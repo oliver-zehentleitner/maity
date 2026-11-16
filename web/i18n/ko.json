@@ -3309,10 +3309,6 @@
   "pending.text": "승인되면 메일이 오고, 이 페이지가 대시보드로 바뀌어요. 따라온 초대는 그동안 기다리고 있어요.",
   "pending.title": "계정이 운영자의 승인을 기다리고 있어요",
   "person.agents.none": "여기에 나열된 에이전트가 없어요.",
-  "person.tab.agents": "에이전트",
-  "person.tab.profile": "프로필",
-  "person.tabs.label": "프로필과 에이전트",
-  "person.title.agents": "{name}의 에이전트",
   "person.handle": "@{handle}",
   "person.handle.organisation": "@{handle} · 조직",
   "person.handle.you": "@{handle} · 나",
@@ -3703,9 +3699,8 @@
   "public_profile.website.too_long": "이 주소가 200자보다 길어요.",
   "public_profile.stats": "내 공개 페이지에 내 수치 표시하기",
   "public_profile.stats.hint": "최근 30일 동안 내 공개 프로젝트에서 완료한 카드, 남긴 리뷰, 병합된 풀 리퀘스트예요. 공개 프로필도 켜져 있을 때만 표시돼요. 직접 켜기 전까지는 꺼져 있고, 프로필을 켜도 표시되지 않아요.",
-  "public_profile.agents": "자체 페이지가 없는 내 에이전트도 에이전트 탭에 표시",
-  "public_profile.agents.hint": "누구나 내 에이전트 탭을 볼 수 있어요. 끄면 자체 페이지가 있는 에이전트(공개 페이지가 있는 프로젝트의 멤버)만 표시돼요. 켜면 프로젝트에서 일하는 다른 에이전트도 표시되지만, 사진, 이름, 핸들만 보이고 그 에이전트가 일하는 비공개 프로젝트에 관한 것은 아무것도 보이지 않아요.",
-  "public_profile.agents.view": "내 에이전트 탭 보기",
+  "public_profile.agents": "자체 페이지가 없는 내 에이전트도 내 공개 페이지에 표시",
+  "public_profile.agents.hint": "누구나 내 페이지의 에이전트를 볼 수 있어요. 끄면 자체 페이지가 있는 에이전트(공개 페이지가 있는 프로젝트의 멤버)만 표시돼요. 켜면 프로젝트에서 일하는 다른 에이전트도 표시되지만, 사진, 이름, 핸들만 보이고 그 에이전트가 일하는 비공개 프로젝트에 관한 것은 아무것도 보이지 않아요.",
   "reg.approval.automatic": "새 계정은 바로 사용할 수 있음",
   "reg.approval.operator": "새 계정을 내가 하나씩 승인",
   "reg.block.address": "주소",
@@ -5270,5 +5265,14 @@
   },
   "visitor.now.agents": {
     "other": "에이전트 {count}개"
-  }
+  },
+  "visitor.crumb.person": "사람",
+  "visitor.crumb.agent": "에이전트",
+  "visitor.agent_of": "소유자",
+  "visitor.agents_of": {
+    "other": "{name}의 에이전트 {count}개"
+  },
+  "visitor.fact.harness": "harness",
+  "visitor.fact.model": "모델",
+  "visitor.stat.last_days": "최근 30일"
 }

@@ -8419,7 +8419,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     byId("public-stats").checked = false; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_stats: false }) && !byId("public-stats").checked,
       "numbers switch: unticking it sends public_stats false " + JSON.stringify(psSent));
-    // The agents tab (`public_agents`, §16.9): the agents with a page by default; ticked, also the other agents that work in a project, sent alone.
+    // The agents on the person's page (`public_agents`, §16.9): the agents with a page by default; ticked, also the other agents that work in a project, sent alone.
     expect(byId("public-agents") && !byId("public-agents").checked, "agents switch: the account page shows it off by default");
     byId("public-agents").checked = true; psForm().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     expect(JSON.stringify(psSent[psSent.length - 1]) === JSON.stringify({ public_agents: "all" }) && byId("public-agents").checked,
@@ -8443,21 +8443,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && plLink().querySelector("a").getAttribute("href") === "#/maintainer?as=public" && plLink().querySelector("a").getAttribute("target") === "_blank"
       && text(plLink()) === "View public page" && !main.querySelector("form.public-profile-form").querySelector(".public-profile-link"),
       "public profile: View public page sits right under the name and handle, outside the form, opened at ?as=public");
-    const paLink = () => main.querySelector("form.public-profile-form p.public-agents-link a");
-    expect(paLink() && paLink().getAttribute("href").endsWith("/maintainer/agents?as=public") && paLink().getAttribute("target") === "_blank"
-      && text(paLink()) === "View my agents tab",
-      "public profile: the agents switch links to the agents tab, opened at ?as=public");
-    // A save draws the links again from the hub's answer: still one link to the tab, not one more.
+    // The agents stand on the person's one page (§16.9, tsk-2t7efzj1p8zt): no link to /<handle>/agents, before or after a save.
+    const paLinks = () => main.querySelectorAll("a").filter((a) => /\/maintainer\/agents(\?|$)/.test(a.getAttribute("href") || ""));
+    expect(!paLinks().length && !main.querySelector("p.public-agents-link"), "public profile: no link to an agents tab, the agents are on the public page");
     byId("public-agents").checked = true; main.querySelector("form.public-profile-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
     byId("public-agents").checked = false; main.querySelector("form.public-profile-form").dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
-    expect(main.querySelectorAll("form.public-profile-form p.public-agents-link a").length === 1,
-      "public profile: after a save the agents tab is linked once");
+    expect(!paLinks().length && main.querySelectorAll("p.public-profile-link a").length === 1,
+      "public profile: after a save still the one link to the public page, none to an agents tab");
     const plGet = win.Maity.api.get;
     win.Maity.api.get = (p) => (p === "/people/maintainer" ? plGet(p).then((x) => ({ ...x, page_served: false })) : plGet(p));
     await go("#/account/settings"); await go("#/account"); for (let k = 0; k < 4; k++) await tick();
     expect(plFacts() && plFacts().nextSibling === plLink() && !plLink().querySelector("a") && text(plLink()) === "",
       "public profile: no page served, no link under the name and handle");
-    expect(!paLink(), "public profile: no page served, no link to the agents tab");
     win.Maity.api.get = plGet;
   }
   // Your data (docs/api.md §2.9): the export and the deletion request, each a sensitive call (§2.8): the page asks for the
@@ -15090,14 +15087,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       notes: [{ id: "nte-1", author: "member", body: "A *note* <img src=y onerror=alert(2)>", state: "open", created_at: "2026-11-02T08:00:00Z", redacted: false,
           edited: { by: "agent", at: "2026-11-02T08:30:00Z", reason: "a <b>typo</b>" } },
         { id: "nte-2", author: "agent", body: null, state: "dismissed", created_at: "2026-11-02T09:00:00Z", redacted: true, edited: null }] } },
-    "/public/pages/stranger/agents/overview": { path: "/stranger/agents/overview", kind: "agent", data: { name: "Overview", handle: "overview", owner: { name: "Sam", handle: "sam", page: "/sam" }, projects: [{ name: "Tool", full_name: "stranger/tool", role: "reviewer" }], statistics: { totals: { cards_done: 1, prs_merged: null } },
-      member_since: "2026-03", online: true, model: "model-<b>one</b>", harness: null, picture: "/api/v1/avatars/public/0123456789abcdef0123456789abcdef" } },
-    "/public/pages/sam": { path: "/sam", kind: "person", data: { name: "Sam", handle: "sam", bio: null, projects: [{ name: "Tool", full_name: "stranger/tool", role: "coder" }], agents: [],
+    // An agent's page (§16.9): its owner with no picture while the owner's profile is off (null), its four counts flat.
+    "/public/pages/stranger/agents/overview": { path: "/stranger/agents/overview", kind: "agent", data: { name: "Overview", handle: "overview", picture: "/api/v1/avatars/public/def00000000000000000000000000000",
+      owner: { name: "Sam", handle: "sam", page: "/sam", picture: null }, projects: [{ name: "Tool", full_name: "stranger/tool", role: "reviewer" }],
+      statistics: { cards_done: 1, reviews_given: 0, prs_merged: null, handovers: 0, claim_to_done_median_seconds: null, review_to_done_median_seconds: null },
+      member_since: "2026-03", online: true, model: "model-<b>one</b>", harness: "Claude Code" } },
+    // A person's page with their agents on it (§16.9, "A person's agents"): one with a page, one without.
+    "/public/pages/sam": { path: "/sam", kind: "person", data: { name: "Sam", handle: "sam", picture: "/api/v1/avatars/public/abc00000000000000000000000000000", bio: "Builds <b>tools</b>.",
+      website: "https://sam.example/", social: { github: "sam-gh", mastodon: "@sam@mastodon.social", discord: "sam_01" },
+      projects: [{ name: "Tool", full_name: "stranger/tool", role: "coder" }],
+      agents: [
+        { name: "Helper", handle: "helper", picture: "/api/v1/avatars/public/abc00000000000000000000000000000", page: null, roles: [], model: null, harness: null },
+        { name: "Overview <b>bot</b>", handle: "overview", picture: "/api/v1/avatars/public/def00000000000000000000000000000", page: "/stranger/agents/overview", roles: ["coder", "reviewer"], model: "model-one", harness: "harness-x" }],
       member_since: "2025-11", online: false, statistics: { cards_done: 4, reviews_given: 2, prs_merged: null } } },
-    // A person's agents (§16.9, "A person's agents"): one with a page, one without.
-    "/public/pages/sam/agents": { path: "/sam/agents", kind: "person_agents", data: { owner: { name: "Sam", handle: "sam", page: "/sam" }, agents: [
-      { name: "Helper", handle: "helper", picture: "/api/v1/avatars/public/abc00000000000000000000000000000", page: null, roles: [], model: null, harness: null },
-      { name: "Overview <b>bot</b>", handle: "overview", picture: "/api/v1/avatars/public/def", page: "/stranger/agents/overview", roles: ["coder", "reviewer"], model: "model-one", harness: "harness-x" }] } },
     "/public/pages/stranger/tool/team": { path: "/stranger/tool/team", kind: "team", data: { shown: [{ name: "Sam", handle: "sam", page: "/sam", trust: "owner", role: "coder" }], others: [{ role: "reviewer", count: 2 }] } },
     "/public/pages/stranger/tool/board": { path: "/stranger/tool/board", kind: "board", data: { columns: [{ status: "open", cards: [{ id: "tsk-1", title: "A <b>card</b>", label: "bug", holder: "member" }] }] } },
     // §16.9's project data: a person whose profile is off has no picture, an agent always one; `members` the Team tab's count.
@@ -15303,12 +15305,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     // Signed in the page is the members' view: no stored-page picture before the name.
     expect(!viView().querySelector(".pic"), "visitor: signed in, an agent's page draws no stored-page picture");
-    // Role, member since, online, and the model as text; no harness line for a null one (§16.9).
+    // Role, member since, online, and the model and harness as text (§16.9); signed in, the list stays.
     const facts = viView().querySelector("ul.visitor-facts");
     const said = facts ? facts.querySelectorAll("li").map(text) : [];
-    expect(said.length === 3 && said[0].startsWith("Member since ") && said[0].includes("2026") && !said[0].includes("2026-03")
-      && said[1] === "Online" && said[2] === "Model: model-<b>one</b>" && !facts.querySelector("b"),
-      "visitor: an agent's page says member since as a month, online, and its model as text, no harness line " + JSON.stringify(said));
+    expect(said.length === 4 && said[0].startsWith("Member since ") && said[0].includes("2026") && !said[0].includes("2026-03")
+      && said[1] === "Online" && said[2] === "Model: model-<b>one</b>" && said[3] === "Harness: Claude Code" && !facts.querySelector("b"),
+      "visitor: signed in, an agent's page says member since as a month, online, and its model and harness as text " + JSON.stringify(said));
     expect(viView().querySelectorAll("span.label-tag").some((t) => text(t) === "Reviewer"), "visitor: an agent's page names its role in each project");
   }
   const viSoGet = win.Maity.api.get;
@@ -15534,52 +15536,99 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",
     "visitor: without a session, /<owner>/agents/overview is the page of the agent named so " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1)]));
   {
-    // The picture the hub's stored page shows above the name stays after the redraw (tsk-777vkhtzmq6f):
-    // the agent's at 128 pixels before its h1; a person without one keeps the neutral square instead.
-    const pic = viView() ? viView().querySelector(".pic") : null;
-    const wrap = viView() ? viView().querySelector(".wrap") : null;
-    const first = wrap ? wrap.firstChild : null;
-    expect(pic && pic.tagName === "IMG" && pic.getAttribute("src") === "/api/v1/avatars/public/0123456789abcdef0123456789abcdef?s=128" && pic.getAttribute("alt") === ""
-      && pic.getAttribute("width") === "128" && first === pic,
-      "visitor: an agent's page shows its picture above the name, as the hub's own page does " + JSON.stringify(pic && [pic.tagName, pic.getAttribute("src")]));
+    // The agent's page in the mockup's layout (agent.html, tsk-2t7efzj1p8zt): the hero with its rounded-square picture,
+    // the crumb Agent, the meta line, "Agent of" its owner with the owner's letter where the hub sends no picture, the
+    // harness and model as facts; the band of its four counts with a 0 shown and an empty one left out; projects as cards.
+    const v = viView();
+    const hero = v && v.querySelector("section.uhero.hero.dz");
+    const pic = hero && hero.querySelector(".wrap img.av.ag.av-128");
+    const meta = hero ? hero.querySelectorAll("p.meta span").map(text) : [];
+    const owner = hero && hero.querySelector("p.owner");
+    const facts = hero ? hero.querySelectorAll("dl.facts div").map((d) => text(d.querySelector("dt")) + "=" + text(d.querySelector("dd"))) : [];
+    const band = v && v.querySelector("section.band");
+    const figures = band ? band.querySelectorAll(".stats4 .stat").map((s) => text(s.querySelector("b")) + " " + text(s.querySelector(".label"))) : [];
+    const cards = v ? v.querySelectorAll(".pgrid a.pcard") : [];
+    expect(v && v.classList.contains("profile-view") && hero && pic && pic.getAttribute("src") === "/api/v1/avatars/public/def00000000000000000000000000000?s=128" && pic.getAttribute("alt") === ""
+      && text(hero.querySelector(".crumb")) === "Agent" && text(hero.querySelector("h1")) === "Overview"
+      && JSON.stringify(meta) === JSON.stringify(["@overview", "Online", "Member since March 2026"]),
+      "visitor: an agent's page has the dark hero, its picture at 128 as a rounded square, the crumb, the name and the meta line " + JSON.stringify(meta));
+    expect(owner && text(owner).startsWith("Agent of") && owner.querySelector("a").getAttribute("href").replace(/^#/, "") === "/sam"
+      && owner.querySelector("span.av.hu.av-22.ini") && text(owner.querySelector("span.av.hu.av-22.ini")) === "S" && !owner.querySelector("img") && text(owner.querySelector("b")) === "Sam",
+      "visitor: an agent's owner line links the owner, with the letter as placeholder where their picture is null");
+    expect(JSON.stringify(facts) === JSON.stringify(["Harness=Claude Code", "Model=model-<b>one</b>"]) && !hero.querySelector("dd b b"),
+      "visitor: the harness and the model as facts in the hero, the model as text " + JSON.stringify(facts));
+    expect(band && text(band.querySelector(".eyebrow")) === "Last 30 days" && JSON.stringify(figures) === JSON.stringify(["1 Cards done", "0 Reviews given", "0 Handovers"]),
+      "visitor: the agent's band, a 0 shown and a null left out " + JSON.stringify(figures));
+    expect(cards.length === 1 && cards[0].getAttribute("href").replace(/^#/, "") === "/stranger/tool" && text(cards[0].querySelector(".pmark")) === "T"
+      && text(cards[0].querySelector("small")) === "stranger/tool" && text(cards[0].querySelector(".chip.role")) === "Reviewer" && !v.querySelector("nav.ptabs"),
+      "visitor: the agent's projects as tile cards with the role chip, and no tab bar");
+    // #1854's check (tsk-777vkhtzmq6f), adapted: the picture stands before the name, now as the hero's first
+    // part (profileHero) at 128 pixels, and no second, stored-page picture (.pic) is drawn beside it.
+    const heroWrap = hero ? hero.querySelector(".wrap") : null;
+    expect(heroWrap && heroWrap.firstChild === pic && pic.getAttribute("width") === "128" && !v.querySelector(".pic"),
+      "visitor: an agent's page shows its picture before the name, in the hero, and no stored-page picture besides " + JSON.stringify(pic && [pic.tagName, pic.getAttribute("src")]));
   }
   // A person's page is the visitor's without a session; signed in, /<handle> is the members' person view.
   await go("#/sam"); for (let k = 0; k < 4; k++) await tick();
   {
-    const said = viView() && viView().querySelector("ul.visitor-facts") ? viView().querySelector("ul.visitor-facts").querySelectorAll("li").map(text) : [];
-    const stats = viView() ? viView().querySelectorAll("ul.visitor-stats li").map(text) : [];
-    expect(viView() && viView().getAttribute("data-kind") === "person" && said.length === 1 && said[0].startsWith("Member since ")
-      && JSON.stringify(stats) === JSON.stringify(["Cards done: 4", "Reviews given: 2"]),
-      "visitor: a person's page says member since, no Online while offline, and their own counts without a null one " + JSON.stringify([said, stats]));
-    const none = viView() ? viView().querySelector(".pic") : null;
-    expect(none && none.tagName === "SPAN" && (none.getAttribute("class") || "").split(" ").includes("none") && !viView().querySelector("img.pic"),
-      "visitor: a person's page without a picture keeps the neutral square of the hub's page, no image");
-    const tabs = viView() ? viView().querySelectorAll("nav.person-tabs a.view-tab").map((a) => [(a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current")]) : [];
-    expect(JSON.stringify(tabs) === JSON.stringify([["/sam", "page"], ["/sam/agents", null]]),
-      "visitor: a person's page carries the tabs Profile and Agents, Profile current (§16.9) " + JSON.stringify(tabs));
-    // Where the hub's person page has it: after the name and the tabs, not before the h1.
-    const order = viView() && viView().querySelector(".wrap") ? viView().querySelector(".wrap").childNodes.map((n) => n.tagName === "NAV" ? "nav" : n.tagName === "H1" ? "h1" : (n.getAttribute && (n.getAttribute("class") || "").split(" ").includes("pic")) ? "pic" : null).filter(Boolean) : [];
-    expect(JSON.stringify(order) === JSON.stringify(["h1", "nav", "pic"]),
-      "visitor: a person's picture stands after the name and the tabs, as on the hub's own page " + JSON.stringify(order));
+    // The person's page in the mockup's layout (person.html, tsk-2t7efzj1p8zt), one page: no tabs (req-xkxaq2c3cjjq).
+    const v = viView();
+    const hero = v && v.querySelector("section.uhero.hero.dz");
+    const pic = hero && hero.querySelector(".wrap img.av.hu.av-128");
+    const meta = hero ? hero.querySelectorAll("p.meta span").map(text) : [];
+    const socs = hero ? hero.querySelectorAll(".socs .soc").map((s) => [s.tagName.toLowerCase(), text(s.querySelector(".net")), s.getAttribute("href"), s.getAttribute("rel")]) : [];
+    const web = hero && hero.querySelector("a.web");
+    const figures = v && v.querySelector("section.band") ? v.querySelectorAll("section.band .stats4 .stat").map((s) => text(s.querySelector("b")) + " " + text(s.querySelector(".label"))) : [];
+    expect(v && v.getAttribute("data-kind") === "person" && hero && pic && pic.getAttribute("src") === "/api/v1/avatars/public/abc00000000000000000000000000000?s=128"
+      && text(hero.querySelector(".crumb")) === "Person" && text(hero.querySelector("h1")) === "Sam"
+      && JSON.stringify(meta) === JSON.stringify(["@sam", "Member since November 2025"]) && text(hero.querySelector("p.bio")) === "Builds <b>tools</b>." && !hero.querySelector("p.bio b"),
+      "visitor: a person's page has the dark hero with the round picture, the crumb Person, the meta line without Online while offline, the bio as text " + JSON.stringify(meta));
+    expect(web && web.getAttribute("href") === "https://sam.example/" && text(web) === "sam.example" && web.getAttribute("rel") === "me nofollow"
+      && JSON.stringify(socs) === JSON.stringify([["a", "GitHub", "https://github.com/sam-gh", "me nofollow"], ["a", "Mastodon", "https://mastodon.social/@sam", "me nofollow"], ["span", "Discord", null, null]]),
+      "visitor: the website as the accent link and the networks as chips, linked as the hub links them, Discord as text " + JSON.stringify(socs));
+    expect(JSON.stringify(figures) === JSON.stringify(["4 Cards done", "2 Reviews given"]),
+      "visitor: a person's own counts in the band, without a null one " + JSON.stringify(figures));
+    const cards = v ? v.querySelectorAll("section.profile-projects .pgrid a.pcard") : [];
+    expect(cards.length === 1 && text(cards[0].querySelector(".chip.role")) === "Coder", "visitor: a person's projects as tile cards with their role");
+    const agents = v ? v.querySelectorAll("section.sec.alt.profile-agents .mgrid .mcard") : [];
+    expect(agents.length === 2 && text(v.querySelector("section.profile-agents .sec-h p")) === "2 agents of Sam"
+      && agents[0].tagName.toLowerCase() === "div" && text(agents[0].querySelector("b")) === "Helper" && text(agents[0].querySelector("small")) === "@helper" && !agents[0].querySelector(".chip")
+      && agents[0].querySelector("img.av.ag.av-44").getAttribute("src") === "/api/v1/avatars/public/abc00000000000000000000000000000?s=128"
+      && agents[1].tagName.toLowerCase() === "a" && agents[1].getAttribute("href").replace(/^#/, "") === "/stranger/agents/overview"
+      && text(agents[1].querySelector("b")) === "Overview <b>bot</b>" && !agents[1].querySelector("b b")
+      && agents[1].querySelectorAll(".chip.role").map(text).join() === "Coder,Reviewer" && text(agents[1].querySelector(".mc-m .h")) === "harness-x",
+      "visitor: a person's agents as cards on the one page, one with a page linked with its roles and harness, one without only named " + JSON.stringify(agents.map(text)));
+    expect(!v.querySelector("nav.person-tabs") && !v.querySelector("nav.ptabs") && !v.querySelectorAll("a").some((a) => (a.getAttribute("href") || "").replace(/^#/, "") === "/sam/agents"),
+      "visitor: a person's page carries no tabs and no link to /<handle>/agents");
+    // #1854's placement check (tsk-777vkhtzmq6f), adapted: the person's picture is the hero's first part, before
+    // the name, and no stored-page picture (.pic) stands after the name any more. Their tab and list checks
+    // are this PR's no-tabs, meta-line and band checks above.
+    const heroWrap = hero ? hero.querySelector(".wrap") : null;
+    expect(heroWrap && heroWrap.firstChild === pic && pic.getAttribute("width") === "128" && !v.querySelector(".pic"),
+      "visitor: a person's picture stands before the name, in the hero, and no stored-page picture after it");
   }
-  // /<handle>/agents (§16.9, "A person's agents", tsk-zrjxhxanfwzd): without a session the visitor's page, the same list as signed in.
-  await go("#/sam/agents"); for (let k = 0; k < 4; k++) await tick();
   {
-    const items = viView() ? viView().querySelectorAll("ul.person-agents li") : [];
-    const tabs = viView() ? viView().querySelectorAll("nav.person-tabs a.view-tab").map((a) => [(a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current")]) : [];
-    expect(viView() && viView().getAttribute("data-kind") === "person_agents" && viAsked[viAsked.length - 1] === "/public/pages/sam/agents"
-      && JSON.stringify(tabs) === JSON.stringify([["/sam", null], ["/sam/agents", "page"]]) && text(viView().querySelector("h1")) === "Agents of Sam",
-      "visitor: without a session, /<handle>/agents is the person's agents page, its Agents tab current " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-1), tabs]));
-    expect(items.length === 2 && !items[0].querySelector("a") && text(items[0]).includes("Helper (helper)") && !items[0].querySelector(".label-tag")
-      && items[0].querySelector("img").getAttribute("src") === "/api/v1/avatars/public/abc00000000000000000000000000000?s=64"
-      && items[1].querySelector("a").getAttribute("href").replace(/^#/, "") === "/stranger/agents/overview" && text(items[1]).includes("Overview <b>bot</b> (overview)")
-      && !items[1].querySelector("b") && items[1].querySelectorAll(".label-tag").map(text).join() === "Coder,Reviewer"
-      && text(items[1]).includes("Model: model-one · Harness: harness-x"),
-      "visitor: each agent with its picture at 64 px, a page linked with its roles, model and harness, one without a page only named " + JSON.stringify(items.map(text)));
+    // A person whose profile is off: no picture (null), their letter; no bio, links, band or projects.
+    const off = viPages["/public/pages/sam"];
+    viPages["/public/pages/sam"] = { path: "/sam", kind: "person", data: { name: "Sam", handle: "sam", picture: null, bio: null, projects: [], agents: [], member_since: null, online: null, statistics: null } };
+    await go("#/stranger/tool/board"); await go("#/sam"); for (let k = 0; k < 4; k++) await tick();
+    const v = viView();
+    const hero = v && v.querySelector("section.uhero");
+    expect(hero && hero.querySelector(".wrap span.av.hu.av-128.ini") && !hero.querySelector("img") && JSON.stringify(hero.querySelectorAll("p.meta span").map(text)) === JSON.stringify(["@sam"])
+      && !hero.querySelector(".socs, a.web, p.bio") && !v.querySelector("section.band, section.profile-projects, section.profile-agents"),
+      "visitor: with the profile off, the letter for the picture and nothing but the name and handle");
+    viPages["/public/pages/sam"] = off;
+  }
+  // /<handle>/agents names nothing since the agents stand on the person's page (§16.9, tsk-2t7efzj1p8zt): no read, "not found".
+  {
+    const before = viAsked.length;
+    await go("#/sam/agents"); for (let k = 0; k < 4; k++) await tick();
+    expect(!viView() && viAsked.length === before && main.querySelector("section.view-not-found") && text(main).includes("This page does not exist, or it is not public.") && win.location.hash === "#/sam/agents",
+      "visitor: without a session, /<handle>/agents asks the hub nothing and is the dashboard's not found, no redirect " + JSON.stringify(viAsked.slice(before)));
   }
   await go("#/sam/agents/helper"); for (let k = 0; k < 4; k++) await tick();
   expect(viAsked[viAsked.length - 1] === "/public/pages/sam/agents/helper",
-    "visitor: /<owner>/agents/<handle> stays an agent's own page, not the person's agents tab " + JSON.stringify(viAsked.slice(-1)));
+    "visitor: /<owner>/agents/<handle> stays an agent's own page " + JSON.stringify(viAsked.slice(-1)));
   await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
   expect(!viView() && byId("login-email"), "visitor: without a session, /overview/swarm stays the login (members only, it goes on there after the sign-in)");
   win.Maity.api.get = viSoGet;
@@ -15628,34 +15677,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(pvView()).includes("2 of 3 shown."),
     "person: a shared project to its overview, a public one to its page, a cut list said with its total");
   expect(text(header).includes("People") && document.title.includes("@wolfgang"), "person: the header and the title name the view");
-  const pvPersonTabs = () => pvView().querySelectorAll("nav.person-tabs a.view-tab").map((a) => [(a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current")]);
   const pvAgents = () => pvView().querySelectorAll("ul.person-agents li");
-  expect(JSON.stringify(pvPersonTabs()) === JSON.stringify([["/wolfgang", "page"], ["/wolfgang/agents", null]]) && !pvAgents().length,
-    "person: a person's view has the tabs Profile and Agents (§16.9), Profile current at /<handle> " + JSON.stringify(pvPersonTabs()));
-  // /<handle>/agents signed in (tsk-zrjxhxanfwzd): the tab Agents of the person's view, §6.27's `agents`, one read.
-  const pvBefore = pvAsked.length;
-  await go("#/wolfgang/agents"); for (let k = 0; k < 4; k++) await tick();
-  expect(pvView() && JSON.stringify(pvAsked.slice(pvBefore)) === JSON.stringify(["/people/wolfgang"]) && pvName() === "Wolfgang"
-    && JSON.stringify(pvPersonTabs()) === JSON.stringify([["/wolfgang", null], ["/wolfgang/agents", "page"]])
-    && !pvView().querySelector(".person-bio") && !pvProjects().length && document.title.includes("Agents of @wolfgang")
-    && pvPublic() && pvPublic().getAttribute("href") === "#/wolfgang/agents?as=public",
-    "person: signed in, /<handle>/agents is the person view's Agents tab, from GET /people alone, View public page at its own address "
-    + JSON.stringify([pvAsked.slice(pvBefore), pvView() && pvPersonTabs(), document.title]));
-  expect(pvAgents().length === 2 && !pvAgents()[0].querySelector("a") && text(pvAgents()[0]).includes("Quiet Bot (quiet-bot)") && !pvAgents()[0].querySelector(".label-tag")
+  // A person's agents stand on the one view, under the projects, as on the public page (§16.9, tsk-2t7efzj1p8zt): no tabs.
+  expect(!pvView().querySelector("nav.person-tabs") && pvAgents().length === 2 && !pvAgents()[0].querySelector("a") && text(pvAgents()[0]).includes("Quiet Bot (quiet-bot)") && !pvAgents()[0].querySelector(".label-tag")
     && pvAgents()[0].querySelector("img").getAttribute("src") === "/api/v1/avatars/public/0f3c9a2b7d1e4c580f3c9a2b7d1e4c58?s=64"
     && pvAgents()[1].querySelector("a").getAttribute("href").replace(/^#/, "") === "/wolfgang/agents/trader-bot" && text(pvAgents()[1]).includes("Trader <b>Bot</b> (trader-bot)")
     && !pvAgents()[1].querySelector("b") && pvAgents()[1].querySelector(".person-picture-none.size-64")
     && pvAgents()[1].querySelectorAll(".label-tag").map(text).join() === "Coder,Reviewer" && text(pvAgents()[1]).includes("Model: model-one · Harness: harness-x"),
-    "person: the Agents tab lists each agent as the public page does: picture at 64 px or a placeholder, a page linked with roles, model and harness, one without only named "
+    "person: the view lists each agent under the projects as the public page does, no tabs: picture at 64 px or a placeholder, a page linked with roles, model and harness, one without only named "
     + JSON.stringify(pvAgents().map(text)));
-  await go("#/wolf/agents"); for (let k = 0; k < 4; k++) await tick();
-  expect(win.location.hash === "#/wolfgang/agents" && pvAgents().length === 2, "person: an alias at /<alias>/agents goes to the current handle's Agents tab");
-  await go("#/anna/agents"); for (let k = 0; k < 4; k++) await tick();
-  expect(text(pvView()).includes("No agents are listed here.") && !pvAgents().length && !pvPublic(), "person: a person with no agent listed says so");
-  await go("#/oz-team/agents"); for (let k = 0; k < 4; k++) await tick();
-  expect(pvView() && text(pvView()).includes("This page does not exist, or you cannot see it.") && !pvView().querySelector("nav.person-tabs")
-    && !pvView().querySelector(".person-name") && pvAsked[pvAsked.length - 1] === "/people/oz-team",
-    "organisation: /<org>/agents names nothing (§16.9), the dashboard's not found");
+  // /<handle>/agents names nothing, signed in too: the dashboard's not found, nothing read, no redirect.
+  for (const at of ["wolfgang", "wolf", "oz-team"]) {
+    const pvBefore = pvAsked.length;
+    await go("#/" + at + "/agents"); for (let k = 0; k < 4; k++) await tick();
+    expect(text(main).includes("This page does not exist, or you cannot see it.") && !main.querySelector(".person-name") && pvAsked.length === pvBefore
+      && win.location.hash === "#/" + at + "/agents",
+      "person: signed in, /" + at + "/agents is the dashboard's not found, from no read, at the same address " + JSON.stringify([pvAsked.slice(pvBefore), win.location.hash]));
+  }
   await go("#/wolf"); for (let k = 0; k < 4; k++) await tick();
   expect(win.location.hash === "#/wolfgang" && pvName() === "Wolfgang", "person: an alias goes to the current handle");
   await go("#/anna"); for (let k = 0; k < 4; k++) await tick();

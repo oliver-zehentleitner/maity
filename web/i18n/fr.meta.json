@@ -12695,22 +12695,6 @@
     "en": "622f06cbcd2e7e61",
     "text": "17699d86d6c23549"
   },
-  "person.tab.agents": {
-    "en": "21cf98a292e94015",
-    "text": "21cf98a292e94015"
-  },
-  "person.tab.profile": {
-    "en": "96ad4bd0f7baa40e",
-    "text": "d1bebceb4c8ca1ae"
-  },
-  "person.tabs.label": {
-    "en": "16a03e3aa01e736f",
-    "text": "6a79013aecc7991b"
-  },
-  "person.title.agents": {
-    "en": "dd81b03eabf89b55",
-    "text": "9ce69fe4cfde486b"
-  },
   "person.view_public": {
     "en": "8164ca72067a45c7",
     "text": "6caadd1bcbb4628e"
@@ -14048,16 +14032,12 @@
     "text": "4f8b0e5bbb11081a"
   },
   "public_profile.agents": {
-    "en": "08ca4775200498d5",
-    "text": "c3016a615477ae73"
+    "en": "037fc250741007c7",
+    "text": "9cf28477d2f67bb4"
   },
   "public_profile.agents.hint": {
-    "en": "fc0119a6483447aa",
-    "text": "7bdd6e0c5d9f1b6e"
-  },
-  "public_profile.agents.view": {
-    "en": "303db7c3e82264e5",
-    "text": "bb56ca345d1b2150"
+    "en": "9d844fb44b4f1a84",
+    "text": "9f88e430af55acd4"
   },
   "public_profile.bio": {
     "en": "906fa76e4230938a",
@@ -19243,9 +19223,33 @@
     "en": "9aa56c3dab3c6957",
     "text": "9aa56c3dab3c6957"
   },
+  "visitor.agent_of": {
+    "en": "dd1cdef1343c9440",
+    "text": "70a5659b4b47c881"
+  },
   "visitor.agents": {
     "en": "21cf98a292e94015",
     "text": "21cf98a292e94015"
+  },
+  "visitor.agents_of": {
+    "en": "322890cb2964c51f",
+    "text": "1f83f6d77d60e412"
+  },
+  "visitor.crumb.agent": {
+    "en": "aa7e6ee1e235416d",
+    "text": "aa7e6ee1e235416d"
+  },
+  "visitor.crumb.person": {
+    "en": "2f988527ec2fcdb9",
+    "text": "77a640b4964d01d1"
+  },
+  "visitor.fact.harness": {
+    "en": "167f756ba15dfc08",
+    "text": "167f756ba15dfc08"
+  },
+  "visitor.fact.model": {
+    "en": "9c16c09f0c180580",
+    "text": "2ef26efdc2a1e07f"
   },
   "visitor.harness": {
     "en": "b3ae7ee4d934d009",
@@ -19378,6 +19382,10 @@
   "visitor.stat.handovers": {
     "en": "0b6b9f7e499ac5f6",
     "text": "c1a5b8d7bf9c2845"
+  },
+  "visitor.stat.last_days": {
+    "en": "db41c93615929f02",
+    "text": "334eaf45e834c468"
   },
   "visitor.stat.members": {
     "en": "6bbc51529519435c",

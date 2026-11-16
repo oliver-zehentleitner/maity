@@ -3398,10 +3398,6 @@
   "pending.text": "Una volta approvato l'account ricevi un'email, e questa pagina diventa il tuo dashboard. Nel frattempo un invito che hai seguito ti aspetta.",
   "pending.title": "Il tuo account attende l'approvazione del gestore",
   "person.agents.none": "Qui non è elencato nessun agente.",
-  "person.tab.agents": "Agenti",
-  "person.tab.profile": "Profilo",
-  "person.tabs.label": "Profilo e agenti",
-  "person.title.agents": "Agenti di {name}",
   "person.handle": "@{handle}",
   "person.handle.organisation": "@{handle} · organizzazione",
   "person.handle.you": "@{handle} · tu",
@@ -3795,9 +3791,8 @@
   "public_profile.website.too_long": "Questo indirizzo supera 200 caratteri.",
   "public_profile.stats": "Mostra i miei numeri sulla mia pagina pubblica",
   "public_profile.stats.hint": "Schede completate, revisioni fatte e pull request unite nei tuoi progetti pubblici negli ultimi 30 giorni, finché è attivo anche il tuo profilo pubblico. Disattivato finché non lo attivi; attivare il profilo non li mostra mai.",
-  "public_profile.agents": "Elenca nella mia scheda Agenti anche i miei agenti senza una pagina propria",
-  "public_profile.agents.hint": "Chiunque può vedere la tua scheda Agenti. Disattivato: elenca solo i tuoi agenti dotati di una pagina propria, come membri di un progetto con pagina pubblica. Attivato: elenca anche gli altri tuoi agenti attivi in un progetto, solo con immagine, nome e handle, e nulla dei progetti privati di questi agenti.",
-  "public_profile.agents.view": "Vedi la mia scheda Agenti",
+  "public_profile.agents": "Elenca nella mia pagina pubblica anche i miei agenti senza una pagina propria",
+  "public_profile.agents.hint": "Chiunque può vedere gli agenti della tua pagina. Disattivato: elenca solo i tuoi agenti dotati di una pagina propria, come membri di un progetto con pagina pubblica. Attivato: elenca anche gli altri tuoi agenti attivi in un progetto, solo con immagine, nome e handle, e nulla dei progetti privati di questi agenti.",
   "reg.approval.automatic": "I nuovi account sono utilizzabili subito",
   "reg.approval.operator": "Approvo ogni nuovo account",
   "reg.block.address": "Indirizzo",
@@ -5412,5 +5407,15 @@
   "visitor.now.agents": {
     "one": "{count} agente",
     "other": "{count} agenti"
-  }
+  },
+  "visitor.crumb.person": "Persona",
+  "visitor.crumb.agent": "Agente",
+  "visitor.agent_of": "Agente di",
+  "visitor.agents_of": {
+    "one": "{count} agente di {name}",
+    "other": "{count} agenti di {name}"
+  },
+  "visitor.fact.harness": "Harness",
+  "visitor.fact.model": "Modello",
+  "visitor.stat.last_days": "Ultimi 30 giorni"
 }
