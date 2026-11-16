@@ -1238,6 +1238,8 @@ window.Maity = window.Maity || {};
     if (/[\s\u0000-\u001f\u007f]/.test(value)) return "format";
     const m = /^https:\/\/([^/?#]*)/.exec(value);
     if (!m) return "format";
+    // ASCII before case-folding, as the hub (U+212A KELVIN SIGN lower-cases to "k").
+    if (!/^[\x00-\x7f]*$/.test(m[1])) return "format";
     const host = m[1].toLowerCase(); // the hub reads the host without case, as urlsplit does
     const label = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
     if (host.length > 253 || !new RegExp("^" + label + "(?:\\." + label + ")+$").test(host) || /^\d+$/.test(host.split(".").pop())) return "format";
@@ -1257,6 +1259,8 @@ window.Maity = window.Maity || {};
   };
   function personNetworkName(network, name) {
     let value = String(name);
+    // ASCII before case-folding, as the hub (U+212A KELVIN SIGN lower-cases to "k").
+    if ((network === "mastodon" || network === "bluesky") && !/^[\x00-\x7f]*$/.test(value)) return null;
     if (network === "mastodon") { const at = value.lastIndexOf("@"); value = value.slice(0, at + 1) + value.slice(at + 1).toLowerCase(); }
     if (network === "bluesky") value = value.toLowerCase();
     if (network === "gitlab" && /\.(git|atom)$/i.test(value)) return null;

@@ -50,6 +50,10 @@ def _dns(host: str) -> bool:
 def normalised(network: str, name: str) -> str | None:
     """The name as stored, or None when it is not of its form: the host of a Mastodon name and
     a Bluesky handle are lower-cased, every other name is stored as given."""
+    # Before lower-casing: `str.lower` maps U+212A (KELVIN SIGN) to ASCII "k", which would store
+    # a different host or handle. A Unicode host is refused; an IDN only in its `xn--` form.
+    if network in ("mastodon", "bluesky") and not name.isascii():
+        return None
     if network == "mastodon":
         user, _, host = name[1:].partition("@") if name.startswith("@") else ("", "", "")
         host = host.lower()
