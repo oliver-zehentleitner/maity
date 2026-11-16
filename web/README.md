@@ -75,21 +75,20 @@ too.
 them, `GET /me/notifications?limit=0` gives the counts, per project too
 (`by_project`, computed by the hub):
 - **Switcher pill.** A project's pill counts its open requests plus its
-  unread chats and mentions, and its label says which. **All projects**
-  shows the hub's `total`, with the same words; it includes a personal
+  unread chats, and its label says which. **All projects** shows the
+  hub's `inbox` plus `chat`, with the same words; it includes a personal
   request of a project the human is not in (`member: false`), which is
   on no project's pill.
 - **Tabs.** The **Inbox** tab shows the project's open requests, the
-  **Chat** tab its unread chats. Unread mentions are counted by the pill
-  and by no tab: while there are some, a line beside the tabs ("1 unread
-  mention") links to them on **All notifications**, filtered to this
-  project (`/notifications?kind=mention&project=<owner>/<slug>`), and
-  every counts read fills that line again. The **Chat** tab leaves the
-  line out (the maintainer's choice): its list marks a chat with an unread
-  mention (`@`); mentions in project messages and on cards stay in the
-  bell and on the other tabs' line.
-- **Tab title.** It starts with `(<total>) ` while anything asks for the
-  human.
+  **Chat** tab its unread chats.
+- **Mentions** are announced by the bell alone (the maintainer,
+  2026-11-16): no line under the tabs, and no number on a pill or in the
+  tab title, which add the requests and chats themselves rather than
+  showing the hub's `total`. One project's mentions can still be read at
+  `/notifications?kind=mention&project=<owner>/<slug>`; the chat list
+  marks a chat with an unread mention (`@`).
+- **Tab title.** It starts with `(<n>) ` while open requests or unread
+  chats ask for the human (`inbox` plus `chat`; mentions only on the bell).
 
 **Theme.** **System** (the default: the browser's light or dark),
 **Light** or **Dark**, kept per browser (`localStorage`, `maity.theme`; without storage the pick holds for
@@ -2035,8 +2034,11 @@ an item read confirms nothing: a sign-in is no item, it is confirmed
 with **This was me** under Sessions. An id the hub skips
 (`skipped`) is said, and its row stays unread. The address may carry a
 filter, `?kind=<kind>` (one kind of §18.2) and `?project=<owner>/<slug>`
-(one of the human's projects), as the mention line beside a project's tabs
-sends it: the hub is asked for that kind and project only, the heading
+(one of the human's projects), given in the address itself, as in
+`/notifications?kind=mention&project=<owner>/<slug>` for one project's
+mentions (no page of the dashboard links to a filtered address; the
+bell's **All notifications** leads to the whole list): the hub is asked
+for that kind and project only, the heading
 names the filter ("Mentions in Maity"), **All notifications** leads back
 to the whole list, and **Mark all read** marks that kind and project only
 (§18.3). Anything else in the address is no filter.

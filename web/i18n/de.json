@@ -1433,14 +1433,6 @@
   "header.away_until": "Abwesend bis {time}",
   "header.brand.signed_in": "Maity: alles, was auf dich wartet",
   "header.brand.signed_out": "Maity: Startseite",
-  "header.count.mentions": {
-    "one": "{count} Erwähnung",
-    "other": "{count} Erwähnungen"
-  },
-  "header.mentions.unread": {
-    "one": "{count} ungelesene Erwähnung",
-    "other": "{count} ungelesene Erwähnungen"
-  },
   "header.count.open": "{count} offen",
   "header.count.unread": "{count} ungelesen",
   "header.count.unread_chats": "{count} ungelesen in Chats",

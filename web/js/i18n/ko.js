@@ -1345,9 +1345,6 @@ window.MAITY_I18N["ko"] = {
   "header.away_until": "{time}까지 자리 비움",
   "header.brand.signed_in": "Maity: 나를 기다리는 모든 것",
   "header.brand.signed_out": "Maity: 홈",
-  "header.count.mentions": {
-    "other": "멘션 {count}개"
-  },
   "header.count.open": "열림 {count}개",
   "header.count.unread": "읽지 않음 {count}개",
   "header.count.unread_chats": "채팅에서 읽지 않음 {count}개",
@@ -1355,9 +1352,6 @@ window.MAITY_I18N["ko"] = {
   "header.fixtures.title": "web/fixtures/의 데이터이며 허브의 데이터가 아닙니다. 변경 사항은 이 탭에만 유지됩니다.",
   "header.instance_admin": "인스턴스 관리",
   "header.invitations": "초대",
-  "header.mentions.unread": {
-    "other": "읽지 않은 멘션 {count}개"
-  },
   "header.new": "새 프로젝트",
   "header.observe": "함께 읽기",
   "header.orgs": "조직",

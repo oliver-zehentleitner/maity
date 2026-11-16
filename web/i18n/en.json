@@ -1440,14 +1440,6 @@
   "header.away_until": "Away until {time}",
   "header.brand.signed_in": "Maity: everything waiting for you",
   "header.brand.signed_out": "Maity: home",
-  "header.count.mentions": {
-    "one": "{count} mention",
-    "other": "{count} mentions"
-  },
-  "header.mentions.unread": {
-    "one": "{count} unread mention",
-    "other": "{count} unread mentions"
-  },
   "header.count.open": "{count} open",
   "header.count.unread": "{count} unread",
   "header.count.unread_chats": "{count} unread in chats",

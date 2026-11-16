@@ -1345,9 +1345,6 @@ window.MAITY_I18N["ja"] = {
   "header.away_until": "{time} まで不在",
   "header.brand.signed_in": "Maity: あなたを待っているものすべて",
   "header.brand.signed_out": "Maity: ホーム",
-  "header.count.mentions": {
-    "other": "メンション {count} 件"
-  },
   "header.count.open": "未対応 {count}",
   "header.count.unread": "未読 {count}",
   "header.count.unread_chats": "チャットの未読 {count}",
@@ -1355,9 +1352,6 @@ window.MAITY_I18N["ja"] = {
   "header.fixtures.title": "web/fixtures/ のデータであり、ハブのデータではありません。変更はこのタブ内にのみ保持されます。",
   "header.instance_admin": "インスタンス管理",
   "header.invitations": "招待",
-  "header.mentions.unread": {
-    "other": "未読のメンション {count} 件"
-  },
   "header.new": "新しいプロジェクト",
   "header.observe": "閲覧のみで参加",
   "header.orgs": "組織",

@@ -1355,14 +1355,6 @@
   "header.away_until": "Fuera hasta {time}",
   "header.brand.signed_in": "Maity: todo lo que te espera",
   "header.brand.signed_out": "Maity: inicio",
-  "header.count.mentions": {
-    "one": "{count} mención",
-    "other": "{count} menciones"
-  },
-  "header.mentions.unread": {
-    "one": "{count} mención sin leer",
-    "other": "{count} menciones sin leer"
-  },
   "header.count.open": "{count} abiertas",
   "header.count.unread": "{count} sin leer",
   "header.count.unread_chats": "{count} sin leer en chats",
