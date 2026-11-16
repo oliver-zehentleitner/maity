@@ -56,9 +56,9 @@ bind address, the public URL, the web directory, the database URLs, the SMTP pas
 token). A test sets each to spaces and holds the flag to what `Settings.from_env` does with it,
 once without and once under the S3 store (whose credentials are read only there), so a secret is
 shown set exactly when the hub runs with it. A setting that a new mode reads only within that mode
-needs that mode's base in the test (`MODE_BASES`), or the binding does not see it. One rule for all secrets ("set when
-the raw value is not empty") was tried and dropped in review: it showed a trimmed key of only a
-newline as set while the hub ran without it.
+needs that mode's base in the test (`MODE_BASES`), or the binding does not see it. One rule for
+all secrets ("set when the raw value is not empty") was tried and dropped in review: it showed a
+trimmed key of only a newline as set while the hub ran without it.
 
 The guard test reads every `"MAITY_…"` literal under `hub/src/maity_hub`, not only `config.py`:
 mail, registration and the GitHub App read their settings in their own modules. A name found
