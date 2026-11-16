@@ -1243,7 +1243,10 @@ project's own harness configuration is never loaded:
   repository's `allow` command list is not applied to agy — each entry,
   exact or ` *` prefix, is left out and runs in agy's sandbox, named by
   `maity runner check`. An allowed command may
-  leave agy's sandbox. agy also merges the agents' user's own
+  leave agy's sandbox; only `command(maity)` stays as a grant, a known
+  residual risk the owner accepted (`req-9spwe33neh1z`) so agy is offered,
+  with its OS-level confinement added incrementally (`tsk-zjv2xyhyggnm`).
+  agy also merges the agents' user's own
   `~/.gemini` settings and customizations. `supervised` runs `agy -p` and
   continues with `-c`, `interactive` runs `agy -i` and resumes with `-c`.
   Its sandbox is advertised `off` until the runner can see agy's own

@@ -46,7 +46,7 @@ whether or not any name in it exists, and a handle- or project-shaped
 address stays `200`. Words under the dashboard's own first words
 (`/inbox/x`, `/admin/x`) stay the shell with `200`: the hub does not
 route them, and the dashboard's sign-in leads on there
-(web/context/routing.md 51873531). The Why view is no part of the depth
+(web/context/routing.md 4062e001). The Why view is no part of the depth
 rule, since a topic's file path goes into the address segment by
 segment.
 

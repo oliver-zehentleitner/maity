@@ -843,14 +843,15 @@ There is likewise no sound invocation path for `maity` the runner can arrange
 at the settings level (a launcher or absolute path is matched the same way,
 and the attacker's environment loads into the launcher process itself before
 any re-exec). So the `command(maity)` grant keeps one command reachable
-outside agy's sandbox. This is why the runner does not offer antigravity:
-`antigravity` is in `config.NOT_OFFERED_YET`, so a configuration naming
-`[harness.antigravity]` is refused — `maity runner check` and `serve` say it
-is held back until its command grants are confined at the OS level — and no
-antigravity placement runs. That confinement is the follow-up card
-tsk-zjv2xyhyggnm; dropping `antigravity` from `NOT_OFFERED_YET` re-offers it
-once that lands. The agy adapter code stays, so it is ready when re-offered.
-Stated plainly in docs/runners.md, with no example.
+outside agy's sandbox — a residual risk the runner cannot close from its own
+settings. The owner has now accepted that residual risk and re-offered
+antigravity (req-9spwe33neh1z, 2026-11-16; see "Antigravity is re-offered
+with its residual command(maity) risk accepted" below): `antigravity` is no
+longer in `config.NOT_OFFERED_YET`, so a configuration naming
+`[harness.antigravity]` is accepted by `maity runner check` and `serve`.
+OS-level confinement of `maity` (the follow-up card tsk-zjv2xyhyggnm) is being
+added incrementally and continues while agy runs. Stated plainly in
+docs/runners.md, with no example.
 
 **Rejected alternatives:**
 - Keeping the allow+deny pair for exact entries (f0ef544a): a line with a
@@ -872,6 +873,38 @@ Stated plainly in docs/runners.md, with no example.
 - A PreToolUse-style hook or a PATH shim: already rejected under f0ef544a for
   agy (no `hooks` through `--settings`; agy canonicalises command names), and
   the drop needs neither.
+
+## Antigravity is re-offered with its residual command(maity) risk accepted
+
+**Id:** 28ac82c8-0921-4ffb-9d3e-9ebb2f10b111
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's answer on decision request req-9spwe33neh1z, 2026-11-16; the release decision to re-offer antigravity as "Step 1 (re-offer)" targeting cli 0.1.0a14, with a separate security review
+**Revisit when:** tsk-zjv2xyhyggnm lands the OS-level confinement of `maity` (the residual risk can then be re-assessed and the grant possibly tightened), or the owner withdraws the accepted risk
+**See:** runner.md#agy-command-grants-are-dropped-exact-and-prefix-agy-reads-the-command-past-a-leading-assignment-or-wrapper — f8a7b727-8c1f-4df9-98eb-8f9ef8879352 — as of 2026-11-16
+
+`antigravity` is dropped from `config.NOT_OFFERED_YET` (`("opencode",)` now),
+so a `runner.toml` naming `[harness.antigravity]` is accepted by
+`maity runner check` and `serve` instead of refused. agy is offered again.
+
+Re-offering does **not** widen agy's grants: agy still gets only
+`command(maity)` plus the `read_url` hosts, and the exact and ` *` prefix
+command grants dropped in "agy command grants are dropped, exact and prefix"
+(f8a7b727) stay dropped. The only grant reaching outside agy's sandbox is the
+one `command(maity)` the runner cannot confine from its own settings — the
+residual limit that decision recorded.
+
+**Reason:** the owner decided agy should run now carrying that known residual
+risk rather than stay held back until it is closed; security for it is built
+incrementally. The OS-level confinement of `maity` continues as the follow-up
+card tsk-zjv2xyhyggnm; it is no longer a precondition for offering the harness.
+
+**Rejected alternative:** keep antigravity in `NOT_OFFERED_YET` until
+tsk-zjv2xyhyggnm confines `maity` at the OS level (the earlier position, in
+f8a7b727's limit). Rejected because the owner chose to accept the residual
+risk and offer the harness now, building the confinement step by step, rather
+than block every antigravity placement until that work lands.
 
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
