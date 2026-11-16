@@ -2337,8 +2337,9 @@ window.Maity = window.Maity || {};
     // takes no click or key any more: an action there (a Revoke) would be
     // answered into a view that is gone, while the new one shows what it read
     // before. Every way out of render() replaces main or renders again.
-    // The hub's own page in <main> (§16.9) counts for this first drawing only, and stays usable
-    // meanwhile: it is what stands if its data cannot be read.
+    // The hub's own page in <main> (§16.9) counts for this first drawing only. A page in the
+    // dashboard's design stands and stays usable meanwhile; any other stays hidden (css/app.css,
+    // `.hub-page`) until it is replaced or 3 s pass. Either is what stands if its data cannot be read.
     const hubPage = !!(main.hasAttribute && main.hasAttribute("data-public-page"));
     if (hubPage) main.removeAttribute("data-public-page");
     // Busy too, for a screen reader; the bar it shows is in css/app.css.

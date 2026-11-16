@@ -21618,11 +21618,12 @@ The frame's stylesheets are `landing.css`, `public-pages.css` and
 the last holds the design of the public pages (§16.9) and builds on the
 other two. Every page the hub renders in the frame links all three, the
 legal pages, the mail link pages, the join page and `/explore` included,
-each by the address with its `?v=<digest>` (§16.7). The dashboard links
-the same three, by the same addresses, while it draws a page in the frame
-(above), and takes them off again when it draws a page outside it, as with
-a session; so a page the hub served signed out, which the dashboard then
-draws again, loads each of them once.
+each by the address with its `?v=<digest>` (§16.7). The dashboard links the same three files
+while it draws a page in the frame (above): where the shell already linked
+them with their digest (§16.9) it takes those links over, otherwise it asks
+without `?v`. It takes them off again when it draws a page outside it, as
+with a session, the shell's links included; so a page the hub served signed
+out, which the dashboard then draws again, loads each of them once.
 
 ```
 GET /site/chrome?lang=<tag>
@@ -22083,7 +22084,8 @@ static page is the answer to a `GET` without a valid session (§16.7's
 definition); with one, the same path is the app shell, and the
 dashboard links to the page where one exists. A visitor's `GET` answers
 the page inside the app shell: the page's title, description and canonical
-link in its head, the frame's stylesheets (§16.7.5) linked there too, its text
+link in its head, for a page in the dashboard's design the frame's
+stylesheets (§16.7.5) linked there too, after the shell's own, its text
 in `<main>`, no `noindex`, so that a crawler reads it, a reader sees it at once
 in its final design, and the dashboard then draws the same view read-only from
 "What visitors read in the dashboard" below, in the same structure; the shell's own security policy applies and the

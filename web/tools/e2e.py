@@ -4984,12 +4984,14 @@ REPORTER = ("rita", "Rita", "rita@e2e.example", "e2e rita password")
 
 
 def public_first_paint_round(run: Run, browser) -> None:
-    """A public page's first paint is its final page (tsk-777vkhtzmq6f): signed out, the hub
-    sends its stored page inside the shell, in `.hub-page`, which stays invisible until the
-    dashboard replaces it with the page in its frame. The public read is held back, so the
-    moment between the two is looked at, for a project's and an agent's page; without a
-    script the hub's page shows after 3 s."""
-    run.step("public pages: the hub's stored layout never shows before the page drawn in its frame")
+    """A public page's first paint is its final page (tsk-777vkhtzmq6f, tsk-zhyqdtt5v59c): signed
+    out, the hub sends its stored page inside the shell. A project's page is stored in the
+    dashboard's design, so it stands at once, styled by the frame's stylesheets the shell links,
+    and the dashboard's drawing over it keeps its place; an agent's page, not yet in that design,
+    waits invisible in `.hub-page` until the dashboard replaces it. The public read is held back,
+    so the moment between the two is looked at; without a script both show, the agent's after
+    3 s."""
+    run.step("public pages: the first paint is the page drawn in its frame, never a second layout")
     for path, kind in (("/owner/e2e-alpha", "project"), ("/owner/agents/e2e-agent", "agent")):
         context = browser.new_context(viewport={"width": 1280, "height": 900})
         context.set_default_timeout(TIMEOUT_MS)
@@ -5007,21 +5009,53 @@ def public_first_paint_round(run: Run, browser) -> None:
             page.wait_for_timeout(50)
             waited += 50
         assert held, f"{path}: the dashboard never asked for the public page"
-        stored = page.evaluate(
-            "() => { const p = document.querySelector('main > .hub-page');"
-            " return p ? [getComputedStyle(p).visibility, p.textContent.trim().length > 0] : null; }"
-        )
-        assert stored == ["hidden", True], f"{path}: the hub's stored page before the redraw: {stored!r}"
+        if kind == "project":
+            # Shown at once in the dashboard's design: the frame's sheets in the head, loaded once.
+            first = page.evaluate(
+                "() => { const v = document.querySelector('main > section.view-visitor.public-view');"
+                " const h = v && v.querySelector('section.phero h1');"
+                " return v ? [getComputedStyle(v).visibility, getComputedStyle(v.querySelector('section.phero')).backgroundColor,"
+                " h ? Math.round(h.getBoundingClientRect().left) : null] : null; }"
+            )
+            assert first is not None and first[0] == "visible" and first[1] == "rgb(11, 15, 20)", (
+                f"{path}: the hub's stored page before the redraw: {first!r}"
+            )
+            # Kept, so the dashboard's drawing is told from the hub's page of the same structure.
+            page.evaluate("() => { window.__hubPage = document.querySelector('main > section.view-visitor'); }")
+        else:
+            stored = page.evaluate(
+                "() => { const p = document.querySelector('main > .hub-page');"
+                " return p ? [getComputedStyle(p).visibility, p.textContent.trim().length > 0] : null; }"
+            )
+            assert stored == ["hidden", True], f"{path}: the hub's stored page before the redraw: {stored!r}"
         for route in held:  # answered before the handler goes: a removed one passes them on itself
             route.continue_()
         page.unroute("**/api/v1/public/pages/**")
-        expect(page.locator(f"main .view-visitor[data-kind='{kind}']")).to_be_visible()
+        # The dashboard's view, not the hub's page standing in for it (in `.hub-page`, or the same
+        # structure kept above).
+        expect(page.locator(f"main .view-visitor[data-kind='{kind}']:not(.hub-page *)")).to_be_visible()
         expect(page.locator("main .hub-page")).to_have_count(0)
+        if kind == "project":
+            page.wait_for_function(
+                "() => { const v = document.querySelector('main > section.view-visitor');"
+                " return v && v !== window.__hubPage; }"
+            )
+            # The drawing over it: the same name in the same column, and each sheet linked once.
+            left = page.locator("main section.phero h1").evaluate("h => Math.round(h.getBoundingClientRect().left)")
+            assert left == first[2], f"{path}: the name moved from {first[2]} to {left} px"
+            hrefs = page.evaluate(
+                "[...document.querySelectorAll('link[rel=stylesheet]')].map(l => l.getAttribute('href').split('?')[0])"
+                ".filter(h => h.startsWith('/assets/landing/'))"
+            )
+            assert sorted(hrefs) == sorted(set(hrefs)) and len(hrefs) == 3, f"{path}: the frame's sheets {hrefs}"
         context.close()
-    # Without a script nothing replaces it: the hub's page shows, at the latest after 3 s.
+    # Without a script nothing replaces them: a project's page shows at once, an agent's at the
+    # latest after 3 s.
     context = browser.new_context(viewport={"width": 1280, "height": 900}, java_script_enabled=False)
     context.set_default_timeout(TIMEOUT_MS)
     page = context.new_page()
+    page.goto(run.base + "/owner/e2e-alpha")
+    expect(page.locator("main > section.view-visitor.public-view section.phero h1")).to_be_visible()
     page.goto(run.base + "/owner/agents/e2e-agent")
     expect(page.locator("main > .hub-page h1")).to_be_visible()
     context.close()

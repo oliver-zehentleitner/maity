@@ -120,6 +120,14 @@ class El extends Node_ {
 }
 const header = new El("header"); header.id = "header";
 const head = new El("head");
+// As the hub's shell links one where it carries a page in the dashboard's design (§16.9,
+// tsk-zhyqdtt5v59c): js/site-chrome.js takes it over when it first enters the frame, not loaded again.
+const shellSheet = new El("link");
+{
+  shellSheet.setAttribute("rel", "stylesheet");
+  shellSheet.setAttribute("href", "/assets/landing/public-sections.css?v=0123456789abcdef");
+  head.appendChild(shellSheet);
+}
 const main = new El("main"); main.id = "main";
 const productLine = new El("footer"); productLine.id = "product-line";
 // The page's body holds them as index.html does: the frame of the pages without a session
@@ -294,6 +302,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The title without the count of what asks for the human (js/notify.js).
   const plainTitle = () => document.title.replace(/^\(\d+\) /, "");
   expect(win.location.hash === "#/all", "empty hash with two projects lands on #/all");
+  // Signed in, the dashboard leaves the frame before it ever entered it: the sheet the shell linked
+  // goes off too, as landing.css styles the whole document (A834 F2); none is added.
+  expect(shellSheet.disabled === true && head.childNodes.filter((x) => x.tagName === "LINK").length === 1,
+    "frame: a sheet the shell linked is off once the dashboard leaves the frame before entering it, none added");
   expect(!main.querySelector(".error"), "cross-project inbox renders");
   // All projects reads each project's members once per page drawn: the Lead button and the inbox
   // share the read (tsk-f78z1dvbs26a). The fixture has requests in both projects, so before, each
@@ -9882,10 +9894,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && frCols() === "Platform:#/login?lang=en=Sign in,#/register?lang=en=Create your account | Legal:/impressum?lang=en=Imprint | Follow:https://social.example/@example=Mastodon"
     && !main.querySelector(".legal-links"),
     "landing: the root without a session is the login page, the landing never read here; the frame's footer names the legal pages set " + (frFoot() ? frCols() : null));
-  expect(header.hidden === true && frOn() && frSheets().map((l) => l.getAttribute("href") + ":" + l.disabled).join() === "/assets/landing/landing.css:false,/assets/landing/public-pages.css:false,/assets/landing/public-sections.css:false"
+  expect(header.hidden === true && frOn() && frSheets().map((l) => l.getAttribute("href") + ":" + l.disabled).sort().join() === "/assets/landing/landing.css:false,/assets/landing/public-pages.css:false,/assets/landing/public-sections.css?v=0123456789abcdef:false"
     && frHead().querySelector("a.signin").getAttribute("aria-current") === "page" && frHead().querySelector("a.brand").getAttribute("href") === "/"
     && !frHead().querySelector(".btn-primary") && frHead().querySelector("button.theme-toggle"),
-    "frame: the hub's three stylesheets on, the app's bar hidden, sign in marked as this page, no call to action without a hero");
+    "frame: the hub's three stylesheets on, the one the shell linked taken over, the app's bar hidden, sign in marked as this page, no call to action without a hero");
   // The page's one h1 is the form's heading: the lockup in the hidden bar is none.
   expect(main.all().filter((x) => x.tagName === "H1").length === 1 && main.querySelector(".door-page") && main.querySelector(".door-page").firstChild.matches("aside.door-panel") && main.querySelector(".door-form").all().some((x) => x.tagName === "H1")
     && !header.all().some((x) => x.tagName === "H1") && main.querySelector(".door-form form.login button.btn.btn-primary"),
@@ -15628,6 +15640,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
         && text(b3Card.querySelector("span.chip.label")) === "bug" && !b3Card.querySelector(".label-tag") && b3Card.querySelector("a.card-id"),
       "visitor: without a session, the Board tab is a section of its columns, a column an h3, a card's title an h4 and its label a chip");
       Object.keys(tabKept).forEach((k) => { if (tabKept[k]) viPages[k] = tabKept[k]; else delete viPages[k]; });
+      {
+        // The structure the hub stores for each page (web/tools/public-skeletons.json, written by
+        // hub/tests/test_public_skeletons.py from the same fixture) is the one drawn here over it, so
+        // the first paint and the redraw are one layout (tsk-zhyqdtt5v59c): elements, classes and
+        // data-kind, every text and every other attribute dropped.
+        const skFixture = JSON.parse(fs.readFileSync(path.join(WEB, "tools/public-pages-fixture.json"), "utf8"));
+        const skWanted = JSON.parse(fs.readFileSync(path.join(WEB, "tools/public-skeletons.json"), "utf8"));
+        // The slot of the hero's offer is the frame's to fill (its `cta`, §16.7.5), so its content is not the page's.
+        // An svg's class is set as an attribute, which this page's stand-in keeps apart from className.
+        const skOf = (n) => [n.tagName.toLowerCase(), (n.className || n.attrs.class || "").split(" ").filter(Boolean).sort(), n.getAttribute("data-kind") || null,
+          n.classList.contains("cta-slot") ? [] : n.childNodes.filter((c) => c.tagName).map(skOf)];
+        // The first place two skeletons part, as a path of tags, for the message.
+        const skDiff = (a, b, at) => {
+          if (!a || !b) return at + ": " + JSON.stringify(a && a.slice(0, 3)) + " vs " + JSON.stringify(b && b.slice(0, 3));
+          if (a[0] !== b[0] || JSON.stringify(a[1]) !== JSON.stringify(b[1]) || a[2] !== b[2]) return at + ": " + JSON.stringify(a.slice(0, 3)) + " vs " + JSON.stringify(b.slice(0, 3));
+          for (let i = 0; i < Math.max(a[3].length, b[3].length); i++) {
+            const d = skDiff(a[3][i], b[3][i], at + ">" + (a[3][i] || b[3][i])[0] + "[" + i + "]");
+            if (d) return d;
+          }
+          return null;
+        };
+        const skKept = {};
+        skFixture.forEach((pg) => { skKept[pg.path] = viPages["/public/pages" + pg.path]; viPages["/public/pages" + pg.path] = pg; });
+        for (const pg of skFixture) {
+          await go("#" + pg.path); for (let k = 0; k < 4; k++) await tick();
+          const drawn = viView() ? [skOf(viView())] : [];
+          const diff = skDiff(drawn[0], (skWanted[pg.kind] || [])[0], pg.kind);
+          expect(viView() && !diff, "visitor: without a session, the " + pg.kind + " page is drawn in the structure the hub stores for it " + (diff || ""));
+        }
+        skFixture.forEach((pg) => { if (skKept[pg.path]) viPages["/public/pages" + pg.path] = skKept[pg.path]; else delete viPages["/public/pages" + pg.path]; });
+      }
       win.Maity.api.get = ppGet;
       await go("#/stranger/tool/overview"); for (let k = 0; k < 4; k++) await tick();
     }

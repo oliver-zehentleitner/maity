@@ -5640,9 +5640,13 @@ reset.
 Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
 `GET /site/chrome` with the address's `?lang=` (or the last one this page saw, `M.i18n.frameAddress`),
 and take the frame's language from its answer. While the page stands, the hub's
-`/assets/landing/landing.css`, `public-pages.css` and `public-sections.css` are linked (the third, the public
-pages' design, was the dashboard's own `css/public-sections.css` until 2026-11-15, tsk-zhyqdtt5v59c) (without `?v`, so the hub answers
-the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
+`/assets/landing/landing.css`, `public-pages.css` and `public-sections.css` are linked (the third, the
+public pages' design, was the dashboard's own `css/public-sections.css` until 2026-11-15, tsk-zhyqdtt5v59c):
+the links the hub's shell already put at the head's end with their `?v`, after `css/app.css` as appended
+ones stand, where it carries a page in the dashboard's design (hub/context/public-pages.md 2388f990), else
+without `?v`, so the hub answers the current file with an ETag; and `html` carries `public-frame`. Leaving
+the frame turns the sheets off, the shell's too where the frame was never entered (a failed page, a session
+found after all). The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
 `render.py` builds them; the app's bar is hidden meanwhile and comes back where the read fails.
 The sign-in stands in the frame wherever it is drawn without a session: `/login`, the root after a
