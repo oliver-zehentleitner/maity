@@ -160,17 +160,30 @@ def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
 
 def needs_a_human(request: Any, mine: Membership) -> str | None:
     """Why no agent answers this, or None: a request marked `humans_only` (§7), a
-    placement's consent request under `spawn_consent_by: human` (§6.1, §15.6) — starting
-    an agent spends compute and model budget, so no agent gives the go — and a proposal
-    whose kind only a human answers (`proposals.Answerer`)."""
+    placement's consent request — only the runner's owner gives that go, never an agent,
+    whatever `spawn_consent_by` says (§15.6) — and a proposal whose kind only a human
+    answers (`proposals.Answerer`)."""
     if mine.kind != "agent":
         return None
     if request.humans_only:
         return "only a human answers or holds this request"
-    if request.placement_id is not None and mine.project.spawn_consent_by == "human":
-        return "under spawn_consent_by: human only a human answers this"
+    if request.placement_id is not None:
+        return "only the runner's owner answers a placement's consent request"
     rule = proposals.answerer(request)
     return rule.refusal if rule is not None and rule.humans_only else None
+
+
+def not_the_runner_owner(conn: Connection, request: Any, mine: Membership) -> bool:
+    """A placement's consent request answered by anyone but its runner's owner (§15.6).
+    One filed before the rule is a project request; it is held to the same rule."""
+    if request.placement_id is None:
+        return False
+    owner = conn.execute(
+        select(t.runner.c.owner_id)
+        .select_from(t.placement.join(t.runner, t.runner.c.id == t.placement.c.runner_id))
+        .where(t.placement.c.id == request.placement_id)
+    ).scalar()
+    return owner != mine.principal_id
 
 
 def needs_the_owner(request: Any, mine: Membership) -> bool:
@@ -198,6 +211,8 @@ def may_answer(conn: Connection, request: Any, mine: Membership) -> bool:
     if mine.trust == "guest":  # answers none, whatever reaches it (§2.3 "Guest")
         return False
     if needs_the_owner(request, mine) or needs_a_human(request, mine) is not None:
+        return False
+    if not_the_runner_owner(conn, request, mine):
         return False
     if proposals.refusal(conn, request, mine) is not None:  # the kind's own rule
         return False

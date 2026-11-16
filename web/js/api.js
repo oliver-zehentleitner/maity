@@ -3397,7 +3397,7 @@ window.Maity = window.Maity || {};
         desired: body.desired || "running", generation: 1, rejoin: false, stop_grace_seconds: body.stop_grace_seconds || 120,
         approval: { status: "approved", request_id: null, pending_change: null }, credential_id: null, reported_current: false,
         session_hint: null, logs_hint: null, active: true, closed_at: null, closed_reason: null,
-        created_by: caller.id, proposed_by: null, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
+        created_by: caller.id, proposed_by: null, foreign: false, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
       };
       made.logs_hint = "maity runner logs " + made.id;
       placementsOf(m[1]).push(made);
@@ -3409,6 +3409,13 @@ window.Maity = window.Maity || {};
       if (body.desired === "running" && project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       p.desired = body.desired;
       p.updated_by = me().member.id; p.updated_at = nowIso();
+      return p;
+    }],
+    // The placement routes' DELETE (§15.6): it closes at once here, as no runner reports.
+    ["DELETE", /^\/projects\/([^/]+)\/placements\/([^/]+)$/, (m, body, path) => {
+      const p = placementFor(m[1], m[2], path);
+      p.active = false; p.desired = "stopped"; p.closed_at = nowIso(); p.closed_reason = "removed";
+      p.updated_by = me().member.id; p.updated_at = p.closed_at;
       return p;
     }],
     ["POST", /^\/projects\/([^/]+)\/placements\/([^/]+)\/restart$/, (m, body, path) => {
@@ -3455,6 +3462,16 @@ window.Maity = window.Maity || {};
       return e;
     }],
     ["GET", /^\/runners\/([^/]+)$/, (m, body, path) => runnerOf(m[1], path)],
+    // The owner's list across projects (§15.3), as the runner owner's line.
+    ["GET", /^\/runners\/([^/]+)\/placements$/, (m, body, path) => {
+      const r = runnerOf(m[1], path);
+      if (r.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
+      const items = fixtureSlugs().flatMap((slug) => placementsOf(slug).filter((p) => p.active && p.runner.id === r.id).map((p) => ({
+        id: p.id, project: p.project || fullOf(slug), agent: { handle: p.agent.handle }, desired: p.desired,
+        state: p.reported ? p.reported.state : null, foreign: !!p.foreign, created_at: p.created_at,
+      })));
+      return { items, next_cursor: null };
+    }],
     ["PATCH", /^\/runners\/([^/]+)$/, (m, body, path) => {
       const r = runnerOf(m[1], path);
       if (r.removed_at) fail(409, "invalid_transition", "the runner was removed", path, { from: "removed", to: null });

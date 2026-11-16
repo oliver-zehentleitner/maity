@@ -34,7 +34,6 @@ NOT_ROUTED = {
     ("GET", "/projects/{}/{}/outsiders"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("GET", "/projects/{}/{}/tasks/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
-    ("GET", "/runners/{}/placements"),  # no route yet: tsk-qgmz0yrc3g5x, the owner's list
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings

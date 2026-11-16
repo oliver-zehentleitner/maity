@@ -12939,6 +12939,10 @@
     "en": "49d75e6bb3a610c1",
     "text": "ceabacf3e6c7b57d"
   },
+  "placements.foreign": {
+    "en": "dd654fb06bc5b641",
+    "text": "c0272a09f2cdb1f0"
+  },
   "placements.generation": {
     "en": "9b9df9a3ed351ac2",
     "text": "d5ec9a46d3a6e3af"
@@ -13091,6 +13095,10 @@
     "en": "077dcaba577a59ac",
     "text": "f98e8212fac0d34f"
   },
+  "placements.not_removed": {
+    "en": "5d15ffc78d58b477",
+    "text": "3fe3bf99a220c4fe"
+  },
   "placements.not_restarted": {
     "en": "e8f1c3c51f9bfa2d",
     "text": "7bf4f36e0a3466fa"
@@ -13206,6 +13214,22 @@
   "placements.refusal": {
     "en": "72bb8b9e25412e8a",
     "text": "72bb8b9e25412e8a"
+  },
+  "placements.remove": {
+    "en": "9469a102f04ea196",
+    "text": "126895d94d27ced1"
+  },
+  "placements.remove.ask": {
+    "en": "f75cbbfcae00cd79",
+    "text": "963d4876cc6d91e1"
+  },
+  "placements.remove.label": {
+    "en": "9a8bd0b7e67b24d3",
+    "text": "95a38bb94662800b"
+  },
+  "placements.removing": {
+    "en": "e58493ed3baaf9ae",
+    "text": "89b221be244229d9"
   },
   "placements.reported": {
     "en": "2dd87877229aaceb",
@@ -15603,6 +15627,10 @@
     "en": "e58493ed3baaf9ae",
     "text": "a7d9660639049cef"
   },
+  "runners.busy.removing_agent": {
+    "en": "ec15567c728a441b",
+    "text": "b913e5ba398ab5c2"
+  },
   "runners.busy.renaming": {
     "en": "55f8d0e263c5fefb",
     "text": "2b0c0250e0c927a5"
@@ -15614,6 +15642,10 @@
   "runners.busy.revoking": {
     "en": "8eaf9e2f90377c6e",
     "text": "471418ecb1033b75"
+  },
+  "runners.busy.stopping_agent": {
+    "en": "d7a7e7da88b2b0d1",
+    "text": "506c767af84d069c"
   },
   "runners.caps.approval": {
     "en": "fb69541820a01ae7",
@@ -15715,6 +15747,10 @@
     "en": "7d055565bf7d2b29",
     "text": "b586e84ffe55deeb"
   },
+  "runners.failed.removing_agent": {
+    "en": "7d055565bf7d2b29",
+    "text": "375b79b499dfc190"
+  },
   "runners.failed.renaming": {
     "en": "e921bfbcc0550db4",
     "text": "94e0010be128bd2c"
@@ -15726,6 +15762,10 @@
   "runners.failed.revoking": {
     "en": "032dbf6db86176e0",
     "text": "740c15c2a48986f4"
+  },
+  "runners.failed.stopping_agent": {
+    "en": "79547f11cfdf947c",
+    "text": "8ed72905156ce3e8"
   },
   "runners.hide": {
     "en": "591087ea83a48ead",
@@ -15882,6 +15922,54 @@
   "runners.paired.used": {
     "en": "c0f0035ae63c347b",
     "text": "0abf303e9a2ccba6"
+  },
+  "runners.placements.empty": {
+    "en": "87aac619f57dfb80",
+    "text": "864805cdc96f12d2"
+  },
+  "runners.placements.foreign": {
+    "en": "03f83924a7e702d2",
+    "text": "4ebaedc7e4c123c2"
+  },
+  "runners.placements.line": {
+    "en": "643cfb6ecbdff921",
+    "text": "cdc06bd1b0e13d28"
+  },
+  "runners.placements.remove": {
+    "en": "85da268af3647203",
+    "text": "90c2fdb77b2f7e76"
+  },
+  "runners.placements.remove.ask": {
+    "en": "d65cac726e8c9d95",
+    "text": "a06674d5c74cc018"
+  },
+  "runners.placements.remove.label": {
+    "en": "e5d9f664255c725d",
+    "text": "b874628f79d400f0"
+  },
+  "runners.placements.reported": {
+    "en": "3d125af1dbacae61",
+    "text": "156c3eebc90e57dc"
+  },
+  "runners.placements.running": {
+    "en": "6f949a93bf99175b",
+    "text": "7915ee357864d798"
+  },
+  "runners.placements.stop": {
+    "en": "f6bd053949705dbb",
+    "text": "9e6814fa005cfad8"
+  },
+  "runners.placements.stop.label": {
+    "en": "2e35003166a89b82",
+    "text": "ce9000e361730085"
+  },
+  "runners.placements.stopped": {
+    "en": "bc41d54f9ca89df6",
+    "text": "27d1c3604576acd5"
+  },
+  "runners.placements.title": {
+    "en": "05284168c0f1a369",
+    "text": "b6d844371f4d8af3"
   },
   "runners.presence.away_never": {
     "en": "90b1864add7a0d8e",
