@@ -98,7 +98,11 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    group chat a `cnv-…` id. Read the chat the line names, not another
    one. Use the printed `--after`: the wait has already moved your event
    cursor past the message, so a bare `maity chat` on your direct
-   conversation would show nothing. In a group chat you are woken when someone mentions
+   conversation would show nothing. A direct-chat message, and a group-chat
+   message that mentions you, has its text quoted under that line (`  > …`).
+   **A direct-chat message is meant for you alone: read it and answer it in
+   the same chat (`maity say human "…"`) before other work**; it is not in
+   `maity messages`. In a group chat you are woken when someone mentions
    you, and once, about ten minutes later, as `chat_unread` when humans
    wrote there without mentioning you: read what you missed with
    `maity chat <id>` (that also re-arms the nudge), answer with

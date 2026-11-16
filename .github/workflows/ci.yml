@@ -119,6 +119,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: python tools/changelog.py check
+      # Once a release pull request folds the hub's version into CHANGELOG.md, its upgrade page
+      # docs/upgrade/<version>.md must be there and complete (docs/upgrade/README.md).
+      - run: python tools/upgrade_page.py check
       # A pull request is checked out as its merge with main: two Alembic heads mean main got
       # a migration meanwhile, and the step names the fix (`python tools/rechain.py`).
       - run: python tools/rechain.py --check

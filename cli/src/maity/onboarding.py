@@ -86,9 +86,9 @@ def quote(text: Any) -> list[str]:
     return [f"> {line}".rstrip() for line in lines]
 
 
-def _capped(text: Any, pointer: str, compact: bool = False) -> list[str]:
+def capped(text: Any, pointer: str, compact: bool = False) -> list[str]:
     """`quote(text)`, cut at MAX_BODY_LINES lines or MAX_BODY_CHARS characters, or at the
-    COMPACT_* ones in the compact text."""
+    COMPACT_* ones in the compact text; `maity wait` cuts a chat message's text with it too."""
     max_lines, max_chars = (
         (COMPACT_LINES, COMPACT_CHARS) if compact else (MAX_BODY_LINES, MAX_BODY_CHARS)
     )
@@ -106,6 +106,8 @@ def _capped(text: Any, pointer: str, compact: bool = False) -> list[str]:
     if not kept:  # one line longer than the cap
         kept = [lines[0][:max_chars]]
     rest = len(lines) - len(kept)
+    if not rest:  # one line, cut inside: no whole line was dropped to count
+        return [*quote("\n".join(kept)), f"… (cut: {pointer})"]
     return [*quote("\n".join(kept)), f"… (cut, {rest} more lines: {pointer})"]
 
 
@@ -540,7 +542,7 @@ def _request(
     if answer.get("talk"):
         lines.append("  they want to talk first: read your chat, " "`maity chat <your member id>`")
     if answer.get("text"):
-        text = _capped(answer["text"], FULL, compact) if compact else quote(answer["text"])
+        text = capped(answer["text"], FULL, compact) if compact else quote(answer["text"])
         lines += ["  " + q for q in text]
     return lines
 
@@ -626,7 +628,7 @@ def _event(
     head += f" ({inline(payload.get('type'))}{to})"
     after = seq - 1 if isinstance(seq, int) else "<seq - 1>"
     pointer = f"`maity api GET /projects/{slug}/events --query after={after} --query limit=1`"
-    body = _capped(payload.get("body") or "", pointer, compact)
+    body = capped(payload.get("body") or "", pointer, compact)
     return [head, *("  " + q for q in body)]
 
 

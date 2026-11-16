@@ -652,6 +652,8 @@ through the same steps:
    `CHANGELOG.md` with `tools/changelog.py release <version>` in a commit of
    its own. That pull request is the last merge before the deploy, and the
    fold is redone on the newest main right before its final MERGE-READY.
+   Since 2026-11-15 it also adds the version's upgrade page and a docs pass
+   (process.md, eb6ffcd4-28b0-4413-bc51-db3ead6cefb5).
 2. ci passes on the push of that merge.
 3. The maintainer pushes `v<version>` on that commit, and nobody else
    pushes a `v*` tag. The tag builds the package and the image, gated as
