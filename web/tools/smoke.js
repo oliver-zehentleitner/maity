@@ -18588,6 +18588,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(nvClick().asked, "new version: a contenteditable spelled TRUE, typed into, asks too");
     body.removeChild(nvEditUpper);
     expect(!nvClick().asked, "new version: an editable host gone from the page asks nothing");
+    // A host off the page is dropped at that look even when another field already asks: put
+    // back after it, it is a host no one typed into since.
+    const nvHeld = document.createElement("textarea");
+    body.appendChild(nvHeld);
+    nvHeld.value = "kept"; nvTyped(nvHeld);
+    const nvGone = document.createElement("div");
+    nvGone.setAttribute("contenteditable", "true");
+    nvGone.appendChild(document.createTextNode("typed"));
+    body.appendChild(nvGone);
+    nvTyped(nvGone);
+    body.removeChild(nvGone);
+    expect(nvClick().asked, "new version: a textarea still holding text asks, a host gone beside it");
+    nvHeld.value = "";
+    body.appendChild(nvGone);
+    expect(!nvClick().asked, "new version: a host gone at the last look is dropped even when another field asked");
+    body.removeChild(nvGone);
+    body.removeChild(nvHeld);
     // Sent asynchronously, as every form here is: a failed sending keeps the text and asks, one that
     // succeeded cleared its field and asks nothing.
     let nvOk = false;

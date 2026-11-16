@@ -42,7 +42,7 @@ window.Maity = window.Maity || {};
   const textOf = (f) => (f.tagName === "TEXTAREA" || f.tagName === "INPUT" ? f.value : f.textContent);
   const typedInto = new WeakSet();
   // The editable hosts typed into, kept by reference: a selector cannot name every spelling of
-  // the attribute. One leaving the page is dropped at the next look.
+  // the attribute. One off the page is dropped at the next look, whatever that look answers.
   const typedHosts = new Set();
   document.addEventListener("input", (e) => {
     if (!e || !e.isTrusted || !textField(e.target)) return;
@@ -52,13 +52,14 @@ window.Maity = window.Maity || {};
   const holders = new Map();
 
   function unsentInput() {
+    // The hosts off the page first, before any answer returns: none is kept past a look.
+    for (const host of Array.from(typedHosts)) {
+      if (!document.body || !document.body.contains(host)) typedHosts.delete(host);
+    }
     const holds = (f) => typeof textOf(f) === "string" && textOf(f).trim() !== "";
     const fields = document.body ? document.body.querySelectorAll("textarea, input") : [];
     if (Array.from(fields).some((f) => typedInto.has(f) && holds(f))) return true;
-    for (const host of Array.from(typedHosts)) {
-      if (!document.body || !document.body.contains(host)) { typedHosts.delete(host); continue; }
-      if (holds(host)) return true;
-    }
+    if (Array.from(typedHosts).some(holds)) return true;
     return Array.from(holders.values()).some((fn) => { try { return !!fn(); } catch (err) { return false; } });
   }
 
