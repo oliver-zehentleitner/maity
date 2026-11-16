@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable
-from typing import Any
+from collections.abc import Callable, Iterable
+from typing import Any, TypeGuard
 
 from maity import pointer
 
@@ -304,8 +304,8 @@ def _sibling(handle: str, item: dict[str, Any]) -> str:
     `<handle>#<id>` with what tells them apart."""
     facts = [inline(item[k]) for k in ("harness", "model", "presence") if item.get(k)]
     claims = item.get("claims")
-    if isinstance(claims, int) and not isinstance(claims, bool):
-        facts.append(f"{claims} claim" + ("" if claims == 1 else "s"))
+    if _is_seq(claims):
+        facts.append(_plural(claims, "claim"))
     facts += ["lead"] if item.get("lead") is True else []
     facts += ["paused"] if item.get("paused") else []
     facts += ["dormant"] if item.get("dormant") else []
@@ -450,24 +450,41 @@ def chat_rules_lines(items: Any, *, chats: bool = True) -> list[str]:
     return lines
 
 
-def _unread_chats(packet: dict[str, Any]) -> list[str]:
-    """Each conversation with unread messages (§5.2 `conversations`, newest activity first):
-    a group chat's messages wake nobody unless they mention you, so the resume says so."""
-    unread = [
-        c for c in _items(packet.get("conversations"))
-        if isinstance(c.get("unread"), int) and not isinstance(c.get("unread"), bool)
-        and c["unread"] > 0
-    ]  # fmt: skip
+def _chat_lines(
+    items: list[dict[str, Any]],
+    fallback: Callable[[dict[str, Any]], Any],
+    command: Callable[[str], str],
+    more: str,
+    extra: Callable[[dict[str, Any]], list[str]] | None = None,
+) -> list[str]:
+    """One line per chat with unread messages, at most UNREAD_CHATS, then `… n more: <more>`.
+
+    A chat without a title is named by `fallback(chat)`; `command(id)` is how it is read, and
+    `extra(chat)` adds the lines that follow a chat's own."""
+    unread = [c for c in items if _count(c.get("unread"))]
     lines = []
     for c in unread[:UNREAD_CHATS]:
         chat = inline(c.get("id") or "?")
-        name = inline(c.get("title")) if c.get("title") else inline(c.get("kind") or "chat")
+        name = inline(c.get("title") or fallback(c))
         counts = f"{inline(c['unread'])} unread, {inline(c.get('mentions_unread') or 0)} mentions"
-        lines.append(f"  {name} {chat} ({counts}): maity chat {chat}")
-        lines += _chat_meat_proxy(c)
+        lines.append(f"  {name} {chat} ({counts}): {command(chat)}")
+        if extra is not None:
+            lines += extra(c)
     if len(unread) > UNREAD_CHATS:
-        lines.append(f"  … {len(unread) - UNREAD_CHATS} more: maity chats")
+        lines.append(f"  … {len(unread) - UNREAD_CHATS} more: {more}")
     return lines
+
+
+def _unread_chats(packet: dict[str, Any]) -> list[str]:
+    """Each conversation with unread messages (§5.2 `conversations`, newest activity first):
+    a group chat's messages wake nobody unless they mention you, so the resume says so."""
+    return _chat_lines(
+        _items(packet.get("conversations")),
+        lambda c: c.get("kind") or "chat",
+        lambda chat: f"maity chat {chat}",
+        "maity chats",
+        _chat_meat_proxy,
+    )
 
 
 def _cross_chats(packet: dict[str, Any]) -> list[str]:
@@ -476,20 +493,12 @@ def _cross_chats(packet: dict[str, Any]) -> list[str]:
     Its own block, after the project's unread chats. The line names the GET the contract
     gives for this room. `maity chat` reads a project's conversation and is not this one.
     """
-    unread = [
-        c for c in _items(packet.get("cross_chats"))
-        if isinstance(c.get("unread"), int) and not isinstance(c.get("unread"), bool)
-        and c["unread"] > 0
-    ]  # fmt: skip
-    lines = []
-    for c in unread[:UNREAD_CHATS]:
-        chat = inline(c.get("id") or "?")
-        name = inline(c.get("title")) if c.get("title") else "Cross"
-        counts = f"{inline(c['unread'])} unread, {inline(c.get('mentions_unread') or 0)} mentions"
-        lines.append(f"  {name} {chat} ({counts}): GET /me/cross-chats/{chat}/messages")
-    if len(unread) > UNREAD_CHATS:
-        lines.append(f"  … {len(unread) - UNREAD_CHATS} more: GET /me/cross-chats")
-    return lines
+    return _chat_lines(
+        _items(packet.get("cross_chats")),
+        lambda c: "Cross",
+        lambda chat: f"GET /me/cross-chats/{chat}/messages",
+        "GET /me/cross-chats",
+    )
 
 
 def imported_mark(card: dict[str, Any]) -> str:
@@ -540,7 +549,7 @@ def _request(
     by = f"  answered by {_name(answer.get('by') or '?', names)}"
     lines.append(by + (f": {inline(label or reply)}" if reply else ""))
     if answer.get("talk"):
-        lines.append("  they want to talk first: read your chat, " "`maity chat <your member id>`")
+        lines.append("  they want to talk first: read your chat, `maity chat <your member id>`")
     if answer.get("text"):
         text = capped(answer["text"], FULL, compact) if compact else quote(answer["text"])
         lines += ["  " + q for q in text]
@@ -762,7 +771,7 @@ def _answered(reqs: dict[str, Any], names: dict[str, str], compact: bool) -> lis
     return lines
 
 
-def _is_seq(value: Any) -> bool:
+def _is_seq(value: Any) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
@@ -786,7 +795,7 @@ def _ticker(packet: dict[str, Any]) -> list[str]:
     if not items:
         return []
     for_me, others = ticker.get("for_me"), ticker.get("others")
-    counts = [n if isinstance(n, int) and not isinstance(n, bool) else 0 for n in (for_me, others)]
+    counts = [_count(n) for n in (for_me, others)]
     lines = [f"Ticker ({counts[0]} for you, {counts[1]} others)"]
     for item in items:
         lines += ["  " + line for line in ticker_lines(item)]
@@ -976,8 +985,8 @@ def _handover_ref(ms: dict[str, Any]) -> str:
     kind, ref = handover.get("kind"), handover.get("id")
     if kind == "task" and isinstance(ref, str) and ref:
         return f"; the hand-over is in {inline(ref)}: maity task show {inline(ref)}"
-    if kind == "message" and isinstance(ref, int) and not isinstance(ref, bool):
-        return f"; the hand-over is in message #{ref}: maity messages --after {ref - 1}"
+    if kind == "message" and (seq := _count(ref)):  # event seqs start at 1
+        return f"; the hand-over is in message #{seq}: maity messages --after {seq - 1}"
     return ""
 
 
