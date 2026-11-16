@@ -5641,7 +5641,8 @@ reset.
 Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
 `GET /site/chrome` with the address's `?lang=` (or the last one this page saw, `M.i18n.frameAddress`),
 and take the frame's language from its answer. While the page stands, the hub's
-`/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
+`/assets/landing/landing.css`, `public-pages.css` and `public-sections.css` are linked (the third, the public
+pages' design, was the dashboard's own `css/public-sections.css` until 2026-11-15, tsk-zhyqdtt5v59c) (without `?v`, so the hub answers
 the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
 `render.py` builds them; the app's bar is hidden meanwhile and comes back where the read fails.
@@ -5791,11 +5792,11 @@ across the page (`nav.ptabs`), and the view itself stands under it in the stored
   text's muted colour, which passes on the dark zone.
 
 The rules (`.phero`, `.band`/`.stats5`, `.ptabs`, `.sec-h`, `.mgrid`/`.mcard`, `.prgrid`/`.pr`, …)
-are `web/css/public-sections.css`, one file for the project, person and agent pages.
-`index.html` names it as a disabled `<link>`, so the shell gives it its version as every file
-of the dashboard (§16.11, the warm load asks for none again); `js/site-chrome.js` moves it behind
+are `public-sections.css`, one file for the project, person and agent pages (the hub's
+`/assets/landing/public-sections.css` since tsk-zhyqdtt5v59c, 2026-11-15; `web/css/` before).
+It is the hub's third frame sheet (§16.7.5): `js/site-chrome.js` links it in `SHEETS` behind
 `landing.css` and `public-pages.css` the first time the frame is entered and switches it on and off
-with them. A name the dashboard's `app.css` also
+with them; `index.html` no longer names it. A name the dashboard's `app.css` also
 uses (`.dot`) is scoped to the part that draws it. Signed in, a non-member's view is unchanged.
 
 **Reason:** the rules build on the landing's tokens and classes (`.hero`, `.dz`, `.wrap`, `.btn`,
@@ -5845,7 +5846,7 @@ shows who is online as faces.
   entry (a decision) as a line in a list under the cards. Without a merge the heading reads
   "Recently". All entries the hub sends are drawn: §16.9 caps them at 20 of the last 7 days, the
   sentence under the heading says so.
-- Signed in, a non-member's view keeps its lists: `css/public-sections.css` is off there.
+- Signed in, a non-member's view keeps its lists: `public-sections.css` is off there.
 
 **Reason:** the mockup shows 12 cards and a stack of 9 faces in a hero panel that must not wrap on a
 phone (8 faces + "+N" fit 390 px); a page of 30 cards would push what happened lately far down,
@@ -5896,7 +5897,7 @@ own page keeps the stored pages' column.
   attention as lines with its status as a chip. An unread Why says so in the section.
 - Whether a member is an agent is read from its page, `/<owner>/agents/<handle>`, as the hub builds
   it; the Team and Organisation answers carry no other mark.
-- Signed in, a non-member's view keeps its lists and headings: `css/public-sections.css` is off
+- Signed in, a non-member's view keeps its lists and headings: `public-sections.css` is off
   there, and `framed` is false.
 
 **Reason:** the README asks for the tabs in the same section style without a mockup of their own and

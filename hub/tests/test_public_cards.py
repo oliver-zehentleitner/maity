@@ -89,7 +89,7 @@ def test_the_notes_are_on_the_page_with_their_authors_named_as_the_holder(world:
     text = page(world, card_id) or ""
     assert "<h2>Notes</h2>" in text and "<em>finding</em>" in text
     assert "<script>x" not in text and "anna-note-words" in text
-    assert "Human anna (anna)" in text
+    assert '<a href="/anna">Human anna</a>' in text
     notes = data(world, card_id).json()["data"]["notes"]
     assert [n["body"] for n in notes] == ["A *finding* <script>x</script>", "anna-note-words"]
     assert set(notes[0]) == {"id", "author", "body", "state", "created_at", "redacted", "edited"}
@@ -108,7 +108,7 @@ def test_a_note_author_follows_their_name(world: World) -> None:
     assert data(world, card_id).json()["data"]["notes"][0]["author"]["handle"] == "anna"
     assert world.anna.patch("/me", {"handle": "anne"}).status_code == 200
     assert data(world, card_id).json()["data"]["notes"][0]["author"]["handle"] == "anne"
-    assert "(anne)" in (page(world, card_id) or "")
+    assert '<a href="/anne">Human anna</a>' in (page(world, card_id) or "")
 
 
 def test_a_redacted_note_shows_as_removed_without_its_text_or_reason(world: World) -> None:
@@ -175,14 +175,14 @@ def test_the_editor_of_anothers_note_is_named_whatever_their_profile_and_a_hold_
     assert edited.status_code == 200, edited.text
     handle = edited.json()["edited"]["by"]["handle"]
     assert data(world, card_id).json()["data"]["notes"][0]["edited"]["by"]["handle"] == handle
-    assert f"({handle})" in (page(world, card_id) or "")
+    assert f'<a href="/{handle}">' in (page(world, card_id) or "")
     # The owner is neither the card's holder nor a note's author on it.
     made = report(world.anna, {"type": "profile", "id": world.owner.id}, "impersonation")
     assert made.status_code == 201, made.text
     resolved = world.owner.post(f"/admin/reports/{made.json()['id']}/resolve", {"action": "hide"})
     assert resolved.status_code == 200, resolved.text
     assert data(world, card_id).json()["data"]["notes"][0]["edited"]["by"] == "member"
-    assert f"({handle})" not in (page(world, card_id) or "")
+    assert f'<a href="/{handle}">' not in (page(world, card_id) or "")
 
 
 def test_a_security_card_has_a_page_only_once_it_is_done(world: World) -> None:
@@ -231,7 +231,7 @@ def test_the_holder_is_named_as_the_board_names_them(world: World) -> None:
     holder = data(world, card_id).json()["data"]["holder"]
     agent = world.bot.get("/me").json()["member"]
     assert holder["handle"] == agent["handle"]
-    assert f"({agent['handle']})" in (page(world, card_id) or "")
+    assert f'<a href="/maintainer/agents/{agent["handle"]}">' in (page(world, card_id) or "")
 
 
 def test_the_holder_on_a_card_page_follows_their_name_and_a_hold(world: World) -> None:
@@ -251,7 +251,7 @@ def test_the_holder_on_a_card_page_follows_their_name_and_a_hold(world: World) -
     path = f"/admin/reports/{made.json()['id']}/resolve"
     assert world.owner.post(path, {"action": "hide"}).status_code == 200
     assert data(world, card_id).json()["data"]["holder"] == "member"
-    assert "(anna)" not in (page(world, card_id) or "")
+    assert '<a href="/anna">' not in (page(world, card_id) or "")
 
 
 def test_every_kind_reads_one_target_by_the_rule_of_its_whole_list(world: World) -> None:
@@ -297,7 +297,7 @@ def test_a_removed_member_is_off_every_card_page_that_named_them(world: World) -
     assert world.bot.post(f"{TASKS}/{noted}/notes", {"body": "bot-words"}).status_code == 201
     other = world.owner.post(TASKS, {"title": "Nothing of the bot"}).json()["id"]
     handle = world.bot.get("/me").json()["member"]["handle"]
-    assert all(f"({handle})" in (page(world, c) or "") for c in (held, noted))
+    assert all(f'/agents/{handle}">' in (page(world, c) or "") for c in (held, noted))
     with world.migrated.connect() as conn:
         before = conn.execute(
             select(t.public_page.c.path, t.public_page.c.body).where(
@@ -306,7 +306,7 @@ def test_a_removed_member_is_off_every_card_page_that_named_them(world: World) -
         ).all()
     assert before
     _remove_agent(world)
-    assert all(f"({handle})" not in (page(world, c) or "") for c in (held, noted))
+    assert all(f'/agents/{handle}">' not in (page(world, c) or "") for c in (held, noted))
     assert "bot-words" in (page(world, noted) or "")  # the note stays, its author unnamed
     with world.migrated.connect() as conn:
         after = conn.execute(
@@ -346,7 +346,7 @@ def test_a_card_held_in_review_or_blocked_loses_its_holder_when_they_go(
     for status, card_id in held.items():
         shown = data(world, card_id).json()["data"]
         assert shown["status"] == status and shown["holder"] is None, shown
-        assert f"({handle})" not in (page(world, card_id) or "")
+        assert f'/agents/{handle}">' not in (page(world, card_id) or "")
 
 
 def test_without_a_public_page_a_removal_costs_nothing_per_held_card(
@@ -385,9 +385,9 @@ def test_a_removed_member_is_off_the_page_of_a_done_card_they_held(world: World)
         conn.execute(t.card.update().where(t.card.c.id == card_id).values(status="done"))
         public_pages.touch(conn, "card", card_id)
     handle = world.bot.get("/me").json()["member"]["handle"]
-    assert f"({handle})" in (page(world, card_id) or "")
+    assert f'/agents/{handle}">' in (page(world, card_id) or "")
     _remove_agent(world)
-    assert f"({handle})" not in (page(world, card_id) or "")
+    assert f'/agents/{handle}">' not in (page(world, card_id) or "")
 
 
 def test_a_removed_editor_is_off_the_card_page_of_the_note_they_edited(
@@ -402,10 +402,10 @@ def test_a_removed_editor_is_off_the_card_page_of_the_note_they_edited(
         {"body": "from anna, cleaned", "reason": "typo", "base_version": 1},
     )
     assert edited.status_code == 200, edited.text
-    assert "(ben)" in (page(world, card_id) or "")
+    assert '<a href="/ben">' in (page(world, card_id) or "")
     removed = world.owner.delete(f"/projects/maintainer/maity/members/{ben.id}")
     assert removed.status_code == 200, removed.text
-    assert "(ben)" not in (page(world, card_id) or "")
+    assert '<a href="/ben">' not in (page(world, card_id) or "")
 
 
 def test_a_member_s_removal_does_not_grow_with_the_project_s_cards(
