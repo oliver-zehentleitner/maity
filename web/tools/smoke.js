@@ -351,14 +351,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(gets.some((p) => p.startsWith("/requests")) && !main.querySelector(".lead-projects") && !header.querySelector(".lead-chat"),
     "#/all renders requests; no lead strip (the lead is behind the header's Chat button)");
   expect(!text(main).includes("null") && !text(header).includes("null"), "no stray 'null' text");
-  // With notifications (docs/api.md §18.2): requests plus unread chats and mentions; Maity has one of each unread.
+  // With notifications (docs/api.md §18.2): requests plus unread chats; Maity has one of each unread, and its unread
+  // mention is the bell's alone, on no pill and not in the tab title (tsk-e78jc2jgqhcb).
   // The total also holds the open personal requests addressed to the human (§18.2): two of ada/elsewhere, which
   // the human is no member of (a soul proposal and a preference proposal), and two reports with no project, on no
   // project's pill.
-  expect(chipCount("All projects") === "14" && chipCount("Maity") === "9" && chipCount("Sample shop") === "1", "switcher counts 14 / 9 / 1");
-  expect(document.title.startsWith("(14) "), "the tab title starts with what asks for the human");
+  expect(chipCount("All projects") === "13" && chipCount("Maity") === "8" && chipCount("Sample shop") === "1", "switcher counts 13 / 8 / 1");
+  expect(document.title.startsWith("(13) "), "the tab title starts with what asks for the human, no mention");
   const allChip = header.querySelectorAll("nav.switcher a").find((a) => a.textContent.startsWith("All projects")).querySelector(".count");
-  expect(allChip.getAttribute("aria-label") === "12 open, 1 unread in chats, 1 mention", "the All projects count says what it is made of, as the pills do");
+  expect(allChip.getAttribute("aria-label") === "12 open, 1 unread in chats", "the All projects count says what it is made of, as the pills do, no mention");
   expect(main.querySelectorAll(".project-label").length === 12, "every entry labelled with its project, a personal request as Personal");
   const firstRow = main.querySelector("li.entry .entry-row");
   expect(firstRow && firstRow.childNodes[0].tagName === "A" && firstRow.childNodes[0].className === "project-label"
@@ -390,14 +391,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(cur, "Later").click(); await tick();
   cur = main.querySelector(".current");
   expect(cur && text(cur).includes("Argon2id"), "Later moves to the next entry without answering");
-  expect(chipCount("All projects") === "14", "Later sends nothing, counts unchanged");
+  expect(chipCount("All projects") === "13", "Later sends nothing, counts unchanged");
   // Answers as the page sends them (§7): the text goes along with a reply or Talk, alone with Send.
   const ansCalls = [];
   const ansPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.endsWith("/answer")) ansCalls.push([p, b]); return ansPost(p, b); };
   btn(cur, "SHA-256 + pepper").click(); await tick(); await tick();
   expect(JSON.stringify(ansCalls.map((c) => c[1])) === JSON.stringify([{ reply_id: "sha" }]), "answer: only a reply, no text key " + JSON.stringify(ansCalls));
-  expect(chipCount("All projects") === "13" && chipCount("Maity") === "8", "answer re-reads /me counts");
+  expect(chipCount("All projects") === "12" && chipCount("Maity") === "7", "answer re-reads /me counts");
   const projSort = byId("inbox-sort"); projSort.value = "project"; projSort.dispatch("change"); await tick();
   const sortLabels = main.querySelectorAll(".project-label").map((el) => el.textContent);
   expect(sortLabels[0].startsWith("Personal") && sortLabels.find((t) => !t.startsWith("Personal")).startsWith("Maity"), "sort by project: the personal requests first, then the projects");
@@ -16288,18 +16289,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "notifications: an id the hub skips is said and the row stays unread " + JSON.stringify(waitWrites));
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
-  // A project whose only unread item is a mention (tsk-xb7bf1x0h3cy, the owner's report): the pill counts it,
-  // no tab does, so a link beside the tabs leads to the project's mentions on /notifications (§18.2 kind, project).
+  // The human's only unread item is a mention: the bell announces it, and nothing else does (the maintainer, 2026-11-16,
+  // tsk-e78jc2jgqhcb: mentions are the bell's; it superseded the line of tsk-xb7bf1x0h3cy). No line under the tabs, on
+  // the Inbox tab or any other, no number on the project's pill, no "(1)" in the tab title, no tab count.
+  // /notifications still filters by kind and project (§18.2).
   const mnGets = [], mnWrites = [];
   const mnMention = { id: "ntf-4300", seq: 4300, kind: "mention", at: "2026-10-22T13:40:00Z",
     project: { slug: "maity", full_name: "maintainer/maity", name: "Maity" }, actor: { member_id: "agt-b" },
     title: "Agent B mentioned you", target: { type: "message", id: "evt-4300" }, url: "https://maity.team/maintainer/maity/messages", read: false, redacted: false };
-  const mnOnly = (a) => {
-    const by = Object.assign({}, a.by_project);
-    by["maintainer/maity"] = { member: true, inbox: 0, chat: 0, mention: 1, total: 1 };
-    by["maintainer/sample"] = { member: true, inbox: 0, chat: 0, mention: 0, total: 0 };
-    return Object.assign({}, a, { by_project: by });
-  };
+  const mnOnly = (a) => Object.assign({}, a, {
+    counts: Object.assign({}, a.counts, { inbox: 0, chat: 0, mention: 1, security: 0, total: 1 }),
+    by_project: { "maintainer/maity": { member: true, inbox: 0, chat: 0, mention: 1, total: 1 } },
+  });
   win.Maity.api.get = (p) => {
     mnGets.push(p);
     if (p === "/me/notifications?limit=0") return waitGet(p).then(mnOnly);
@@ -16309,42 +16310,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = (p, b) => { if (p === "/me/notifications/read") mnWrites.push(b); return waitPost(p, b); };
   await go("#/maintainer/sample/inbox"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
   const mnTab = (label) => header.querySelectorAll("nav.views a").find((a) => a.textContent.startsWith(label));
-  expect(chipCount("Maity") === "1" && !mnTab("Inbox").querySelector(".count") && !mnTab("Chat").querySelector(".count"),
-    "mention count: the pill counts the one unread mention, the Inbox and Chat tabs count nothing");
-  const mnLink = () => header.querySelectorAll(".mention-note a").find((a) => a.textContent === "1 unread mention");
-  expect(mnLink() && mnLink().getAttribute("href") === "#/notifications?kind=mention&project=maintainer%2Fmaity",
-    "mention count: beside the tabs, a link to the project's mentions on /notifications");
-  // Not on the Chat tab, the maintainer's choice, where the list shows chat mentions as an @ (tsk-sesdq48m9ewk): neither
-  // on the list nor in an open chat, nor after a counts round there; back on the inbox the line is there again.
+  expect(chipCount("Maity") === "" && chipCount("All projects") === "" && !document.title.startsWith("(")
+    && !mnTab("Inbox").querySelector(".count") && !mnTab("Chat").querySelector(".count"),
+    "mention count: no number on the pills, none in the tab title, none on the Inbox and Chat tabs "
+    + JSON.stringify([chipCount("Maity"), chipCount("All projects"), document.title]));
+  const mnNoLine = () => !header.querySelector(".mention-note") && !text(header).includes("unread mention");
+  const mnInbox = mnNoLine();
+  bellBtn().click(); for (let k = 0; k < 4; k++) await tick();
+  const mnPanel = header.querySelector(".bell-panel");
+  const mnBell = [bellBtn().getAttribute("aria-label") === "1 new notification", !mnPanel.hidden, text(mnPanel.querySelector(".bell-counts")).includes("Mentions"),
+    text(mnPanel).includes("Agent B mentioned you")];
+  bellBtn().dispatch("keydown", { key: "Escape" }); await tick();
+  expect(mnInbox && JSON.stringify(mnBell) === "[true,true,true,true]",
+    "mention count: the unread mention is in the bell, no line under the tabs on the Inbox tab " + JSON.stringify([mnInbox, mnBell]));
+  // Nor on the Chat tab, in an open chat, or after a counts round that changes the project's mentions.
   await go("#/maintainer/maity/chat"); for (let k = 0; k < 6; k++) await tick();
-  const mnOnChat = !header.querySelector(".mention-note");
-  await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
-  const mnChatRound = !header.querySelector(".mention-note");
+  const mnOnChat = mnNoLine();
   await go("#/maintainer/maity/chat/agt-a"); for (let k = 0; k < 6; k++) await tick();
-  const mnOpenChat = !header.querySelector(".mention-note");
+  const mnOpenChat = mnNoLine();
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
-  expect(mnOnChat && mnChatRound && mnOpenChat && !!mnLink(),
-    "mention count: no line on the Chat tab, its list or an open chat, nor after a counts round there; the inbox has it "
-    + JSON.stringify([mnOnChat, mnChatRound, mnOpenChat, !!mnLink()]));
-  // A counts read while one stays in the project fills the line again (tsk-gsk31zvpfv02, nte-eh3zh053w5ew):
-  // a second mention changes its number, none takes it away, and it comes back with the next one.
-  const mnSet = (n) => { mnCount = n; };
-  let mnCount = 1;
   const mnRound = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me/notifications?limit=0"
-    ? mnRound(p).then((a) => Object.assign({}, a, { by_project: Object.assign({}, a.by_project, { "maintainer/maity": { member: true, inbox: 0, chat: 0, mention: mnCount, total: mnCount } }) }))
+    ? mnRound(p).then((a) => Object.assign({}, a, { by_project: Object.assign({}, a.by_project, { "maintainer/maity": { member: true, inbox: 0, chat: 0, mention: 2, total: 2 } }) }))
     : mnRound(p));
-  const mnNote = () => header.querySelector(".mention-note");
-  mnSet(2); await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
-  const mnTwo = [mnNote() && !mnNote().hidden, mnNote() ? text(mnNote()) : null];
-  mnSet(0); await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
-  const mnNone = [mnNote() ? !!mnNote().hidden : null, mnNote() ? mnNote().querySelectorAll("a").length : null];
-  mnSet(1); await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
-  const mnBack = !!mnLink();
+  await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
+  const mnAfterRound = mnNoLine() && chipCount("Maity") === "" && !document.title.startsWith("(");
   win.Maity.api.get = mnRound;
-  expect(JSON.stringify(mnTwo) === JSON.stringify([true, "2 unread mentions"]) && JSON.stringify(mnNone) === "[true,0]" && mnBack,
-    "mention count: a counts read in the project changes the line's number, takes it away at none and brings it back "
-    + JSON.stringify([mnTwo, mnNone, mnBack]));
+  expect(mnOnChat && mnOpenChat && mnAfterRound,
+    "mention count: no line on the Chat tab, in an open chat, nor a line or number after a counts round " + JSON.stringify([mnOnChat, mnOpenChat, mnAfterRound]));
   await go("#/notifications?kind=mention&project=maintainer%2Fmaity"); for (let k = 0; k < 6; k++) await tick();
   const mnList = mnGets.filter((p) => p.startsWith("/me/notifications?limit=50"));
   expect(mnList.length && mnList[mnList.length - 1].includes("&kind=mention") && mnList[mnList.length - 1].includes("&project=maintainer%2Fmaity"),
@@ -16355,7 +16348,6 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(mnWrites.length === 1 && "up_to" in mnWrites[0] && mnWrites[0].kind === "mention" && mnWrites[0].project === "maintainer/maity",
     "mention count: Mark all read there marks that kind and project only (§18.3) " + JSON.stringify(mnWrites));
   await go("#/maintainer/sample/inbox"); for (let k = 0; k < 6; k++) await tick();
-  expect(!header.querySelectorAll(".mention-note a").length, "mention count: a project without unread mentions has no such link");
   win.Maity.api.get = waitGet; win.Maity.api.post = waitPost;
 
   // The mock counts an unread invitation as the open personal request it is (§18.2): in inbox, on an

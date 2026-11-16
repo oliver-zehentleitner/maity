@@ -6271,38 +6271,34 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     page.keyboard.press("Escape")  # the focus is on the bell after the click
     expect(panel).to_be_hidden()
     expect(bell).to_be_focused()
-    # A mention of the owner (nte-nkwh5y6n4ve2): the unread line beside the project's tabs and the
-    # filtered All notifications page it leads to, each under axe; Mark all read there marks the
-    # mentions of that project only, and the line goes. "@owner" is a group word, never a member
-    # (§8.6), so the agent names the owner by the alias handle_hints_step left (LONG_OWNER).
-    run.step("notifications: a mention of the owner shows its line beside the tabs and the filtered list, both under axe")
+    # A mention of the owner (nte-nkwh5y6n4ve2): the bell announces it and nothing else does (the maintainer,
+    # 2026-11-16, tsk-e78jc2jgqhcb): no line under the project's tabs, no number on its pill for it. The filtered
+    # All notifications page still lists it by its address, under axe; Mark all read there marks the mentions of
+    # that project only. "@owner" is a group word, never a member (§8.6), so the agent names the owner by the alias
+    # handle_hints_step left (LONG_OWNER).
+    run.step("notifications: a mention of the owner is in the bell, with no line under the tabs; the filtered list under axe")
     cursor = run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after="latest", wait=0)["cursor"]
     run.maity(alpha, "say", "all", f"A mention for @{LONG_OWNER} in the e2e run.", "--type", "notice")
     said = [e for e in run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after=cursor, wait=0)["items"]
             if e.get("kind") == "message"]
     assert len(said) == 1 and len(said[0]["payload"].get("mentions") or []) == 1, said  # the alias resolved to the owner
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    line = page.locator("header p.mention-note a")
-    expect(line).to_be_visible(timeout=20000)
-    expect(line).to_have_attribute("href", "/notifications?kind=mention&project=owner%2Fe2e-alpha")
-    run.a11y(page, "the unread mention line")
-    # Not on the Chat tab, the maintainer's choice, where the list shows chat mentions as an @ (tsk-sesdq48m9ewk); back on the
-    # inbox the line is there again.
-    page.goto(f"{run.base}/owner/e2e-alpha/chat")
-    expect(page.locator(".chat-list-pane")).to_be_visible()
+    expect(page.locator("main section.view-inbox")).to_be_visible()
+    bell.click()
+    panel = page.locator("header .bell-panel")
+    expect(panel).to_be_visible()
+    expect(panel.locator(".bell-counts")).to_contain_text("Mentions", timeout=20000)
+    run.a11y(page, "the bell with an unread mention")
+    page.keyboard.press("Escape")
+    expect(panel).to_be_hidden()
     expect(page.locator("header p.mention-note")).to_have_count(0)
-    page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    expect(line).to_be_visible(timeout=20000)
-    line.click()
-    expect(page).to_have_url(re.compile(r"/notifications\?kind=mention&project=owner%2Fe2e-alpha$"))
+    expect(page.locator("header")).not_to_contain_text("unread mention")
+    page.goto(f"{run.base}/notifications?kind=mention&project=owner%2Fe2e-alpha")
     mark_all = page.get_by_role("button", name="Mark all read", exact=True)
     expect(mark_all).to_be_enabled(timeout=10000)  # the unread mention is listed
     run.a11y(page, "notifications filtered to mentions in a project")
     mark_all.click()
     expect(mark_all).to_be_disabled()
-    page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    expect(page.locator("main section.view-inbox")).to_be_visible()
-    expect(page.locator("header p.mention-note")).to_be_hidden(timeout=20000)
     no_problems(run, "notifications")
 
 
