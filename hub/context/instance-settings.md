@@ -29,3 +29,33 @@ The admin needs to know that the key is there, never what it is.
   secret is simpler to keep than a parser per URL form.
 - A switch in the overview: two places to change a setting, one of them losing at the next start,
   would only mislead.
+
+## The overview reads the environment the process kept at its start, from one list of entries a test holds to the code
+
+**Id:** 07adcfd3-aaec-42df-8f1f-7b0e335d2579
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-f87sx61wbfdj ("a test that fails when config.py has a switch the overview leaves out, or an explicit, commented exclusion list"); hub/src/maity_hub/settings_overview.py, hub/tests/test_settings_overview.py
+**See:** instance-settings.md#a-read-only-route-of-its-own-lists-every-maity_-setting-secrets-only-as-set-or-not-set — cb544480-3808-4eb6-8ee0-3930a613129f — as of 2026-11-16
+**Revisit when:** the hub reads a setting under a name it builds at run time, which the test's search for `"MAITY_…"` literals would not find
+
+`Settings.from_env` keeps the `MAITY_*` variables that are set, and the overview answers from that,
+never from `os.environ` at the time of the request: the hub reads its environment once, so what the
+process kept is what runs, and a test hands a client its own environment without touching the
+process's. `settings_overview.ENTRIES` names every setting once, with its group, its default
+(a constant of the module that owns the setting where one exists, a function for a derived one),
+whether it is secret and which admin section can set it too.
+
+The guard test reads every `"MAITY_…"` literal under `hub/src/maity_hub`, not only `config.py`:
+mail, registration and the GitHub App read their settings in their own modules. A name found
+there that is neither an entry nor in `NOT_LISTED` (each exclusion with its reason) fails, and so
+does an entry no code reads any more. A second test holds every entry to a row of
+`hub/README.md` (Configuration), the page the overview links to.
+
+**Rejected alternatives:**
+- Reading `os.environ` per request: it can differ from what the process started with, and a test
+  would have to change the process's environment.
+- Deriving each value from the parsed `Settings` fields: the source (environment or default) is lost
+  once parsed, and a value would be shown in the parser's form, not as the operator wrote it.
+- Scanning only `config.py`: a third of the settings are read elsewhere and would slip through.
