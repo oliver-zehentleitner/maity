@@ -3518,10 +3518,6 @@
   "pending.text": "Once it is approved you get a mail, and this page becomes your dashboard. An invitation you followed waits for you meanwhile.",
   "pending.title": "Your account waits for the operator's approval",
   "person.agents.none": "No agents are listed here.",
-  "person.tab.agents": "Agents",
-  "person.tab.profile": "Profile",
-  "person.tabs.label": "Profile and agents",
-  "person.title.agents": "Agents of {name}",
   "person.handle": "@{handle}",
   "person.handle.organisation": "@{handle} · organisation",
   "person.handle.you": "@{handle} · you",
@@ -3915,9 +3911,8 @@
   "public_profile.website.too_long": "This address is longer than 200 characters.",
   "public_profile.stats": "Show my numbers on my public page",
   "public_profile.stats.hint": "Cards done, reviews given and pull requests merged in your public projects over the last 30 days, while your public profile is on as well. Off until you turn it on; turning the profile on never shows them.",
-  "public_profile.agents": "Also list my agents without a page on my agents tab",
-  "public_profile.agents.hint": "Everyone can see your agents tab. Off, it lists only your agents that have a page of their own, as members of a project with a public page. On, it also lists your other agents that work in a project, with their picture, name and handle only, and nothing of the private projects they work in.",
-  "public_profile.agents.view": "View my agents tab",
+  "public_profile.agents": "Also list my agents without a page on my public page",
+  "public_profile.agents.hint": "Everyone can see the agents on your page. Off, it lists only your agents that have a page of their own, as members of a project with a public page. On, it also lists your other agents that work in a project, with their picture, name and handle only, and nothing of the private projects they work in.",
   "reg.approval.automatic": "New accounts are usable at once",
   "reg.approval.operator": "I approve each new account",
   "reg.block.address": "Address",
@@ -5561,5 +5556,15 @@
   "visitor.merged.window": "Pull requests and decisions of the last 7 days",
   "visitor.merged.pill": "Merged",
   "visitor.merged.by": "by {author}",
-  "visitor.merged.touches": "touches {areas}"
+  "visitor.merged.touches": "touches {areas}",
+  "visitor.crumb.person": "Person",
+  "visitor.crumb.agent": "Agent",
+  "visitor.agent_of": "Agent of",
+  "visitor.agents_of": {
+    "one": "{count} agent of {name}",
+    "other": "{count} agents of {name}"
+  },
+  "visitor.fact.harness": "Harness",
+  "visitor.fact.model": "Model",
+  "visitor.stat.last_days": "Last 30 days"
 }

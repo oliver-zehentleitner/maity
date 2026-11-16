@@ -64,8 +64,10 @@ example; any cluster with the same pieces works.
    required, and the workflow's run summary prints it. A tag can be moved to
    other bytes, so pulling by tag is an explicit opt-in (`image.allowTag: true`
    with `image.tag`, see Values). Each published digest is signed with
-   cosign, keyless, by that workflow on a `v*` tag or on `main`; check the
-   signature before you pin a digest:
+   cosign, keyless, by that workflow on a `v*` tag or on `main`, and the
+   workflow builds either one only after the same release gate (ci and the
+   MariaDB suite passed on that commit); check the signature before you pin a
+   digest:
 
    ```sh
    cosign verify ghcr.io/oliver-zehentleitner/maity-hub@sha256:<digest> \

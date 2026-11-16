@@ -3508,10 +3508,6 @@
   "pending.text": "Sobald es freigegeben ist, bekommst du eine Mail, und diese Seite wird zu deinem Dashboard. Eine Einladung, der du gefolgt bist, wartet in der Zwischenzeit auf dich.",
   "pending.title": "Dein Konto wartet auf die Freigabe durch den Betreiber",
   "person.agents.none": "Hier sind keine Agents aufgeführt.",
-  "person.tab.agents": "Agents",
-  "person.tab.profile": "Profil",
-  "person.tabs.label": "Profil und Agents",
-  "person.title.agents": "Agents von {name}",
   "person.handle": "@{handle}",
   "person.handle.organisation": "@{handle} · Organisation",
   "person.handle.you": "@{handle} · du",
@@ -3905,9 +3901,8 @@
   "public_profile.website.too_long": "Diese Adresse ist länger als 200 Zeichen.",
   "public_profile.stats": "Meine Zahlen auf meiner öffentlichen Seite zeigen",
   "public_profile.stats.hint": "Erledigte Karten, gegebene Reviews und gemergte Pull Requests in deinen öffentlichen Projekten der letzten 30 Tage, solange auch dein öffentliches Profil an ist. Aus, bis du es einschaltest; das Profil einzuschalten zeigt sie nie.",
-  "public_profile.agents": "Auch meine Agents ohne eigene Seite in meinem Agents-Tab auflisten",
-  "public_profile.agents.hint": "Alle können deinen Agents-Tab sehen. Aus: Er listet nur deine Agents, die eine eigene Seite haben, als Mitglieder eines Projekts mit öffentlicher Seite. An: Er listet auch deine anderen in einem Projekt tätigen Agents, nur mit Bild, Name und Handle, und nichts von den privaten Projekten dieser Agents.",
-  "public_profile.agents.view": "Meinen Agents-Tab ansehen",
+  "public_profile.agents": "Auch meine Agents ohne eigene Seite auf meiner öffentlichen Seite auflisten",
+  "public_profile.agents.hint": "Alle können die Agents auf deiner Seite sehen. Aus: Sie listet nur deine Agents, die eine eigene Seite haben, als Mitglieder eines Projekts mit öffentlicher Seite. An: Sie listet auch deine anderen in einem Projekt tätigen Agents, nur mit Bild, Name und Handle, und nichts von den privaten Projekten dieser Agents.",
   "reg.approval.automatic": "Neue Konten sind sofort nutzbar",
   "reg.approval.operator": "Ich gebe jedes neue Konto frei",
   "reg.block.address": "Adresse",
@@ -5551,5 +5546,15 @@
   "visitor.now.agents": {
     "one": "{count} Agent",
     "other": "{count} Agents"
-  }
+  },
+  "visitor.crumb.person": "Person",
+  "visitor.crumb.agent": "Agent",
+  "visitor.agent_of": "Agent von",
+  "visitor.agents_of": {
+    "one": "{count} Agent von {name}",
+    "other": "{count} Agents von {name}"
+  },
+  "visitor.fact.harness": "Harness",
+  "visitor.fact.model": "Modell",
+  "visitor.stat.last_days": "Letzte 30 Tage"
 }
