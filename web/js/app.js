@@ -1439,16 +1439,17 @@ window.Maity = window.Maity || {};
   // the cross-project view with the total.
   function switcher(ctx) {
     const N = M.notify.state;
-    // What asks for the human, requests, unread chats and mentions
-    // (docs/api.md §18.2); until the counts are read, the open requests.
-    const total = N.counts ? N.counts.total : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
+    // What asks for the human, requests and unread chats (docs/api.md §18.2);
+    // mentions are the bell's alone (tsk-e78jc2jgqhcb). Until the counts are
+    // read, the open requests.
+    const total = N.counts ? M.notify.badgeCount(N.counts) : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
     const count = (n) => (n ? h("span", { class: "count", "aria-label": M.t("header.count.open", { count: n }) }, String(n)) : null);
     // The same words on every pill: what the number is made of.
     const counted = (c) => (c.total ? h("span", { class: "count", "aria-label": M.fmt.list([c.requests ? M.t("header.count.open", { count: c.requests }) : null,
-      c.chat ? M.t("header.count.unread_chats", { count: c.chat }) : null, c.mention ? M.t("header.count.mentions", { count: c.mention }) : null].filter(Boolean)) },
+      c.chat ? M.t("header.count.unread_chats", { count: c.chat }) : null].filter(Boolean)) },
     String(c.total)) : null);
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
-    const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
+    const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
       h("a", { href: "/all", "aria-current": !ctx.visiting && ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
       // The tabs this browser has open, in its order (js/tabs.js): dragged
@@ -1638,20 +1639,6 @@ window.Maity = window.Maity || {};
     return n ? h("span", { class: "count", "aria-label": route === "inbox" ? M.t("header.count.open", { count: n }) : M.t("header.count.unread", { count: n }) }, String(n)) : null;
   }
 
-  // The project's mentions have no tab (the inbox is the requests alone),
-  // yet the pill counts them (§18.2): while some are unread, a link beside
-  // the tabs leads to them on /notifications, filtered to this project
-  // (tsk-xb7bf1x0h3cy). Filled again with every count read.
-  const mentionsHref = (fullName) => "/notifications?kind=mention&project=" + encodeURIComponent(fullName);
-  function fillMentionNote(ctx, box) {
-    clear(box);
-    const n = M.notify.state.counts
-      ? M.notify.projectCount(ctx.projects.find((p) => p.full_name === ctx.slug) || { full_name: ctx.slug }).mention : 0;
-    box.hidden = !n;
-    if (n) append(box, h("a", { href: mentionsHref(ctx.slug) }, M.t("header.mentions.unread", { count: n })));
-    return box;
-  }
-
   // All projects has two pages (the maintainer, tsk-gw59z3w3fenf): the
   // requests across projects and every chat across them, each with what
   // the hub counts for it (§18.2).
@@ -1684,8 +1671,6 @@ window.Maity = window.Maity || {};
       });
       return;
     }
-    const note = document.getElementById("header").querySelector(".mention-note");
-    if (note) fillMentionNote(ctx, note);
     nav.querySelectorAll("a").forEach((a) => {
       // dom.h writes a route through M.route.href (a fragment in the fixture), so compare with that.
       const route = NAV.find((n) => a.getAttribute("href") === M.route.href(projectLink(ctx.slug, n.route)));
@@ -1860,11 +1845,7 @@ window.Maity = window.Maity || {};
         : ALL_PAGES.some((page) => page.scope === ctx.scope)
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": !ctx.visiting && ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
-          : null,
-      // Not on the Chat tab, the maintainer's choice (tsk-sesdq48m9ewk): its list shows each chat's unread mention as an @
-      // at a glance. The @ covers chat mentions only; those in project messages and on cards stay in the bell and on the
-      // other tabs' line, which is why the maintainer kept the removal (chat 103539).
-      ctx.scope === "project" && current !== "chat" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
+          : null);
     M.dom.keepImages(previous, fresh);
     while (fresh.firstChild) header.appendChild(fresh.firstChild);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });

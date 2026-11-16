@@ -1355,14 +1355,6 @@
   "header.away_until": "Afwezig tot {time}",
   "header.brand.signed_in": "Maity: alles wat op je wacht",
   "header.brand.signed_out": "Maity: start",
-  "header.count.mentions": {
-    "one": "{count} vermelding",
-    "other": "{count} vermeldingen"
-  },
-  "header.mentions.unread": {
-    "one": "{count} ongelezen vermelding",
-    "other": "{count} ongelezen vermeldingen"
-  },
   "header.count.open": "{count} open",
   "header.count.unread": "{count} ongelezen",
   "header.count.unread_chats": "{count} ongelezen in chats",

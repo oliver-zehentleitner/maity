@@ -890,11 +890,41 @@ that does not exist. Talk for another owner's agent: the hub refuses it
 alone and `talk` are accepted: a hub change for what the dashboard can
 tell from the request today; the Revisit when names it.
 
+## Unread mentions are the bell's alone: no line under the project's tabs, no number on a pill or in the tab title
+
+**Id:** 5e333da0-4b01-4900-a5a6-16235309135b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's statements of 2026-11-16 on card tsk-e78jc2jgqhcb (the line "1 unread mention" under the tabs of a project's Inbox, and the card note that a mention must not count as "(1)" either: "Mentions go to the bell only"); docs/api.md §18.2 (`counts`, `by_project`)
+**Revisit when:** the maintainer wants mentions back beside the requests and chats, or the hub sends a count without mentions
+**See:** views.md#a-projects-unread-mentions-are-a-link-beside-its-tabs-to-notifications-filtered-to-the-project — 0906c3fe-ffe3-4baf-94c1-c093de6fee54 — as of 2026-11-16
+**See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-16
+
+An unread mention is announced by the bell (its count, its "Mentions" line and the item in its
+list) and by nothing else in the header. There is no line under a project's tabs on any tab, and
+the numbers on the project pills, on All projects and in the browser tab's title ("(6) …") are the
+open requests plus the unread chats: the dashboard adds `inbox` and `chat` of `counts` and of each
+`by_project` entry itself instead of showing the hub's `total`, which adds `mention` (§18.2). The
+hub's answer is unchanged. `/notifications?kind=mention&project=<owner>/<slug>` still reads and
+marks one project's mentions when opened by its address.
+
+**Reason:** the maintainer wants mentions in one place, the bell; a line and a number elsewhere
+announced the same mention twice or three times, and a "(1)" on a project read as a waiting
+message that the project's tabs did not show.
+
+**Rejected alternatives:**
+- Keeping the line and only dropping it from the Inbox tab: the maintainer asked for it gone
+  above the tabs, and the Chat tab already went without it.
+- A hub `total` without mentions: a contract change for what the dashboard can add up from the
+  counts it already reads.
+
 ## A project's unread mentions are a link beside its tabs, to /notifications filtered to the project
 
 **Id:** 0906c3fe-ffe3-4baf-94c1-c093de6fee54
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 5e333da0-4b01-4900-a5a6-16235309135b
 **Evidence:** inferred
 **Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"; the maintainer's decision to drop the line on the Chat tab, card tsk-sesdq48m9ewk, 2026-11-10 (chats 102080 and 103539)
 **See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-03
