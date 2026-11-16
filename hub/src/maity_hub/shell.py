@@ -183,28 +183,44 @@ def asset_versions(web_dir: Path) -> dict[str, str]:
 # seconds: every API answer carries it, and the walk over the files is not for every request.
 WEB_VERSION_TTL = 10.0
 _WEB_VERSIONS: dict[str, tuple[float, str | None]] = {}
+# What `kept_web_version` answers when the value must be computed again.
+STALE = object()
 
 
-def web_version(web_dir: Path | None) -> str | None:
-    """16 hex digits that change when, and only when, a file of the dashboard changes: its
-    `index.html` or a file under `/assets/` it loads (§1.1). None without a dashboard."""
-    if web_dir is None:
-        return None
-    key = os.path.realpath(web_dir)
-    now = time.monotonic()
-    kept = _WEB_VERSIONS.get(key)
-    if kept is not None and now - kept[0] < WEB_VERSION_TTL:
-        return kept[1]
+def _web_version_of(web_dir: Path, versions: dict[str, str] | None = None) -> str | None:
+    """The value from the files as they are now; `versions`, when the caller has just read
+    them (`asset_versions`), is taken as they are. None when the files cannot be read."""
     try:
         shell = (web_dir / "index.html").read_bytes()
+        if versions is None:
+            versions = asset_versions(web_dir)
     except OSError:
-        version = None
-    else:
-        digest = hashlib.sha256(b"index.html\0" + shell)
-        for path, file_version in sorted(asset_versions(web_dir).items()):
-            digest.update(b"\n" + path.encode() + b"\0" + file_version.encode())
-        version = digest.hexdigest()[:16]
-    _WEB_VERSIONS[key] = (now, version)
+        return None
+    digest = hashlib.sha256(b"index.html\0" + shell)
+    for path, file_version in sorted(versions.items()):
+        digest.update(b"\n" + path.encode() + b"\0" + file_version.encode())
+    return digest.hexdigest()[:16]
+
+
+def kept_web_version(web_dir: Path | None) -> str | None | object:
+    """The value kept for `web_dir` while it is fresh, without touching a file; `STALE` when it
+    must be computed (`web_version`). The middleware asks this first, on the event loop."""
+    if web_dir is None:
+        return None
+    kept = _WEB_VERSIONS.get(str(web_dir))
+    if kept is not None and time.monotonic() - kept[0] < WEB_VERSION_TTL:
+        return kept[1]
+    return STALE
+
+
+def web_version(web_dir: Path | None, versions: dict[str, str] | None = None) -> str | None:
+    """16 hex digits that change when, and only when, a file of the dashboard changes: its
+    `index.html` or a file under `/assets/` it loads (§1.1). None without a dashboard.
+    Computed from the files and kept (`WEB_VERSION_TTL`); `versions` as `_web_version_of`."""
+    if web_dir is None:
+        return None
+    version = _web_version_of(web_dir, versions)
+    _WEB_VERSIONS[str(web_dir)] = (time.monotonic(), version)
     return version
 
 
@@ -360,7 +376,9 @@ def versioned(page: bytes, web_dir: Path) -> bytes:
     later = {path: version for path, version in versions.items() if path.startswith(LATER)}
     data = json.dumps(later, sort_keys=True, separators=(",", ":")).replace("<", "\\u003c")
     block = f'<script type="application/json" id="{VERSIONS_ID}">{data}</script>'.encode()
-    version = web_version(web_dir)
+    # From the same reading of the files as the `?v=` above, never the kept value: a shell
+    # served just after a deploy names the new dashboard, so its page shows no band (§16.11).
+    version = web_version(web_dir, versions)
     if version is not None:
         block += f'<meta name="{WEB_VERSION_NAME}" content="{version}">'.encode()
     closed = _HEAD_END.search(page)

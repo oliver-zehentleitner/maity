@@ -192,7 +192,22 @@ class HubMiddleware:
             if origin.tls and self.settings.hsts_max_age
             else None
         )
-        web = shell.web_version(self.settings.web_dir) if path.startswith("/api/v1/") else None
+        # Every API answer (§1.1); on the join host only the exchange, which answers as
+        # `POST /api/v1/join/{token}` does, never the redirects and `404`s there.
+        if (
+            join_host.TOKEN_PATH.match(path) is not None and scope.get("method") == "POST"
+            if on_join_host
+            else path.startswith("/api/v1/")
+        ):
+            kept = shell.kept_web_version(self.settings.web_dir)
+            # The walk over the files reads the disk: off the event loop.
+            web = (
+                await run_in_threadpool(shell.web_version, self.settings.web_dir)
+                if kept is shell.STALE
+                else kept if isinstance(kept, str) else None
+            )
+        else:
+            web = None
         send = _noting_refusal(
             _with_headers(send, public=public, hsts=hsts, web=web), scope["state"]
         )

@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from starlette.responses import Response
 
 from maity_hub import shell
+from tests import flow
 from tests.conftest import ClientFactory
 
 VERSION = re.compile(r"[0-9a-f]{16}")
@@ -82,11 +84,36 @@ def test_a_hub_without_a_dashboard_sends_none(make_client: ClientFactory, tmp_pa
         assert "maity-web-version" not in answer.headers
 
 
-def test_a_route_cannot_set_it(dashboard: Path) -> None:
-    # The middleware owns the header, as it owns `Maity-Server-Time`.
-    from maity_hub import middleware
+def test_a_route_cannot_set_it(make_client: ClientFactory, dashboard: Path) -> None:
+    # The middleware owns the header, as it owns `Maity-Server-Time`: a route's own value is
+    # replaced on an API answer, and dropped outside the API.
+    client = make_client()
+    real = version_of(client)
 
-    assert b"maity-web-version" in middleware._SET
+    def sets_it() -> Response:
+        return Response("x", headers={"Maity-Web-Version": "0" * 16})
+
+    client.app.add_api_route("/api/v1/sets-web-version", sets_it)  # type: ignore[attr-defined]
+    client.app.add_api_route("/sets-web-version", sets_it)  # type: ignore[attr-defined]
+    answer = client.get("/api/v1/sets-web-version")
+    assert answer.status_code == 200
+    assert answer.headers.get_list("maity-web-version") == [real]
+    assert "maity-web-version" not in client.get("/sets-web-version").headers
+
+
+def test_a_shell_served_just_after_a_change_names_the_new_version(
+    make_client: ClientFactory, dashboard: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With the value kept (the hub's own TTL), the shell still reads the files afresh: a page
+    # loaded right after a deploy names the new dashboard and never shows the band.
+    monkeypatch.setattr(shell, "WEB_VERSION_TTL", 60.0)
+    client = make_client()
+    old = version_of(client)
+    (dashboard / "js" / "app.js").write_text("// deployed\n", encoding="utf-8")
+    assert version_of(client) == old  # kept
+    found = META.search(client.get("/").text)
+    assert found is not None and found[1] != old
+    assert version_of(client) == found[1]  # the shell's reading is kept for the API too
 
 
 def test_the_value_is_kept_for_a_few_seconds(
@@ -94,10 +121,10 @@ def test_the_value_is_kept_for_a_few_seconds(
 ) -> None:
     monkeypatch.setattr(shell, "WEB_VERSION_TTL", 60.0)
     shell._WEB_VERSIONS.clear()
+    assert shell.kept_web_version(dashboard) is shell.STALE
     first = shell.web_version(dashboard)
     (dashboard / "js" / "app.js").write_text("// three\n", encoding="utf-8")
-    assert shell.web_version(dashboard) == first
-    shell._WEB_VERSIONS.clear()
+    assert shell.kept_web_version(dashboard) == first  # no file is read while it is fresh
     assert shell.web_version(dashboard) != first
 
 
@@ -109,3 +136,31 @@ def test_a_restart_keeps_it(dashboard: Path, monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(shell, "_FORMS", {})
     monkeypatch.setattr(shell, "_WEB_VERSIONS", {})
     assert shell.web_version(dashboard) == first
+
+
+JOIN = "https://join.example"
+
+
+def test_on_the_join_host_only_the_exchange_carries_it(
+    make_client: ClientFactory, migrated: Any, dashboard: Path
+) -> None:
+    """`POST /{token}` answers as `POST /api/v1/join/{token}` does, its `Maity-*` headers
+    included (§1.1); the join host's redirects and `404`s are no API answers."""
+    real = version_of(make_client())
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    made = owner.post(
+        f"/projects/{owner.handle}/maity/joins",
+        {"agent": {"handle": "agent-w", "display_name": "Agent W"}},
+    ).json()
+    token = made["join_url"].rsplit("/", 1)[1]
+    host = make_client(base_url=JOIN, join_url=JOIN)
+    exchange = host.post(f"/{token}", json={"code": made["code"], "client": "curl"})
+    assert exchange.status_code == 201, exchange.text
+    assert exchange.headers["maity-web-version"] == real
+    refused = host.post("/" + "A" * 22, json={"code": "x", "client": "curl"})
+    assert refused.status_code == 404 and refused.headers["maity-web-version"] == real
+    for method, path in (("GET", "/api/v1/health"), ("POST", "/api/v1/join/" + "A" * 22)):
+        other = host.request(method, path, follow_redirects=False)
+        assert other.status_code in (302, 404), (method, path)
+        assert "maity-web-version" not in other.headers, (method, path)
