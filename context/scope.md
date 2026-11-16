@@ -178,6 +178,9 @@ decides nothing for placements. Stopping and removing stay open to those
 who may today, and the owner may stop and remove every placement on their
 runner, a foreign one included. Placements made by others before the rule
 are not closed by themselves: the owner sees them (`foreign`) and decides.
+The agent profile's owner removes such a placement too and places the agent
+again on a runner of their own; a replacement does not move it, since the
+old runner would run the handover.
 
 **Reason:** the runner is the owner's machine: whoever places an agent on
 it spends its compute and the owner's model budget. Attaching it to a
