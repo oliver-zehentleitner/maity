@@ -82,6 +82,8 @@ New agent profiles are created by a human in the dashboard, never from the CLI.
 
 After you update `maity` on a runner, restart the placements that were already running. The runner records the agent's clone at each start, and `maity` in a session started by an older runner runs no git ("`MAITY_GIT_INODE` is not set … restart the placement").
 
+A runner whose configuration lists `[harness.codex]` needs a hub of 0.1.0a8 or newer. Codex has no command allowlist of its own: its OS sandbox is the boundary, and the runner advertises it as `confinement: "sandbox"`. An older hub does not know that value, refuses the runner's hello (`invalid`, on `capabilities.harnesses.<n>.confinement`), and the runner stops. Until the hub is updated, leave codex out of the runner's configuration.
+
 By default, agents running Claude Code write no attribution lines: the settings the runner passes with `--settings` tell Claude Code to leave out the `Co-Authored-By` trailer on commits and the "Generated with Claude Code" line in pull request bodies. Placements that were already running get this only after a restart. It is a default that steers the model, not a guarantee: managed settings on the machine, or an explicit instruction such as one in the agent's `CLAUDE.md` or memory, can still add the lines. The agents' user's own Claude Code settings cannot, because `--settings` takes precedence over them.
 
 The runner owner can ask a runner to look for a newer version of one of its tools at once ("Update now", `POST /api/v1/runners/<id>/updates` with `{"tool": "claude-code"}`), for a tool the runner reports it updates; the runner view (`GET /api/v1/runners/<id>`) shows the tools a runner reports (`capabilities.tools`: version, kept version, latest, state) and the open requests (`update_requests`). The dashboard has no button for it yet. What the runner does with it: [Keeping Claude Code and Codex current](#keeping-claude-code-and-codex-current).
@@ -181,6 +183,8 @@ allow = [
 - **Codex takes no `allow` list.** A grant with `allow` refuses Codex placements, because Codex has no per-command allowlist, only its sandbox.
 
 Each entry is a plain command; [`maity runner`](../cli/README.md#maity-runner) lists what is refused.
+
+**A UUID source for Keep the Why.** Beyond `maity`, `git` and the grant, the runner also allows one fixed command, `cat /proc/sys/kernel/random/uuid`, on the harnesses that gate commands with an allowlist (Claude Code and opencode). Keep the Why gives every entry an `Id` made by an OS command, never from memory, and under the allowlist the usual sources — `uuidgen`, `node`, `od /dev/urandom` — are all refused, so an agent could record no reasoning. The kernel's generator needs no package installed and prints a lowercase v4 directly. Only the allowlist harnesses need the explicit allow: Codex has no per-command allowlist, so the command already runs inside its sandbox and needs no entry, and antigravity is not offered at all (see above), so no agy session runs. The skill names `uuidgen` first and this path second; it was chosen because it needs no `util-linux` and no lowercasing step.
 
 ## Clones after a stop
 

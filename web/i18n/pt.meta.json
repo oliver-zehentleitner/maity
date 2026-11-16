@@ -3271,6 +3271,54 @@
     "en": "3a26dc0879f9a035",
     "text": "2a1cca214b33639e"
   },
+  "chat.verdict.agree": {
+    "en": "08c068ceec37bae5",
+    "text": "524b39e5c2fe3181"
+  },
+  "chat.verdict.agrees": {
+    "en": "5f4feafd8adc2f71",
+    "text": "6f4502040defa822"
+  },
+  "chat.verdict.busy": {
+    "en": "4e65400e023b52a3",
+    "text": "ade5c82913159b8b"
+  },
+  "chat.verdict.cancel": {
+    "en": "c0774c185060fc13",
+    "text": "fff7b42b2d6747cb"
+  },
+  "chat.verdict.disagree": {
+    "en": "58c2c949322ab752",
+    "text": "2958b17b5a63d9be"
+  },
+  "chat.verdict.disagrees": {
+    "en": "3223e4971a407bc1",
+    "text": "974389ee16577fe1"
+  },
+  "chat.verdict.disagrees_because": {
+    "en": "3a39b4da351eda7b",
+    "text": "2bda6c3db8103198"
+  },
+  "chat.verdict.failed": {
+    "en": "831641bc8e3a7e90",
+    "text": "b4fd9406adb0f780"
+  },
+  "chat.verdict.list": {
+    "en": "f73a01919cade3a4",
+    "text": "aa28c79ab0f4db73"
+  },
+  "chat.verdict.send": {
+    "en": "58c2c949322ab752",
+    "text": "2958b17b5a63d9be"
+  },
+  "chat.verdict.sentence": {
+    "en": "bb8ec57024c8c5d0",
+    "text": "c7bc1518100bbdbf"
+  },
+  "chat.verdict.take_back": {
+    "en": "5ecd7560aa5038c4",
+    "text": "30ac250824c3e780"
+  },
   "chat.who.agent": {
     "en": "7649b444a37e5ea5",
     "text": "3e90e34db8f697ca"
@@ -15954,6 +16002,14 @@
   "runners.tool.pod": {
     "en": "56be784490660ce9",
     "text": "07c9cab789e4e6e3"
+  },
+  "runners.tool.sandbox_off": {
+    "en": "d68b744295663ec1",
+    "text": "46238009d640b12e"
+  },
+  "runners.tool.sandbox_on": {
+    "en": "63a0cf1774b3eb81",
+    "text": "2dca75061d4aaa99"
   },
   "runners.tool.sandboxed": {
     "en": "c9836cf5e769461d",
