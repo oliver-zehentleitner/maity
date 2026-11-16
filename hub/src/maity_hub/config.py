@@ -187,6 +187,12 @@ class Settings:
     # MAITY_HSTS_MAX_AGE: the `Strict-Transport-Security` max-age, in seconds, sent on every
     # answer that went out over TLS (§1.1, §2.5); 0 sends none.
     hsts_max_age: int = 31536000
+    # The `MAITY_*` variables set at start, name and value as written (a parser that keeps
+    # spaces, like the SMTP password's, must be seen as set), for the admin's overview of the
+    # settings (§16.14, settings_overview); never printed, compared or hashed.
+    environment: tuple[tuple[str, str], ...] = field(
+        default=(), repr=False, compare=False, hash=False
+    )
 
     @property
     def join_host(self) -> str | None:
@@ -309,6 +315,9 @@ class Settings:
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
             hsts_max_age=parse_whole(env, "MAITY_HSTS_MAX_AGE", 31536000, 0, 63072000),
+            environment=tuple(
+                sorted((k, v) for k, v in env.items() if k.startswith("MAITY_") and v)
+            ),
         )
 
 
