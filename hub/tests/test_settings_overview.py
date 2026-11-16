@@ -19,7 +19,26 @@ SRC = Path(__file__).resolve().parents[1] / "src" / "maity_hub"
 README = Path(__file__).resolve().parents[1] / "README.md"
 
 # A value for every secret, each a string no other part of an answer could hold by chance.
-SECRETS = {e.name: f"s3cr3t-{e.name.lower()}-x9q" for e in settings_overview.ENTRIES if e.secret}
+# The credentials the contract names (§16.14), written out here rather than read from the
+# entries' flags, so that an entry that lost its flag is still given a marker and caught
+# (A899 N1). A value for each, a string no other part of an answer could hold by chance.
+SECRET_NAMES = (
+    "MAITY_ATTACHMENT_S3_ACCESS_KEY_ID",
+    "MAITY_ATTACHMENT_S3_ENDPOINT",
+    "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY",
+    "MAITY_DATABASE_URL",
+    "MAITY_DIRECT_DATABASE_URL",
+    "MAITY_FORGE_GITHUB_APP_CLIENT_ID",
+    "MAITY_FORGE_GITHUB_APP_CLIENT_SECRET",
+    "MAITY_FORGE_GITHUB_APP_PRIVATE_KEY",
+    "MAITY_FORGE_GITHUB_TOKEN",
+    "MAITY_MAIL_SIGNING_KEY",
+    "MAITY_SECRET_KEY",
+    "MAITY_SMTP_PASSWORD",
+    "MAITY_SMTP_PASSWORD_FILE",
+    "MAITY_SMTP_USERNAME",
+)
+SECRETS = {name: f"s3cr3t-{name.lower()}-x9q" for name in SECRET_NAMES}
 
 
 @pytest.fixture
@@ -128,6 +147,10 @@ def test_no_secret_ever_appears(make_client: ClientFactory, migrated: Engine) ->
     assert rows["MAITY_SMTP_PASSWORD_FILE"]["secret"] is True
 
 
+def test_the_contracts_credentials_are_the_secret_entries() -> None:
+    assert {e.name for e in settings_overview.ENTRIES if e.secret} == set(SECRET_NAMES)
+
+
 def test_every_name_with_a_credential_is_secret() -> None:
     """When in doubt, secret: a name that says it holds a credential or a URL that can carry
     one is never shown (§16.14)."""
@@ -163,8 +186,12 @@ def test_only_the_instance_admin_reads_it(
 
 
 def _names_in_code() -> set[str]:
+    """Every `"MAITY_…"` literal of the hub's code but the overview's own list, which names
+    them and reads none: an entry must have a reader elsewhere (A899 N2)."""
     names: set[str] = set()
     for path in SRC.rglob("*.py"):
+        if path.name == "settings_overview.py":
+            continue
         names |= set(re.findall(r"[\"'](MAITY_[A-Z0-9_]+)", path.read_text(encoding="utf-8")))
     return names
 
