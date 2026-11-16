@@ -46,8 +46,7 @@
   ".items[].attachments: the fixture leaves it out",
   ".items[].from_instance: the fixture leaves it out",
   ".items[].mentions: the fixture leaves it out",
-  ".items[].to_instance: the fixture leaves it out",
-  ".items[].verdicts: the fixture leaves it out"
+  ".items[].to_instance: the fixture leaves it out"
  ],
  "GET /projects/{project}/conversations/{group}": [
   ".participants[].name: the fixture leaves it out",
@@ -58,8 +57,7 @@
   ".items[].from_instance: the fixture leaves it out",
   ".items[].mentions[].instance: the fixture leaves it out",
   ".items[].mentions[].name: the fixture leaves it out",
-  ".items[].to_instance: the fixture leaves it out",
-  ".items[].verdicts: the fixture leaves it out"
+  ".items[].to_instance: the fixture leaves it out"
  ],
  "GET /projects/{project}/conversations?observed=true": [
   ".items[].participants[].name: the fixture leaves it out"
@@ -180,17 +178,11 @@
  ],
  "POST /projects/{project}/conversations/{agent}/messages": [
   ".from_instance: the fixture leaves it out",
-  ".mentions: the fixture leaves it out",
-  ".redacted: the fixture leaves it out",
-  ".redaction: the fixture leaves it out",
-  ".verdicts: the fixture leaves it out"
+  ".mentions: the fixture leaves it out"
  ],
  "POST /projects/{project}/conversations/{group}/messages": [
   ".from_instance: the fixture leaves it out",
-  ".redacted: the fixture leaves it out",
-  ".redaction: the fixture leaves it out",
-  ".to_instance: the fixture leaves it out",
-  ".verdicts: the fixture leaves it out"
+  ".to_instance: the fixture leaves it out"
  ],
  "POST /projects/{project}/tasks": [
   ".approvals: the fixture leaves it out",

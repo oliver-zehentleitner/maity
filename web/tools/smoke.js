@@ -7020,6 +7020,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(byId("chat-text").value.startsWith("> Agent A:\n> Endpoints for join, tasks and requests are drafted.\n> Messages and presence follow this afternoon.\n\n"),
     "chat: Quote puts the message into the composer as a quote");
   byId("chat-text").value = ""; byId("chat-text").dispatch("input");
+  // §9.7: Agree, Disagree with its sentence, and Take back, on the agent's message; one's own offers none.
+  {
+    const vIn = () => main.querySelector("li.msg.in");
+    const vBtn = (label) => vIn().querySelectorAll(".msg-verdicts button").find((b) => b.textContent === label);
+    const vList = () => vIn().querySelector(".verdict-list");
+    expect(vBtn("Agree") && vBtn("Disagree") && !vBtn("Take back") && !vList() && !main.querySelector("li.msg.out .msg-verdicts button"),
+      "verdict: Agree and Disagree under someone else's message only, nothing given yet");
+    vBtn("Agree").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(vList() && text(vList()).startsWith("👍 ") && text(vList()).endsWith(" agrees") && vBtn("Agree").getAttribute("aria-pressed") === "true" && vBtn("Take back"),
+      "verdict: Agree is given and said under the message, Take back offered " + (vList() ? text(vList()) : ""));
+    vBtn("Disagree").click(); await tick();
+    const vForm = vIn().querySelector("form.verdict-form");
+    expect(vForm && vForm.querySelector("label") && text(vForm.querySelector("label")) === "Why not? One sentence, if you like", "verdict: Disagree asks for its optional sentence");
+    vForm.querySelector("input").value = "  Not before the release.  ";
+    vForm.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(vList() && text(vList()).startsWith("👎 ") && text(vList()).endsWith(" disagrees: Not before the release.") && !vIn().querySelector("form.verdict-form")
+      && vBtn("Disagree").getAttribute("aria-pressed") === "true" && vBtn("Agree").getAttribute("aria-pressed") === "false",
+      "verdict: Disagree replaces Agree, its sentence trimmed " + (vList() ? text(vList()) : ""));
+    vBtn("Take back").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(!vList() && !vBtn("Take back") && vBtn("Agree").getAttribute("aria-pressed") === "false", "verdict: Take back leaves none");
+  }
   // The history: a day separator, the line before what was unread, the agent's picture.
   const histItems = main.querySelector("ol.messages").childNodes.map((li) => li.className);
   expect(JSON.stringify(histItems) === JSON.stringify(["day", "msg out", "new-line", "msg in"]) && /^(Yesterday|.*2026.*)$/.test(text(main.querySelector("li.day"))),
@@ -11003,6 +11024,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await fireIntervals(); await tick(); await tick();
   expect(text(main.querySelector(".group-chat .group-title")) === "Renamed by Ops" && byId("chat-text") === gcTyping,
     "group chat: someone else's rename is drawn in place, the composer untouched");
+  // §9.7: a verdict given elsewhere (another tab) arrives with the feed under its message; redacted, it keeps its
+  // value without the sentence; taken back, it is gone.
+  {
+    const vLi = gcList().querySelectorAll("li.msg.in").find((li) => !li.querySelector(".msg-redacted"));
+    const vSeq = Number(vLi.getAttribute("data-seq"));
+    const vNow = () => gcList().querySelectorAll("li.msg").find((li) => li.getAttribute("data-seq") === String(vSeq));
+    const vEvent = (seq, value, sentence) => ({ seq, kind: "chat_verdict", at: "2026-11-15T10:00:00Z", actor: { member_id: "hum-maintainer" },
+      payload: { conversation: { id: "cnv-0007", kind: "group", title: null }, message_seq: vSeq, author: "agt-a", value, previous: null, sentence } });
+    gcFeed = [vEvent(9104, "disagree", "Not before the release.")];
+    await fireIntervals(); await tick(); await tick();
+    expect(text(vNow().querySelector(".verdict-list") || { textContent: "" }) === "👎 Maintainer disagrees: Not before the release.", "group chat: a verdict is drawn under the message at once");
+    gcFeed = [{ seq: 9105, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 9104, reason: "a name" } }];
+    await fireIntervals(); await tick(); await tick();
+    const vText = text(vNow().querySelector(".verdict-list") || { textContent: "" });
+    expect(vText === "👎 Maintainer disagrees", "group chat: a redacted verdict keeps its value, not its sentence " + vText);
+    gcFeed = [vEvent(9106, null, null)];
+    await fireIntervals(); await tick(); await tick();
+    expect(!vNow().querySelector(".verdict-list") && text(vNow()).includes("Quote"), "group chat: a verdict taken back is gone, the message stays");
+    // An owner reading along from outside the project: the event names the human by id, not member_id (§8.2).
+    // It arrives while the reader types a sentence for Disagree: what is typed stays.
+    btn(vNow(), "Disagree").click(); await tick();
+    const vField = () => vNow().querySelector(".verdict-form input");
+    vField().value = "half typed"; vField().dispatch("input");
+    gcFeed = [Object.assign(vEvent(9107, "agree", null), { actor: { kind: "human", id: "hum-outside", handle: "outside" } })];
+    await fireIntervals(); await tick(); await tick();
+    expect(text(vNow().querySelector(".verdict-list") || { textContent: "" }) === "👍 an owner outside the project agrees",
+      "group chat: a verdict of an owner outside the project arrives and is named as the observers' line names them");
+    expect(vField() && vField().value === "half typed", "group chat: a sentence being typed survives another's verdict arriving");
+    btn(vNow(), "Cancel").click(); await tick();
+    expect(!vField(), "group chat: Cancel closes the sentence field");
+  }
   // A direct chat takes a removal the same way.
   await go("#/maintainer/maity/chat/agt-a");
   gcFeed = [{ seq: 9103, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 4202, reason: "pasted" } }];
@@ -11184,6 +11236,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && text(main.querySelector(".group-observers")).includes("you (owner of Spare)")
     && main.querySelector(".group-chat a.chat-back").getAttribute("href") === "#/observe/guest/guestlab" && main.querySelectorAll(".group-chat li.msg").length === 1
     && text(main.querySelector(".group-chat li.msg")).includes("@guest"), "read along: the chat read only, its people by handle");
+  // §9.7 from outside the project: the reader's own verdict under their own name, and others'
+  // verdicts taken over by the 30-second re-read (no event reaches an observer).
+  {
+    const voLi = () => main.querySelector(".group-chat li.msg");
+    btn(voLi(), "Agree").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(voLi().querySelector(".verdict-list") || { textContent: "" }) === "👍 Maintainer agrees",
+      "read along: an observer from outside gives a verdict, said under their own name " + text(voLi()));
+    win.Maity.api.get = (p) => (p.startsWith("/projects/guest/guestlab/conversations/cnv-0301/messages?")
+      ? gcOutGet(p).then((r) => Object.assign({}, r, { items: r.items.map((m) => (m.seq === 7001
+        ? Object.assign({}, m, { verdicts: (m.verdicts || []).concat({ by: "hum-guest", value: "disagree", sentence: null, at: "2026-10-22T09:10:00Z", seq: 7100 }) }) : m)) }))
+      : gcOutGet(p));
+    await fireIntervals(); await tick(); await tick(); await tick();
+    const voText = text(voLi().querySelector(".verdict-list") || { textContent: "" });
+    expect(voText.includes("👍 Maintainer agrees") && voText.includes("👎 @guest disagrees"), "read along: the re-read brings a verdict given meanwhile " + voText);
+    btn(voLi(), "Take back").click(); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.get = gcOutGet;
+  }
   // From outside: other observers neutrally, someone who left as a former participant, the access ending said.
   win.Maity.api.get = (p) => {
     gcOutGets.push(p);
