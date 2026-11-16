@@ -39,16 +39,6 @@ PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "gemini-3-pro"}
 REPO = "https://github.com/oliver-zehentleitner/maity"
 
 
-@pytest.fixture(autouse=True)
-def _agy_offered_for_adapter_tests(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Antigravity is in `config.NOT_OFFERED_YET` (held back until tsk-zjv2xyhyggnm), so a
-    configuration with `[harness.antigravity]` is refused at parse. These tests exercise the agy
-    adapter, supervisor and check code, kept for when it is offered again, so they run as if it
-    were offered. That it is not offered — and why — is covered in test_runner
-    (`test_antigravity_is_not_offered_yet`)."""
-    monkeypatch.setattr(config, "NOT_OFFERED_YET", ("opencode",))
-
-
 def context(tmp_path: Path, **overrides: Any) -> adapters.Context:
     harness = config.Harness("antigravity", ("interactive", "supervised"), "interactive",
                              ("gemini-3-pro",), binary="agy")  # fmt: skip
