@@ -1642,10 +1642,14 @@ key not yet translated. `make check` fails on a code of `docs/api.md` §1.3 with
   **Reload** and **Later**; it never reloads by itself, and over a reload
   with input the reader has not sent the browser asks first
   (`context/refresh.md` 9d7aee6c): a field the reader changed (a trusted
-  `input` or `change` event, never a value a script sets) while it is not
-  blank, and what a page keeps outside its fields and names with
-  `M.newVersion.holds` (the chats' drafts, the board's open panel). A form
-  that stays after its save calls `M.newVersion.clean`. **Later** holds for
+  `input` or `change` event, never a value a script sets; a loaded file via
+  `M.newVersion.changed`) in a textarea or a form that is no search, while it
+  is not blank, and what a page keeps outside its fields and names with
+  `M.newVersion.holds` (the chats' drafts, the board's open panel, the
+  landing page editor, row edits on the members and agents pages, a
+  preference review). A form that stays after its save calls
+  `M.newVersion.clean`; a switch in a form that saves at once carries
+  `data-saves-itself`. **Later** holds for
   each version it was chosen for. No request of its own: it reads the header
   of the answers above.
 - In a project, the project's events (`docs/api.md` §8.3): the head is

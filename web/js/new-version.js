@@ -30,9 +30,12 @@ window.Maity = window.Maity || {};
   // pages draw their fields anew:
   // - A field the reader changed: marked by a trusted `input` or `change` event (typing, pasting,
   //   autofill, a drop, a click on a checkbox, a choice in a select), never by a value a script
-  //   sets. It holds input while it still has some: text that is not blank, a box or choice the
-  //   reader set. A form that sent clears its field, so it holds none; one whose sending failed
-  //   keeps the text, so it still does.
+  //   sets; a file loaded into a field by the reader's choice is marked by its page (`changed`).
+  //   Only a field whose value waits for a sending counts: a textarea, or a field of a form that
+  //   is no search; a filter, a sort or a switch that saves itself at once stands outside a form,
+  //   and one inside a form says so with `data-saves-itself`. It holds input while it still has
+  //   some: text that is not blank, a box or choice the reader set. A form that sent clears its
+  //   field, so it holds none; one whose sending failed keeps the text, so it still does.
   // - What a page keeps outside its fields (a chat's draft in another chat, a card panel drawn
   //   anew with what was typed): the page says so itself through `holds(name, fn)`.
   const NOT_TYPED = /^(button|submit|reset|image|hidden)$/;
@@ -40,17 +43,25 @@ window.Maity = window.Maity || {};
   const kind = (f) => ((f && f.getAttribute && f.getAttribute("type")) || "").toLowerCase();
   const typable = (f) => !!f && (f.tagName === "TEXTAREA" || f.tagName === "SELECT"
     || (f.tagName === "INPUT" && !NOT_TYPED.test(kind(f))));
-  const changed = new WeakSet();
-  function mark(e) { if (e && e.isTrusted && typable(e.target)) changed.add(e.target); }
+  const byReader = new WeakSet();
+  function mark(e) { if (e && e.isTrusted && typable(e.target)) byReader.add(e.target); }
   document.addEventListener("input", mark, true);
   document.addEventListener("change", mark, true);
+  const sendsLater = (f) => {
+    if (f.getAttribute("data-saves-itself") != null) return false;
+    if (f.tagName === "TEXTAREA") return true;
+    for (let n = f.parentNode; n; n = n.parentNode) {
+      if (n.tagName === "FORM") return (n.getAttribute("role") || "") !== "search";
+    }
+    return false;
+  };
   const stillHolds = (f) => (f.tagName === "SELECT" || CHOSEN.test(kind(f)) ? true
     : typeof f.value === "string" && f.value.trim() !== "");
   const holders = new Map();
 
   function unsentInput() {
     const fields = document.body ? document.body.querySelectorAll("textarea, input, select") : [];
-    if (Array.from(fields).some((f) => changed.has(f) && stillHolds(f))) return true;
+    if (Array.from(fields).some((f) => byReader.has(f) && sendsLater(f) && stillHolds(f))) return true;
     return Array.from(holders.values()).some((fn) => { try { return !!fn(); } catch (err) { return false; } });
   }
 
@@ -106,8 +117,15 @@ window.Maity = window.Maity || {};
     // the one field given, hold no input until the reader changes them again.
     clean: (root) => {
       if (!root) return;
-      if (typable(root)) changed.delete(root);
-      if (root.querySelectorAll) Array.from(root.querySelectorAll("textarea, input, select")).forEach((f) => changed.delete(f));
+      if (typable(root)) byReader.delete(root);
+      if (root.querySelectorAll) Array.from(root.querySelectorAll("textarea, input, select")).forEach((f) => byReader.delete(f));
     },
+    // A value the reader brought in by a way that fires no event of theirs (a file loaded into
+    // the field): input as if typed.
+    changed: (f) => { if (typable(f)) byReader.add(f); },
+    // For a page's `holds`: whether a map of unsaved edits (id -> {field: value}) holds any, text
+    // that is not blank or a switch turned on.
+    editsHeld: (edits) => Array.from(edits.values()).some((d) => d && Object.values(d)
+      .some((v) => v === true || (typeof v === "string" && v.trim() !== ""))),
   };
 })(window.Maity);

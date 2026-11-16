@@ -18516,19 +18516,60 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     nvNoteForm.dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
     expect(nvNote.value === "" && nvAsks() === false, "new version: a sending that succeeded cleared the field, and a reload asks nothing");
     body.removeChild(nvNoteForm);
-    // A box clicked without its focus (WebKit), a choice in a multiple select: changes too.
+    // A box clicked without its focus (WebKit), a choice in a multiple select: changes too, in a form.
+    const nvSettings = document.createElement("form");
+    body.appendChild(nvSettings);
     const nvBox = document.createElement("input");
     nvBox.setAttribute("type", "checkbox");
-    body.appendChild(nvBox);
+    nvSettings.appendChild(nvBox);
     nvBox.checked = true; nvBy("change", nvBox);
     expect(nvAsks() === true, "new version: a box ticked without the focus is input");
-    body.removeChild(nvBox);
+    nvSettings.removeChild(nvBox);
     const nvMany = document.createElement("select");
     nvMany.multiple = true;
-    body.appendChild(nvMany);
+    nvSettings.appendChild(nvMany);
     nvBy("change", nvMany);
     expect(nvAsks() === true, "new version: a choice in a multiple select is input");
-    body.removeChild(nvMany);
+    nvSettings.removeChild(nvMany);
+    // A switch in a form that saves itself at once says so.
+    const nvSelf = document.createElement("input");
+    nvSelf.setAttribute("type", "checkbox"); nvSelf.setAttribute("data-saves-itself", "");
+    nvSettings.appendChild(nvSelf);
+    nvSelf.checked = true; nvBy("change", nvSelf);
+    expect(nvAsks() === false, "new version: a switch marked as saving itself asks nothing");
+    body.removeChild(nvSettings);
+    // A filter, a sort, a switch outside any form, a search form's field: nothing waits for a sending.
+    const nvSort = document.createElement("select");
+    body.appendChild(nvSort);
+    nvBy("change", nvSort);
+    const nvSwitch = document.createElement("input");
+    nvSwitch.setAttribute("type", "checkbox");
+    body.appendChild(nvSwitch);
+    nvSwitch.checked = true; nvBy("change", nvSwitch);
+    const nvSearch = document.createElement("form");
+    nvSearch.setAttribute("role", "search");
+    const nvQuery = document.createElement("input");
+    nvSearch.appendChild(nvQuery);
+    body.appendChild(nvSearch);
+    nvQuery.value = "release"; nvBy("input", nvQuery);
+    expect(nvAsks() === false, "new version: a sort select, a switch outside a form and a search field ask nothing");
+    body.removeChild(nvSort); body.removeChild(nvSwitch); body.removeChild(nvSearch);
+    // A textarea is text waiting to be sent, in a form or not; a file loaded into it as well.
+    const nvLoose = document.createElement("textarea");
+    body.appendChild(nvLoose);
+    nvLoose.value = "a reason"; nvBy("input", nvLoose);
+    expect(nvAsks() === true, "new version: text typed into a textarea outside a form asks");
+    body.removeChild(nvLoose);
+    const nvJson = document.createElement("textarea");
+    body.appendChild(nvJson);
+    nvJson.value = "{\"pages\": {}}"; win.Maity.newVersion.changed(nvJson);
+    expect(nvAsks() === true, "new version: a file the reader loaded into a field asks, though no event of theirs came");
+    body.removeChild(nvJson);
+    // A page's unsaved edits by row (members, agents): text not blank or a switch on.
+    const nvEdits = new Map([["agt-a", { reason: "  " }], ["agt-b", { liftHide: false }]]);
+    const nvHeldBefore = win.Maity.newVersion.editsHeld(nvEdits);
+    nvEdits.set("agt-c", { isolate: "noisy" });
+    expect(!nvHeldBefore && win.Maity.newVersion.editsHeld(nvEdits), "new version: row edits hold input only with text or a switch on");
     // What a page keeps outside its fields: a chat's draft in another chat, blanks alone none.
     win.Maity.chatParts.drafts.set("maintainer/maity/agt-b", "   ");
     expect(nvAsks() === false, "new version: a chat draft of blanks alone asks nothing");

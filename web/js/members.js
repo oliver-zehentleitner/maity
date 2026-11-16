@@ -767,6 +767,11 @@ window.Maity = window.Maity || {};
     // The rows' unsaved edits, by member id: a redraw (an action elsewhere,
     // the presence refresh) rebuilds the form from them, not from the member.
     const edits = new Map();
+    // What a reload would lose (js/new-version.js): these edits, kept over a redraw.
+    if (M.newVersion) {
+      M.newVersion.holds("member-edits", () => M.newVersion.editsHeld(edits));
+      if (ctx.onDispose) ctx.onDispose(() => M.newVersion.holds("member-edits", null));
+    }
     const P = memberParts(ctx, { status, keyed, edits, open, reload, redraw });
     const { act, pausedText, ownAgent } = P;
 

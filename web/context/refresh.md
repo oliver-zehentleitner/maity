@@ -486,17 +486,25 @@ sources:
 - A field the reader changed, marked by a trusted `input` or `change`
   event at the document (typing, pasting, autofill, a drop, a box
   ticked without its focus, a choice in a select, a multiple one too).
-  A value a script sets never marks it. The field holds input while it
-  still has some: text that is not blank, a box or choice the reader
-  set. A form that sent clears its field, so it holds none; one whose
-  sending failed keeps the text, so it still does. A form that stays as
-  it was after a successful save says so with `clean()` (the
-  preferences editor).
+  A value a script sets never marks it; a file the reader loads into a
+  field fires no event of theirs, so its page marks it (`changed()`).
+  Only a field whose value waits for a sending counts: a textarea, or a
+  field of a form that is no search form. Filters, sorts and switches
+  that save at once stand outside forms in this dashboard, and one that
+  saves at once inside a form carries `data-saves-itself`. The field
+  holds input while it still has some: text that is not blank, a box or
+  choice the reader set. A form that sent clears its field, so it holds
+  none; one whose sending failed keeps the text, so it still does. A
+  form that stays as it was after a successful save says so with
+  `clean()` (the preferences editor, by Save and by Ctrl+Enter alike).
 - What a page keeps outside its fields says so itself with
-  `holds(name, fn)`: the chats' drafts, the ones of chats not open
-  included, as long as one is not blank, and the board's open panel
-  while one of its controls differs from how it was drawn, which a late
-  draw carries onto controls drawn anew.
+  `holds(name, fn)`, removed when its view is left: the chats' drafts,
+  the ones of chats not open included, as long as one is not blank; the
+  board's open panel while one of its controls differs from how it was
+  drawn, which a late draw carries onto controls drawn anew; the landing
+  page editor's draft against the setting as saved, and its JSON text
+  not loaded; the rows' unsaved edits on the members and agents pages;
+  a preference review's reason and edit until it is answered.
 
 Two remainders are accepted, both on the side of asking: a field the
 page filled in that the reader cleared counts as no input, and a
@@ -535,4 +543,7 @@ places that keep input elsewhere are few enough to name.
   (#1900, review).
 - Every form saying itself whether it is dirty: more than a hundred
   forms, and the reader's events already say the same for fields.
+- Every field the reader changed, wherever it stands: a sort, a filter
+  or a switch that saves at once would ask before every reload after
+  its use, though nothing waits to be sent (#1900, review).
 

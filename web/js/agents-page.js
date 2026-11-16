@@ -622,6 +622,11 @@ window.Maity = window.Maity || {};
     const focusables = new Map();
     const keyed = (key, el) => { focusables.set(key, el); el.setAttribute("data-focus", key); return el; };
     const edits = new Map(), open = new Set();
+    // What a reload would lose (js/new-version.js): these edits, kept over a redraw.
+    if (M.newVersion) {
+      M.newVersion.holds("agent-edits", () => M.newVersion.editsHeld(edits));
+      if (ctx.onDispose) ctx.onDispose(() => M.newVersion.holds("agent-edits", null));
+    }
     // The rows whose card is open; the one asked for (agents/<id>, its rulebook) opens.
     const cardsOpen = new Set(wanted ? [wanted] : []);
     let items = ctx.members, profiles = [], views = {}, words = null, unread = null;
