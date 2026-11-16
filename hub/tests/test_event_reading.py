@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import CLI_VERSION, clock
+from maity_hub import CLI_VERSION, clock, listening
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
@@ -169,6 +169,7 @@ def test_listening_shows_while_a_long_poll_is_open(
         say(owner, agent.id, "wake up")  # ends the wait
         waiting.result(timeout=10)
     assert view["presence"] == "online"
+    listening.written()  # on PostgreSQL the close reaches `long_poll` from the writer thread
     assert (
         owner.get(f"/projects/maintainer/maity/members/{agent.id}").json()["session"]["listening"]
         is False

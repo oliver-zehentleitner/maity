@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, update
 
-from maity_hub import events
+from maity_hub import events, listening
 from maity_hub import tables as t
 from maity_hub.events import Actor
 from tests import factory, flow
@@ -387,6 +387,7 @@ def test_the_long_poll_wakes_on_an_attachment_and_shows_listening(
         body = waiting.result(timeout=10).json()
     assert time.monotonic() - start < 8
     assert [e["kind"] for e in body["items"]] == ["runner_attached"]
+    listening.written()  # on PostgreSQL the close reaches `long_poll` from the writer thread
     assert owner.get(f"/runners/{runner.id}").json()["listening"] is False
 
 
