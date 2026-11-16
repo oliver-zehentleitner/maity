@@ -969,7 +969,7 @@ shared case safer than an operator would choose anyway.
 safer default on paper, but it puts sudo configuration in front of a
 first run.
 
-## For now the runner offers Claude Code and Codex
+## For now the runner offers Claude Code, Codex and Antigravity
 
 **Id:** 62bcf506-caed-470c-a094-9bea4217b440
 **Type:** decision
@@ -978,10 +978,11 @@ first run.
 **Source:** maintainer decision on the runner design's question 4, relayed 2026-10-22
 **Revisit when:** the maintainer decides on opencode and the harnesses without a command allowlist when the runner goes into use
 
-A configuration may name `claude-code`, `codex` and `stub`. `opencode`
-is refused as "not offered yet" even though its adapter is built. `pi`,
-`hermes`, `kimi`, `cline` and `omp` stay refused because they have no
-command allowlist (design §6.3).
+A configuration may name `claude-code`, `codex`, `antigravity` and
+`stub` (`antigravity` was held back here on 2026-10-22 and re-offered
+later, req-9spwe33neh1z). `opencode` is refused as "not offered yet"
+even though its adapter is built. `pi`, `hermes`, `kimi`, `cline` and
+`omp` stay refused because they have no command allowlist (design §6.3).
 
 **Reason:** the maintainer wants to discuss the rest once the runner is
 in use, with real runs behind the discussion. The opencode adapter stays
