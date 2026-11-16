@@ -7044,3 +7044,33 @@ and a phone on a slow line meets the same cut tab.
   but not before the first drawing for sure, so the race stays.
 - A looser measure in the e2e step: rejected, the tab really ends
   outside its row, and a longer label (another language) cuts more of it.
+
+## A verdict is taken back with its own button, and a pressed Disagree opens its sentence again
+
+**Id:** 8fd2e947-88f1-4cfa-8505-311211f2f833
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.7 (one verdict per human and message, `PUT` replaces it, `DELETE` takes it back, the sentence only with `disagree`); the card tsk-3d0wm9mh2f03, the web part of tsk-55x4f398dttv; web/js/chat.js `verdicts`, 2026-11-16
+**Revisit when:** the contract lets a verdict's sentence change without a `PUT` of its value, or the buttons become a toggle elsewhere in the dashboard
+
+Under someone else's chat message stand **Agree** and **Disagree**, both
+with `aria-pressed` for the reader's current verdict, and **Take back**
+only while the reader has one. A pressed **Agree** is disabled. A pressed
+**Disagree** opens its sentence field again, filled with the sentence
+given, so that the sentence is changed by a `PUT` that replaces the
+verdict.
+
+**Reason:** the sentence goes with Disagree alone, and changing it is a
+`PUT` with the same value. One gesture must therefore reach the sentence
+of a verdict already given, and a separate button keeps taking it back
+from happening by accident.
+
+**Alternatives considered:**
+- Pressing a pressed button again takes the verdict back (a toggle):
+  rejected, a pressed Disagree would then either take back or open the
+  sentence, and a reader who wanted to change the sentence would lose the
+  verdict, which wakes the agent with a taken-back event.
+- No way to change the sentence but Take back and Disagree again:
+  rejected, that writes two events and wakes the agent twice for one
+  change of words.

@@ -725,7 +725,19 @@ too.
    and a **Copy** button (and a warning for invisible characters in it), inline code (a click, Enter
    or Space copies it, "Copied" beside it; a click that ends a selection copies nothing), strong and em, and links only when plain
    `https`; raw HTML stays visible as text. **Quote** under a message puts
-   it into the composer as a quote. Chats are also reachable from inbox entries and agent cards. Every
+   it into the composer as a quote. **Agree** and **Disagree** under someone else's message give
+   the reader's verdict (`docs/api.md` §9.7), in a direct chat and in an open group chat, an
+   observer's too; **Disagree** asks for one optional sentence (at most 500 characters), opened
+   again to change it, and **Take back** removes one's own verdict. Every human's current verdict
+   stands under the message as a sentence ("👍 Maintainer agrees", "👎 Maintainer disagrees:
+   …"); a `chat_verdict` in the feed redraws that message's verdicts in place, a redacted one
+   keeps its value without its sentence, and a removed message shows none and offers none. A
+   closed group chat shows the verdicts and offers no buttons. A verdict of an owner reading along
+   from outside the project is named as the line of observers names them. A member reading
+   along gets the verdict events as an agent's owner and sees them live; an observer from outside
+   the project gets no events, and its 30-second re-read of the newest page brings others'
+   verdicts. A sentence being typed stays, with its focus, when another's verdict redraws the
+   message's verdicts. Chats are also reachable from inbox entries and agent cards. Every
    message, in a group chat too, shows its seq after its time (`19:04 · #54306`), small and muted, so
    that a message an agent cites by its seq can be found; the "#" is the stylesheet's, so selecting
    the number copies the number alone. The human's own messages say "not
