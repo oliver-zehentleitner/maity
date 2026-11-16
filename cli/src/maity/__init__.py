@@ -1,3 +1,3 @@
 """Agent-side command for Maity."""
 
-__version__ = "0.1.0a13"
+__version__ = "0.1.0a14"
