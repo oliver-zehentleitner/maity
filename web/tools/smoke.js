@@ -11753,6 +11753,40 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const atPastedSent = atCalls.filter((c) => c[0] === "POST" && c[1] === "/projects/maintainer/maity/conversations/agt-b/messages").pop();
   expect(atPastedSent && atPastedSent[2].body === "pasted" && atPastedSent[2].attachments.length === 3 && !main.querySelectorAll(".attach-pending li").length,
     "attachments: the pasted images go with the message");
+  // While a pasted image's bytes are read the composer is busy, so a Send then does not go
+  // without it; it is sent with the message once read and uploaded.
+  const atPosts = () => atCalls.filter((c) => c[0] === "POST" && c[1] === "/projects/maintainer/maity/conversations/agt-b/messages");
+  let atRelease = null;
+  const atSlow = Object.assign(atFile("image.png", PNG, 100, "image/png"), {
+    slice: (a, b) => ({ arrayBuffer: () => new Promise((ok) => { atRelease = () => ok(Uint8Array.from(PNG.slice(a, b)).buffer); }) }),
+  });
+  atBefore = atRaws().length;
+  let atPostsBefore = atPosts().length;
+  await atPaste("chat-text", atClip([atSlow]));
+  byId("chat-text").value = "while reading"; main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(atPosts().length === atPostsBefore && atRaws().length === atBefore && text(main).includes("Not sent: a file is still uploading"),
+    "attachments: a Send while a pasted image is still being read is held back as busy");
+  atRelease(); for (let k = 0; k < 8; k++) await tick();
+  main.querySelector("form.compose").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(atRaws().length === atBefore + 1 && atPosts().length === atPostsBefore + 1 && atPosts().pop()[2].attachments.length === 1
+    && atPosts().pop()[2].body === "while reading", "attachments: once read and uploaded, the pasted image goes with that message");
+  // Bytes that cannot be read are said on the status line; the paste's other images still go.
+  const atUnreadable = Object.assign(atFile("image.png", PNG, 100, "image/png"), {
+    slice: () => ({ arrayBuffer: () => Promise.reject(new Error("NotReadableError")) }),
+  });
+  atBefore = atRaws().length;
+  await atPaste("chat-text", atClip([atUnreadable, atFile("image.png", PNG, 100, "image/png")]));
+  expect(atRaws().length === atBefore + 1 && main.querySelectorAll(".attach-pending li").length === 1
+    && text(main.querySelector(".attach")).includes("Not attached: the image could not be read"),
+    "attachments: an unreadable pasted image is said on the status line, and the paste's other image still goes");
+  // Only GIF87a or GIF89a is a GIF, as the hub sniffs it; any clipboard text wins, a space too.
+  atBefore = atRaws().length;
+  await atPaste("chat-text", atClip([atFile("image.gif", [0x47, 0x49, 0x46, 0x38, 0x58, 0x58, 0, 0, 0, 0, 0, 0], 100, "image/gif")]));
+  expect(atRaws().length === atBefore && text(main).includes("Not attached: a pasted image that is not a PNG, JPEG, WebP or GIF"),
+    "attachments: a pasted GIF8 without 7a or 9a is no GIF and refused");
+  expect(!(await atPaste("chat-text", atClip([atFile("image.png", PNG, 100, "image/png")], " "))) && atRaws().length === atBefore,
+    "attachments: a paste whose text is only a space pastes the text and attaches no image");
+  btn(main.querySelector(".attach-pending li"), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
   // A group chat: the participant attaches; a project message too.
   await go("#/maintainer/maity/chat/cnv-0007");
   expect(byId("group-files"), "attachments: a group chat's composer offers files");

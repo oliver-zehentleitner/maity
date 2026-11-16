@@ -821,9 +821,13 @@ too.
      pending by name and size with **Remove**, no preview (`web/context/rendering.md`,
      52e88bfb). It is named `pasted-image-YYYYMMDD-HHMMSS.<ext>` in the
      account's time zone (`-2`, `-3` for more in one paste), and must be
-     a PNG, JPEG, WebP or GIF by its bytes. A paste that carries text
-     too pastes the text only: an office program puts a picture of the
-     copied cells beside their text. Only where **Attach files** is
+     a PNG, JPEG, WebP or GIF by its bytes; one whose bytes cannot be
+     read is said, and the paste's others still go. Until its images are
+     read and uploaded the composer is busy, and a Send says a file is
+     still uploading, as while a chosen one uploads. A
+     paste that carries text too, a lone space included, pastes the text
+     only: an office program puts a picture of the copied cells beside
+     their text. Only where **Attach files** is
      offered; dragging a file in is not taken.
    - **Refused before sending:** over 10 MiB, or more than ten in one
      message. The hub's own refusals (the 20-file or 100 MiB pending
