@@ -288,7 +288,7 @@ window.Maity = window.Maity || {};
         lines.length ? h("ul", null, lines.map((line) => {
           const words = { agent: line.agent.handle, project: line.project };
           return h("li", null,
-            M.tn("runners.placements.line", { agent: h("strong", null, line.agent.handle), project: line.project }),
+            M.tn("runners.placements.line", { agent: h("strong", { translate: "no" }, line.agent.handle), project: line.project }),
             h("span", { class: "muted" }, " · ", line.desired === "running" ? M.t("runners.placements.running") : M.t("runners.placements.stopped"),
               line.state ? [" · ", M.t("runners.placements.reported", { state: line.state })] : null,
               line.foreign ? [" · ", M.t("runners.placements.foreign")] : null),
