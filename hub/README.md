@@ -533,8 +533,8 @@ under the same version. Per deploy:
    nobody else pushes a `v*` tag. The tag runs `release-hub.yml` (the package
    on PyPI) and `publish-image.yml` (the image), and both wait for ci on that
    commit and for hub-mariadb on the same hub files. Both also refuse a
-   version without its complete upgrade page (`tools/release_gate.py
-   --upgrade-page`).
+   version without its complete upgrade page, or a tag that is not
+   `v<version>` (`tools/release_gate.py --upgrade-page`).
 4. Ops deploys the image that tag built, pinned by its digest, after
    checking its signature as the chart README shows. That check accepts
    only a `v*` tag's signature: an image built by hand from `main` is not
