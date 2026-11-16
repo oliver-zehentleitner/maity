@@ -5,7 +5,9 @@
   `command(maity)` grant (#1886), and the Claude Code and opencode
   sandbox profiles allow one OS UUID v4 source,
   `cat /proc/sys/kernel/random/uuid`, so a placed agent can write Keep the
-  Why entries (#1869).
+  Why entries (#1869). `maity wait` prints the text of a chat message
+  meant for the agent (its direct chat, or a mention) under the
+  message's line (#1885).
 - cli: **Upgrade note:** from 0.1.0a14, a `runner.toml` with a
   `[harness.antigravity]` table is accepted again; 0.1.0a13 refused it. A
   runner whose table was removed for 0.1.0a13 can add it back after the
