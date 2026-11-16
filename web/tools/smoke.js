@@ -11063,6 +11063,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(vField() && vField().value === "half typed", "group chat: a sentence being typed survives another's verdict arriving");
     btn(vNow(), "Cancel").click(); await tick();
     expect(!vField(), "group chat: Cancel closes the sentence field");
+    // A send while the list is drawn again (here a removal event for 5015): the form drawn anew shows
+    // the same send under way and sends nothing a second time; the answer reaches the drawing on screen.
+    btn(vNow(), "Disagree").click(); await tick();
+    vField().value = "sent once"; vField().dispatch("input");
+    const vPut = win.Maity.api.put;
+    const vPuts = [];
+    let vAnswer = null;
+    win.Maity.api.put = (p, b) => {
+      if (!p.endsWith("/messages/" + vSeq + "/verdict")) return vPut(p, b);
+      vPuts.push(b);
+      return new Promise((res) => { vAnswer = () => vPut(p, b).then(res); });
+    };
+    vNow().querySelector(".verdict-form").dispatch("submit"); await tick();
+    gcFeed = [{ seq: 9108, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 5015, reason: "a key" } }];
+    await fireIntervals(); await tick(); await tick();
+    expect(vField() && vField().value === "sent once" && text(vNow()).includes("Saving…"),
+      "group chat: a list drawn again during a send shows the same form, the send under way " + text(vNow().querySelector(".msg-verdicts")));
+    vNow().querySelector(".verdict-form").dispatch("submit"); await tick();
+    expect(vPuts.length === 1, "group chat: a second submit during the send sends nothing " + vPuts.length);
+    vAnswer(); for (let k = 0; k < 4; k++) await tick();
+    expect(!vField() && text(vNow().querySelector(".verdict-list") || { textContent: "" }).includes("Maintainer disagrees: sent once"),
+      "group chat: the answer closes the form on screen and draws the verdict there " + text(vNow().querySelector(".msg-verdicts")));
+    // A send that fails leaves the form and what is typed, and says so; nothing hangs in "Saving…".
+    btn(vNow(), "Disagree").click(); await tick();
+    vField().value = "will fail"; vField().dispatch("input");
+    win.Maity.api.put = (p, b) => (p.endsWith("/messages/" + vSeq + "/verdict")
+      ? Promise.reject(Object.assign(new Error("the hub is away"), { code: "unavailable" })) : vPut(p, b));
+    vNow().querySelector(".verdict-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    const vFailText = text(vNow().querySelector(".msg-verdicts"));
+    expect(vField() && vField().value === "will fail" && vFailText.includes("Not saved") && !vFailText.includes("Saving…"),
+      "group chat: a failed send keeps the form and its text and says it was not saved " + vFailText);
+    btn(vNow(), "Cancel").click(); await tick();
+    win.Maity.api.put = vPut;
+    // Taken back for the cases below, past gcWrites: they count the chat's own writes.
+    const vDel = win.Maity.api.del;
+    win.Maity.api.del = gcDel;
+    btn(vNow(), "Take back").click(); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.del = vDel;
   }
   // A direct chat takes a removal the same way.
   await go("#/maintainer/maity/chat/agt-a");
@@ -11284,7 +11322,28 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(main.querySelectorAll(".group-chat li.msg").length === 2 && voLi() !== voItem && voField() && voField() !== voTyped
       && voField().value === "half typed" && document.activeElement === voField(),
       "read along: a new message redraws the list, the sentence being typed and its focus kept");
-    btn(voLi(), "Cancel").click(); await tick();
+    // Sent while a re-read draws the list from fresh objects: the answer shows on the drawing on screen
+    // at once, not only at the next re-read, and it is one PUT.
+    const voPut = win.Maity.api.put;
+    const voPuts = [];
+    let voAnswer = null;
+    win.Maity.api.put = (p, b) => {
+      if (!p.endsWith("/messages/7001/verdict")) return voPut(p, b);
+      voPuts.push(b);
+      return new Promise((res) => { voAnswer = () => voPut(p, b).then(res); });
+    };
+    voLi().querySelector(".verdict-form").dispatch("submit"); await tick();
+    const voMore = voWith(true);
+    win.Maity.api.get = (p) => (p.startsWith("/projects/guest/guestlab/conversations/cnv-0301/messages?")
+      ? voMore(p).then((r) => Object.assign({}, r, { items: r.items.concat([Object.assign({}, r.items[r.items.length - 1], { seq: 7103, body: "and another", verdicts: [] })]) }))
+      : voMore(p));
+    await fireIntervals(); await tick(); await tick(); await tick();
+    expect(main.querySelectorAll(".group-chat li.msg").length === 3 && voField() && voField().value === "half typed" && text(voLi()).includes("Saving…") && voPuts.length === 1,
+      "read along: a re-read during a send shows the same form, the send under way, one PUT");
+    voAnswer(); for (let k = 0; k < 4; k++) await tick();
+    expect(!voField() && text(voLi().querySelector(".verdict-list") || { textContent: "" }).includes("👎 Maintainer disagrees: half typed") && voPuts.length === 1,
+      "read along: the answer is drawn on the message on screen at once " + text(voLi().querySelector(".msg-verdicts")));
+    win.Maity.api.put = voPut;
     voProto.focus = voFocus; document.activeElement = undefined;
     btn(voLi(), "Take back").click(); for (let k = 0; k < 4; k++) await tick();
     win.Maity.api.get = gcOutGet;

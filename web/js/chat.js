@@ -340,30 +340,44 @@ window.Maity = window.Maity || {};
   // someone else's message, Agree, Disagree (one sentence optional) and Take back.
   // opts.verdictPath: the conversation's messages path, where the reader may give one;
   // opts.verdictDraws: seq -> draw again, for a change that comes as an event;
-  // opts.verdictForms: seq -> what is typed in an open sentence field, so that the field and its
-  // text outlive a redraw of the whole list (a group chat read again from outside the project).
+  // opts.verdictForms: seq -> the message's verdict state (the sentence field open, what is typed
+  // in it, a send under way, its status line), shared by every drawing of the message, so that it
+  // outlives a redraw of the whole list (a group chat) and a send's answer reaches the drawing on screen.
   function verdicts(ctx, msg, o, own) {
     const box = h("div", { class: "msg-verdicts" });
-    const status = M.statusLine();
     const forms = o.verdictForms || null;
-    let asking = !!forms && forms.has(msg.seq);
-    // What is typed in the open sentence field, kept across a redraw that an event causes.
-    let draft = asking ? forms.get(msg.seq) : null;
-    const keep = () => { if (!forms) return; if (asking) forms.set(msg.seq, draft); else forms.delete(msg.seq); };
+    let st = forms && forms.get(msg.seq);
+    if (!st) {
+      st = { asking: false, draft: null, sending: false, status: M.statusLine() };
+      if (forms) forms.set(msg.seq, st);
+    }
+    const status = st.status;
+    // The message of the newest drawing: a re-read from outside the project draws fresh objects,
+    // and the answer to a send belongs on the one shown.
+    st.msg = msg;
     const mayGive = !!o.verdictPath && !own && ctx.me.kind === "human";
     const url = () => o.verdictPath + "/" + encodeURIComponent(msg.seq) + "/verdict";
+    // The drawing on screen: a redraw of the list may have replaced this one meanwhile.
+    const current = () => (o.verdictDraws && o.verdictDraws.get(msg.seq)) || draw;
     async function send(value, sentence) {
+      // One send at a time per message, whichever drawing it came from.
+      if (st.sending) return;
+      st.sending = true;
       status.busy(M.t("chat.verdict.busy"));
       try {
         const fresh = value === null ? await M.api.del(url()) : await M.api.put(url(), sentence ? { value, sentence } : { value });
         msg.verdicts = fresh.verdicts || [];
-        asking = false;
-        draft = null;
-        keep();
+        if (st.msg) st.msg.verdicts = msg.verdicts;
+        st.asking = false;
+        st.draft = null;
         status.done();
-        draw();
+        st.sending = false;
+        current()();
       } catch (err) {
+        st.sending = false;
         status.fail(M.t("chat.verdict.failed"), err);
+        // A failure leaves the form as it is, its focus too; only a drawing that replaced this one is drawn.
+        if (current() !== draw) current()();
       }
     }
     // Whole sentences, one per verdict; the sentence of a Disagree is plain text (§9.7).
@@ -376,22 +390,22 @@ window.Maity = window.Maity || {};
     function form(mine) {
       const id = "verdict-sentence-" + msg.seq;
       const given = mine && mine.value === "disagree" && mine.sentence ? mine.sentence : "";
-      const input = h("input", { type: "text", id, maxlength: "500", oninput: (e) => { draft = e.target.value; keep(); } });
-      input.value = draft !== null ? draft : given;
+      const input = h("input", { type: "text", id, maxlength: "500", oninput: (e) => { st.draft = e.target.value; } });
+      input.value = st.draft !== null ? st.draft : given;
       return h("form", { class: "verdict-form", onsubmit: (e) => { e.preventDefault(); send("disagree", input.value.trim() || null); } },
         h("label", { for: id }, M.t("chat.verdict.sentence")), input,
         h("button", { type: "submit", class: "small" }, M.t("chat.verdict.send")),
-        h("button", { type: "button", class: "small", onclick: () => { asking = false; draft = null; keep(); status.done(); draw(); } }, M.t("chat.verdict.cancel")));
+        h("button", { type: "button", class: "small", onclick: () => { st.asking = false; st.draft = null; status.done(); draw(); } }, M.t("chat.verdict.cancel")));
     }
     function draw() {
       // The sentence field keeps its focus when another's verdict redraws the box.
-      const focused = asking && document.activeElement && box.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+      const focused = st.asking && document.activeElement && box.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
       clear(box);
       const list = isRemoved(msg) ? [] : (msg.verdicts || []);
       if (list.length) append(box, h("ul", { class: "verdict-list", "aria-label": M.t("chat.verdict.list") }, list.map(line)));
       if (!mayGive || isRemoved(msg)) return;
       const mine = list.find((v) => v.by === ctx.me.id);
-      if (asking) {
+      if (st.asking) {
         append(box, form(mine), status.el);
         if (focused) box.querySelector("input").focus();
         return;
@@ -401,7 +415,7 @@ window.Maity = window.Maity || {};
         h("button", { type: "button", class: "small", "aria-pressed": String(is("agree")), disabled: is("agree"), onclick: () => send("agree") }, M.t("chat.verdict.agree")),
         // Pressed again, Disagree opens its sentence to change it.
         h("button", { type: "button", class: "small", "aria-pressed": String(is("disagree")),
-          onclick: () => { asking = true; keep(); draw(); const field = box.querySelector("input"); if (field) field.focus(); } }, M.t("chat.verdict.disagree")),
+          onclick: () => { st.asking = true; draw(); const field = box.querySelector("input"); if (field) field.focus(); } }, M.t("chat.verdict.disagree")),
         mine ? h("button", { type: "button", class: "small", onclick: () => send(null) }, M.t("chat.verdict.take_back")) : null), status.el);
     }
     draw();
