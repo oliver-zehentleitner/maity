@@ -61,23 +61,24 @@ example; any cluster with the same pieces works.
    tagged with the version and the full commit SHA and never `latest`. The
    workflow `publish-image` builds them; until its first release you build
    the image yourself. Pin it by digest (`image.digest`) when you can; the
-   workflow's run summary prints it. Each published digest is signed with
-   cosign, keyless, by that workflow on a `v*` tag or on `main`, and the
-   workflow builds either one only after the same release gate (ci and the
-   MariaDB suite passed on that commit); check the signature before you pin a
-   digest:
+   workflow's run summary prints it. A release is the image a `v*` tag
+   built, after the release gate (ci and the MariaDB suite passed on that
+   commit), and that run signs its digest with cosign, keyless; check the
+   signature before you pin a digest:
 
    ```sh
    cosign verify ghcr.io/oliver-zehentleitner/maity-hub@sha256:<digest> \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-     --certificate-identity-regexp '^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/(tags/v[^/]+|heads/main)$'
+     --certificate-identity-regexp '^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/tags/v[^/]+$'
    ```
 
    This needs cosign v3 or later: the workflow stores the signature in the
    newer bundle format, which cosign 2.x does not find.
 
-   An image whose signature names another workflow or another ref did not
-   come from a release or from `main`; don't run it. To build your own from
+   An image whose signature names another workflow or another ref is not a
+   release; don't run it. That includes an image the maintainer built by
+   hand from `main`: it passes the same gate and is signed, but as
+   `refs/heads/main`, which this check refuses. To build your own from
    the repository root:
 
    ```sh
