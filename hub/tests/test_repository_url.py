@@ -203,7 +203,10 @@ def test_the_guard_refuses_every_socket_but_the_test_databases(
         with pytest.raises(Outbound):
             socket.create_connection(address, 1)
     assert calls == ["socket"] * 3
-    with migrated.connect() as connection:  # on MariaDB a new socket to the database: let through
+    # The pool emptied, so that the connection below opens a new socket on MariaDB, which the
+    # guard lets through (A828 F1); a pooled connection would not reach the guard at all.
+    migrated.dispose()
+    with migrated.connect() as connection:
         assert connection.exec_driver_sql("SELECT 1").scalar() == 1
     assert calls == ["socket"] * 3
 
