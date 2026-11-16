@@ -106,11 +106,43 @@ window.Maity = window.Maity || {};
   // is still caught there: ids.js links only what M.route.isRoute accepts.
   M.reservedFirst = OWN_WORDS;
 
-  // Throws URIError on a malformed escape; called inside render's try.
+  // An address that can never be a page (docs/api.md §16.11), as the hub answers it `404`
+  // (hub/src/maity_hub/paths.py, `never_a_page`): the path's words alone decide, never a read,
+  // so "not found" there tells nobody whether a name exists.
+  const NO_ROUTE_FIRST = ["components", "health", "imprint"];
+  // The deepest route, /<owner>/<slug>/team/<id>/sessions/<instance>; below Why there is no bound.
+  const DEEPEST = 6;
+  const HANDLE = /^[a-z0-9][a-z0-9-]{1,30}$/; // §6.24
+  function neverAPage(parts) {
+    if (!parts.length) return false;
+    const first = parts[0];
+    if (!HANDLE.test(first) || NO_ROUTE_FIRST.includes(first)) return true;
+    // Below the dashboard's own first words only the depth counts.
+    const shaped = !OWN_WORDS.includes(first);
+    if (shaped && parts.length === 2 && parts[1] === "agents") return true;
+    if (shaped && parts.length >= 3 && parts[1] !== "agents") {
+      if (!NAV.some((n) => n.route === parts[2])) return true;
+      if (parts[2] === "why") return false;
+    }
+    return parts.length > DEEPEST;
+  }
+  M.neverAPage = neverAPage;
+
+  // One segment, split before it is decoded (§16.11): an escape that does not decode leaves the
+  // segment as it was sent, where it used to throw and draw the failed page.
+  function segmentOf(raw) {
+    try {
+      return decodeURIComponent(raw);
+    } catch (err) {
+      return raw;
+    }
+  }
+
   function parseRoute() {
     // A route's own query (/login?next=…) is the page's to read (M.route.current).
-    const parts = M.route.current().path.split("/").filter(Boolean).map(decodeURIComponent);
+    const parts = M.route.current().path.split("/").filter(Boolean).map(segmentOf);
     if (!parts.length) return { scope: null };
+    if (neverAPage(parts)) return { scope: "never" };
     // Signed out as much as signed in: an invitation (§3.4) and registration (§2.7).
     if (parts[0] === "invite" && parts[1]) return { scope: "invite", token: parts[1] };
     // /invite alone: the person invitations of one's projects (§16.11, js/invitations.js).
@@ -157,11 +189,12 @@ window.Maity = window.Maity || {};
   }
 
   // Whether an address shows a visitor nothing once its public page, if any, was asked for
-  // (§16.11): a handle, or a project address whose view word is none of the dashboard's. An
+  // (§16.11): an address that can never be a page (neverAPage, the hub's `404`), a handle, or a
+  // project address whose view word is none of the dashboard's. An
   // address under one of the dashboard's own first words keeps the sign-in, which leads on
   // there (`/sign-in/code`, `/requests/<id>` from a mail, `/inbox`), even where it names no view.
   function showsVisitorNothing(where) {
-    if (where.scope === "person") return true;
+    if (where.scope === "person" || where.scope === "never") return true;
     return where.scope === "project" && !NAV.some((n) => n.route === where.route);
   }
 
