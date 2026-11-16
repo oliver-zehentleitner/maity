@@ -7,8 +7,9 @@
   `details.reason: "runner_owner_only"`. An agent's proposal goes to the runner's owner
   as a personal request, and only that human gives the go; `policy.spawn_consent_by`
   stays and decides nothing for placements. Stopping and removing stay open as before,
-  and the runner's owner may stop and remove every placement on their runner. Not
-  built yet: the hub and the dashboard follow (tsk-qgmz0yrc3g5x).
+  and the runner's owner may stop and remove every placement on their runner, member
+  of its project or not. Not built yet: the hub and the dashboard follow
+  (tsk-qgmz0yrc3g5x).
 
 ### Added
 
