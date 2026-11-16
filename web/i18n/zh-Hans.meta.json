@@ -3271,6 +3271,54 @@
     "en": "3a26dc0879f9a035",
     "text": "d8f2af5807edd803"
   },
+  "chat.verdict.agree": {
+    "en": "08c068ceec37bae5",
+    "text": "b23c18e30aaa9a6f"
+  },
+  "chat.verdict.agrees": {
+    "en": "5f4feafd8adc2f71",
+    "text": "fb3d2595254d38f7"
+  },
+  "chat.verdict.busy": {
+    "en": "4e65400e023b52a3",
+    "text": "95fb4d2033a3088f"
+  },
+  "chat.verdict.cancel": {
+    "en": "c0774c185060fc13",
+    "text": "4fa6cdbf13079926"
+  },
+  "chat.verdict.disagree": {
+    "en": "58c2c949322ab752",
+    "text": "d2aa17f686127119"
+  },
+  "chat.verdict.disagrees": {
+    "en": "3223e4971a407bc1",
+    "text": "fa6416abb9ca4122"
+  },
+  "chat.verdict.disagrees_because": {
+    "en": "3a39b4da351eda7b",
+    "text": "929e652a58fedebf"
+  },
+  "chat.verdict.failed": {
+    "en": "831641bc8e3a7e90",
+    "text": "c31a441132dec6cc"
+  },
+  "chat.verdict.list": {
+    "en": "f73a01919cade3a4",
+    "text": "84707be2dfca3118"
+  },
+  "chat.verdict.send": {
+    "en": "58c2c949322ab752",
+    "text": "d2aa17f686127119"
+  },
+  "chat.verdict.sentence": {
+    "en": "bb8ec57024c8c5d0",
+    "text": "255c65ce6b2970c2"
+  },
+  "chat.verdict.take_back": {
+    "en": "5ecd7560aa5038c4",
+    "text": "3eac0cfee071f567"
+  },
   "chat.who.agent": {
     "en": "7649b444a37e5ea5",
     "text": "7ca84dc4f04aac65"
@@ -4314,18 +4362,6 @@
   "error.webhook_signature": {
     "en": "76c012bc07d476ba",
     "text": "7b66164c87952f71"
-  },
-  "experiment.not_saved": {
-    "en": "831641bc8e3a7e90",
-    "text": "2ef2f4a46f5e9bd0"
-  },
-  "experiment.notice": {
-    "en": "ef237730002e679e",
-    "text": "5cb8125850d305d4"
-  },
-  "experiment.understood": {
-    "en": "baef2b7fd9c56095",
-    "text": "fc56bae1992f8f39"
   },
   "factor_banner.label": {
     "en": "ca4ae1ba2d424523",
@@ -10911,6 +10947,14 @@
     "en": "91068c8308ff7d7d",
     "text": "2f3a060ac27e8834"
   },
+  "name_rules.handle_bad": {
+    "en": "13237a61bb5d1457",
+    "text": "e2703c742c4e26a1"
+  },
+  "name_rules.handle_lowercase": {
+    "en": "6c675eafabb0d256",
+    "text": "e982040ce1614ad7"
+  },
   "name_rules.slug": {
     "en": "0851da38257f9de3",
     "text": "a382b5dc85607dc5"
@@ -12659,22 +12703,6 @@
     "en": "622f06cbcd2e7e61",
     "text": "47bd7680349c3ef2"
   },
-  "person.tab.agents": {
-    "en": "21cf98a292e94015",
-    "text": "7ca84dc4f04aac65"
-  },
-  "person.tab.profile": {
-    "en": "96ad4bd0f7baa40e",
-    "text": "a9aa6b8db7077ac8"
-  },
-  "person.tabs.label": {
-    "en": "16a03e3aa01e736f",
-    "text": "7bcbf1acfeab6e24"
-  },
-  "person.title.agents": {
-    "en": "dd81b03eabf89b55",
-    "text": "7719f5b1a97547be"
-  },
   "person.view_public": {
     "en": "8164ca72067a45c7",
     "text": "fb0f335deedb5ccb"
@@ -13603,6 +13631,10 @@
     "en": "191903c61492ea38",
     "text": "23559cc5ea4cfa56"
   },
+  "product.discord": {
+    "en": "eda6e32290d46f17",
+    "text": "81557403227e6660"
+  },
   "product.love": {
     "en": "96fa5228627bef6a",
     "text": "f693dd139913a023"
@@ -14008,16 +14040,12 @@
     "text": "b365cb294a8bc1e6"
   },
   "public_profile.agents": {
-    "en": "08ca4775200498d5",
-    "text": "dbe47380827479ec"
+    "en": "037fc250741007c7",
+    "text": "5065e794fd5be50c"
   },
   "public_profile.agents.hint": {
-    "en": "fc0119a6483447aa",
-    "text": "7e7ab453adca0883"
-  },
-  "public_profile.agents.view": {
-    "en": "303db7c3e82264e5",
-    "text": "5cc82b13693c8672"
+    "en": "9d844fb44b4f1a84",
+    "text": "5b23c69b87d43391"
   },
   "public_profile.bio": {
     "en": "906fa76e4230938a",
@@ -15963,6 +15991,14 @@
     "en": "56be784490660ce9",
     "text": "08f915528a273a5d"
   },
+  "runners.tool.sandbox_off": {
+    "en": "d68b744295663ec1",
+    "text": "839f5db1ff0f556d"
+  },
+  "runners.tool.sandbox_on": {
+    "en": "63a0cf1774b3eb81",
+    "text": "023c923d08ed9570"
+  },
   "runners.tool.sandboxed": {
     "en": "c9836cf5e769461d",
     "text": "c07828464c156978"
@@ -17219,13 +17255,25 @@
     "en": "2a3edb7abc9e6929",
     "text": "8bdc4fa997bbf0f4"
   },
+  "settings.tab.general": {
+    "en": "468d61a94d9f9d93",
+    "text": "570ed8250bc527a0"
+  },
+  "settings.tab.members": {
+    "en": "e19fc6262faca358",
+    "text": "994344aa6a5658fb"
+  },
   "settings.tab.mine": {
     "en": "a0b7adfdfdec7307",
     "text": "cb4a66c30fef4566"
   },
-  "settings.tab.project": {
-    "en": "6c6b7df3070f112f",
-    "text": "2c925658d1f8c37f"
+  "settings.tab.moderation": {
+    "en": "77d3010b1619f85e",
+    "text": "d887c6198d77ca49"
+  },
+  "settings.tab.work": {
+    "en": "b113e55138adce94",
+    "text": "257eb836ba574fe7"
   },
   "settings.title": {
     "en": "83909f82446ee9c3",
@@ -19183,13 +19231,41 @@
     "en": "9aa56c3dab3c6957",
     "text": "f1e0d8bbdd499626"
   },
+  "visitor.agent_of": {
+    "en": "dd1cdef1343c9440",
+    "text": "a69e1367e68cc911"
+  },
   "visitor.agents": {
     "en": "21cf98a292e94015",
     "text": "7ca84dc4f04aac65"
   },
+  "visitor.agents_of": {
+    "en": "322890cb2964c51f",
+    "text": "8490f4892eab73e3"
+  },
+  "visitor.crumb.agent": {
+    "en": "aa7e6ee1e235416d",
+    "text": "7ca84dc4f04aac65"
+  },
+  "visitor.crumb.person": {
+    "en": "2f988527ec2fcdb9",
+    "text": "eb3db181781ef259"
+  },
+  "visitor.fact.harness": {
+    "en": "167f756ba15dfc08",
+    "text": "77e2d3fdeec02378"
+  },
+  "visitor.fact.model": {
+    "en": "9c16c09f0c180580",
+    "text": "20478f60269006b7"
+  },
   "visitor.harness": {
     "en": "b3ae7ee4d934d009",
     "text": "4e6ea2ed519ea5e6"
+  },
+  "visitor.hero.try": {
+    "en": "a934f2e0ccd4a613",
+    "text": "c5001a0e20f558b0"
   },
   "visitor.holder.agent": {
     "en": "aec70cfd47032616",
@@ -19202,6 +19278,26 @@
   "visitor.member_since": {
     "en": "068cef0810198a3d",
     "text": "75ae0db57a6c5c76"
+  },
+  "visitor.merged": {
+    "en": "20a2d9635951284d",
+    "text": "0e60fe9b16455be2"
+  },
+  "visitor.merged.by": {
+    "en": "760db489ae38e56d",
+    "text": "71fcf68a6f6a8e93"
+  },
+  "visitor.merged.pill": {
+    "en": "63f7ea9a67b1918b",
+    "text": "acf434ea83cc6094"
+  },
+  "visitor.merged.touches": {
+    "en": "9f96cbfe3aefbe09",
+    "text": "851ebb37536dcb5d"
+  },
+  "visitor.merged.window": {
+    "en": "527e74a00a093185",
+    "text": "4845135bc6378ef9"
   },
   "visitor.model": {
     "en": "00d5d0c26a1a0925",
@@ -19222,6 +19318,38 @@
   "visitor.note.incorporated": {
     "en": "65ed0630ec44c3b1",
     "text": "2f8c02bc3b9d5507"
+  },
+  "visitor.now": {
+    "en": "6daba6e18d19bb49",
+    "text": "10e0fb3c8d257afc"
+  },
+  "visitor.now.agents": {
+    "en": "37be5bf9ee1b4228",
+    "text": "4102bd1ec0ef62fb"
+  },
+  "visitor.now.both": {
+    "en": "063bd57eebf6f866",
+    "text": "67448f899eeb2ef2"
+  },
+  "visitor.now.more": {
+    "en": "ef1401d515ebac72",
+    "text": "ef1401d515ebac72"
+  },
+  "visitor.now.more.label": {
+    "en": "737c4c28d6c824c1",
+    "text": "68b678bd749edaeb"
+  },
+  "visitor.now.one": {
+    "en": "ffec9d158f4f123c",
+    "text": "2aed7c883e7df0c4"
+  },
+  "visitor.now.people": {
+    "en": "fd5ff2a1c5aa16bf",
+    "text": "d40e28277cf95634"
+  },
+  "visitor.now.working": {
+    "en": "4bbfd3742efe22a2",
+    "text": "e170434a0579c3eb"
   },
   "visitor.online": {
     "en": "b11148e2002ef092",
@@ -19263,6 +19391,14 @@
     "en": "0b6b9f7e499ac5f6",
     "text": "cac4685bcdf37dd4"
   },
+  "visitor.stat.last_days": {
+    "en": "db41c93615929f02",
+    "text": "4713af0f000e9a60"
+  },
+  "visitor.stat.members": {
+    "en": "6bbc51529519435c",
+    "text": "45f8e9f37d5ab57e"
+  },
   "visitor.stat.prs_merged": {
     "en": "631e272f82e120d7",
     "text": "7204e3e102a8a3da"
@@ -19271,6 +19407,10 @@
     "en": "c3839ae79e842a97",
     "text": "3586daf4e889914a"
   },
+  "visitor.stat.window": {
+    "en": "6dce96dd18a540d7",
+    "text": "61f1ccecb4a3acd4"
+  },
   "visitor.statistics": {
     "en": "f7e895590e4ed336",
     "text": "ae7724764121e483"
@@ -19278,6 +19418,14 @@
   "visitor.statistics.own": {
     "en": "068dce52f609b9c3",
     "text": "7048fa0059b1f5c3"
+  },
+  "visitor.team.all": {
+    "en": "3d29f2722dcf9dab",
+    "text": "8e77f0b7ebb9e3ea"
+  },
+  "visitor.team.both": {
+    "en": "45a4ef43d5d36042",
+    "text": "36b4117159a0d294"
   },
   "visitor.why.attention": {
     "en": "f98f532ad04f9c38",

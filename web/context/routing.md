@@ -237,7 +237,7 @@ where the hub answers the shell anyway.
 
 **Id:** 51873531-fa92-4281-b935-066b6e73944f
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the card tsk-h1e5zmq1wnhj (an unknown address showed the sign-in form) and the lead's approval of the plan, 2026-11-07; docs/api.md §16.11; web/js/not-found.js; web/js/app.js `showsVisitorNothing`; the not-found cases in web/tools/smoke.js
 **See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-07

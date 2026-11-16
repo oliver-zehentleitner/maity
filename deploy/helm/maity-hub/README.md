@@ -60,15 +60,18 @@ example; any cluster with the same pieces works.
 2. **Image.** Releases are published as `ghcr.io/oliver-zehentleitner/maity-hub`,
    tagged with the version and the full commit SHA and never `latest`. The
    workflow `publish-image` builds them; until its first release you build
-   the image yourself. Pin it by digest (`image.digest`) when you can; the
-   workflow's run summary prints it. Each published digest is signed with
-   cosign, keyless, by that workflow on a `v*` tag or on `main`; check the
-   signature before you pin a digest:
+   the image yourself. The chart pulls the image by digest: `image.digest` is
+   required, and the workflow's run summary prints it. A tag can be moved to
+   other bytes, so pulling by tag is an explicit opt-in (`image.allowTag: true`
+   with `image.tag`, see Values). A release is the image a `v*` tag built,
+   after the release gate (ci and the MariaDB suite passed on that commit),
+   and that run signs its digest with cosign, keyless; check the signature
+   before you pin a digest:
 
    ```sh
    cosign verify ghcr.io/oliver-zehentleitner/maity-hub@sha256:<digest> \
      --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-     --certificate-identity-regexp '^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/(tags/v[^/]+|heads/main)$'
+     --certificate-identity-regexp '^https://github\.com/oliver-zehentleitner/maity/\.github/workflows/publish-image\.yml@refs/tags/v[^/]+$'
    ```
 
    This needs cosign v3 or later: the workflow stores the signature in the
@@ -78,14 +81,19 @@ example; any cluster with the same pieces works.
    is not pinned by digest, the signature does not match, or cosign is not
    installed. For an image you built yourself, set `NO_SIGNATURE_CHECK=1`.
 
-   An image whose signature names another workflow or another ref did not
-   come from a release or from `main`; don't run it. To build your own from
+   An image whose signature names another workflow or another ref is not a
+   release; don't run it. That includes an image the maintainer built by
+   hand from `main`: it passes the same gate and is signed, but as
+   `refs/heads/main`, which this check refuses. To build your own from
    the repository root:
 
    ```sh
    docker build -f deploy/Dockerfile -t registry.example.org/maity-hub:<commit> .
    docker push registry.example.org/maity-hub:<commit>
    ```
+
+   `docker push` prints the pushed digest (`digest: sha256:…`); set it as
+   `image.digest`.
 
    For a private registry, create the pull Secret in the namespace:
    `kubectl -n maity create secret docker-registry registry-credentials …`.
@@ -122,9 +130,12 @@ example; any cluster with the same pieces works.
    ```
 
    The instance key for secrets the hub stores (`MAITY_SECRET_KEY`: the
-   forge webhook's secret, a stored SMTP password, second-factor secrets;
-   docs/api.md §16.2, §17.4) is optional: without it none of those can be
-   stored, and the second factor `required_admins` refuses to start. 32
+   forge webhook's secret, a stored SMTP password, second-factor secrets,
+   the verifiers of agent and runner credentials; docs/api.md §2.2, §16.2,
+   §17.4) is optional: without it none of the first three can be stored,
+   the verifiers cannot be sealed, and the second factor
+   `required_admins` refuses to start. Sealing the verifiers is opt-in,
+   default off (`secretKey.sealVerifiers`, below). 32
    random bytes, base64:
 
    ```sh
@@ -135,7 +146,8 @@ example; any cluster with the same pieces works.
    A value that is not exactly 32 bytes of base64 stops the hub and the
    migrate Job from starting, so a typo shows at once. Keep a copy outside
    the cluster: a lost or changed key makes every stored secret unusable (the hub logs it at startup, and each webhook
-   needs a new secret). In the values it is `secretKey.existingSecret`
+   needs a new secret). With sealed credential verifiers it also means that every agent and runner
+   must join again. In the values it is `secretKey.existingSecret`
    (below); the Secret's key defaults to `secret-key`, set `secretKey.key` if you named it differently.
 
 4. **Values.** A `values.yaml` behind an ingress controller with
@@ -144,7 +156,7 @@ example; any cluster with the same pieces works.
    ```yaml
    image:
      repository: registry.example.org/maity-hub
-     tag: "<commit>"
+     digest: sha256:<the image digest>  # a digest, not a tag: the one the publish-image run summary prints
    imagePullSecrets:
      - name: registry-credentials
    database:
@@ -199,6 +211,10 @@ Upgrades are the same command with `helm upgrade`, also with
 when the release brings a migration: it stops the hub while the migration
 runs and starts it again on any exit (see "The migration and the running
 pod" below). It also checks the image's signature first, as in step 2.
+Before upgrading to chart 0.2.0, set `image.digest`, or
+`image.allowTag: true` with `image.tag`: without either the chart does not
+render, and the script stops at its signature check before it changes
+anything (with `NO_SIGNATURE_CHECK=1`, only after it has stopped the hub).
 
 ## Values
 
@@ -209,7 +225,8 @@ silently ignored. These are the values that matter:
 | Value | Default | Meaning |
 |---|---|---|
 | `image.repository` | required | the hub image |
-| `image.tag` / `image.digest` | appVersion / none | a digest wins over the tag |
+| `image.digest` | required | `sha256:…`; the chart pulls by digest, which always wins over a tag |
+| `image.allowTag`, `image.tag` | `false`, none | pull by tag instead: both must be set and the digest empty (an opt-in; there is no default tag) |
 | `imagePullSecrets` | `[]` | `[{name: …}]` |
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
 | `database.poolSize`, `.maxOverflow` | hub default (16, 16) | `MAITY_DB_POOL_SIZE`, `MAITY_DB_MAX_OVERFLOW`: each pod's connections, shared by its workers (see Several pods) |
@@ -223,6 +240,7 @@ silently ignored. These are the values that matter:
 | `attachments.s3.bucket`, `.endpoint`, `.region`, `.prefix`, `.allowHttp` | none (bucket required with `s3`), AWS, none, none, `false` | `MAITY_ATTACHMENT_S3_BUCKET`, `_ENDPOINT` (an https URL without a path), `_REGION`, `_PREFIX`, `_ALLOW_HTTP` (plain http only to a host inside the cluster) |
 | `attachments.s3.existingSecret`, `.accessKeyIdKey`, `.secretAccessKeyKey` | none, `MAITY_ATTACHMENT_S3_ACCESS_KEY_ID`, `MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY` | the Secret holding the bucket's credentials, by reference; none: the client's own chain (an instance role) |
 | `secretKey.existingSecret`, `.key` | none, `secret-key` | the Secret holding `MAITY_SECRET_KEY`, the instance key for stored secrets; moving it from `extraEnv`: drop it there in the same upgrade, the chart does not dedupe; a Secret created with the first README holds the key as `MAITY_SECRET_KEY`, then set `secretKey.key: MAITY_SECRET_KEY` |
+| `secretKey.sealVerifiers` | `false` | `MAITY_SEAL_VERIFIERS=1`: the hub seals the verifiers of agent and runner credentials with the instance key (docs/api.md §2.2); needs `secretKey.existingSecret`. Opt-in, default off; sealed verifiers are read either way. After switching it on, run `maity-hub seal-verifiers` once in a hub pod to seal the verifiers stored before (idempotent, prints a count); the migrate Job seals nothing |
 | `mail.signingKeySecret.existingSecret`, `.key` | none, `mail-signing-key` | the Secret holding `MAITY_MAIL_SIGNING_KEY` (32 bytes or more, base64); without it the hub sends no mail |
 | `mail.host`, `.port`, `.tls` | none, `587`, `starttls` | `MAITY_SMTP_HOST`, `_PORT`, `_TLS` (`starttls`, `implicit` or `none`); empty host: no SMTP env, the admin settings apply; with a host, port and TLS always come from here. Moving these from `extraEnv`: drop them from `extraEnv` in the same upgrade, the chart does not dedupe |
 | `mail.username`, `.from`, `.replyTo` | none | `MAITY_SMTP_USERNAME`, `_FROM`, `_REPLY_TO` |
@@ -250,7 +268,8 @@ The chart refuses to render:
 - with `allowPlainHttp` together with the Ingress or a NodePort or
   LoadBalancer Service.
 
-The registration, terms, second-factor, limit and public-page settings have no
+The registration, terms, second-factor, limit, public-page and agent-firewall
+(`MAITY_AGENT_FIREWALL`) settings have no
 value of their own here. Set them in `extraEnv`, or as instance admin where the
 dashboard offers them; what each does is in
 [`hub/README.md`](../../../hub/README.md#settings-for-a-public-instance), the
@@ -262,6 +281,7 @@ extraEnv:
   - {name: MAITY_REGISTRATION, value: open}
   - {name: MAITY_SIGN_IN_SECOND_FACTOR, value: required_admins}
   - {name: MAITY_PUBLIC_PAGES, value: "on"}
+  - {name: MAITY_AGENT_FIREWALL, value: "on"}
 ```
 
 ## Client addresses

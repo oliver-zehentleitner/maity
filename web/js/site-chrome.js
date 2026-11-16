@@ -1,6 +1,6 @@
 // The frame of the pages without a session (docs/api.md §16.7.5): the landing page's header and
 // full footer around the sign-in and registration wherever they are drawn without a session, from GET /site/chrome in the page's language, with
-// the landing page's two stylesheets under /assets/landing/. The hub draws the same frame around
+// the frame's three stylesheets under /assets/landing/. The hub draws the same frame around
 // its landing and legal pages from the same model (hub/src/maity_hub/render.py), so the markup
 // here is that file's. The stylesheets are on only while such a page stands: landing.css sets
 // :root, body, headings and links for the whole document, so every other view leaves the frame
@@ -14,7 +14,12 @@ window.Maity = window.Maity || {};
   const { h, append } = M.dom;
   // Asked without ?v=<digest>: the hub then answers the current file with no-cache and an ETag
   // (hub/src/maity_hub/landing_files.py), so a revalidation costs no body and never goes stale.
-  const SHEETS = ["/assets/landing/landing.css", "/assets/landing/public-pages.css"];
+  // Where the hub's shell already links one with its digest (a stored page in the dashboard's
+  // design, §16.9), that link is taken over instead, so the file is loaded once.
+  // The third is the public pages' design (the project's hero, its figures band, its tab bar, the
+  // sections), the hub's own as it stores those pages in it (§16.9); it builds on the landing's
+  // tokens and classes, so it comes last.
+  const SHEETS = ["/assets/landing/landing.css", "/assets/landing/public-pages.css", "/assets/landing/public-sections.css"];
   const ON = "public-frame";
   let links = [];
   let header = null;
@@ -22,9 +27,24 @@ window.Maity = window.Maity || {};
   // Each drawing counts; an answer for an earlier one, or one after leave(), draws nothing.
   let round = 0;
 
+  // The frame's sheets already in the head: the shell's, with their digest, or ours.
+  function linkedSheets() {
+    return Array.from(document.head.querySelectorAll("link"))
+      .filter((l) => l.getAttribute("rel") === "stylesheet" && SHEETS.includes((l.getAttribute("href") || "").split("?")[0]));
+  }
   function sheets(on) {
+    if (!on && !links.length) {
+      // Leaving before the frame was ever entered (a failed page, a session found after all):
+      // the shell's links are not taken over yet, but are on, and landing.css styles the whole
+      // document, so they go off too.
+      linkedSheets().forEach((link) => { link.disabled = true; });
+      return;
+    }
     if (on && !links.length) {
+      const linked = linkedSheets();
       links = SHEETS.map((href) => {
+        const had = linked.find((l) => (l.getAttribute("href") || "").split("?")[0] === href);
+        if (had) return had;
         const link = document.createElement("link");
         link.setAttribute("rel", "stylesheet");
         link.setAttribute("href", href);
@@ -224,5 +244,7 @@ window.Maity = window.Maity || {};
     mark(false);
   }
 
-  M.siteChrome = { enter, leave, line, active: () => (document.documentElement.className || "").split(/\s+/).includes(ON) };
+  // `link`: an address of the model as the header draws it, for a page that repeats one of its
+  // links in its own content (a visitor's project page repeats the call to action, js/visitor.js).
+  M.siteChrome = { enter, leave, line, link, active: () => (document.documentElement.className || "").split(/\s+/).includes(ON) };
 })(window.Maity);

@@ -92,7 +92,8 @@ jobs:
                 e2e:web/*|e2e:hub/*|e2e:cli/*|e2e:docs/join-page.md) hit=true ;;
                 cli:cli/*|cli:docs/runners.md) hit=true ;;
                 helm:deploy/*) hit=true ;;
-                contract:docs/api.md|contract:hub/*) hit=true ;;
+                # capabilities.py: hub/tests/test_runner_confinement.py checks the hub against it
+                contract:docs/api.md|contract:hub/*|contract:cli/src/maity/runner/capabilities.py) hit=true ;;
                 vendor:web/vendor/*|vendor:web/tools/vendor_ktw.py) hit=true ;;
                 dist:hub/*|dist:web/*|dist:docs/join-page.md) hit=true ;;
               esac
@@ -271,7 +272,7 @@ jobs:
   # The contract tests: the test files that read docs/api.md (the endpoint index against the
   # routes, the reserved paths, the guide texts), on SQLite. A change of the contract alone does not start the
   # hub jobs (`hub` does not list docs/api.md: the database jobs take about an hour); this part
-  # does, and a change under hub/ starts it too. It is in ci-ok.
+  # does, and a change under hub/ or to cli/src/maity/runner/capabilities.py (test_runner_confinement) starts it too. It is in ci-ok.
   hub-contract:
     needs: changes
     if: needs.changes.outputs.contract == 'true'

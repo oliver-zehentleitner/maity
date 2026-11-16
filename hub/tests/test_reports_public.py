@@ -182,7 +182,7 @@ def test_the_reporters_list_shows_the_current_public_name_or_a_neutral_word(
     assert agent["id"] not in str(shown) and world.anna.id not in str(shown)
 
 
-def test_an_agent_its_owners_agents_page_lists_without_a_page_is_reportable(
+def test_an_agent_its_owners_page_lists_without_a_page_is_reportable(
     world: World, make_client: ClientFactory
 ) -> None:
     flow.project(world.owner, "secret")  # a private project: the agent has no page of its own
@@ -197,7 +197,7 @@ def test_an_agent_its_owners_agents_page_lists_without_a_page_is_reportable(
     target = {"type": "profile", "id": "maintainer/hidden-bot"}
     assert report(zoe, target).status_code == 404  # not listed yet
     assert world.owner.patch("/me", {"public_agents": "all"}).status_code == 200
-    listed = world.anyone.get("/api/v1/public/pages/maintainer/agents").json()["data"]["agents"]
+    listed = world.anyone.get("/api/v1/public/pages/maintainer").json()["data"]["agents"]
     assert {"handle": "hidden-bot", "page": None}.items() <= next(
         a for a in listed if a["handle"] == "hidden-bot"
     ).items()

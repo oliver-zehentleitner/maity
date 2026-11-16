@@ -63,8 +63,8 @@ window.Maity = window.Maity || {};
     { route: "jour-fixe", view: "jourFixe", get label() { return M.t("nav.jour_fixe"); } },
     // The project's own settings, its last tab (the maintainer's request,
     // 2026-10-25); a save stays here.
-    // One view with two tabs (§16.11): the project's for its admins, one's
-    // own at settings/mine for every human member.
+    // One view in sub-tabs (§16.11, web/context/views.md): the project's for its admins,
+    // one's own at settings/mine for every human member.
     { route: "settings", get label() { return M.t("nav.settings"); }, when: (ctx) => ctx.canAdmin || ctx.me.kind === "human" },
   ];
   const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
@@ -143,8 +143,10 @@ window.Maity = window.Maity || {};
       || parts[1] === "pages" && !parts[3] && (!parts[2] || ["landing", "legal", "sign-in", "sign-up", "site"].includes(parts[2])))) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
-    // /<handle>/agents: the person's tab Agents (§6.27, §16.11); `agents` is never a slug (a project
-    // view), and an agent's own page, /<owner>/agents/<handle>, stays the project scope's.
+    // /<handle>/agents names nothing since the person's agents stand on their one page (§16.9, "A
+    // person's agents", tsk-2t7efzj1p8zt): the person scope answers it with "not found", no redirect.
+    // `agents` is never a slug (a project view), and an agent's own page, /<owner>/agents/<handle>,
+    // stays the project scope's.
     if (parts.length === 2 && parts[1] === "agents" && !OWN_WORDS.includes(parts[0])) return { scope: "person", handle: parts[0], tab: "agents" };
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
       return { scope: "project", slug: parts[0] + "/" + parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
@@ -544,7 +546,7 @@ window.Maity = window.Maity || {};
 
   // The repository (§6.1, project:admin, humans only): where the probe, the
   // Keep the Why dashboard and the runners' clones look. https only here;
-  // the hub checks the forge host. Changing or removing it asks first.
+  // the hub checks the rest of the shape. Changing or removing it asks first.
   function repositoryForm(ctx) {
     const current = ctx.project.repository && ctx.project.repository.url;
     const status = statusLine();
@@ -560,9 +562,12 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         error.textContent = "";
         input.removeAttribute("aria-invalid");
-        const url = input.value.trim().replace(/\/+$/, "");
+        // One trailing slash comes off, as the hub takes it off (§6.1 step 2); a second stays,
+        // so the shape check below refuses it, as the hub would for its empty segment.
+        const url = input.value.trim().replace(/([^/])\/$/, "$1");
         if (url === (current || "")) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("settings.repo.unchanged"))); return; }
-        if (url && !/^https:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+$/.test(url)) { fail(forgeRule()); return; }
+        // The shape alone, a GitLab group path included; the hub checks the rest (§6.1).
+        if (url && !/^https:\/\/[^\s/]+(?:\/[^\s/]+){2,22}$/i.test(url)) { fail(forgeRule()); return; }
         if (current && !window.confirm(url
           ? M.t("settings.repo.confirm_change", { url })
           : M.t("settings.repo.confirm_remove"))) return;
@@ -573,7 +578,7 @@ window.Maity = window.Maity || {};
         } catch (err) {
           const fields = err.code === "invalid" && err.details && err.details.fields;
           const why = fields && (fields["repository.url"] || fields.repository);
-          if (why) { status.done(); fail(why === "not_a_configured_forge" ? forgeRule() : String(why)); }
+          if (why) { status.done(); fail(why === "not_a_repository_url" ? forgeRule() : String(why)); }
           else status.fail(M.t("settings.repo.not_saved"), err);
         }
       },
@@ -740,7 +745,140 @@ window.Maity = window.Maity || {};
     h("p", { class: "hint" }, M.t("settings.onboarding.target_hint")), button, status.el);
   }
 
-  function projectPanel(ctx) {
+  // The project's settings in sub-tabs, each at an address of its own (tsk-chtvqs62cd10,
+  // web/context/views.md): General at settings itself, the others at settings/<tab>. Mine is
+  // one's own (js/notify-settings.js) and takes the owner's absence here.
+  const SETTINGS_TABS = [
+    ["general", () => M.t("settings.tab.general")],
+    ["members", () => M.t("settings.tab.members")],
+    ["work", () => M.t("settings.tab.work")],
+    ["moderation", () => M.t("settings.tab.moderation")],
+    ["mine", () => M.t("settings.tab.mine")],
+  ];
+  const humanAdminOf = (ctx) => ctx.me.kind === "human" && ctx.canAdmin;
+  // Each section once, in its tab's order: whom it is for, and how it is drawn. A tab is offered
+  // where one of its sections is, the same rule each section had on the one page before.
+  const SETTINGS_SECTIONS = [
+    // General: what the project is and where it lives.
+    { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx, save) => languageSection(ctx, save) },
+    { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx, save) => stateForm(ctx, save) },
+    { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx) => repositoryForm(ctx) },
+    { tab: "general", when: (ctx) => ctx.canAdmin && !!M.forge, build: (ctx) => M.forge.repositoryPart(ctx) },
+    { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx) => linksForm(ctx) },
+    // Its name: rename and transfer, for a human owner (§6.25).
+    { tab: "general", when: (ctx) => !!M.projectNames, build: (ctx) => M.projectNames.section(ctx) },
+    // The public page: the namespace owner's alone, however high the trust (§16.9).
+    { tab: "general", when: () => !!M.publicPage, build: (ctx, save) => M.publicPage.projectPart(ctx, save) },
+    { tab: "general", when: humanAdminOf, build: (ctx, save) => badgeForm(ctx, save) },
+    // The change ticker (§17.3), read by every member, changed by a human
+    // admin; the forge webhook (§17.4) for that human only.
+    { tab: "general", when: () => !!M.tickerSettings, build: (ctx, save) => h("div", { class: "ticker-settings-slot" }, M.tickerSettings.tickerForm(ctx, save)) },
+    { tab: "general", when: (ctx) => humanAdminOf(ctx) && !!M.tickerSettings, build: (ctx) => h("div", { class: "webhook-slot" }, M.tickerSettings.webhookPanel(ctx)) },
+    // docs/api.md §6.1.
+    { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx) => imagesForm(ctx) },
+    // Members and agents: who joins, on what terms, and who reads what.
+    { tab: "members", when: humanAdminOf, build: (ctx, save) => memberAgentsForm(ctx, save) },
+    { tab: "members", when: humanAdminOf, build: (ctx, save) => h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)) },
+    { tab: "members", when: (ctx) => ctx.canAdmin, build: (ctx) => onboardingForm(ctx) },
+    // Who reads and writes the cards' restricted texts (§6.1, §6.4): a human with
+    // project:admin changes it after a step-up; an admin agent reads its mode alone.
+    { tab: "members", when: (ctx) => ctx.canAdmin && !!M.restricted, build: (ctx) => M.restricted.settingsSection(ctx, (said) => { settingsSaved = said; render(); }) },
+    { tab: "members", when: (ctx) => ctx.canAdmin, build: (ctx, save) => signingForm(ctx, save) },
+    // Way of working: how a card is closed and what the agents keep. Humans only, as every
+    // policy field (§2.3 ʰ); the commitment follows the memory provider.
+    { tab: "work", when: humanAdminOf, build: (ctx, save) => doneAuthorityForm(ctx, save) },
+    { tab: "work", when: (ctx) => ctx.canAdmin && !!M.projectSetup, build: (ctx, save) => memoryPanel(ctx, save, humanAdminOf(ctx)) },
+    { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyForm(ctx, save) },
+    { tab: "work", when: humanAdminOf, build: (ctx, save) => keepTheWhyDefaultsForm(ctx, save) },
+    // The jour fixe's series and their moderators (§20.1, §20.2) are kept at the top of the jour fixe
+    // view (the maintainer, 2026-11-06); here only where to find them.
+    { tab: "work", when: humanAdminOf, build: (ctx) => h("section", { class: "jf-series-moved", "aria-labelledby": "jfs-moved-title" },
+      h("h2", { class: "panel-title", id: "jfs-moved-title" }, M.t("jfs.title")),
+      h("p", { class: "hint" }, M.tn("jfs.kept_on_page", { link: h("a", { href: ctx.link("jour-fixe") }, M.t("jf.title")) }))) },
+    // Moderation.
+    { tab: "moderation", when: (ctx) => ctx.canAdmin && !!M.groupChat, build: (ctx) => h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)) },
+    // §8.7: everyone's pending uploads, for freeing the quota.
+    { tab: "moderation", when: (ctx) => ctx.canAdmin && !!M.attachments, build: (ctx) => M.attachments.pendingPanel(ctx) },
+    // Mine: the owner's own absence (§6.1), beside one's own settings for the project.
+    { tab: "mine", when: (ctx) => ctx.isOwner, build: (ctx, save) => absenceForm(ctx, save) },
+  ];
+  // Mine is every human's (one's own settings); the project's tabs are for project:admin.
+  function settingsTabOffered(ctx, tab) {
+    if (tab === "mine") return ctx.me.kind === "human" || SETTINGS_SECTIONS.some((s) => s.tab === tab && s.when(ctx));
+    return ctx.canAdmin && SETTINGS_SECTIONS.some((s) => s.tab === tab && s.when(ctx));
+  }
+
+  function languageSection(ctx, save) {
+    const language = (ctx.project.settings || {}).language || "en";
+    if (humanAdminOf(ctx)) {
+      const picker = M.languagePicker("project-language", language);
+      const select = picker.select;
+      return h("form", { class: "inline-form project-language", onsubmit: (e) => {
+        e.preventDefault(); save({ settings: { language: select.value } }, { saved: M.t("settings.language.saved"), notSaved: M.t("settings.language.not_saved") });
+      } }, h("h2", { class: "panel-title" }, M.t("settings.language.title")),
+      h("label", { for: "project-language" }, M.t("settings.language.label")), picker.search, select,
+      h("button", { type: "submit" }, M.t("settings.language.save")));
+    }
+    const shown = h("p", { class: "project-language" });
+    M.writeLanguageName(language, (name) => { shown.textContent = M.t("settings.language.shown", { name }); });
+    return shown;
+  }
+
+  function stateForm(ctx, save) {
+    const state = h("select", { id: "state-select" },
+      STATES.map((s) => h("option", {
+        value: s,
+        selected: s === ctx.project.state,
+        // Only the owner moves the project to launch; an admin may leave it.
+        disabled: s === "launch" && !ctx.isOwner && ctx.project.state !== "launch",
+      }, M.dom.word("project", s))));
+    const note = h("input", { id: "state-note", value: ctx.project.state_note || "", placeholder: M.t("settings.state.note_placeholder") });
+    const reason = h("input", { id: "state-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
+    return h("form", {
+      class: "inline-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ state: state.value, state_note: note.value.trim() || null, reason: reason.value.trim() }, { saved: M.t("settings.state.saved"), notSaved: M.t("settings.state.not_saved") });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.state.title")),
+    ctx.project.released_at
+      ? h("p", { class: "released-note" }, M.t("settings.state.released", { day: releasedDay(ctx.project) }))
+      : null,
+    h("label", { for: "state-select" }, M.t("settings.state.label")), state,
+    h("label", { for: "state-note" }, M.t("settings.state.note")), note,
+    h("label", { for: "state-reason" }, M.t("settings.reason")), reason,
+    h("button", { type: "submit" }, M.t("settings.state.change")));
+  }
+
+  function absenceForm(ctx, save) {
+    const a = ctx.project.absence;
+    const until = h("input", { id: "absence-until", type: "datetime-local", required: true });
+    const scope = h("input", { id: "absence-scope", required: true, placeholder: M.t("settings.absence.scope_placeholder"), value: a ? a.scope : "" });
+    return h("form", {
+      class: "inline-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        // The field holds the account's time zone, the one the absence is shown in (§5.1).
+        const when = M.fmt.fromWall(until.value);
+        if (!when) { until.focus(); return; }
+        if (!scope.value.trim()) { scope.focus(); return; }
+        save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.absence.title")),
+    h("label", { for: "absence-until" }, M.t("settings.absence.until")), until,
+    h("label", { for: "absence-scope" }, M.t("settings.absence.scope")), scope,
+    h("div", { class: "actions" },
+      a ? h("button", { type: "button", onclick: () => save({ absence: null }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") }) }, M.t("settings.absence.back")) : null,
+      h("button", { type: "submit" }, a ? M.t("settings.absence.update") : M.t("settings.absence.set"))));
+  }
+
+  // One tab's sections in one panel; null where the reader has none on it.
+  function projectPanel(ctx, tab) {
+    const sections = SETTINGS_SECTIONS.filter((s) => s.tab === tab && s.when(ctx));
+    if (!sections.length) return null;
     const status = statusLine();
     // atFields: a form's own handler of the hub's field refusals; when it says
     // them at its fields, the status line only says that nothing was saved.
@@ -761,102 +899,7 @@ window.Maity = window.Maity || {};
 
     // The settings' forms share one reading column (web/context/views.md).
     const panel = h("div", { class: "panel form-column", id: "project-panel" });
-    const language = (ctx.project.settings || {}).language || "en";
-    const humanAdmin = ctx.me.kind === "human" && ctx.canAdmin;
-    if (humanAdmin) {
-      const picker = M.languagePicker("project-language", language);
-      const select = picker.select;
-      append(panel, h("form", { class: "inline-form project-language", onsubmit: (e) => {
-        e.preventDefault(); save({ settings: { language: select.value } }, { saved: M.t("settings.language.saved"), notSaved: M.t("settings.language.not_saved") });
-      } }, h("h2", { class: "panel-title" }, M.t("settings.language.title")),
-      h("label", { for: "project-language" }, M.t("settings.language.label")), picker.search, select,
-      h("button", { type: "submit" }, M.t("settings.language.save"))));
-    } else {
-      const shown = h("p", { class: "project-language" });
-      M.writeLanguageName(language, (name) => { shown.textContent = M.t("settings.language.shown", { name }); });
-      append(panel, shown);
-    }
-
-    if (ctx.canAdmin) {
-      const state = h("select", { id: "state-select" },
-        STATES.map((s) => h("option", {
-          value: s,
-          selected: s === ctx.project.state,
-          // Only the owner moves the project to launch; an admin may leave it.
-          disabled: s === "launch" && !ctx.isOwner && ctx.project.state !== "launch",
-        }, M.dom.word("project", s))));
-      const note = h("input", { id: "state-note", value: ctx.project.state_note || "", placeholder: M.t("settings.state.note_placeholder") });
-      const reason = h("input", { id: "state-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
-      append(panel, h("form", {
-        class: "inline-form",
-        onsubmit: (e) => {
-          e.preventDefault();
-          if (!reason.value.trim()) { reason.focus(); return; }
-          save({ state: state.value, state_note: note.value.trim() || null, reason: reason.value.trim() }, { saved: M.t("settings.state.saved"), notSaved: M.t("settings.state.not_saved") });
-        },
-      },
-      h("h2", { class: "panel-title" }, M.t("settings.state.title")),
-      ctx.project.released_at
-        ? h("p", { class: "released-note" }, M.t("settings.state.released", { day: releasedDay(ctx.project) }))
-        : null,
-      h("label", { for: "state-select" }, M.t("settings.state.label")), state,
-      h("label", { for: "state-note" }, M.t("settings.state.note")), note,
-      h("label", { for: "state-reason" }, M.t("settings.reason")), reason,
-      h("button", { type: "submit" }, M.t("settings.state.change"))));
-    }
-    if (ctx.canAdmin) append(panel, onboardingForm(ctx), repositoryForm(ctx), M.forge ? M.forge.repositoryPart(ctx) : null, linksForm(ctx));
-    // Its name: rename and transfer, for a human owner (§6.25).
-    const names = M.projectNames && M.projectNames.section(ctx);
-    if (names) append(panel, names);
-    if (M.projectSetup) append(panel, memoryPanel(ctx, save, humanAdmin));
-    // Humans only, as every policy field (§2.3 ʰ); the commitment above the badge (the maintainer, 2026-11-01).
-    // The public page: the namespace owner's alone, however high the trust (§16.9).
-    if (M.publicPage) append(panel, M.publicPage.projectPart(ctx, save));
-    if (humanAdmin) append(panel, keepTheWhyForm(ctx, save), keepTheWhyDefaultsForm(ctx, save), badgeForm(ctx, save));
-    // The jour fixe's series and their moderators (§20.1, §20.2) are kept at the top of the jour fixe
-    // view (the maintainer, 2026-11-06); here only where to find them.
-    if (humanAdmin) append(panel, h("section", { class: "jf-series-moved", "aria-labelledby": "jfs-moved-title" },
-      h("h2", { class: "panel-title", id: "jfs-moved-title" }, M.t("jfs.title")),
-      h("p", { class: "hint" }, M.tn("jfs.kept_on_page", { link: h("a", { href: ctx.link("jour-fixe") }, M.t("jf.title")) }))));
-    // The change ticker (§17.3), read by every member, changed by a human
-    // admin; the forge webhook (§17.4) for that human only.
-    if (M.tickerSettings) {
-      append(panel, h("div", { class: "ticker-settings-slot" }, M.tickerSettings.tickerForm(ctx, save)));
-      if (humanAdmin) append(panel, h("div", { class: "webhook-slot" }, M.tickerSettings.webhookPanel(ctx)));
-    }
-    if (humanAdmin) {
-      append(panel, doneAuthorityForm(ctx, save), memberAgentsForm(ctx, save), h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)));
-    }
-    // Who reads and writes the cards' restricted texts (§6.1, §6.4): a human with
-    // project:admin changes it after a step-up; an admin agent reads its mode alone.
-    if (ctx.canAdmin && M.restricted) append(panel, M.restricted.settingsSection(ctx, (said) => { settingsSaved = said; render(); }));
-    if (ctx.canAdmin && M.groupChat) append(panel, h("div", { class: "remove-reported-slot" }, blindRemoveForm(ctx)));
-    // §8.7: everyone's pending uploads, for freeing the quota.
-    if (ctx.canAdmin && M.attachments) append(panel, M.attachments.pendingPanel(ctx));
-    // docs/api.md §6.1.
-    if (ctx.canAdmin) append(panel, signingForm(ctx, save), imagesForm(ctx));
-    if (ctx.isOwner) {
-      const a = ctx.project.absence;
-      const until = h("input", { id: "absence-until", type: "datetime-local", required: true });
-      const scope = h("input", { id: "absence-scope", required: true, placeholder: M.t("settings.absence.scope_placeholder"), value: a ? a.scope : "" });
-      append(panel, h("form", {
-        class: "inline-form",
-        onsubmit: (e) => {
-          e.preventDefault();
-          // The field holds the account's time zone, the one the absence is shown in (§5.1).
-          const when = M.fmt.fromWall(until.value);
-          if (!when) { until.focus(); return; }
-          if (!scope.value.trim()) { scope.focus(); return; }
-          save({ absence: { until: when.toISOString().replace(/\.\d{3}Z$/, "Z"), scope: scope.value.trim() } }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") });
-        },
-      },
-      h("h2", { class: "panel-title" }, M.t("settings.absence.title")),
-      h("label", { for: "absence-until" }, M.t("settings.absence.until")), until,
-      h("label", { for: "absence-scope" }, M.t("settings.absence.scope")), scope,
-      h("div", { class: "actions" },
-        a ? h("button", { type: "button", onclick: () => save({ absence: null }, { saved: M.t("settings.absence.saved"), notSaved: M.t("settings.absence.not_saved") }) }, M.t("settings.absence.back")) : null,
-        h("button", { type: "submit" }, a ? M.t("settings.absence.update") : M.t("settings.absence.set")))));
-    }
+    sections.forEach((s) => append(panel, s.build(ctx, save)));
     append(panel, status.el);
     return panel;
   }
@@ -1374,7 +1417,7 @@ window.Maity = window.Maity || {};
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
     const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
-      h("a", { href: "/all", "aria-current": ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
+      h("a", { href: "/all", "aria-current": !ctx.visiting && ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
       // The tabs this browser has open, in its order (js/tabs.js): dragged
       // into place, or moved with Alt+Shift+Arrow, or from the tabs menu.
       M.tabs.open(ctx).map((p) => h("a", {
@@ -1783,7 +1826,7 @@ window.Maity = window.Maity || {};
           }, item.label, tabCount(ctx, item.route))))
         : ALL_PAGES.some((page) => page.scope === ctx.scope)
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
-            ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
+            ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": !ctx.visiting && ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
           : null,
       // Not on the Chat tab, the maintainer's choice (tsk-sesdq48m9ewk): its list shows each chat's unread mention as an @
       // at a glance. The @ covers chat mentions only; those in project messages and on cards stay in the bell and on the
@@ -1810,20 +1853,37 @@ window.Maity = window.Maity || {};
   let settingsFocus = null;
   // What the last save on Settings did, said once on the redrawn tab.
   let settingsSaved = null;
-  // Settings (§16.11): the project's tab at settings for those with
-  // project:admin, one's own at settings/mine for every human member; a
-  // member without the right who opens settings gets settings/mine.
+  // Settings (§16.11): the project's tabs for those with project:admin, General at settings and
+  // the others at settings/<tab>, one's own at settings/mine for every human member. A tab the
+  // reader is not offered (a member without the right at settings) leads to the first one they are.
   M.views.settings = async function (ctx, root, args) {
-    const mine = (args || [])[0] === "mine";
+    const asked = (args || [])[0] || "general";
+    const offeredTabs = SETTINGS_TABS.filter(([key]) => settingsTabOffered(ctx, key));
+    const tabLink = (key) => (key === "general" ? projectLink(ctx.slug, "settings") : projectLink(ctx.slug, "settings", key));
+    // A guard: NAV offers this view only to project:admin and humans, who always have a tab (an
+    // agent without the right gets page not found, as on the one page). Should none be offered,
+    // Mine with its humans-only sentence, never an empty page.
+    if (!offeredTabs.length) offeredTabs.push(SETTINGS_TABS.find(([key]) => key === "mine"));
+    const chosen = offeredTabs.find(([key]) => key === asked);
+    // settings/general is General's longer name; the address is settings.
+    if (!chosen || (args || [])[0] === "general" || (args || []).length > 1) {
+      M.route.go(tabLink(chosen ? chosen[0] : offeredTabs[0][0]), { replace: true });
+      return;
+    }
+    const tab = chosen[0];
     const human = ctx.me.kind === "human";
-    if (!mine && !ctx.canAdmin) { M.route.go(projectLink(ctx.slug, "settings", "mine"), { replace: true }); return; }
-    const tabs = [ctx.canAdmin ? [M.t("settings.tab.project"), projectLink(ctx.slug, "settings"), !mine] : null,
-      human ? [M.t("settings.tab.mine"), projectLink(ctx.slug, "settings", "mine"), mine] : null].filter(Boolean);
     append(root, h("h2", null, M.t("settings.title")),
-      tabs.length > 1 ? h("nav", { class: "settings-tabs", "aria-label": M.t("settings.title") },
-        tabs.map(([label, href, on]) => h("a", { href, "aria-current": on ? "page" : null }, label))) : null);
-    if (mine) {
-      await M.mySettings(ctx, root);
+      offeredTabs.length > 1 ? M.tabBar("settings-tabs", M.t("settings.title"),
+        offeredTabs.map(([key, label]) => [key, tabLink(key), label()]), tab) : null);
+    const saved = settingsSaved ? h("p", { class: "ok", role: "status" }, settingsSaved) : null;
+    settingsSaved = null;
+    if (tab === "mine") {
+      // The owner's absence stands among one's own settings, above leaving the project.
+      const absence = projectPanel(ctx, "mine");
+      append(root, saved);
+      if (human) await M.mySettings(ctx, root, absence);
+      else if (absence) append(root, absence);
+      else await M.mySettings(ctx, root);
       // A member in the restricted-access set who may not change it reads it here: the set's
       // notice links to settings, which leads such a member to settings/mine (§6.1, §19).
       const restricted = ((ctx.project && ctx.project.settings) || {}).restricted_access;
@@ -1835,10 +1895,9 @@ window.Maity = window.Maity || {};
     append(root,
       h("p", { class: "muted" }, M.t("settings.intro")),
       // The project's runners, no tab of their own any more.
-      h("p", { class: "settings-runners" }, h("a", { href: projectLink(ctx.slug, "runners") }, M.t("settings.runners_link"))),
-      settingsSaved ? h("p", { class: "ok", role: "status" }, settingsSaved) : null,
-      projectPanel(ctx));
-    settingsSaved = null;
+      tab === "general" ? h("p", { class: "settings-runners" }, h("a", { href: projectLink(ctx.slug, "runners") }, M.t("settings.runners_link"))) : null,
+      saved,
+      projectPanel(ctx, tab));
     const wanted = settingsFocus ? Array.from(root.querySelectorAll("input")).find((el) => el.id === settingsFocus) : null;
     settingsFocus = null;
     if (wanted) window.setTimeout(() => wanted.focus(), 0);
@@ -2278,8 +2337,9 @@ window.Maity = window.Maity || {};
     // takes no click or key any more: an action there (a Revoke) would be
     // answered into a view that is gone, while the new one shows what it read
     // before. Every way out of render() replaces main or renders again.
-    // The hub's own page in <main> (§16.9) counts for this first drawing only, and stays usable
-    // meanwhile: it is what stands if its data cannot be read.
+    // The hub's own page in <main> (§16.9) counts for this first drawing only. A page in the
+    // dashboard's design stands and stays usable meanwhile; any other stays hidden (css/app.css,
+    // `.hub-page`) until it is replaced or 3 s pass. Either is what stands if its data cannot be read.
     const hubPage = !!(main.hasAttribute && main.hasAttribute("data-public-page"));
     if (hubPage) main.removeAttribute("data-public-page");
     // Busy too, for a screen reader; the bar it shows is in css/app.css.
@@ -2292,6 +2352,9 @@ window.Maity = window.Maity || {};
     // page, a failed page, every signed-in drawing).
     if (M.api.session()) M.siteChrome.leave();
     let where = { scope: "unknown" };
+    // The path `where` was parsed from: a click while this drawing waits moves the address on, and
+    // the newer drawing answers it; this one reads the page of its own address, if any (tsk-25x1t18ergxz).
+    let wherePath = null;
     let ctx;
     let keptSlug = null;
     // The invitation's token is in its path: no referrer before this drawing asks anything
@@ -2338,6 +2401,7 @@ window.Maity = window.Maity || {};
     if (seq !== renderSeq) return;
     try {
       where = parseRoute();
+      wherePath = M.route.current().path;
       const held = M.maintenance.running();
       // The reset reads no session: it ends every one and signs nobody in (§2.10).
       if (where.scope === "reset" && M.passwordReset && !held) { await M.passwordReset.page(main, document.getElementById("header")); return; }
@@ -2366,8 +2430,10 @@ window.Maity = window.Maity || {};
             return;
           }
           // A public page of this address, read-only (§16.9), in the landing's frame as the
-          // sign-in is (js/visitor.js); otherwise the login.
-          const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
+          // sign-in is (js/visitor.js); otherwise the login. A drawing overtaken while it read the
+          // session asks for no page: a click during the first drawing went elsewhere.
+          if (seq !== renderSeq) return;
+          const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, wherePath, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
           if (shown) return;
           // The hub's own page in <main> stands when its data could not be read. A dashboard
           // route asks for the sign-in; an address that shows a visitor nothing says so
@@ -2375,7 +2441,7 @@ window.Maity = window.Maity || {};
           // has no page: a read that failed otherwise (null) keeps the sign-in.
           if (seq === renderSeq && !hubPage) {
             if (M.notFound && shown === false && showsVisitorNothing(where)) {
-              M.notFound.page(main, document.getElementById("header"), M.route.current().path, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
+              M.notFound.page(main, document.getElementById("header"), wherePath, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
             } else renderLogin(main);
           }
           return;
@@ -2429,9 +2495,11 @@ window.Maity = window.Maity || {};
         const head = async () => {
           const own = await loadContext({ scope: "all" }, me);
           own.projectViews = await projectViews(me);
+          // The page shown is another project's, none of "All projects": nothing there is current.
+          own.visiting = true;
           if (seq === renderSeq) renderHeader(own, null);
         };
-        if (await M.visitor.page(main, null, where, M.route.current().path, { signedIn: true, head, live: () => seq === renderSeq })) return;
+        if (await M.visitor.page(main, null, where, wherePath, { signedIn: true, head, live: () => seq === renderSeq })) return;
         if (seq !== renderSeq) return;
       }
       // An earlier address of a project (a rename, a transfer) leads to its current one.
@@ -2569,7 +2637,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "runners") label = M.t("view.runners");
     else if (where.scope === "invitations") label = M.t("header.invitations");
     else if (where.scope === "agents") label = M.t("view.agents");
-    else if (where.scope === "person") label = where.tab === "agents" ? M.t("person.title.agents", { name: "@" + where.handle }) : "@" + where.handle;
+    else if (where.scope === "person") label = "@" + where.handle;
     else if (where.scope === "instance-admin") label = M.t("view.instance_admin");
     else if (where.scope === "observe") label = M.t("view.read_along", { slug: where.slug });
     else if (known) label = item.label + " · " + ctx.project.name;
@@ -2669,6 +2737,18 @@ window.Maity = window.Maity || {};
     document.getElementById("header").querySelectorAll("nav, .project-links").forEach(updateCue);
     document.querySelectorAll("nav.account-tabs").forEach(updateCue);
   });
+  // The fonts load with font-display: swap, so a view can be drawn in the fallback face first.
+  // Inter is wider: the current tab, brought into sight before it arrived, could end outside its
+  // row (Security at 390 px, tsk-1cs7h9jhww36). Once a face is in, every row that brought its
+  // current tab into sight does so again (the header's and the account's), and the cues follow.
+  if (document.fonts && document.fonts.addEventListener) {
+    document.fonts.addEventListener("loadingdone", () => {
+      const header = document.getElementById("header");
+      header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); updateCue(nav); });
+      header.querySelectorAll(".project-links").forEach(updateCue);
+      document.querySelectorAll("nav.account-tabs").forEach((nav) => { showCurrent(nav); updateCue(nav); });
+    });
+  }
   M.maintenance.onChange(() => render());
   document.addEventListener("DOMContentLoaded", render);
 })(window.Maity);

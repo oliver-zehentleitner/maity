@@ -116,6 +116,9 @@ class Settings:
     # MAITY_SECRET_KEY: the instance key for secrets stored at rest (§16.2, §17.4);
     # never logged, never in a response, never in the database.
     secret_key: bytes | None = field(default=None, repr=False)
+    # MAITY_SEAL_VERIFIERS: 1 seals the credentials' verifiers at rest with `secret_key`
+    # (§2.2, hub/context/credentials.md); opt-in, default off. Sealed rows are read either way.
+    seal_verifiers: bool = False
     # MAITY_SMTP_*, MAITY_MAIL_*: the mail settings the environment sets (§16.2); the
     # password and the signing key never appear in a repr.
     mail: MailEnvironment = field(default_factory=MailEnvironment)
@@ -141,6 +144,10 @@ class Settings:
     # MAITY_SIGN_IN_SECOND_FACTOR: off, optional or required_admins (§2.8.5); None
     # leaves it to the instance admin.
     sign_in_second_factor: str | None = None
+    # MAITY_SECOND_FACTOR_WRONG_PER_DAY: wrong second-factor codes per human and UTC day, 10 to
+    # 10000; at it every check of that human is refused until the day ends or the link mailed
+    # then lifts it (§2.8.6).
+    second_factor_wrong_per_day: int = 50
     # MAITY_MAX_AGENTS_PER_HUMAN, MAITY_MAX_ORGS_PER_HUMAN, MAITY_MAX_PROJECTS_PER_OWNER (§16.5):
     # a number from 1 to 10000 or `unlimited`; None where the environment leaves the value to
     # the instance admin.
@@ -165,6 +172,11 @@ class Settings:
     public_pages_snapshot_minutes: int = 5
     public_pages_startup_seconds: int = 30
     public_pages_render_seconds: int = 2
+    # MAITY_AGENT_FIREWALL (`on`/`off`, §9.6, "The switch"): whether the agent firewall's gate
+    # holds an agent of one side back from a group chat or a work message of another until its
+    # owner's yes; off (the default), chats and messages reach as before the gate, while the
+    # allow and deny entries stay editable (req-5tngzfgp3nne o2).
+    agent_firewall: bool = False
     # MAITY_ROUTE_LIMITS: limits on single routes the operator sets in an emergency, counted per
     # client address in each process; empty, no route has one beyond its own (§1.7).
     route_limits: tuple[RouteLimit, ...] = ()
@@ -172,6 +184,9 @@ class Settings:
     # (§16.9) and of the badges (§6.20), as (count, seconds).
     public_page_limit: tuple[int, int] = (60, 60)
     badge_limit: tuple[int, int] = (60, 60)
+    # MAITY_HSTS_MAX_AGE: the `Strict-Transport-Security` max-age, in seconds, sent on every
+    # answer that went out over TLS (§1.1, §2.5); 0 sends none.
+    hsts_max_age: int = 31536000
 
     @property
     def join_host(self) -> str | None:
@@ -246,6 +261,7 @@ class Settings:
                 env, "MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", 60.0, minimum=0, maximum=3600
             ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
+            seal_verifiers=parse_seal_verifiers(env),
             mail=parse_mail(env),
             sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
             sign_in_email_link=parse_switch(env, "MAITY_SIGN_IN_EMAIL_LINK"),
@@ -259,6 +275,9 @@ class Settings:
             ),
             registration=parse_registration(env),
             sign_in_second_factor=parse_second_factor(env),
+            second_factor_wrong_per_day=parse_whole(
+                env, "MAITY_SECOND_FACTOR_WRONG_PER_DAY", 50, 10, 10000
+            ),
             public_pages=parse_choice(env, "MAITY_PUBLIC_PAGES", ("on", "off"), "off") == "on",
             public_pages_render=parse_choice(
                 env, "MAITY_PUBLIC_PAGES_RENDER", ("on_change", "interval"), "on_change"
@@ -285,9 +304,11 @@ class Settings:
                 env, "MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT", 1024**2, 1024**5
             ),
             max_aliases=parse_alias_limit(env),
+            agent_firewall=parse_choice(env, "MAITY_AGENT_FIREWALL", ("on", "off"), "off") == "on",
             route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
+            hsts_max_age=parse_whole(env, "MAITY_HSTS_MAX_AGE", 31536000, 0, 63072000),
         )
 
 
@@ -706,6 +727,14 @@ def parse_second_factor(env: dict[str, str]) -> str | None:
     if value == "required_admins" and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
         raise ConfigError("MAITY_SIGN_IN_SECOND_FACTOR=required_admins needs MAITY_SECRET_KEY")
     return value
+
+
+def parse_seal_verifiers(env: dict[str, str]) -> bool:
+    """MAITY_SEAL_VERIFIERS: sealing needs the instance key it seals with."""
+    seal = parse_flag(env.get("MAITY_SEAL_VERIFIERS", ""), "MAITY_SEAL_VERIFIERS")
+    if seal and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
+        raise ConfigError("MAITY_SEAL_VERIFIERS=1 needs MAITY_SECRET_KEY")
+    return seal
 
 
 def parse_switch(env: dict[str, str], name: str) -> bool | None:

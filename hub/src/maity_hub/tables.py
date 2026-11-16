@@ -60,6 +60,8 @@ TITLE = 200  # characters, docs/api.md §1.7
 BRIDGE_PURPOSE = 200  # characters, docs/api.md §2.3 ("The bridge")
 MARKDOWN = 16384  # characters, docs/api.md §1.7; enforced by the API, see MARKDOWN_TEXT
 HEX_SHA256 = 64
+# A verifier sealed by `auth.verifiers`: `s1:` and the base64 of 60 bytes (83), or 64 hex.
+SEALED_VERIFIER = 128
 # A namespace owner is a human or an organisation: one of the two foreign keys, and
 # `owner_id` the same id (docs/api.md §6.25, §6.26).
 OWNER_SHAPE = (
@@ -469,6 +471,22 @@ second_factor = Table(
     **MYSQL_TABLE,
 )
 
+# The wrong second-factor codes of one human on one UTC day (§2.8.6): at the cap every check of
+# that human is refused for the rest of the day, unless the link mailed then lifts it; `unlocks`
+# counts the lifts, and a link names the count it was made at, so it works once. `alerted`: the
+# alert with its link was written since the day began or the cap was last lifted; no refusal
+# comes before it, also after the cap was lowered during the day.
+second_factor_day = Table(
+    "second_factor_day",
+    metadata,
+    _ref("human_id", "human.id", primary_key=True),
+    Column("day", String(10), primary_key=True),
+    Column("wrong_codes", Integer, nullable=False),
+    Column("unlocks", Integer, nullable=False, server_default="0"),
+    Column("alerted", Boolean, nullable=False, server_default=false()),
+    **MYSQL_TABLE,
+)
+
 # Ten recovery codes per enrolled human, each an HMAC-SHA-256 under MAITY_SECRET_KEY
 # (a database copy alone opens none), each usable once (§2.8.1).
 recovery_code = Table(
@@ -631,7 +649,8 @@ project = Table(
     Column("state_changed_at", UtcDateTime, nullable=False),
     # Set once, when the probe first finds a release's tag; never cleared (§6.1).
     Column("released_at", UtcDateTime),
-    Column("repository_url", String(255)),
+    # 2048 is the contract's maximum for a stored repository URL (§6.1).
+    Column("repository_url", String(2048)),
     Column("repository_default_branch", String(255)),
     # The one check that says a commit is good (§6.1 `repository.required_check`), or null.
     Column("repository_required_check", String(200)),
@@ -1031,6 +1050,13 @@ join_link = Table(
     Column("failed_attempts", Integer, nullable=False),
     Column("burned_at", UtcDateTime),
     Column("revoked_at", UtcDateTime),
+    # Who revoked it (§3.1): the principal behind a `DELETE`, a profile's deletion by its owner
+    # or the end of the creator's membership (`join_revocation`); null when the hub revoked it
+    # on its own: a runner's pickups (§15.9), an account's deletion (§2.9), and joins revoked
+    # before the column existed, and a membership end the hub carries out (an organisation
+    # owner's seat it kept, released, §6.26). No foreign key: the record stays as written, as
+    # `credential.revoked_by`.
+    Column("revoked_by", String(ID)),
     # A runner's pickup for a placement (§15.9): the placement, the runner and the
     # generation it was picked up for; null on a human's join.
     _ref("placement_id", "placement.id", index=True),
@@ -1045,8 +1071,9 @@ credential = Table(
     metadata,
     _id(primary_key=True),
     _membership_ref("membership_id", nullable=False, index=True),
-    # sha256 over the secret's text, hex; the HMAC key and the bearer verifier.
-    Column("verifier", String(HEX_SHA256), nullable=False),
+    # sha256 over the secret's text: the HMAC key and the bearer verifier. Sealed with
+    # MAITY_SECRET_KEY (`auth.verifiers`), plain hex without an instance key.
+    Column("verifier", String(SEALED_VERIFIER), nullable=False),
     # The agent instance this credential is (§6.17): unique within the membership and
     # never reused, also after revocation.
     Column("instance", String(INSTANCE), nullable=False),
@@ -1301,6 +1328,8 @@ runner = Table(
     Column("version", Text),  # the `client` of its last hello
     Column("capabilities", JSON_VALUE),  # what it last advertised (§15.3), never a grant
     Column("capabilities_at", UtcDateTime),
+    # The owner's open `Update now` requests, `[{tool, requested_at}]` (§15.16); null: none.
+    Column("update_requests", JSON_VALUE),
     # True until the runner is removed, NULL afterwards: a name is unique among
     # one owner's runners, and a removed runner's name is free again.
     Column("active", Boolean, default=True),
@@ -1335,8 +1364,9 @@ runner_credential = Table(
     metadata,
     _id(primary_key=True),
     _ref("runner_id", "runner.id", nullable=False),
-    # sha256 over the secret's text, hex; the HMAC key (a runner signs every call).
-    Column("verifier", String(HEX_SHA256), nullable=False),
+    # sha256 over the secret's text: the HMAC key (a runner signs every call). Sealed as
+    # `credential.verifier` is.
+    Column("verifier", String(SEALED_VERIFIER), nullable=False),
     _ref("enrollment_id", "runner_enrollment.id", nullable=False),
     Column("client", Text),
     Column("created_at", UtcDateTime, nullable=False),
@@ -1683,6 +1713,10 @@ request = Table(
     Column("while_open", String(32), nullable=False),
     Column("needs_in_session", JSON_VALUE),
     Column("cover", JSON_VALUE),  # `{for, by, since}` while a substitute covers it (§6.12)
+    # The agents of other owners its `to` reached without their owner's yes when it was filed
+    # (§7, §9.6): it is not theirs to read, find or answer, whatever their owner says later;
+    # null when it held nobody.
+    Column("held", JSON_VALUE),
     Column("ktw_ref", String(255)),
     # The owner's digest (§5.3): what the request shows, one entry per listed instance
     # (`{membership_id, instance, kind, since, last_seen_at, cards, reason}`), compared on the
@@ -2097,6 +2131,28 @@ conversation_meat_proxy = Table(
     Column("conversation_id", String(ID), nullable=False),
     Column("meat_proxy", Boolean, nullable=False),
     PrimaryKeyConstraint("human_id", "project_id", "conversation_id"),
+    **MYSQL_TABLE,
+)
+
+VERDICT_SENTENCE = 500  # Unicode code points, docs/api.md §9.7
+
+# A human's current verdict on a chat message (docs/api.md §9.7): one row per message and human,
+# replaced by a new one and deleted when taken back. `set_seq` is the `chat_verdict` event that
+# set it. Kept apart from the events because a redacted event loses its payload, and the verdict
+# it set must stay (hub/context/events.md). The projects' record, kept with a deleted account.
+chat_verdict = Table(
+    "chat_verdict",
+    metadata,
+    Column("message_seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _ref("human_id", "human.id", nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("conversation_id", String(ID), nullable=False),
+    Column("value", String(8), nullable=False),
+    Column("sentence", String(VERDICT_SENTENCE)),
+    Column("set_seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("message_seq", "human_id"),
+    CheckConstraint("value IN ('agree', 'disagree')", name="value"),
     **MYSQL_TABLE,
 )
 
@@ -2613,7 +2669,10 @@ mail_delivery = Table(
 # as one JSON value, beside the address and its verification. `pending_nonce` makes the
 # newest verification link the only valid one; `epoch` moves when the address changes or
 # is removed, which voids every unsubscribe link (§18.6). `address_change` is a change
-# held for approval (§18.4).
+# held for approval (§18.4). `pending_browser`, `pending_os` and `pending_ip` are the
+# requesting session's, for the notice to the old address once the new one is verified
+# (§2.6.3, §18.4); they go with the pending address: at its verification, when it is
+# replaced, removed or voided, and once it expired (`notifications/retention`).
 notification_settings = Table(
     "notification_settings",
     metadata,
@@ -2630,6 +2689,9 @@ notification_settings = Table(
     Column("pending_address", String(254)),
     Column("pending_nonce", String(32)),
     Column("pending_expires_at", UtcDateTime),
+    Column("pending_browser", String(64)),
+    Column("pending_os", String(64)),
+    Column("pending_ip", String(64)),
     Column("epoch", Integer, nullable=False),
     Column("hard_failures", Integer, nullable=False),
     Column("disabled_at", UtcDateTime),

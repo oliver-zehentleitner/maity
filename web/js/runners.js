@@ -25,7 +25,8 @@ window.Maity = window.Maity || {};
   // ---- plain words for what a runner advertises (shared with Project → Runners)
 
   const TOOLS = {
-    "claude-code": "Claude Code", codex: "Codex", opencode: "opencode", pi: "pi", hermes: "Hermes",
+    "claude-code": "Claude Code", codex: "Codex", opencode: "opencode", antigravity: "Antigravity",
+    pi: "pi", hermes: "Hermes",
     kimi: "Kimi Code", cline: "Cline", omp: "oh-my-pi", get stub() { return M.t("runners.tool.stub"); },
   };
   const toolName = (id) => (Object.hasOwn(TOOLS, id) ? TOOLS[id] : id);
@@ -95,7 +96,11 @@ window.Maity = window.Maity || {};
     const bounds = tool.confinement === "allowlist" ? M.t("runners.tool.allowlist")
       : tool.confinement === "pod" ? M.t("runners.tool.pod")
         : tool.confinement === "none" ? M.t("runners.tool.tests_only") : tool.confinement;
-    const parts = [tool.sandbox === "on" ? M.t("runners.tool.sandboxed", { bounds }) : bounds,
+    // `sandbox` (codex): the OS sandbox is the whole boundary, so its state is the sentence.
+    const kept = tool.confinement === "sandbox"
+      ? (tool.sandbox === "on" ? M.t("runners.tool.sandbox_on") : M.t("runners.tool.sandbox_off"))
+      : tool.sandbox === "on" ? M.t("runners.tool.sandboxed", { bounds }) : bounds;
+    const parts = [kept,
       // "; or ": a mode's own words hold a comma.
       (tool.modes || []).map((m) => (Object.hasOwn(MODES, m) ? MODES[m] : m)).join(M.t("runners.tool.or"))];
     if ((tool.models || []).length) parts.push(M.t("runners.tool.models", { models: names(tool.models) }));

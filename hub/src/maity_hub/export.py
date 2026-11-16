@@ -21,7 +21,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, select
+from sqlalchemy import Connection, or_, select
 
 from maity_hub import (
     avatars,
@@ -86,6 +86,15 @@ def build(conn: Connection, human_id: str, now: datetime) -> dict[str, Any]:
         "memberships": [_membership_view(row, names, member_ids) for row in mine],
         "messages": _messages(conn, member_project_ids, my_ids, names, titles, chat=False),
         "chat_messages": _messages(conn, member_project_ids, my_ids, names, titles, chat=True),
+        # Every verdict they gave (§9.7), also as an owner reading a chat along from outside
+        # the project, which only their agents' projects can hold.
+        "chat_verdicts": _chat_verdicts(
+            conn,
+            sorted(set(member_project_ids) | {row.project_id for row in agent_memberships}),
+            my_ids,
+            human_id,
+            titles,
+        ),
         "requests_asked": _requests_asked(conn, member_project_ids, my_ids, names, titles),
         "answers_given": [_answer_view(row, names, titles) for row in answered],
         "cards_created": _cards_created(conn, member_project_ids, my_ids, names, titles),
@@ -703,6 +712,44 @@ def _messages(
                     review=payload.get("review"),
                 )
         out.append(item)
+    return out
+
+
+def _chat_verdicts(
+    conn: Connection, project_ids: list[str], my_ids: set[int], human_id: str, titles: _Titles
+) -> list[dict[str, Any]]:
+    """Each `chat_verdict` the caller gave (§9.7), the history and not only the current one:
+    every change is written by them. The message is named by its seq, never its text, which
+    is another person's; a redacted one is exported as redacted (§2.9, §8.5)."""
+    names = namespace.full_names(conn, project_ids)
+    by_me = t.event.c.actor_human_id == human_id
+    if my_ids:
+        by_me = or_(by_me, t.event.c.actor_membership.in_(my_ids))
+    out = []
+    for project_id in project_ids:  # on the `(project_id, kind, seq)` index, as `_events`
+        for row in conn.execute(
+            select(t.event)
+            .where(t.event.c.project_id == project_id, t.event.c.kind == "chat_verdict", by_me)
+            .order_by(t.event.c.seq)
+        ):
+            payload = row.payload or {}
+            item: dict[str, Any] = {
+                "project": names.get(row.project_id),
+                "id": f"evt-{row.seq}",
+                "seq": row.seq,
+                "at": ts(row.at),
+                "conversation": titles.conversation(row.project_id, row.conversation_id),
+            }
+            if row.redacted:
+                item.update(redacted=True, redaction=_redaction(payload, human_id))
+            else:
+                item.update(
+                    message_seq=payload.get("message_seq"),
+                    value=payload.get("value"),
+                    sentence=payload.get("sentence"),
+                    redacted=False,
+                )
+            out.append(item)
     return out
 
 

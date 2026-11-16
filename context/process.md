@@ -110,11 +110,13 @@ merge — the status quo that caused the problem.
 
 **Id:** 3ac98e12-f84b-423d-98de-3d3f7f610b8f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** https://github.com/oliver-zehentleitner/maity — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
 **Evidence:** confirmed
-**Source:** the maintainer's standing instruction, 2026-10-22, relayed by the coordinator
+**Source:** the maintainer's standing instruction, 2026-10-22, relayed by the coordinator; retired by the maintainer's answer to req-5x293t6ntn8q, 2026-11-14, relayed by the team lead
 **Revisit when:** the maintainer withdraws the standing instruction, or a deploy without a go breaks maity.team
 **See:** https://github.com/oliver-zehentleitner/maity — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
 
 For the night of 2026-10-22 the maintainer gave a standing instruction:
 the coordinator deploys a new image to maity.team before the maintainer
@@ -131,6 +133,14 @@ reasons in the hub's Kubernetes entry.
 night's merges deployed before the maintainer is back was stated.
 
 **Alternatives:** none were weighed.
+
+**Superseded:** from deploy 6 (2026-11-10) every deploy of maity.team
+is a release built by the maintainer's `v*` tag, the hub context's
+entry 1555765c. The two descriptions disagreed until the maintainer
+settled it on 2026-11-14 (req-5x293t6ntn8q): that entry stays, and this
+one, which deployed the image from the publish workflow on `main`, is
+retired. The documented `cosign verify` no longer accepts an image
+signed on `main` (the hub context's entry 9c3f6a1e).
 
 ## Before the deploy go, the lead puts every upgrade or setting note of the shipped changelog fragments on the deploy list
 
@@ -244,15 +254,21 @@ job's `make smoke` also runs `tools/run_slot.sh` (web/Makefile's `SLOT`), which 
 
 Three hub test files (`test_contract_routes.py`, `test_guide.py`, `test_paths.py`) read `docs/api.md`, but the `hub` part of the `changes` job
 did not list it, so a pull request that changed only the contract got a green `ci-ok` and main went red after the merge. A new
-part `contract` (`docs/api.md` and `hub/*`) starts the job `hub-contract`: `make install` and every test file that builds
+part `contract` (`docs/api.md` and `hub/*`; since 2026-11-16 also `cli/src/maity/runner/capabilities.py`, below) starts the job `hub-contract`: `make install` and every test file that builds
 the path `"docs" / "api.md"` (found by `grep` in the job, not listed; today `test_contract_routes`, `test_guide` and
 `test_paths`) on SQLite, a few minutes. It is in `ci-ok`. A change under `hub/` starts it too, beside the hub jobs that run the same files: it answers in a few minutes, while the database
-jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*`; a push to main and a change
+jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*` (the third pattern came with the review of #1872, below); a push to main and a change
 to the workflow start it like every other part.
 
 **Known gap (review of 2026-11-02):** hub tests also read files outside `hub/` and `docs/` (`web/tools/hub-shapes.json`,
 `web/tools/site-fixture.json`, `deploy/Dockerfile`, `cli/src/maity/__init__.py`, `README.md`); a pull request that changes only
 one of them starts neither the hub jobs nor this one. Not solved here; its own task.
+
+**One file of the gap now starts the job (2026-11-16, tsk-ag8rgjnzt0kg):** `hub/tests/test_runner_confinement.py` checks the
+hub's confinements against the CLI's `cli/src/maity/runner/capabilities.py` and builds the path `"docs" / "api.md"`, so
+`hub-contract` runs it. The `contract` part also lists `cli/src/maity/runner/capabilities.py`: a pull request that
+changes only that file would otherwise leave a confinement the hub refuses unseen until main (the finding H1 of review A783
+of #1872). Only this file, because the job runs it already; the other files of the gap stay open.
 
 **Rejected alternatives:**
 - `docs/api.md` in the `hub` part: every contract pull request would run the PostgreSQL and SQLite suites, about an

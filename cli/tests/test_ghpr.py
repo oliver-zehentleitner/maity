@@ -57,7 +57,6 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     assert git is not None
     subprocess.run([git, "init", "-q", "-b", BRANCH, str(clone)], check=True)
     (clone / ".git" / "maity").mkdir()
-    (clone / clonecheck.GIT_PATH).write_text(git + "\n")
     log = tmp_path / "gh.json"
     gh = tmp_path / "bin" / "gh"
     gh.parent.mkdir()
@@ -69,7 +68,6 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         f" open({str(log)!r}, 'w'))\n"
     )
     gh.chmod(0o755)
-    (clone / ghpr.PULL_REQUESTS_PATH).write_text(f"{REPOSITORY}\n{gh}\n")
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
     # As the runner starts a session (#1683): the .git it recorded, git's own directory.
@@ -77,8 +75,11 @@ def placed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     private = tmp_path / "agent" / "git"
     private.mkdir(parents=True)
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
+    # The runner's records, in its directory for the agent, never in the clone.
+    (private / clonecheck.GIT_PATH.name).write_text(git + "\n")
+    (private / ghpr.PULL_REQUESTS).write_text(f"{REPOSITORY}\n{gh}\n")
     monkeypatch.chdir(clone)
-    return {"clone": clone, "log": log, "gh": str(gh)}
+    return {"clone": clone, "log": log, "gh": str(gh), "record": private / ghpr.PULL_REQUESTS}
 
 
 def ran(placed: dict[str, Any]) -> dict[str, Any] | None:
@@ -242,7 +243,7 @@ def test_a_body_over_the_limit_is_refused(
 def test_without_a_record_the_grant_is_named(
     placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (placed["clone"] / ghpr.PULL_REQUESTS_PATH).write_text("")
+    placed["record"].write_text("")
     err = refused(["gh", "pr", "view"], capsys)
     assert "pull_requests = true" in err and ran(placed) is None
 
@@ -259,7 +260,7 @@ def test_without_a_record_the_grant_is_named(
 def test_a_record_the_runner_does_not_write_is_refused(
     placed: dict[str, Any], record: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (placed["clone"] / ghpr.PULL_REQUESTS_PATH).write_text(record.format(gh=placed["gh"]))
+    placed["record"].write_text(record.format(gh=placed["gh"]))
     refused(["gh", "pr", "view"], capsys)
     assert ran(placed) is None
 
@@ -269,7 +270,7 @@ def test_a_linked_record_is_refused(
 ) -> None:
     other = tmp_path / "record"
     other.write_text(f"github.com/other/repo\n{placed['gh']}\n")
-    record = placed["clone"] / ghpr.PULL_REQUESTS_PATH
+    record = placed["record"]
     record.unlink()
     record.symlink_to(other)
     err = refused(["gh", "pr", "view"], capsys)
@@ -502,7 +503,7 @@ def test_a_recorded_git_that_does_not_run_is_maitys_refusal(
 ) -> None:
     """The branch is read with the git the runner recorded; when that is no program, maity
     refuses (exit 4) and names why, instead of failing as a general error."""
-    (placed["clone"] / clonecheck.GIT_PATH).write_text(str(tmp_path / "no-git") + "\n")
+    (placed["record"].parent / clonecheck.GIT_PATH.name).write_text(str(tmp_path / "no-git") + "\n")
     code = cli.main(["gh", "pr", "create", "--title", "t", "--body", "b"])
     assert code == cli.EXIT_REFUSED
     assert "maity runs no git here" in capsys.readouterr().err and ran(placed) is None
@@ -531,17 +532,22 @@ def test_a_git_exchanged_for_a_decoy_is_refused_before_its_record_is_read(
     assert ran(placed) is None and not (tmp_path / "decoy-ran").exists()
 
 
-def test_the_record_is_read_through_the_checked_git(placed: dict[str, Any]) -> None:
-    """With the `.git` the runner recorded in place, the record is read from its descriptor:
-    a record that is a link is refused even though the name would resolve."""
-    clone: Path = placed["clone"]
-    record = clone / ghpr.PULL_REQUESTS_PATH
-    elsewhere = clone.parent / "record"
-    elsewhere.write_text(record.read_text())
-    record.unlink()
-    record.symlink_to(elsewhere)
-    assert cli.main(["gh", "pr", "view"]) == 4
-    assert ran(placed) is None
+@runs_gh
+def test_a_record_in_the_clone_is_never_read(placed: dict[str, Any], tmp_path: Path) -> None:
+    """A record at `.git/maity/pull_requests` in the clone naming another repository and
+    another gh is not the runner's: maity reads only the runner's record in its own
+    directory, so the real gh runs on the real repository."""
+    decoy = tmp_path / "decoy-gh"
+    decoy.write_text(f"#!{sys.executable}\nopen({str(tmp_path / 'decoy-ran')!r}, 'w')\n")
+    decoy.chmod(0o755)
+    (placed["clone"] / ghpr.PULL_REQUESTS_PATH).write_text(f"github.com/attacker/other\n{decoy}\n")
+    assert cli.main(["gh", "pr", "view", "7"]) == 0
+    assert not (tmp_path / "decoy-ran").exists()
+    call = ran(placed)
+    assert call is not None and f"--repo={REPOSITORY}" in call["argv"]
+    placed["record"].unlink()  # without the runner's record: no grant, never the clone's
+    assert cli.main(["gh", "pr", "view", "7"]) == 4
+    assert not (tmp_path / "decoy-ran").exists()
 
 
 @walks  # `opened_git` yields a descriptor only where maity walks
@@ -550,11 +556,11 @@ def test_a_body_under_the_checked_git_is_refused_after_a_rename(placed: dict[str
     descriptor: renamed after the check, with a decoy under the old name, the real one is
     still no body's way."""
     clone: Path = placed["clone"]
-    with clonecheck.opened_git(clone) as dot_git:
+    with clonecheck.opened_clone(clone) as opened:
         os.rename(clone / ".git", clone / ".git-moved")
         (clone / ".git").mkdir()
         with pytest.raises(ghpr.Refused, match="under the clone's .git"):
-            ghpr.body_file(clone, ".git-moved/maity/pull_requests", dot_git)
+            ghpr.body_file(clone, ".git-moved/maity/pull_requests", opened)
 
 
 @walks  # `opened_git` yields a descriptor only where maity walks
@@ -573,20 +579,34 @@ def test_the_record_comes_from_the_checked_git_after_a_rename(
         assert ghpr.granted(clone, dot_git) == (REPOSITORY, placed["gh"])
 
 
+@walks  # `opened_clone` yields descriptors only where maity walks
+def test_a_body_is_read_from_the_checked_root_after_an_exchange(placed: dict[str, Any]) -> None:
+    """The walk starts at the root `opened_clone` checked with `.git`, by its descriptor: a
+    directory put at the clone's path after the check, with a body of its own, is not read."""
+    clone: Path = placed["clone"]
+    (clone / "body.md").write_text("real\n")
+    moved = clone.parent / "moved"
+    with clonecheck.opened_clone(clone) as opened:
+        os.rename(clone, moved)
+        clone.mkdir()
+        (clone / "body.md").write_text("decoy\n")
+        assert ghpr.body_file(clone, str(clone / "body.md"), opened) == b"real\n"
+
+
 def renamed_after_the_check(monkeypatch: pytest.MonkeyPatch, clone: Path, decoy_gh: str) -> None:
-    """`opened_git` checks the real `.git`, then sandboxed code renames it and puts a decoy
+    """`opened_clone` checks the real `.git`, then sandboxed code renames it and puts a decoy
     with its own record under the old name, before `maity gh` reads anything."""
-    checked = clonecheck.opened_git
+    checked = clonecheck.opened_clone
 
     @contextlib.contextmanager
-    def then_renamed(root: Path) -> Iterator[int | None]:
-        with checked(root) as dot_git:
+    def then_renamed(root: Path) -> Iterator[clonecheck.Opened | None]:
+        with checked(root) as opened:
             os.rename(clone / ".git", clone / ".git-moved")
             (clone / ".git" / "maity").mkdir(parents=True)
             (clone / ghpr.PULL_REQUESTS_PATH).write_text(f"github.com/attacker/other\n{decoy_gh}\n")
-            yield dot_git
+            yield opened
 
-    monkeypatch.setattr(clonecheck, "opened_git", then_renamed)
+    monkeypatch.setattr(clonecheck, "opened_clone", then_renamed)
 
 
 @walks

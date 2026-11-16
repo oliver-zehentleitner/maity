@@ -56,12 +56,18 @@ imagePullSecrets:
 {{- end -}}
 {{- end -}}
 
+{{/*
+The hub image, pulled by digest. A tag only with image.allowTag: true and an
+explicit image.tag; there is no default tag (the chart's appVersion is not used).
+*/}}
 {{- define "maity-hub.image" -}}
 {{- $repository := required "image.repository is required: the hub image built from deploy/Dockerfile" .Values.image.repository -}}
 {{- if .Values.image.digest -}}
 {{- printf "%s@%s" $repository .Values.image.digest -}}
+{{- else if .Values.image.allowTag -}}
+{{- printf "%s:%s" $repository (required "image.tag is required with image.allowTag: the tag to pull" .Values.image.tag) -}}
 {{- else -}}
-{{- printf "%s:%s" $repository (default .Chart.AppVersion .Values.image.tag) -}}
+{{- fail "image.digest is required: the chart pulls the image by digest (sha256:…, printed in the publish-image run summary). To pull by tag instead, set image.allowTag: true and image.tag" -}}
 {{- end -}}
 {{- end -}}
 
@@ -109,6 +115,9 @@ the cluster.
 {{- else if .Values.ingress.joinHost -}}
 {{- fail "ingress.joinHost needs the Ingress enabled; with your own Ingress, set MAITY_JOIN_URL through extraEnv" -}}
 {{- end -}}
+{{- if and .Values.secretKey.sealVerifiers (not .Values.secretKey.existingSecret) -}}
+{{- fail "secretKey.sealVerifiers needs secretKey.existingSecret: the verifiers are sealed with the instance key" -}}
+{{- end -}}
 {{- if and .Values.config.allowPlainHttp (or .Values.ingress.enabled (ne .Values.service.type "ClusterIP")) -}}
 {{- fail "config.allowPlainHttp is only for a hub nothing outside the cluster reaches: not with the Ingress enabled or a NodePort/LoadBalancer Service" -}}
 {{- end -}}
@@ -142,6 +151,10 @@ the chart.
     secretKeyRef:
       name: {{ . }}
       key: {{ $.Values.secretKey.key }}
+{{- end }}
+{{- if .Values.secretKey.sealVerifiers }}
+- name: MAITY_SEAL_VERIFIERS
+  value: "1"
 {{- end }}
 {{- with .Values.mail.signingKeySecret.existingSecret }}
 - name: MAITY_MAIL_SIGNING_KEY

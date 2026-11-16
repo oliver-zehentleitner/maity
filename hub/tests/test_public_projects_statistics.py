@@ -29,9 +29,12 @@ def done_by(engine: Engine, project_id: str, membership_id: int, at: Any | None 
 
 
 def statistics(text: str) -> str:
-    """The statistics, the last part of the page; who is online is the snapshot's to say."""
-    start = text.index("<h2>The agents, last 30 days</h2>")
-    return text[start : text.index("</main>", start)]
+    """The figures band under the hero (§16.9, the dashboard's design); who is online is the
+    snapshot's to say, in the hero."""
+    if '<section class="band">' not in text:
+        return ""
+    start = text.index('<section class="band">')
+    return text[start : text.index("</section>", start)]
 
 
 def membership_of(engine: Engine, member_id: str) -> int:
@@ -46,9 +49,15 @@ def membership_of(engine: Engine, member_id: str) -> int:
 
 
 def stat(text: str, label: str) -> str:
-    found = re.search(rf"<li>{re.escape(label)}: ([^<]*)</li>", text)
-    assert found is not None, label
-    return found.group(1)
+    """A figure of the band; one that is 0 is not shown (the approved mockup's README)."""
+    found = re.search(rf'<b>([^<]*)</b><span class="label">{re.escape(label)}</span>', text)
+    return found.group(1) if found is not None else "0"
+
+
+def totals(world: World) -> dict[str, Any]:
+    got = world.anyone.get("/api/v1/public/pages/maintainer/maity")
+    assert got.status_code == 200, got.text
+    return dict(got.json()["data"]["statistics"]["totals"])
 
 
 def test_the_page_counts_only_what_the_agents_did(
@@ -64,10 +73,11 @@ def test_the_page_counts_only_what_the_agents_did(
     with migrated.begin() as conn:
         public_pages.touch(conn, "project", world.project_id)
     text = shown(world.anyone)
-    assert "<h2>The agents, last 30 days</h2>" in text
+    assert '<span class="label">Cards done</span><small>30 days</small>' in text
     assert stat(text, "Cards done") == "2"
-    assert stat(text, "Handovers") == "0"
-    assert stat(text, "Median, claim to done") == "-"  # fewer than three samples: none
+    assert stat(text, "Handovers") == "0" and "Handovers" not in statistics(text)
+    # Fewer than three samples: no median, in the data (the design shows no median).
+    assert totals(world)["claim_to_done_median_seconds"] is None
 
 
 def test_a_card_older_than_30_days_is_not_counted(
@@ -202,16 +212,18 @@ def test_the_page_has_a_row_for_each_named_agent_and_the_series_per_day(
     world.owner.patch("/me", {"public_profile": False})  # the agent is named all the same
     handle = world.bot.get("/me").json()["member"]["handle"]
     named = shown(world.anyone)
-    assert named.count("<span title=") == 30
-    assert "<h3>Per agent</h3>" in named and f"({handle})</td><td>2</td>" in named
-    assert "Human maintainer" not in named.split("<h3>Per agent</h3>")[1]  # no human row
+    # The series per day and the rows per agent are the data's; the page shows the figures.
+    series = totals(world)["cards_done_per_day"]
+    assert len(series) == 30  # one entry a day
+    assert stat(named, "Cards done") == "2"
+    assert "Human maintainer" not in statistics(named)  # no human in the figures
     with migrated.connect() as conn:
         rows = public_projects.agent_statistics(conn, world.project_id)["members"]
     assert [(r["handle"], r["name"], r["display_name"]) for r in rows] == [
         (handle, rows[0]["display_name"], rows[0]["display_name"])
     ]  # `name` is the display name (§6.22)
     today = clock.now().date().isoformat()
-    assert f'title="{today}: 2"' in named
+    assert {"date": today, "count": 2} in series
 
 
 def test_an_online_agent_and_a_held_card_leave_no_trace_on_the_page(

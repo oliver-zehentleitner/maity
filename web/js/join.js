@@ -130,6 +130,7 @@ window.Maity = window.Maity || {};
       const bad = !HANDLE.test.test(v);
       handleState.className = "hint handle-state" + (!v ? "" : bad || taken || refused.has(v) ? " field-error" : " ok");
       handleState.textContent = !v ? ""
+        : bad && /[A-Z]/.test(v) ? M.handles.problem(v)
         : bad ? M.t("join.handle.bad", { rule: HANDLE.text })
         : taken ? M.t("join.handle.taken", { name: taken.display_name, handle: v })
         : refused.has(v) ? M.t("join.handle.refused", { handle: v })
@@ -780,8 +781,6 @@ window.Maity = window.Maity || {};
         h("button", { type: "button", class: "icon-button join-close", "aria-label": M.t("join.close"), title: M.t("join.close"), onclick: onClose }, M.icons.close(16))),
       h("p", { class: "join-project" }, M.t("join.project", { name: project.name || ctx.slug || full, full })),
       h("p", { class: "muted" }, M.t("join.intro")),
-      // Until the person confirmed it, once (docs/api.md §5.1, "Experiment notice"); it holds nothing back.
-      M.experimentNotice ? M.experimentNotice.forConnecting(ctx) : null,
     ];
   }
 
