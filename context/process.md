@@ -110,11 +110,13 @@ merge — the status quo that caused the problem.
 
 **Id:** 3ac98e12-f84b-423d-98de-3d3f7f610b8f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** https://github.com/oliver-zehentleitner/maity — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
 **Evidence:** confirmed
-**Source:** the maintainer's standing instruction, 2026-10-22, relayed by the coordinator
+**Source:** the maintainer's standing instruction, 2026-10-22, relayed by the coordinator; retired by the maintainer's answer to req-5x293t6ntn8q, 2026-11-14, relayed by the team lead
 **Revisit when:** the maintainer withdraws the standing instruction, or a deploy without a go breaks maity.team
 **See:** https://github.com/oliver-zehentleitner/maity — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
 
 For the night of 2026-10-22 the maintainer gave a standing instruction:
 the coordinator deploys a new image to maity.team before the maintainer
@@ -131,6 +133,14 @@ reasons in the hub's Kubernetes entry.
 night's merges deployed before the maintainer is back was stated.
 
 **Alternatives:** none were weighed.
+
+**Superseded:** from deploy 6 (2026-11-10) every deploy of maity.team
+is a release built by the maintainer's `v*` tag, the hub context's
+entry 1555765c. The two descriptions disagreed until the maintainer
+settled it on 2026-11-14 (req-5x293t6ntn8q): that entry stays, and this
+one, which deployed the image from the publish workflow on `main`, is
+retired. The documented `cosign verify` no longer accepts an image
+signed on `main` (the hub context's entry 9c3f6a1e).
 
 ## Before the deploy go, the lead puts every upgrade or setting note of the shipped changelog fragments on the deploy list
 

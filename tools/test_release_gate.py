@@ -423,6 +423,19 @@ class Workflows(unittest.TestCase):
         self.assertNotIn("'skipped'", image_job)
         self.assertNotIn("always()", image_job)
 
+    def test_the_documented_verify_accepts_only_a_tag_signature(self):
+        # Every deploy is a release: an image a hand start signed on main is refused.
+        text = (ROOT / "deploy/helm/maity-hub/README.md").read_text(encoding="utf-8")
+        identities = re.findall(r"--certificate-identity-regexp '([^']*)'", text)
+        self.assertEqual(
+            identities,
+            [
+                r"^https://github\.com/oliver-zehentleitner/maity/"
+                r"\.github/workflows/publish-image\.yml@refs/tags/v[^/]+$"
+            ],
+        )
+        self.assertNotIn("heads/main", identities[0])
+
     def test_hand_title_names_the_tested_commit(self):
         text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")
         self.assertIn("format('hand {0}', inputs.sha || 'head')", text)

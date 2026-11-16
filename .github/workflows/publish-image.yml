@@ -12,7 +12,9 @@ name: publish-image
 # carries an SBOM and SLSA provenance as attestations. A second job signs the
 # pushed digest with cosign, keyless: the certificate names this workflow and the
 # ref it ran on, which is what an operator checks (deploy/helm/maity-hub/README.md);
-# only that job may request an OIDC token.
+# only that job may request an OIDC token. The documented check accepts only a
+# v* tag's signature: every deploy is a release, and a hand start from main
+# builds an image that is signed as refs/heads/main and not deployed.
 # On a tag and on a hand start from main alike, the `gate` job first asks what
 # release-hub.yml asks before the package: ci passed on the commit and
 # hub-mariadb on the same hub files (tools/release_gate.py, read-only). A commit
