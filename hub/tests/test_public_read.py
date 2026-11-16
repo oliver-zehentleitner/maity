@@ -12,9 +12,9 @@ from sqlalchemy import Engine, select, update
 
 from maity_hub import public_pages, public_projects
 from maity_hub import tables as t
-from maity_hub.routes import pages
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.test_public_pages import only_the_frames_script
 from tests.test_public_project_views import World
 from tests.test_reports import report
 
@@ -57,13 +57,19 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
         "links",
         "people",
         "agents",
+        "members",
         "statistics",
         "ticker",
         "online",
     }
     assert set(project["data"]["statistics"]) == {"totals", "members"}
     assert set(project["data"]["online"]) == {"humans", "agents", "named", "as_of"}
-    assert project["data"]["people"] and all(set(p) == PERSON for p in project["data"]["people"])
+    assert all(set(p) == PERSON | {"picture"} for p in project["data"]["online"]["named"])
+    assert all(set(e) == {"type", "text", "url", "at", "merge"} for e in project["data"]["ticker"])
+    assert isinstance(project["data"]["members"], int)
+    people, agents = project["data"]["people"], project["data"]["agents"]
+    assert people and all(set(p) == PERSON | {"picture", "role"} for p in people)
+    assert agents and all(set(a) == PERSON | {"picture", "role", "harness"} for a in agents)
 
     board = read(world, f"{BASE}/board")
     assert board["kind"] == "board" and set(board["data"]) == {"columns"}
@@ -72,13 +78,17 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
 
     members = read(world, f"{BASE}/team")
     assert members["kind"] == "team" and set(members["data"]) == {"shown", "others"}
-    assert all(set(p) == PERSON | {"trust", "role"} for p in members["data"]["shown"])
+    assert all(set(p) == PERSON | {"picture", "trust", "role"} for p in members["data"]["shown"])
     assert all(set(o) == {"role", "count"} for o in members["data"]["others"])
 
     organisation = read(world, f"{BASE}/organisation")
     assert organisation["kind"] == "organisation" and set(organisation["data"]) == {"nodes"}
     assert all(
         set(n) == {"index", "person", "role", "reports_to"} for n in organisation["data"]["nodes"]
+    )
+    assert all(
+        n["person"] is None or set(n["person"]) == PERSON | {"picture"}
+        for n in organisation["data"]["nodes"]
     )
 
     person = read(world, "maintainer")
@@ -104,7 +114,7 @@ def test_each_kind_answers_exactly_the_keys_of_the_contract(world: World) -> Non
         "harness",
     }
     assert all(set(p) == {"name", "full_name", "role"} for p in agent["data"]["projects"])
-    assert set(agent["data"]["owner"]) == PERSON
+    assert set(agent["data"]["owner"]) == PERSON | {"picture"}
 
 
 def test_nothing_private_reaches_an_answer(world: World, migrated: Engine) -> None:
@@ -283,8 +293,8 @@ def test_explore_draws_the_projects_as_cards_in_the_frame(world: World) -> None:
     got = world.anyone.get("/explore")
     html = got.text
     assert '<header class="site-header dz">' in html and '<footer class="site-footer">' in html
-    assert "/assets/landing/public-pages.css?v=" in html and "<script" not in html
-    assert got.headers["content-security-policy"] == pages.LEGAL_CSP
+    assert "/assets/landing/public-pages.css?v=" in html
+    assert got.headers["content-security-policy"] == public_pages.FRAMED_CSP
     assert "Accept-Language" in got.headers["vary"]
     assert '<section class="hero dz xhero"><div class="wrap"><p class="eyebrow">Explore</p>' in html
     assert (
@@ -298,6 +308,24 @@ def test_explore_draws_the_projects_as_cards_in_the_frame(world: World) -> None:
     assert ' style="' not in html.split("<body", 1)[1]
     flow.project(world.owner, "second", public_page="on")
     assert world.anyone.get("/explore").text.count('class="xcard"') == 2
+
+
+def test_explore_has_the_landing_pages_theme_switch(world: World) -> None:
+    """tsk-v499cfz74hma: `/explore`'s header has the landing page's light/dark switch, in the
+    frame's language, and the page loads the landing page's one script and no other, as a stored
+    page in its frame does (req-q34v0gr2rbw2); its policy lets that script run."""
+    got = world.anyone.get("/explore")
+    assert (
+        '<button type="button" class="theme-toggle" data-lp-theme hidden aria-pressed="false" '
+        'aria-label="Switch between the light and the dark theme">◐</button>'
+    ) in got.text
+    assert only_the_frames_script(got.text)
+    assert "script-src 'self'" in got.headers["content-security-policy"]
+    # The switch sits in the header, before its call to sign in (the mockup's place).
+    header = got.text.split("<header ", 1)[1].split("</header>", 1)[0]
+    assert -1 < header.find("data-lp-theme") < header.find('class="signin"')
+    german = world.anyone.get("/explore", params={"lang": "de"}).text
+    assert 'aria-label="Zwischen hellem und dunklem Farbschema wechseln"' in german
 
 
 def test_no_stored_page_carries_an_inline_style(world: World, migrated: Engine) -> None:

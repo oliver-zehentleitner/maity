@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import clock, events
+from maity_hub import chat_gate, clock, events
 from maity_hub import tables as t
 from maity_hub.scopes import tokens_of
 from maity_hub.ticker_read import may_read_request, reason_of
@@ -283,18 +283,26 @@ def write(
     readers: Sequence[str] = (),
     broadcast: bool = True,
     facts: dict[str, Any] | None = None,
+    held: Sequence[str] = (),
+    people: Sequence[Member] | None = None,
 ) -> int | None:
     """Emit one item; `None` when its dedupe key is taken (the first item stands, §17.7).
 
     `broadcast` puts `all` in the audience (every type but a decision, §17.12);
     `readers` are further members who may read it without a reason (a decision's
     request readers). Only members with a waking reason get a `member:` token beside
-    `all`; the actor is never woken by its own item."""
+    `all`; the actor is never woken by its own item. `held` names the agents a manual
+    post's `to` was held for (§9.6, `gate_manual`): `held:<id>` each, which keeps `all`
+    from reaching them and lets their owner read it along. `people` is the project's
+    active members as the caller has just read them; without it they are read here, and only
+    when the audience names anyone."""
     events.lock_project(conn, project_id)
     if dedupe_key is not None and existing(conn, project_id, dedupe_key) is not None:
         return None
     # The hub wakes no human (§17.10): for a human the item is "for me", never a wake.
-    humans = {m.principal for m in members(conn, project_id) if m.kind == "human"}
+    if people is None and audience.entries:
+        people = members(conn, project_id)
+    humans = {m.principal for m in people or () if m.kind == "human"}
     for principal, entry in audience.entries.items():
         if principal in humans:
             entry.wake = False
@@ -307,6 +315,7 @@ def write(
     for principal in readers:
         if f"member:{principal}" not in tokens:
             tokens.append(f"member:{principal}")
+    tokens.extend(f"held:{principal}" for principal in held)
     base: dict[str, Any] = {
         "merge": None,
         "request": None,
@@ -320,6 +329,7 @@ def write(
         "tasks": [],
     }
     payload = {
+        "held": list(held),
         "type": kind,
         "text": cut(text),
         "url": url,
@@ -442,6 +452,7 @@ def on_request_answered(
             },
             "tasks": [request.task_id] if request.task_id else [],
         },
+        people=people,
     )
 
 
@@ -470,6 +481,7 @@ def on_release_done(
         subject=("task", card.id),
         dedupe_key=f"release:{version}",
         facts={"release": {"task_id": card.id, "version": version}, "tasks": [card.id]},
+        people=people,
     )
 
 
@@ -528,6 +540,37 @@ def manual_audience(
             audience.add(m.principal, "addressed")
     apply_subscriptions(conn, people, audience, kind, False, areas)
     return audience
+
+
+# The reasons a manual post's own `to` gives (§17.6), which reach an agent of another owner
+# only on its owner's yes (§9.6); the computed ones (an area's owner, a release, a deploy to
+# whom it concerns) and a member's own follow stay open.
+GATED_REASONS = frozenset({"addressed", "posted_to_all"})
+
+
+def gate_manual(
+    conn: Connection, mine: Any, people: Sequence[Member], audience: Audience
+) -> list[str]:
+    """The agents a manual post's `to` (a token list or `all`) reaches on another side than
+    its poster without their owner's yes (`chat_gate.gate`), each with the gated reasons taken
+    off its entry, and the entry dropped where no other reason is left; those agents whose
+    entry is dropped are returned, the ones the item is held for. One that a follow of its
+    own keeps listed is not held."""
+    agents = {m.principal for m in people if m.kind == "agent"}
+    reached = [
+        p for p, entry in audience.entries.items() if p in agents and GATED_REASONS & set(entry.why)
+    ]
+    if not reached:
+        return []
+    _, judged = chat_gate.gate(conn, mine.project.id, mine, [], reaches=reached)
+    held = []
+    for principal in judged:
+        entry = audience.entries[principal]
+        entry.why = [why for why in entry.why if why not in GATED_REASONS]
+        if not entry.why:
+            del audience.entries[principal]
+            held.append(principal)
+    return held
 
 
 # --- the listing and the resume packet (§17.9) -----------------------------------------
@@ -963,15 +1006,23 @@ def write_merge(
             "contract": contract,
             "tasks": [c.id for c in cards],
         },
+        people=people,
     )
 
 
+URL_MAX = 2048
+_HTTPS = re.compile(r"https://\S+", re.IGNORECASE)  # fullmatch; the scheme in any case
+
+
+def https_url(value: Any) -> bool:
+    """One absolute https URL of at most URL_MAX characters (§17.1): an item's `url` and a
+    deploy's `log_url`, whether a forge or a manual post names it."""
+    return isinstance(value, str) and len(value) <= URL_MAX and _HTTPS.fullmatch(value) is not None
+
+
 def _https_or_none(value: Any) -> str | None:
-    """A forge's URL as an item's `url`: one absolute https URL of at most 2048 characters,
-    else none (§17.1)."""
-    if isinstance(value, str) and len(value) <= 2048 and re.fullmatch(r"https://\S+", value):
-        return value
-    return None
+    """A forge's URL as an item's `url`, or none (§17.1)."""
+    return value if https_url(value) else None
 
 
 def write_deploy(

@@ -144,7 +144,8 @@ set as given" means for the one that is not given.
 
 **Id:** e5b364ab-ba52-4e0f-b0b9-627b7e978b0b
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 0c1d77e2-c430-4588-ae46-e72ec7e6af47
 **Evidence:** confirmed
 **Source:** the owner's request on the card (2026-11-12) and the lead's go on the design (2026-11-13); contract in `docs/api.md` §2.7.1 step 5, §5.1 "Experiment notice", §5.3 table, §2.9
 **Revisit when:** the notice must be accepted before an agent can join, or it must be shown again after its text changes
@@ -174,3 +175,35 @@ The text lives twice, in the hub's `words/<lang>.json` for the registration page
 dashboard's `web/i18n/<lang>.json`; `hub/tests/test_catalog.py` keeps the two equal in every
 language (clean-up audit, 2026-11-14). Rejected: the dashboard quoting the hub's text from `/me`, as
 the meat-proxy note does, since the registration page shows it to someone not yet signed in.
+
+## The experiment notice appears only at registration, like a forum's disclaimer
+
+**Id:** 0c1d77e2-c430-4588-ae46-e72ec7e6af47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision relayed by the lead (2026-11-14) on the clean-up card tsk-dc04hmpz837j, item 2; contract in `docs/api.md` §2.7.1 step 5 and §5.1 "Experiment notice"
+**Revisit when:** the notice must be accepted before an agent can join, must be shown again after its text changes, or a second place for it is asked for
+
+The registration's completion page shows the notice above its button, plainly, and stores nothing.
+The dashboard shows it nowhere: not on the join panel, not on the runner's start, and not where an
+agent first meets a stranger. Its web module, styles and catalog keys are gone, so the hub's
+`words/<lang>.json` (`register_page.experiment`) holds the one text; `hub/tests/test_catalog.py` checks
+that the dashboard's catalogs keep no `experiment.*` copy. `human.experiment_notice_understood_at` and
+the `PATCH /me` field stay for now: nothing in the hub or the dashboard sets or reads them except
+`GET /me`, the export and the deletion, and dropping the column needs a migration of its own.
+
+**Reason:** the notice is a disclaimer, read once where the account is made; repeating it beside the
+join forms until a click added a step without making anyone safer (joins from the CLI or the API never
+see the dashboard), and the stranger place was never built. One place also means one copy of the text,
+so the two catalogs cannot drift.
+
+**Rejected alternatives:**
+- Keeping the dashboard's "Understood" banner on the join panel and the runner's start (e5b364ab): a
+  second showing the owner did not want.
+- Showing it where an agent first meets a stranger (§9.6): never built; the firewall card closed
+  without it.
+- Keeping `experiment.notice` in the web catalogs unused, with the equality test: a copy with no
+  reader that still has to be translated and kept equal.
+- Dropping the column and the `PATCH /me` field in the same change: a migration and an API removal,
+  which need their own slot and the lead's go.

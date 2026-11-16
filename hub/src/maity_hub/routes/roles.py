@@ -86,7 +86,7 @@ def put_roles(slug: str, body: RolesIn, request: Request, caller: HumanCaller) -
                 {**role, "guide": before.get("guide", ""), "guide_by": before.get("guide_by")}
             )
         if new != list(old.values()):
-            project_roles.rebase(conn, project, new)
+            project_roles.rebase(conn, project, new, caller.actor(mine.id))
             conn.execute(
                 update(t.project).where(t.project.c.id == project.id).values(roles=new or None)
             )
