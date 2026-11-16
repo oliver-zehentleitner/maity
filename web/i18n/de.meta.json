@@ -5991,9 +5991,81 @@
     "en": "6a0ad2bedc57dba0",
     "text": "6a0ad2bedc57dba0"
   },
+  "instance.column.admin": {
+    "en": "0a4033d45cabaa7e",
+    "text": "d2c380bfa1da1332"
+  },
+  "instance.column.name": {
+    "en": "54f30857c965d846",
+    "text": "6e50996e05e831da"
+  },
+  "instance.column.source": {
+    "en": "6165ee130f0082e8",
+    "text": "573501b50c797cda"
+  },
+  "instance.column.value": {
+    "en": "f951b794a3597650",
+    "text": "4dffae797922812d"
+  },
+  "instance.docs": {
+    "en": "fcdbb7dec69a10f9",
+    "text": "6ddbd273fb3181af"
+  },
   "instance.dormant": {
     "en": "3271785a9671b980",
     "text": "0b5ea636bf3fdd0f"
+  },
+  "instance.group.address": {
+    "en": "a46bbeb5bcb7cbc7",
+    "text": "426f70a33d18c445"
+  },
+  "instance.group.agents": {
+    "en": "21cf98a292e94015",
+    "text": "7f662265ecc2b71c"
+  },
+  "instance.group.attachments": {
+    "en": "7598bc1dde680e28",
+    "text": "85a7b97638f3e310"
+  },
+  "instance.group.database": {
+    "en": "8a71e0500e1c091f",
+    "text": "3ee206cb86f46eaf"
+  },
+  "instance.group.forge": {
+    "en": "584f5686c08e985f",
+    "text": "584f5686c08e985f"
+  },
+  "instance.group.limits": {
+    "en": "de426ff2905e9741",
+    "text": "bc1f3b5cd3577d51"
+  },
+  "instance.group.mail": {
+    "en": "2c30b8cd5f5975cc",
+    "text": "2c30b8cd5f5975cc"
+  },
+  "instance.group.processes": {
+    "en": "5d6036b39ae87f3e",
+    "text": "7d33c54f87682b32"
+  },
+  "instance.group.public_pages": {
+    "en": "bdb2d57820801d96",
+    "text": "51ad753ec008beff"
+  },
+  "instance.group.registration": {
+    "en": "db6193bb5277ebb8",
+    "text": "b0ccd11bf2445ce1"
+  },
+  "instance.group.security": {
+    "en": "f534bbe691d443f8",
+    "text": "68f8e13f8061df42"
+  },
+  "instance.group.sign_in": {
+    "en": "bcd6cebd02b72e7d",
+    "text": "df97a0449ed4ccc3"
+  },
+  "instance.read_failed": {
+    "en": "fc73de26133b6aa3",
+    "text": "4a5dff05731b9252"
   },
   "instance.rest": {
     "en": "9ba3f116c77560b9",
@@ -6018,6 +6090,34 @@
   "instance.rest.title": {
     "en": "7e6b6d688a45f225",
     "text": "309a8db7d956fa55"
+  },
+  "instance.secret_set": {
+    "en": "d0377289c9272fe7",
+    "text": "ff42f06e876cd72e"
+  },
+  "instance.secret_unset": {
+    "en": "1b75e22e3954d5ae",
+    "text": "7800794a02dae9ea"
+  },
+  "instance.settings_hint": {
+    "en": "ef98935df20c2751",
+    "text": "d89995abb8af57a2"
+  },
+  "instance.settings_title": {
+    "en": "83909f82446ee9c3",
+    "text": "e94e0e45ef8f0aaa"
+  },
+  "instance.source.default": {
+    "en": "4ca0e0e73229540c",
+    "text": "d998c212030bc7c2"
+  },
+  "instance.source.environment": {
+    "en": "7cb84457d52cfe74",
+    "text": "2b2b830ab6472683"
+  },
+  "instance.unset": {
+    "en": "1b75e22e3954d5ae",
+    "text": "7800794a02dae9ea"
   },
   "instance.wake": {
     "en": "c0bdaaf5d162c737",
