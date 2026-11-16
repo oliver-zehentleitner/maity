@@ -840,9 +840,10 @@ TAKES_OVER = {"member_id": "agt-c", "handle": "agent-ops-opus", "name": None}
             "; the hand-over is in message #5: maity messages --after 4.",
         ),
         (
-            {"kind": "message", "id": 0},
-            "; the hand-over is in message #0: maity messages --after -1.",
+            {"kind": "message", "id": 1},
+            "; the hand-over is in message #1: maity messages --after 0.",
         ),
+        ({"kind": "message", "id": 0}, "."),  # event seqs start at 1
         ({"kind": "message", "id": -1}, "."),  # a negative id names no message
         (None, "."),
     ],
@@ -885,6 +886,7 @@ def test_a_takeover_without_a_briefing_points_at_the_hand_over_above() -> None:
         {"kind": "task"},
         {"kind": "message", "id": "9"},
         {"kind": "message", "id": True},
+        {"kind": "message", "id": 0},
         {"kind": "message", "id": -1},
         {"kind": "file"},
     ],
