@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import threading
 from datetime import timedelta
-from html import escape
 from typing import Any
 
 from sqlalchemy import Connection, Engine, select
@@ -166,28 +165,6 @@ def _pictures(conn: Connection, rows: dict[int, Any], named: list[Any]) -> dict[
     shown = [i for i in shown if i not in humans or i in chosen]
     urls = avatars.public_urls(conn, shown)
     return {mid: urls.get(i) for mid, i in principal.items()}
-
-
-def html(entries: list[dict[str, Any]], up: dict[str, Any]) -> str:
-    """The two parts of the project's page; every text is escaped, a link only `https`."""
-
-    def item(entry: dict[str, Any]) -> str:
-        text = escape(entry["text"])
-        if entry["url"]:
-            text = f'<a href="{escape(entry["url"], quote=True)}" rel="nofollow ugc">{text}</a>'
-        when = escape(entry["at"], quote=True)
-        return f'<li><time datetime="{when}">{escape(entry["at"][:10])}</time> {text}</li>'
-
-    recent = (
-        f'<h2>Recently</h2><ul class="ticker">{"".join(item(e) for e in entries)}</ul>'
-        if entries
-        else ""
-    )
-    names = "".join(
-        f"<li>{escape(p['name'])} ({escape(p['handle'])})</li>" for p in up["named"] if p
-    )
-    count = f"<p>{up['humans']} human(s) and {up['agents']} agent(s) online</p>"
-    return f"{recent}<h2>Online</h2>{count}" + (f"<ul>{names}</ul>" if names else "")
 
 
 def _members_of(conn: Connection, project_ids: list[str]) -> list[tuple[str, str]]:

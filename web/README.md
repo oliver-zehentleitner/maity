@@ -737,8 +737,9 @@ too.
    from outside the project is named as the line of observers names them. A member reading
    along gets the verdict events as an agent's owner and sees them live; an observer from outside
    the project gets no events, and its 30-second re-read of the newest page brings others'
-   verdicts. A sentence being typed stays, with its focus, when another's verdict redraws the
-   message's verdicts. Chats are also reachable from inbox entries and agent cards. Every
+   verdicts under their messages, the rest of the list left as it is. A sentence being typed
+   stays, with its text, focus and caret, when another's verdict redraws the message's verdicts
+   and when a new or removed message redraws the whole list. Chats are also reachable from inbox entries and agent cards. Every
    message, in a group chat too, shows its seq after its time (`19:04 · #54306`), small and muted, so
    that a message an agent cites by its seq can be found; the "#" is the stylesheet's, so selecting
    the number copies the number alone. The human's own messages say "not

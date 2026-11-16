@@ -1,6 +1,6 @@
 // The frame of the pages without a session (docs/api.md §16.7.5): the landing page's header and
 // full footer around the sign-in and registration wherever they are drawn without a session, from GET /site/chrome in the page's language, with
-// the landing page's two stylesheets under /assets/landing/. The hub draws the same frame around
+// the frame's three stylesheets under /assets/landing/. The hub draws the same frame around
 // its landing and legal pages from the same model (hub/src/maity_hub/render.py), so the markup
 // here is that file's. The stylesheets are on only while such a page stands: landing.css sets
 // :root, body, headings and links for the whole document, so every other view leaves the frame
@@ -14,13 +14,10 @@ window.Maity = window.Maity || {};
   const { h, append } = M.dom;
   // Asked without ?v=<digest>: the hub then answers the current file with no-cache and an ETag
   // (hub/src/maity_hub/landing_files.py), so a revalidation costs no body and never goes stale.
-  const SHEETS = ["/assets/landing/landing.css", "/assets/landing/public-pages.css"];
-  // After them the dashboard's own sections of the signed-out pages (css/public-sections.css: the
-  // project's hero, its figures band, its tab bar, the sections). They build on the landing's
-  // tokens and classes, so they come last and are on only here. index.html names the file,
-  // disabled, so the shell gives it its version as every file of the dashboard (§16.11); it is
-  // moved behind the two the first time the frame is entered.
-  const OWN_SHEET = "public-sections";
+  // The third is the public pages' design (the project's hero, its figures band, its tab bar, the
+  // sections), the hub's own as it stores those pages in it (§16.9); it builds on the landing's
+  // tokens and classes, so it comes last.
+  const SHEETS = ["/assets/landing/landing.css", "/assets/landing/public-pages.css", "/assets/landing/public-sections.css"];
   const ON = "public-frame";
   let links = [];
   let header = null;
@@ -37,11 +34,6 @@ window.Maity = window.Maity || {};
         document.head.appendChild(link);
         return link;
       });
-      const own = document.getElementById(OWN_SHEET);
-      if (own) {
-        document.head.appendChild(own);
-        links.push(own);
-      }
     }
     links.forEach((link) => { link.disabled = !on; });
   }
