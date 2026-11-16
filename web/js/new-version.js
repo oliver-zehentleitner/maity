@@ -32,19 +32,33 @@ window.Maity = window.Maity || {};
   // not blank (js/chat.js says so through `holds`). An extra question costs a click; a case it
   // misses (a field a redraw replaced) is still a reload the person chose.
   const TEXT = /^(|text|search|email|url|tel|number|password)$/;
-  const editable = (f) => !!f && f.getAttribute && f.getAttribute("contenteditable") != null
-    && f.getAttribute("contenteditable") !== "false";
+  // A contenteditable host by the browser's own reading (isContentEditable), its attribute in
+  // any case ("TRUE" edits as "true" does) where that reading is missing.
+  const editable = (f) => !!f && (f.isContentEditable === true || (f.isContentEditable === undefined
+    && f.getAttribute && f.getAttribute("contenteditable") != null
+    && String(f.getAttribute("contenteditable")).toLowerCase() !== "false"));
   const textField = (f) => !!f && (f.tagName === "TEXTAREA" || editable(f)
     || (f.tagName === "INPUT" && TEXT.test(((f.getAttribute && f.getAttribute("type")) || "").toLowerCase())));
   const textOf = (f) => (f.tagName === "TEXTAREA" || f.tagName === "INPUT" ? f.value : f.textContent);
-  const FIELDS = ["textarea", "input"].concat(["true", "", "plaintext-only"].map((v) => '[contenteditable="' + v + '"]')).join(",");
   const typedInto = new WeakSet();
-  document.addEventListener("input", (e) => { if (e && e.isTrusted && textField(e.target)) typedInto.add(e.target); }, true);
+  // The editable hosts typed into, kept by reference: a selector cannot name every spelling of
+  // the attribute. One leaving the page is dropped at the next look.
+  const typedHosts = new Set();
+  document.addEventListener("input", (e) => {
+    if (!e || !e.isTrusted || !textField(e.target)) return;
+    typedInto.add(e.target);
+    if (e.target.tagName !== "TEXTAREA" && e.target.tagName !== "INPUT") typedHosts.add(e.target);
+  }, true);
   const holders = new Map();
 
   function unsentInput() {
-    const fields = document.body ? document.body.querySelectorAll(FIELDS) : [];
-    if (Array.from(fields).some((f) => typedInto.has(f) && typeof textOf(f) === "string" && textOf(f).trim() !== "")) return true;
+    const holds = (f) => typeof textOf(f) === "string" && textOf(f).trim() !== "";
+    const fields = document.body ? document.body.querySelectorAll("textarea, input") : [];
+    if (Array.from(fields).some((f) => typedInto.has(f) && holds(f))) return true;
+    for (const host of Array.from(typedHosts)) {
+      if (!document.body || !document.body.contains(host)) { typedHosts.delete(host); continue; }
+      if (holds(host)) return true;
+    }
     return Array.from(holders.values()).some((fn) => { try { return !!fn(); } catch (err) { return false; } });
   }
 

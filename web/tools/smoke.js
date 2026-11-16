@@ -18500,6 +18500,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     nvTyped(nvEdit);
     expect(nvClick().asked, "new version: text typed into a contenteditable asks");
     body.removeChild(nvEdit);
+    // The attribute in another case edits all the same (contenteditable="TRUE").
+    const nvEditUpper = document.createElement("div");
+    nvEditUpper.setAttribute("contenteditable", "TRUE");
+    nvEditUpper.appendChild(document.createTextNode("hello"));
+    body.appendChild(nvEditUpper);
+    nvTyped(nvEditUpper);
+    expect(nvClick().asked, "new version: a contenteditable spelled TRUE, typed into, asks too");
+    body.removeChild(nvEditUpper);
+    expect(!nvClick().asked, "new version: an editable host gone from the page asks nothing");
     // Sent asynchronously, as every form here is: a failed sending keeps the text and asks, one that
     // succeeded cleared its field and asks nothing.
     let nvOk = false;
