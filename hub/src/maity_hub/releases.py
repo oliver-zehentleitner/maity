@@ -4,6 +4,9 @@ Readiness is computed on every read from observed state only
 (`context/integrations.md`): what an agent reported or a human typed counts
 for nothing until the forge probe observed it. Without a probe a release is
 never ready.
+
+A version is the one the release's tag carries without the `v`, SemVer or
+canonical PEP 440 (`valid_version`); the tag looked for is `v` + version as given.
 """
 
 from __future__ import annotations
@@ -18,11 +21,22 @@ from maity_hub import clock, forge, forge_access
 from maity_hub import tables as t
 from maity_hub.events import emit
 
-# SemVer 2.0 core with an optional pre-release; no build metadata (§6.7).
+# A version is the one its tag carries without the `v` (§6.7), in one of two syntaxes.
+# SemVer 2.0 core with an optional pre-release; no build metadata.
 # ASCII digits only: `\d` would take every Unicode digit, and `1٠.0.0` looks like 10.0.0.
+_NUM = r"(0|[1-9][0-9]*)"
 _ID = r"(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
-SEMVER = re.compile(rf"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-{_ID}(?:\.{_ID})*)?")
+SEMVER = re.compile(rf"{_NUM}\.{_NUM}\.{_NUM}(?:-{_ID}(?:\.{_ID})*)?")
+# PEP 440 in its canonical spelling only, three numbers and an optional a/b/rc pre-release:
+# the probe looks the tag up by exact text, so a spelling PEP 440 would normalize
+# (`0.1.0alpha1`, `0.1.0.a1`) names a tag that is not there. No .post, .dev, epoch, local.
+PEP440 = re.compile(rf"{_NUM}\.{_NUM}\.{_NUM}(?:(?:a|b|rc){_NUM})?")
 PR_STATES = ("open", "merged", "closed")
+
+
+def valid_version(text: str) -> bool:
+    """SemVer or canonical PEP 440 (§6.7); compared as text elsewhere, never normalized."""
+    return bool(SEMVER.fullmatch(text) or PEP440.fullmatch(text))
 
 
 def checklist_item(number: int, text: str) -> dict[str, Any]:

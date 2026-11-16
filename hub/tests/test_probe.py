@@ -247,6 +247,27 @@ def test_the_first_found_release_tag_marks_the_project_released_for_good(
     assert len([e for e in _events(migrated, "state_changed") if "released_at" in e.payload]) == 1
 
 
+def test_a_pep440_release_finds_its_tag(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.7: a release `0.1.0a4` looks for the tag `v0.1.0a4`, the way the repository
+    tags its releases, and the found tag marks the project released (§6.1)."""
+    release = owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "0.1.0a4", "kind": "release", "release": {"version": "0.1.0a4"}},
+    )
+    assert release.status_code == 201, release.text
+    github.tag("v0.1.0a4")
+    project_id = _project(migrated).id
+    probe.observe_release(migrated, READER, project_id)
+    assert "/repos/acme/maity/git/ref/tags/v0.1.0a4" in github.calls
+    tag = owner.get(f"/projects/maintainer/maity/tasks/{release.json()['id']}").json()["release"][
+        "tag"
+    ]
+    assert (tag["name"], tag["found"], tag["sha"]) == ("v0.1.0a4", True, SHA)
+    assert _project(migrated).released_at is not None
+
+
 def test_merged_conflicting_branch_and_tag(owner: flow.Human, github: FakeGitHub) -> None:
     github.pull(4, merged=True)
     github.pull(5, head=OTHER, mergeable=False, mergeable_state="dirty")

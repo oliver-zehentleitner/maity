@@ -309,8 +309,8 @@ def _new_release(conn: Connection, mine: Membership, body: ReleaseIn | None) -> 
     mine.require("releases:write")
     if body is None:
         raise invalid({"release.version": "required"})
-    if not releases.SEMVER.fullmatch(body.version):
-        raise invalid({"release.version": "not_semver"})
+    if not releases.valid_version(body.version):
+        raise invalid({"release.version": "not_a_version"})
     taken = conn.execute(
         select(t.card.c.id).where(
             t.card.c.project_id == mine.project.id, t.card.c.release_version == body.version

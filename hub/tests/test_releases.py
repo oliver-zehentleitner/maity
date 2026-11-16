@@ -139,14 +139,80 @@ def test_a_release_card_has_the_contract_shape(owner: flow.Human) -> None:
 
 
 @pytest.mark.parametrize(
-    "version", ["1.0", "01.0.0", "1.0.0+build", "v1.0.0", "1.0.0-", "1\u0660.0.0", "0.0.1-\u0661a"]
+    "version",
+    [
+        "0.1.0",
+        "0.1.0a0",
+        "0.1.0a4",
+        "0.1.0b1",
+        "0.1.0rc1",
+        "10.20.30rc12",
+        "1.0.0-rc.1",
+        "0.1.0-alpha.8",
+    ],
 )
-def test_a_version_is_semver(owner: flow.Human, version: str) -> None:
+def test_a_version_is_its_tags_semver_or_pep440(owner: flow.Human, version: str) -> None:
+    """\u00a76.7: the version as the tag carries it, echoed as given, never normalized."""
+    assert release(owner, version)["release"]["version"] == version
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "1.0",
+        "01.0.0",
+        "1.0.0+build",
+        "v1.0.0",
+        "1.0.0-",
+        "1\u0660.0.0",
+        "0.0.1-\u0661a",
+        # PEP 440 beyond the canonical X.Y.Z{a|b|rc}N, or spelled the way it would normalize
+        "0.1.0a",
+        "0.1.0rc",
+        "0.1.0A1",
+        "0.1.0alpha1",
+        "0.1.0.a1",
+        "0.1.0c1",
+        "0.1.0pre1",
+        "0.1.0a01",
+        "0.1.0.post1",
+        "0.1.0.dev1",
+        "0.1.0a1.post1",
+        "1!0.1.0",
+        "0.1.0+local",
+        "0.1.0a1+local",
+        "v0.1.0a1",
+        "0.1a1",
+        "0.1.0.0",
+        "0.1.0a\u06611",
+        "0.1.0a1 ",
+        "0.1.0a1\n",
+    ],
+)
+def test_a_version_is_semver_or_pep440(owner: flow.Human, version: str) -> None:
     response = owner.post(
         "/projects/maintainer/maity/tasks",
         {"title": "x", "kind": "release", "release": {"version": version}},
     )
-    assert response.json()["error"]["details"]["fields"] == {"release.version": "not_semver"}
+    assert response.json()["error"]["details"]["fields"] == {"release.version": "not_a_version"}
+
+
+def test_versions_are_compared_as_text(owner: flow.Human) -> None:
+    """\u00a76.7: `0.1.0-alpha.4` and `0.1.0a4` are two releases; each text exists once."""
+    semver = release(owner, "0.1.0-alpha.4")
+    cancelled = owner.patch(
+        f"/projects/maintainer/maity/tasks/{semver['id']}", {"status": "cancelled"}
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    pep440 = release(owner, "0.1.0a4")
+    assert pep440["release"]["version"] == "0.1.0a4" and pep440["id"] != semver["id"]
+    owner.patch(f"/projects/maintainer/maity/tasks/{pep440['id']}", {"status": "cancelled"})
+    again = owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "x", "kind": "release", "release": {"version": "0.1.0a4"}},
+    )
+    assert (again.status_code, again.json()["error"]["code"]) == (409, "version_exists")
+    assert again.json()["error"]["details"] == {"release": pep440["id"]}
 
 
 def test_one_release_in_flight_and_each_version_once(owner: flow.Human) -> None:
