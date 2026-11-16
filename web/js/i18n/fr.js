@@ -4317,6 +4317,8 @@ window.MAITY_I18N["fr"] = {
   "runners.tool.not_installed": "{tool} n'est pas installé sur {runner}",
   "runners.tool.or": " ; ou ",
   "runners.tool.pod": "sans liste de commandes autorisées : son pod est la seule limite",
+  "runners.tool.sandbox_off": "sans liste de commandes autorisées, et son bac à sable du système est désactivé",
+  "runners.tool.sandbox_on": "sans liste de commandes autorisées : son bac à sable du système est la seule limite",
   "runners.tool.sandboxed": "{bounds}, dans son bac à sable du système",
   "runners.tool.stub": "un outil de test",
   "runners.tool.tests_only": "pour les tests uniquement",

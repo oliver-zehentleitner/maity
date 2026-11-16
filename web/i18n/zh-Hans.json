@@ -4193,6 +4193,8 @@
   "runners.tool.not_installed": "{tool} 未安装在 {runner} 上",
   "runners.tool.or": "；或 ",
   "runners.tool.pod": "没有命令允许列表：其 pod 是唯一的边界",
+  "runners.tool.sandbox_off": "没有命令允许列表，且其操作系统沙箱已关闭",
+  "runners.tool.sandbox_on": "没有命令允许列表：其操作系统沙箱是唯一的边界",
   "runners.tool.sandboxed": "{bounds}，位于其操作系统沙箱中",
   "runners.tool.stub": "一个测试工具",
   "runners.tool.tests_only": "仅用于测试",

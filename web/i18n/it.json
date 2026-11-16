@@ -4295,6 +4295,8 @@
   "runners.tool.not_installed": "{tool} non è installato su {runner}",
   "runners.tool.or": "; oppure ",
   "runners.tool.pod": "senza allowlist di comandi: il suo pod è l'unico confine",
+  "runners.tool.sandbox_off": "senza allowlist di comandi, e la sua sandbox del sistema operativo è spenta",
+  "runners.tool.sandbox_on": "senza allowlist di comandi: la sua sandbox del sistema operativo è l'unico confine",
   "runners.tool.sandboxed": "{bounds}, nella sua sandbox del sistema operativo",
   "runners.tool.stub": "uno strumento di test",
   "runners.tool.tests_only": "solo per test",

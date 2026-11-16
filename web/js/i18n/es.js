@@ -4317,6 +4317,8 @@ window.MAITY_I18N["es"] = {
   "runners.tool.not_installed": "{tool} no está instalado en {runner}",
   "runners.tool.or": "; o ",
   "runners.tool.pod": "sin lista de comandos permitidos: su pod es el único límite",
+  "runners.tool.sandbox_off": "sin lista de comandos permitidos, y su sandbox del sistema operativo está desactivado",
+  "runners.tool.sandbox_on": "sin lista de comandos permitidos: su sandbox del sistema operativo es el único límite",
   "runners.tool.sandboxed": "{bounds}, en su sandbox del sistema operativo",
   "runners.tool.stub": "una herramienta de prueba",
   "runners.tool.tests_only": "solo para pruebas",

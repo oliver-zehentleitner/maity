@@ -4317,6 +4317,8 @@ window.MAITY_I18N["nl"] = {
   "runners.tool.not_installed": "{tool} is niet geïnstalleerd op {runner}",
   "runners.tool.or": "; of ",
   "runners.tool.pod": "zonder command-allowlist: de pod is de enige grens",
+  "runners.tool.sandbox_off": "zonder command-allowlist, en de OS-sandbox staat uit",
+  "runners.tool.sandbox_on": "zonder command-allowlist: de OS-sandbox is de enige grens",
   "runners.tool.sandboxed": "{bounds}, in de OS-sandbox ervan",
   "runners.tool.stub": "een testtool",
   "runners.tool.tests_only": "alleen voor tests",
