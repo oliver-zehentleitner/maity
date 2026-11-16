@@ -130,14 +130,14 @@ def test_the_page_lists_the_agents_that_have_a_page_by_default(
 
 
 def test_the_old_agents_address_names_nothing(world: World) -> None:
-    """`/{handle}/agents` answers the app shell, its visitors' route `not_found`, and neither
-    redirects (§16.9, "A person's agents"; §16.11)."""
+    """`/{handle}/agents` answers `404` with the app shell, an address that can never be a page,
+    its visitors' route `not_found`, and neither redirects (§16.9, "A person's agents"; §16.11)."""
     assert world.anyone.get(f"{ROUTE}/maintainer/agents").status_code == 404
     got = world.anyone.get("/maintainer/agents", follow_redirects=False)
-    assert got.status_code == 200 and "<title>dashboard</title>" in got.text
+    assert got.status_code == 404 and "<title>dashboard</title>" in got.text
     assert "location" not in got.headers
     slashed = world.anyone.get("/maintainer/agents/", follow_redirects=False)
-    assert slashed.status_code == 200 and "location" not in slashed.headers  # no 308 either
+    assert slashed.status_code == 404 and "location" not in slashed.headers  # no 308 either
     assert "/maintainer/agents</loc>" not in world.anyone.get("/sitemap.xml").text
     with world.migrated.connect() as conn:
         stored = conn.execute(

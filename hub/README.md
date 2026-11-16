@@ -516,7 +516,10 @@ under the same version. Per deploy:
    nobody else pushes a `v*` tag. The tag runs `release-hub.yml` (the package
    on PyPI) and `publish-image.yml` (the image), and both wait for ci on that
    commit and for hub-mariadb on the same hub files.
-4. Ops deploys the image that tag built, pinned by its digest.
+4. Ops deploys the image that tag built, pinned by its digest, after
+   checking its signature as the chart README shows. That check accepts
+   only a `v*` tag's signature: an image built by hand from `main` is not
+   deployed.
 
 The deployment itself is unchanged: manual approvals, on the maintainer's
 command.
