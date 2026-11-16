@@ -540,7 +540,7 @@ window.Maity = window.Maity || {};
             drawEarlier();
           }
           // Drawn again only on a change: the list is a live region.
-          const sig = (list) => JSON.stringify(list.map((m) => [m.seq, m.body, !!m.redacted]));
+          const sig = (list) => JSON.stringify(list.map((m) => [m.seq, m.body, !!m.redacted, m.verdicts || []]));
           if (sig(next) !== sig(all)) {
             all.splice(0, all.length, ...next);
             if (all.length) cursor = Math.max(cursor, all[all.length - 1].seq);

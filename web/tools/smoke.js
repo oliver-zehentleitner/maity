@@ -11041,6 +11041,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     gcFeed = [vEvent(9106, null, null)];
     await fireIntervals(); await tick(); await tick();
     expect(!vNow().querySelector(".verdict-list") && text(vNow()).includes("Quote"), "group chat: a verdict taken back is gone, the message stays");
+    // An owner reading along from outside the project: the event names the human by id, not member_id (§8.2).
+    // It arrives while the reader types a sentence for Disagree: what is typed stays.
+    btn(vNow(), "Disagree").click(); await tick();
+    const vField = () => vNow().querySelector(".verdict-form input");
+    vField().value = "half typed"; vField().dispatch("input");
+    gcFeed = [Object.assign(vEvent(9107, "agree", null), { actor: { kind: "human", id: "hum-outside", handle: "outside" } })];
+    await fireIntervals(); await tick(); await tick();
+    expect(text(vNow().querySelector(".verdict-list") || { textContent: "" }) === "👍 an owner outside the project agrees",
+      "group chat: a verdict of an owner outside the project arrives and is named as the observers' line names them");
+    expect(vField() && vField().value === "half typed", "group chat: a sentence being typed survives another's verdict arriving");
+    btn(vNow(), "Cancel").click(); await tick();
+    expect(!vField(), "group chat: Cancel closes the sentence field");
   }
   // A direct chat takes a removal the same way.
   await go("#/maintainer/maity/chat/agt-a");
@@ -11223,6 +11235,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!byId("chat-text") && text(main).includes("You read along as the owner of an agent in this chat") && text(main.querySelector(".group-observers")).includes("you (owner of Spare)")
     && main.querySelector(".group-chat a.chat-back").getAttribute("href") === "#/observe/guest/guestlab" && main.querySelectorAll(".group-chat li.msg").length === 1
     && text(main.querySelector(".group-chat li.msg")).includes("@guest"), "read along: the chat read only, its people by handle");
+  // §9.7 from outside the project: the reader's own verdict under their own name, and others'
+  // verdicts taken over by the 30-second re-read (no event reaches an observer).
+  {
+    const voLi = () => main.querySelector(".group-chat li.msg");
+    btn(voLi(), "Agree").click(); for (let k = 0; k < 4; k++) await tick();
+    expect(text(voLi().querySelector(".verdict-list") || { textContent: "" }) === "👍 Maintainer agrees",
+      "read along: an observer from outside gives a verdict, said under their own name " + text(voLi()));
+    win.Maity.api.get = (p) => (p.startsWith("/projects/guest/guestlab/conversations/cnv-0301/messages?")
+      ? gcOutGet(p).then((r) => Object.assign({}, r, { items: r.items.map((m) => (m.seq === 7001
+        ? Object.assign({}, m, { verdicts: (m.verdicts || []).concat({ by: "hum-guest", value: "disagree", sentence: null, at: "2026-10-22T09:10:00Z", seq: 7100 }) }) : m)) }))
+      : gcOutGet(p));
+    await fireIntervals(); await tick(); await tick(); await tick();
+    const voText = text(voLi().querySelector(".verdict-list") || { textContent: "" });
+    expect(voText.includes("👍 Maintainer agrees") && voText.includes("👎 @guest disagrees"), "read along: the re-read brings a verdict given meanwhile " + voText);
+    btn(voLi(), "Take back").click(); for (let k = 0; k < 4; k++) await tick();
+    win.Maity.api.get = gcOutGet;
+  }
   // From outside: other observers neutrally, someone who left as a former participant, the access ending said.
   win.Maity.api.get = (p) => {
     gcOutGets.push(p);

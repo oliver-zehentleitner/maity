@@ -344,6 +344,8 @@ window.Maity = window.Maity || {};
     const box = h("div", { class: "msg-verdicts" });
     const status = M.statusLine();
     let asking = false;
+    // What is typed in the open sentence field, kept across a redraw that an event causes.
+    let draft = null;
     const mayGive = !!o.verdictPath && !own && ctx.me.kind === "human";
     const url = () => o.verdictPath + "/" + encodeURIComponent(msg.seq) + "/verdict";
     async function send(value, sentence) {
@@ -352,6 +354,7 @@ window.Maity = window.Maity || {};
         const fresh = value === null ? await M.api.del(url()) : await M.api.put(url(), sentence ? { value, sentence } : { value });
         msg.verdicts = fresh.verdicts || [];
         asking = false;
+        draft = null;
         status.done();
         draw();
       } catch (err) {
@@ -360,20 +363,24 @@ window.Maity = window.Maity || {};
     }
     // Whole sentences, one per verdict; the sentence of a Disagree is plain text (§9.7).
     function line(v) {
-      const who = M.dom.memberRef(ctx, v.by);
+      const who = giver(ctx, v.by);
       if (v.value === "agree") return h("li", { class: "verdict agree" }, M.tn("chat.verdict.agrees", { who }));
       return h("li", { class: "verdict disagree" }, v.sentence
         ? M.tn("chat.verdict.disagrees_because", { who, sentence: v.sentence }) : M.tn("chat.verdict.disagrees", { who }));
     }
     function form(mine) {
       const id = "verdict-sentence-" + msg.seq;
-      const input = h("input", { type: "text", id, maxlength: "500", value: mine && mine.value === "disagree" && mine.sentence ? mine.sentence : "" });
+      const given = mine && mine.value === "disagree" && mine.sentence ? mine.sentence : "";
+      const input = h("input", { type: "text", id, maxlength: "500", oninput: (e) => { draft = e.target.value; } });
+      input.value = draft !== null ? draft : given;
       return h("form", { class: "verdict-form", onsubmit: (e) => { e.preventDefault(); send("disagree", input.value.trim() || null); } },
         h("label", { for: id }, M.t("chat.verdict.sentence")), input,
         h("button", { type: "submit", class: "small" }, M.t("chat.verdict.send")),
-        h("button", { type: "button", class: "small", onclick: () => { asking = false; status.done(); draw(); } }, M.t("chat.verdict.cancel")));
+        h("button", { type: "button", class: "small", onclick: () => { asking = false; draft = null; status.done(); draw(); } }, M.t("chat.verdict.cancel")));
     }
     function draw() {
+      // The sentence field keeps its focus when another's verdict redraws the box.
+      const focused = asking && document.activeElement && box.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
       clear(box);
       const list = isRemoved(msg) ? [] : (msg.verdicts || []);
       if (list.length) append(box, h("ul", { class: "verdict-list", "aria-label": M.t("chat.verdict.list") }, list.map(line)));
@@ -381,6 +388,7 @@ window.Maity = window.Maity || {};
       const mine = list.find((v) => v.by === ctx.me.id);
       if (asking) {
         append(box, form(mine), status.el);
+        if (focused) box.querySelector("input").focus();
         return;
       }
       const is = (value) => !!mine && mine.value === value;
@@ -396,11 +404,22 @@ window.Maity = window.Maity || {};
     return box;
   }
 
+  // Who gave a verdict: a member as everywhere; the reader, read along from outside the project,
+  // by their own name (they are in no member list there); for a member, an owner reading along
+  // from outside the project, as the chat's line of observers says it (js/group-chat.js).
+  function giver(ctx, id) {
+    const known = ctx.memberById && ctx.memberById[id];
+    if (!known && id === ctx.me.id) return M.dom.memberRef(ctx, ctx.me);
+    if (!known && !ctx.outsider) return M.t("group.observer.outside");
+    return M.dom.memberRef(ctx, id);
+  }
+
   // A `chat_verdict` (§9.7) of a message on screen: that human's verdict replaced, or gone
   // when taken back; the latest per human counts. True when one was on screen.
   function applyVerdict(shownMessages, draws, e) {
     const p = e.payload;
-    const by = e.actor && e.actor.member_id;
+    // A member's actor names member_id; a human outside the project, reading along, id (§8.2).
+    const by = e.actor && (e.actor.member_id || e.actor.id);
     const msg = p && by ? shownMessages.find((m) => m.seq === p.message_seq) : null;
     if (!msg) return false;
     const rest = (msg.verdicts || []).filter((v) => v.by !== by);
