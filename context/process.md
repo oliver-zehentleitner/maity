@@ -111,7 +111,7 @@ merge — the status quo that caused the problem.
 **Id:** 3ac98e12-f84b-423d-98de-3d3f7f610b8f
 **Type:** decision
 **Status:** superseded
-**Superseded by:** none — the deploy is described in the hub project of this family, entry 1555765c-85df-41a5-9929-2ee3479ce1fc (every deploy of maity.team is a release), which the maintainer kept on 2026-11-14
+**Superseded by:** https://github.com/oliver-zehentleitner/maity — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
 **Evidence:** confirmed
 **Source:** the maintainer's standing instruction, 2026-10-22, relayed by the coordinator; retired by the maintainer's answer to req-5x293t6ntn8q, 2026-11-14, relayed by the team lead
 **Revisit when:** the maintainer withdraws the standing instruction, or a deploy without a go breaks maity.team
