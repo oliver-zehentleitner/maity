@@ -117,6 +117,8 @@ def test_an_escape_that_does_not_decode_leaves_the_segment_as_sent() -> None:
     assert paths._segment("%77hy%zz") == "%77hy%zz"
     assert paths._segment("a%2") == "a%2"
     assert paths._segment("%61b") == "ab"
+    assert paths._segment("%c3%a9") == "é"  # lower-case hex is an escape too
+    assert paths._segment("%61b%2") == "%61b%2"  # one hex digit starts none
 
 
 def test_no_lookup_decides_it_and_a_session_changes_nothing(

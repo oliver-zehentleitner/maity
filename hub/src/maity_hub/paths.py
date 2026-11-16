@@ -85,7 +85,7 @@ _NO_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
 def _segment(raw: str) -> str:
     """One segment as the dashboard reads it: percent-decoded, or as sent where an escape does
-    not decode (§16.11). Strict, like the dashboard's `decodeURIComponent`: one `%` that starts
+    not decode (§16.11). Strict, like the dashboard's `decodeURIComponent`: any `%` that starts
     no escape leaves the whole segment as sent, not only that escape."""
     if _NO_ESCAPE.search(raw):
         return raw
