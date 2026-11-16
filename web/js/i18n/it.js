@@ -312,6 +312,7 @@ window.MAITY_I18N["it"] = {
   "attach.not_removed": "Non rimosso: {reason}",
   "attach.not_shown": "{name}: impossibile mostrarlo.",
   "attach.off": "gli allegati non sono configurati su questa istanza",
+  "attach.paste.not_image": "un'immagine incollata che non è PNG, JPEG, WebP o GIF",
   "attach.pending": "File da inviare",
   "attach.per_message": {
     "one": "al massimo {count} file in un messaggio",

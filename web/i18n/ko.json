@@ -296,6 +296,7 @@
   "attach.not_removed": "제거하지 못했어요: {reason}",
   "attach.not_shown": "{name}: 표시할 수 없어요.",
   "attach.off": "이 인스턴스에는 첨부 파일이 설정되어 있지 않음",
+  "attach.paste.not_image": "붙여 넣은 이미지가 PNG, JPEG, WebP, GIF가 아님",
   "attach.pending": "보낼 파일",
   "attach.per_message": {
     "other": "한 메시지에 파일 최대 {count}개"

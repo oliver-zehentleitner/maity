@@ -301,6 +301,7 @@ window.MAITY_I18N["ja"] = {
   "attach.not_removed": "取り除かれませんでした: {reason}",
   "attach.not_shown": "{name}: 表示できませんでした。",
   "attach.off": "このインスタンスでは添付ファイルが設定されていません",
+  "attach.paste.not_image": "貼り付けた画像が PNG、JPEG、WebP、GIF のいずれでもありません",
   "attach.pending": "送信するファイル",
   "attach.per_message": {
     "other": "1通のメッセージにつき最大 {count} ファイル"

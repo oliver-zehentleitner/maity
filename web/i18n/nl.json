@@ -307,6 +307,7 @@
   "attach.not_removed": "Niet weggehaald: {reason}",
   "attach.not_shown": "{name}: kon niet worden getoond.",
   "attach.off": "bijlagen zijn op deze instantie niet ingesteld",
+  "attach.paste.not_image": "een geplakte afbeelding die geen PNG, JPEG, WebP of GIF is",
   "attach.pending": "Te verzenden bestanden",
   "attach.per_message": {
     "one": "hooguit {count} bestand in één bericht",
