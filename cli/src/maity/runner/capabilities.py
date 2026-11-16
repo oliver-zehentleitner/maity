@@ -37,7 +37,7 @@ _UNPRINTABLE = re.compile(r"[^\x20-\x7e]")
 # The harness versions whose sandbox behaviour was checked for a call with something placed
 # in front of `maity` (runner.md, the adapters entry). Another version still runs; the runner
 # says that it was not checked.
-CHECKED = {"claude-code": "2.1.318"}
+CHECKED = {"claude-code": "2.1.325"}
 
 
 # The oldest Claude Code whose hooks refuse the call when they fail or time out

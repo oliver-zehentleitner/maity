@@ -1241,8 +1241,9 @@ stays writable, because Claude Code's sandbox turns an `Edit(…)` deny
 into a write deny for every command, and commit, fetch and push need
 refs, the index, objects, logs and `FETCH_HEAD` between them (a commit
 writes the index, a fetch `FETCH_HEAD`, both refs, objects and logs). That a call with something in front of
-`maity` stays inside Claude Code's sandbox was checked with one version,
-2.1.318 (`capabilities.CHECKED`); with another version the runner still
+`maity` stays inside Claude Code's sandbox was checked with Claude Code 2.1.318
+and, by a static read, again at 2.1.325 (`capabilities.CHECKED`); with
+another version the runner still
 starts the agent, and `runner check` and the supervisor log say that it
 was not checked for it.
 
@@ -1317,6 +1318,37 @@ one version, not a contract.
 - Keeping the `Write(…)` deny next to `Edit(…)`: Claude Code warns at
   start that it ignores it, and a rule that does nothing reads as a
   boundary.
+
+## The sandbox-checked Claude Code version is raised to 2.1.325
+
+**Id:** 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-zjv2xyhyggnm (the owner/lead's approval of the bump); a static read of Claude Code 2.1.325's command matching, with no runtime session with the harness; the security detail of the read held to DM to the lead and the security lead
+**See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-16
+**Revisit when:** a full runtime confirmation is still open — a few downstream normalizers were not exhaustively traced statically, their observed behaviour is harmless and a downstream guard catches the relevant case, so a session able to run the harness should confirm it; or a later Claude Code version changes how it matches commands for the sandbox, which calls for a re-check and another bump
+
+`capabilities.CHECKED` for `claude-code` is raised from 2.1.318 to 2.1.325,
+so `maity runner check` no longer warns that the installed harness is a
+version whose sandbox behaviour was not checked. The property the runner
+relies on — a command with something in front of `maity` (a leading
+assignment or wrapper) stays inside the sandbox, as it did at the
+previously-checked 2.1.318 — was confirmed for 2.1.325.
+
+**Reason:** the installed runner moved to Claude Code 2.1.325, and the
+version check warned that this version was not checked. A static read of how
+2.1.325 matches the command for the sandbox confirmed it still reads past a
+leading assignment or wrapper on a `maity` line, so the placement stays
+sandboxed as before. The decision to record the bump was approved by the
+lead and the security lead; the particulars of the read are held to DM and
+kept out of the repository, so this entry stays general.
+
+**Rejected alternative:** a runtime confirmation with the harness before
+bumping. No session able to run the harness was available, and the static
+read together with a downstream guard that catches the relevant case was
+judged enough to raise the recorded version now, with the full runtime
+confirmation left open under **Revisit when**.
 
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 
