@@ -23339,7 +23339,7 @@ Scope `instance:admin`, human only (§16.1).
   for a URL that can carry credentials (`MAITY_DATABASE_URL`,
   `MAITY_DIRECT_DATABASE_URL`, `MAITY_ATTACHMENT_S3_ENDPOINT`), `secret`
   is `true`, `value` is `null`, not even a host, and `set` says whether
-  the environment sets it. A `_FILE` variant (`MAITY_SMTP_PASSWORD_FILE`)
+  the hub takes it (above). A `_FILE` variant (`MAITY_SMTP_PASSWORD_FILE`)
   is a setting of its own and as secret as the one it holds; when it is
   set, it fixes its variable as the variable itself would, though that
   variable's own row says `default`. When it is

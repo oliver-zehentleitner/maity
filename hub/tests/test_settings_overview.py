@@ -256,16 +256,37 @@ def test_spaces_count_as_the_parsers_count_them(
     assert rows["MAITY_AGENT_FIREWALL"]["value"] == "on"
 
 
+# A setting read only in a mode (the S3 credentials, under MAITY_ATTACHMENT_STORE=s3) is
+# probed with that mode set too, or the binding below would never see its reader (A911 N1).
+MODE_BASES: tuple[dict[str, str], ...] = (
+    {},
+    {
+        "MAITY_ATTACHMENT_STORE": "s3",
+        "MAITY_ATTACHMENT_S3_BUCKET": "maity",
+        "MAITY_ATTACHMENT_S3_ENDPOINT": "https://s3.example",
+        "MAITY_ATTACHMENT_S3_ACCESS_KEY_ID": "key-id",
+        "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY": "secret",
+    },
+)
+
+
+def _loaded(env: dict[str, str]) -> object:
+    """What the hub makes of an environment: its settings, or the error that stops it."""
+    try:
+        return Settings.from_env(env)
+    except ValueError as error:  # ConfigError and the mail, registration and App errors
+        return (type(error), str(error))
+
+
 def test_as_written_is_what_the_parsers_do() -> None:
     """`as_written` is bound to the hub's own parsers: a setting of only spaces changes what
-    `Settings.from_env` loads (or stops the hub) exactly for the entries marked so, so a new
-    setting read as written cannot be shown unset while the hub runs with it (A904)."""
-    unset = Settings.from_env({})
+    `Settings.from_env` loads (or how it stops) exactly for the entries marked so, in every
+    mode that reads it, so a new setting read as written cannot be shown unset while the hub
+    runs with it (A904, A911 N1)."""
     taken = set()
-    for entry in settings_overview.ENTRIES:
-        try:
-            if Settings.from_env({entry.name: "  "}) != unset:
+    for base in MODE_BASES:
+        for entry in settings_overview.ENTRIES:
+            without = {k: v for k, v in base.items() if k != entry.name}
+            if _loaded({**without, entry.name: "  "}) != _loaded(without):
                 taken.add(entry.name)
-        except ValueError:  # ConfigError and the mail and registration errors: it was read
-            taken.add(entry.name)
     assert taken == {e.name for e in settings_overview.ENTRIES if e.as_written}
