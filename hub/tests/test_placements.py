@@ -1378,6 +1378,42 @@ def test_a_runner_owner_outside_the_project_stops_and_removes_only(
     assert stranger.delete(one).status_code == 404
 
 
+@pytest.mark.parametrize("method", ["PATCH", "DELETE"])
+def test_a_runner_owner_outside_the_project_replays_their_own_stop_and_removal(
+    setup: Setup, make_client: ClientFactory, method: str
+) -> None:
+    """A repeat with the same Idempotency-Key answers what the first call did (§1.5): the
+    runner owner's line, though they read nothing else of the project."""
+    other, theirs, _ = _theirs(make_client, setup)
+    their_runner = paired(make_client, other)
+    assert attach(other, their_runner).status_code in (200, 201)
+    assert hello(make_client(), their_runner).status_code == 200
+    created = other.post(
+        "/projects/maintainer/maity/placements",
+        {"agent": {"id": theirs.id}, "runner": their_runner.id, "harness": "claude-code"},
+    )
+    assert created.status_code == 201, created.text
+    url = f"/api/v1/projects/maintainer/maity/placements/{created.json()['id']}"
+    with setup.engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == other.id).values(active=None)
+        )
+    headers = {"X-CSRF-Token": other.csrf, "Idempotency-Key": f"outside-owner-{method}-0001"}
+    body = {"desired": "stopped"} if method == "PATCH" else None
+    first = other.client.request(method, url, json=body, headers=headers)
+    again = other.client.request(method, url, json=body, headers=headers)
+    assert first.status_code == 200, first.text
+    assert again.status_code == 200, again.text
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert again.json() == first.json()
+    # The key is theirs: a stranger with it replays nothing of the placement.
+    stranger = flow.human(make_client, setup.engine, "stranger")
+    taken = stranger.client.request(
+        method, url, json=body, headers={**headers, "X-CSRF-Token": stranger.csrf}
+    )
+    assert taken.status_code == 404, taken.text
+
+
 def test_a_consent_filed_before_the_rule_is_the_runner_owners_too(
     setup: Setup, make_client: ClientFactory
 ) -> None:

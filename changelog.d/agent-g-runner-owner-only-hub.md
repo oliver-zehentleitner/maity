@@ -9,7 +9,8 @@
   A consent request filed as a project request before this release is answered only by
   the runner's owner too.
 - hub: the runner's owner stops and deletes every placement on their runner, also in a
-  project they are not a member of; there the answer is the runner owner's line only.
+  project they are not a member of; there the answer is the runner owner's line only,
+  and a repeat with the same `Idempotency-Key` replays that line.
 - hub: the agent profile's owner deletes their agent's placement too, so a placement on
   someone else's runner ends and the agent is placed again on a runner of their own.
 

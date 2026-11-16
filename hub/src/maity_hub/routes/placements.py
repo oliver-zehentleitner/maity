@@ -158,6 +158,25 @@ idempotency.register(
 )
 
 
+def _owns_its_runner(conn: Connection, placement_id: str, caller: Caller) -> bool:
+    """The human who owns the placement's runner: what they stopped or removed from outside
+    the project replays as their line of it, though its GET does not open for them."""
+    runner_owner = conn.execute(
+        select(t.runner.c.owner_id)
+        .join(t.placement, t.placement.c.runner_id == t.runner.c.id)
+        .where(t.placement.c.id == placement_id)
+    ).scalar()
+    return caller.kind == "human" and runner_owner is not None and runner_owner == caller.human_id
+
+
+# The runner owner's line (§15.3) of a placement they acted on from outside its project.
+idempotency.register(
+    "placement_owner_line",
+    idempotency.plain(lambda conn, placement_id: pl.owner_line(conn, pl.row(conn, placement_id))),
+    _owns_its_runner,
+)
+
+
 def _placement(conn: Connection, mine: Membership, placement_id: str) -> Any:
     found = conn.execute(
         select(t.placement).where(
@@ -602,7 +621,9 @@ def patch_placement(
                 raise
             outside = _outside_owner(conn, caller, slug, placement_id)
             stopped = _owner_stops(conn, outside, _outside_actor(caller), caller.principal_id)
-            return idempotency.Outcome(200, "placement", outside.id, pl.owner_line(conn, stopped))
+            return idempotency.Outcome(
+                200, "placement_owner_line", outside.id, pl.owner_line(conn, stopped)
+            )
         project = events.lock_project(conn, mine.project.id)
         placement = _placement(conn, mine, placement_id)
         runner = _runner(conn, placement.runner_id)
@@ -827,7 +848,9 @@ def delete_placement(
                 raise
             outside = _outside_owner(conn, caller, slug, placement_id)
             removed = _remove(conn, outside, _outside_actor(caller), caller.principal_id)
-            return idempotency.Outcome(200, "placement", outside.id, pl.owner_line(conn, removed))
+            return idempotency.Outcome(
+                200, "placement_owner_line", outside.id, pl.owner_line(conn, removed)
+            )
         events.lock_project(conn, mine.project.id)
         placement = _placement(conn, mine, placement_id)
         runner = _runner(conn, placement.runner_id)
