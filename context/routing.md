@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-10-29 in the team chat (paths like a forge, indexable public pages, alpha without legacy layers); the details are the contract owner's; contract `docs/api.md` §16.11, §16.7, §16.9, §6.25
+**Source:** the maintainer's decision of 2026-10-29 in the team chat (paths like a forge, indexable public pages, alpha without legacy layers); the maintainer's decision of 2026-11-07 (req-0d6vhrr0xqh8: a 404 for addresses that can never be a page), its boundary drawn in card tsk-85dc596aty5w; the details are the contract owner's; contract `docs/api.md` §16.11, §16.7, §16.9, §6.25
 **Revisit when:** Maity leaves alpha (from then on an address change needs the §1.6 rule of a stated period, not a removal); or the hub must render a dashboard page itself beyond the public pages; or a word the hub or the dashboard needs as a first segment is already held by a handle
 **See:** projects.md#projects-live-in-their-owners-namespace-ownerslug-as-on-a-forge-old-names-stay-aliases-the-change-is-made-once-in-v1-before-the-launch — 281820c9-2286-45c4-9389-603b7e8a3923 — as of 2026-10-29
 **See:** scope.md#public-pages-are-static-html-public-by-default-and-the-instances-operator-must-allow-them — 2571d046-a270-4680-b50a-dc4e9ad60f19 — as of 2026-10-29
@@ -16,7 +16,8 @@ Every dashboard route is a path (`/<owner>/<slug>/board`, `/inbox`,
 The hub serves the app shell for every `GET` that is not one of its own
 paths (`/api/…`, `/assets/…`, `/mail/…`, `/badge/…`, the join, the
 legal pages, the files for search engines), unknown paths included,
-`no-cache` and `noindex`. A project's public page is served at
+`no-cache` and `noindex`; an address that can never be a page gets the
+same shell with `404` (below). A project's public page is served at
 `/<owner>/<slug>`, a person's or an organisation's at `/<handle>`: to a
 visitor without a session the static page where it is public, the app
 shell otherwise, never a status that tells whether the name exists;
@@ -30,6 +31,22 @@ webhook addresses, and the answers for one-segment project routes
 address is simply `not_found` or the app shell. The CLI's one-time read
 of `full_name` from `GET /me` for a state written before the namespace
 stays, because it needs no hub route.
+
+An address that can never be a page is told by its words alone: a
+first segment that is no handle by §6.24's syntax, a reserved first word
+that names no route (`components`, `health`, `imprint`), more than 7
+segments outside a project's Why, a project's view word that is no view,
+and `/<handle>/agents` (§16.11 has the exact shapes). The hub answers
+those `404` with the shell as the body, so that the dashboard still draws
+its "not found" and a crawler sees the status. The boundary leaks
+nothing because no lookup decides it: an address gets the same status
+whether or not any name in it exists, and a handle- or project-shaped
+address stays `200`. Words under the dashboard's own first words
+(`/inbox/x`, `/admin/x`) stay the shell with `200`: the hub does not
+route them, and the dashboard's sign-in leads on there
+(web/context/routing.md 51873531). The Why view is no part of the depth
+rule, since a topic's file path goes into the address segment by
+segment.
 
 Aliases from a rename or a transfer (handles, §6.24; projects, §6.25)
 are not part of what is removed: they are a feature, not a transition —
@@ -75,6 +92,12 @@ a project or a person exists.
   served; without them mentions and links would break on each rename
   and a given-up name could be taken by someone posing as its former
   holder.
+- A `404` for every address under the dashboard's own first words that
+  names no view (`/inbox/x`, `/admin/x`, a tab under a view): the hub
+  would need the dashboard's whole route table, and the sign-in there
+  leads on from a mail's link (`/sign-in/code`, `/requests/<id>`).
+- One bound on the depth for every path: the Why view writes a topic's
+  file path into the address, whose depth no number bounds.
 
 ## Agents and people get pages of their own; `/invite` gathers a human's person invitations without a route of its own
 

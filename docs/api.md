@@ -21,7 +21,8 @@ an agent reads, `GET /api/v1/openapi.json` is the machine form.
 ### 1.1 Base path, media types, headers
 
 - Every endpoint lives under `/api/v1`. The dashboard is served as the
-  app shell at every path that is not one of the hub's own (§16.11; at
+  app shell at every path that is not one of the hub's own (§16.11, with
+  `404` at an address that can never be a page; at
   `/for/<slug>` the hub serves an existing landing variant, and an
   unknown one gets the shell, §16.7.2), the
   join page at `/join/{token}` and the project badge at
@@ -22349,8 +22350,9 @@ page of their own for them (the maintainer's decisions of 2026-11-06,
 card tsk-b9kp7tfsf0yn, which brought them as a tab at
 `/{handle}/agents`, and of 2026-11-15, request req-xkxaq2c3cjjq, "as
 in the mockup", which took the tab back; card tsk-2t7efzj1p8zt).
-`/{handle}/agents` names nothing: it answers the app shell as any path
-that names nothing (§16.11), its visitors' route `not_found`, and
+`/{handle}/agents` names nothing: it answers `404` with the app shell
+as an address that can never be a page (§16.11), its visitors' route
+`not_found`, and
 there is no redirect to `/{handle}` (alpha, no old addresses kept, as
 for the removed routes of §16.11). The list is shown whatever the
 person's `public_profile`. It lists the person's agent profiles (§6.3)
@@ -22784,7 +22786,8 @@ sections named say; a path under one of them that names nothing is
 The join host is unchanged (§1.1): it serves no app shell.
 
 **The app shell.** Every other `GET` on the public host answers the
-dashboard's `index.html`, the app shell: `200`, `text/html`,
+dashboard's `index.html`, the app shell: `200` (`404` at an address that
+can never be a page, below), `text/html`,
 `Cache-Control: no-cache` (it is small and must follow a deploy at
 once), `X-Content-Type-Options: nosniff`, the default policy and the
 HTML headers of §1.1 (`frame-ancestors 'none'` and `X-Frame-Options:
@@ -22820,10 +22823,11 @@ the built files under
 `/assets/` are served; the repository's `web/` tree as such is not, so
 an old file path (`/js/…`, `/css/…`) and the development files
 (`web/fixtures/`, `web/tools/`) are never reachable — such a path gets
-the shell like any other. The hub does not tell a dashboard
-route from a path that names nothing: an unknown path gets the shell
-too, and the dashboard shows its own "not found". Any other method on
-such a path is `not_found`. Three kinds of path are not always the
+the shell like any other. Beyond the addresses that can never be a
+page (below), the hub does not tell a dashboard route from a path that
+names nothing: an unknown path gets the shell too, and the dashboard
+shows its own "not found". Any other method on such a path is
+`not_found`. Three kinds of path are not always the
 shell: `/`, which is the landing page for a visitor without a valid
 session while the landing page is enabled (§16.7), `/for/<slug>`, which
 is a landing variant for every visitor while the landing page is
@@ -22842,6 +22846,40 @@ same read-only view at the same address, under the dashboard's own header
 (§16.9); at `…/overview/swarm` they are taken to `…/overview`, the address
 replaced. A project without a public page, and an earlier address of one,
 answers there as at any other address.
+
+**Addresses that can never be a page.** The maintainer's decision of
+2026-11-07: a `GET` or `HEAD` whose path is no hub path and has one of
+these shapes is answered `404`, with the app shell as its body and the
+shell's headers, so that the dashboard draws its "not found" and a
+crawler sees the status. A segment is a non-empty part of the path
+between slashes, after percent-decoding.
+
+- The first segment is no handle by the syntax of §6.24
+  (`[a-z0-9][a-z0-9-]{1,30}`): an upper-case letter, a dot, an
+  underscore, one character, more than 31 (`/Oliver`, `/favicon.ico`,
+  `/.well-known/…`), at any depth.
+- The first segment is a reserved word (below) that names no route:
+  `components`, `health`, `imprint`, at any depth.
+- The path has more than 7 segments, the depth of the deepest route,
+  `/observe/<owner>/<slug>/team/<id>/sessions/<instance>`. Not below a
+  project's Why (`/<owner>/<slug>/why/…`, `/observe/<owner>/<slug>/why/…`):
+  there the path of a topic's file in the repository goes into the
+  address segment by segment, so the depth has no bound. A release that
+  adds a deeper route raises this number in the same change.
+- A project's view word is none of the views below, `members` included:
+  `/<owner>/<slug>/<word>…` and `/observe/<owner>/<slug>/<word>…`, where
+  `<owner>` is no reserved word and `<slug>` is not `agents` (an agent's
+  page, §16.9), at any depth below the word; and `/<handle>/agents`,
+  which names nothing (§16.9, "A person's agents").
+
+Each shape is read from the path's words alone, never from a lookup:
+the same address gets the same status whether or not a name exists, so
+the status tells a stranger nothing (`context/routing.md`). Everything
+else stays the shell with `200`: a handle-shaped first segment, a
+project's address and its views whatever the names, and the words under
+the dashboard's own first words (`/inbox/…`, `/admin/…`,
+`/account/…`), which the hub does not route and where the dashboard's
+sign-in leads on.
 
 **The dashboard's paths.** The dashboard routes with the History API
 (`pushState`, `popstate`); a link inside it is an ordinary `href` to a
@@ -22866,9 +22904,9 @@ names:
 | `/account/pending` | the one page of an account waiting for approval (§2.7.5) |
 | `/account/…`, `/admin…`, `/all`, `/chats…`, `/new`, `/runners`, `/observe/<owner>/<slug>`, `/inbox`, `/notifications` | the dashboard's own pages |
 | `/explore` | the public projects, by name, as cards in the frame of §16.7.5 and in its language (`?lang`, else `Accept-Language`), for every visitor with or without a session, under the public pages' `Cache-Control` and `nosniff` (§16.9), the policy of a stored page in its frame (§16.9) and `Vary: Cookie, Accept-Language`, without an `ETag`; the shell while the instance serves no public pages |
-| `/<handle>` | a person's or an organisation's address; its public page where one is served (below). A person's agents stand on it (§6.27, §16.9, "A person's agents"); `/<handle>/agents` names nothing and answers as a path that names nothing, the dashboard's "not found", no redirect |
+| `/<handle>` | a person's or an organisation's address; its public page where one is served (below). A person's agents stand on it (§6.27, §16.9, "A person's agents"); `/<handle>/agents` names nothing: `404` with the shell (above), the dashboard's "not found", no redirect |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view (below): the app shell and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `placements` (the tab the dashboard names **Managed agents**: where the project's agents run and their wanted and reported state, §15.5–§15.7, the start on a runner being in the page's **Join an agent** menu; every member who reads the project sees it, the actions on it as §15.6 grants them), `organisation`, `runners`, `why`, `settings` (one view in tabs: the project's settings for callers with `project:admin`, General at `settings` and the others at `settings/members`, `settings/work` and `settings/moderation`, each shown only where the caller has a part on it, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller opening a tab not shown to them gets the first one that is, so a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives); a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view: `404` with the app shell (above) and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `placements` (the tab the dashboard names **Managed agents**: where the project's agents run and their wanted and reported state, §15.5–§15.7, the start on a runner being in the page's **Join an agent** menu; every member who reads the project sees it, the actions on it as §15.6 grants them), `organisation`, `runners`, `why`, `settings` (one view in tabs: the project's settings for callers with `project:admin`, General at `settings` and the others at `settings/members`, `settings/work` and `settings/moderation`, each shown only where the caller has a part on it, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller opening a tab not shown to them gets the first one that is, so a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives); a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/team`, `/organisation` and
@@ -22885,7 +22923,8 @@ where the first segment is not reserved (below):
   dashboard then asks for sign-in at a project's address, and at
   `/<handle>` or under a project at a word that is no view shows its "not
   found", worded for a page that does not exist or is not public, with the
-  sign-in one link away.
+  sign-in one link away (a word that is no view has the status `404`,
+  above, as it does for everyone, since the word alone decides it).
 - With a valid session the path is always the app shell: the dashboard
   shows the project, or its own view of the person or organisation, and
   offers **View public page** where a page is served, which opens the
