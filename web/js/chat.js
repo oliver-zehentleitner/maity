@@ -1161,8 +1161,9 @@ window.Maity = window.Maity || {};
       target.addEventListener("change", () => { if (target.value) targets.set(key, target.value); else targets.delete(key); });
     }
 
-    // Files go with the message (§8.7): uploaded when chosen, named when sent.
+    // Files go with the message (§8.7): uploaded when chosen or pasted, named when sent.
     const files0 = M.attachments ? M.attachments.picker(ctx, "chat") : null;
+    if (files0) files0.pasteInto(text);
     // The meat-proxy mode for this chat (§9.3), from one's own entry in the list's participants.
     const ownEntry = listed && (listed.participants || []).find((p) => p.member_id === ctx.me.id);
     const meat = M.meatProxy ? M.meatProxy.toggle(ctx, ctx.base + "/conversations/" + encodeURIComponent(agent.id), ownEntry || null) : null;
