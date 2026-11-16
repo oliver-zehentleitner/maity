@@ -1640,11 +1640,14 @@ key not yet translated. `make check` fails on a code of `docs/api.md` §1.3 with
   `docs/api.md` §1.1); the shell names the one the page runs (§16.11). When
   they differ, `js/new-version.js` draws a band above the header with
   **Reload** and **Later**; it never reloads by itself, and over a reload
-  with input the reader changed the browser asks first (`context/refresh.md`):
-  a field's value is noted when the reader first comes to it, so what a form
-  fills in itself is no input, and a sent form's fields count as unchanged.
-  **Later** holds for each version it was chosen for. No request of its own:
-  it reads the header of the answers above.
+  with input the reader has not sent the browser asks first
+  (`context/refresh.md` 9d7aee6c): a field the reader changed (a trusted
+  `input` or `change` event, never a value a script sets) while it is not
+  blank, and what a page keeps outside its fields and names with
+  `M.newVersion.holds` (the chats' drafts, the board's open panel). A form
+  that stays after its save calls `M.newVersion.clean`. **Later** holds for
+  each version it was chosen for. No request of its own: it reads the header
+  of the answers above.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
   members, then `after=<cursor>&wait=0` every 15 seconds, page by page,

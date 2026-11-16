@@ -1,6 +1,6 @@
 """docs/api.md §1.1 `Maity-Web-Version` and §16.11: every API answer carries the dashboard's
 version, the app shell carries the same value, and it changes when, and only when, a file of
-the dashboard changes (web/context/refresh.md d499ba75)."""
+the dashboard changes (web/context/refresh.md 9d7aee6c)."""
 
 from __future__ import annotations
 

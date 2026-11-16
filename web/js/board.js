@@ -1058,6 +1058,14 @@ window.Maity = window.Maity || {};
       const all = Array.from(root.querySelectorAll(CONTROLS));
       return all.map((e) => [controlKey(e, all), e]);
     };
+    // What a reload would lose (js/new-version.js): the open panel's controls the reader changed
+    // against how they were drawn, carried over a late draw onto controls drawn anew.
+    // The board's own, until the view is left.
+    if (M.newVersion) {
+      M.newVersion.holds("board-panel", () => !!(panelPart && panelDrawn
+        && controlsOf(panelPart).some(([k, e]) => panelDrawn.has(k) && panelDrawn.get(k) !== stateOf(e))));
+      if (ctx.onDispose) ctx.onDispose(() => M.newVersion.holds("board-panel", null));
+    }
     const choiceBox = (el) => el.getAttribute("type") === "checkbox" || el.getAttribute("type") === "radio";
     const stateOf = (el) => (el.tagName === "SELECT" && el.multiple
       ? Array.from(el.querySelectorAll("option")).filter((o) => o.selected).map((o) => o.getAttribute("value")).join("\n")

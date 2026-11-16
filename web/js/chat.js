@@ -34,6 +34,9 @@ window.Maity = window.Maity || {};
   const targets = new Map();
   // Signing out ends them; the next human in this tab starts empty.
   M.clearChatDrafts = () => { drafts.clear(); targets.clear(); };
+  // A reload loses them (js/new-version.js): one that is not blank asks first, in whichever chat
+  // of this tab it was typed. The group chats keep theirs here too (M.chatParts.drafts).
+  if (M.newVersion) M.newVersion.holds("chat-drafts", () => Array.from(drafts.values()).some((d) => typeof d === "string" && d.trim() !== ""));
 
   // A chat as the list shows it: one per owned agent (§9.1), and the group
   // chats the hub lists (§9.3); a chat's kind comes from the hub, never from

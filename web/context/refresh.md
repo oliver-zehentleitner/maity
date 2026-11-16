@@ -425,7 +425,8 @@ settings first, and with the switch off the hub holds nothing anyway.
 
 **Id:** d499ba75-c622-45da-842b-a897fae5fbd0
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 9d7aee6c-ba64-49e8-96e8-b5fe51521d55
 **Evidence:** confirmed
 **Source:** the card tsk-y19gcsk731aa (from tsk-7jhpzrvsnzm3: a fix already live did not reach a project owner whose tab still ran the old JavaScript); the design proposal on the card and the maintainer's approval of it, 2026-11-16 (req-t44nh4e278ee); docs/api.md §1.1 `Maity-Web-Version` and §16.11
 **See:** refresh.md#a-hidden-tab-reads-nothing-on-its-intervals-me-every-60-seconds-events-every-15 — 6cb02c3d-063d-473b-b86b-8f8324c11f14 — as of 2026-11-16
@@ -460,3 +461,78 @@ touch them. Offering instead of forcing keeps what a reader is typing.
 - A service worker that notices the new files: it would need a worker
   script for the page, and it takes on caching that the hub's
   `Cache-Control` and `?v=` already settle (§16.11).
+
+## A reload after a deploy asks first while the reader holds unsent input: fields the reader changed, and what a page says it keeps
+
+**Id:** 9d7aee6c-ba64-49e8-96e8-b5fe51521d55
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-y19gcsk731aa and its approved design (req-t44nh4e278ee, 2026-11-16); the review of #1900, in which reading unsent input from `defaultValue`, and then from a value noted at the first focus, both failed on the dashboard's forms; the review lead's choice of this approach, 2026-11-16; docs/api.md §1.1 `Maity-Web-Version` and §16.11
+**See:** refresh.md#a-hidden-tab-reads-nothing-on-its-intervals-me-every-60-seconds-events-every-15 — 6cb02c3d-063d-473b-b86b-8f8324c11f14 — as of 2026-11-16
+**Revisit when:** the dashboard gets a reading that keeps a connection open (a stream), a page keeps typed input outside its fields without saying so, or a reload is reported to have lost a reader's input
+
+The hub sends the dashboard's version on every `/api/v1/` answer as
+`Maity-Web-Version`, and the shell carries the same value as a meta
+element. The value changes only when a file of the dashboard changes.
+`js/api.js` compares the header of each answer with the page's own
+value. When they differ, a quiet band offers a reload, and "Later"
+hides it for each version it was chosen for. The page never reloads by
+itself.
+
+Over a click on Reload the browser asks first while the reader holds
+input that is not sent. `js/new-version.js` reads that from two
+sources:
+- A field the reader changed, marked by a trusted `input` or `change`
+  event at the document (typing, pasting, autofill, a drop, a box
+  ticked without its focus, a choice in a select, a multiple one too).
+  A value a script sets never marks it. The field holds input while it
+  still has some: text that is not blank, a box or choice the reader
+  set. A form that sent clears its field, so it holds none; one whose
+  sending failed keeps the text, so it still does. A form that stays as
+  it was after a successful save says so with `clean()` (the
+  preferences editor).
+- What a page keeps outside its fields says so itself with
+  `holds(name, fn)`: the chats' drafts, the ones of chats not open
+  included, as long as one is not blank, and the board's open panel
+  while one of its controls differs from how it was drawn, which a late
+  draw carries onto controls drawn anew.
+
+Two remainders are accepted, both on the side of asking: a field the
+page filled in that the reader cleared counts as no input, and a
+changed field in a form that stays after its save, without `clean()`,
+asks once more, where confirming loses nothing.
+
+**Reason:** a tab that stays open after a deploy keeps running the old
+JavaScript until it is reloaded, so a fix that is already live can miss
+the person it was for. The check costs no request: the page reads `/me`
+every 60 seconds while it is shown, and a tab shown again reads within 5
+seconds (6cb02c3d). Tying the value to the dashboard's files and not to
+the hub's version keeps the band away after a release that did not
+touch them. Offering instead of forcing keeps what a reader is typing.
+The dashboard's forms send asynchronously and its pages draw their
+fields anew, so no rule on the DOM alone can tell a sent form from an
+unsent one. The reader's own events mark what they changed, and the
+places that keep input elsewhere are few enough to name.
+
+**Rejected alternatives:**
+- A `/version` route read on a timer of its own: requests that the
+  answers the page already reads make unnecessary, and one more interval
+  for a hidden tab to skip.
+- The hub's `version` from `GET /health`: it also changes with a
+  release that leaves the dashboard as it was, and the band would ask
+  for a reload that brings nothing.
+- A service worker that notices the new files: it would need a worker
+  script for the page, and it takes on caching that the hub's
+  `Cache-Control` and `?v=` already settle (§16.11).
+- A field's value against its `defaultValue`: that is the HTML
+  attribute only, so every value a form sets itself counted as typed
+  (#1900, review).
+- A field's value against the one noted at its first focus, reset when
+  its form is submitted: the reset ran before an asynchronous sending
+  had succeeded, so a failed one lost the protection and a cleared one
+  asked; a change without focus and a field drawn anew went unseen
+  (#1900, review).
+- Every form saying itself whether it is dirty: more than a hundred
+  forms, and the reader's events already say the same for fields.
+

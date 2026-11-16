@@ -161,6 +161,8 @@ window.Maity = window.Maity || {};
         shown = await M.api.put("/me/preferences", { markdown: text.value, base_version: baseVersion });
         drawLine();
         status.done();
+        // Saved, the editor keeps the text: it is no longer unsent input (js/new-version.js).
+        if (M.newVersion) M.newVersion.clean(text);
         append(status.el, h("span", { class: "ok" }, M.t("prefs.saved", { version: String(shown.version) })));
       } catch (err) {
         if (err.code === "conflict") await conflicted();
