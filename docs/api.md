@@ -24991,7 +24991,8 @@ mail.
 - **Stage 1 — badges and the bell.** The dashboard reads `GET
   /me/notifications?limit=0` for the counts (instead of summing `/me`)
   and shows them on the inbox, the chat list and the bell; the tab
-  title is `(<total>) maity`. The bell opens the latest items (`limit=20`),
+  title is `(<inbox + chat>) maity`, mentions and security alerts on
+  the bell only (§18.2). The bell opens the latest items (`limit=20`),
   each linking to its `url`, unread ones marked, with "mark all read"
   and a filter "unread only" (`unread=true`, §18.2). Above the list
   stands the block of `pinned` security items, whatever their age, each
