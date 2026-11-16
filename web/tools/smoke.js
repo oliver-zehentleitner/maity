@@ -1109,8 +1109,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(names) === JSON.stringify(["Agent A for Reviewer", "Agent B", "Agent C", "Agent C", "Agent C", "Agent D", "Agent Z", "Anna"].filter((n) => names.includes(n))) && names.length >= 3, "sort by agent: " + names.join(", "));
 
   // malformed and unknown routes
+  // A malformed escape leaves its segment as sent (§16.11): `p` is one letter, no handle, so the address
+  // can never be a page, "not found", no failed page from a URIError.
   await go("#/p/%E0%A4%A");
-  expect(main.querySelector(".page-failed") && text(main.querySelector(".page-failed details")).includes("URI"), "malformed hash says the page could not load, the reason under Details");
+  expect(!main.querySelector(".page-failed") && text(main).includes("Page not found"), "malformed escape: the segment stays as sent, the address is not found, no failed page");
+  // Addresses that can never be a page (§16.11, the hub's `404`), signed in: the dashboard's not found.
+  const neverSigned = [];
+  for (const at of ["/components", "/Maintainer/maity", "/x.y/z", "/maintainer/maity/board/a/b/c/d", "/maintainer/maity/%zz"]) {
+    await go("#" + at); for (let k = 0; k < 4; k++) await tick();
+    if (!text(main).includes("Page not found")) neverSigned.push(at);
+  }
+  expect(!neverSigned.length, "never a page: signed in, each shape is the dashboard's not found " + JSON.stringify(neverSigned));
+  expect(win.Maity.neverAPage(["maintainer", "maity", "why", "topic", "a", "b", "c", "d.md"]) === false
+    && win.Maity.neverAPage(["observe", "maintainer", "maity", "cnv-0301"]) === false
+    && win.Maity.neverAPage(["maintainer", "agents", "bot"]) === false
+    && win.Maity.neverAPage(["inbox", "x"]) === false
+    && win.Maity.neverAPage(["maintainer", "maity", "team", "agt-a", "sessions", "abcd"]) === false
+    && win.Maity.neverAPage(["maintainer", "maity", "team", "agt-a", "sessions", "abcd", "x"]) === true
+    && win.Maity.neverAPage(["maintainer", "agents"]) === true && win.Maity.neverAPage(["maintainer", "maity", "members"]) === true,
+    "never a page: the same shapes as the hub's (hub/tests/test_never_a_page.py), Why, observe, an agent's page and own words left out");
   await go("#/maintainer/maity/constructor");
   expect(text(main).includes("Page not found") && plainTitle() === "Page not found · Maity", "prototype key is no view, sane title");
   await go("#/maintainer/maity/nonsense");
@@ -15359,6 +15376,17 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const nfFlaky = !nfPage() && !!byId("login-email");
   win.Maity.api.get = nfGet;
   expect(nfFlaky, "not found: a public page whose read failed with 503 keeps the sign-in, not \"not found\"");
+  // An address that can never be a page (§16.11, the hub's `404`): "not found" for a visitor too, where a
+  // dashboard route kept the sign-in before; a word under the dashboard's own first words still keeps it.
+  const neverVisitor = [];
+  for (const at of ["/components", "/Stranger", "/x.y/z", "/stranger/tool/board/a/b/c/d", "/stranger/tool/%zz"]) {
+    await go("#" + at); for (let k = 0; k < 6; k++) await tick();
+    if (!nfPage() || byId("login-email")) neverVisitor.push(at);
+  }
+  await go("#/inbox/anything"); for (let k = 0; k < 6; k++) await tick();
+  const nfOwnWord = !nfPage() && !!byId("login-email");
+  expect(!neverVisitor.length && nfOwnWord, "never a page: a visitor gets \"not found\" at each shape, no sign-in form; /inbox/anything keeps the sign-in "
+    + JSON.stringify(neverVisitor) + nfOwnWord);
   // A click during the first drawing (tsk-25x1t18ergxz): the drawing of a public address still waits
   // for the session when the visitor goes to the sign-in. The overtaken drawing asks for no page of
   // the new address (it asked for /public/pages/login, a 404 in the browser's console); the newer
