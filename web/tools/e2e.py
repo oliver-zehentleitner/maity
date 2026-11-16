@@ -1838,9 +1838,23 @@ def attachments_step(run: Run, page: Page, agent_id: str) -> None:
     pending = page.locator(".attach-pending li", has_text="e2e-shot.png")
     # Uploaded once its Remove is there (the hub answered); a refusal is a failure here.
     expect(pending.get_by_role("button", name="Remove e2e-shot.png", exact=True)).to_be_visible()
+    # A pasted image (tsk-e40k9yxt574b) takes the same way: a real ClipboardEvent in Chromium,
+    # uploaded at once, pending under its own name with Remove.
+    run.step("attachments: an image pasted into the message field is attached like a picked file")
+    page.locator("#chat-text").evaluate(
+        """(field, bytes) => {
+            const data = new DataTransfer();
+            data.items.add(new File([new Uint8Array(bytes)], "image.png", { type: "image/png" }));
+            field.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+        }""",
+        list(tiny_png(24, 24, (200, 60, 40))),
+    )
+    pasted = page.locator(".attach-pending li", has_text=re.compile(r"pasted-image-\d{8}-\d{6}\.png"))
+    expect(pasted.get_by_role("button", name=re.compile(r"^Remove pasted-image-\d{8}-\d{6}\.png$"))).to_be_visible()
     run.step("attachments: the owner sends an image to the agent; it shows inline from the hub")
     page.locator("#chat-text").fill("a picture")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
+    expect(page.locator("ol.messages li.msg.out").last.locator("img.attach-image")).to_have_count(2)
     img = page.locator("ol.messages li.msg.out img.attach-image").last
     expect(img).to_have_attribute("src", re.compile(r"^/api/v1/projects/owner/e2e-alpha/attachments/[A-Za-z0-9_-]+/content$"))
     page.wait_for_function("() => { const i = [...document.querySelectorAll('img.attach-image')].pop(); return i && i.complete; }")

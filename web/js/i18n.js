@@ -321,6 +321,7 @@ window.Maity = window.Maity || {};
     date: (value) => when(value, { year: "numeric", month: "short", day: "numeric" }),
     time: (value) => when(value, { hour: "2-digit", minute: "2-digit" }),
     when,
+    wall,
     day,
     toWall,
     fromWall,
