@@ -11086,15 +11086,62 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(!vField() && text(vNow().querySelector(".verdict-list") || { textContent: "" }).includes("Maintainer disagrees: sent once"),
       "group chat: the answer closes the form on screen and draws the verdict there " + text(vNow().querySelector(".msg-verdicts")));
     // A send that fails leaves the form and what is typed, and says so; nothing hangs in "Saving…".
+    // The send is over, so a new attempt goes out: one more PUT, no more.
+    const vFails = [];
+    let vFail = null;
+    win.Maity.api.put = (p, b) => {
+      if (!p.endsWith("/messages/" + vSeq + "/verdict")) return vPut(p, b);
+      vFails.push(b);
+      if (vFail) return new Promise((res, rej) => { const fail = vFail; vFail = null; fail.go = rej; });
+      return vPut(p, b);
+    };
+    const vAway = () => Object.assign(new Error("the hub is away"), { code: "unavailable" });
     btn(vNow(), "Disagree").click(); await tick();
     vField().value = "will fail"; vField().dispatch("input");
-    win.Maity.api.put = (p, b) => (p.endsWith("/messages/" + vSeq + "/verdict")
-      ? Promise.reject(Object.assign(new Error("the hub is away"), { code: "unavailable" })) : vPut(p, b));
-    vNow().querySelector(".verdict-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    vFail = {};
+    const vFirst = vFail;
+    vNow().querySelector(".verdict-form").dispatch("submit"); await tick();
+    if (vFirst.go) vFirst.go(vAway());
+    for (let k = 0; k < 4; k++) await tick();
     const vFailText = text(vNow().querySelector(".msg-verdicts"));
     expect(vField() && vField().value === "will fail" && vFailText.includes("Not saved") && !vFailText.includes("Saving…"),
       "group chat: a failed send keeps the form and its text and says it was not saved " + vFailText);
-    btn(vNow(), "Cancel").click(); await tick();
+    vNow().querySelector(".verdict-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(vFails.length === 2 && !vField() && text(vNow().querySelector(".verdict-list") || { textContent: "" }).includes("Maintainer disagrees: will fail"),
+      "group chat: after a failed send a new attempt sends once more " + vFails.length);
+    // The same when the list is drawn again while the send is under way: the error is on the drawing
+    // on screen, and the new attempt from there sends once more. In the chat opened anew, so that this
+    // case starts from its own state and does not lean on the one above.
+    await go("#/maintainer/maity/chat/agt-a");
+    await go("#/maintainer/maity/chat/cnv-0007"); await tick(); await tick();
+    const wSeq = vSeq;
+    const wNow = () => gcList().querySelectorAll("li.msg").find((li) => li.getAttribute("data-seq") === String(wSeq));
+    const wField = () => wNow().querySelector(".verdict-form input");
+    const wFails = [];
+    let wFail = null;
+    win.Maity.api.put = (p, b) => {
+      if (!p.endsWith("/messages/" + wSeq + "/verdict")) return vPut(p, b);
+      wFails.push(b);
+      if (wFail) return new Promise((res, rej) => { const fail = wFail; wFail = null; fail.go = rej; });
+      return vPut(p, b);
+    };
+    btn(wNow(), "Disagree").click(); await tick();
+    wField().value = "fails redrawn"; wField().dispatch("input");
+    wFail = {};
+    const wFirst = wFail;
+    wNow().querySelector(".verdict-form").dispatch("submit"); await tick();
+    gcFeed = [{ seq: 9109, kind: "event_redacted", actor: { member_id: "hum-maintainer" }, payload: { seq: 5015, reason: "a key" } }];
+    await fireIntervals(); await tick(); await tick();
+    expect(wField() && text(wNow()).includes("Saving…") && wFails.length === 1,
+      "group chat: a list drawn again during a send that will fail shows the send under way " + wFails.length);
+    if (wFirst.go) wFirst.go(vAway());
+    for (let k = 0; k < 4; k++) await tick();
+    const wFailText = text(wNow().querySelector(".msg-verdicts"));
+    expect(wField() && wField().value === "fails redrawn" && wFailText.includes("Not saved") && !wFailText.includes("Saving…"),
+      "group chat: a send failing after the list was drawn again says so on the drawing on screen " + wFailText);
+    wNow().querySelector(".verdict-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    expect(wFails.length === 2 && !wField() && text(wNow().querySelector(".verdict-list") || { textContent: "" }).includes("Maintainer disagrees: fails redrawn"),
+      "group chat: after that failure a new attempt sends once more " + wFails.length);
     win.Maity.api.put = vPut;
     // Taken back for the cases below, past gcWrites: they count the chat's own writes.
     const vDel = win.Maity.api.del;
