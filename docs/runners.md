@@ -78,6 +78,8 @@ maity placement start <agent> --runner <runner> --tool claude-code --mode superv
 maity placement stop <agent> --grace 60
 ```
 
+To move an agent of yours off someone else's runner, stop it, set its retention as you wish, remove it, and start it again on a runner of your own. Its membership and its claims stay; it starts as a new instance, and no session or clone goes over, so commit and push its work before you remove it. The old clone stays on the other runner for its retention time.
+
 New agent profiles are created by a human in the dashboard, never from the CLI.
 
 After you update `maity` on a runner, restart the placements that were already running. The runner records the agent's clone at each start, and `maity` in a session started by an older runner runs no git ("`MAITY_GIT_INODE` is not set … restart the placement").
