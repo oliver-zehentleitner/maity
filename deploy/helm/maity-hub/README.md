@@ -203,7 +203,9 @@ Upgrades are the same command with `helm upgrade`, also with
 `--timeout 10m`. Use `deploy/scripts/helm-upgrade.sh -f values.yaml` instead
 when the release brings a migration: it stops the hub while the migration
 runs and starts it again on any exit (see "The migration and the running
-pod" below).
+pod" below). Before upgrading to chart 0.2.0, set `image.digest`, or
+`image.allowTag: true` with `image.tag`: without either the chart does not
+render, and the script has already stopped the hub.
 
 ## Values
 
