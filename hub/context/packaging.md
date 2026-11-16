@@ -298,6 +298,11 @@ certificate names `publish-image.yml` and the ref the run was on.
 The chart README tells operators to check that identity with
 `cosign verify` before they pin a digest.
 
+**Since the maintainer's decision of 2026-11-14 (req-5x293t6ntn8q):** the identity the chart README checks is
+`refs/tags/v*` alone. A run from `main` still builds and signs, after
+the same gate as a tag, but its `refs/heads/main` signature is refused
+by that check, because every deploy is a release (9c3f6a1e).
+
 **Reason:** the image is what every installation runs, so only
 reviewed code, on `main` or a release tag, should become one. What
 holds that is the signature with the tag rule: a run from a branch,
@@ -348,16 +353,17 @@ pushed layers are the ones the check just ran, not a second build.
 - `no-cache` on the push build as well: a second build from nothing, so
   the pushed image would not be the image the check ran.
 
-## A hand-started image build runs the same release gate as a tag build
+## A hand-started image build runs the same release gate as a tag build, and only a tag's signature is accepted
 
 **Id:** 9c3f6a1e-7b42-4d85-a0e9-3e5d8b17c4f2
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-6zh891gy6cvz, point 2 (release chain hardening, 2026-11-13); `.github/workflows/publish-image.yml`, `tools/release_gate.py`, `tools/test_release_gate.py`, `deploy/helm/maity-hub/README.md`
-**Revisit when:** images built from `main` stop being deployed or signed, or the gate starts needing something a hand start does not have (a tag, a version)
+**Source:** card tsk-6zh891gy6cvz, point 2 (release chain hardening, 2026-11-13); the maintainer's answer to req-5x293t6ntn8q, 2026-11-14, relayed by the team lead (every deploy is a `v*` release, the deploy description in this file stays, the identity drops `refs/heads/main`); `.github/workflows/publish-image.yml`, `tools/release_gate.py`, `tools/test_release_gate.py`, `deploy/helm/maity-hub/README.md`
+**Revisit when:** a deploy runs an image no tag built, or the gate starts needing something a hand start does not have (a tag, a version)
 **See:** https://github.com/oliver-zehentleitner/maity — ea58fdd2-6e3f-45df-ae48-4ce6825cafde — as of 2026-11-13
 **See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
+**See:** packaging.md#every-deploy-of-maityteam-is-a-release-a-version-bump-as-the-last-merge-then-the-maintainers-v-tag — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
 
 The `gate` job of `publish-image.yml` runs on a hand start from `main`
 as on a `v*` tag, and the `image` job needs it to have passed in both
@@ -365,22 +371,36 @@ cases; a skipped gate no longer lets a build through.
 `tools/release_gate.py` needs only the full commit id: on a hand start
 that is the head of `main` the run started on, and it asks the same two
 things of it (ci-ok of the push to main, hub-mariadb on the same hub
-files), waiting while they still run. The signing identity stays as the
-chart README documents it, `refs/tags/v*` or `refs/heads/main`.
+files), waiting while they still run.
 
-**Reason:** a digest signed as `refs/heads/main` is accepted by the
-documented `cosign verify` just like a release, so it should stand for
-the same checks as a release. The gate needs no tag, so the hand start
-can run it unchanged.
+The documented signing identity, in the chart README's `cosign verify`,
+accepts only `refs/tags/v*`; `refs/heads/main` is no longer in it. A
+hand start from `main` still builds, signs and pushes, but the
+signature it gets is one the documented check refuses, so its image is
+not deployed. Of the two deploy descriptions that disagreed, the one in
+this file (1555765c: every deploy is a release built by the
+maintainer's tag) stays; the root context's overnight deploy entry,
+which deployed the image from the publish workflow on `main`, is
+superseded.
+
+**Reason:** the gate, because a commit should not become a signed image
+without the checks a release has, however the run was started; it needs
+no tag, so the hand start runs it unchanged. Dropping `heads/main`, by
+the maintainer's decision that every deploy is a release: with no deploy
+path left for an image built from `main`, accepting its signature would
+only widen what an operator trusts. The two together answer the card's
+point both ways.
 
 **Rejected alternatives:**
-- Dropping `heads/main` from the documented identity, so that a hand
-  start's signature is no longer accepted: images built from `main` are
-  still a documented deploy path (the root context's overnight deploy
-  entry), and operators would lose the only way to check them. Open
-  until the owner settles which of the two deploy descriptions stays.
-- Leaving the hand start ungated as the maintainer's own build: it
-  carries the same signature an operator trusts.
+- Keeping `heads/main` in the identity with the gate alone: chosen
+  first, while images built from `main` were still a documented deploy
+  path and it was open which deploy description stays; dropped once the
+  maintainer settled that every deploy is a release.
+- Leaving the hand start ungated as the maintainer's own build: a signed
+  image of an unchecked commit in the public registry.
+- Removing the hand start from `main` altogether: not part of the
+  maintainer's answer, so it stays; whether it is still wanted is left
+  to the maintainer's review of this change.
 
 ## The hub is published to PyPI as `maity-hub` from the same `v*` tag as the image, built from a hashed lock
 
