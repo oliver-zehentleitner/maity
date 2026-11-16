@@ -169,8 +169,9 @@ window.Maity = window.Maity || {};
     // A human in the chat deletes a file of it, as it removes a message (§8.7).
     // A human who reads the chat, an observer too, gives a verdict while it is open (§9.7).
     const verdictDraws = new Map();
+    const verdictForms = new Map();
     const opts = { group: true, onRedact: mayRedact ? redact : null, canDeleteFile: () => mayRedact && !closed, target: M.route.seqTarget(),
-      verdictPath: closed ? null : path, verdictDraws };
+      verdictPath: closed ? null : path, verdictDraws, verdictForms };
     const messages = h("ol", { class: "messages", "aria-live": "polite" });
     // At the newest unless the reader scrolled up; then a pill counts what came (js/chat.js).
     // Newest leaves the focus in the composer, or on the title where there is none.
@@ -179,6 +180,11 @@ window.Maity = window.Maity || {};
     // Drawn as one timeline (days, groups, the unread line); the earlier part
     // put before it means drawing it again.
     function redraw() {
+      // A sentence field being typed in keeps its focus and caret (its text is in verdictForms).
+      const active = document.activeElement;
+      const activeId = active && active.getAttribute ? active.getAttribute("id") || "" : "";
+      const typing = activeId.startsWith("verdict-sentence-") && messages.contains(active)
+        ? { id: activeId, start: active.selectionStart, end: active.selectionEnd } : null;
       draw = parts.timeline(ctx, new Map(), firstUnread, observer || closed ? null : quote, opts);
       clear(messages);
       if (!all.length) {
@@ -186,6 +192,11 @@ window.Maity = window.Maity || {};
           h("p", { class: "muted" }, earlier === null ? M.t("group.empty.none_hint") : M.t("group.empty.nothing_new_hint"))));
       } else {
         all.forEach((m) => append(messages, draw(m)));
+      }
+      const field = typing && Array.from(messages.querySelectorAll(".verdict-form input")).find((el) => el.getAttribute("id") === typing.id);
+      if (field) {
+        field.focus();
+        if (typeof typing.start === "number" && field.setSelectionRange) field.setSelectionRange(typing.start, typing.end);
       }
     }
     redraw();
@@ -539,9 +550,12 @@ window.Maity = window.Maity || {};
             earlier = next[0].seq;
             drawEarlier();
           }
-          // Drawn again only on a change: the list is a live region.
-          const sig = (list) => JSON.stringify(list.map((m) => [m.seq, m.body, !!m.redacted, m.verdicts || []]));
-          if (sig(next) !== sig(all)) {
+          // Drawn again only on a change: the list is a live region. A change of verdicts alone is
+          // taken over under its message, as an event's is; the rest of the list stays as it is.
+          const sig = (list) => JSON.stringify(list.map((m) => [m.seq, m.body, !!m.redacted]));
+          if (sig(next) === sig(all)) {
+            next.forEach((m, i) => parts.takeVerdicts(all[i], m, verdictDraws));
+          } else {
             all.splice(0, all.length, ...next);
             if (all.length) cursor = Math.max(cursor, all[all.length - 1].seq);
             const top = messages.scrollTop;
