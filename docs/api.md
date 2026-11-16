@@ -217,12 +217,12 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover` and `admin_team_only` §6.19); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
 | 403 | `code_invalid` | join or pairing code wrong (either is burned after 3 wrong codes); a device code or a mailed sign-in code that is wrong, unknown, expired, used or denied — never which (§2.6); a password reset token that is invalid, expired, used, of a changed password or address, or of an account disabled since (§2.10); a second-factor or recovery code that is wrong or already used (§2.8) |
-| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the four calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, `PATCH …/members/{id}` with `agent`, `owner_preferences` or `discuss_first` on their agent's membership, §6.18, §19.4, and `DELETE …/members/{id}/bridges/{brg}` on a connection their agent serves as the bridge, seeing that connection only, §2.3; and a signed-in human who is no member of a public project, an *outsider*, who reads the project as a member holding `project:read` alone, in no group chat — every write, a group chat, the dashboard's Settings and the event routes `GET …/events` and `GET …/events/{seq}` stay `not_found` to them — and who calls `GET …/contribution` and the joins routes for an agent of their own, §2.3, "Reading a public project from outside", §3.1, §6.1), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
+| 404 | `not_found` | no such resource — also for any resource in a project the caller is not a member of (exceptions: the owner of an agent in a group chat reads that chat along and the attachments of its messages, and its writes there are `forbidden`, §9.2; the same owner reads `GET …/jour-fixe/rounds/{id}` of a round its agent is a current participant of, as a minimal projection, while `GET …/jour-fixe` and `GET …/jour-fixe/rounds` stay `not_found` to it, §20.7; and the four calls a human makes there as the owner of an agent profile without being a member: `POST …/takeovers/{id}/respond` on a cross-owner takeover of their agent and `DELETE …/tasks/{id}/objection-hold` on a hold of their own objection, §6.19, `PATCH …/members/{id}` with `agent`, `owner_preferences` or `discuss_first` on their agent's membership, §6.18, §19.4, and `DELETE …/members/{id}/bridges/{brg}` on a connection their agent serves as the bridge, seeing that connection only, §2.3; the owner of a runner, for the placements on that runner: `PATCH …/placements/{id}` with `desired: stopped` alone and `DELETE …/placements/{id}`, each answered with the runner owner's line, while every other placement route stays `not_found` to them, §15.3, §15.6; and a signed-in human who is no member of a public project, an *outsider*, who reads the project as a member holding `project:read` alone, in no group chat — every write, a group chat, the dashboard's Settings and the event routes `GET …/events` and `GET …/events/{seq}` stay `not_found` to them — and who calls `GET …/contribution` and the joins routes for an agent of their own, §2.3, "Reading a public project from outside", §3.1, §6.1), for an event sequence number that belongs to another project, for a runner caller on any `/projects/*` route, and for a placement, runner or enrollment the caller may not see, a runner's own calls included (§15) |
 | 405 | `method_not_allowed` | the path exists, the method does not; the `Allow` header lists the methods |
 | 408 | `request_timeout` | the body did not arrive within the time §1.7 gives it from the hub starting to read it (120 seconds; 30 minutes for a replacement's sealed transcript); the hub closes the connection (`Connection: close`) |
 | 409 | `already_claimed` | claim on a task that is held; `details.holder`, `details.instance`, `details.lease_until`, `details.expired`. Also an outsider's claim on a card whose claim request by another outsider's agent waits for confirmation (§6.5, "An outsider's claim"): `details.pending: true` and no holder fields |
@@ -858,7 +858,7 @@ The scopes:
 | `releases:write` — create release cards, typed PR refs, checklist | roles `reviewer`, `purple-team`, `ops`; trust `owner`, `admin` |
 | `requests:ask` — file requests | every role but `expert`; not `guest` |
 | `events:post` — post messages | every role; a `guest` only `chat` in the conversations it is in (below) |
-| `agents:propose` — propose a placement for an existing membership, stop and restart placements, read every placement and the project's runners (§15.6) | role `ops`; trust `owner`, `admin` |
+| `agents:propose` — propose a placement for an existing membership on a runner its own human owns, stop placements, start, restart and nudge them on such a runner, read every placement and the project's runners (§15.6) | role `ops`; trust `owner`, `admin` |
 | `ticker:post` — post a ticker item by hand (§17.6) | role `ops`; trust `owner`, `admin` |
 | `project:admin` — state, policy, rules text, settings, repository, the uploaded logo and banner (human memberships only; an admin agent sets `settings.onboarding` and the project briefing alone, ʰ) | trust `owner`; `admin` ʰ |
 | `members:admin` — joins, trust, roles, areas, capabilities, pause, remove members (a human ends their own membership without this scope, §6.2, "Leaving a project"); for an agent with trust `admin`, limited as `ᵃ` says | trust `owner`; `admin` ᵃ |
@@ -1367,8 +1367,7 @@ one), does not take effect
 on the call: it answers `202` with a `consent` request to `owner`
 (title `Remove <handle>`, `Change <handle> to <trust> <role>`, `Pause
 <handle>` or `Change cover for <handle>`), which only a human answers —
-an agent's answer is `forbidden` with `details.reason: humans_only`, as under
-`spawn_consent_by: human` (§15.6) — and the change is applied on `go`,
+an agent's answer is `forbidden` with `details.reason: humans_only` — and the change is applied on `go`,
 in the human's name as approver and the agent's as actor. It never
 lifts **or replaces** a pause a human set (§5.3). A pause it sets is
 stored with `by` naming it, gates new work like a human's pause, is not
@@ -1617,7 +1616,8 @@ Additional rules that are not scopes:
 - A runner is not a membership and holds no trust, no role and no scope: it may
   call `/runner/*` and nothing else (§15.1). Who may create placements
   is `members:admin` plus ownership of the runner, or `agents:propose`
-  under the project's `spawn_requests` (§15.6).
+  under the project's `spawn_requests` for an agent whose own human owns
+  the runner (§15.6).
 - `instance:admin` is not a project scope and no trust or role grants it: it
   belongs to the human account that is the instance admin (§16), is
   checked on `/admin/*` only, and opens no project, inbox or chat. An
@@ -6349,8 +6349,8 @@ stay; `state_changed` is not emitted for the mapping.
 | `steward_writes` | `cards_only`, `self` | whether the Keep the Why steward writes `context/` entries itself or opens cards for the owners |
 | `lease_seconds` | 600–86400 | claim lease, default 7200 |
 | `signing` | `optional`, `required` | whether agent calls may use the bearer credential or must be HMAC-signed (§2.2); every preset fills `optional` at creation; a later preset change leaves `signing` as it is unless the same `policy` sets it. Runner calls are signed whatever this says (§15.1) |
-| `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value |
-| `spawn_consent_by` | `human`, `role` | who may answer the consent request of a placement proposal (§15.6): `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included (a proxy only as a relay, §2.3). Set by a human with `members:admin`. A project that predates the field reads as `human`; a later preset change keeps it, as `signing`: a preset must not loosen who gives the go in passing |
+| `spawn_requests` | `off`, `consent`, `direct` | what an agent's placement proposal does (§15.6): `off` refuses it (`forbidden`); `consent` creates it pending and files a `consent` request; `direct` approves it at once, logged with its `reason`. Every preset fills `consent` at creation, and a project that predates the field reads as `consent` (default pending the maintainer); a later preset change keeps it, as `signing`. Stop and restart are not proposals and are allowed under every value; start, restart and nudge only on the runner's side (§15.6) |
+| `spawn_consent_by` | `human`, `role` | kept, and since 2026-11-16 decides nothing: a placement proposal's consent request goes to the runner's owner, who alone answers it (§15.6). Before, it said who may answer that request: `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included (a proxy only as a relay, §2.3). Set by a human with `members:admin`. A project that predates the field reads as `human`; a later preset change keeps it, as `signing`: a preset must not loosen who gives the go in passing |
 | `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking or removing a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting `MAITY_ON_RUNNER_REVOKE` (§16); `keep` is refused (`invalid`, `details.fields.on_runner_revoke: "stop_floor"`) when that setting is `stop_floor`. A project that predates the field reads as `inherit`; a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `takeover_window_minutes` | 5–1440, default 60 | how long a holder has to answer a takeover before the card moves, and how long a disputed one waits for a settlement before it is escalated (§6.19); a project that predates the field reads as 60; a later preset change keeps it |
 | `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
@@ -12683,7 +12683,9 @@ is a member of the project. A proposal for a human's preferences
 (§19.4) concerns that human in person and is a personal request too,
 addressed `to: "human:<human id>"`, likewise allowed only here, and so
 is the request to let another owner's side chat with the human's agents
-(§9.6), which carries `project: null`. So are
+(§9.6), which carries `project: null`. So is the consent request of an
+agent's placement proposal, addressed `to: "human:<id>"` of the runner's
+owner (§15.6). So are
 the requests an organisation files (§6.26): an invitation, and an
 admin's transfer into the organisation; and the owner's digest of agent
 instances that are not listening (§5.3), which concerns every project of
@@ -17184,12 +17186,13 @@ and `resolveEntry`, and any write.
 | GET, PATCH, DELETE | `/runners/{id}` | owner, `members:admin` in an attached project (GET) / owner | 15.3 |
 | POST | `/runners/{id}/revoke` | owner | 15.3 |
 | POST | `/runners/{id}/updates` | owner | 15.3, 15.16 |
+| GET | `/runners/{id}/placements` | owner | 15.3, 15.6 |
 | GET, POST | `/projects/{owner}/{slug}/runners` | `project:read` (agents: `agents:propose`) / `members:admin` + runner owner | 15.4 |
 | DELETE | `/projects/{owner}/{slug}/runners/{runner_id}` | `members:admin` / runner owner | 15.4 |
-| GET, POST | `/projects/{owner}/{slug}/placements` | `project:read` (agents: own, all with `agents:propose`) / `members:admin` + runner owner, `agents:propose` | 15.6 |
-| GET, PATCH, DELETE | `/projects/{owner}/{slug}/placements/{id}` | as the list / as `POST`, `desired` and `workspace_retention` also the profile's owner | 15.6 |
+| GET, POST | `/projects/{owner}/{slug}/placements` | `project:read` (agents: own, all with `agents:propose`) / `members:admin` + runner owner, `agents:propose` on the runner's side | 15.6 |
+| GET, PATCH, DELETE | `/projects/{owner}/{slug}/placements/{id}` | as the list / as `POST`, `desired` and `workspace_retention` also the profile's owner, a stop and `DELETE` also the runner's owner, the profile's owner and `agents:propose`, `workspace_retention` alone also `agents:propose` | 15.6 |
 | GET | `/projects/{owner}/{slug}/placements/{id}/reports` | as the list | 15.6 |
-| POST | `/projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | 15.6 |
+| POST | `/projects/{owner}/{slug}/placements/{id}/restart` | the runner's side | 15.6 |
 | POST | `/projects/{owner}/{slug}/placements/{id}/workspace/remove` | the profile's owner or `members:admin`, humans only | 15.5, 15.6 |
 | POST | `/projects/{owner}/{slug}/placements/{id}/nudge` | as restart | 15.6, 15.14 |
 | POST | `/projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | 15.6, 15.14 |
@@ -17717,6 +17720,7 @@ rule of §13 before it writes anything.
 |---|---|---|
 | `GET /runners` | human | the runners the caller owns, and the runners attached to projects where the caller has `members:admin`; ordered by `name`; `{items}` |
 | `GET /runners/{id}` | the owner, or `members:admin` in an attached project | the runner view |
+| `GET /runners/{id}/placements` | the owner | `{items}`: the active placements on the runner in every project it is attached to, ordered by project and agent handle, each as the **runner owner's line** `{id, project, agent: {handle}, desired, state, foreign, created_at}`: `project` is `owner/slug`, `state` the state the runner last reported (`null` before its first report), `foreign` as in §15.5. Nothing else of the placement or its project: no `briefing`, no aliases, no branch, no spec, whoever asks; it is what the runner on the owner's machine holds already. The owner stops (`PATCH` with `desired: stopped` alone) or removes (`DELETE`) any of them through the project's placement routes (§15.6), whether they are a member of its project with any trust or not; a non-member gets this line as the answer, and no other placement route opens to them. Anyone but the owner gets `not_found`, a project admin who sees the runner included, as on every owner-only runner route; detaching closes them all (§15.4) |
 | `PATCH /runners/{id}` | the owner | `{name}`; `invalid` when the caller owns a runner of that name |
 | `POST /runners/{id}/updates` | the owner | `{tool}`; `202` with the runner view: asks the runner to look for a newer version of that tool now (`Update now`, §15.16); `conflict` (`details.reason: "updates_off"`) for a tool the runner does not update |
 | `POST /runners/{id}/revoke` | the owner | `{"reason"?, "agents"?}`; revokes the live credential, ends its long-poll; returns the runner view with `on_runner_revoke` (below). What happens to its agents follows `on_runner_revoke` per attached project, or `agents` (below) |
@@ -17985,6 +17989,12 @@ placements on that runner are `runner_not_attached`, and the runner
 keeps reading the project's closing placements (§15.8) until each is
 closed.
 
+Attaching shows the runner to the project; it lets nobody but its owner
+place agents on it (the maintainer's decision of 2026-11-16). Only the
+runner's side (§15.6) creates a placement on it, changes its spec, moves a
+placement onto it or starts, restarts and nudges one there; the go of a
+proposal comes from the runner's owner alone.
+
 While V1 has one human, the runner's owner and the project's admin are
 the same person; attaching someone else's runner is designed with
 invitations, not now.
@@ -18041,6 +18051,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `workspace_epoch` | which clone of the placement is meant: `1` for its first clone, raised by one when the hub takes a `removed` report, since the next start makes a new clone. The runner keeps the value it read when the placement started in that clone (one that continues another placement's clone starts at its own value) and names it in each workspace report (§15.8). After removing a clone, the runner makes the placement's next clone only once the hub has taken that `removed` report, and keeps the `workspace_epoch` of that answer, so no clone carries the epoch of the one before. The hub keeps and raises it; the runner side is not built yet, tsk-34gb7frfbsk7 |
 | `workspace_outcome` | the clone after a stop or a close (§15.5): `null` while the placement runs and until the runner reports; else `{state, reason, unsaved, size_bytes, removes_at, epoch, remove_requested, remove_requested_at, reported_at}`. `state` `retained` (the clock runs; `removes_at` the deadline), `removed` (final) or `kept`; `reason` `null` but for `kept`: `unsaved_work` (git found uncommitted or untracked files, commits on no remote branch or stashes; for `antigravity` also an entry beside `repo` in the workspace folder), `in_use` (a running placement of the runner names the clone, or a process holds it), `not_inspectable` (git cannot run in it or could not say what is in it, `not_a_plain_clone` included), `not_recorded` (the path is not the one the runner recorded for the clone, or a symbolic link), `remove_failed` (the file system refused); `unsaved` the number of entries git listed, plus for `antigravity` the entries beside `repo`, `0` unless `unsaved_work`; `size_bytes` the clone's size when the runner last measured it, `null` once removed; `epoch` the clone the outcome is about (`workspace_epoch` below); `remove_requested` true after a removal by hand was asked (§15.6), with `remove_requested_at`, until a report names that request. Never a file name or a commit. The hub stores and shows it; the runner does not report yet and the dashboard does not show it yet, tsk-34gb7frfbsk7 |
 | `created_by`, `proposed_by` | `created_by` is always a human: the human who created it, or for a proposal the agent profile's owner; `proposed_by` is the proposing member or `null` |
+| `foreign` | computed, never stored: `true` when the agent profile's owner is not the runner's owner. Since 2026-11-16 no new placement is foreign (§15.4, §15.6); one made before stays until its runner's owner stops or removes it, and only the runner's side starts it again. Its profile's owner ends it with a `DELETE` and places the agent again on a runner of their own; a replacement does not move it (§15.6, "Moving an agent off someone else's runner") |
 | `reported` | the runner's latest report (§15.7), `null` until the first one. Only the runner writes it: a new generation does not reset it |
 | `open_run` | supervised only: `{id, opened_at}` of the run the hub saw open, else `null`. `id` is opaque, issued by the hub, unique within the placement and never issued again; `opened_at` is the `reported_at` of the report that opened it (§15.7). The runner names `id` in the run's usage record (§15.15). A new `generation` sets it to `null` |
 | `reported_current` | computed, never stored: `true` when `reported.observed_generation` equals `generation`, `false` otherwise and while `reported` is `null`. The dashboard shows the placement as pending while it is `false` |
@@ -18052,7 +18063,7 @@ clone Z. It is the only thing the hub asks of a runner.
 
 | Field | Who sees it |
 |---|---|
-| the placement, except the rows below | humans with `project:read`; an agent for its own placement; an agent with `agents:propose` for every placement of the project |
+| the placement, except the rows below | humans with `project:read`; an agent for its own placement; an agent with `agents:propose` for every placement of the project; the runner's owner who is not a member of the project: only the runner owner's line of each placement on their runner (§15.3) |
 | `briefing` (a new profile, until the first pickup) | `members:admin` and the creator |
 | `session_hint`, `logs_hint` | the runner's owner only — never an agent, `agents:propose` included |
 | `proposed_by`, `approval.request_id` | everyone who sees the placement |
@@ -18221,16 +18232,16 @@ still needed (the owner's decision, req-fdfb49yzqnhv, tsk-34gb7frfbsk7):
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{owner}/{slug}/placements` | `project:read`; agents: their own, all with `agents:propose` | `{items}`, active ones, ordered by agent handle; `closed=true` adds those closed in the last 30 days, and older ones whose clone is still held (`workspace_outcome` `retained` or `kept`), so a kept clone stays in view with its size until it is removed |
-| `POST /projects/{owner}/{slug}/placements` | `members:admin` and ownership of the runner; or `agents:propose` under `spawn_requests` | body below; `201` with the placement; `approval.status` is `pending` for a proposal under `consent` |
+| `POST /projects/{owner}/{slug}/placements` | `members:admin` and ownership of the runner; or `agents:propose` under `spawn_requests`, for an agent on the runner's side (below) | body below; `201` with the placement; `approval.status` is `pending` for a proposal under `consent`. Anyone off the runner's side is `forbidden` with `details.reason: "runner_owner_only"` |
 | `GET /projects/{owner}/{slug}/placements/{id}` | as the list | |
 | `GET /projects/{owner}/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
-| `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` and `workspace_retention` alone also by the agent profile's owner | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`, `workspace_retention`; a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
-| `POST /projects/{owner}/{slug}/placements/{id}/restart` | as `PATCH` | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal sets it, §15.5): a `restart` with `{}` or a `PATCH desired: running` that would carry it out answers `forbidden` (`owner_only`) for anyone but the agent profile's owner after such a revocation. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
+| `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` and `workspace_retention` alone also by the agent profile's owner; `desired: stopped` alone also by the runner's owner, member of the project or not; `desired: stopped` and `workspace_retention` alone also by every agent with `agents:propose`; a change of spec and `desired: running` only on the runner's side (below, `runner_owner_only`) | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`, `workspace_retention`; a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
+| `POST /projects/{owner}/{slug}/placements/{id}/restart` | the runner's side (below): its owner with `members:admin` or as the agent profile's owner, or an agent with `agents:propose` whose own human owns the runner; anyone else `forbidden` (`runner_owner_only`) | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal sets it, §15.5): a `restart` with `{}` or a `PATCH desired: running` that would carry it out answers `forbidden` (`owner_only`) for anyone but the agent profile's owner after such a revocation. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove` | humans only: the agent profile's owner, or `members:admin`; an agent credential is `forbidden` | `{}`; `202` with the placement: asks the runner to remove the clone of a stopped or closed placement whose `workspace_outcome` is `retained` or `kept`, unsaved work included (§15.5); sets `remove_requested` and `remove_requested_at`, emits `placement_updated`. Any other placement or outcome is `conflict` (`details.reason: "workspace_not_held"`). Works on a closed placement too, however long ago it closed |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
-| `POST /projects/{owner}/{slug}/placements/{id}/replace` | `members:admin` and ownership of both runners, the old placement's and the new one's; or `agents:propose` under `spawn_requests` | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open: until its old placement has closed after step 3, or its new one after an abort (§15.14) |
+| `POST /projects/{owner}/{slug}/placements/{id}/replace` | `members:admin` and ownership of both runners, the old placement's and the new one's; or `agents:propose` under `spawn_requests`, for an agent whose own human owns both runners (`runner_owner_only` otherwise) | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open: until its old placement has closed after step 3, or its new one after an abort (§15.14) |
 | `POST /projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | `{note}`, at most 48 KiB, which leaves the request of 64 KiB room for plain text (§1.7; JSON escaping can still push a body under it over that, which is then `payload_too_large`): the handover note of a `summary` or `full` replacement (§15.14); `204` |
-| `DELETE /projects/{owner}/{slug}/placements/{id}` | as `POST` | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
+| `DELETE /projects/{owner}/{slug}/placements/{id}` | `members:admin` and ownership of the runner; or `agents:propose` under every `spawn_requests`; or the agent profile's owner; or the runner's owner, member of the project with any trust or not | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
 
 ```
 POST /api/v1/projects/oliver/maity/placements
@@ -18274,15 +18285,60 @@ POST /api/v1/projects/oliver/maity/placements
   credential, or setting `desired: running` on one, is `runner_revoked`.
 - Beyond `max_placements` active placements: `placement_quota`.
 
-**Who may do what.**
+**Who may do what.** The **runner's side** of a placement is the human
+who owns its runner and every agent whose profile that human owns. Only
+the runner's side places agents on a runner (§15.4): creating a
+placement, changing its spec, replacing it (both the old and the new
+runner on the caller's side), and starting, restarting or nudging it. A
+call of these by anyone else is `forbidden` with `details.reason:
+"runner_owner_only"`, whatever trust and scopes they hold. The scope comes
+first, as everywhere: a caller the route's scope column does not let
+through at all (an agent without `agents:propose`; on a restart, a human
+who is neither `members:admin` nor the profile's owner) gets
+`details.scope`; `runner_owner_only` answers the one it lets through who
+is off the runner's side. Stopping and removing are the safe direction and stay
+open as the table says.
 
 | Caller | May |
 |---|---|
 | a human with `members:admin` who owns the runner | create (new profiles included; an existing member only when that human owns the profile, `not_yours` otherwise), change, stop, start, restart, nudge, replace (owning the new placement's runner too), delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
-| the owner of the agent profile | `desired`, `workspace_retention`, restart and nudge on that profile's placement; having its held clone removed (§15.5) |
+| the runner's owner, member of the project with any trust or not | stop and delete every placement on their runner, a foreign one included (§15.5); their runner's list shows them all (`GET /runners/{id}/placements`, §15.3) |
+| the owner of the agent profile | `desired: stopped`, `workspace_retention`, `DELETE` and having its held clone removed (§15.5) on that profile's placement; `desired: running`, restart and nudge only when they also own the runner |
 | any other human with `members:admin` | having a held clone removed (§15.5) |
-| an agent with `agents:propose` | propose a placement for an **existing** membership whose profile its own human owns (`not_yours` otherwise; never a new profile, never a trust, role, area or briefing), propose a change of spec or a replacement (§15.14); stop, start, restart, nudge, change `workspace_retention` of and delete existing placements of the project |
+| an agent with `agents:propose` whose own human owns the runner | propose a placement for an **existing** membership whose profile its own human owns (`not_yours` otherwise; never a new profile, never a trust, role, area or briefing), propose a change of spec, or a replacement between two runners its human owns (§15.14); stop, start, restart, nudge, change `workspace_retention` of and delete placements of the project on that runner |
+| any other agent with `agents:propose` | stop, change `workspace_retention` of and delete existing placements of the project; nothing else (`runner_owner_only`) |
 | everyone else | nothing: `forbidden` |
+
+**Moving an agent off someone else's runner.** A placement on a runner
+its profile's owner does not own (`foreign`, §15.5) does not move by a
+replacement (§15.14). Its profile's owner moves it with the existing
+routes, in this order:
+
+1. Before the stop, the agent checkpoints, pushes its branch and releases
+   its claims (`…/release`, §6.5). Work that is not pushed is the profile
+   owner's to save; nothing of the clone goes over.
+2. `desired: stopped`, and `workspace_retention` as they wish.
+3. `DELETE` the placement and wait until it is closed (`active: false`).
+   The first `DELETE` of a placement the runner acted on answers `200`
+   while it is still `closing`; if the runner never reports, a second
+   `DELETE` closes it at once (§15.5).
+4. Revoke the old instance's credential (`POST …/credentials/{id}/revoke`,
+   §10, which the agent's owner may), which a `DELETE` alone does not
+   (§15.14). That frees its place under `agent.max_instances` (§6.18). A claim
+   it did not release stays with the revoked instance and moves only by a
+   takeover (§6.19) or a human's reassignment (§6.17).
+5. Create a placement on a runner of their own. Its pickup is a new
+   instance (`new_instance`, §15.9), which claims again.
+6. A card still assigned to the old instance (`assigned_instance`) stays
+   so after the release and the revocation, and the new instance's claim
+   of it is `instance_assigned` (§6.18). It is assigned again to the new
+   instance with `POST …/tasks/{id}/assign` (§6.4), by whoever may assign:
+   `tasks:admin`, or `line:lead` within reach. Owning the profile does not
+   give that right; without it the profile owner asks a project admin.
+
+The membership stays. Nothing else moves: it is no replacement's
+handover, no session or work tree goes over, and the old clone stays on
+the other runner for its retention.
 
 **Proposals.** What an agent's creation or change of spec does follows
 `policy.spawn_requests` (§6.1):
@@ -18292,8 +18348,8 @@ POST /api/v1/projects/oliver/maity/placements
   pending`; a change of a placement's spec leaves the placement running
   on its current spec and generation and stores the change as
   `approval.pending_change`. Either way the hub files, in the same
-  transaction, a `consent` request (§7): `asked_by` the proposer, `to:
-  owner`, replies `go`/`no`, title `Start <handle> on <runner name>`
+  transaction, a personal `consent` request (§7) to the runner's owner
+  (`to: human:<id>`): `asked_by` the proposer, replies `go`/`no`, title `Start <handle> on <runner name>`
   (`Change <handle> on <runner name>` for a change), `task_id` null, and
   a `summary` of one `field: value` line per field — agent, runner,
   target, tool, model, mode, isolation, reason.
@@ -18302,11 +18358,15 @@ POST /api/v1/projects/oliver/maity/placements
 
 Stop, start, restart, nudge and delete are never proposals and are allowed to
 `agents:propose` under every value of `spawn_requests`: stopping is the
-safe direction, and a restart re-runs something already approved. While
+safe direction, and a restart re-runs something already approved. Start,
+restart and nudge only on the runner's side (above). While
 a consent request is open, a further change of spec or a restart by an
 agent or by the profile's owner without the right is `approval_pending`;
 the same action by a human with the right settles the proposal instead
-(below). `desired: stopped` and `DELETE` are never refused.
+(below). `workspace_retention` alone, `desired: stopped` and `DELETE`
+are never refused. The proposing agent takes its proposal back with a
+`DELETE` of the placement: the request is personal, and only its human
+withdraws it (§7).
 
 **Settling.** Answering or withdrawing a request that carries a
 placement, or a human with `members:admin` who owns the runner acting on
@@ -18316,20 +18376,16 @@ it, settles it in the same transaction:
 |---|---|---|
 | `go` (only an answer with `reply_id: go`; any other answer, text-only included, settles as `no`) | `approval.status: approved`; `placement_updated` reaches the runner | the change is applied, `generation` bumped, `pending_change` cleared |
 | `no` | `refused`; closed (`refused`) | `pending_change` cleared; the placement runs on as it was |
-| withdrawn (by the proposer or `requests:answer`) | closed (`withdrawn`) | `pending_change` cleared |
+| withdrawn (by the runner's owner; a `DELETE` of the placement withdraws it too) | closed (`withdrawn`) | `pending_change` cleared |
 | the human with the right acts (their own action is their consent) | their `PATCH`, start or restart approves it: `approval.status: approved` with their action applied, the request answered `go` in their name; `placement_updated` reaches the runner. A `DELETE` withdraws the request and closes the placement (`removed`) | their change of spec or restart withdraws the proposal: `pending_change` cleared, the request withdrawn, their own action applied |
 
-Who may answer a placement's consent request follows
-`policy.spawn_consent_by` (§6.1): `human` (the default, the maintainer's
-decision of 2026-10-22: starting an agent spends compute and model
-budget, so a human gives the go) lets only humans holding
-`requests:answer` answer it, and an agent's answer is `forbidden` with
-`details.reason: humans_only`; `role` applies the rule for every other
-consent request (§2.3): holders of `requests:answer` — trust `owner` and
-`admin`, agents included, a proxy only by recording the owner's answer. Either way never the
-proposer (`self_answer`). Which value a project uses is agreed between
-its admins, human and agent, and set by a human with `members:admin`.
-Requests do not expire; an unanswered proposal stays pending.
+Only the runner's owner answers a placement's consent request, directly
+under `/requests/{id}/answer` (§7), never an agent and never a proxy:
+starting an agent spends the compute and model budget of the owner's
+machine, so its owner gives the go (the maintainer's decisions of
+2026-10-22 and 2026-11-16). `policy.spawn_consent_by` (§6.1) decides
+nothing for placements since then; it stays in the policy. Never the
+proposer (`self_answer`). Requests do not expire; an unanswered proposal stays pending.
 
 ### 15.7 Reported state
 
@@ -18812,7 +18868,7 @@ each is written so that either answer fits.
 |---|---|
 | 1 — agents as the operator's user or a separate one | `targets[].isolation` (§15.3) carries whichever layout the runner uses |
 | 2 — model access in pods | `models` (§15.3): the hub never learns how access is provided |
-| 3 — who may say go to a proposal | §15.6, settled as for every consent request (default pending the maintainer) |
+| 3 — who may say go to a proposal | settled: only the runner's owner, as a personal request (§15.6), the maintainer's decision of 2026-11-16 |
 | 4 — the five harnesses without an allowlist | `harnesses[].id`, `confinement` (§15.3): the hub accepts what a runner advertises |
 | 5 — default modes | `harnesses[].default_mode` (§15.3) |
 | 6 — what revoking a runner's key does to its agents | settled: `on_runner_revoke` (§15.3, §6.1, §16), the maintainer's decision of 2026-10-22 |
@@ -19738,8 +19794,14 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
 - **Who.** As a creation (§15.6), the maintainer's answer
   (req-8kv8vz1xx60k): a human with `members:admin` who owns both the old
   and the new placement's runner does it directly; one who owns only one
-  of them gets `forbidden` (§15.6, "everyone else"). An agent with `agents:propose`
-  proposes it under `policy.spawn_requests`. The consent request is
+  of them gets `forbidden` (`runner_owner_only`, §15.6). An agent with
+  `agents:propose` proposes it under `policy.spawn_requests` when its own
+  human owns both runners (`runner_owner_only` otherwise): the old runner
+  runs the handover and, with `keep_old`, the dormant instance. A placement
+  on someone else's runner (`foreign`, §15.5) therefore does not move by a
+  replacement: its profile's owner ends it with a `DELETE` and places the
+  agent again on a runner of their own, without a handover (§15.6, "Moving
+  an agent off someone else's runner"). The consent request is
   titled `Replace <handle> on <old runner> with <new runner>` and its
   summary adds a `handover:` line.
 - **Two at once.** From the replacement's start until one of the two
