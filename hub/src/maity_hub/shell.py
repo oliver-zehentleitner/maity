@@ -411,10 +411,18 @@ class ShellRoute(BaseRoute):
     async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         response: Response | None
         if scope["method"] in ("GET", "HEAD"):
-            # A stored public page first, for a visitor, while the instance serves pages (§16.9).
-            response = await run_in_threadpool(
-                public_pages.answer, Request(scope, receive), self._inside_shell
-            )
+            # Split as sent, an encoded slash in its segment. A server without `raw_path` (uvicorn
+            # always sends it) falls back to the decoded path, where `%2F` would split.
+            raw = scope.get("raw_path")
+            if paths.never_a_page(raw.decode("latin-1") if raw else scope.get("path", "")):
+                # No page has such an address, whatever exists: `404`, the shell as the body, so
+                # that the dashboard still draws its "not found" (§16.11).
+                response = shell_response(self.web_dir, self.public_url, status_code=404)
+            else:
+                # A stored public page first, for a visitor, while the instance serves them (§16.9).
+                response = await run_in_threadpool(
+                    public_pages.answer, Request(scope, receive), self._inside_shell
+                )
             if response is None:
                 response = shell_response(self.web_dir, self.public_url)
             if scope.get("path", "").startswith(INVITE):
@@ -426,10 +434,12 @@ class ShellRoute(BaseRoute):
         await response(scope, receive, send)
 
 
-def shell_response(web_dir: Path, public_url: str) -> Response:
-    """`index.html` as the shell: `200`, `no-cache`, `noindex` (§16.11)."""
+def shell_response(web_dir: Path, public_url: str, status_code: int = 200) -> Response:
+    """`index.html` as the shell: `200` (`404` at an address that can never be a page),
+    `no-cache`, `noindex` (§16.11)."""
     return Response(
         versioned(shell_document((web_dir / "index.html").read_bytes(), public_url), web_dir),
+        status_code=status_code,
         media_type="text/html",
         headers=SHELL_HEADERS,
     )

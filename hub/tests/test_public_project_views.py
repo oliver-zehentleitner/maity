@@ -178,8 +178,10 @@ def test_the_team_view_is_at_team_and_headed_team(world: World) -> None:
 
 
 def test_members_serves_no_page_and_redirects_nowhere(world: World) -> None:
+    # `members` is no view: `404` with the shell, an address that can never be a page (§16.11).
     got = world.anyone.get(f"{BASE}/members", follow_redirects=False)
-    assert got.status_code == 200 and "<title>dashboard</title>" in got.text
+    assert got.status_code == 404 and "<title>dashboard</title>" in got.text
+    assert "location" not in got.headers
 
 
 def test_organisation_shows_the_lines_and_names_everyone(world: World, migrated: Engine) -> None:
