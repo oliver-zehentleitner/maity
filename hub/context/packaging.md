@@ -303,6 +303,12 @@ The chart README tells operators to check that identity with
 the same gate as a tag, but its `refs/heads/main` signature is refused
 by that check, because every deploy is a release (9c3f6a1e).
 
+**Since the maintainer's decision of 2026-11-16 (req-ry02xngnedjq):**
+there is no run from `main` any more. `publish-image.yml` runs on a
+`v*` tag alone, and both jobs' `if` admit only a `v*` tag (5b3e0b46).
+The environment's list of refs is the repository's setting and is
+unchanged by that.
+
 **Reason:** the image is what every installation runs, so only
 reviewed code, on `main` or a release tag, should become one. What
 holds that is the signature with the tag rule: a run from a branch,
@@ -330,10 +336,11 @@ registry alone.
 **Status:** active
 **Evidence:** confirmed
 **Source:** card tsk-6zh891gy6cvz, point 1 (release chain hardening, 2026-11-13); `.github/workflows/publish-image.yml`
-**Revisit when:** `publish-image.yml` gains a trigger other than a `v*` tag and a hand start, or a release build becomes too slow without a cache
+**Revisit when:** `publish-image.yml` gains a trigger other than a `v*` tag, or a release build becomes too slow without a cache
 
-Builds for a release tag or a hand-started run use no build cache shared
-with other refs. `publish-image.yml` runs only for those two, so neither
+Builds for a release tag use no build cache shared with other refs
+(until 2026-11-16 also a hand-started run from `main`, 5b3e0b46).
+`publish-image.yml` runs only for a `v*` tag, so neither
 build step of its `image` job names `cache-from` or `cache-to`: the build
 for the check runs with `no-cache` in a builder that `setup-buildx-action`
 creates for the job, and the push build after it reuses only what that
@@ -357,7 +364,8 @@ pushed layers are the ones the check just ran, not a second build.
 
 **Id:** 9c3f6a1e-7b42-4d85-a0e9-3e5d8b17c4f2
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 5b3e0b46-aa2f-47be-ac53-b7d5cc4b7a96
 **Evidence:** confirmed
 **Source:** card tsk-6zh891gy6cvz, point 2 (release chain hardening, 2026-11-13); the maintainer's answer to req-5x293t6ntn8q, 2026-11-14, relayed by the team lead (every deploy is a `v*` release, the deploy description in this file stays, the identity drops `refs/heads/main`); `.github/workflows/publish-image.yml`, `tools/release_gate.py`, `tools/test_release_gate.py`, `deploy/helm/maity-hub/README.md`
 **Revisit when:** a deploy runs an image no tag built, or the gate starts needing something a hand start does not have (a tag, a version)
@@ -401,6 +409,42 @@ point both ways.
 - Removing the hand start from `main` altogether: not part of the
   maintainer's answer, so it stays; whether it is still wanted is left
   to the maintainer's review of this change.
+
+## The image is built only for a v* tag; the hand start from main is removed
+
+**Id:** 5b3e0b46-aa2f-47be-ac53-b7d5cc4b7a96
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-ry02xngnedjq, 2026-11-16 ("remove it, only the `v*` tag"), card tsk-xz5rdgdy0srk; `.github/workflows/publish-image.yml`, `tools/test_release_gate.py`, `deploy/helm/maity-hub/README.md`
+**Revisit when:** a deploy needs an image no tag built, or a tag build has to be started again in a way a re-run of its own run cannot
+**See:** packaging.md#a-hand-started-image-build-runs-the-same-release-gate-as-a-tag-build-and-only-a-tags-signature-is-accepted — 9c3f6a1e-7b42-4d85-a0e9-3e5d8b17c4f2 — as of 2026-11-16
+**See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-16
+
+`publish-image.yml` has one trigger, a push of a `v*` tag; the
+`workflow_dispatch` trigger is gone. The `if` of the `gate` and the
+`image` job admit only a `v*` tag, no longer `refs/heads/main`, and the
+`image` job still needs the gate to have passed. The release gate is
+unchanged: it asks of the tagged commit what it asked before.
+`tools/test_release_gate.py` fails when the workflow gains another
+trigger, a `workflow_dispatch` or a branch, or when either job's `if`
+admits a branch.
+
+**Reason:** since 9c3f6a1e the documented `cosign verify` refuses an
+image signed as `refs/heads/main`, so a hand start from `main` built,
+signed and pushed an image that was never deployed. Removing the
+trigger leaves one way to an image, the one every deploy takes, and one
+fewer kind of signed image in the public registry that an operator must
+learn to refuse.
+
+**Rejected alternatives:**
+- Keeping `workflow_dispatch` but admitting it only on a `v*` tag ref
+  (a job `if` on `refs/tags/v`): a second way to start the same tag
+  build, with a run that differs only in its event. A failed tag build
+  is started again with "Re-run jobs" on its own run, which keeps the
+  tag's ref and commit, so nothing needs the dispatch.
+- Keeping the hand start from `main` with the gate (9c3f6a1e): its image
+  had no use once every deploy is a release.
 
 ## The chart pulls by digest by default; a tag is an explicit opt-in
 

@@ -78,9 +78,9 @@ example; any cluster with the same pieces works.
    newer bundle format, which cosign 2.x does not find.
 
    An image whose signature names another workflow or another ref is not a
-   release; don't run it. That includes an image the maintainer built by
-   hand from `main`: it passes the same gate and is signed, but as
-   `refs/heads/main`, which this check refuses. To build your own from
+   release; don't run it. The workflow builds only for a `v*` tag; an image
+   signed from `main` by an earlier version of it has `refs/heads/main` in
+   its certificate, which this check refuses. To build your own from
    the repository root:
 
    ```sh
