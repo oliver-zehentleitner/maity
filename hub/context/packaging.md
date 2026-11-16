@@ -492,6 +492,7 @@ default was the case where nobody chose a tag at all.
 **Source:** card tsk-6zh891gy6cvz, point 3 (release chain hardening, 2026-11-13); `deploy/scripts/helm-upgrade.sh`, `deploy/scripts/test-helm-upgrade.sh`, `deploy/helm/maity-hub/README.md`
 **Revisit when:** the chart or the cluster checks signatures itself (an admission policy), the signing identity changes, or deploys stop going through `helm-upgrade.sh`
 **See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
+**See:** packaging.md#the-image-is-built-only-for-a-v-tag-the-hand-start-from-main-is-removed — 5b3e0b46-aa2f-47be-ac53-b7d5cc4b7a96 — as of 2026-11-16
 
 `deploy/scripts/helm-upgrade.sh` renders the upgrade first
 (`helm upgrade --dry-run=client` with the caller's own arguments), takes every

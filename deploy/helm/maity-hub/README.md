@@ -215,6 +215,9 @@ Before upgrading to chart 0.2.0, set `image.digest`, or
 `image.allowTag: true` with `image.tag`: without either the chart does not
 render, and the script stops at its signature check before it changes
 anything (with `NO_SIGNATURE_CHECK=1`, only after it has stopped the hub).
+With `image.allowTag`, the script runs only with `NO_SIGNATURE_CHECK=1`,
+since its check refuses an image by tag (see "The migration and the running
+pod").
 
 ## Values
 
@@ -444,8 +447,11 @@ lifecycle rule that expires noncurrent versions is what makes a deleted attachme
   image's signature with `cosign verify` and the identity in step 2 of the
   install; a `--dry-run` among its arguments is refused before anything runs;
   an image by tag, a failed check or a missing cosign stops it with nothing
-  changed, unless `NO_SIGNATURE_CHECK=1` (your own build). `COSIGN=<path>`
-  names the cosign binary when it is not `cosign` on the `PATH`. And
+  changed, unless `NO_SIGNATURE_CHECK=1` (your own build). Helm fetches a
+  remote chart or a `-f` URL once for that render and again for the upgrade,
+  so pin it (`--version`, or a local copy) to deploy what was checked.
+  `COSIGN=<path>` names the cosign binary when it is not `cosign` on the
+  `PATH`. And
   `deploy/scripts/test-helm-upgrade.sh` runs the failure paths against stub
   `kubectl`, `helm` and `cosign`. A release whose migration touches no busy table can
   use plain `helm upgrade`.
