@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import re
 import tempfile
 import unittest
@@ -507,9 +508,24 @@ class Main(unittest.TestCase):
         ):
             self.assertEqual(g.main(["--sha", TAG, "--upgrade-page"]), 1)
 
+    def test_the_page_check_gets_the_tag_only_on_a_tag_run(self):
+        failing = g.State("fail", "x")
+        for env, tag in (
+            ({"GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": "v0.1.0a9"}, "v0.1.0a9"),
+            ({"GITHUB_REF_TYPE": "branch", "GITHUB_REF_NAME": "main"}, None),
+            ({}, None),
+        ):
+            with self.subTest(env=env), mock.patch.dict(os.environ, env):
+                for k in ("GITHUB_REF_TYPE", "GITHUB_REF_NAME"):
+                    if k not in env:
+                        os.environ.pop(k, None)
+                with mock.patch.object(g, "page_state", return_value=failing) as page:
+                    self.assertEqual(g.main(["--sha", TAG, "--upgrade-page"]), 1)
+                page.assert_called_once_with(tag=tag)
+
 
 class UpgradePage(unittest.TestCase):
-    def page_state(self, page):
+    def page_state(self, page, tag=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "hub").mkdir()
@@ -518,8 +534,19 @@ class UpgradePage(unittest.TestCase):
                 (root / "docs" / "upgrade").mkdir(parents=True)
                 (root / "docs" / "upgrade" / "0.1.0a9.md").write_text(page, encoding="utf-8")
             with contextlib.redirect_stdout(io.StringIO()) as out:
-                state = g.page_state(root)
+                state = g.page_state(root, tag)
         return state, out.getvalue()
+
+    COMPLETE = "".join(f"## {s}\n\nNothing.\n\n" for s in upgrade_page.SECTIONS)
+
+    def test_a_tag_of_the_pyproject_version_passes(self):
+        state, _ = self.page_state(self.COMPLETE, "v0.1.0a9")
+        self.assertEqual(state.kind, "ok")
+
+    def test_a_tag_of_another_version_fails_even_with_a_complete_page(self):
+        state, out = self.page_state(self.COMPLETE, "v0.1.0a10")
+        self.assertEqual(state.kind, "fail")
+        self.assertIn("::error::the tag v0.1.0a10 is not v0.1.0a9", out)
 
     def test_the_tagged_versions_page_must_exist(self):
         state, out = self.page_state(None)
