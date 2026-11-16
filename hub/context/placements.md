@@ -75,7 +75,8 @@ discussion: only the runner's owner may give a placement's go.
 
 **Id:** 22e17362-56cb-4bf7-94fa-c245119e6eac
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** a35d39cd-b7ca-4cd8-941d-a420ba73336e
 **Evidence:** confirmed
 **Source:** `docs/api.md` §6.1 and §15.6 (contract #137), 2026-10-22
 **See:** https://github.com/oliver-zehentleitner/maity — 97a02556-475b-4041-8db5-6ce845ceb7fa — as of 2026-10-22
@@ -100,6 +101,31 @@ among the kept fields since the contract owner's ruling on #185 (#186).
 **Rejected alternative:** only the runner's owner gives the go (the open
 question this replaces). Not chosen by the maintainer; the policy names a
 class of answerer, not one person.
+
+## Only the runner's owner answers a placement's consent request
+
+**Id:** a35d39cd-b7ca-4cd8-941d-a420ba73336e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §15.6, the maintainer's decision of 2026-11-16 (tsk-qgmz0yrc3g5x)
+**See:** https://github.com/oliver-zehentleitner/maity — 320a6e51-5a65-4684-8da8-df911d4273c1 — as of 2026-11-16
+
+An agent's placement proposal under `consent` files a personal request to
+the runner's owner (`human:<id>`), answered only by that human directly
+under `/requests/{id}/answer`; `policy.spawn_consent_by` is kept and no
+longer read for placements. Creating, changing the spec of, moving onto,
+starting, restarting and nudging a placement is refused off the runner's
+side with `forbidden`, `details.reason: runner_owner_only`.
+
+**Reason:** the project-wide rule that only a runner's owner places agents
+on it (see the root entry); a project request answered by
+`requests:answer` could be given by a human who does not own the runner.
+
+**Rejected alternative:** keep the project request and check the answerer
+against the runner's owner. The owner need not be a member of the
+project, and a project request does not reach a non-member; the personal
+request does, and it already has an answer route of its own.
 
 ## A runner's stop revokes its agents' credentials when they are next used
 
