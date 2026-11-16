@@ -76,6 +76,10 @@ example; any cluster with the same pieces works.
 
    This needs cosign v3 or later: the workflow stores the signature in the
    newer bundle format, which cosign 2.x does not find.
+   `deploy/scripts/helm-upgrade.sh` runs this same check on every image the
+   upgrade would deploy before it changes anything, and stops when the image
+   is not pinned by digest, the signature does not match, or cosign is not
+   installed. For an image you built yourself, set `NO_SIGNATURE_CHECK=1`.
 
    An image whose signature names another workflow or another ref is not a
    release; don't run it. That includes an image the maintainer built by
@@ -206,9 +210,11 @@ Upgrades are the same command with `helm upgrade`, also with
 `--timeout 10m`. Use `deploy/scripts/helm-upgrade.sh -f values.yaml` instead
 when the release brings a migration: it stops the hub while the migration
 runs and starts it again on any exit (see "The migration and the running
-pod" below). Before upgrading to chart 0.2.0, set `image.digest`, or
+pod" below). It also checks the image's signature first, as in step 2.
+Before upgrading to chart 0.2.0, set `image.digest`, or
 `image.allowTag: true` with `image.tag`: without either the chart does not
-render, and the script has already stopped the hub.
+render, and the script stops at its signature check before it changes
+anything (with `NO_SIGNATURE_CHECK=1`, only after it has stopped the hub).
 
 ## Values
 
@@ -432,9 +438,16 @@ lifecycle rule that expires noncurrent versions is what makes a deleted attachme
   `dump ok:` line (`DUMP_REQUIRES_ATTACHMENTS=1` also demands the attachment
   tar in it). Without that CronJob the script stops before it changes
   anything; `NO_DUMP=1` skips the dump, for a cluster where you take it
-  yourself. `deploy/k3s-single/backup.yaml` is such a CronJob. And
+  yourself. `deploy/k3s-single/backup.yaml` is such a CronJob.
+  Before the dump and before it looks for the CronJob, it renders the upgrade
+  (`helm upgrade --dry-run=client` with the same arguments) and checks each
+  image's signature with `cosign verify` and the identity in step 2 of the
+  install; a `--dry-run` among its arguments is refused before anything runs;
+  an image by tag, a failed check or a missing cosign stops it with nothing
+  changed, unless `NO_SIGNATURE_CHECK=1` (your own build). `COSIGN=<path>`
+  names the cosign binary when it is not `cosign` on the `PATH`. And
   `deploy/scripts/test-helm-upgrade.sh` runs the failure paths against stub
-  `kubectl` and `helm`. A release whose migration touches no busy table can
+  `kubectl`, `helm` and `cosign`. A release whose migration touches no busy table can
   use plain `helm upgrade`.
 - **Rollback.** There is no schema downgrade: `maity-hub` has `serve`,
   `migrate` and `owner`, and the hook runs only on install and upgrade.
