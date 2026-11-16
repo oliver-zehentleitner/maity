@@ -80,9 +80,15 @@ DEEPEST = 6
 _HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,30}")  # §6.24
 
 
+_NO_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
 def _segment(raw: str) -> str:
     """One segment as the dashboard reads it: percent-decoded, or as sent where an escape does
-    not decode (§16.11)."""
+    not decode (§16.11). Strict, like the dashboard's `decodeURIComponent`: any `%` that starts
+    no escape leaves the whole segment as sent, not only that escape."""
+    if _NO_ESCAPE.search(raw):
+        return raw
     try:
         return unquote_to_bytes(raw).decode("utf-8")
     except UnicodeDecodeError:

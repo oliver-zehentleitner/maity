@@ -706,8 +706,8 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         why = NOT_OFFERED_WHY.get(name)
         reason = f": {why}" if why else ""
         problems.append(
-            f"{where}: not offered yet{reason}; for now the runner runs claude-code and codex"
-            " (and stub)"
+            f"{where}: not offered yet{reason}; for now the runner runs claude-code, codex and"
+            " antigravity (and stub)"
         )
     modes = tuple(
         table.get(

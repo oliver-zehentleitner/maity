@@ -276,7 +276,8 @@ that names nothing is therefore the router's `not_found`, a wrong method on one 
 An address that can never be a page (`paths.never_a_page`, §16.11 since 2026-11-16) gets the same document with
 `404`, decided from the path's words before the public page is looked up, so no lookup can colour the status;
 `paths.NO_ROUTE_FIRST` and `paths.DEEPEST` are its words and its depth. It reads the path as sent
-(`raw_path`), split at its slashes before a segment is decoded, as the dashboard does.
+(`raw_path`), split at its slashes before a segment is decoded, as the dashboard does; a segment with any `%` that
+starts no escape, or bytes that are no UTF-8, stays whole as sent, as `decodeURIComponent` leaves it.
 `paths.RESERVED_FIRST` is the list of first segments no handle may take, `paths.PROJECT_VIEWS` the views no slug
 may be; `tests/test_paths.py` compares both with §16.11, and registration, `maity-hub owner create` and the
 `next` of a login (`paths.safe_next`) use them. `maity-hub migrate` stops, before it changes anything, when a

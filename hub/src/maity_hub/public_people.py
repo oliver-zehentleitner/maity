@@ -21,7 +21,6 @@ import hashlib
 import re
 from collections.abc import Collection
 from datetime import datetime
-from html import escape
 from typing import Any, NamedTuple
 
 from sqlalchemy import Connection, select
@@ -57,27 +56,6 @@ def served(conn: Connection, human: Any) -> bool:
         and human.suspended_at is None
         and moderation.hold(conn, "profile", human.id) is None
     )
-
-
-def _links(human: Any) -> str:
-    """The website and the names on the networks, while the person lets everyone see them
-    (§16.9); each link carries `rel="me nofollow"` so a network can confirm the website."""
-    if human.links_visible != "everyone":
-        return ""
-    items: list[str] = []
-    if human.website:
-        link = escape(human.website, quote=True)
-        items.append(f'<li><a href="{link}" rel="me nofollow">{escape(human.website)}</a></li>')
-    for network, shown_as in person_links.built(human.social).items():
-        label = escape(network)
-        if shown_as.startswith("https://"):
-            items.append(
-                f'<li>{label}: <a href="{escape(shown_as, quote=True)}" rel="me nofollow">'
-                f"{escape(human.social[network])}</a></li>"
-            )
-        else:  # Discord has no public profile address: text
-            items.append(f"<li>{label}: {escape(shown_as)}</li>")
-    return f"<ul>{''.join(items)}</ul>" if items else ""
 
 
 class Listed(NamedTuple):
@@ -121,22 +99,6 @@ class ListedAgent(NamedTuple):
     model: str | None
     harness: str | None
     picture: str | None = None  # its public address (§6.10); every agent has a picture
-
-
-# The sides a picture is drawn at; each has its class in render.STYLE and public-pages.css.
-PICTURE_SIDES = (64, 128)
-
-
-def picture_html(url: str | None, side: int) -> str:
-    """A picture on a public page (§16.9): an `<img>` from its public address at `side`
-    pixels, with an empty `alt` since the name follows; without one a neutral placeholder of
-    the same size, drawn by a size class and no image: an inline style is refused where the page
-    stands inside the app shell, whose policy allows no inline style (tsk-8fk897a9tan8)."""
-    if url is None:
-        assert side in PICTURE_SIDES, side
-        return f'<span class="pic none size-{side}" aria-hidden="true"></span>'
-    src = escape(f"{url}?s={side}", quote=True)
-    return f'<img class="pic" src="{src}" alt="" width="{side}" height="{side}">'
 
 
 def listed_agents(conn: Connection, human: Any) -> list[ListedAgent]:
@@ -255,58 +217,6 @@ def _shown(conn: Connection, human: Any, named: list[Listed]) -> Shown:
     return Shown(member_since(human.created_at), online, numbers)
 
 
-def _agent_item(listed: ListedAgent) -> str:
-    """One agent on the person's page (§16.9, "A person's agents"): its picture at 64 pixels,
-    its name, linked where it has a page, and its handle; with a page also its roles, model and
-    harness, which only an agent with a page has."""
-    agent = listed.agent
-    name = escape(agent.display_name)
-    if listed.page is not None:
-        name = f'<a href="{escape(listed.page, quote=True)}">{name}</a>'
-    item = f"{picture_html(listed.picture, 64)}{name} ({escape(agent.handle)})"
-    item += "".join(f' <span class="tag">{escape(role)}</span>' for role in listed.roles)
-    facts = [
-        f"{label}: {escape(value)}"
-        for label, value in (("Model", listed.model), ("Harness", listed.harness))
-        if value
-    ]
-    if facts:
-        item += f'<br><span class="sub">{" · ".join(facts)}</span>'
-    return f"<li>{item}</li>"
-
-
-def _listed_html(named: list[Listed], agents: list[ListedAgent], shown: Shown) -> str:
-    from maity_hub import public_projects
-
-    html = ""
-    facts = []
-    if shown.member_since is not None:
-        facts.append(f"<li>Member since {escape(shown.member_since)}</li>")
-    if shown.online:
-        facts.append("<li>Online</li>")
-    if facts:
-        html += f'<ul class="facts">{"".join(facts)}</ul>'
-    if named:
-        items = "".join(
-            f'<li><a href="/{escape(listed.full_name, quote=True)}">{escape(listed.name)}</a> '
-            f'<span class="tag">{escape(listed.role)}</span></li>'
-            for listed in named
-        )
-        html += f"<h2>Projects</h2><ul>{items}</ul>"
-    if shown.statistics is not None:
-        lines = "".join(
-            f"<li>{escape(label)}: {escape(public_projects.stat_value(key, shown.statistics[key]))}"
-            "</li>"
-            for key, label in public_projects.STAT_LABELS
-            if key in STAT_KEYS and (key != "prs_merged" or shown.statistics[key] is not None)
-        )
-        html += f"<h2>Statistics, last {public_projects.STAT_DAYS} days</h2><ul>{lines}</ul>"
-    if agents:
-        items = "".join(_agent_item(listed) for listed in agents)
-        html += f"<h2>Agents</h2><ul>{items}</ul>"
-    return html
-
-
 def _data(
     human: Any,
     named: list[Listed],
@@ -338,44 +248,33 @@ def _data(
 
 
 def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public_pages.Page]:
+    """The person's page: its `data` first, then the HTML in the dashboard's design as a pure
+    function of it (`public_design.profile`), so the two cannot show different things."""
     human = conn.execute(select(t.human).where(t.human.c.id == human_id)).first()
     if human is None or not served(conn, human):
         return []
-    from maity_hub import avatars
+    from maity_hub import avatars, public_design
 
     chosen = bool(human.public_profile)  # the personal details, by the person's choice
-    # The picture while the profile is on (§16.9), else the placeholder.
+    # The picture while the profile is on (§16.9), else the letter.
     picture = avatars.public_urls(conn, [human.id])[human.id] if chosen else None
-    shown_picture = picture_html(picture, 128)
-    bio = f'<p class="sub">{escape(human.public_bio)}</p>' if chosen and human.public_bio else ""
-    links = _links(human) if chosen else ""
     named = _listed(conn, human)
     agents = listed_agents(conn, human)
     shown = _shown(conn, human, named)
-    listed = _listed_html(named, agents, shown)
-    heading = f'<p class="eyebrow">{escape(human.handle)}</p><h1>{escape(human.display_name)}</h1>'
+    data = _data(human, named, agents, shown, picture)
     path = f"/{human.handle}"
     # One page: the agents stand under the projects, no tabs (§16.9, "A person's agents").
-    content = f"{heading}{render.report_link(path)}{shown_picture}{bio}{links}{listed}"
+    content = public_design.profile(KIND, data, path)
     body = render.page_document(
         lang="en",
         title=f"{human.display_name} ({human.handle})",
         canonical=f"{hub.public_url.rstrip('/')}{path}",
         content=content,
         indexed=chosen,
+        styled=False,
     )
     inputs = hashlib.sha256(
-        "\x00".join(
-            (
-                human.handle,
-                human.display_name,
-                "on" if chosen else "off",
-                human.public_bio or "" if chosen else "",
-                links,
-                listed,
-                shown_picture,
-            )
-        ).encode()
+        "\x00".join((path, human.display_name, "on" if chosen else "off", content)).encode()
     )
     page = public_pages.Page(
         path=path,
@@ -383,7 +282,7 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
         inputs=inputs.hexdigest(),
         lastmod=clock.now(),
         view=KIND,
-        data=_data(human, named, agents, shown, picture),
+        data=data,
         indexed=chosen,
     )
     return [page]

@@ -23,13 +23,6 @@ def world(make_client: ClientFactory, migrated: Engine, settings: Any) -> World:
     return World(make_client, migrated)
 
 
-def link(path: str) -> str:
-    """The link as the contract gives it, the page's language added as on every sign-in link."""
-    back = quote(f"{path}?report", safe="")
-    href = f"/login?next={back}&amp;lang=en"
-    return f'<p class="report-link"><a href="{href}" rel="nofollow">Report</a></p>'
-
-
 def row(path: str, what: str = "project") -> str:
     """The same link in a page of the dashboard's design (§16.9): where the dashboard has its report
     row, in its words, with the form's empty slot after it."""
@@ -68,11 +61,15 @@ def test_a_card_page_carries_the_link_to_its_own_address(world: World) -> None:
 
 
 def test_a_person_and_an_agent_carry_it(world: World) -> None:
-    assert link("/maintainer") in page(world, "/maintainer")
+    # In the dashboard's design since PR 4 of tsk-zhyqdtt5v59c: the report row in the hero, after
+    # the name, in the words for a person and an agent.
+    text = page(world, "/maintainer")
+    assert row("/maintainer", "person") in text
+    assert text.index("</h1>") < text.index(row("/maintainer", "person"))
     with world.migrated.connect() as conn:
         handle = conn.execute(select(t.agent_profile.c.handle)).scalar_one()
     path = f"/maintainer/agents/{handle}"
-    assert link(path) in page(world, path)
+    assert row(path, "agent") in page(world, path)
 
 
 def test_the_link_is_no_part_of_the_page_description(world: World) -> None:

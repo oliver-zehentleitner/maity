@@ -345,7 +345,10 @@ def test_no_stored_page_carries_an_inline_style(world: World, migrated: Engine) 
     kind_of = {path: read(world, path.lstrip("/"))["kind"] for path, _ in rows}
     kinds = set(kind_of.values())
     assert {"project", "board", "card", "person", "agent"} <= kinds, kinds
-    assert 'class="pic none size-128"' in next(body for path, body in rows if path == "/maintainer")
+    person = next(body for path, body in rows if path == "/maintainer")
+    # Without a picture, the dashboard's letter, drawn by classes (PR 4 of tsk-zhyqdtt5v59c).
+    assert '<span class="av hu av-128 ini" aria-hidden="true">' in person
+    assert '<section class="view-visitor public-view profile-view" data-kind="person">' in person
     assert '<section class="view-visitor public-view" data-kind="project">' in next(
         body for path, body in rows if path == f"/{BASE}"
     )

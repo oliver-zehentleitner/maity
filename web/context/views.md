@@ -5897,11 +5897,13 @@ stylesheet (`/assets/landing/public-sections.css`, the hub's since tsk-zhyqdtt5v
 - A network link is built in the SPA by the same rules as the hub's stored page
   (`public_people.person_links`: github, gitlab, x, mastodon `@user@host`, bluesky, linkedin;
   discord as text), `rel="me nofollow"`.
-- Signed in, a non-member's view keeps its lists; the stored first paint keeps its simpler
-  column, only its content changed (agents with pictures, no tabs).
+- Signed in, a non-member's view keeps its lists.
 
-The classes are the contract the hub's later skeleton rendering of these pages copies, so they
-are kept stable.
+The classes are a contract: since PR 4 of tsk-zhyqdtt5v59c (2026-11-16) the hub stores these pages
+in the same structure (`public_design.profile`, from the same `data`), so the shell's first paint is
+this page and the drawing over it keeps its place; smoke compares the drawing with the hub's
+skeletons (`web/tools/public-skeletons.json`, kinds `person` and `agent`). Until then the stored
+first paint was left as is, in its simpler column.
 
 **Reason:** one look for all public pages, light and dark, desktop and phone, from the stylesheet
 the project page already loads. A 0 on a person's band says "nothing this month", which is a
@@ -5915,12 +5917,13 @@ contract change: §16.9 sends the handles, and the hub's stored page already has
   can build from the handle; open if a network's address rule ever becomes non-trivial.
 - Hiding a 0 on the profile band as on the project's: the mockup draws it, and three or four
   figures always fit.
-- Redesigning the stored first paint in the same PR: the hub's skeleton rendering is planned as
-  its own PR that copies this markup; changing it twice would collide.
+- Redesigning the stored first paint in the same PR: the hub's skeleton rendering was planned as
+  its own PR that copies this markup (it landed as PR 4 of tsk-zhyqdtt5v59c); changing it twice
+  would have collided.
 - The dashboard's identicon as placeholder: see d0565716-aca3-48f1-8168-4752e733ca3a.
 
-**Revisit when:** the hub renders these pages from the same markup (the stored paint then follows
-this entry), or §16.9's `social` changes shape.
+**Revisit when:** §16.9's `social` changes shape, or the network rules of
+`person_links.py` change (the hub's stored page and this view build the links the same way).
 
 ## A visitor's Board, Team, Organisation and Why tabs are sections across the page in the Overview's style, their content unchanged
 

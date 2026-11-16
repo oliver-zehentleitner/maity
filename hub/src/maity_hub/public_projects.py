@@ -207,26 +207,6 @@ def agent_statistics(
     return {"totals": folded["totals"], "members": folded["members"]}
 
 
-def _duration(seconds: int | None) -> str:
-    if seconds is None:
-        return "-"
-    hours, rest = divmod(seconds, 3600)
-    return f"{hours} h {rest // 60} min" if hours else f"{rest // 60} min"
-
-
-def stat_labels(totals: dict[str, Any]) -> list[tuple[str, str]]:
-    """The counters a page shows: no line for merges it may not count (`swarm.fold`)."""
-    return [
-        (key, label) for key, label in STAT_LABELS if key != "prs_merged" or totals[key] is not None
-    ]
-
-
-def stat_value(key: str, value: Any) -> str:
-    if key.endswith("seconds"):
-        return _duration(value)
-    return "-" if value is None else str(value)
-
-
 def pages_with_picture(conn: Connection, owner_id: str) -> list[tuple[str, str]]:
     """The project pages that show a member's picture (§16.9, `project`, `team` and
     `organisation`): the page and the views (its Team and Organisation tabs) of each public

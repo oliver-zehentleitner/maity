@@ -417,20 +417,29 @@ class Workflows(unittest.TestCase):
             block = text[text.index(f"\n  {dependent}:") :]
             self.assertRegex(block, rf"needs: (\[[^\]]*\b{job}\b[^\]]*\]|{job})", name)
 
-    def test_a_hand_started_image_build_runs_the_same_gate_as_a_tag(self):
+    def test_the_image_is_built_only_for_a_v_tag(self):
+        # No hand start and no branch: an image from main is signed as
+        # refs/heads/main and never deployed (req-ry02xngnedjq).
         text = (ROOT / ".github/workflows/publish-image.yml").read_text(encoding="utf-8")
+        on = re.search(r"^on:\n((?:[ #].*\n|\n)*)", text, re.M).group(1)
+        triggers = [line.strip() for line in on.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+        self.assertEqual(triggers, ["push:", 'tags: ["v*"]'])
+        self.assertNotIn("workflow_dispatch", text)
+        self.assertNotIn("branches", on)
         gate_job = text[text.index("\n  gate:") : text.index("\n  image:")]
         image_job = text[text.index("\n  image:") : text.index("\n  sign:")]
-        # The gate runs on main (a hand start) as well as on a v* tag ...
-        self.assertIn("github.ref == 'refs/heads/main'", gate_job)
-        self.assertIn("startsWith(github.ref_name, 'v')", gate_job)
-        # ... and the image is built only after it passed, never when it was skipped.
+        for job in (gate_job, image_job):
+            condition = job[job.index("\n    if:") : job.index("\n    runs-on:")]
+            self.assertIn("github.ref_type == 'tag' && startsWith(github.ref_name, 'v')", condition)
+            self.assertNotIn("refs/heads", condition)
+            self.assertNotIn("||", condition)
+        # The image is built only after the gate passed, never when it was skipped.
         self.assertIn("needs.gate.result == 'success' &&", image_job)
         self.assertNotIn("'skipped'", image_job)
         self.assertNotIn("always()", image_job)
 
     def test_the_documented_verify_accepts_only_a_tag_signature(self):
-        # Every deploy is a release: an image a hand start signed on main is refused.
+        # Every deploy is a release: a signature from main is refused.
         text = (ROOT / "deploy/helm/maity-hub/README.md").read_text(encoding="utf-8")
         identities = re.findall(r"--certificate-identity-regexp '([^']*)'", text)
         self.assertEqual(

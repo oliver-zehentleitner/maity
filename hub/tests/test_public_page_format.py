@@ -84,3 +84,20 @@ def test_a_row_of_an_earlier_format_with_the_same_inputs_is_rendered_again(
         public_pages.refresh(conn, config, NOTE, "a")
     again = rows(migrated)["/a"]
     assert (again.etag, again.rendered_at) == before
+
+
+def test_a_row_of_the_previous_format_is_rendered_again(
+    migrated: Engine, settings: Settings, shown: Shown  # noqa: F811
+) -> None:
+    # A row a hub of the format before this one stored (its HTML now older than this version's,
+    # as the person and agent pages of format 2 are for format 3) is never kept as it is.
+    config = hub(settings)
+    at = clock.now()
+    shown.targets["a"] = ("A", True, at)
+    digest = f"A@{at.isoformat()}"
+    stored(migrated, f"f{public_pages.FORMAT - 1}:{digest}")
+    with migrated.begin() as conn:
+        public_pages.refresh(conn, config, NOTE, "a")
+    row = rows(migrated)["/a"]
+    assert row.inputs == public_pages.stamped(digest) and shown.renders == 1
+    assert public_pages.format_of(row.inputs) == public_pages.FORMAT

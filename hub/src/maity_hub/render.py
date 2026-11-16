@@ -1206,14 +1206,15 @@ def stored_in_frame(
     )
 
 
-# A page in the dashboard's design (`public_design`) draws its own sections across the page.
-_DESIGNED = '<section class="view-visitor public-view"'
+# A page in the dashboard's design (`public_design`) draws its own sections across the page: a
+# project's view, or a person's or an agent's page (`profile-view`).
+_DESIGNED = re.compile(r'<section class="view-visitor public-view(?: profile-view)?"')
 
 
 def designed(main: str) -> bool:
     """Whether a stored page's content is in the dashboard's design (§16.9): the structure the
     dashboard draws over it, styled by the frame's stylesheets alone."""
-    return main.startswith(_DESIGNED)
+    return _DESIGNED.match(main) is not None
 
 
 def _framed_main(main: str) -> str:
@@ -1267,7 +1268,7 @@ def page_document(
     canonical link (§16.9); `indexed=False` adds `noindex`. `content` is the HTML of the page's
     body, already made of escaped text and elements. `styled=False` leaves out the inline
     stylesheet: a page in the dashboard's design (`public_design`) is styled by the frame's
-    stylesheets only; the person, agent and organisation pages keep `STYLE` for now."""
+    stylesheets only; the organisation pages keep `STYLE` for now."""
     description = text_of(_REPORT_LINK.sub("", content))[:DESCRIPTION_MAX]
     robots = "" if indexed else '<meta name="robots" content="noindex">'
     return _document(
