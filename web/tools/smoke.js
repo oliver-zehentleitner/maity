@@ -120,10 +120,10 @@ class El extends Node_ {
 }
 const header = new El("header"); header.id = "header";
 const head = new El("head");
+// As the hub's shell links one where it carries a page in the dashboard's design (§16.9,
+// tsk-zhyqdtt5v59c): js/site-chrome.js takes it over when it first enters the frame, not loaded again.
+const shellSheet = new El("link");
 {
-  // As the hub's shell links one where it carries a page in the dashboard's design (§16.9,
-  // tsk-zhyqdtt5v59c): js/site-chrome.js takes it over when it first enters the frame, not loaded again.
-  const shellSheet = new El("link");
   shellSheet.setAttribute("rel", "stylesheet");
   shellSheet.setAttribute("href", "/assets/landing/public-sections.css?v=0123456789abcdef");
   head.appendChild(shellSheet);
@@ -302,6 +302,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The title without the count of what asks for the human (js/notify.js).
   const plainTitle = () => document.title.replace(/^\(\d+\) /, "");
   expect(win.location.hash === "#/all", "empty hash with two projects lands on #/all");
+  // Signed in, the dashboard leaves the frame before it ever entered it: the sheet the shell linked
+  // goes off too, as landing.css styles the whole document (A834 F2); none is added.
+  expect(shellSheet.disabled === true && head.childNodes.filter((x) => x.tagName === "LINK").length === 1,
+    "frame: a sheet the shell linked is off once the dashboard leaves the frame before entering it, none added");
   expect(!main.querySelector(".error"), "cross-project inbox renders");
   // All projects reads each project's members once per page drawn: the Lead button and the inbox
   // share the read (tsk-f78z1dvbs26a). The fixture has requests in both projects, so before, each

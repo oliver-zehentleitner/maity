@@ -684,14 +684,17 @@ one in it stands in the shell at once (2388f990).
 **Evidence:** confirmed
 **Source:** the lead's agreement to the plan of card tsk-zhyqdtt5v59c (PR 3 of 4, 2026-11-15); contract `docs/api.md` §16.9 ("the frame's stylesheets (§16.7.5) linked there too") and §16.7.5; `shell.page_in_shell`, `render.frame_sheets`, `render.designed`, `web/js/site-chrome.js` (`sheets`); `hub/tests/test_public_pages.py`, `web/tools/e2e.py` (`public_first_paint_round`), `web/tools/smoke.js` (the skeleton comparison)
 **See:** public-pages.md#the-hub-renders-the-public-project-pages-in-the-dashboards-design-as-a-pure-function-of-their-data-one-stylesheet-home-a-format-guard — 5262b6b7-c4bf-472e-9a05-06f1a139a177 — as of 2026-11-15
+**See:** public-pages.md#inside-the-shell-the-stored-page-waits-invisible-for-the-dashboards-page-at-most-3-s — 6fae1f6f-c1c2-46b2-9d72-03efbfea5417 — as of 2026-11-16
 
-Once the hub stores a page in the dashboard's design (5262b6b7), the shell carries it as the first paint
-instead of hiding it: `page_in_shell` leaves out the `.hub-page` wrapper for such a page, links the frame's
-three stylesheets by their versioned addresses in the head and marks the root `public-frame`, as
-`site-chrome.js` does when it enters the frame. The dashboard then takes those links over instead of adding
-its own (it adds one only where the head has none for that file), so each sheet loads once, and draws the same
-structure over the page; smoke compares that structure with the hub's skeletons, element by element. A page
-not in that design keeps the 3 s wait of 6fae1f6f.
+Once the hub stores a page in the dashboard's design (5262b6b7), the shell carries it as the first paint instead
+of hiding it: `page_in_shell` leaves out the `.hub-page` wrapper for such a page, links the frame's three
+stylesheets by their versioned addresses at the head's end, after the dashboard's own sheets where
+`site-chrome.js` appends them too, and marks the root `public-frame`, as `site-chrome.js` does when it enters
+the frame. The dashboard then takes those links over instead of adding its own (it adds one only where the head
+has none for that file), so each sheet loads once; leaving the frame, even before it ever entered it, turns the
+shell's links off with its own, since landing.css styles the whole document. It draws the same structure over
+the page; smoke compares that structure with the hub's skeletons, element by element. A page not in that design
+keeps the 3 s wait of 6fae1f6f.
 
 **Rejected:** dropping the wait for every page at once (the person, agent and organisation pages are still
 in the old layout until tsk-2t7efzj1p8zt, so they would flash again); the dashboard asking for the sheets
@@ -1151,8 +1154,7 @@ would put the old design back over the new one until the next pass.
   need an interpreter of its own, and the drift would move into the two interpreters.
 - The dashboard parsing the hub's stored HTML: rejected earlier (eb7fd1c7), a page's markup would become an
   interface.
-- Keeping the old design in the stored page and letting the dashboard replace it after a wait of up to 3 s (the
-  short-term fix 6fae1f6f, which PR 3 of the card removes): every reader saw the page change its design, and a
+- Keeping the old design in the stored page and letting the dashboard replace it after a wait of up to 3 s (the short-term fix 6fae1f6f, which PR 3 of the card narrows to the pages not yet in this design): every reader saw the page change its design, and a
   crawler and a reader without script never saw the design at all.
 - Keeping an old-format row while a newer one exists, or replacing a newer row: either serves a design, or a
   removal, that the running version did not make; taking the target off is what a missing page already means.

@@ -370,7 +370,11 @@ def page_in_shell(shell: bytes, body: str) -> bytes | None:
     # crawler reads the text either way.
     if render.designed(found["main"]):
         inner = found["main"].encode()
-        head += render.frame_sheets().encode()
+        # At the head's end, after the dashboard's own sheets, where js/site-chrome.js appends
+        # them: landing.css sets the root's and the body's type as css/app.css does, and the
+        # later one wins, so a page has the same type however the visitor came to it.
+        sheets = render.frame_sheets().encode()
+        done = _HEAD_END.sub(lambda _: sheets + b"</head>", done, count=1)
         # Marked as the dashboard marks a page in the frame (js/site-chrome.js), so the shell's
         # own `<main>` has the frame's measures (css/app.css, `.public-frame #main`) at once.
         done = _SHELL_HTML.sub(lambda _: b'<html class="public-frame"', done, count=1)

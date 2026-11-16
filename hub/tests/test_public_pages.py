@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 from html import escape
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -19,6 +20,7 @@ from tests.conftest import ClientFactory
 from tests.test_pages import hero, publish
 
 PATH = "/oz-team"
+WEB_INDEX = Path(__file__).resolve().parents[2] / "web" / "index.html"
 
 
 def store(engine: Engine, path: str = PATH, body: str | None = None) -> None:
@@ -404,6 +406,39 @@ def test_a_slash_at_the_end_leads_a_visitor_to_the_page(
     assert client.get("/nobody/here/", follow_redirects=False).status_code != 308
 
 
+def test_the_frame_sheets_come_after_the_dashboards_own_in_the_real_shell(tmp_path: Path) -> None:
+    """landing.css sets the root's and the body's type as css/app.css does, and the later one
+    wins: the shell links the frame's sheets after the dashboard's own, where js/site-chrome.js
+    appends them, so a page has the same type however the visitor came to it (tsk-zhyqdtt5v59c)."""
+    shell = shell_module.versioned(
+        shell_module.shell_document(WEB_INDEX.read_bytes(), "https://hub.example"),
+        WEB_INDEX.parent,
+    )
+    designed = render.page_document(
+        lang="en",
+        title="T",
+        canonical="https://hub.example/t",
+        content='<section class="view-visitor public-view" data-kind="board"><h1>T</h1></section>',
+        styled=False,
+    )
+    shown = shell_module.page_in_shell(shell, designed)
+    assert shown is not None
+    head = shown.split(b"</head>")[0].decode()
+    sheets = [
+        href.split("?")[0]
+        for rel, href in re.findall(r'<link rel="(\w+)" href="([^"]+)"', head)
+        if rel == "stylesheet"
+    ]
+    assert sheets == [
+        "css/app.css",
+        "brand/loader.css",
+        "/assets/landing/landing.css",
+        "/assets/landing/public-pages.css",
+        "/assets/landing/public-sections.css",
+    ]
+    assert re.search(r'<html class="public-frame"[ >]', shown.decode())
+
+
 def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None:
     shell = (
         b'<html><head><title>Maity</title><meta name="description" content="x"></head><body>'
@@ -446,6 +481,8 @@ def test_a_page_comes_inside_the_shell_for_a_crawler_and_the_dashboard() -> None
         b"/assets/landing/public-sections.css",
     ]
     assert shown.startswith(b'<html class="public-frame">')
+    # After the dashboard's own sheets, where js/site-chrome.js appends them (A834 F1).
+    assert head.index(b"/assets/landing/") > head.index(b"<title>")
     social = shell_module.page_in_shell(
         b'<html><title>M</title><meta property="og:title" content="Maity">'
         b'<meta property="og:description" content="Old"><main id="main"></main></html>',
