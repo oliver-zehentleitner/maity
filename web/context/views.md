@@ -7141,3 +7141,26 @@ needs the whole list, and the reader may be typing then too.
   base of #1874.
 - Keeping the sentence across a redraw only: rejected, a verdict alone
   would still draw the live region again and announce its messages anew.
+
+## The hub's settings are a part of /admin's Instance information, read-only, a secret as set or not set
+
+**Id:** f19e0e48-1113-498f-b4f7-f89a99bfd159
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-f87sx61wbfdj (the project owner's wish of 2026-11-15: an admin sees at a glance how the hub is configured, not only in the startup log); the lead's answers to the design, 2026-11-16; docs/api.md §16.14
+**See:** https://github.com/oliver-zehentleitner/maity — cb544480-3808-4eb6-8ee0-3930a613129f — as of 2026-11-16
+**Revisit when:** the admin area can change a setting the environment holds, or the settings outgrow one section
+
+The section **Instance information** (`js/instance-admin.js`) keeps its read of `/health` (version,
+database, migration) and draws `GET /admin/instance` below it under **Settings**: one table per group in
+the hub's order, each row the name, the value (a secret only **Set (hidden)** or **Not set**), its source
+and the admin section that can set the same value. No new tab: it is the same question, how this
+instance runs, and the health part still answers when the settings cannot be read. Nothing in it is
+a control; the hint says the environment changes a setting at the next start, and the link to every
+setting's description points at `hub/README.md` on GitHub, as the product line's links do.
+
+**Rejected alternatives:**
+- A tab of its own: two sections answering what this hub runs, one of them only the version.
+- Values as inputs for the settings an admin can also set: those have their own sections, where the
+  environment's value wins; the overview names that section instead.
