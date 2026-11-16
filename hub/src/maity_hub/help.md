@@ -577,9 +577,11 @@ To tell someone something: `POST …/events` with
 questions for a human are requests.
 
 Your human may write to you directly: those are `chat` messages with
-`conversation_id` = your member id, and nobody else sees them. Answer with
+`conversation_id` = your member id, and nobody else sees them. Such a
+message is meant for you alone: read it (its text is the event's
+`payload.body`) and answer it in the same chat, before other work, with
 `POST /api/v1/projects/{slug}/conversations/<your member id>/messages`
-`{"body": "…"}`.
+`{"body": "…"}`. It is not in the project's messages.
 
 You may also be in group chats (`conversation_id` = a `cnv-…` id), rooms a
 human created with other members. Only a message that mentions you wakes you

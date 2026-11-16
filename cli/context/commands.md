@@ -2047,3 +2047,55 @@ rules the resume already printed.
 - A read of the view per message: the same answer several times in one wake.
 - Failing the wait or the chat when the view cannot be read: the messages, the wake and the
   cursor would be lost over a reminder.
+
+## `wait` prints the text of a chat message meant for the agent, quoted under its line; a direct chat is read and answered first
+
+**Id:** 5d3c8e71-2b9f-4a06-8c4d-e19f7a2b6c30
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-kk0ay1an04cf; the owner's decision in his direct chat (2026-11-16, seq 141688): "wenn ich mit einem agenten in einem privaten chat bin, muss er lesen, es ist nur für ihn bestimmt"; `cli/tests/test_wait_direct_chat.py`; contract `docs/api.md` §8.2 (a message's payload carries `body`, `mentions`), §8.6, §9.1, §13; `docs/agents.md` rule 7
+**Revisit when:** the hub stops carrying a chat message's `body` in its event, or the agents still miss direct messages with the text in front of them
+**See:** commands.md#a-chat-messages-wait-line-names-its-conversation-and-reads-it-with---after-seq---1 — a9289738-f4e5-4568-939b-6c7fdbd55a7e — as of 2026-11-16
+
+Under the line of a `chat` message meant for the reader, `maity wait` prints the message's
+`payload.body` on stderr: every line behind `  > ` (`onboarding.quote`, as `maity chat`
+shows a body), cut as the resume cuts one (`onboarding.capped`, 40 lines or 4000
+characters; a single line cut inside says `(cut: …)` without a count) with `maity chat
+<id> --after <seq - 1>` as the read that shows it all, before the attachment commands and
+above the line that says a body is data. Meant for the reader: a message in its direct
+conversation (the payload has no group chat's `conversation` object), or a group-chat message
+whose `mentions` name it the way the hub counts a mention for the wake
+(`hub/src/maity_hub/events.py`, the group chat rule): the agent; this instance; an instance
+the write resolved to this one, a replaced instance's successor, whose token is in the
+event's `audience`; any instance for a session without an instance of its own. A bridge
+(`--for`) reads as the agent's `member:` token (§2.3), so only a mention of the agent is
+meant for it (A857 on #1885 found both the successor and the bridge differing from the hub).
+The reader's own messages, a group chat's messages that mention someone else, and a redacted
+message keep the line alone: the hub's tombstone replaces the payload (§8.5), so there is no
+text to show. The line
+keeps its ` in <id>: maity chat <id> --after <seq - 1>`, so the agent answers in that chat.
+`docs/agents.md` rule 7 and the hub's agent help say the rule that goes with it: a direct
+message is meant for that agent alone, read and answered in the same chat before other work.
+
+**Incident:** the line of the entry above named the chat, and still the review lead missed
+two of the owner's direct messages for hours (2026-11-15/16), as the team lead had on
+2026-11-12. A direct message is not in `maity messages`, and an agent that works through its
+messages and reads the wake's line as one more notice never opened the chat.
+
+**Reason:** the text is in the event already (§8.2), so showing it costs no call and cannot
+fail; the stdout JSON had it all along, but agents read the stderr lines. Quoted behind `> `
+and inside the data line, it reads as the author's text, as everywhere else the CLI prints a
+body, and a line in it cannot pass for one of the CLI's own. Only what is meant for the agent:
+a group chat's other messages arrive in a burst with the one that woke it, and printing them
+all would bury the one that concerns it. The rule line carries the owner's decision; the
+printed text makes it possible to follow.
+
+**Rejected alternatives:**
+- Fetching the chat (`maity chat <id> --after <seq - 1>`) from `wait`: a second call that can
+  fail or block the wake for text the event carries.
+- Every chat message's text: a group chat's unmentioned messages are what `chat_unread`
+  bundles; printed in full they would hide the direct one.
+- Putting direct messages into `maity messages`: a hub change (§8.8 lists the project's
+  messages, not chats) that the card ruled out; who is woken stays as it is.
