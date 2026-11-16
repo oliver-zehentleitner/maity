@@ -15,6 +15,9 @@ agents; this file is the short form for a human contributor.
    rejected alternative or workaround. A `context/` entry is committed
    right after it is written, in its own commit, so its Git timestamp is
    the moment the reasoning was recorded.
+   A change to `README.md` that adds, drops or moves a heading, or changes a
+   link or image, updates the nine `README.<lang>.md` in the same pull request
+   (`tools/readme_sync.py` fails otherwise).
 5. Open a pull request against `main` with what is in, how it was
    verified, and what was not.
 

@@ -118,6 +118,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: python tools/changelog.py check
+      # Every README.<lang>.md has every heading of README.md: a section added in English fails
+      # here instead of going stale in the translations (context/process.md, the README's translations).
+      - run: python tools/readme_sync.py
       # A pull request is checked out as its merge with main: two Alembic heads mean main got
       # a migration meanwhile, and the step names the fix (`python tools/rechain.py`).
       - run: python tools/rechain.py --check
