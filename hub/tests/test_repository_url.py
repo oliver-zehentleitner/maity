@@ -161,7 +161,10 @@ class Outbound(Exception):
     """A test double: any real read raises, and is counted."""
 
 
-def _forbid(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+def _forbid(monkeypatch: pytest.MonkeyPatch, database: Engine) -> list[str]:
+    """Every way out refused and counted, except the socket to the test database itself:
+    PyMySQL (MariaDB) opens its connection with `socket.create_connection`, and the pool may
+    open one in the middle of the test. Any other address is refused."""
     calls: list[str] = []
 
     def refuse(name: str) -> Callable[..., Any]:
@@ -171,16 +174,47 @@ def _forbid(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
         return gone
 
+    url = database.url
+    own = (
+        {(url.host, url.port or 3306)}
+        if url.get_backend_name() in ("mariadb", "mysql") and url.host
+        else set()
+    )
+    connect = socket.create_connection
+    refused = refuse("socket")
+
+    def only_the_database(address: Any, *args: Any, **kwargs: Any) -> Any:
+        if tuple(address) in own:
+            return connect(address, *args, **kwargs)
+        return refused(address, *args, **kwargs)
+
     monkeypatch.setattr(forge._opener, "open", refuse("opener"))
     monkeypatch.setattr(outbound, "read", refuse("outbound"))
-    monkeypatch.setattr(socket, "create_connection", refuse("socket"))
+    monkeypatch.setattr(socket, "create_connection", only_the_database)
     return calls
+
+
+def test_the_guard_refuses_every_socket_but_the_test_databases(
+    migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _forbid(monkeypatch, migrated)
+    url = migrated.url
+    for address in [("gitlab.corp.example", 443), ("127.0.0.1", 443), (url.host or "127.0.0.1", 1)]:
+        with pytest.raises(Outbound):
+            socket.create_connection(address, 1)
+    assert calls == ["socket"] * 3
+    with migrated.connect() as connection:  # on MariaDB a new socket to the database: let through
+        assert connection.exec_driver_sql("SELECT 1").scalar() == 1
+    assert calls == ["socket"] * 3
 
 
 def test_the_hub_stores_a_non_github_url_and_never_fetches_it(
     make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls = _forbid(monkeypatch)
+    calls = _forbid(monkeypatch, migrated)
+    # The pool emptied, so that on MariaDB the next database connection opens under the guard
+    # every time, not only when the pool happens to need one (tsk-2mjkhqs0pxjh).
+    migrated.dispose()
     owner = flow.human(
         lambda **kw: make_client(
             forge_github_token=TOKEN, forge_instance_namespaces=frozenset({"maintainer"}), **kw

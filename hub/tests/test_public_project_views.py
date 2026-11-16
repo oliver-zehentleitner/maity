@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, public_pages, render
+from maity_hub import clock, public_pages
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -84,15 +84,16 @@ def test_the_board_shows_id_title_status_and_label_and_never_a_body(world: World
     world.touch()
     text = view(world.anyone, "board") or ""
     assert "Shipped" in text and "Next up" in text and "Maybe" in text and done in text
-    assert "secret body" not in text and "bug" in text
-    # Each id links its card's page, and nothing else in the page links but the Report link (§16.9).
-    after = (
-        text.split("<h1>")[1]
-        .split("</main>")[0]
-        .replace(render.report_link(f"{BASE}/board").replace('" rel', '&amp;lang=en" rel'), "")
+    assert "secret body" not in text and '<span class="chip label">bug</span>' in text
+    # In the columns each id links its card's page, and nothing else links (§16.9).
+    columns = text.split('<div class="columns"')[1].split("</main>")[0]
+    assert columns.count("<a ") == 3 == columns.count('<a class="card-id" href=')
+    assert f'href="{BASE}/tasks/{done}"' in columns
+    assert (
+        text.index('data-status="proposed"')
+        < text.index('data-status="open"')
+        < text.index('data-status="done"')
     )
-    assert after.count("<a ") == 3 and f'href="{BASE}/tasks/{done}"' in after
-    assert text.index("proposed") < text.index("open") < text.index("done")
 
 
 def test_done_and_cancelled_cards_stay_for_30_days(world: World) -> None:
@@ -115,7 +116,7 @@ def test_an_open_column_holds_at_most_200_cards_newest_first(
     world.touch()
     text = view(world.anyone, "board") or ""
     assert "card 200" in text and "card 001" in text
-    assert "card 000" not in text and "open (200)" in text
+    assert "card 000" not in text and "Open (200)" in text
 
 
 def test_a_card_change_renders_the_board_at_once(world: World) -> None:
@@ -128,7 +129,7 @@ def test_a_card_change_renders_the_board_at_once(world: World) -> None:
     text = view(world.anyone, "board") or ""
     assert "Second title" in text and "First title" not in text
     world.owner.patch(f"{TASKS}/{card_id}", {"status": "cancelled"})
-    assert "cancelled (1)" in (view(world.anyone, "board") or "")
+    assert "Cancelled (1)" in (view(world.anyone, "board") or "")
 
 
 def test_a_holder_is_named_whatever_their_profile_and_a_held_one_is_a_member(
@@ -143,27 +144,37 @@ def test_a_holder_is_named_whatever_their_profile_and_a_held_one_is_a_member(
     world.touch()
     agent = world.bot.get("/me").json()["member"]
     text = view(world.anyone, "board") or ""
-    assert "Human anna (anna)" in text and f"({agent['handle']})" in text
+    assert '<a href="/anna">Human anna</a>' in text
+    assert f'<a href="/maintainer/agents/{agent["handle"]}">' in text
     world.anna.patch("/me", {"public_profile": False})  # off is not invisible (§16.9)
-    assert "Human anna (anna)" in (view(world.anyone, "board") or "")
+    assert '<a href="/anna">Human anna</a>' in (view(world.anyone, "board") or "")
     made = report(world.owner, {"type": "profile", "id": world.anna.id}, "impersonation")
     assert made.status_code == 201, made.text
     path = f"/admin/reports/{made.json()['id']}/resolve"
     assert world.owner.post(path, {"action": "hide"}).status_code == 200
     text = view(world.anyone, "board") or ""
-    assert "(anna)" not in text and "a member" in text
+    assert "Human anna" not in text and '<span class="muted">A member</span>' in text
 
 
 def test_members_names_everyone_with_trust_and_role(world: World) -> None:
     world.anna.patch("/me", {"public_profile": False})
     text = view(world.anyone, "team") or ""
-    assert '<a href="/anna">Human anna</a> (anna)' in text and "<h2>Others</h2>" not in text
-    assert "presence" not in text and "<img" not in text
+    assert (
+        '<a class="mcard" href="/anna">' in text and "<b>Human anna</b><small>@anna</small>" in text
+    )
+    assert "<h3>Others</h3>" not in text
+    # A picture by the member's own page's rule (§16.9): with her profile off, anna's letter.
+    assert "presence" not in text
+    assert (
+        '<a class="mcard" href="/anna"><span class="av hu av-44 ini" aria-hidden="true">H</span>'
+        in text
+    )
 
 
 def test_the_team_view_is_at_team_and_headed_team(world: World) -> None:
     text = view(world.anyone, "team") or ""
-    assert "<h1>" in text and text.split("<h1>")[1].split("</h1>")[0].endswith(": Team")
+    assert "<title>Team of " in text and "<h2>Team</h2>" in text
+    assert '<a href="/maintainer/maity/team" class="view-tab" aria-current="page">Team</a>' in text
 
 
 def test_members_serves_no_page_and_redirects_nowhere(world: World) -> None:
@@ -185,7 +196,7 @@ def test_organisation_shows_the_lines_and_names_everyone(world: World, migrated:
     assert "Human anna" in text and "<ul><li>" in text
     world.anna.patch("/me", {"public_profile": False})
     text = view(world.anyone, "organisation") or ""
-    assert "Human anna (anna)" in text  # off is not invisible
+    assert "<b>Human anna</b><small>@anna</small>" in text  # off is not invisible
 
 
 def test_a_card_under_a_hold_is_on_no_board_and_comes_back_when_it_is_dismissed(
@@ -222,7 +233,7 @@ def test_a_card_removed_by_moderation_never_shows_its_title_on_the_board(world: 
     done = world.owner.post(f"/admin/reports/{got.json()['id']}/resolve", {"action": "remove"})
     assert done.status_code == 200, done.text
     text = view(world.anyone, "board") or ""
-    assert "Abusive title" not in text and "cancelled (0)" in text
+    assert "Abusive title" not in text and "Cancelled (0)" in text
 
 
 def test_the_views_are_in_the_sitemap(world: World) -> None:
@@ -234,7 +245,7 @@ def test_the_views_are_in_the_sitemap(world: World) -> None:
 def test_an_isolated_agent_is_on_no_view_and_a_held_agent_has_no_name(world: World) -> None:
     world.owner.patch("/me", {"public_profile": True})
     agent = world.bot.get("/me").json()["member"]
-    assert f"({agent['handle']})" in (view(world.anyone, "team") or "")
+    assert f"<small>@{agent['handle']}</small>" in (view(world.anyone, "team") or "")
     made = world.anna.post(
         "/reports", {"target": {"type": "profile", "id": agent["id"]}, "reason": "spam"}
     )
@@ -242,13 +253,14 @@ def test_an_isolated_agent_is_on_no_view_and_a_held_agent_has_no_name(world: Wor
     path = f"/admin/reports/{made.json()['id']}/resolve"
     assert world.owner.post(path, {"action": "hide"}).status_code == 200
     members = view(world.anyone, "team") or ""
-    assert f"({agent['handle']})" not in members and "× coder" in members  # a count, no name
+    counted = '<li><b>1</b><span class="chip role">Coder</span></li>'
+    assert f"@{agent['handle']}" not in members and counted in members  # a count, no name
     assert world.owner.post(path, {"action": "dismiss"}).status_code == 200
     boxes = (view(world.anyone, "organisation") or "").count("<li>")
     isolate = f"/projects/maintainer/maity/members/{agent['id']}/isolate"
     assert world.owner.post(isolate, {"reason": "it rewrote the release notes"}).status_code == 200
     members = view(world.anyone, "team") or ""
-    assert f"({agent['handle']})" not in members and "× coder" not in members
+    assert f"@{agent['handle']}" not in members and counted not in members
     assert (view(world.anyone, "organisation") or "").count("<li>") == boxes - 1  # no box
 
 
@@ -256,7 +268,7 @@ def test_an_agent_on_members_links_to_its_page_under_its_owner(world: World) -> 
     world.owner.patch("/me", {"public_profile": True})
     handle = world.bot.get("/me").json()["member"]["handle"]
     members = view(world.anyone, "team") or ""
-    assert f'<a href="/maintainer/agents/{handle}">' in members
+    assert f'<a class="mcard" href="/maintainer/agents/{handle}">' in members
     page = world.anyone.get(f"/maintainer/agents/{handle}")
     assert page.status_code == 200 and "<title>dashboard</title>" not in page.text
 
@@ -280,7 +292,8 @@ def test_the_holder_of_a_done_card_is_still_an_agent_when_it_was_isolated(world:
     assert world.owner.post(isolate, {"reason": "it rewrote the release notes"}).status_code == 200
     world.touch()
     text = view(world.anyone, "board") or ""
-    assert "Shipped by the bot" in text and "an agent" in text and "Human anna (anna)" in text
+    assert "Shipped by the bot" in text and '<span class="muted">An agent</span>' in text
+    assert '<a href="/anna">Human anna</a>' in text
     assert agent["handle"] not in text
 
 
@@ -305,7 +318,7 @@ def test_the_limit_of_a_column_counts_the_cards_the_hold_leaves(
     text = view(world.anyone, "board") or ""
     # the newest card is held: the three shown are the next three, not two
     assert "card 4" not in text and all(f"card {n}<" in text for n in (3, 2, 1))
-    assert "open (3)" in text
+    assert "Open (3)" in text
 
 
 def test_a_security_card_stays_off_the_board_until_it_is_done(world: World) -> None:

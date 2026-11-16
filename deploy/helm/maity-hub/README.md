@@ -60,8 +60,10 @@ example; any cluster with the same pieces works.
 2. **Image.** Releases are published as `ghcr.io/oliver-zehentleitner/maity-hub`,
    tagged with the version and the full commit SHA and never `latest`. The
    workflow `publish-image` builds them; until its first release you build
-   the image yourself. Pin it by digest (`image.digest`) when you can; the
-   workflow's run summary prints it. Each published digest is signed with
+   the image yourself. The chart pulls the image by digest: `image.digest` is
+   required, and the workflow's run summary prints it. A tag can be moved to
+   other bytes, so pulling by tag is an explicit opt-in (`image.allowTag: true`
+   with `image.tag`, see Values). Each published digest is signed with
    cosign, keyless, by that workflow on a `v*` tag or on `main`; check the
    signature before you pin a digest:
 
@@ -82,6 +84,9 @@ example; any cluster with the same pieces works.
    docker build -f deploy/Dockerfile -t registry.example.org/maity-hub:<commit> .
    docker push registry.example.org/maity-hub:<commit>
    ```
+
+   `docker push` prints the pushed digest (`digest: sha256:…`); set it as
+   `image.digest`.
 
    For a private registry, create the pull Secret in the namespace:
    `kubectl -n maity create secret docker-registry registry-credentials …`.
@@ -144,7 +149,7 @@ example; any cluster with the same pieces works.
    ```yaml
    image:
      repository: registry.example.org/maity-hub
-     tag: "<commit>"
+     digest: sha256:<the image digest>  # a digest, not a tag: the one the publish-image run summary prints
    imagePullSecrets:
      - name: registry-credentials
    database:
@@ -198,7 +203,9 @@ Upgrades are the same command with `helm upgrade`, also with
 `--timeout 10m`. Use `deploy/scripts/helm-upgrade.sh -f values.yaml` instead
 when the release brings a migration: it stops the hub while the migration
 runs and starts it again on any exit (see "The migration and the running
-pod" below).
+pod" below). Before upgrading to chart 0.2.0, set `image.digest`, or
+`image.allowTag: true` with `image.tag`: without either the chart does not
+render, and the script has already stopped the hub.
 
 ## Values
 
@@ -209,7 +216,8 @@ silently ignored. These are the values that matter:
 | Value | Default | Meaning |
 |---|---|---|
 | `image.repository` | required | the hub image |
-| `image.tag` / `image.digest` | appVersion / none | a digest wins over the tag |
+| `image.digest` | required | `sha256:…`; the chart pulls by digest, which always wins over a tag |
+| `image.allowTag`, `image.tag` | `false`, none | pull by tag instead: both must be set and the digest empty (an opt-in; there is no default tag) |
 | `imagePullSecrets` | `[]` | `[{name: …}]` |
 | `database.existingSecret`, `.key` | required, `database-url` | the Secret holding `MAITY_DATABASE_URL` |
 | `database.poolSize`, `.maxOverflow` | hub default (16, 16) | `MAITY_DB_POOL_SIZE`, `MAITY_DB_MAX_OVERFLOW`: each pod's connections, shared by its workers (see Several pods) |

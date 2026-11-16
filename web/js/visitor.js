@@ -93,7 +93,8 @@ window.Maity = window.Maity || {};
   // ---- the project's hero, figures and tab bar, signed out (tsk-9482zxza3gs3) ------------
   // The approved mockup's project page (project.html, pp.css): a dark hero in the landing's dark
   // zone, the figures in a band under it, the views as a full-width bar under both. The rules are
-  // css/public-sections.css, on with the frame's stylesheets (js/site-chrome.js).
+  // /assets/landing/public-sections.css (the hub's, hub/src/maity_hub/landing_assets), on with the
+  // frame's stylesheets (js/site-chrome.js).
 
   // The project's tile: it has no picture, so its letter in the accent colour, the first letter of
   // its name or else the first character of its slug, as the hub's /explore draws it
@@ -305,7 +306,7 @@ window.Maity = window.Maity || {};
   // ---- a person's and an agent's page, signed out (tsk-2t7efzj1p8zt) ----------------------
   // The approved mockup's person.html and agent.html: the same dark hero as a project's with the
   // picture beside the name, the figures in a band, the projects as cards and, for a person, their
-  // agents as the Overview's member cards. Rules: css/public-sections.css (.uhero and on).
+  // agents as the Overview's member cards. Rules: /assets/landing/public-sections.css (.uhero and on).
 
   // A person's networks, linked as the hub links them on the stored page
   // (hub/src/maity_hub/person_links.py, §16.9 "A person's links"): the data carries the name only.

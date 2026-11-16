@@ -5640,7 +5640,8 @@ reset.
 Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
 `GET /site/chrome` with the address's `?lang=` (or the last one this page saw, `M.i18n.frameAddress`),
 and take the frame's language from its answer. While the page stands, the hub's
-`/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
+`/assets/landing/landing.css`, `public-pages.css` and `public-sections.css` are linked (the third, the public
+pages' design, was the dashboard's own `css/public-sections.css` until 2026-11-15, tsk-zhyqdtt5v59c) (without `?v`, so the hub answers
 the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
 `render.py` builds them; the app's bar is hidden meanwhile and comes back where the read fails.
@@ -5790,11 +5791,11 @@ across the page (`nav.ptabs`), and the view itself stands under it in the stored
   text's muted colour, which passes on the dark zone.
 
 The rules (`.phero`, `.band`/`.stats5`, `.ptabs`, `.sec-h`, `.mgrid`/`.mcard`, `.prgrid`/`.pr`, …)
-are `web/css/public-sections.css`, one file for the project, person and agent pages.
-`index.html` names it as a disabled `<link>`, so the shell gives it its version as every file
-of the dashboard (§16.11, the warm load asks for none again); `js/site-chrome.js` moves it behind
+are `public-sections.css`, one file for the project, person and agent pages (the hub's
+`/assets/landing/public-sections.css` since tsk-zhyqdtt5v59c, 2026-11-15; `web/css/` before).
+It is the hub's third frame sheet (§16.7.5): `js/site-chrome.js` links it in `SHEETS` behind
 `landing.css` and `public-pages.css` the first time the frame is entered and switches it on and off
-with them. A name the dashboard's `app.css` also
+with them; `index.html` no longer names it. A name the dashboard's `app.css` also
 uses (`.dot`) is scoped to the part that draws it. Signed in, a non-member's view is unchanged.
 
 **Reason:** the rules build on the landing's tokens and classes (`.hero`, `.dz`, `.wrap`, `.btn`,
@@ -5844,7 +5845,7 @@ shows who is online as faces.
   entry (a decision) as a line in a list under the cards. Without a merge the heading reads
   "Recently". All entries the hub sends are drawn: §16.9 caps them at 20 of the last 7 days, the
   sentence under the heading says so.
-- Signed in, a non-member's view keeps its lists: `css/public-sections.css` is off there.
+- Signed in, a non-member's view keeps its lists: `public-sections.css` is off there.
 
 **Reason:** the mockup shows 12 cards and a stack of 9 faces in a hero panel that must not wrap on a
 phone (8 faces + "+N" fit 390 px); a page of 30 cards would push what happened lately far down,
@@ -5876,7 +5877,8 @@ ticker's limit of 20 changes.
 
 Signed out, a person's page (`/<handle>`) and an agent's page (`/<owner>/agents/<handle>`)
 (`js/visitor.js`) stand in the landing's frame as a project's page does, with the same
-stylesheet (`css/public-sections.css`, `section.profile-view`):
+stylesheet (`/assets/landing/public-sections.css`, the hub's since tsk-zhyqdtt5v59c,
+`section.profile-view`):
 
 - Hero (`section.uhero.hero.dz`): the 128 px picture (96 px on a phone, stacked above the name),
   the crumb Person or Agent, the h1, a meta line (`@handle`, Online, member since). A person's
@@ -5946,7 +5948,7 @@ own page keeps the stored pages' column.
   attention as lines with its status as a chip. An unread Why says so in the section.
 - Whether a member is an agent is read from its page, `/<owner>/agents/<handle>`, as the hub builds
   it; the Team and Organisation answers carry no other mark.
-- Signed in, a non-member's view keeps its lists and headings: `css/public-sections.css` is off
+- Signed in, a non-member's view keeps its lists and headings: `public-sections.css` is off
   there, and `framed` is false.
 
 **Reason:** the README asks for the tabs in the same section style without a mockup of their own and
@@ -7074,3 +7076,31 @@ from happening by accident.
 - No way to change the sentence but Take back and Disagree again:
   rejected, that writes two events and wakes the agent twice for one
   change of words.
+
+## An open verdict sentence outlives the list being drawn again, and a re-read takes verdicts over in place
+
+**Id:** 839d984c-980f-4d2c-859c-0fe03207b9c1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-q8cd2hh4beq3 (the review A796 of #1874: an owner reading along from outside the project lost a sentence being typed at the 30-second re-read); web/js/group-chat.js `redraw` and the outsider re-read, web/js/chat.js `verdicts`, 2026-11-16
+**Revisit when:** an observer from outside the project gets events, or the group chat stops drawing the whole list again
+
+An observer from outside the project gets no events, so its view reads
+the newest page again every 30 seconds. When only verdicts changed, they
+are taken over under their messages (`takeVerdicts`, as for an event);
+the list is not drawn again. When a message came or was removed, the
+list is drawn again, and an open sentence field comes back: what is typed
+is kept per message (`verdictForms`), and `redraw` gives the field its
+focus and caret back.
+
+**Reason:** the list is a live region, so drawing it again for a verdict
+alone would also announce every message once more. A new message still
+needs the whole list, and the reader may be typing then too.
+
+**Alternatives considered:**
+- Taking verdicts over in place only: rejected, a new message at the
+  re-read still cost the sentence, which A796 had found already at the
+  base of #1874.
+- Keeping the sentence across a redraw only: rejected, a verdict alone
+  would still draw the live region again and announce its messages anew.
