@@ -231,10 +231,13 @@ def test_spaces_count_as_the_parsers_count_them(
         "MAITY_SMTP_PASSWORD": "   ",
         "MAITY_SECRET_KEY": "\n",
         "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY": " ",
+        "MAITY_SMTP_USERNAME": "   ",
+        "MAITY_FORGE_GITHUB_TOKEN": " ",
         "MAITY_AGENT_FIREWALL": " on ",
     }
     loaded = Settings.from_env(env)
-    assert loaded.secret_key is None and loaded.mail.password == "   "
+    assert loaded.secret_key is None and loaded.mail.username is None
+    assert loaded.mail.password == "   " and loaded.forge_github_token == " "
     who = flow.human(lambda **kw: make_client(environment=loaded.environment, **kw), migrated)
     rows = by_name(who.get(PATH).json())
     assert rows["MAITY_SIGN_IN_DEVICE_CODE"]["source"] == "default"
@@ -242,7 +245,12 @@ def test_spaces_count_as_the_parsers_count_them(
     assert rows["MAITY_SMTP_PASSWORD"]["set"] is True
     assert rows["MAITY_SMTP_PASSWORD"]["source"] == "environment"
     assert rows["MAITY_SMTP_PASSWORD"]["value"] is None
-    for name in ("MAITY_SECRET_KEY", "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY"):
+    assert rows["MAITY_FORGE_GITHUB_TOKEN"]["set"] is True
+    for name in (
+        "MAITY_SECRET_KEY",
+        "MAITY_ATTACHMENT_S3_SECRET_ACCESS_KEY",
+        "MAITY_SMTP_USERNAME",
+    ):
         assert rows[name]["set"] is False, name
         assert rows[name]["source"] == "default", name
     assert rows["MAITY_AGENT_FIREWALL"]["value"] == "on"
