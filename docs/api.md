@@ -24396,9 +24396,9 @@ rules that make a position safe to resume from:
   `totals.unread` of `GET /me/conversations` (§9.3), the hub computes
   both with one function. `mention` and `security` count the unread items of that
   kind. `total` is `inbox + chat + mention` — everything but the
-  security alerts; the dashboard shows
-  it in the tab title as `(6) maity` and nothing when it is `0`.
-  `security` shows on the bell only. The keys are exactly these five;
+  security alerts. The dashboard shows `inbox + chat` in the tab title
+  as `(6) maity` and on the project switcher, and nothing when it is
+  `0`; `mention` and `security` show on the bell only. The keys are exactly these five;
   the counts of the kinds removed on 2026-10-26 (§18.1) are not sent.
 - **`by_project`.** The same counts per project, keyed by the project's
   `full_name`, for every project of the human with at least one non-zero
