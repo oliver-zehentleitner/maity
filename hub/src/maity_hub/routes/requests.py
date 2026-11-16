@@ -19,6 +19,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import (
     avatars,
     bridges,
+    chat_gate,
     chat_request,
     clock,
     cover,
@@ -41,6 +42,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.cards import CLOSED
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -441,6 +443,7 @@ def _view(conn: Connection, row: Any, known: _Known) -> dict[str, Any]:
         "humans_only": inbox.humans_only(row),
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
         "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
+        "held": list(row.held or []),  # the agents `to` reached without their owner's yes
         "action": _action_view(row),
         "report": _report_view(known, row),  # set by the hub only (§16.8)
     }
@@ -523,8 +526,48 @@ def load_member_patch(conn: Connection, request_id: str) -> dict[str, Any]:
     return view
 
 
-idempotency.LOADERS["request"] = idempotency.plain(load_request)
-idempotency.LOADERS["member_patch"] = idempotency.plain(load_member_patch)
+def may_see(conn: Connection, request_id: str, caller: Caller) -> bool:
+    """Whether the caller reads the request now: as `GET /requests/{id}` lets the human it
+    is personal to, or as `GET …/requests/{request_id}` lets a member (§7). A replayed write
+    of a request answers only them (§1.5)."""
+    row = conn.execute(select(t.request).where(t.request.c.id == request_id)).first()
+    if row is None:
+        return False
+    if row.personal and caller.kind == "human":
+        try:
+            _personal(conn, caller, request_id, asker=True)
+            return True
+        except ApiError:
+            pass
+    if row.project_id is None:
+        return False
+    try:
+        mine = membership(conn, caller, namespace.name_of(conn, row.project_id))
+    except ApiError:
+        return False
+    if _withdrew_the_pair(conn, row, mine):
+        return True
+    if row.personal and (row.filed_by == "hub" or not inbox.is_asker(row, mine)):
+        return False
+    return inbox.may_read(conn, row, mine)
+
+
+def _withdrew_the_pair(conn: Connection, row: Any, mine: Membership) -> bool:
+    """A withdrawn pair's request (a cross-owner `reports_to`, a bridge's consent) to whom
+    `withdraw` lets withdraw it: an owner of either side or an admin need not read it to
+    withdraw it, and its retry finds it as the withdrawal left it, which nothing changes."""
+    if row.status != "withdrawn":
+        return False
+    kind = (row.proposal or {}).get("kind")
+    if kind in bridges.KINDS:
+        return bridges.may_withdraw(conn, row, mine) is True
+    if row.personal and kind == cross_owner.KIND:
+        return cross_owner.may_withdraw(conn, row, mine) is True
+    return False
+
+
+idempotency.register("request", idempotency.plain(load_request), may_see)
+idempotency.register("member_patch", idempotency.plain(load_member_patch), may_see)
 
 
 def _row(conn: Connection, request_id: str) -> Any:
@@ -742,6 +785,11 @@ def create_request(
             ).first()
             if card is None:
                 raise invalid({"task_id": "unknown_task"})
+        # An agent of another owner that `to` reaches without its owner's yes is held (§9.6):
+        # decided now, for good; a later yes admits the next request, not this one.
+        audience, held = chat_gate.gate(
+            conn, mine.project.id, mine, _addressee_audience(conn, mine, to)
+        )
         # Links only: a mention in a request pings nobody (§8.6).
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary") + (
             mentions.resolve(conn, mine.project.id, body.tried, "tried")
@@ -773,6 +821,7 @@ def create_request(
                     "ktw_ref": body.ktw_ref,
                     "humans_only": body.humans_only,
                     "action": _action_stored(body.action),
+                    "held": held or None,
                     "status": "open",
                     "changed_by_credential": caller.credential_id,
                     "changed_via": caller.via,
@@ -802,15 +851,17 @@ def create_request(
             )
             blocked = card.id
         view = request_view(conn, _row(conn, request_id))
-        emit(
+        seq = emit(
             conn,
             mine.project.id,
             "request_created",
-            _addressee_audience(conn, mine, to),
+            audience,
             view,
             actor=caller.actor(mine.id),
             subject=("request", request_id),
         )
+        if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
+            chat_request.note_held_by(conn, mine, seq, "request", held)
         _status_moved(conn, blocked, caller.actor(mine.id))
         return idempotency.Outcome(201, "request", request_id, view)
 
@@ -1155,7 +1206,7 @@ def list_requests(
     cursor: str | None = None,
 ) -> JSONResponse:
     _check_sort(sort)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         rows = _filtered(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
@@ -1179,7 +1230,7 @@ def list_all_requests(
     """The cross-project inbox (§7): every membership of the human, `project` inline."""
     _check_sort(sort)
     _check_status(status)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         projects = conn.execute(
             select(t.project)
             .join(t.membership, t.membership.c.project_id == t.project.c.id)
@@ -1213,7 +1264,7 @@ def list_all_requests(
 
 @router.get("/projects/{owner}/{slug}/requests/{request_id}")
 def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         row = _project_request(conn, mine, request_id)
         if row.personal and (row.filed_by == "hub" or not inbox.is_asker(row, mine)):
@@ -1529,7 +1580,22 @@ def _holder_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
             )
         ).scalars()
         return [f"member:{h}" for h in humans]
-    return _addressee_audience(conn, mine, inbox.addressee_of(row))
+    return _filed_audience(conn, mine, row)
+
+
+def _filed_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
+    """`to` as filed, as an audience, with each agent it was held for (§9.6) named
+    `held:<id>` in place of its own tokens, as the request's first event named it."""
+    audience = _addressee_audience(conn, mine, inbox.addressee_of(row))
+    held = list(row.held or [])
+    if not held:
+        return audience
+    kept = [
+        x
+        for x in audience
+        if not any(x == f"member:{a}" or x.startswith(f"instance:{a}#") for a in held)
+    ]
+    return [*kept, *(f"held:{a}" for a in held)]
 
 
 def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after: Any) -> list[str]:
@@ -1540,7 +1606,7 @@ def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after:
                 *_asker_audience(conn, before),
                 *_holder_audience(conn, mine, before),
                 *_holder_audience(conn, mine, after),
-                *_addressee_audience(conn, mine, inbox.addressee_of(before)),
+                *_filed_audience(conn, mine, before),
             ]
         )
     )
@@ -1601,6 +1667,45 @@ def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
     return row
 
 
+def _refuse_held(
+    conn: Connection, mine: Membership, row: Any, target: Any, then: str = "forward"
+) -> None:
+    """`forbidden` (`held_by_gate`) for a forward to an agent the request is held for, or
+    that the gate of §9.6 would hold it for were the asker to file it to that agent now: the
+    text is the asker's, so the asker's side is judged, whoever forwards it. The forward would
+    otherwise hand the request to a holder that may not read it. A claim from the pool is
+    judged the same way, with the claiming agent as the target (`then`: `claim`)."""
+    if target.agent_id is None:
+        return
+    if target.agent_id in (row.held or []):
+        raise ApiError(
+            403,
+            "forbidden",
+            "the gate of §9.6 held this request for that agent when it was filed, and a later yes"
+            " does not release it. Its owner can allow the asker's side, and the asker then asks"
+            " again",
+            {"reason": "held_by_gate"},
+        )
+    if row.asked_by is None:
+        return
+    asker = conn.execute(select(t.membership).where(t.membership.c.id == row.asked_by)).one()
+    kind = "agent" if asker.agent_id is not None else "human"
+    _, held_now = chat_gate.gate(
+        conn,
+        mine.project.id,
+        Membership(mine.project, asker, kind),
+        [f"member:{target.agent_id}"],
+    )
+    if target.agent_id in held_now:
+        raise ApiError(
+            403,
+            "forbidden",
+            "the gate of §9.6 holds this request for that agent: its owner has not said yes"
+            f" to the asker's side. The owner can allow the asker's side and then {then}",
+            {"reason": "held_by_gate"},
+        )
+
+
 @router.post("/projects/{owner}/{slug}/requests/{request_id}/forward")
 def forward(
     slug: str, request_id: str, body: ForwardIn, request: Request, caller: AnyCaller
@@ -1645,6 +1750,8 @@ def forward(
                 raise invalid({"to": "owners_round"}, "this goes to one human, the owner's choice")
             # Nor to someone the proposal's kind would not let answer it (§6.19).
             _refuse_by_kind(conn, row, target)
+            # Nor to an agent the gate holds the request for (§9.6): refused, never dropped.
+            _refuse_held(conn, mine, row, target)
             target_id = target.id
             values = {"holder_member": target.id, "holder_pool": None}
         action_name = "opened" if target_id is None else "forwarded"
@@ -1689,6 +1796,8 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
         _refuse_by_kind(conn, row, mine)  # a holder that may not answer would strand it
         if inbox.is_asker(row, mine):
             raise invalid({"to": "self"}, "nobody holds a request it asked")
+        # Nor an agent the gate holds the request for (§9.6), as for a forward to it.
+        _refuse_held(conn, mine, row, mine.row, then="claim")
         won = conn.execute(
             update(t.request)
             .where(t.request.c.id == row.id, _pool_open())
@@ -1781,21 +1890,27 @@ def withdraw(
         _refuse_unless_open(row)
         proposals.require_known(row)
         now = clock.now()
-        conn.execute(
+        done = conn.execute(
             update(t.request)
-            .where(t.request.c.id == row.id)
+            .where(t.request.c.id == row.id, t.request.c.status == "open")
             .values(
                 status="withdrawn",
                 withdrawn_at=now,
                 withdraw_reason=body.reason,
                 changed_by_credential=caller.credential_id,
                 changed_via=caller.via,
+                **_snapshot(conn, row),
             )
-        )
+        ).rowcount
+        if done != 1:
+            _refuse_unless_open(_row(conn, row.id))
         moved = _unblock(conn, row)
         placements.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
         proposals.settle(conn, row, "withdrawn", None, caller.actor(mine.id))
-        view = request_view(conn, _row(conn, row.id))
+        closed = _row(conn, row.id)
+        # One record per state change of a personal request, on this route too (§18.1).
+        records.personal_request(conn, closed)
+        view = request_view(conn, closed)
         emit(
             conn,
             mine.project.id,
@@ -2194,7 +2309,7 @@ def file_to_human_outside(
                 "id": request_id,
                 "project_id": project_id,
                 "class": "consent",
-                "title": title_text,
+                "title": title_text[: t.TITLE],  # a project name alone may fill it
                 "summary": summary,
                 "options": [],
                 "priority": "normal",
@@ -2279,7 +2394,7 @@ def _file_personal(
                 "project_id": mine.project.id,
                 "org_id": org_id,
                 "class": class_,
-                "title": title_text,
+                "title": title_text[: t.TITLE],  # a project name alone may fill it
                 "summary": summary,
                 "options": options or [],
                 "priority": "normal",

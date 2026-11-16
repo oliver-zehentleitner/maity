@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import functools
 import getpass
+import json
 import os
 import re
 import shutil
@@ -19,16 +20,156 @@ from pathlib import Path
 from typing import Any
 
 from .. import proc
-from . import config
+from . import config, tools
 from .asuser import RUNNER, AsUser
 
 VERSION_TIMEOUT = 10.0
-_VERSION = re.compile(r"\d+(?:\.\d+)+(?:[-+][0-9A-Za-z.]+)?")
+# A version as a harness prints it, whole: its prerelease and build metadata may hold `-`
+# (`2.1.295--rc`), so neither is cut short into a release. It is a token of its own: after
+# the start, a blank, `(` or `v`, and before the end, a blank, `)`, `,` or `;`. A token with
+# anything else (`2.1.295+`, `2.1.295-_dev`) is no version here; the probe keeps the whole
+# line, which no gate reads as a version. Both probes read with it (local here, ssh in
+# targets).
+VERSION = re.compile(
+    r"(?<![^\s(v])\d+(?:\.\d+)+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?(?![^\s),;])"
+)
 _UNPRINTABLE = re.compile(r"[^\x20-\x7e]")
 # The harness versions whose sandbox behaviour was checked for a call with something placed
 # in front of `maity` (runner.md, the adapters entry). Another version still runs; the runner
 # says that it was not checked.
 CHECKED = {"claude-code": "2.1.318"}
+
+
+# The oldest Claude Code whose hooks refuse the call when they fail or time out
+# (`onFailure: "block"`): the runner's sandboxed sessions rely on it (adapters.claude_settings),
+# so its sandbox is switched on only from this version (cli/context/runner.md).
+CLAUDE_SANDBOX_MIN = (2, 1, 295)
+# A SemVer 2.0.0 version: MAJOR.MINOR.PATCH without leading zeros, an optional prerelease
+# (`-…`, dot-separated identifiers, a numeric one without a leading zero) and build metadata
+# (`+…`); no identifier is empty. Anything else is no version the gate reads.
+_NUMBER = r"(?:0|[1-9]\d*)"
+_PRE_ID = rf"(?:{_NUMBER}|\d*[A-Za-z-][0-9A-Za-z-]*)"
+_BUILD_ID = r"[0-9A-Za-z-]+"
+_RELEASE = re.compile(
+    rf"({_NUMBER})\.({_NUMBER})\.({_NUMBER})"
+    rf"(-{_PRE_ID}(?:\.{_PRE_ID})*)?(\+{_BUILD_ID}(?:\.{_BUILD_ID})*)?"
+)
+
+
+def sandbox_version_ok(harness_id: str, version: str | None) -> bool:
+    """Whether the runner may switch the harness's sandbox on at this version: for Claude Code
+    CLAUDE_SANDBOX_MIN or later, read from the probed version; an unknown or unreadable
+    version is not, nor is any other shape. A prerelease sorts before its release (SemVer
+    §11), so `2.1.295-rc.1` is below the minimum; build metadata (`+…`) does not count.
+    Other harnesses: always."""
+    if harness_id != "claude-code":
+        return True
+    match = _RELEASE.fullmatch(version or "")
+    if match is None:
+        return False
+    release = tuple(int(part) for part in match.groups()[:3])
+    if match.group(4) is not None:  # a prerelease of `release`
+        return release > CLAUDE_SANDBOX_MIN
+    return release >= CLAUDE_SANDBOX_MIN
+
+
+def sandbox_version_line(version: str | None) -> str:
+    """Why Claude Code's sandbox stays off at this version, for `check` and the log."""
+    oldest = ".".join(str(part) for part in CLAUDE_SANDBOX_MIN)
+    return (
+        f"harness claude-code: version {version or 'unknown'} is older than {oldest} or"
+        " unknown; its sandbox is not switched on (the runner's hook needs `onFailure`)"
+    )
+
+
+def sandbox_held(harness_id: str, tools: bool, version: str | None) -> bool:
+    """Claude Code whose sandbox tools are there, at a version the gate does not take (older
+    than CLAUDE_SANDBOX_MIN, or unknown): its sandbox is off for the version alone."""
+    return harness_id == "claude-code" and tools and not sandbox_version_ok(harness_id, version)
+
+
+def sandbox_refused(harness: config.Harness, on: bool, held: bool) -> bool:
+    """Whether a start of `harness` is refused for its sandbox: never while it is on; with
+    `require_sandbox = true` whenever it is off; unset (the default) when it is off for the
+    version alone (`sandbox_held`); never with an explicit `require_sandbox = false`, the
+    opt-out for a host where the agents run unsandboxed on purpose."""
+    if on:
+        return False
+    if harness.require_sandbox is None:
+        return held
+    return harness.require_sandbox
+
+
+# Where Claude Code reads its managed settings, which no `--settings` file overrides: a
+# switch there that turns hooks off would leave a sandboxed agent's `maity` line unchecked.
+# Hosts of the ssh backend are Linux (bwrap and socat).
+CLAUDE_MANAGED = {
+    "linux": Path("/etc/claude-code/managed-settings.json"),
+    "darwin": Path("/Library/Application Support/ClaudeCode/managed-settings.json"),
+}
+HOOK_SWITCHES = ("disableAllHooks", "allowManagedHooksOnly")
+SETTINGS_MAX = 1024 * 1024  # a Claude Code settings file read for its hook switches
+_DROP_INS = 'for f in "$1"/*.json; do if [ -f "$f" ]; then printf "%s\\n" "$f"; fi; done'
+
+
+def _present(as_user: AsUser, path: Path, kind: str = "-e") -> bool:
+    """`test` on the agents' side; anything but a clear yes or no is an OSError."""
+    if as_user.direct:
+        return as_user.exists(path, kind)
+    done = as_user.run(["test", kind, str(path)])
+    if done.returncode not in (0, 1):
+        raise OSError(f"{path} cannot be checked (exit {done.returncode})")
+    return done.returncode == 0
+
+
+def claude_hooks_off(as_user: AsUser = RUNNER, platform: str | None = None) -> str | None:
+    """Why the runner's hook would not run for the agents' Claude Code, or None. Managed
+    settings (the file, and each `*.json` in `managed-settings.d/` beside it) that set
+    `disableAllHooks` or `allowManagedHooksOnly`, or that cannot be read as JSON: unknown
+    counts as off. In the agents' user settings only `allowManagedHooksOnly` counts; the
+    runner's own settings file sets `disableAllHooks` back to false over theirs."""
+    if as_user.here:
+        platform = sys.platform if platform is None else platform
+    else:
+        platform = "linux"
+    managed = next((p for key, p in CLAUDE_MANAGED.items() if platform.startswith(key)), None)
+    # Each file with its switches and the directory it is read from (limitread): the managed
+    # settings' own directory, the agents' user's home.
+    files: list[tuple[Path, tuple[str, ...], Path]] = []
+    try:
+        if managed is not None:
+            if _present(as_user, managed):
+                files.append((managed, HOOK_SWITCHES, managed.parent))
+            drop_ins = managed.parent / "managed-settings.d"
+            if _present(as_user, drop_ins, "-d"):
+                done = as_user.run(["sh", "-c", _DROP_INS, "sh", str(drop_ins)])
+                if done.returncode != 0:
+                    return f"{drop_ins} cannot be listed"
+                listed = sorted(done.stdout.splitlines())
+                files += [(Path(line), HOOK_SWITCHES, managed.parent) for line in listed]
+        home = as_user.home()
+        user = home / ".claude" / "settings.json"
+        if _present(as_user, user):
+            files.append((user, ("allowManagedHooksOnly",), home))
+    except (OSError, KeyError) as exc:
+        return f"the Claude Code settings cannot be checked ({ascii_text(str(exc), 120)})"
+    for path, switches, under in files:
+        try:
+            data = json.loads(as_user.read_whole(path, SETTINGS_MAX, under=under))
+        except (OSError, KeyError, ValueError):
+            return f"{path} cannot be read as JSON"
+        if not isinstance(data, dict):
+            return f"{path} is not a JSON object"
+        on = [key for key in switches if data.get(key) is not False and key in data]
+        if on:
+            return f"{path} sets {' and '.join(on)}"
+    return None
+
+
+def claude_hooks_line(why: str) -> str:
+    """Why a sandboxed Claude Code agent is not started, for `check` and the log."""
+    return (f"harness claude-code: {why}, so the runner's hook would not run; its sandboxed"
+            " agents are not started until the setting is removed")  # fmt: skip
 
 
 def unchecked(harness_id: str, version: str | None) -> str | None:
@@ -60,12 +201,23 @@ class Probe:
         return self.reason is None
 
 
-def probe(harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER) -> Probe:
+def probe(
+    harness: config.Harness,
+    agent_path: str,
+    as_user: AsUser = RUNNER,
+    tools_dir: Path | None = None,
+) -> Probe:
     """Resolve the harness binary on `agent_path` and read its version, as the agents' user:
-    a binary that user cannot run is not available, whatever the runner can run."""
+    a binary that user cannot run is not available, whatever the runner can run. A tool the
+    runner manages (§15.16) is never looked up on the PATH: the version new sessions start
+    with, from `tools_dir`, or none."""
     if harness.id == "stub":
         return Probe(None, None, None)
-    found = which(harness.binary or "", agent_path, as_user)
+    if tools_dir is not None and (harness.install or harness.update != "never"):
+        managed = tools.binary(tools_dir, harness.id)
+        found = str(managed) if managed is not None else None
+    else:
+        found = which(harness.binary or "", agent_path, as_user)
     if found is None:
         return Probe(None, None, "binary_not_found")
     try:
@@ -79,7 +231,7 @@ def probe(harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER) ->
     lines = (done.stdout or done.stderr).strip().splitlines()
     if done.returncode != 0 or not lines:
         return Probe(found, None, "version_failed")
-    match = _VERSION.search(lines[0])
+    match = VERSION.search(lines[0])
     return Probe(found, ascii_text(match.group(0) if match else lines[0], 80), None)
 
 
@@ -96,19 +248,31 @@ def claude_sandbox_tools(platform: str | None = None) -> tuple[str, ...] | None:
 
 
 def sandbox_available(
-    harness: config.Harness, path: str | None = None, as_user: AsUser = RUNNER
+    harness: config.Harness,
+    path: str | None = None,
+    as_user: AsUser = RUNNER,
+    tools_dir: Path | None = None,
 ) -> bool:
     """Whether the harness's own OS sandbox can be switched on for the agents: Claude Code's
     needs its tools (`claude_sandbox_tools`, §6.1) found on the agents' PATH. Codex's is
     tried once per binary (`codex sandbox -- true`): a host where it cannot start is not
-    advertised as sandboxed. Nothing else is switched on yet."""
+    advertised as sandboxed. agy's is reported off until the runner has a bounded check
+    that sees agy's own sandbox start (§15.3, `agy_namespaces`). Nothing else is switched on
+    yet. A Codex the runner manages (§15.16) is tried as the binary its sessions start with,
+    from `tools_dir`, never one the PATH finds, as `probe` does."""
     if harness.id == "codex":
-        binary = which(harness.binary or "codex", path, as_user)
+        if tools_dir is not None and (harness.install or harness.update != "never"):
+            managed = tools.binary(tools_dir, harness.id)
+            binary = str(managed) if managed is not None else None
+        else:
+            binary = which(harness.binary or "codex", path, as_user)
         return binary is not None and _codex_sandbox_starts(binary, as_user.user)
-    tools = claude_sandbox_tools()
-    if harness.id != "claude-code" or tools is None:
+    if harness.id == "antigravity":
+        return False  # not seen starting: the namespaces it needs are a diagnostic only
+    needed = claude_sandbox_tools()
+    if harness.id != "claude-code" or needed is None:
         return False
-    return all(which(tool, path, as_user) for tool in tools)
+    return all(which(tool, path, as_user) for tool in needed)
 
 
 def which(name: str, path: str | None, as_user: AsUser = RUNNER) -> str | None:
@@ -136,6 +300,43 @@ def _codex_sandbox_starts(binary: str, user: str | None = None) -> bool:
     return done.returncode == 0
 
 
+# agy's terminal sandbox on Linux runs each command in kernel namespaces of its own, which
+# needs unprivileged user namespaces; where they are blocked agy runs the command without it,
+# and without saying so (§15.3). The contract reports the sandbox on only once the runner has
+# seen agy's sandbox start, and agy has no command that starts its sandbox alone (as `codex
+# sandbox` does) while a headless run costs the operator's model quota and needs the sign-in.
+# So the capability stays off (`sandbox_available`), and `maity runner check` only tries the
+# namespaces agy's sandbox needs, as the agents' user: user, mount, pid and network. That they
+# start says agy's sandbox could, never that it did (cli/context/runner.md).
+AGY_NAMESPACES = ("--user", "--map-root-user", "--mount", "--pid", "--fork", "--net", "true")
+
+
+def agy_sandbox_platform(platform: str | None = None) -> bool:
+    """Where the runner knows what agy's sandbox needs: Linux only."""
+    return (sys.platform if platform is None else platform).startswith("linux")
+
+
+def agy_namespaces(path: str, as_user: AsUser = RUNNER) -> bool:
+    """A diagnostic for `maity runner check`: whether the namespaces agy's sandbox needs start
+    as the agents' user (`unshare`, on the agents' PATH). It never turns the capability on."""
+    unshare = which("unshare", path, as_user)
+    if unshare is None:
+        return False
+    try:
+        if as_user.direct:
+            done = proc.run([unshare, *AGY_NAMESPACES], cwd=Path.home(), timeout=30)
+        else:
+            done = as_user.run([unshare, *AGY_NAMESPACES], env={"PATH": path}, timeout=30)
+    except (proc.ToolError, subprocess.TimeoutExpired, OSError):
+        return False
+    return done.returncode == 0
+
+
+def agy_login(as_user: AsUser = RUNNER) -> Path:
+    """Where agy keeps its sign-in for the agents' user without a keyring (never read)."""
+    return as_user.home() / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
+
+
 def agent_path(cfg: config.Config, environ_path: str) -> str:
     return (cfg.local.agent_path if cfg.local else None) or environ_path
 
@@ -147,8 +348,13 @@ def harness_entry(
     targets: list[str] | None = None,
     sandbox: bool | None = None,
     as_user: AsUser = RUNNER,
+    tools_dir: Path | None = None,
 ) -> dict[str, Any]:
-    on = sandbox_available(harness, path, as_user) if sandbox is None else sandbox
+    if sandbox is None:
+        sandbox = sandbox_available(harness, path, as_user, tools_dir) and sandbox_version_ok(
+            harness.id, found.version
+        )
+    on = sandbox
     return {
         "id": harness.id,
         "version": found.version,
@@ -207,7 +413,7 @@ def build(
         ],
         "harnesses": [
             harness_entry(h, probes[h.id], agent_path(cfg, os.environ.get("PATH", "")),
-                          as_user=AsUser(agents_user))  # fmt: skip
+                          as_user=AsUser(agents_user), tools_dir=cfg.tools_dir)  # fmt: skip
             for h in cfg.harnesses.values()
         ],
         "projects": list(limits.projects),

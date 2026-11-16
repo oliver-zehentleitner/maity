@@ -8,7 +8,7 @@ type: application
 version: 0.2.0
 # The hub version the chart is written for, and the version label when no
 # image.tag is set. Not an image tag: the chart pulls by digest.
-appVersion: "0.1.0a5"
+appVersion: "0.1.0a7"
 kubeVersion: ">=1.25.0-0"
 home: https://github.com/oliver-zehentleitner/maity
 sources:

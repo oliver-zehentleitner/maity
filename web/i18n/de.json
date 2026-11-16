@@ -1469,12 +1469,14 @@
   "inbox.chat_access.denied": "Was deine angehakten Agenten ihnen nicht verraten dürfen (optional)",
   "inbox.chat_access.denied_placeholder": "zum Beispiel: nichts über Releases",
   "inbox.chat_access.held": "eine Nachricht von ihnen wird für ihn zurückgehalten",
-  "inbox.chat_access.human": "@{handle} selbst",
+  "inbox.chat_access.human": "Auch @{handle} persönlich",
   "inbox.chat_access.human_hint": "Ohne Haken gilt eine Erlaubnis für ihre Agenten, nicht für sie selbst.",
   "inbox.chat_access.human_in_chat": "@{handle} ist in einem Chat, in dem deine Agenten warten: ohne Haken warten deine Agenten dort weiter.",
-  "inbox.chat_access.legend": "Welche deiner Agenten mit ihnen chatten dürfen",
+  "inbox.chat_access.legend": "Welche deiner Agenten chatten dürfen",
   "inbox.chat_access.none": "Hake mindestens einen Agenten an, um zu erlauben; Nein und Blockieren brauchen keinen Haken.",
+  "inbox.chat_access.their_agents": "Die Agenten von @{handle} in diesen Chats und Nachrichten, immer",
   "inbox.chat_access.waiting": "wartet in einem Chat mit ihnen",
+  "inbox.chat_access.with_legend": "Mit wem",
   "inbox.class.consent": "Zustimmung",
   "inbox.class.contract": "Vertrag",
   "inbox.class.decision": "Entscheidung",
@@ -3003,6 +3005,8 @@
   "mine.title": "Deine Einstellungen für {name}",
   "mine.use_default": "Meinen Standard verwenden",
   "name_rules.handle": "Kleinbuchstaben, Ziffern und -, 2–31 Zeichen, beginnend mit einem Buchstaben oder einer Ziffer.",
+  "name_rules.handle_bad": "Noch kein Handle: {rule}",
+  "name_rules.handle_lowercase": "Nur Kleinbuchstaben: Ein Handle hat keine Großbuchstaben.",
   "name_rules.slug": "Kleinbuchstaben, Ziffern und -, 2–63 Zeichen, beginnend mit einem Buchstaben oder einer Ziffer.",
   "names.aliases": "Frühere Namen, die weiterhin hierher führen: {names}.",
   "names.current": "Dieses Projekt ist {name}.",
@@ -3757,6 +3761,7 @@
   "prefs.versions.reading": "Wird gelesen …",
   "prefs.versions.title": "Frühere Versionen",
   "product.bug": "Einen Fehler gefunden?",
+  "product.discord": "Chatte mit uns auf Discord",
   "product.love": "Liebe",
   "product.made_by": "Mit {heart} gemacht von {name} auf {github} & {maity}",
   "product.security": "Eine Sicherheitslücke gefunden?",
@@ -4711,8 +4716,11 @@
   "settings.state.released": "Veröffentlicht seit {day}, endgültig: Schnittstellen ändern sich nur mit Versionierung und einer genannten Übergangsfrist, Migrationen bleiben abwärtskompatibel, und die Release-Checkliste ist verpflichtend.",
   "settings.state.saved": "Status gespeichert.",
   "settings.state.title": "Projektstatus",
+  "settings.tab.general": "Allgemein",
+  "settings.tab.members": "Mitglieder und Agents",
   "settings.tab.mine": "Meine",
-  "settings.tab.project": "Projekt",
+  "settings.tab.moderation": "Moderation",
+  "settings.tab.work": "Arbeitsweise",
   "settings.title": "Einstellungen",
   "sf.elsewhere": "Öffne diesen Link in dem Browser, in dem du dich angemeldet hast, oder gib dort den Code aus dieser Mail ein.",
   "sf.elsewhere.dashboard": "Zum Dashboard",
@@ -5499,5 +5507,35 @@
   "trust.role_word.expert": "expert",
   "trust.every.role.expert": "alle Expert",
   "settings.onboarding.role.expert": "Rolle: jeder Expert",
-  "members.refused.holds_cards": "Dieses Mitglied hält Karten oder hat Karten auf dem Weg; erst diese klären, dann die Rolle expert."
+  "members.refused.holds_cards": "Dieses Mitglied hält Karten oder hat Karten auf dem Weg; erst diese klären, dann die Rolle expert.",
+  "visitor.hero.try": "Probier es aus – erstelle dein Konto",
+  "visitor.now": "Gerade jetzt",
+  "visitor.now.both": "{people} · {agents} online",
+  "visitor.now.one": "{who} online",
+  "visitor.now.working": "arbeiten an diesem Projekt",
+  "visitor.stat.members": "Mitglieder",
+  "visitor.stat.window": "30 Tage",
+  "visitor.now.more": "+{count}",
+  "visitor.now.more.label": {
+    "one": "und {count} weiteres Mitglied",
+    "other": "und {count} weitere Mitglieder"
+  },
+  "visitor.team.both": "{people} und {agents}",
+  "visitor.team.all": {
+    "one": "{count} Mitglied →",
+    "other": "Alle {count} Mitglieder →"
+  },
+  "visitor.merged": "Kürzlich gemergt",
+  "visitor.merged.window": "Pull Requests und Entscheidungen der letzten 7 Tage",
+  "visitor.merged.pill": "Gemergt",
+  "visitor.merged.by": "von {author}",
+  "visitor.merged.touches": "betrifft {areas}",
+  "visitor.now.people": {
+    "one": "{count} Mensch",
+    "other": "{count} Menschen"
+  },
+  "visitor.now.agents": {
+    "one": "{count} Agent",
+    "other": "{count} Agents"
+  }
 }

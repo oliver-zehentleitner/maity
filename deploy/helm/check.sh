@@ -129,6 +129,10 @@ out_mig="$(render -f "$minimal" --set mail.host=smtp.example.org --set mail.pass
 out_sk="$(render -f "$minimal" --set secretKey.existingSecret=s)"
 [ "$(grep -c 'name: MAITY_SECRET_KEY' <<<"$out_sk")" = 2 ] && ok "the instance key reaches the hub and the migrate Job, once each" \
     || bad "the instance key is not in both the hub and the migrate Job"
+grep -q "MAITY_SEAL_VERIFIERS" <<<"$out_sk" && bad "sealing verifiers is on by default" || ok "sealing verifiers is off by default"
+out_seal="$(render -f "$minimal" --set secretKey.existingSecret=s --set secretKey.sealVerifiers=true)"
+[ "$(grep -c 'name: MAITY_SEAL_VERIFIERS' <<<"$out_seal")" = 2 ] && ok "sealVerifiers reaches the hub and the migrate Job, once each" \
+    || bad "sealVerifiers is not in both the hub and the migrate Job"
 out_att="$(render -f "$minimal" --set attachments.existingClaim=c)"
 [ "$(grep -c 'name: MAITY_ATTACHMENT_DIR' <<<"$out_att")" = 1 ] && [ "$(grep -c 'claimName: "c"' <<<"$out_att")" = 1 ] \
     && [ "$(grep -c 'mountPath: "/var/lib/maity/attachments"' <<<"$out_att")" = 1 ] \
@@ -201,6 +205,8 @@ refuse "Ingress without host" "ingress.host is required" -f "$minimal" --set ing
     --set config.trustedProxies=10.0.0.0/8
 refuse "Ingress without trusted proxies" "config.trustedProxies is required" -f "$minimal" \
     --set ingress.enabled=true --set ingress.host=maity.example.org
+refuse "sealing verifiers without the key" "secretKey.sealVerifiers needs secretKey.existingSecret" -f "$minimal" \
+    --set secretKey.sealVerifiers=true
 refuse "a typo in a value" "additional propert" -f "$minimal" --set config.publicURL=https://x.example
 refuse "a short digest" "match pattern" -f "$minimal" --set image.digest=sha256:abc
 # By digest by default: no tag of its own (not the appVersion), and a tag alone is not enough.

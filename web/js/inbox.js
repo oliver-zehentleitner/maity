@@ -197,7 +197,12 @@ window.Maity = window.Maity || {};
   }
 
   // A card as an entry names it: its reference, title and status (the hub's word).
-  const cardLine = (cardRef, task) => M.t("inbox.card", { ref: cardRef, title: task.title, status: task.status.replace("_", " ") });
+  // The reference is drawn as every other one (M.ids.plain): a full one wraps in its project's
+  // name, never inside the id (tsk-e9d52pfhvk3v); the translation places it. Placed as a piece,
+  // the status is a text of its own, so it is the board's word for it, translated (M.dom.word);
+  // a status the dashboard does not know yet reads as the hub's word.
+  const statusWord = (status) => M.dom.word("status", status).replace("_", " ");
+  const cardLine = (cardRef, task) => M.tn("inbox.card", { ref: M.ids.plain(cardRef), title: task.title, status: statusWord(task.status) });
 
   // The member ids of the reader's own agent profiles (GET /agents), read once
   // per view: who Talk may go to across projects and for personal requests.
@@ -299,8 +304,9 @@ window.Maity = window.Maity || {};
   const RULE_MAX = 1000;
 
   // The ticks of an open request to chat with one's agents (§9.6), from
-  // GET /requests/{id}: one box per waiting or held agent, all ticked, one for
-  // that side's human, not ticked, and the two rules for the entries an allow writes.
+  // GET /requests/{id}: one box per waiting or held agent, all ticked; then with whom:
+  // that side's agents, always, and a box for that side's human, not ticked; and the two
+  // rules for the entries an allow writes.
   // null for any other request, and for one with no agent left (closed meanwhile).
   function chatAccessPicker(req) {
     const car = req.chat_access_request;
@@ -328,12 +334,19 @@ window.Maity = window.Maity || {};
     const ticked = () => agents.filter((x) => x.box.checked).map((x) => x.a.id);
     const changed = () => { none.hidden = ticked().length > 0; listeners.forEach((f) => f()); };
     agents.forEach((x) => x.box.addEventListener("change", changed));
-    const el = h("fieldset", { class: "chat-access field-stack" },
-      h("legend", null, M.t("inbox.chat_access.legend")),
-      agents.map((x) => x.el),
-      h("label", { class: "check", for: human.id }, human, " " + M.t("inbox.chat_access.human", { handle: side.handle || side.id || "" })),
-      h("p", { class: "hint", id: base + "-human-hint" },
-        car.their_human_in_chat ? M.t("inbox.chat_access.human_in_chat", { handle: side.handle || side.id || "" }) : M.t("inbox.chat_access.human_hint")),
+    const handle = side.handle || side.id || "";
+    // Two parts, so the other side never reads as one of one's own agents: who of one's agents
+    // may chat, then with whom, their agents always and their person only on a tick (§9.6).
+    const el = h("div", { class: "chat-access field-stack" },
+      h("fieldset", { class: "chat-access-mine field-stack" },
+        h("legend", null, M.t("inbox.chat_access.legend")),
+        agents.map((x) => x.el)),
+      h("fieldset", { class: "chat-access-whom field-stack" },
+        h("legend", null, M.t("inbox.chat_access.with_legend")),
+        h("p", null, M.t("inbox.chat_access.their_agents", { handle })),
+        h("label", { class: "check", for: human.id }, human, " " + M.t("inbox.chat_access.human", { handle })),
+        h("p", { class: "hint", id: base + "-human-hint" },
+          car.their_human_in_chat ? M.t("inbox.chat_access.human_in_chat", { handle }) : M.t("inbox.chat_access.human_hint"))),
       allowed.nodes, denied.nodes, none);
     return {
       el,

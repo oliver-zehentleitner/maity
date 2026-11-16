@@ -144,6 +144,10 @@ secretKey:
   # A Secret created with the first README holds the key as `MAITY_SECRET_KEY`: set `secretKey.key: MAITY_SECRET_KEY` then.
   existingSecret: ""
   key: secret-key
+  # MAITY_SEAL_VERIFIERS: seal the verifiers of agent and runner credentials with this key (docs/api.md §2.2). Opt-in,
+  # default off; needs `existingSecret`. Sealed verifiers are read either way. After switching it on, run
+  # `maity-hub seal-verifiers` once to seal the verifiers stored before.
+  sealVerifiers: false
 
 mail:
   # The instance's outgoing mail (docs/api.md §16.2). Nothing is rendered until a value is set: without

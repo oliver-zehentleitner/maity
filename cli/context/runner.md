@@ -106,8 +106,8 @@ history and the process list.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** runner design v2 §5.2, §8 and §10.1; implementation of runner slice R2, 2026-10-22 (which answers count as fatal, the superseded stream, `KillMode`)
-**Revisit when:** the hub gains a reason to answer a runner 4xx that a later retry could clear, or the runner runs more than one service per credential by design
+**Source:** runner design v2 §5.2, §8 and §10.1; implementation of runner slice R2, 2026-10-22 (which answers count as fatal, the superseded stream, `KillMode`); card tsk-vyp87d3hnbem (the lead's security review of 2026-11-13: a full disk must not stop the runner service for good), 2026-11-14
+**Revisit when:** the hub gains a reason to answer a runner 4xx that a later retry could clear, or the runner runs more than one service per credential by design, or the service gets a way to tell a state directory that is gone from one that is full
 
 `maity runner serve` backs off and says `hello` again only on no answer,
 a 5xx, 408, 429 or a clock skew. A revoked credential, any other 4xx and
@@ -123,7 +123,11 @@ make them supersede each other forever. On one host a lock on the state
 directory refuses the second service at its start, so the running one
 keeps the stream. A state directory the service cannot write ends it with
 78 too, so a unit pointed at the wrong path does not restart every ten
-seconds. The agents run in a tmux server
+seconds; that is decided at the start (the lock file in the state
+directory). Once serving, a status that cannot be written (a full disk)
+backs off and says `hello` again like a hub outage: an exit with 78 there
+would leave the agents running unsupervised until someone started the
+service by hand, and the disk may have room again a minute later. The agents run in a tmux server
 the runner started, inside the unit's cgroup, so systemd's default
 `KillMode=control-group` would end every agent on a service restart. The
 design keeps agents running across runner restarts and hub outages, so
@@ -134,6 +138,12 @@ only the runner's own process may be signalled.
   wrong configuration behind an endless reconnect.
 - Backing off on `superseded` and reconnecting: two services would take
   the stream from each other in turn.
+- Ending with 78 on any local write that fails while serving, as before
+  2026-11-14: a full disk then stopped the service for good while its
+  agents ran on without stops, kills or status.
+- Ending with another exit code there, for systemd to restart: the
+  restart lands in the same full disk, and an in-process backoff keeps
+  the supervisor and its agents' state in memory.
 - Leaving `KillMode` at its default: a `systemctl restart` for an
   upgrade would end every agent mid-work.
 - `PrivateTmp` in the unit: with the agents outliving the service, the
@@ -488,7 +498,10 @@ its settings switches that off; unknown keys are refused. Started one
 level above the clone, it loaded none of the clone's configuration, also
 after the agent had worked in the clone. The folder is writable for the
 agent, so a run could leave configuration there for the next one: hence
-the check at every start. The mode is set because agy 1.5.7 made `auto`
+the check at every start, and in `supervised` mode before every run of
+the loop too, which starts agy again per event and after a failed run
+without the supervisor (the loop runs the same check, through the same
+listing, as the agents' user; review of PR #1815). The mode is set because agy 1.5.7 made `auto`
 the default, also headless, and in the test its reviewer model let a
 command leave the sandbox and list `.git/maity`. The settings are merged
 with the user's own, not replacing them; the owner accepted that for
@@ -533,6 +546,277 @@ delete what the agent left there.
   in a folder of its own.
 - Leaving agy's mode as it comes: `auto` lets a model decide whether a
   command leaves the sandbox.
+
+## agy's sandbox is reported off until the runner sees agy's own sandbox start
+
+**Id:** 7b878d0c-623f-4aa9-97d5-8b3ecc23c2d6
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; agy 1.5.7's `--help`, its changelog and its built-in documentation; docs/api.md §15.3; review of PR #1815 (fix order A449: a namespace probe is a precondition, not agy's sandbox start), 2026-11-14
+**See:** runner.md#antigravity-starts-in-a-workspace-folder-that-holds-only-the-clone-in-a-mode-the-runner-sets — b0646ec1-c909-456c-842d-28f2d4facd54 — as of 2026-11-14
+**Revisit when:** agy gains a command, flag or dry run that starts its terminal sandbox alone without a model call or the sign-in, or a setting that fails a run when the sandbox is missing: then a bounded check of that start can report `on`
+
+The runner advertises `sandbox: off` for agy on every host, so an agy
+placement runs as `sandbox_unavailable` and `require_sandbox = true`
+refuses it. The session settings still switch agy's terminal sandbox on
+(`enableTerminalSandbox`): what the runner reports does not change what
+agy does. `maity runner check` tries, as the agents' user, whether the
+namespaces agy's sandbox needs start (`unshare --user --map-root-user
+--mount --pid --fork --net true`, on Linux, on an ssh host there) and
+prints the result as a diagnostic, "agy's sandbox start not verified";
+it never turns the capability on.
+
+**Reason:** §15.3 lets the runner say `on` only where it has seen agy's
+sandbox start, because agy runs a command without it, silently, where it
+cannot start. agy 1.5.7 has no command that starts only its sandbox, as
+`codex sandbox -- true` does for Codex. Namespaces that start are the
+precondition named in agy's changelog, not agy's sandbox start, so they
+cannot satisfy the contract; until a bounded check of agy's own start
+exists, the code follows the contract and reports `off`.
+
+**Rejected alternatives:**
+- Reporting `on` where the namespaces start (the first version of this
+  PR): a precondition probe, which the contract does not accept as having
+  seen the sandbox start.
+- A headless `agy -p` run that executes one command: it needs the
+  operator's sign-in, costs model quota at every service start, and its
+  answer is the model's text, not an exit code.
+- Turning agy's sandbox off in the session settings while it is
+  reported off: `proceed-in-sandbox` would then fall back to asking,
+  which a supervised run refuses, and a host where it does start would
+  lose it.
+
+## agy's session settings: grants as command rules, the sign-in denied, hosts allowed
+
+**Id:** af2e96d9-ddfc-4415-9118-48bce30f8bf8
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the antigravity adapter (tsk-ydpnmpdzpc0a, code part), 2026-11-14; the test runs of agy 1.5.7 in the notes of card tsk-e062xzrgfxxc; agy's built-in documentation of its rule forms; `agy --settings <file> agents` in a home of its own, which refuses unknown settings and values but not malformed rules
+**See:** runner.md#antigravity-starts-in-a-workspace-folder-that-holds-only-the-clone-in-a-mode-the-runner-sets — b0646ec1-c909-456c-842d-28f2d4facd54 — as of 2026-11-14
+**Revisit when:** a real session shows a rule form not matching as assumed, or git cannot reach the forge from agy's sandbox
+
+Details of the settings §15.3 describes, chosen in the code:
+
+- A grant's `allow` entry became `command(<prefix>)`: the words before
+  a closing ` *`; an entry with another `*` is left out. Only the prefix
+  form was seen to work in a run; agy accepts a malformed rule at start
+  without a word, so an unverified form (`regex:`) could silently match
+  nothing. The cost: an entry without ` *` allowed any arguments.
+  Superseded for entries without `*` by the exact grants below
+  (f0ef544a-a531-4073-9572-af946f5475b2), 2026-11-15, and for the closing
+  ` *` entries too — no command grant is given to agy any more — by
+  f8a7b727-8c1f-4df9-98eb-8f9ef8879352; the left-out entry with another
+  `*` stays as described here.
+- The file tools are denied the private paths every sandbox hides, but
+  for `~/.gemini` only agy's sign-in file: agy's sandboxed commands use
+  their scratch and artifact directories there. Other harnesses' sandboxes
+  hide all of `~/.gemini`.
+- Writes to GIT_PROTECTED are denied to the file tools, as Claude Code's
+  `Edit` denies are. Whether such a deny also makes the path read-only in
+  agy's sandbox, as the `.git/maity` read deny masked that directory in
+  the test, is unknown, so each session gets SANDBOX_GIT_CONFIG as well;
+  the three settings do no harm where `.git/config` stays writable.
+- `read_url(<host>)` for the hub, the forge and the grant's `network`
+  hosts, agy's documented rule for a domain, so git and `maity`'s
+  traffic may get out of the sandbox's network block. Not seen in a run.
+- `command(...)` denies only for prefixes (`git -c`, `git --config-env`,
+  `git --exec-path`, `gh`); git is not allowed at all and runs in the
+  sandbox, as §15.3 lists only `maity` and the grant.
+
+**Rejected alternatives:**
+- Denying all of `~/.gemini` to agy as well: it could break agy's own
+  sandboxed scratch, unseen.
+- Mapping grants with agy's `regex:` form to keep Claude Code's exact
+  match: no run showed how agy anchors it. Taken up later as a deny
+  beside the allow, once agy's matching code had been read
+  (f0ef544a-a531-4073-9572-af946f5475b2).
+
+## agy grants are exact, as for Claude Code: a deny for each exact entry's longer forms
+
+**Id:** f0ef544a-a531-4073-9572-af946f5475b2
+**Type:** decision
+**Status:** superseded
+**Superseded by:** f8a7b727-8c1f-4df9-98eb-8f9ef8879352
+**Evidence:** inferred
+**Source:** card tsk-k5z0t8gdr835 and the coordinator's go-ahead for the deny design, 2026-11-15; agy's permissions documentation; agy 1.5.9's command matching read from its binary; `agy --settings <file> agents` in a home of its own; review order A582 on #1828 (the line-feed case), with Go's regexp/syntax source; review order A587 on #1828 (the empty argument), with agy's terminal.RequiresExactMatch, its walker, terminal.wordLiteral and extractSimpleCommands.func1 read from the binary
+**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-15
+**Revisit when:** a signed-in agy session shows how an environment assignment (`VAR=x cmd`) or a plain redirect (`cmd > f`) on a granted command is matched, or an agy release changes how `command(...)` rules match, keeps an empty word, or adds an exact form
+
+An exact `allow` entry `a b` (no `*`) becomes the allow rule
+`command(a b)` plus the deny rule
+`command(regex:a b [[:ascii:][:^ascii:]]*)`; an entry
+ending in ` *` stays a plain prefix, and one with another `*` is left
+out, both as before. An exact entry is left out for agy, named by
+`maity runner check`, and runs in agy's sandbox like an unlisted
+command when a word holds a character outside letters, digits and
+`_ / = : @ % , -`, or when another entry may allow a longer command
+that starts with it. One covered by a ` *` entry gets no rules.
+
+**Reason:** agy matches `command(x)` and `command(regex:x)` both by the
+command's first words: a rule with more words than the command never
+matches, otherwise each of the rule's words is compared with the
+command's word at that place, literally or as `^(?:word)$`, and nothing
+anchors the end. An allow alone therefore granted any arguments, a
+wider grant than Claude Code's exact `Bash(a b)`. The deny has one word
+more, so it never matches the entry itself and matches every longer
+form, and deny beats allow; a longer form is then refused, also inside
+the sandbox, as an ungranted command is under Claude Code's `dontAsk`.
+agy accepts a regex that does not compile without a word and it then
+matches nothing, so a deny it could misread would fail open: hence the
+character set, which holds no regex or shell metacharacter (`.` and `+`
+included, which match more). Without its deny an exact entry would be a
+prefix, so such an entry is not allowed at all. The deny's last word
+is a bracket class of all ASCII and all non-ASCII characters, not
+`.*`: agy compiles each word with Go's `regexp.Compile` (syntax.Perl,
+without the `s` flag), where `.` matches every character but a line
+feed, so `.*` did not cover a quoted argument holding one. The class
+holds no backslash, quote, parenthesis or `|`, which agy's shell split
+of the rule would take apart or reject; it reaches the regex compiler
+unchanged on every path of that split. Two exact entries that
+share a start cannot both stay exact with one deny each: the shorter
+one's deny refuses the longer one, so the shorter one is left out.
+The env-assignment and redirect cases in **Revisit when** are open: both
+need a signed-in agy, which has not been allowed for a test run.
+
+**Limit (superseded):** agy cannot tell an extra empty argument apart; it is allowed.
+`a b ''`, `a b ""`, `a b $''`, `a b ' '` and `a '' b` run as `a b`,
+outside the sandbox, though the shell passes one argument more. No rule
+can catch it (review order A587 on #1828, agy 1.5.9 read from its
+binary): such a line does not make agy match the whole line, since
+`terminal.RequiresExactMatch` fires only on a NUL, a non-ASCII control,
+format or space character, a parse error or a construct its walker
+refuses, and the walker accepts `*syntax.SglQuoted` (with or without
+`$`) and a `*syntax.DblQuoted` of literals; so agy matches words, and
+`terminal.wordLiteral` takes a quoted word's raw text and ends in
+`strings.TrimSpace`, and `extractSimpleCommands.func1` skips a word
+whose text is then empty, before `shared.coversCommand` hands the words
+to `MatchesConfigAny`. `MatchesConfigAnyRaw`, the only matcher that sees
+the raw line, runs only on the whole-line path. The same trim makes
+`a ' b'` count as `a b`. `maity runner check` names the limit once per
+repository with exact entries for agy, and docs/runners.md says it to
+the owner.
+
+**Rejected alternatives:**
+- Keeping the prefix match as a recorded difference: one harness would
+  get a wider grant than another from the same list.
+- A PreToolUse hook that forbids leaving the sandbox for a line that is
+  not an exact grant: `--settings` refuses `hooks`, so it would live in
+  the workspace's `.agents/`, which the agent can write, or in the
+  agents' user's shared `~/.gemini`, re-parse the shell itself, and was
+  untried.
+- A shim for the granted programs on `PATH`: an allowed command leaves
+  the sandbox, and agy canonicalises command names, so the shim cannot
+  tell a sandboxed call from one that leaves it.
+- `ask` rules instead of the deny: a person is asked in an interactive
+  run and a headless run refuses, so nothing beyond the deny.
+- Escaping `.` or `+` in the deny: agy splits the rule like a shell
+  line, which would take the backslash, and no run showed another
+  escape working; left out rather than risk a deny that fails open.
+- A complement regex per word so that entries sharing a start stay
+  exact together: complex, and untried in agy.
+- `(?s).*` or `[\s\S]*` as the deny's last word: the shell split takes
+  the backslash, and the parentheses are shell syntax, so the word
+  would reach the compiler only through agy's fallback for a line that
+  does not parse; the bracket class needs no such fallback.
+- A deny that catches an empty quoted word after an exact entry (review
+  order A587's option (a)): agy drops the word before any rule is
+  compared, and `MatchesConfigAnyRaw` sees the raw line only on the
+  whole-line path, which such a line never takes; no rule can say it.
+
+## agy command grants are dropped, exact and prefix: agy reads the command past a leading assignment or wrapper
+
+**Id:** f8a7b727-8c1f-4df9-98eb-8f9ef8879352
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-vgce05kdmk2x and the coordinator's go-ahead, 2026-11-15, first for dropping exact grants and then, once the same exposure was confirmed for prefix grants, for dropping those too (two stacked pull requests on the one card); agy 1.5.9's command matching read from its binary (terminal.extractSimpleCommands, terminal.isEnvAssignmentToken, terminal.isCommandWrapper, terminal.canonicalCommandName, shared.coversCommand, commandutils.MatchesConfigAny; the raw-line matcher commandutils.MatchesConfigAnyRaw and terminal.RequiresExactMatch on the whole-line path); agy's permissions documentation
+**See:** runner.md#agy-grants-are-exact-as-for-claude-code-a-deny-for-each-exact-entrys-longer-forms — f0ef544a-a531-4073-9572-af946f5475b2 — as of 2026-11-15
+**Revisit when:** an agy release changes how it reads the invoked command from a line, gives `command(...)` rules a way to match a whole line or an exact form, or forbids a leading assignment or wrapper on an allowed command; a sound way to keep a prefix grant, or to tighten the `command(maity)` grant, for agy is found; tsk-zjv2xyhyggnm confines `maity` at the OS level; or a signed-in agy session is allowed and shows a granted command matching differently
+
+Neither an exact `allow` entry `a b` (no `*`) nor a ` *` prefix entry `a b *`
+is given to agy as a rule: each is left out, named by `maity runner check`,
+and runs in agy's sandbox like every unlisted command. An entry with another
+`*` (`a *.py`, `npm run test:*`) is left out without a word, as before, since
+a rule word is matched on its own. So agy now gets no `command(...)` allow
+from a grant's command list at all: only `command(maity)`, the `read_url`
+hosts and the file and command denies stand. The same `allow` command list
+reaches Claude Code and Codex unchanged.
+
+**Reason:** agy does not match a `command(...)` rule the way Claude Code
+matches `Bash(...)`. It reads the invoked command from the line first,
+stepping over a leading environment assignment (terminal.isEnvAssignmentToken)
+and a command wrapper such as env, nohup, time, nice, sudo, xargs or timeout
+(terminal.isCommandWrapper), before any `command(...)` rule is compared; only
+the words that remain reach the matcher (shared.coversCommand →
+commandutils.MatchesConfigAny; terminal.canonicalCommandName canonicalises the
+program name). The one matcher that sees the raw line,
+commandutils.MatchesConfigAnyRaw, runs only on agy's whole-line path, and
+terminal.RequiresExactMatch takes that path only for a NUL, a non-ASCII
+control, format or space character, a parse error or a construct its walker
+refuses — not for a plain leading assignment or wrapper. So no `command(...)`
+rule can describe a line that carries such a prefix. This defeats both grant
+forms the same way: an exact entry's earlier allow+deny pair (f0ef544a) let
+the bare command run outside agy's sandbox and relied on the deny to refuse
+longer forms, but a line carrying the prefix matched the bare allow with the
+prefix already stepped over and no deny could refuse it; and a ` *` prefix
+entry, emitted as a bare `command(a b)` allow, matches such a line with the
+prefix stepped over just as directly, running the command outside the sandbox.
+A `command()`-level hard refusal of every assignment or wrapper line is
+therefore not provably complete — the prefix is gone before any rule is
+compared, and the raw-line matcher is not on that path — so there is no sound
+way at the settings level to keep either an exact or a prefix command grant
+for agy. Dropping both is the only sound choice: such a command then runs
+inside the sandbox, like an unlisted one. This narrows agy grants (a
+command that needs to run outside agy's sandbox through the `allow` list no
+longer can — arrange it another way, or run it under Claude Code or Codex;
+docs/runners.md, CHANGELOG), while the `allow` list stays unchanged for the
+other harnesses.
+
+**Limit:** one command grant remains that agy cannot be given more tightly —
+`command(maity)`. The runner must let the session reach the hub, so `maity`
+runs outside agy's sandbox (as for every harness), and agy applies
+`command(maity)` the same way it applies any command rule, reading the invoked
+command past a leading assignment or wrapper; so for agy that grant is not as
+tight a boundary as Claude Code's `Bash(maity *)`. No agy setting closes this,
+confirmed by reading agy 1.5.9's binary: the stepping in extractSimpleCommands
+is unconditional, the whole-line path (commandutils.MatchesConfigAnyRaw, gated
+by terminal.RequiresExactMatch) is never taken for a plain leading assignment
+or wrapper, and `--settings` has no match-mode key and refuses unknown ones.
+There is likewise no sound invocation path for `maity` the runner can arrange
+at the settings level (a launcher or absolute path is matched the same way,
+and the attacker's environment loads into the launcher process itself before
+any re-exec). So the `command(maity)` grant keeps one command reachable
+outside agy's sandbox. This is why the runner does not offer antigravity:
+`antigravity` is in `config.NOT_OFFERED_YET`, so a configuration naming
+`[harness.antigravity]` is refused — `maity runner check` and `serve` say it
+is held back until its command grants are confined at the OS level — and no
+antigravity placement runs. That confinement is the follow-up card
+tsk-zjv2xyhyggnm; dropping `antigravity` from `NOT_OFFERED_YET` re-offers it
+once that lands. The agy adapter code stays, so it is ready when re-offered.
+Stated plainly in docs/runners.md, with no example.
+
+**Rejected alternatives:**
+- Keeping the allow+deny pair for exact entries (f0ef544a): a line with a
+  leading assignment or wrapper matched the bare allow, which no deny could
+  refuse, so the entry did not run exactly as granted; this is what the drop
+  first replaced.
+- Keeping ` *` prefix grants (as the exact-grant drop first did): a prefix
+  entry is emitted as a bare `command(a b)` allow, which the same leading
+  assignment or wrapper matches with the prefix stepped over, so a prefix
+  grant has the same exposure as an exact one and cannot be kept soundly
+  either. agy differs from Claude Code here: Claude Code's `Bash(a b *)`
+  prefix-matches the literal command string, so a leading assignment keeps the
+  line from matching, but agy strips the prefix first. Confirmed against agy
+  1.5.9's binary.
+- A `command()`-level refusal of every assignment and wrapper line: agy reads
+  the command past such a prefix before any rule is compared, and the raw-line
+  matcher is not on that path, so no set of `command()` denies is provably
+  complete.
+- A PreToolUse-style hook or a PATH shim: already rejected under f0ef544a for
+  agy (no `hooks` through `--settings`; agy canonicalises command names), and
+  the drop needs neither.
 
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
@@ -1935,8 +2219,9 @@ At a session's start the runner records the inode of the clone's `.git`
 (`MAITY_GIT_INODE`, read on the agents' side with `ls -di` where the
 runner cannot read it itself). Before maity starts git there, it opens
 the clone's root, then `.git` from it once, without following a link,
-and refuses a directory with another inode. It reads the recorded git
-and copies the refs through that descriptor, so a `.git` renamed after
+and refuses a directory with another inode. It copies the refs (and,
+for Codex, reads the recorded git; for the others it is read from the
+runner's directory since 818828af) through that descriptor, so a `.git` renamed after
 the check is not read. git's own repository for the run (its
 configuration, HEAD, refs) is made outside the clone, in the runner's
 directory for the agent, which the sandbox hides (`MAITY_GIT_PRIVATE`);
@@ -2353,13 +2638,15 @@ listed: it is real, untracked work that `git status` must keep showing.
 **Evidence:** confirmed
 **Source:** card tsk-3qb19f0r56zf (the runner test of 2026-11-11: after its first `maity resume`, a placed agent ran `maity` in pipes and chains, read "this clone has not joined a project", took the hub for broken and stopped without `maity wait`; its session transcript)
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-11
+**See:** runner.md#a-placed-claude-code-agents-maity-line-is-one-plain-call-held-to-that-by-a-hook — 63492c65-e6bf-4fd8-9a73-5a599f11707e — as of 2026-11-13
 **Revisit when:** Claude Code matches `excludedCommands` per part of a compound command, or the credential becomes readable inside the sandbox
 
 Claude Code's sandbox hides `.git/maity`, and only a command that matches
-`excludedCommands` (`maity *`) runs outside it. A pipe or a chain with
-`;`, `&&` or `||` is one command that does not match, so its `maity`
-runs inside and finds no credential. The start prompt of a Claude Code
-placement says to run every `maity` command alone. When `MAITY_PLACEMENT`
+`excludedCommands` (`maity *`) runs outside it. A pipe or a chain that
+does not start with `maity` does not match, so its `maity` runs inside
+and finds no credential; a line that starts with `maity` and holds more
+than the call is refused before it runs (63492c65). The start prompt of
+a Claude Code placement says to run every `maity` command alone. When `MAITY_PLACEMENT`
 is set and no credential is readable, `maity` says that instead of "has not
 joined a project".
 
@@ -2371,6 +2658,152 @@ do, and hid that the cause was the shape of its own command.
   allowed build or test command runs could then read it (ea36c196).
 - Rewriting the agent's command in a hook: hooks are switched off for
   placements (`--setting-sources user`), and the harness owns the command.
+
+## A placed Claude Code agent's `maity` line is one plain call, held to that by a hook
+
+**Id:** 63492c65-e6bf-4fd8-9a73-5a599f11707e
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
+**See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
+**See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
+**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295 even with `require_sandbox = false`; opencode is offered, or its scanner is checked against a redirect or a substitution on a `maity` line
+
+Under its sandbox, a placed Claude Code session runs a hook before every
+tool call (`runner/plaincall.py`), written by the runner into the
+session's settings beside `excludedCommands`. A command line that starts
+with `maity` passes only as one plain call: words of letters, digits and
+`_-./:=@%+,~^#`, a backslash before any character but a newline,
+single-quoted text, and double-quoted text without `$`, a backtick or
+`!`, with no newline inside. Anything else on such a line (a pipe, `;`,
+`&&`, `||`, `&`, a redirect, `$(…)`, backticks, `<(…)`, a heredoc, a
+`$`) is refused before it runs, with the way out: the text in a file in
+the clone, passed with `--body-file`. So `maity say … - <<'EOF'` does not
+run for a placed Claude Code agent. Before looking for `maity`, every
+leading character that is not a letter or a digit is skipped, so a line
+counts however the harness trims it; a line that starts with a variable
+or another command is left to the permission rules.
+
+The hook is the runner's own interpreter and module (`-I -m
+maity.runner.plaincall`; on an ssh host `<maity> runner plaincall` with
+the host's `maity` by its absolute path, as for the loop, 92a3aa0a), outside the clone and not the agent's to change. It has no
+matcher, so it sees every tool, and checks any tool input with a
+`command`. A hook that fails, cannot start or times out refuses the call
+(`onFailure: "block"`), and unreadable input is refused too. The session's
+settings set `disableAllHooks: false` over the agents' user settings.
+Because the hook's refusal on failure needs `onFailure` (Claude Code
+2.1.295), the runner switches Claude Code's sandbox on only from that
+version (`capabilities.sandbox_version_ok`); an unknown or unreadable
+version counts as older, and so does a prerelease of 2.1.295 (SemVer
+sorts `2.1.295-rc.1` before `2.1.295`; build metadata does not count).
+Where the sandbox's tools are there, such a start is refused unless
+`require_sandbox = false` (92a3aa0a); then, and on a host without the
+tools, the session runs unsandboxed (`sandbox_unavailable`), with no
+exclusion for the hook to guard. The hook's shell form ends in `|| exit 2`, so a hook that cannot
+start or fails refuses the call on any version; only a timeout needs
+`onFailure`.
+opencode, which runs without a sandbox and gets no hook, denies
+`maity *<c>*` for each of `;&|<>$`, a backtick and a newline, after its
+allows; whether its scanner hands a redirect to the rule with the
+command is not checked.
+
+**Reason:** only `maity` itself needs to run outside the sandbox. A line
+that holds more than maity's call is held to the rules every other
+command is, and the check does not rely on the shell to tell the parts
+apart. A grammar of what may appear rather than a list of operators: a
+spelling nobody listed (`${X@P}`, `$'…'`) falls outside it.
+
+**Rejected alternatives:**
+- A narrower `excludedCommands` pattern: the exclusion is a pattern
+  over the line, and nothing in it says what may not follow `maity`.
+- A list of refused operators (the order's first shape): an expansion
+  nobody listed would pass.
+- Letting heredocs through: their line holds `<` and a newline like any
+  other redirection; a file in the clone carries the same text.
+- `maity` checking its own command line: a program sees its arguments,
+  not the line around it; a redirect is done before it starts.
+- The hook in exec form (`args`): the shell form with the runner's
+  quoted paths also runs on a harness version that predates exec form.
+- No exclusion for `maity` at all: a larger change, for a card of its
+  own.
+- Only a warning for a Claude Code older than 2.1.295 (the first round
+  of #1752): there a hook that fails or times out lets the call through,
+  so the promise above would not hold for a version the runner accepts
+  (review of #1752).
+- Refusing every Claude Code placement on such a version, sandbox
+  required or not: without the sandbox there is no exclusion and nothing
+  for the hook to hold; a runner without `require_sandbox` already runs
+  such sessions where the sandbox's tools are missing.
+
+## A sandboxed Claude Code start needs the hook to run; an old or unknown version is refused where the sandbox could run
+
+**Id:** 92a3aa0a-eed2-412a-9bad-5d0af30e7add
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bg81webs911m, the follow-up to #1752 the lead ordered (lotse seq 127403, 127806, 128291) with the review of #1752 (hcrb, seq 128028: a version token needs its boundaries), 2026-11-14; Claude Code's settings documentation (managed settings take precedence over a `--settings` file; `disableAllHooks`, `allowManagedHooksOnly`). Which paths and switches count is the author's reading, not checked against a managed Claude Code install
+**See:** runner.md#a-placed-claude-code-agents-maity-line-is-one-plain-call-held-to-that-by-a-hook — 63492c65-e6bf-4fd8-9a73-5a599f11707e — as of 2026-11-14
+**Revisit when:** Claude Code reads managed settings from another place or under another switch, or reports whether hooks are on; a host without bubblewrap must run Claude Code sandboxed; the opt-out `require_sandbox = false` is no longer used; agents on an ssh host may install their own `maity` on purpose
+
+Four rules hold a sandboxed Claude Code session to the hook of 63492c65:
+
+- **Settings that switch hooks off refuse the start.** Before every
+  sandboxed Claude Code start (supervisor `_refusal`) and in `maity
+  runner check`, the runner reads the managed settings (Linux
+  `/etc/claude-code/managed-settings.json` and each `*.json` in
+  `managed-settings.d/` beside it, macOS under `/Library/Application
+  Support/ClaudeCode/`; on an ssh host the Linux paths, read there) and
+  the agents' user's `~/.claude/settings.json`
+  (`capabilities.claude_hooks_off`). `disableAllHooks` or
+  `allowManagedHooksOnly` set to anything but `false` in a managed file,
+  or `allowManagedHooksOnly` in the user's, refuses the start
+  (`harness_refused`) with the file and the switch in the log. A managed
+  file that is not a JSON object, cannot be read, or a host that cannot
+  be asked counts as switched off. The user's `disableAllHooks` does not
+  count: the session's own settings file sets it back to `false`.
+- **The hook starts the host's `maity` by its absolute path.** On an ssh
+  host the runner looks `maity` up on `agent_path` once per connection
+  (`targets.pin_maity`) and writes that path into the hook and the loop
+  (`Ssh.maity_path`); a host without it, or with a path that is not plain
+  (`/` and `A-Za-z0-9._+-`), is refused. Locally the hook already is
+  the runner's own interpreter by its absolute path.
+- **An old or unknown version is refused where the sandbox could run.**
+  `require_sandbox` has three values (`capabilities.sandbox_refused`):
+  `true` refuses any start without the sandbox, `false` none, and unset
+  (the default) refuses Claude Code when its sandbox tools are there but
+  its version keeps the sandbox off (older than 2.1.295, a prerelease of
+  it, or unknown; `capabilities.sandbox_held`, `Target.held`). A host
+  without the tools runs unsandboxed as before, with a warning.
+- **A version is a token of its own.** The probes read a version only
+  between the start, a blank, `(` or `v` and the end, a blank, `)`, `,`
+  or `;` (`capabilities.VERSION`). `2.1.295+` or `2.1.295-_dev` is no
+  version: the probe keeps the whole line, which the gate reads as
+  unknown, so the rule above refuses it.
+
+**Reason:** the sandboxed session relies on the hook for its `maity`
+line (63492c65). Managed settings win over the session's `--settings`
+file, so a switch there would start the session without the hook, and
+an unsandboxed start of a version that the gate refuses was the same
+outcome by another way. Refusing, with the reason in `check` and the
+log, leaves the choice to the operator: remove the switch, update Claude
+Code, or opt out with `require_sandbox = false`. A name looked up on a
+session's PATH is whatever comes first there; the path found once on the
+configured `agent_path` is the one `check` reported.
+
+**Rejected alternatives:**
+- Starting unsandboxed when hooks are switched off: the session would
+  run with the exclusion for `maity` and no hook, or without its sandbox
+  where the operator installed one.
+- Checking the settings only in `maity runner check`: managed settings
+  change without the runner; they are read at every start.
+- Making `require_sandbox = true` the default: a host without
+  bubblewrap, where Claude Code has never run sandboxed, would stop
+  starting agents with no change on it.
+- A `PATH` check at each start instead of the absolute path: the hook
+  runs with the session's environment, not the one checked.
+- Taking the leading part of a malformed version token as the version:
+  `2.1.295+` would pass the gate as `2.1.295`.
 
 ## Placed agents open their pull requests through `maity gh`, pinned to the clone's repository
 
@@ -2389,7 +2822,8 @@ and its agents then run `maity gh pr create` and `maity gh pr view`
 sandbox. It takes only the options it knows, with no abbreviations, so
 bundles such as `-dR` are refused. It does not take `--repo`, a URL, or an
 option gh would read a file with. It starts gh with `--repo=` set to the
-repository the runner wrote into `.git/maity/pull_requests` at launch, and
+repository the runner recorded at launch (`pull_requests`, in its directory for the agent
+since 818828af; `.git/maity/pull_requests` before), and
 it gives gh only the environment it names (`ghpr.ENV_PASSED`: `HOME`,
 the locale, the temporary directory, proxies and certificates), so no
 variable names another repository, configuration or login, or a program
@@ -2484,6 +2918,152 @@ of its own, and with it the record that names gh. Since #1683
 opens `.git` once from the root's descriptor, refusing a different one;
 `maity gh` reads the record and compares the walk through that
 descriptor.
+
+## Under a placement maity writes a file only inside the clone, and reads its records from the runner's directory
+
+**Id:** 818828af-24cb-4b2a-be54-1bff2211ccb0
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bg81webs911m (the rule, and the lead's order for a first pull request with `files get` and the recorded git only), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed
+**See:** runner.md#placed-agents-open-their-pull-requests-through-maity-gh-pinned-to-the-clones-repository — 9f43804d-cfdc-4496-b07b-b01e65fc6410 — as of 2026-11-13
+**See:** runner.md#maity-takes-the-clones-git-only-as-the-directory-the-runner-recorded — e44249f8-15d0-4104-8940-5ff48decd412 — as of 2026-11-13
+**Revisit when:** a harness runs `maity` inside its sandbox; the runner stops setting `MAITY_GIT_PRIVATE`; someone needs `--force` under a placement
+
+Under a runner placement (`MAITY_PLACEMENT`) `maity files get` writes
+only inside the runner's clone, never under its `.git`
+(`maity/inclone.py`). The walk is the one `maity gh` uses for its body
+file, moved there: the path is worked out on its text, then the clone's
+root is opened and each directory after it from the one before, without
+following a link, and refused when it is the `.git` that
+`clonecheck.opened_clone` checked. The walk starts at the root's
+descriptor that check opened (without following a link) and read `.git`
+from, so a directory put at the clone's path after the check is not
+written to (review of #1749). The bytes go into a file of maity's own in
+the last directory, without a name where the system has `O_TMPFILE`, and
+that open file is what gets the name: linked through `/proc/self/fd`, or
+by its own name compared by device and inode before and after the link,
+or, without hard links or once its name is gone, copied from maity's own
+descriptor into an exclusively created file. Either way it counts as
+saved when the name holds that file (device and inode) at the moment of
+that check; a failed copy is left under its name and named in the
+refusal, never removed by name, since POSIX cannot remove a name only
+while it holds a given file. A named staging file (no `O_TMPFILE`) is
+removed afterwards only when its name still holds maity's file at that
+check, made while maity's descriptor is still open; a name that holds
+another file by then, or none, is left untouched, and a left name is
+noted on standard error. A saved file is not refused over it. Linking fails on an existing name, so no file is replaced
+there, `--force` included; another file that took the temporary name
+never gets the target's, and one that took the target's name during the
+copy is refused and left alone (review of #1749). Without `-o` the
+file goes to the clone's `.git/maity-files/`, outside the work tree,
+opened from the checked `.git` (d1d6b49d in commands.md). Where a name
+cannot be opened through a directory's descriptor (Windows), no file is
+saved; `-o -` is not offered either since 783e476c. Outside a placement
+nothing changes.
+
+The git maity starts under the runner and the record `maity gh` reads
+(`git`, `pull_requests`) are written by the runner into its directory
+for the agent, the one `MAITY_GIT_PRIVATE` names (`clonecheck.runner_record`),
+not into the clone's `.git/maity`. A record left there is not read. Only
+Codex keeps them in `.git/maity` (the value `clone`): its `maity` runs
+inside its sandbox with the agent's own rights. A session started by an
+older runner has no record there and runs no git until its placement is
+restarted.
+
+**Reason:** under a placement `maity` runs outside the harness's
+sandbox and reads and writes paths the agent names. A path must not take
+it where the sandbox keeps the agent out, and a program maity starts must
+not be named by a file inside the clone, which the agent writes. The
+runner's directory for the agent is outside the clone, hidden from the
+sandbox, and already checked by maity before git's own repository is made
+there.
+
+**Rejected alternatives:**
+- One helper that checks a path and returns it (`placement_path`): the
+  path is looked up again by name when it is opened, and between the two
+  a directory can become a link (rounds 3 and 4 of #1663's review).
+- Replacing an existing file under `--force` when maity wrote it: what
+  maity wrote would need a record of its own, kept where the agent cannot
+  write. The agent can remove the file itself, inside its sandbox, and
+  then fetch it again.
+- On Windows, checking the path by name: it is racy (the body file's
+  choice); `-o -` remained until 783e476c.
+- Confining the writes alone and keeping the records in the clone:
+  without the harness's sandbox the clone's `.git/maity` is writable
+  anyway, and every other path maity writes for the agent would have to
+  be closed first.
+- A variable naming the git program: it would work too; the directory
+  holds both records in one place the runner already makes and maity
+  already checks.
+
+**Known gap:** a file with a name can be opened by that name. Where the
+system has no `O_TMPFILE` (macOS, some file systems), maity's file has a
+name in the clone until it is linked, and code running as the same user
+can write into it between the digest check and the link. In the copy
+without hard links the target has its name while maity writes it, and
+such code can write into it as well. The target is then the file maity
+made, with those writes: its identity is checked, its content is not.
+The identity check itself is a snapshot: such code can rename or replace
+the name after it, before maity reports the file saved. The same holds
+for the staging file's removal: between the check and the unlink such
+code can put another file under the staging name, and that file is then
+removed. POSIX has no unlink only while a name holds a given inode; the
+window is accepted, since the name is maity's own unpredictable one in
+the clone and code that can put a file there can remove it itself.
+
+## Under a placement maity reads a file for the agent only inside the clone, and writes no attachment to standard output
+
+**Id:** 783e476c-3975-43de-9c4e-7c3a5da57be7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-bg81webs911m (the rest of the card: every path maity reads for the agent, the lead's list of those paths and of the ways out to test (an absolute path, `../`, `.git/maity/`, a symbolic link, a hard link), and the order to offer no `-o -` under a placement), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed
+**See:** runner.md#under-a-placement-maity-writes-a-file-only-inside-the-clone-and-reads-its-records-from-the-runners-directory — 818828af-24cb-4b2a-be54-1bff2211ccb0 — as of 2026-11-13
+**Revisit when:** a command gets a file option that does not read through `cli._placed_read`; an option needs more than 10 MiB; a placed agent needs to name a file with more than one hard link; a harness runs `maity` inside its sandbox
+
+Under a runner placement every file maity reads for a command goes
+through `cli._placed_read`, which reads it with `inclone.read` from the
+root and `.git` that `clonecheck.opened_clone` opened and checked once:
+`files put`, `--attach`, every `--…-file` option (`--body-file`,
+`--summary-file`, `--last-file`, `--next-file`, `--review-file`),
+`api --json`, `--action-body`, the jour fixe's `--file`, `profile
+avatar`, `memory add --soul`, `task restricted set --file` and
+`join --join-file`; `maity gh`'s body file already did. It must be a
+regular file in the clone, outside `.git`, reached without a link, whose
+opened inode has exactly one link, of at most 10 MiB (1 MiB for an
+avatar). A refusal is a usage error before any call; the one of
+`task restricted set` names no part of the path, as its other refusals
+do not. stdin (`-`) stays where an option takes it. Text is decoded as
+before: UTF-8, newlines as `read_text` gives them, a leading byte order
+mark dropped. Where a name cannot be opened through a directory's
+descriptor (Windows), only stdin is taken. `maity files get -o -` is
+refused under a placement before any call, so the walk into the clone is
+the only way maity writes an attachment there.
+
+**Reason:** maity runs outside the harness's sandbox, and what it reads
+for a command can go to the hub (an upload, a message, a request body).
+A path the agent names must not let it read what the sandbox hides from
+the agent: this clone's `.git/maity`, another clone's credential, the
+runner's state. A hard link in the clone to such a file is the same
+inode under a second name; refusing every opened file with more than one
+link catches it whatever and wherever the other name is. Standard output
+goes wherever the command line sent it, which maity cannot see.
+
+**Rejected alternatives:**
+- Comparing the opened file's device with the clone root's: a hard link
+  is always on the same device, so it would pass.
+- Refusing a hard link only when its other name lies outside the clone:
+  the other names of an inode cannot be listed.
+- Keeping `-o -` when standard output is a terminal: a harness reads a
+  command's output through a pipe, so it would be refused anyway, and a
+  terminal check says nothing about where a redirect points.
+- Checking the path by name first (`realpath` and a prefix test) and
+  then reading it: the name is looked up twice (as in 818828af).
+
+**Known gap:** a file whose other name is removed between the open and
+the link count reads as one link; that takes write access to the
+directory of that other name.
 
 ## The runner nudges an interactive agent that stopped listening, then resumes it
 
@@ -2676,8 +3256,9 @@ answer: something in the clone may still be needed.
 **Source:** card tsk-29nmydbzrg5z, the owner's request and agreed shape (chat 2026-11-12, opt-in per tool, the vendor's installer in the runner user's space, no swap under a running agent, a kept previous version, versions on the runners tab with "Update now", maity updated the same way with the older sessions restarted); the owner's answers of 2026-11-12: req-r2egh0ry0c4c (older sessions restart at their next idle point; answer event 119533), req-vpcfh15h247c (local target only, ssh targets reported; answer event 119538), both relayed by the lead in 119605; docs/api.md §15.16
 **Revisit when:** an ssh target's owner wants the runner to manage its tools, a harness tool ships without an installer the runner can run in the user's space, or a tool's update needs a step only a person can do
 
-Not built yet (tsk-29nmydbzrg5z): this records the contract's decision;
-the runner and the dashboard follow in their own pull requests.
+The harness tools are built (tsk-29nmydbzrg5z, runner part; how they are
+fetched and checked is the next entry); `maity`'s own update and the
+dashboard follow in their own pull requests.
 
 Operators kept the runner's tools and `maity` current by hand, and
 sessions started by an older `maity` stayed on it until someone
@@ -2700,17 +3281,53 @@ in his words are this design's (inferred).
   answered its version; a running session keeps what it started with.
   The previous version stays for `maity runner tools rollback`, a local
   command, because a rollback is the operator's call on the machine.
+  An older version goes only once no running session started from it,
+  and an install and a rollback hold the tool's lock across processes,
+  so neither overwrites the other's `state.json` (a4xv's review).
+- **A start keeps the tool its gate looked at.** The start gate reads the
+  harness's probe, sandbox and held state once, under the supervisor's
+  lock, and the launch uses that same view (`GateView`), held through
+  the clone and join, which can take minutes. A rollback in that window
+  therefore still starts the version just left, under the sandbox
+  decision made for that version, and the session then counts as one
+  on an older version. Rejected: a fresh look under the lock right
+  before the tmux start, refusing or retrying when it changed; it would
+  add a second gate whose answer can differ from the first, for a
+  window that ends in a consistent start either way (47me's review).
+- **Only a runner that manages a tool reports tools.** The runner sends
+  `capabilities.tools`, and runs its tool thread, only when its
+  configuration sets `install` or `update` for some harness. A hub from
+  before §15.16 refuses the unknown field and the runner would stop at
+  `hello`, and the CLI ships before such a hub is deployed everywhere;
+  a runner that manages nothing has nothing to report, so it stays as
+  it was. The lead chose this over waiting for the hub release
+  (confirmed, lotse 139517). Rejected: a retry of `hello` without
+  `tools` after the refusal, and reading the hub's version first; both
+  add a second path to every start for a gap that closes with the next
+  hub release.
 - **"Update now" is read, not pushed.** The hub stores the owner's
-  request on the runner, and the runner reads `GET /runner` after every
-  wake of its event wait. Every event belongs to a project, and a runner
-  without an attached project would never hear one; the wait's own
-  fallback brings the read within a minute anyway. The hub drops a
+  request on the runner, and the runner's tool thread reads `GET /runner`
+  at most once a minute while a tool is updated daily, apart from the
+  event wait so an install of minutes never holds it up. Every event
+  belongs to a project, and a runner without an attached project would
+  never hear one, so a poll within a minute is what an event would give
+  anyway. The hub drops a
   request only when the report that ends the attempt names it, its
   `requested_at` exactly as the runner read it, as a removal by hand is
   closed (161d5507). Rejected: dropping it once a report shows a check at
   or after it, which compares the runner's clock with the hub's, and the
   signing window allows minutes of skew: a check decided before the
-  request could erase it (v5vp's review).
+  request could erase it (v5vp's review). One exception, without the
+  token: a report that lists the tool with `update: "never"`, leaves it
+  out or carries no `tools` drops its request, since that runner will
+  never carry it out and the owner would see it standing for nothing
+  (vhqe's review). Because equality decides, no two requests for a tool
+  may share a time: the hub makes each one strictly later than the last
+  it issued for that tool, a mark it keeps after the request is settled
+  or dropped. Rejected: taking that floor from the standing request and
+  the runner's last report, since a late or missing report moves it back
+  and a reissued time is settled by an old report (hcrb's review), and a
+  runner's far-future value would push it (47me's review).
 - **A rollback is a state of its own.** After `maity runner tools
   rollback`, the tool reports `rolled_back` while the version in use is
   older than `latest` (a second rollback back to `latest` reports
@@ -2739,6 +3356,64 @@ Rejected:
 - Installing on ssh targets too: a vendor's installer would run on a
   machine whose owner did not set it up for that, with more ways to fail
   (the owner's answer); a later card can add it.
+
+## The runner takes a tool only as an exact vendor release it can check, and keeps it beside its state directory
+
+**Id:** 841ed5f8-10e3-4682-8d8e-76adf97edf15
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-29nmydbzrg5z, the lead's rules for the installers (2026-11-14: no script fetched and run unless its version is pinned, the vendor's package at an exact version, the vendor's checksum checked, refuse rather than fall back, what each tool verifies written down for the security team) and the lead's approval of the agent_user scope (2026-11-14); the vendors' install scripts and documentation read 2026-11-14 (Claude Code's signed `manifest.json`, release key fingerprint 31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE; Codex's GitHub releases with a SHA-256 `digest` per asset and a sigstore bundle); `cli/src/maity/runner/installers.py`, `tools.py`, `keeper.py`
+**Revisit when:** a vendor stops publishing the checksum or signature used here, the runner gains a sigstore verifier, or an operator of the agent_user layout needs managed tools
+**See:** runner.md#the-runner-installs-and-updates-the-harness-tools-and-maity-only-where-its-owner-allows-it-per-tool — 4c984f97-09b8-479b-bd1a-f56bb41057fd — as of 2026-11-14
+
+The contract says "the vendor's installer"; the runner runs none of the
+vendors' install scripts. It downloads one exact version's release
+straight from the vendor and refuses it unless the vendor's own check
+passes, before anything is unpacked or run:
+
+- **Claude Code:** the release's `manifest.json` must carry a valid
+  signature by Anthropic's release key, checked with `gpgv` against the
+  key shipped inside `maity` (the fingerprint above is pinned; nothing
+  fetched at install time is trusted as a key). The manifest must name
+  the version asked for, so an older signed manifest cannot be replayed,
+  and the binary must match its SHA-256 and size. A host without `gpgv`
+  is refused.
+- **Codex:** the release tagged `rust-v<version>`, neither draft nor
+  prerelease, its package tarball matched against the SHA-256 that
+  GitHub's release API states, from the one expected URL, unpacked with
+  tarfile's `data` filter. Not checked: the sigstore bundle, since the
+  runner has no verifier for it; that trust is GitHub's and the vendor's
+  account over HTTPS.
+- **opencode** has no installer: its install route offers no checksum,
+  and the runner does not offer it to placements yet.
+
+The versions live in `~/.local/share/maity-runner/tools`, not in the
+state directory: the state directory is hidden from every sandboxed
+command (supervisor.private_paths), and Codex's sandbox starts the Codex
+binary and its bundled helpers inside the sandbox. In the agent_user
+layout `install` and `update` are refused at load for now: the agents
+run as another OS user, and the runner user's own directory is not
+theirs to rely on. A managed session is started with the tool's own
+self-update switched off (`DISABLE_UPDATES` for Claude Code,
+`check_for_update_on_startup = false` for Codex), so only the runner
+changes the version.
+
+**Rejected alternatives:**
+- Running the vendor's install script (`curl … | bash`): it would run
+  whatever the vendor's server sends that minute, with no version the
+  runner chose (the lead's rule).
+- Trusting the manifest's or the API's checksum alone: for Claude Code
+  the signature is offered, so it is used; the checksum is only as good
+  as the document that carries it.
+- Fetching the release key at install time: a key from the same server
+  as the manifest proves nothing about the manifest.
+- Falling back to an unchecked download when `gpgv` or a digest is
+  missing: refused instead (the lead's rule).
+- Keeping the versions under the state directory: the harness sandboxes
+  could not run them.
+- A world-readable tools directory for the agent_user layout now: only
+  built when someone needs it (the lead's decision).
 
 ## Placed sessions commit as the runner's `[git]` identity, set through the environment
 
@@ -2809,3 +3484,106 @@ repository. Rejected: the repository declaring its own checks in a
 committed file. The project's committed configuration is never loaded
 (adapters' module docstring), because a branch could then widen its own
 grant. `git apply` stays ungranted (the lead's decision).
+
+## Files on the agents' side are read bounded, and a clone only in the start task
+
+**Id:** 096be6c1-a4b4-400e-9e1d-f876c8000edd
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-vyp87d3hnbem (the lead's security review of 2026-11-13, item 1, and the fix it named); implementation 2026-11-14; the anchored walk from a code review of the change on 2026-11-14, which reproduced a `.git` swapped for a link between the listing and the read
+**Revisit when:** the runner reads the agents' side through a channel of its own instead of running commands there, or the supervisor stops holding one lock for every placement
+**See:** runner.md#the-limit-file-is-read-on-the-agents-side-by-the-runners-own-module-not-by-dd — aa29acab-65eb-4f60-a8da-ee284877266f — as of 2026-11-14
+
+Every file the runner reads from the agents' side (a clone's
+`.git/config`, its `.git/info/exclude` and `.git/maity/state.json`, a
+pane log, the agents' user's Claude Code settings, and the managed
+settings the hook check reads) goes through
+`AsUser.read`, which reads the way the limit file was already read
+(`limitread`): no link followed, no wait on a FIFO, a regular file only,
+at most a limit the caller names. Every read is anchored at a directory
+the runner knows (`under`: the clone, the agents' file directory, the
+agents' home, the managed settings' own directory): that directory is
+opened, each directory below it is opened from the one before with
+`O_NOFOLLOW | O_DIRECTORY` (`dir_fd`), and the file from the last of
+them, so no link anywhere below the anchor is followed. In the runner's own process that is `limitread.take`;
+through sudo or on an ssh host it is the runner's own module there
+(`--under`, `--bytes`, `--offset`), within `READ_TIMEOUT`, a timeout
+turned into an `OSError` every caller handles. The supervisor's tick,
+which holds the lock `update` and the reports wait on, reads only the
+runner's own workspace record of an existing clone (`workspace.owned`);
+the clone's `.git` is checked (`clonecheck`) and then read for its origin
+by the start task (`workspace.prepare`).
+
+**Reason:** the agents can replace any of these files, and the clone's
+`.git` too, between two looks at it. A read that follows a link to an
+endless device, waits on a FIFO or takes a huge file into memory, done
+while the supervisor holds its lock, stops every placement on the runner,
+not only the one whose clone it is. One way of reading for everything on
+that side means a new caller cannot pick the unsafe one by accident.
+`O_NOFOLLOW` covers only a path's last name: an agent could swap its
+already listed `.git` for a link to a directory outside the clone, and a
+read of `.git/config` by its full path would take that directory's file
+as the clone's. Walking down from the anchor refuses that swap.
+
+**Rejected alternatives:**
+- `tail -c` and `head -c` through sudo, as the logs were read: bounded in
+  size with `head`, but they follow links and wait on a FIFO, and a
+  killed `sudo` leaves them waiting.
+- `dd` with `iflag=nofollow,nonblock`: macOS's `dd` has no `iflag`
+  (aa29acab).
+- Comparing `.git`'s inode with the one seen at the listing (as
+  `MAITY_GIT_INODE` does for git's own runs): it covers `.git` alone,
+  not the other directories on the way to a log or the limit file, and
+  leaves a window between the comparison and the open.
+- Walking from `/` without following any link: refuses ordinary
+  configured paths that run through a link (`/home` on some systems,
+  macOS's `/var`); the anchor is the runner's own path, only what lies
+  below it is the agents'.
+- Keeping the origin check in the tick with a safe read: still a command
+  through sudo or ssh, up to its timeout, under the lock every placement
+  needs.
+- Falling back to `tail` where an ssh host's `maity` is older than the
+  runner's: it would keep the unsafe read alive. Such a host reads
+  nothing, as for the limit file, and an existing clone there is refused
+  as `origin_mismatch` until the host's `maity` is updated.
+
+## A placement's log is held to `log_keep_bytes` by its own writer, keeping the newest half
+
+**Id:** 9bdc2aa5-b5dc-489a-bda6-db7c06d3eed5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-vyp87d3hnbem (the lead's security review of 2026-11-13, item 2: `limits.log_keep_bytes` was documented and never applied); implementation 2026-11-14; cutting to the newer half instead of rotating confirmed by the lead on 2026-11-14; the real-size check from a code review of the change on 2026-11-14, which reproduced another writer's append taking the log past the limit
+**Revisit when:** someone needs a pane's older output after the limit, or tmux's `pipe-pane` gains a size limit of its own
+
+tmux's `pipe-pane` hands a pane's output to `maity.runner.logcap` (`maity
+runner logcap` on an ssh host) instead of `cat >>`. The module runs on the
+agents' side, appends to `<agent_files>/logs/<placement>.log`, and when
+the next chunk would take the log past `limits.log_keep_bytes` it first
+cuts the file to its newest half, through a copy renamed over it. A
+write that fails (a full disk) drops that chunk and the module reads on.
+The module is the log's only writer, but the log lies on the agents'
+side, where they can write it too: before every write, and once more
+when the pane ends, it takes the file's real size (`fstat`), not its own
+count, and reopens the path when the file there is no longer the one it
+holds (device and inode). Bytes another writer appends count at the
+module's next write, so the log holds the limit after each of its
+writes and when it ends.
+`maity runner logs --follow` starts again at the log's beginning when it
+finds the log shorter than what it showed.
+
+**Reason:** the writer is the only process that sees every byte as it
+arrives, so it holds the limit without a second process watching the
+file. A private count of its own bytes missed what others append, and a
+log renamed away and replaced kept receiving output in the old file. Keeping the newest half leaves the output that
+explains a failure, which is what the log is read for, and bounds the
+disk to one limit per placement.
+
+**Rejected alternatives:**
+- Rotating to `<placement>.log.1`: twice the limit on the disk, and a
+  second file `logs` would have to know about.
+- The supervisor cutting the logs on its tick: a command through sudo or
+  ssh per log and tick, racing the writer's appends.
+- Emptying the log when it is full: drops the output that led up to the
+  limit, usually the part someone wants to read.

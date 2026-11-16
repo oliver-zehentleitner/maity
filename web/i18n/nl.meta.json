@@ -10891,6 +10891,14 @@
     "en": "91068c8308ff7d7d",
     "text": "a28a94c667f041ed"
   },
+  "name_rules.handle_bad": {
+    "en": "13237a61bb5d1457",
+    "text": "40cf78cc387b7bc2"
+  },
+  "name_rules.handle_lowercase": {
+    "en": "6c675eafabb0d256",
+    "text": "0fd363010f8c52f3"
+  },
   "name_rules.slug": {
     "en": "0851da38257f9de3",
     "text": "7f248661362d6c52"
@@ -13582,6 +13590,10 @@
   "product.bug": {
     "en": "191903c61492ea38",
     "text": "a26b79d41268cdba"
+  },
+  "product.discord": {
+    "en": "eda6e32290d46f17",
+    "text": "1a0e215f10f8144c"
   },
   "product.love": {
     "en": "96fa5228627bef6a",
@@ -17199,13 +17211,25 @@
     "en": "2a3edb7abc9e6929",
     "text": "ff894bb77eed4de0"
   },
+  "settings.tab.general": {
+    "en": "468d61a94d9f9d93",
+    "text": "98a7ca0baf60ff17"
+  },
+  "settings.tab.members": {
+    "en": "e19fc6262faca358",
+    "text": "793a19137c46ea58"
+  },
   "settings.tab.mine": {
     "en": "a0b7adfdfdec7307",
     "text": "8fc5075dcc25473d"
   },
-  "settings.tab.project": {
-    "en": "6c6b7df3070f112f",
-    "text": "6c6b7df3070f112f"
+  "settings.tab.moderation": {
+    "en": "77d3010b1619f85e",
+    "text": "e848f95811e46dc2"
+  },
+  "settings.tab.work": {
+    "en": "b113e55138adce94",
+    "text": "7ab084fabf039d13"
   },
   "settings.title": {
     "en": "83909f82446ee9c3",
@@ -19171,6 +19195,10 @@
     "en": "b3ae7ee4d934d009",
     "text": "b3ae7ee4d934d009"
   },
+  "visitor.hero.try": {
+    "en": "a934f2e0ccd4a613",
+    "text": "3d604760dcefaec9"
+  },
   "visitor.holder.agent": {
     "en": "aec70cfd47032616",
     "text": "4eeb5863fee53828"
@@ -19182,6 +19210,26 @@
   "visitor.member_since": {
     "en": "068cef0810198a3d",
     "text": "f64284de21ae380f"
+  },
+  "visitor.merged": {
+    "en": "20a2d9635951284d",
+    "text": "69b803b1de148c67"
+  },
+  "visitor.merged.by": {
+    "en": "760db489ae38e56d",
+    "text": "5c39b3df1f214779"
+  },
+  "visitor.merged.pill": {
+    "en": "63f7ea9a67b1918b",
+    "text": "ccbb0de290bb568d"
+  },
+  "visitor.merged.touches": {
+    "en": "9f96cbfe3aefbe09",
+    "text": "f3e2743adc252b61"
+  },
+  "visitor.merged.window": {
+    "en": "527e74a00a093185",
+    "text": "a4d3b1347a6963d9"
   },
   "visitor.model": {
     "en": "00d5d0c26a1a0925",
@@ -19202,6 +19250,38 @@
   "visitor.note.incorporated": {
     "en": "65ed0630ec44c3b1",
     "text": "ff44eb4940a67f68"
+  },
+  "visitor.now": {
+    "en": "6daba6e18d19bb49",
+    "text": "daec1e6aa0027df4"
+  },
+  "visitor.now.agents": {
+    "en": "37be5bf9ee1b4228",
+    "text": "37be5bf9ee1b4228"
+  },
+  "visitor.now.both": {
+    "en": "063bd57eebf6f866",
+    "text": "063bd57eebf6f866"
+  },
+  "visitor.now.more": {
+    "en": "ef1401d515ebac72",
+    "text": "ef1401d515ebac72"
+  },
+  "visitor.now.more.label": {
+    "en": "737c4c28d6c824c1",
+    "text": "8d4af677302da988"
+  },
+  "visitor.now.one": {
+    "en": "ffec9d158f4f123c",
+    "text": "ffec9d158f4f123c"
+  },
+  "visitor.now.people": {
+    "en": "fd5ff2a1c5aa16bf",
+    "text": "a8130b8af91277bd"
+  },
+  "visitor.now.working": {
+    "en": "4bbfd3742efe22a2",
+    "text": "4c012342f817338e"
   },
   "visitor.online": {
     "en": "b11148e2002ef092",
@@ -19243,6 +19323,10 @@
     "en": "0b6b9f7e499ac5f6",
     "text": "647042c3baac2472"
   },
+  "visitor.stat.members": {
+    "en": "6bbc51529519435c",
+    "text": "b1d1b55e67224b54"
+  },
   "visitor.stat.prs_merged": {
     "en": "631e272f82e120d7",
     "text": "4ce658dceb0a3ed6"
@@ -19251,6 +19335,10 @@
     "en": "c3839ae79e842a97",
     "text": "6c9a4b2b8701de60"
   },
+  "visitor.stat.window": {
+    "en": "6dce96dd18a540d7",
+    "text": "948195e160c249ad"
+  },
   "visitor.statistics": {
     "en": "f7e895590e4ed336",
     "text": "371a15ff3d7a2bb8"
@@ -19258,6 +19346,14 @@
   "visitor.statistics.own": {
     "en": "068dce52f609b9c3",
     "text": "36f81397dd1f0664"
+  },
+  "visitor.team.all": {
+    "en": "3d29f2722dcf9dab",
+    "text": "32ab34828d6f09d6"
+  },
+  "visitor.team.both": {
+    "en": "45a4ef43d5d36042",
+    "text": "eda4e56b6daf6558"
   },
   "visitor.why.attention": {
     "en": "f98f532ad04f9c38",

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,13 +41,16 @@ GIT_PROMPT = (
     "origin <branch>`; never `push -u`, `--set-upstream`, `--track` or `branch -m`, which "
     "store an upstream or rename one and print an error. `maity report` needs no upstream."
 )
-# Claude Code's sandbox hides the clone's credential; only a command that is a `maity` call
-# alone matches `excludedCommands` and runs outside it (cli/context/runner.md).
+# Claude Code's sandbox hides the clone's credential; `maity` runs outside it, and only as
+# one plain call: the runner's hook (plaincall) refuses anything else on its line
+# (cli/context/runner.md).
 CLAUDE_MAITY_PROMPT = (
-    " Run every `maity` command alone: in a pipe, chained with `;`, `&&` or `||`, sent to the "
-    "background with `&` or inside `$(...)` it runs "
-    "inside the sandbox and cannot read this clone's credential."
+    " Run every `maity` command alone, as one plain call: a line that pipes, chains with `;`, "
+    "`&&` or `||`, redirects, sends it to the background with `&`, uses `$(...)`, a heredoc "
+    "or a `$` is refused. Pass longer text in a file in this clone (`--body-file`)."
 )
+# What a line that starts with `maity` may not hold in opencode's rules (opencode_config).
+MAITY_NOT_PLAIN = (";", "&", "|", "<", ">", "`", "$", "\n")
 # An interactive session the runner ended because its agent stopped listening (§15.14) starts
 # again on the same conversation with this line, where the harness can resume one.
 RESUME_PROMPT = (
@@ -102,7 +107,7 @@ PULL_REQUEST_PROMPT = (
 # more placeholder that was not seen in a sandboxed run.
 GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
 
-READY = ("stub", "claude-code", "codex", "opencode")  # harnesses with an adapter
+READY = ("stub", "claude-code", "codex", "opencode", "antigravity")  # harnesses with an adapter
 SESSION_GIT_CONFIG = {
     "GIT_CONFIG_COUNT": "2",
     "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "false",
@@ -124,8 +129,10 @@ SANDBOX_GIT_CONFIG = (
 
 def git_config(ctx: Context) -> dict[str, str]:
     """The session's `GIT_CONFIG_*`: SESSION_GIT_CONFIG, plus SANDBOX_GIT_CONFIG under a
-    sandbox that keeps `.git/config` unwritable."""
-    extra = SANDBOX_GIT_CONFIG if writes_denied(ctx) else ()
+    sandbox that keeps `.git/config` unwritable, and for agy, whose deny of `.git/config` to
+    its file tools may or may not reach its sandbox (not seen in a run): the three settings
+    work either way."""
+    extra = SANDBOX_GIT_CONFIG if writes_denied(ctx) or ctx.harness.id == "antigravity" else ()
     env = dict(SESSION_GIT_CONFIG)
     first = int(SESSION_GIT_CONFIG["GIT_CONFIG_COUNT"])
     for index, (key, value) in enumerate(extra, start=first):
@@ -163,6 +170,8 @@ CLAUDE_PLACEHOLDERS = (
 )  # fmt: skip
 EXCLUDE_BEGIN = "# maity-runner: the sandbox's placeholders (begin)"
 EXCLUDE_END = "# maity-runner: the sandbox's placeholders (end)"
+# A clone's `.git/info/exclude` larger than this is left as it is, without the block.
+EXCLUDE_MAX = 256 * 1024
 
 # Exit codes that are a harness's provider limit, per harness: only what a real run verified.
 LIMIT_EXITS: dict[str, tuple[int, ...]] = {}
@@ -191,6 +200,8 @@ class Context:
     agent_path: str = ""  # the agents' PATH, for the runner's own modules on an ssh host
     resume: bool = False  # interactive: continue the harness's last conversation (§15.14)
     git: config.GitIdentity = config.GitIdentity()  # who the session commits as (`[git]`)
+    # The workspace folder the harness starts in, holding the clone (§15.5); None: the clone.
+    folder: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -226,19 +237,22 @@ def launch(ctx: Context) -> Launch:
     # git's own repository for each run maity starts, outside the clone, in the agent's
     # directory the sandbox hides (clonecheck._private_dir). Codex runs maity in its sandbox,
     # which cannot write there: named as the clone's `.git/maity`.
+    # The runner's records for maity are kept there too, outside the clone, whose files are
+    # the agent's to write (clonecheck.runner_record).
     if ctx.harness.id == "codex":
         env[clonecheck.GIT_PRIVATE_ENV] = clonecheck.IN_CLONE
+        records = ctx.clone / ".git" / "maity"
     else:
-        private = ctx.agent_dir / "git"
-        ctx.as_user.mkdir(private)
-        env[clonecheck.GIT_PRIVATE_ENV] = str(private)
+        records = ctx.agent_dir / "git"
+        ctx.as_user.mkdir(records)
+        env[clonecheck.GIT_PRIVATE_ENV] = str(records)
     # The git maity starts there: this one, found on the runner's PATH, not the agent's.
     git = proc.program("git")
     if git is not None:
-        ctx.as_user.write(ctx.clone / clonecheck.GIT_PATH, git + "\n")
+        ctx.as_user.write(records / clonecheck.GIT_PATH.name, git + "\n")
     # What `maity gh` may do here: the repository it pins and the gh it starts, or nothing
     # (an empty record also clears one a former grant left).
-    ctx.as_user.write(ctx.clone / ghpr.PULL_REQUESTS_PATH, pull_requests_record(ctx))
+    ctx.as_user.write(records / ghpr.PULL_REQUESTS, pull_requests_record(ctx))
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
@@ -248,6 +262,8 @@ def launch(ctx: Context) -> Launch:
         return _codex(ctx, env)
     if harness.id == "opencode":
         return _opencode(ctx, env)
+    if harness.id == "antigravity":
+        return _antigravity(ctx, env)
     raise NotYet(f"no adapter for {harness.id}")
 
 
@@ -269,6 +285,9 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
             "first": first,
             "again": again,
             "env": env,
+            "clone": str(ctx.clone),  # where `maity wait` runs: agy starts above it
+            # agy's workspace folder, checked before every run as before the start (§15.5).
+            **({"folder": str(ctx.folder)} if ctx.folder is not None else {}),
             "restart": {
                 "initial": policy.initial, "factor": policy.factor, "max": policy.max,
                 "crash_window": policy.crash_window, "crash_cap": policy.crash_cap,
@@ -334,6 +353,22 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                                          *(f"{git}/{name}" for name in GIT_PROTECTED)]},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
+        # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
+        # that starts with `maity` and holds anything else (plaincall). It runs for every
+        # tool, outside the sandbox, from the runner's own code; a hook that fails or times
+        # out refuses the call (`onFailure`, Claude Code 2.1.295 and later: the sandbox is not
+        # switched on for an older one, capabilities.sandbox_version_ok). Shell form, so a
+        # version that predates exec form runs it too; `|| exit 2` refuses on any version
+        # when the hook cannot start or fails.
+        module = " ".join(shlex.quote(word) for word in ctx.as_user.runner_module("plaincall"))
+        hook = f"{module} || exit 2"
+        settings["hooks"] = {
+            "PreToolUse": [
+                {"hooks": [{"type": "command", "command": hook, "timeout": 30,
+                            "onFailure": "block"}]},
+            ],
+        }  # fmt: skip
+        settings["disableAllHooks"] = False  # over a `true` in the agents' user settings
     return settings
 
 
@@ -359,8 +394,9 @@ def trust_clone(ctx: Context) -> None:
 
 
 def pull_requests_record(ctx: Context) -> str:
-    """`ghpr.PULL_REQUESTS_PATH`'s content: the placement's repository and the gh on the
-    runner's PATH when the grant has pull requests and gh is there, else empty."""
+    """The content of the runner's record `ghpr.PULL_REQUESTS`: the placement's repository
+    and the gh on the runner's PATH when the grant has pull requests and gh is there, else
+    empty."""
     if not ctx.grant.pull_requests:
         return ""
     gh = proc.program("gh")
@@ -390,8 +426,12 @@ def hide_placeholders(ctx: Context) -> None:
     lines: list[str] = []
     if ctx.as_user.exists(path, "-f"):
         try:
-            lines = ctx.as_user.read(path).decode("utf-8").splitlines()
-        except UnicodeDecodeError:  # rewriting it could change bytes that are not ours
+            lines = (
+                ctx.as_user.read_whole(path, EXCLUDE_MAX, under=ctx.clone)
+                .decode("utf-8")
+                .splitlines()
+            )
+        except (OSError, UnicodeDecodeError):  # rewriting it could change bytes not ours
             return
     kept, had_block = _without_block(lines)
     hidden = [name for name in CLAUDE_PLACEHOLDERS if _placeholder_only(ctx, ctx.clone / name)]
@@ -429,8 +469,15 @@ def _placeholder_only(ctx: Context, path: Path) -> bool:
         return False
 
 
+def managed(ctx: Context) -> bool:
+    """The runner installs or updates this harness's tool (§15.16)."""
+    return ctx.harness.install or ctx.harness.update != "never"
+
+
 def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
+    if managed(ctx):  # the runner swaps versions (§15.16); the tool never updates itself
+        env = {**env, "DISABLE_UPDATES": "1"}
     if ctx.sandbox:
         hide_placeholders(ctx)
     settings = _write(ctx, ctx.agent_dir / "claude-settings.json", claude_settings(ctx))
@@ -482,7 +529,9 @@ def codex_config(ctx: Context) -> str:
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
     return (
         'approval_policy = "never"\n'
-        'default_permissions = "maity"\n\n'
+        'default_permissions = "maity"\n'
+        # A version the runner manages is never swapped by Codex itself (§15.16).
+        + ("check_for_update_on_startup = false\n" if managed(ctx) else "") + "\n"
         # The clone's own .codex/config.toml would override this profile; an untrusted
         # project's configuration layers are not loaded.
         f'[projects.{json.dumps(str(ctx.clone))}]\ntrust_level = "untrusted"\n\n'
@@ -537,8 +586,11 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
-    # After the allows: the last match wins.
+    # After the allows: the last match wins. A `maity` call only as one plain call, as the
+    # Claude Code hook has it (plaincall): opencode checks each command its scanner finds,
+    # and a redirect or a substitution on maity's line would pass `maity *`.
     bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
+    bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
     # The clone's credential is neither readable nor writable; nothing under .git is edited
     # (agents commit through git; its config and hooks would turn a git call into anything).
@@ -575,3 +627,124 @@ def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     first = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, prompt]
     again = [ctx.binary, "run", "--dir", str(ctx.clone), *chosen, "--continue", prompt]
     return _supervised(ctx, first, again, env)
+
+
+# --- Antigravity (agy) ------------------------------------------------------------------------
+
+# agy starts in the workspace folder, one level above the clone, so it loads none of the
+# clone's own agy configuration; the project's `AGENTS.md` is then not loaded either and is
+# named here (§15.3, cli/context/runner.md).
+AGY_FOLDER_PROMPT = (
+    "You start in a workspace folder that holds the project's clone as `{repo}` and nothing "
+    "else. Run `cd {repo}` first and work only in the clone: read `{repo}/AGENTS.md`, and run "
+    "`maity`, `git` and every other command there. Leave nothing in this folder besides "
+    "`{repo}`: the runner does not start you again while anything else is there. "
+)
+# `maity` may leave agy's sandbox only as the command its allow rule names; a chained line is
+# refused outside the sandbox (the agy entry in cli/context/runner.md).
+AGY_MAITY_PROMPT = (
+    " Run every `maity` command alone, as one plain call, not piped or chained with other "
+    "commands; pass longer text in a file in the clone (`--body-file`)."
+)
+# agy's sign-in, a file in its directory under the agents' home when there is no keyring. The
+# rest of `~/.gemini` stays readable to agy's own sandbox, which keeps its scratch there.
+AGY_LOGIN = Path(".gemini") / "antigravity-cli" / "antigravity-oauth-token"
+# What agy's command rules match by prefix: GIT_DENIED without its globs, and gh.
+AGY_DENIED_COMMANDS = ("git -c", "git --config-env", "git --exec-path", "gh")
+
+
+# Why a command grant is not given to agy as a rule. agy does not match a `command(...)` rule
+# the way Claude Code matches `Bash(...)`: it reads the invoked command from the line, past a
+# leading environment assignment or command wrapper, before any rule is compared, so neither
+# an exact entry nor a ` *` prefix entry can be reproduced for it the way Claude Code applies a
+# grant. Both are left out and run in agy's sandbox like every unlisted command (the agy
+# grants entry in cli/context/runner.md).
+AGY_COMMAND_LEFT_OUT = "agy does not match a command grant the way Claude Code does"
+
+
+@dataclass(frozen=True)
+class AgyGrants:
+    """The command grants mapped for agy: every one is left out with why. agy gets no
+    `command(...)` allow from them; `maity runner check` names those it leaves out."""
+
+    left_out: tuple[tuple[str, str], ...] = ()
+
+
+def _agy_prefix(words: list[str]) -> list[str] | None:
+    """The words before a closing ` *`, when no other word holds a `*`."""
+    if len(words) > 1 and words[-1] == "*" and not any("*" in word for word in words[:-1]):
+        return words[:-1]
+    return None
+
+
+def agy_grants(rules: Sequence[str]) -> AgyGrants:
+    """agy reads the invoked command from a line, stepping over a leading environment
+    assignment or command wrapper, before it compares any `command(...)` rule, so a rule
+    cannot say what Claude Code's grant says. Neither an exact entry (`a b`) nor a ` *` prefix
+    entry (`a b *`) is given to agy: each is left out, named by `maity runner check`, and runs
+    in agy's sandbox like every unlisted command. An entry with another `*` (`a *.py`,
+    `npm run test:*`) is left out without a word, since a rule word is matched on its own, so
+    no rule says what it says. agy therefore gets no `command(...)` allow from a grant's
+    command list; only `command(maity)` and the non-command grants stand."""
+    left_out: list[tuple[str, str]] = []
+    for rule in dict.fromkeys(rules):
+        words = rule.split(" ")
+        if "*" in rule and _agy_prefix(words) is None:
+            continue  # another `*`, not a closing ` *`: left out without a word, as before
+        left_out.append((rule, AGY_COMMAND_LEFT_OUT))
+    return AgyGrants(tuple(left_out))
+
+
+def _agy_private(path: Path) -> Path:
+    """A path no file tool may touch: as given, but for agy's own directory only its login."""
+    return path.parent / AGY_LOGIN if path.name == ".gemini" else path
+
+
+def antigravity_settings(ctx: Context) -> dict[str, Any]:
+    """The session's settings (`--settings`, never saved; §15.3): the default agent mode, not
+    `auto`, whose reviewer may let a command leave the sandbox; commands no rule names run in
+    the sandbox without asking; the sandbox on; the workspace folder trusted, so an
+    interactive start asks nothing. Allowed: `maity` and URLs of the hub, the forge and the
+    grant's `network` hosts. A grant's `allow` command list is not given to agy (agy_grants):
+    agy does not match a `command(...)` rule the way Claude Code does, so each such entry is
+    left out and runs in agy's sandbox, named by `maity runner check`. Denied to the file
+    tools: the clone's credential, what makes git run something (GIT_PROTECTED), the other
+    clones' credentials and the runner's private paths. agy merges these with the agents'
+    user's own settings (cli/context/runner.md)."""
+    assert ctx.folder is not None  # noqa: S101 - the supervisor gives agy its folder
+    git = ctx.clone / ".git"
+    allow = ["command(maity)"]
+    allow += [f"read_url({host})" for host in sorted({*ctx.hosts, *ctx.grant.network})]
+    denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
+    deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
+    deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
+    deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
+    return {
+        "agentMode": "",
+        "toolPermission": "proceed-in-sandbox",
+        "enableTerminalSandbox": True,
+        "trustedWorkspaces": [str(ctx.folder)],
+        "permissions": {"allow": allow, "deny": deny},
+    }
+
+
+def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
+    assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
+    assert ctx.folder is not None  # noqa: S101 - the supervisor gives agy its folder
+    settings = _write(ctx, ctx.agent_dir / "agy-settings.json", antigravity_settings(ctx))
+    # agy takes the work tree from $PWD: the folder's real path (workspace.check_folder).
+    env = {**env, "PWD": str(ctx.folder)}
+    base = [ctx.binary, "--settings", str(settings)]
+    model = ctx.placement.get("model")
+    if model:
+        base += ["--model", model]
+    folder = AGY_FOLDER_PROMPT.format(repo=ctx.clone.name)
+    extra = AGY_MAITY_PROMPT + _sandbox_prompt(ctx)
+    if ctx.placement.get("mode") == "interactive":
+        if ctx.resume:  # `-c`: the folder's latest conversation, so this placement's
+            return Launch([*base, "-c", "-i", RESUME_PROMPT], env)
+        return Launch([*base, "-i", folder + START_PROMPT + extra], env)
+    # `-c` continues the latest conversation of the working directory: the placement's own
+    # folder, so never another placement's (cli/context/runner.md).
+    prompt = folder + SUPERVISED_PROMPT + extra
+    return _supervised(ctx, [*base, "-p", prompt], [*base, "-c", "-p", prompt], env)

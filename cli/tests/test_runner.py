@@ -580,6 +580,27 @@ def test_check_requires_the_sandbox_when_configured(
 
 
 @pytest.mark.parametrize(
+    ("version", "code"),
+    [("2.1.294", 1), ("2.1.295", 0), ("2.1.325", 0), ("dev build", 1)],
+)
+def test_check_refuses_a_required_sandbox_on_a_claude_code_older_than_its_hook_policy(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, code: int
+) -> None:
+    """The runner's hook refuses a call when it fails only from 2.1.295 (`onFailure`); an
+    older or unknown version gets no sandbox, so `require_sandbox` refuses it."""
+    if not sys.platform.startswith("linux"):
+        pytest.skip("the sandbox prerequisites are checked on Linux")
+    for tool in ("tmux", "maity", "bwrap", "socat"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", f"{version} (Claude Code)")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\nrequire_sandbox = true\n")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
+    said = [line for line in lines(capsys) if "is older than 2.1.295 or unknown" in line]
+    assert [line.split()[0] for line in said] == (["error"] if code else [])
+
+
+@pytest.mark.parametrize(
     ("platform", "tools", "said", "code"),
     [
         ("linux", ("bwrap", "socat"), "ok     harness claude-code: OS sandbox (bwrap, socat)", 0),
@@ -665,6 +686,14 @@ def test_default_config_path(home: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 def test_opencode_is_not_offered_yet() -> None:
     found = problems(minimal(o="\n[harness.opencode]\n"))
     assert any(p.startswith("harness.opencode: not offered yet") for p in found), found
+
+
+def test_antigravity_is_not_offered_yet() -> None:
+    found = problems(minimal(a="\n[harness.antigravity]\n"))
+    named = [p for p in found if p.startswith("harness.antigravity: not offered yet")]
+    assert named, found
+    # The refusal names why agy is held back, so the operator knows it is deliberate.
+    assert "confined at the OS level (tsk-zjv2xyhyggnm)" in named[0]
 
 
 @pytest.mark.parametrize(

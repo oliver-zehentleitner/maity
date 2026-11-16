@@ -406,9 +406,29 @@ one rule for the field instead of one per option value.
 - **A failed file read is held for 30 s with its own error**, and a read dropped for room is not read again inside 30 s; the files themselves sit in one store per process (`ktw.RAW`, 64 MiB), keyed by URL, shared with §11.3's reads. The store itself records when each file was read, apart from the files it keeps, so a file §11.3's summary read is held as well as one these reads made.
 - **The named repositories' reader has a budget of its own**, checked on every call before a warm family is used: a project whose own grant is healthy still gets `probe_unavailable` for a named repository while the anonymous (or instance) source is spent, rather than an answer from memory past a check that reads nothing.
 - **A named family's forge reads take the same permits as the files** (4 per project, 16 per process): a family walk holds one permit for its time, since its reads are sequential.
-- **One read of one file at a time**: a call that finds a read of the same file under way waits for it and answers from it; the store and the hold are checked again after the wait.
+- **One read of one file at a time**: a call that finds a read of the same file under way waits for it and answers from it; the store and the hold are checked again after the wait. The wait is at most `ktw.LOCK_WAIT` since tsk-ybc2ma72dzvq (the entry "The views' reads wait at most half a second" below).
 - **A named repository's lock lives while a call holds or waits for it** (`ForeignCache.locks`): counted with its callers and dropped by the last one, not tied to the cached family the way `ktw.CACHE` ties its lock to a project's entry.
 
 **Reason:** the views get a project's decision record whole, so every refusal has to take effect before an answer leaves the hub, not when a cache happens to expire; reusing §11.4's own source choice keeps one place that decides which token reads for a project.
 
 **Rejected alternatives:** a namespace check of its own in §11.5 ahead of §11.4's: two places that decide what the instance token serves, which drift. Repeating `probe_unavailable` until the cached snapshot expires: a client that waits for `retry_at` would get the same 503 for up to ten minutes. Answering `timeout` inside the hold: hides the file's real error. Checking the store only before waiting for a permit: two calls for one file both read it inside one hold window. Checking it again after the permit but with no wait on the read under way: the second call would answer `timeout` while the first is still reading. A named repository's lock bound to its cache entry and removed on eviction: the exit on `Busy` (a call that gave up waiting) left the lock behind.
+
+## The views' reads wait at most half a second, then answer what the store holds
+
+**Id:** d25ecdd4-980f-4b56-9541-d0e504a9866a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-ybc2ma72dzvq (reads stay cheap at scale), the lead's split of 2026-11-14 naming §11.3's `LOCK_WAIT` as the model; docs/api.md §11.5 "Caps and cache"
+**See:** keep-the-why.md#the-export-lives-in-memory-read-on-request-and-refreshed-in-the-background-for-the-view — f5af1bd9-bb11-4310-b751-334de2668dfe — as of 2026-11-14
+**Revisit when:** §11.3's `LOCK_WAIT` changes, or the dashboard shows `timeout` often enough that a longer wait would pay
+
+A §11.5 call (`ktw_reads._file`) waits at most `ktw.LOCK_WAIT` (0.5 s) in all: for a read of the same file already under way, and for a permit (one of the project's 4, one of the process's 16). Past that it answers the file the store holds with `fresh: false`, or `ktw_unavailable` with reason `timeout` when it holds none; it reads nothing itself. A named family's read takes its permits under the same bound. Before, each of the three waits was up to `ktw.FAMILY_DEADLINE` (30 s).
+
+**Reason:** a call's time stays bounded whatever a read in flight takes, as §11.3's reads already are with `LOCK_WAIT`; one bound for both reads keeps one rule. Answering the held file rather than `timeout` keeps a second tab's view filled while the first tab's read runs.
+
+**Rejected alternatives:**
+- Keeping the 30 s waits so a second call shares the read under way (the earlier choice, its rejected alternative "no wait on the read under way"): a fresher answer for a few calls, each of them open for up to 30 s.
+- Three separate 0.5 s waits (flight, project permit, process permit): up to 1.5 s per call where one deadline gives 0.5 s.
+- `timeout` even when the store holds the file: the client already gets that file as `details.last`, only as an error; `fresh: false` says the same without failing the view.
+- Async routes: a larger change of the whole read path, not needed to bound the wait.

@@ -101,7 +101,8 @@ def test_a_persons_picture_is_public_while_their_profile_is(world: World) -> Non
     assert got.headers["etag"] == f'"{digest(url)}"'
     # The id address keeps its readers: a stranger never reads it, whatever the page.
     assert world.anyone.get(url).status_code in (401, 404)
-    assert world.owner.client.get(url).headers["cache-control"] == "private, no-cache"
+    kept = world.owner.client.get(url).headers["cache-control"]  # its readers' browsers only
+    assert kept == "private, max-age=31536000, immutable"
     assert world.owner.patch("/me", {"public_profile": False}).status_code == 200
     gone = world.anyone.get(public)
     assert gone.status_code == 404
@@ -182,9 +183,9 @@ def test_every_size_is_scaled_once_and_kept(
     scaled: list[str] = []
     decode = avatars.decode
 
-    def counted(settings: Any, data: bytes, kind: str, mode: str = "avatar") -> bytes:
+    def counted(settings: Any, data: bytes, kind: str, mode: str = "avatar", **kw: Any) -> bytes:
         scaled.append(mode)
-        return decode(settings, data, kind, mode)
+        return decode(settings, data, kind, mode, **kw)
 
     monkeypatch.setattr(avatars, "decode", counted)
     tags = {}
@@ -396,7 +397,7 @@ def test_a_private_profile_shows_the_placeholder(world: World) -> None:
     put_human(world.owner, "/me/avatar", image())
     world.owner.patch("/me", {"public_profile": False})
     html = main(world.anyone, "/maintainer")
-    assert '<span class="pic none" style="width:128px;height:128px"' in html
+    assert '<span class="pic none size-128" aria-hidden="true"></span>' in html
     assert "<img" not in html
     assert world.anyone.get("/api/v1/public/pages/maintainer").json()["data"]["picture"] is None
 

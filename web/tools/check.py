@@ -815,7 +815,7 @@ def load_catalog(path):
 
 # Literals that read as words but stay as they are in every language: the strict-mode
 # directive, product names, the brand in a page title, keys as a browser names them.
-NOT_PROSE = {"use strict", " · Maity", "Codex", "Hermes", "Kimi Code", "Cline", "Claude Code",
+NOT_PROSE = {"use strict", " · Maity", "Codex", "Antigravity", "Hermes", "Kimi Code", "Cline", "Claude Code",
              "⌘+Enter", "Ctrl+Enter", "Strg+Enter", "Control+Enter Meta+Enter",
              "Maity", "GitHub", "GitLab", "Gitea", "HTTP ", "SHA-256 ", "[U+", "?c=", "XXXX-XXXX-XXXX", "de", "staging",
              "badge ok", "reply primary", "nofollow ugc",

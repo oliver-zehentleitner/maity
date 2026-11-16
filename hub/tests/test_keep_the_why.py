@@ -394,7 +394,7 @@ def test_a_failed_member_keeps_its_last_good_summary(
     owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
     good = owner.get("/projects/maintainer/widget/keep-the-why").json()["members"][1]["summary"]
@@ -411,7 +411,7 @@ def test_a_root_that_cannot_be_read_fails_the_call_with_the_last_answer(
     owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
     first = owner.get("/projects/maintainer/widget/keep-the-why").json()
@@ -475,7 +475,7 @@ def test_the_cache_and_a_forced_read(
     owner: flow.Human, fake: Fake, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     flow.project(owner, "widget", repository={"url": REPO})
     owner.get("/projects/maintainer/widget/keep-the-why")
@@ -556,6 +556,34 @@ def test_the_background_read_fills_the_cache_once_per_project(
     )
     ktw._refresh_in_background(forge.Forge(None), project_id, REPO, jobs.append)
     assert len(jobs) == 2  # done: the next one may be scheduled
+
+
+@pytest.mark.parametrize(
+    ("raised", "logged"),
+    [(ktw.Busy(), False), (forge.ForgeUnavailableError("down"), False), (KeyError("x"), True)],
+)
+def test_a_failed_background_read_is_logged_unless_expected(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    raised: Exception,
+    logged: bool,
+) -> None:
+    """A busy family or a forge that did not answer is expected and quiet; anything else, a
+    bug in walk or digest, leaves a warning with its trace, and the cache as it was."""
+
+    def fail(*_args: Any, **_kwargs: Any) -> Any:
+        raise raised
+
+    monkeypatch.setattr(ktw.CACHE, "get", fail)
+    jobs: list[Any] = []
+    ktw._refresh_in_background(forge.Forge(None), "p-log", REPO, jobs.append)
+    with caplog.at_level("WARNING", logger="maity_hub.ktw"):
+        jobs[0]()
+    warned = [r for r in caplog.records if r.name == "maity_hub.ktw"]
+    assert bool(warned) is logged
+    if logged:
+        assert warned[0].exc_info is not None
+    assert "p-log" not in ktw._pending  # the failed read freed the project for the next one
 
 
 def _project_id(owner: flow.Human) -> str:
