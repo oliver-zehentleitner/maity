@@ -45,20 +45,21 @@ The admin needs to know that the key is there, never what it is.
 **See:** instance-settings.md#a-read-only-route-of-its-own-lists-every-maity_-setting-secrets-only-as-set-or-not-set — cb544480-3808-4eb6-8ee0-3930a613129f — as of 2026-11-16
 **Revisit when:** the hub reads a setting under a name it builds at run time, which the test's search for `"MAITY_…"` literals would not find
 
-`Settings.from_env` keeps the `MAITY_*` variables that are set, and the overview answers from that,
-never from `os.environ` at the time of the request: the hub reads its environment once, so what the
-process kept is what runs, and a test hands a client its own environment without touching the
-process's. `settings_overview.ENTRIES` names every setting once, with its group, its default
+`Settings.from_env` keeps the `MAITY_*` variables that are set, and the overview answers from
+that, never from `os.environ` at the time of the request: the hub reads its environment once, so
+what the process kept is what runs, and a test hands a client its own environment without touching
+the process's. `settings_overview.ENTRIES` names every setting once, with its group, its default
 (a constant of the module that owns the setting where one exists, a function for a derived one),
 whether it is secret and which admin section can set it too. Whether a setting counts as set
-follows the hub's own parser: most trim, a few read the value as written (`as_written`: the
-bind address, the public URL, the web directory, the database URLs, the SMTP password, the forge
+follows the hub's own parser: most trim, a few read the value as written (`as_written`: the bind
+address, the public URL, the web directory, the database URLs, the SMTP password, the forge
 token). A test sets each to spaces and holds the flag to what `Settings.from_env` does with it,
 once without and once under the S3 store (whose credentials are read only there), so a secret is
-shown set exactly when the hub runs with it. A setting that a new mode reads only within that mode
-needs that mode's base in the test (`MODE_BASES`), or the binding does not see it. One rule for
-all secrets ("set when the raw value is not empty") was tried and dropped in review: it showed a
-trimmed key of only a newline as set while the hub ran without it.
+shown set when it has a value under its parser's rule for spaces; that its feature is in use is
+not part of `set` (an S3 key with the local store is set all the same). A setting that a new mode
+reads only within that mode needs that mode's base in the test (`MODE_BASES`), or the binding does
+not see it. One rule for all secrets ("set when the raw value is not empty") was tried and dropped
+in review: it showed a trimmed key of only a newline as set while the hub ran without it.
 
 The guard test reads every `"MAITY_…"` literal under `hub/src/maity_hub`, not only `config.py`:
 mail, registration and the GitHub App read their settings in their own modules. A name found

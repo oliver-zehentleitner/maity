@@ -223,7 +223,7 @@ def test_every_setting_is_described_where_the_overview_points() -> None:
 def test_spaces_count_as_the_parsers_count_them(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """Set exactly when the hub runs with it: a password of only spaces is set (the hub takes
+    """Set as the hub's parser counts it: a password of only spaces is set (the hub takes
     the SMTP password as written), a key or a switch of only spaces or a newline is not (their
     parsers trim) (§16.14; A895 N1, A899 P2, A904)."""
     env = {

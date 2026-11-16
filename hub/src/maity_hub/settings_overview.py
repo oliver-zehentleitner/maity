@@ -226,8 +226,9 @@ ENTRIES: tuple[Entry, ...] = (
 
 def _entry(entry: Entry, settings: Settings, env: Mapping[str, str]) -> dict[str, Any]:
     raw = env.get(entry.name, "")
-    # Set as the hub's own parser reads it: as written for the few read that way, else trimmed,
-    # so a secret is shown set exactly when the hub runs with it (A895 N1, A899 P2, A904).
+    # Set as the hub's own parser reads it: as written for the few read that way, else trimmed.
+    # A secret is shown set when it has a value under that rule, also while its feature is not
+    # in use, e.g. an S3 key with the local store (A895 N1, A899 P2, A904, A930).
     value = raw if entry.as_written else raw.strip()
     row: dict[str, Any] = {"name": entry.name, "group": entry.group}
     row["source"] = "environment" if value else "default"
