@@ -18329,6 +18329,12 @@ routes, in this order:
    takeover (§6.19) or a human's reassignment (§6.17).
 5. Create a placement on a runner of their own. Its pickup is a new
    instance (`new_instance`, §15.9), which claims again.
+6. A card still assigned to the old instance (`assigned_instance`) stays
+   so after the release and the revocation, and the new instance's claim
+   of it is `instance_assigned` (§6.18). It is assigned again to the new
+   instance with `POST …/tasks/{id}/assign` (§6.4), by whoever may assign:
+   `tasks:admin`, or `line:lead` within reach. Owning the profile does not
+   give that right; without it the profile owner asks a project admin.
 
 The membership stays. Nothing else moves: it is no replacement's
 handover, no session or work tree goes over, and the old clone stays on
