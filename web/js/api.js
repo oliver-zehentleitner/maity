@@ -1478,7 +1478,40 @@ window.Maity = window.Maity || {};
     return d ? { direct: d[0] } : null;
   }
   // A message item as §9 shows it (#206): redacted and redaction always there.
-  const messageView = (x) => Object.assign({ redacted: false, redaction: null }, x);
+  // §9.7: each human's current verdict, oldest first; a redacted message reads none.
+  const messageView = (x) => {
+    const v = Object.assign({ redacted: false, redaction: null }, x);
+    v.verdicts = v.redacted ? [] : (x.verdicts || []).map((y) => Object.assign({}, y));
+    return v;
+  };
+  // §9.7: a human's verdict on someone else's chat message, given, replaced (PUT) or taken back (DELETE).
+  function verdictRoute(m, body, path, method) {
+    const meId = me().member.id;
+    if (me().member.kind !== "human") fail(403, "forbidden", "only humans give a verdict", path, { reason: "humans_only" });
+    const seq = Number(m[3]);
+    let msg = null;
+    if (/^cnv-/.test(m[2])) {
+      const c = groupChat(m[1], m[2], path);
+      if (!groupItem(m[1], c, path)) fail(404, "not_found", "Not found", path);
+      msg = c.items.find((x) => x.seq === seq);
+      if (msg && c.view.closed_at) fail(409, "conversation_closed", "the chat is closed", path, { closed_reason: c.view.closed_reason || null });
+    } else {
+      msg = keyed(m[1], "conversations.json", m[2], path).items.find((x) => x.seq === seq);
+    }
+    if (!msg) fail(404, "not_found", "Not found", path);
+    if (msg.from === meId) fail(400, "invalid", "your own message", path, { fields: { seq: "own_message" } });
+    if (msg.redacted || msg.body === null) fail(400, "invalid", "a redacted message", path, { fields: { seq: "redacted" } });
+    const kept = (msg.verdicts || []).filter((v) => v.by !== meId);
+    if (method === "DELETE") { msg.verdicts = kept; return messageView(msg); }
+    if (!["agree", "disagree"].includes(body.value)) fail(400, "invalid", "agree or disagree", path, { fields: { value: "invalid" } });
+    const sentence = typeof body.sentence === "string" && body.sentence.trim() ? body.sentence.trim() : null;
+    if (sentence && body.value === "agree") fail(400, "invalid", "a sentence goes with disagree only", path, { fields: { sentence: "agree_has_none" } });
+    if (sentence && Array.from(sentence).length > 500) fail(400, "invalid", "at most 500 characters", path, { fields: { sentence: "too_long" } });
+    const before = (msg.verdicts || []).find((v) => v.by === meId);
+    if (before && before.value === body.value && before.sentence === sentence) return messageView(msg);
+    msg.verdicts = kept.concat({ by: meId, value: body.value, sentence, at: nowIso(), seq: 9000 + kept.length + seq });
+    return messageView(msg);
+  }
   // Read again, a deleted file says so (§8.7): the message as written, the tombstone from the file.
   const withTombstones = (slug, x) => (x.attachments && x.attachments.length ? Object.assign({}, x, { attachments: x.attachments.map((f) => {
     const a = attachmentsOf(slug).find((y) => y.id === f.id);
@@ -5755,7 +5788,7 @@ window.Maity = window.Maity || {};
         attachments: bindAttachments(m[1], body.attachments, last + 1, path) };
       c.items.push(msg);
       c.read[me().member.id] = msg.seq;
-      return msg;
+      return messageView(msg);
     }],
     // §8.5: a chat message redacted by a human in the room, the direct chat's
     // human party with events:admin, or blind in a closed group chat.
@@ -5862,8 +5895,10 @@ window.Maity = window.Maity || {};
         attachments: bindAttachments(m[1], body.attachments, last + 1, path),
       };
       conv.items.push(Object.assign({ seen_by_human: true }, msg));
-      return msg;
+      return messageView(msg);
     }],
+    ["PUT", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages\/(\d+)\/verdict$/, (m, body, path) => verdictRoute(m, body, path, "PUT")],
+    ["DELETE", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages\/(\d+)\/verdict$/, (m, body, path) => verdictRoute(m, body, path, "DELETE")],
   ];
 
   function fromFixtures(method, fullPath, body, headers) {

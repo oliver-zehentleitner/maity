@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, func, insert, select
+from sqlalchemy import Engine, func, insert, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -222,7 +222,14 @@ def test_the_sweep_goes_in_batches_and_stops_when_asked(
     stopped = threading.Event()
     stopped.set()
     assert retention.prune(migrated, stopped) == dict.fromkeys(
-        ("account_record", "mail_item_sent", "mail_delivery", "notification_position"), 0
+        (
+            "account_record",
+            "mail_item_sent",
+            "mail_delivery",
+            "notification_position",
+            "pending_origin",
+        ),
+        0,
     )
     assert retention.prune(migrated, budget=0)["mail_delivery"] == 0
     assert retention.prune(migrated)["mail_delivery"] == 5
@@ -275,3 +282,49 @@ def test_a_record_item_mailed_two_months_ago_is_not_mailed_again(
     factory.login_handle(make_client(), "maintainer")  # a new sign-in moves the stamp
     mail_tests.run(migrated)
     assert alerts() == first + 1  # the new sign-in only, not the old one again
+
+
+# --- where a pending address change was asked from ---------------------------------------
+
+
+def test_the_origin_of_an_expired_address_change_is_cleared(migrated: Engine, now: Any) -> None:
+    expired, edge, open_ = factory.human(migrated), factory.human(migrated), factory.human(migrated)
+    c = t.notification_settings.c
+    for human_id, expires in (
+        (expired, NOW - timedelta(hours=1)),
+        (edge, NOW),
+        (open_, NOW + timedelta(hours=1)),
+    ):
+        _settings(migrated, human_id, "verified")
+        with migrated.begin() as conn:
+            conn.execute(
+                update(t.notification_settings)
+                .where(c.human_id == human_id)
+                .values(
+                    pending_address=f"new-{human_id}@example.org",
+                    pending_nonce="n",
+                    pending_expires_at=expires,
+                    pending_browser="Firefox",
+                    pending_os="Linux",
+                    pending_ip="198.51.100.7",
+                )
+            )
+    assert retention.prune(migrated)["pending_origin"] == 2  # a link dies at its expiry
+    with migrated.begin() as conn:
+        rows = {
+            row.human_id: row
+            for row in conn.execute(
+                select(c.human_id, c.pending_address, c.pending_browser, c.pending_os, c.pending_ip)
+            )
+        }
+    for human_id in (expired, edge):
+        row = rows[human_id]
+        assert (row.pending_browser, row.pending_os, row.pending_ip) == (None, None, None)
+        assert row.pending_address == f"new-{human_id}@example.org"  # the settings still show it
+    row = rows[open_]
+    assert (row.pending_browser, row.pending_os, row.pending_ip) == (
+        "Firefox",
+        "Linux",
+        "198.51.100.7",
+    )
+    assert retention.prune(migrated)["pending_origin"] == 0
