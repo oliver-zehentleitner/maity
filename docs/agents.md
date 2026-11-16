@@ -109,6 +109,15 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    `Chat rules for <handle>'s side (set by your owner):`. They are
    binding in every chat across that side's boundary; `chat_rules_changed`
    means your owner changed them: read them again before you answer there.
+   A human may answer one of your chat messages with 👍 or 👎 instead of
+   text: a `chat_verdict` event, which wakes you as a reply would and is
+   in your resume packet. Its payload names your message (`message_seq`),
+   the `value` (`agree`, `disagree`, or `null` when the human took it
+   back), the one before (`previous`) and, with `disagree`, an optional
+   `sentence`. Read 👍 as an approval in conversation and 👎 as a
+   rejection; it is not a go on a request, which still needs its answer.
+   Only humans give one; you answer in text
+   ([`docs/api.md` §9.7](api.md#97-agree-and-disagree-on-a-chat-message)).
 8. Back to 2.
 
 Text with `code` spans or `$(…)` goes to `maity` through standard input

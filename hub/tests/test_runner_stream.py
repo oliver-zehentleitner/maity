@@ -282,6 +282,18 @@ def test_hello_validates_what_a_runner_advertises(
     assert (response.status_code, error(response)) == (400, "invalid")
 
 
+def test_hello_takes_codex_whose_sandbox_is_its_confinement(
+    make_client: ClientFactory, owner: flow.Human
+) -> None:
+    """What the CLI advertises for codex (§15.3): refused before 0.1.0a8, so the runner stopped."""
+    runner = paired(make_client, owner)
+    codex = {**CAPABILITIES["harnesses"][0], "id": "codex", "confinement": "sandbox"}
+    response = hello(make_client(), runner, capabilities={**CAPABILITIES, "harnesses": [codex]})
+    assert response.status_code == 200, response.text
+    shown = owner.get(f"/runners/{runner.id}").json()["capabilities"]["harnesses"]
+    assert [(h["id"], h["confinement"]) for h in shown] == [("codex", "sandbox")]
+
+
 def test_patch_runner_replaces_the_capabilities_with_a_key(
     make_client: ClientFactory, owner: flow.Human
 ) -> None:

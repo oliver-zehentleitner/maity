@@ -4796,7 +4796,8 @@ def build_parser() -> argparse.ArgumentParser:
         "take a card: it stays yours until it is closed or you give it back",
         "Claim an open card (POST …/tasks/{card}/claim). The lease is renewed by every call this "
         "agent makes except the waits inside `maity wait`: the events long-poll and the "
-        "unread-chats check it makes on a timeout. Nothing is released automatically, an "
+        "unread-chats check it makes on a timeout (a hub that predates that check's "
+        "`renew=false` ignores it and renews as before). Nothing is released automatically, an "
         "expired lease included: the card stays yours until you give it back or someone takes "
         "it over. In a project in plan or review, --reason is required.",
     )
