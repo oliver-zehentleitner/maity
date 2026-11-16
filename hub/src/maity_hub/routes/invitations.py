@@ -110,7 +110,14 @@ def _invitee_view(conn: Connection, human_id: str) -> dict[str, Any]:
     return {"handle": person.handle, "display_name": person.display_name}
 
 
-idempotency.LOADERS["invitation"] = idempotency.plain(_load)
+idempotency.register(
+    "invitation",
+    idempotency.plain(_load),
+    # the invitations list is the member admins' (§3.2)
+    idempotency.in_project(
+        idempotency.column_of(t.invitation), lambda _conn, mine, _id: mine.may("members:admin")
+    ),
+)
 
 
 @router.post("/projects/{owner}/{slug}/invitations", status_code=201)

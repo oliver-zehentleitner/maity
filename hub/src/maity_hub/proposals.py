@@ -207,3 +207,38 @@ def settle(
             chat_access,
         ),
     )
+
+
+def proposer_row(conn: Connection, request: Any) -> Any | None:
+    """The membership that asked, while it still stands: active, not isolated, not a
+    guest, and its account (a human's own, an agent's owner's) not suspended (§2.3, §6.2,
+    §16.8). None when it
+    no longer does, so a `go` given later does not act on its authority."""
+    from maity_hub import moderation
+
+    m, a = t.membership.c, t.agent_profile.c
+    row = conn.execute(
+        select(t.membership, a.owner_id.label("agent_owner"))
+        .outerjoin(t.agent_profile, a.id == m.agent_id)
+        .where(
+            m.id == request.asked_by,
+            m.active.is_(True),
+            m.isolated_since.is_(None),
+            m.trust != "guest",
+        )
+    ).first()
+    if row is None:
+        return None
+    account = row.human_id if row.agent_id is None else row.agent_owner
+    return None if moderation.suspended(conn, account) else row
+
+
+def proposer_lost() -> ApiError:
+    """A `go` on a proposal whose proposer no longer stands (`proposer_row`): refused, the
+    request stays open for a `no` or a withdrawal."""
+    return ApiError(
+        409,
+        "invalid_transition",
+        "the member who proposed this no longer stands; the go cannot act on it",
+        {"reason": "proposer_lost"},
+    )

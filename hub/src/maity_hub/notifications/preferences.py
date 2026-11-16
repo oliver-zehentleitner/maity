@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import admin, clock, languages
+from maity_hub import admin, catalog, clock, languages
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
 from maity_hub.errors import ApiError, invalid
@@ -158,6 +158,16 @@ def row_of(conn: Connection, human_id: str, *, lock: bool = False) -> Any:
     except IntegrityError:  # a first write of the same human committed between our read and insert
         pass
     return conn.execute(query.with_for_update()).one()
+
+
+def verified_row(conn: Connection, human_id: str) -> Any:
+    """The human's settings row when it holds a verified address, else None."""
+    row = conn.execute(
+        select(t.notification_settings).where(t.notification_settings.c.human_id == human_id)
+    ).first()
+    if row is None or row.address_status != "verified" or row.address is None:
+        return None
+    return row
 
 
 _NONE = SimpleNamespace(
@@ -639,18 +649,16 @@ def apply_address(
     )
     link = f"{public_url}/mail/verify/{token}"
     # Never the handle, the name or projects: nobody confirmed this address yet (§18.4).
+    # The language is the human's own (§6.2); it names nobody.
+    words = catalog.section("mail", text_language(conn, human_id))
     outbox.enqueue(
         conn,
         kind="security",
         human_id=human_id,
         to=wanted,
         extra_headers={"_purpose": "verify"},
-        subject="[Maity] Confirm your address",
-        body=(
-            f"Someone asked to send Maity mail from {public_url} to {wanted}.\n\n"
-            f"Confirm the address: {link}\n\n"
-            "The link is valid for 24 hours. If you did not ask for this, ignore this mail.\n"
-        ),
+        subject=f"[Maity] {words['verify_subject']}",
+        body=words["verify_body"].format(url=public_url, address=wanted, link=link),
     )
 
 
@@ -856,24 +864,29 @@ def _tell_old_address(
     records.write(
         conn, human_id, "email_address_changed", {"masked": masked, "removed": new is None}
     )
+    language = text_language(conn, human_id)
+    words, unknown = catalog.section("mail", language), catalog.section("notify", language)
     where = ""
     if session is not None:
-        browser = session.browser or "a browser"
-        system = session.os or "an unknown system"
-        where = f"\nFrom: {browser} on {system}, {session.ip or 'an unknown address'}"
-    change = f"was changed to {masked}" if masked else "was removed"
+        where = "\n" + words["address_from"].format(
+            browser=session.browser or unknown["a_browser"],
+            os=session.os or unknown["unknown_os"],
+            ip=session.ip or words["unknown_ip"],
+        )
+    body = words["address_changed_body" if masked else "address_removed_body"].format(
+        url=public_url,
+        masked=masked,
+        time=clock.rfc3339(clock.now()),
+        where=where,
+        sessions=f"{public_url}/account/sessions",
+    )
     outbox.enqueue(
         conn,
         kind="security",
         human_id=human_id,
         to=old,
-        subject="[Maity] Your sign-in address was changed",
-        body=(
-            f"The Maity address of your account at {public_url} {change} "
-            f"on {clock.rfc3339(clock.now())}.{where}\n\n"
-            "If this was not you, sign in and check your sessions: "
-            f"{public_url}/account/sessions\n"
-        ),
+        subject=f"[Maity] {words['address_subject']}",
+        body=body,
     )
 
 

@@ -15,7 +15,7 @@ from sqlalchemy import Engine, delete, select, update
 
 from maity_hub import clock, events, holder_stalled, not_listening
 from maity_hub import tables as t
-from maity_hub.auth import leaks
+from maity_hub.auth import revocation
 from maity_hub.db import downgrade, migrate
 from maity_hub.events import transaction
 from tests import flow
@@ -90,7 +90,9 @@ def test_a_caller_that_moves_the_claims_says_nothing(setup: Setup) -> None:
     """A replacement and a removal move or release the claims themselves and say so."""
     setup.claim()
     with transaction(setup.engine) as conn:
-        assert leaks.revoke(conn, setup.agent.credential_id, "replaced", by=None, holder_moves=True)
+        assert revocation.revoke(
+            conn, setup.agent.credential_id, "replaced", by=None, holder_moves=True
+        )
     assert setup.events("holder_stalled") == []
 
 
@@ -137,7 +139,7 @@ def test_a_second_revocation_says_nothing(setup: Setup) -> None:
     revoked = setup.owner.post(f"{BASE}/credentials/{setup.agent.credential_id}/revoke", {})
     assert revoked.status_code == 200, revoked.text
     with transaction(setup.engine) as conn:
-        assert not leaks.revoke(conn, setup.agent.credential_id, "lost laptop", by=None)
+        assert not revocation.revoke(conn, setup.agent.credential_id, "lost laptop", by=None)
     assert len(setup.events("holder_stalled")) == 1
 
 
@@ -152,7 +154,7 @@ def test_a_holder_without_a_session_is_still_session_ended(setup: Setup) -> None
             )
         )
     with transaction(setup.engine) as conn:
-        assert leaks.revoke(conn, setup.agent.credential_id, "lost laptop", by=None)
+        assert revocation.revoke(conn, setup.agent.credential_id, "lost laptop", by=None)
     [event] = setup.events("holder_stalled")
     assert event.payload["reason"] == "session_ended"
     assert (event.payload["session_id"], event.payload["last_seen_at"]) == (None, None)

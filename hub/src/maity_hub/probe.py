@@ -110,6 +110,13 @@ def _read(fg: forge.Forge, repository: str, kind: str, ref: str) -> dict[str, An
         ) from None
 
 
+def _only_github(project: Any) -> None:
+    """A probe read exists only for `github.com` (§11). Anything else is not covered,
+    and nothing is requested: the host of `repository.url` is not a target."""
+    if forge.kind_of(project.repository_url) != "github":
+        raise forge.NotCoveredError("forge_not_github")
+
+
 def observe(
     engine: Engine,
     fg: forge.Forge,
@@ -124,6 +131,7 @@ def observe(
     Raises `forge.ForgeUnavailableError` when the forge must be asked and
     does not answer; the caller decides what the last observation is worth.
     """
+    _only_github(project)
     cached = _young(engine, project.id, kind, ref, max_age, floor)
     if cached is not None:
         return cached
@@ -247,6 +255,7 @@ def observe_commit(
     The commit's own read is stored only once the branch read is in too: a read dropped
     after the commit part leaves no stored commit behind that `details.last` or a later
     round could take for a complete observation."""
+    _only_github(project)
     commit = _young(engine, project.id, "commit", sha, max_age, floor)
     if commit is None:
         observed_at = clock.now()
@@ -698,6 +707,8 @@ def observe_visibility(engine: Engine, fg: forge.Forge, project_id: str) -> None
     project = _project(engine, project_id)
     if project is None or project.public_page != "on" or project.repository_url is None:
         return
+    if forge.kind_of(project.repository_url) != "github":
+        return  # off GitHub the visibility is not asked (§11)
     public = fg.for_project(project_id).repository_public(
         forge.repository_of(project.repository_url)
     )
@@ -998,7 +1009,9 @@ def _covered(
     names the project, as the reason alone can't be told apart when several have it."""
     try:
         work(*args)
-    except forge.NotCoveredError as error:
+    except (forge.NotCoveredError, forge.InvalidRepositoryError) as error:
+        # A URL that names no repository is that project's own fault, as a missing grant
+        # is: left out for the round, never the end of the round for every later project.
         log.warning("probe: project %s: %s", project_id, error)
         not_covered.add(project_id)
         return None

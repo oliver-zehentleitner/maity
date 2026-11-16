@@ -21,6 +21,20 @@ def test_defaults() -> None:
     assert (settings.host, settings.port) == ("127.0.0.1", 8080)
     assert settings.public_url == "http://127.0.0.1:8080"
     assert settings.web_dir_required is False
+    assert settings.seal_verifiers is False
+
+
+def test_sealing_verifiers_is_opt_in_and_needs_the_key() -> None:
+    """MAITY_SEAL_VERIFIERS (docs/api.md §2.2): off by default, also with a key."""
+    key = "q0bS0b3k1uN4b9dW8m2Yx5zR7cJ6vT1eH3gK8pL0aQs="
+    assert Settings.from_env({"MAITY_SECRET_KEY": key}).seal_verifiers is False
+    on = {"MAITY_SECRET_KEY": key, "MAITY_SEAL_VERIFIERS": "1"}
+    assert Settings.from_env(on).seal_verifiers is True
+    assert Settings.from_env({**on, "MAITY_SEAL_VERIFIERS": "0"}).seal_verifiers is False
+    with pytest.raises(ConfigError, match="MAITY_SEAL_VERIFIERS=1 needs MAITY_SECRET_KEY"):
+        Settings.from_env({"MAITY_SEAL_VERIFIERS": "1"})
+    with pytest.raises(ConfigError, match="MAITY_SEAL_VERIFIERS must be 1 or 0"):
+        Settings.from_env({**on, "MAITY_SEAL_VERIFIERS": "maybe"})
 
 
 @pytest.mark.parametrize(

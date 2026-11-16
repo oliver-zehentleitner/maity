@@ -116,6 +116,9 @@ def test_input_is_read_loosely(make_client: ClientFactory) -> None:
     assert device_codes.normalise("K7QM-4XPR-9D2U") is None  # U is not Crockford
     assert device_codes.normalise("K7QM-4XPR") is None  # the eight of before, no longer
     assert device_codes.normalise("K7QM") is None
+    fresh = device_codes.new_code()  # stored as its hash: it reads back as itself
+    assert device_codes.normalise(fresh) == fresh
+    assert device_codes.normalise(f"{fresh[:4]}-{fresh[4:8]}-{fresh[8:]}".lower()) == fresh
 
 
 def test_a_wrong_pick_denies_the_code(make_client: ClientFactory, desk: flow.Human) -> None:

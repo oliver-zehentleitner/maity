@@ -104,7 +104,8 @@ queue loses its text at once, since the text carries the mail's links (a
 confirmation, a sign-in, a registration link), and its headers (the signed
 unsubscribe link is one), and keeps its recipient and subject; the row is
 deleted after seven days, so the outbox keeps no lasting record of who got
-what. A row that left before this change loses its text on the next sweep.
+what. A row that left before this change lost its text on a later sweep
+(done and superseded on 2026-11-14: that sweep is removed, see the update below).
 A row still waiting keeps its text for the seconds it takes to send; a mail
 that keeps failing is dropped on the first failed attempt after 24 hours, so
 the text of a row nobody retries can stay longer.
@@ -126,6 +127,17 @@ like the images worker needs no new process for one replica.
   text at all. Clearing the text when the row leaves the queue closes the
   long exposure (a backup taken a week later) without that dependency
   (card tsk-ayng0czsxp11, from the review of #489).
+
+**Updated 2026-11-14 (tsk-3ar6h2s0kff5):** the sweep's UPDATE that emptied rows which left the
+queue before their text went at once is removed; `forget_old` only deletes rows past the week.
+Those rows left in late October (#544) and were deleted after their week, and every way out of
+the queue empties the row: `_finish` for `sent`, `failed` (a refusal, and a row that cannot be
+built or whose handling raises, tsk-dv8f620hjebf) and `dropped` (over budget, a disabled address,
+an ended membership, 24 hours of retries); an account's deletion drops its waiting rows and
+empties every row of the account in the same transaction (`account_deletion._forget_mail`). The
+UPDATE cast the headers to text over the whole table every five seconds. `mail_delivery` rows
+are now deleted after a day by the hourly retention sweep (notifications.md —
+c28a0dba-829b-4476-a422-9eadcca9337a).
 
 ## An outbox row is claimed before it is sent; the claim lapses after two minutes
 
@@ -173,6 +185,44 @@ part of the outbox from its first version, not a later change on top.
   one transaction depends on no commit and no clock.
 - Counting when a mail is sent: the place would be free again for a mail that fails for good;
   counting when it is admitted keeps a place used, the strict side of a budget against abuse.
+
+## One row never stops the outbox: a mail that cannot be built is failed before it is admitted, and rows left in `sending` need no migration
+
+**Id:** 34e5cd71-12cb-4484-b03c-2c4309665605
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-dv8f620hjebf (outbox robustness and header cleaning), 2026-11-13; `mail/outbox.py` `_deliver`, `_unsendable`
+**Revisit when:** the outbox gets a schedule of its own for retries, or a row could fail to build only for a while (a setting that changes the message)
+**See:** mail.md#an-outbox-row-is-claimed-before-it-is-sent-the-claim-lapses-after-two-minutes — 92cf47a5-5206-4552-a493-2255cb3a1e48 — as of 2026-11-13
+
+Each row of a pass is claimed, built, admitted and sent inside its own handler. The message is
+built (and turned into bytes once) in the claim's transaction, before the budget is asked: a row
+that cannot be built is `failed` there, emptied as every finished row is, counted as `failed` in
+`mail_delivery` and logged by id, kind and the error's class, never its text or headers. Any
+other failure of a row that is not the database's (`SQLAlchemyError` ends the pass, as before)
+marks that row `failed` too, and the pass goes on with the next one. Header text is folded to
+one line (every Unicode Cc, Zl and Zp character, not only ASCII ones), so a name a human typed
+builds.
+
+Rows that an earlier version left in `sending` get no migration and no startup step: their claim
+lapses after two minutes like any claim, the next pass takes them again, and under this version
+they are built first, then sent or failed.
+
+**Reason:** a build failure does not go away by retrying, so a row that raised would come back on
+every pass, and a mail that never leaves should hold no place in its kind's budget. Building
+before admitting means such a row takes no place at all; failing it ends its loop. The lapse already is the path back for a row
+whose process did not finish, so a separate unstick step would repeat it.
+
+**Rejected alternatives:**
+- A migration that sets every `sending` row back to `waiting`: the lapse does the same within
+  two minutes, and a migration would also release a row a running old process is in the middle
+  of sending.
+- A startup step that does the same: the same overlap with a live process, every start.
+- Retrying a row that failed to build with backoff, as a server's failure is: the same data
+  builds the same way, so it would only delay the `failed`.
+- Admitting first and handing the place back when the build fails: two writes to the budget's
+  row for nothing; building first needs none.
 
 ## A registration's link is a signed token whose nonce is kept only as a hash, in the mail's own transaction
 

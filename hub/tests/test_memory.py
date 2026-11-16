@@ -285,6 +285,40 @@ def test_the_packet_reads_many_tiny_entries_in_batches(
     assert len(team["items"]) == team["total"] and team["items"][0]["text"] == "e59"
 
 
+def test_entry_views_cost_the_same_for_3_entries_and_for_20(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The listing and the packet build their entries in batches: the memberships and the
+    handles once, never four to six lookups per entry."""
+    from tests.statements import count_statements
+
+    agent = flow.agent(make_client, owner)
+
+    def grow(n: int) -> None:
+        for i in range(n):
+            added(agent, f"team {i}")  # an agent author
+            assert owner.post(M, {"store": "community", "text": f"c{i}"}).status_code == 201
+        gone = added(agent, f"gone {n}")
+        assert remove(agent, gone["id"]).status_code == 200  # a tombstone with its `by`
+
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    where = t.memory_entry.c.project_id == project_id
+
+    def costs() -> tuple[int, int]:
+        listing = count_statements(migrated, lambda: owner.get(f"{M}?deleted=true&limit=200"))
+        with migrated.connect() as conn:
+            packet = count_statements(migrated, lambda: memory._compact(conn, where))
+        return listing, packet
+
+    grow(3)
+    few = costs()
+    grow(17)  # 40 live entries: one of the packet's batches of PACKET_BATCH, as for 6
+    many = costs()
+    assert len(owner.get(f"{M}?deleted=true&limit=200").json()["items"]) == 42
+    assert many == few, (few, many)
+
+
 def test_soul_changed_reaches_every_project_and_the_owner_outside_it(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -465,6 +499,41 @@ def test_an_agents_community_entry_is_a_proposal_a_project_admin_confirms(
     assert entry["by"]["member_id"] == agent.id and entry["by"]["session_id"].startswith("ses-")
     assert entry["confirmed_by"]["id"] == owner.id and entry["request_id"] == request["id"]
     assert _events(migrated, "memory_added")[-1].audience == ["all"]
+
+
+@pytest.mark.parametrize("change", ["isolated", "owner_suspended"])
+def test_a_go_on_a_proposal_needs_the_proposer_still_standing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, change: str
+) -> None:
+    # §19.2: the entry is the proposing agent's; a go after its isolation, or after its
+    # owner's suspension, stores nothing and leaves the request open.
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    request = agent.post(M, {"store": "community", "text": "Never on a Friday."}).json()
+    with migrated.begin() as conn:
+        if change == "isolated":
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.agent_id == agent.id)
+                .values(isolated_since=clock.now())
+            )
+        else:  # beside the route: the hub reads the column at the go
+            conn.execute(
+                update(t.human).where(t.human.c.id == owner.id).values(suspended_at=clock.now())
+            )
+    answer = f"/projects/maintainer/maity/requests/{request['id']}/answer"
+    if change == "owner_suspended":  # a co-owner answers: the suspended one signs in no more
+        other = flow.human(make_client, migrated, "co-owner")
+        with migrated.connect() as conn:
+            project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        factory.membership(migrated, project_id, "owner", human_id=other.id)
+        refused = other.post(answer, {"reply_id": "go"})
+    else:
+        refused = owner.post(answer, {"reply_id": "go"})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "proposer_lost"}
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.memory_entry)).first() is None
 
 
 def test_a_refused_or_withdrawn_proposal_stores_nothing(

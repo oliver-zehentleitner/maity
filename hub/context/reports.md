@@ -315,13 +315,18 @@ issue that starts while a suspension is in progress therefore waits for
 it, and then refuses. `write_guard.hold` refuses a suspended account as
 it refuses a deleted one.
 
-The lock order is account, then project, then the human's own rows
-(sessions, the human row):
+The lock order is account, then the runners (credential, then row), then
+project, then the human's own rows (sessions, the human row):
 
-- The suspension takes the account lock first. Then it revokes the agent
-  and runner credentials, which lock their projects. Only after that does
-  it end the sessions, void the mailed links and update the human row,
-  because ordinary project work locks the project before the human.
+- The suspension takes the account lock first. Then it takes its runners'
+  live credentials and their rows, in the order a runner's own call takes
+  them (credential, then runner), and then every project the revocations
+  will lock, in one pass in the order of their ids. Then it revokes the
+  account's agent credentials, and then stops its runners and revokes
+  their credentials (hub/context/placements.md, the entry on runner
+  credential revocations). Only after that does it end the sessions, void
+  the mailed links and update the human row, because ordinary project
+  work locks the project before the human.
 - Every issuer takes the account lock before its other locks:
   - The join exchange and the runner pairing take it shared right after
     reading their link or enrollment, before the profile check and the

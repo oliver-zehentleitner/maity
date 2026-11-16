@@ -121,6 +121,47 @@ def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
     return humans, shown
 
 
+def member_pictures(
+    conn: Connection, humans: list[tuple[str, bool]], agents: list[str]
+) -> dict[str, str | None]:
+    """The picture of each member as their own page shows it (§16.9), by human or agent id:
+    a person's (`humans`, each with their `public_profile`) only while their profile is on,
+    `None` otherwise; an agent's always. The one rule of every page whose `data` names members
+    with a picture: the project page and its Team and Organisation tabs."""
+    from maity_hub import avatars
+
+    pictures: dict[str, str | None] = dict.fromkeys(human_id for human_id, _ in humans)
+    pictures |= avatars.public_urls(
+        conn, [*(human_id for human_id, shown in humans if shown), *agents]
+    )
+    return pictures
+
+
+def team_details(
+    conn: Connection, project_id: str, humans: list[Any], agents: list[Any]
+) -> tuple[dict[str, str | None], dict[str, str], dict[str, str | None]]:
+    """What the page's data adds to each one it names (§16.9, `project`): the picture a person's
+    own page shows (none while their `public_profile` is off; an agent always has one), the role
+    of the membership in this project, as the Team tab shows it, and an agent's harness, as its
+    own page shows it."""
+    from maity_hub import public_agents
+
+    pictures = member_pictures(
+        conn, [(h.id, bool(h.public_profile)) for h in humans], [a.id for a in agents]
+    )
+    m = t.membership.c
+    roles: dict[str, str] = {}
+    for human_id, agent_id, role in conn.execute(
+        select(m.human_id, m.agent_id, m.role).where(m.project_id == project_id, m.active.is_(True))
+    ).all():
+        roles[human_id or agent_id] = role
+    harnesses: dict[str, str | None] = {}
+    for a in agents:
+        found = public_agents.memberships(conn, a.id)
+        harnesses[a.id] = public_agents.latest_session(conn, found)[1] if found else None
+    return pictures, roles, harnesses
+
+
 STAT_DAYS = 30
 STAT_LABELS = (
     ("cards_done", "Cards done"),
@@ -186,15 +227,23 @@ def stat_value(key: str, value: Any) -> str:
 
 
 def _per_day_html(series: list[dict[str, Any]]) -> str:
-    """The cards done per day as bars: inline style only, the text of each day in its title."""
+    """The cards done per day as bars of an SVG, sized by attributes and never by an inline style,
+    which the app shell's policy refuses where the page stands inside it (tsk-8fk897a9tan8); the
+    text of each day in its title."""
     peak = max((day["count"] for day in series), default=0) or 1
+    top = 41
     bars = "".join(
-        f'<span title="{escape(day["date"])}: {day["count"]}" style="display:inline-block;'
-        f"width:6px;margin-right:2px;background:currentColor;opacity:.6;"
-        f'height:{1 + 40 * day["count"] // peak}px"></span>'
-        for day in series
+        f'<rect x="{8 * i}" y="{top - (1 + 40 * day["count"] // peak)}" width="6" '
+        f'height="{1 + 40 * day["count"] // peak}">'
+        f'<title>{escape(day["date"])}: {day["count"]}</title></rect>'
+        for i, day in enumerate(series)
     )
-    return f'<p aria-label="Cards done per day, last {STAT_DAYS} days">{bars}</p>'
+    width = max(8 * len(series) - 2, 0)
+    return (
+        f'<p><svg class="per-day" role="img" width="{width}" height="{top}" '
+        f'viewBox="0 0 {width} {top}" fill="currentColor" fill-opacity=".6" '
+        f'aria-label="Cards done per day, last {STAT_DAYS} days">{bars}</svg></p>'
+    )
 
 
 def _statistics_html(stats: dict[str, Any]) -> str:
@@ -215,6 +264,25 @@ def _statistics_html(stats: dict[str, Any]) -> str:
         )
         html += f"<h3>Per agent</h3><table><tr><th>Agent</th>{head}</tr>{body}</table>"
     return html
+
+
+def pages_with_picture(conn: Connection, owner_id: str) -> list[tuple[str, str]]:
+    """The project pages that show a member's picture (§16.9, `project`, `team` and
+    `organisation`): the page and the views (its Team and Organisation tabs) of each public
+    project where the person or the agent is an active member, in its team and in `online`."""
+    m = t.membership.c
+    ids = conn.execute(
+        select(t.project.c.id)
+        .join(t.membership, m.project_id == t.project.c.id)
+        .where(
+            t.project.c.public_page == "on",
+            m.active.is_(True),
+            (m.human_id == owner_id) | (m.agent_id == owner_id),
+        )
+        .distinct()
+        .order_by(t.project.c.id)
+    ).scalars()
+    return [(kind, project_id) for project_id in ids for kind in (KIND, VIEWS)]
 
 
 def pages_of_member(conn: Connection, human_id: str) -> list[tuple[str, str]]:
@@ -353,6 +421,11 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
             )
         ).all()
     )
+    pictures, roles, harnesses = team_details(conn, project.id, humans, agents)
+    from maity_hub.public_project_views import members as team_members
+
+    # The Members figure: the Team tab's list, those it names and those it only counts.
+    members_count = len(team_members(conn, project.id))
     data = {
         "name": project.name,
         "full_name": full,
@@ -361,16 +434,27 @@ def render_project(conn: Connection, hub: Settings, project_id: str) -> list[pub
         "repository_url": shown_url if shown_url and landing.safe_target(shown_url) else None,
         "links": [u for u in shown_links if landing.safe_target(u)],
         "people": [
-            {"name": h.display_name, "handle": h.handle, "page": f"/{h.handle}"} for h in humans
+            {
+                "name": h.display_name,
+                "handle": h.handle,
+                "page": f"/{h.handle}",
+                "picture": pictures.get(h.id),
+                "role": roles.get(h.id),
+            }
+            for h in humans
         ],
         "agents": [
             {
                 "name": a.display_name,
                 "handle": a.handle,
                 "page": f"/{owners[a.owner_id]}/agents/{a.handle}",
+                "picture": pictures.get(a.id),
+                "role": roles.get(a.id),
+                "harness": harnesses.get(a.id),
             }
             for a in agents
         ],
+        "members": members_count,
         "statistics": statistics,
         "ticker": entries,
         # The snapshot's time: `data` is stored on every render, the HTML and the sitemap's
@@ -475,7 +559,31 @@ def _dependents(conn: Connection, project_id: str, cards: list[str]) -> list[tup
         *([("organisation", org)] if org else []),
         *public_agents.pages_of_project(conn, project_id),
         *[("person", person) for person in people],
+        *_shared_agent_pages(conn, project_id),
     ]
+
+
+def _shared_agent_pages(conn: Connection, project_id: str) -> list[tuple[str, str]]:
+    """The other public project pages with an agent of this project: each names the agent's
+    harness, read from its latest session in any of its public projects (§16.9), so a change
+    of this one (its page, its state, a member) may change what they show."""
+    m = t.membership.c
+    other = t.membership.alias("other")
+    ids = conn.execute(
+        select(other.c.project_id)
+        .select_from(other.join(t.project, t.project.c.id == other.c.project_id))
+        .where(
+            other.c.agent_id.in_(
+                select(m.agent_id).where(m.project_id == project_id, m.agent_id.is_not(None))
+            ),
+            other.c.project_id != project_id,
+            other.c.active.is_(True),
+            t.project.c.public_page == "on",
+        )
+        .distinct()
+        .order_by(other.c.project_id)
+    ).scalars()
+    return [(KIND, other_id) for other_id in ids]
 
 
 def monogram(full: str, name: str) -> str:

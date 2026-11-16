@@ -18,22 +18,15 @@ from sqlalchemy import Connection, insert, select, update
 
 from maity_hub import catalog, clock
 from maity_hub import tables as t
+from maity_hub.auth import totp
+from maity_hub.codes import digest as digest  # auth/password_resets.py imports it from here
 from maity_hub.ratelimit import Limiter
 
 LIFETIME = timedelta(minutes=15)
 
 
-def digest(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
-
-
 def code_mac(key: bytes, nonce_hash: str, code: str) -> str:
     return hmac.new(key, f"sign-in-code:{nonce_hash}:{code}".encode(), hashlib.sha256).hexdigest()
-
-
-def normalise_code(value: str) -> str | None:
-    value = value.replace(" ", "")
-    return value if len(value) == 6 and value.isascii() and value.isdigit() else None
 
 
 def lock_human(conn: Connection, human_id: str) -> None:
@@ -102,9 +95,7 @@ def issue(
     )
     nonce = secrets.token_urlsafe(32)
     hashed = digest(nonce)
-    code = (
-        f"{secrets.randbelow(1_000_000):06d}" if _daily(conn, human_id).wrong_codes < 20 else None
-    )
+    code = totp.new_six() if _daily(conn, human_id).wrong_codes < 20 else None
     expires = requested_at + LIFETIME
     conn.execute(
         insert(t.email_sign_in).values(
@@ -162,7 +153,7 @@ def try_code(conn: Connection, row: Any, value: str, signing_key: bytes) -> bool
     daily = _daily(conn, row.human_id)
     if row.code_mac is None or row.wrong_codes >= 5 or daily.wrong_codes >= 20:
         return False
-    code = normalise_code(value)
+    code = totp.normalise_six(value)
     if code is not None and hmac.compare_digest(
         row.code_mac, code_mac(signing_key, row.nonce_hash, code)
     ):

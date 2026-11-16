@@ -18,10 +18,12 @@ from typing import Any
 
 from .. import hub, onboarding, state
 from . import (
+    adapters,
     capabilities,
     config,
     install,
     limitread,
+    logcap,
     loop,
     operate,
     plaincall,
@@ -29,6 +31,7 @@ from . import (
     stub,
     supervisor,
     targets,
+    tools,
     trust,
 )
 from .asuser import RUNNER, AsUser
@@ -37,6 +40,8 @@ STATE_FILE = serve.RUNNER_FILE
 UNIT = "maity-runner.service"
 REVOKE = serve.REVOKE
 HEALTH_TIMEOUT = 10.0
+# The agents' user's Claude Code settings, read by `check`: larger is not looked at.
+SETTINGS_MAX = 1024 * 1024
 
 
 class Refused(Exception):
@@ -117,10 +122,11 @@ def cmd_pair(args: argparse.Namespace) -> int:
         },
         name=STATE_FILE,
     )
-    attached = ", ".join(result.attached) or "none yet"
+    attached = ", ".join(onboarding.inline(name) for name in result.attached) or "none yet"
     print(
-        f"paired as runner {result.runner_id}; attached to: {attached}; credential "
-        f"{result.credential_id} stored in {stored} (mode 0600, not printed)",
+        f"paired as runner {onboarding.inline(result.runner_id)}; attached to: {attached}; "
+        f"credential {onboarding.inline(result.credential_id)} stored in {stored} "
+        "(mode 0600, not printed)",
         file=sys.stderr,
     )
     if created:
@@ -186,7 +192,7 @@ class Report:
 
     def print(self) -> None:
         for level, text in self.lines:
-            print(f"{level:5}  {text}")
+            print(f"{level:5}  {onboarding.clean(text)}")
 
 
 DEFAULTS = (
@@ -195,7 +201,7 @@ DEFAULTS = (
     ("limits.stop_grace_max", "120 (seconds; caps a placement's stop_grace_seconds)"),
     ("limits.restart", "at most 5 exits in 1800 s; backoff from 10 s, factor 2, cap 300 s; "
                        "an exit within 60 s counts as a crash"),  # fmt: skip
-    ("limits.log_keep_bytes", "10 MiB per placement"),
+    ("limits.log_keep_bytes", "10 MiB per placement; a full log drops its older half"),
     ("limits.require_local_approval", "false"),
     ("backend.kind", "local"),
     ("backend.local.workspaces", config.DEFAULT_WORKSPACES),
@@ -211,7 +217,11 @@ DEFAULTS = (
     ("backend.ssh.hosts[].isolation", "shared_user (own_user: not yet)"),
     ("harness.<id>.modes", '["supervised"]; default_mode: the first'),
     ("harness.<id>.binary", "the harness's usual command, resolved on agent_path"),
-    ("harness.<id>.require_sandbox", "false"),
+    (
+        "harness.<id>.require_sandbox",
+        "unset: claude-code with bwrap and socat refused below version 2.1.295 or unknown,"
+        " other harnesses start without their sandbox; false: never refused for the sandbox",
+    ),
     ("harness.<id>.env_file", "unset"),
     (
         "git.name, git.email",
@@ -256,8 +266,10 @@ def _check_config_file(report: Report, path: Path) -> None:
 
 def _check_repositories(report: Report, cfg: config.Config) -> None:
     """A gh rule in a grant's `allow` is not applied: agents open their pull requests with
-    `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). Said, never
-    an error, so a restart before the table is edited keeps every placement running."""
+    `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). With
+    antigravity configured, a command grant is not applied to agy (adapters.agy_grants): it is
+    named as left out and runs in agy's sandbox like an unlisted command. Said, never an
+    error, so a restart before the table is edited keeps every placement running."""
     for name, grant in cfg.repositories.items():
         if grant.refused:
             listed = ", ".join(repr(rule) for rule in grant.refused)
@@ -266,6 +278,15 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
                 "remove it and set pull_requests = true to let agents open pull requests "
                 "with `maity gh pr create`"
             )
+        if "antigravity" in cfg.harnesses:
+            # agy reads the command past a leading assignment/wrapper; no command grant is
+            # applied to it, exact or prefix, so each is left out and runs sandboxed.
+            plain = [rule for rule in grant.allow if config.plain_command(rule)]
+            for rule, why in adapters.agy_grants(plain).left_out:
+                report.warn(
+                    f"repositories.{name}: allow {rule!r} is left out for antigravity and runs "
+                    f"in agy's sandbox like an unlisted command: {why}"
+                )
         if grant.pull_requests and "api.github.com" in grant.network:
             report.warn(
                 f"repositories.{name}: network api.github.com is not needed for pull requests "
@@ -354,12 +375,24 @@ def _existing_parent(path: Path) -> Path:
 
 
 def _check_harness(
-    report: Report, harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER
+    report: Report,
+    harness: config.Harness,
+    agent_path: str,
+    as_user: AsUser = RUNNER,
+    tools_dir: Path | None = None,
 ) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
         return
-    found = capabilities.probe(harness, agent_path, as_user)
+    found = capabilities.probe(harness, agent_path, as_user, tools_dir)
+    if found.reason == "binary_not_found" and tools_dir is not None and harness.install:
+        report.ok(f"harness {harness.id}: not installed yet; `serve` installs it (§15.16)")
+        return
+    if found.reason == "binary_not_found" and tools_dir is not None and harness.update != "never":
+        report.error(
+            f"harness {harness.id}: no version installed by the runner; set install = true"
+        )
+        return
     if found.reason == "binary_not_found":
         report.error(f"harness {harness.id}: `{harness.binary}` not found on {agent_path}")
         return
@@ -377,6 +410,8 @@ def _check_harness(
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
         _check_claude_code(report, harness, as_user, agent_path, found.version)
+    if harness.id == "antigravity":
+        _check_antigravity(report, harness, as_user, agent_path)
     if harness.id == "codex":
         # The login of whoever runs the agents, as the adapter links it.
         own = None if as_user.user else os.environ.get("CODEX_HOME")
@@ -384,6 +419,97 @@ def _check_harness(
         login = Path(own or home / ".codex") / "auth.json"
         if not as_user.exists(login, "-f"):
             report.warn(f"harness codex: no login at {login}; agents would start without one")
+
+
+def _check_antigravity(
+    report: Report, harness: config.Harness, as_user: AsUser = RUNNER, agent_path: str = "",
+    where: str = "",
+) -> None:  # fmt: skip
+    """agy's sandbox (reported off; the namespaces it needs as a diagnostic), its sign-in,
+    and what of the agents' user's own agy settings every agent inherits (§15.3)."""
+    here = not where  # an ssh host is Linux
+    if here and not capabilities.agy_sandbox_platform():
+        report.warn(f"{where}harness antigravity: no terminal sandbox on this platform")
+    elif capabilities.agy_namespaces(agent_path, as_user):
+        report.ok(
+            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs start; "
+            "agy's sandbox start not verified"
+        )
+    else:
+        report.warn(
+            f"{where}harness antigravity: the namespaces agy's terminal sandbox needs do not "
+            "start (or no `unshare`); agy would run commands unsandboxed"
+        )
+    line = (
+        f"{where}harness antigravity: sandbox reported off: the runner has not seen agy's "
+        "sandbox start; agents run as `sandbox_unavailable`"
+    )
+    refused = capabilities.sandbox_refused(harness, False, False)
+    if refused:
+        report.error(line + ", and require_sandbox = true refuses them")
+    else:
+        report.warn(line)
+    try:
+        login = capabilities.agy_login(as_user)
+        signed_in = as_user.exists(login, "-f")
+    except (OSError, KeyError):
+        login, signed_in = None, False
+    if not signed_in and harness.env_file is None:
+        report.warn(
+            f"{where}harness antigravity: no sign-in at {login or '~/.gemini'}; sign in "
+            "once with `agy` as the agents' user, or agents start without one"
+        )
+    _check_agy_settings(report, as_user, where)
+
+
+def _check_agy_settings(report: Report, as_user: AsUser, where: str) -> None:
+    """The agents' user's own agy settings, which agy merges into every agent's session:
+    their allow rules widen every grant, and global MCP servers run outside the sandbox."""
+    try:
+        home = as_user.home()
+    except (OSError, KeyError):
+        return
+    try:
+        path = home / ".gemini" / "antigravity-cli" / "settings.json"
+        settings = _json_bytes(as_user.read_whole(path, SETTINGS_MAX, under=home))
+    except OSError:
+        settings = None
+    permissions = settings.get("permissions") if settings else None
+    allow = permissions.get("allow") if isinstance(permissions, dict) else None
+    if isinstance(allow, list) and allow:
+        report.warn(
+            f"{where}harness antigravity: ~/.gemini/antigravity-cli/settings.json allows "
+            f"{len(allow)} rule(s) of its own; every agent this runner starts inherits them"
+        )
+    try:
+        path = home / ".gemini" / "config" / "mcp_config.json"
+        servers = as_user.read_whole(path, SETTINGS_MAX, under=home).strip()
+    except OSError:
+        servers = b""
+    if servers and servers not in (b"{}", b'{"mcpServers": {}}', b'{"mcpServers":{}}'):
+        report.warn(
+            f"{where}harness antigravity: ~/.gemini/config/mcp_config.json is not "
+            "empty; agy starts its MCP servers for every agent, outside its sandbox"
+        )
+
+
+def _check_agy_workspaces(report: Report, root: Path, as_user: AsUser, where: str = "") -> None:
+    """The runner refuses an antigravity start in a workspace folder inside a git work tree
+    (§15.3): a `.git` in the workspaces root or above it refuses every one of them."""
+    start = root.resolve() if as_user.here else root
+    for directory in (start, *start.parents):
+        git = directory / ".git"
+        try:
+            found = as_user.exists(git) or as_user.exists(git, "-L")
+        except OSError:
+            found = False
+        if found:
+            report.error(
+                f"{where}harness antigravity: {directory} has an entry .git, so every workspace "
+                f"folder under {root} lies inside a git work tree and every antigravity start "
+                "is refused (workspace_in_repository); move the workspaces out of it"
+            )
+            return
 
 
 def _check_claude_code(
@@ -397,6 +523,7 @@ def _check_claude_code(
     tools = capabilities.claude_sandbox_tools()
     missing = [t for t in tools or () if not capabilities.which(t, agent_path, as_user)]
     line = None
+    held = tools is not None and not missing
     if tools is None:
         line = f"harness claude-code: no OS sandbox on {sys.platform}; agents run unsandboxed"
     elif missing:
@@ -404,17 +531,31 @@ def _check_claude_code(
     elif not capabilities.sandbox_version_ok(harness.id, version):
         line = capabilities.sandbox_version_line(version)
     if line is not None:
-        (report.error if harness.require_sandbox else report.warn)(line)
+        refused = capabilities.sandbox_refused(harness, False, held)
+        (report.error if refused else report.warn)(line)
     else:
         report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
+        _check_claude_hooks(report, as_user, "")
     _check_claude_settings(report, as_user, "")
+
+
+def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:
+    """With the sandbox on, the runner's hook must run: settings that switch hooks off
+    refuse every start of a sandboxed agent (supervisor), so `check` says so as an error."""
+    why = capabilities.claude_hooks_off(as_user)
+    if why is None:
+        report.ok(f"{where}harness claude-code: hooks are not switched off")
+    else:
+        report.error(f"{where}{capabilities.claude_hooks_line(why)}")
 
 
 def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
     """The agents' user's own Claude Code settings (here, through sudo, or on a host):
     agents start with --setting-sources user, so they inherit its rules and hooks."""
     try:
-        settings = _json_bytes(as_user.read(as_user.home() / ".claude" / "settings.json"))
+        home = as_user.home()
+        path = home / ".claude" / "settings.json"
+        settings = _json_bytes(as_user.read_whole(path, SETTINGS_MAX, under=home))
     except (OSError, KeyError):
         settings = None
     if settings is None:
@@ -485,7 +626,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             report.ok(f"{name}: {tool} found on agent_path")
         else:
             report.error(f"{name}: `{tool}` is not on agent_path ({target.agent_path})")
-    probes, sandbox = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
+    probes, sandbox, held = targets.probe_remote(as_user, cfg.harnesses, target.agent_path)
     for harness in cfg.harnesses.values():
         probe = probes[harness.id]
         if harness.id == "stub":
@@ -502,7 +643,12 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                     line = f"{name}: harness claude-code: no OS sandbox (bwrap or socat missing)"
                 else:
                     line = f"{name}: {capabilities.sandbox_version_line(probe.version)}"
-                (report.error if harness.require_sandbox else report.warn)(line)
+                refused = capabilities.sandbox_refused(harness, False, harness.id in held)
+                (report.error if refused else report.warn)(line)
+            elif harness.id == "claude-code":
+                _check_claude_hooks(report, as_user, f"{name}: ")
+            if harness.id == "antigravity":
+                _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
@@ -511,6 +657,8 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
         report.ok(f"{name}: workspaces {root}")
     if "claude-code" in cfg.harnesses:
         _check_claude_settings(report, as_user, f"{name}: ")
+    if "antigravity" in cfg.harnesses:
+        _check_agy_workspaces(report, root, as_user, f"{name}: ")
     if as_user.run(["sudo", "-n", "true"]).returncode == 0:
         report.warn(f"{name}: the remote user has sudo without a password; agents have it too")
 
@@ -571,7 +719,9 @@ def cmd_check(args: argparse.Namespace) -> int:
         else:
             report.ok("maity found on agent_path")
         for harness in cfg.harnesses.values():
-            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg))
+            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir)
+        if "antigravity" in cfg.harnesses:
+            _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
@@ -606,6 +756,46 @@ def _alive(pid: Any) -> bool:
     except OSError:
         return True  # no /proc: the signal check is all there is
     return b"runner" in command and b"serve" in command
+
+
+def cmd_tools(args: argparse.Namespace) -> int:
+    """The tools this runner installs and updates (§15.16), from its tools directory only;
+    `rollback` makes the kept version the one new sessions start with. Never contacts the
+    hub: a running `serve` notices within a minute and tells the hub."""
+    cfg = config.load(config.path_of(args.config))
+    managed = {h.id: h for h in cfg.harnesses.values() if h.install or h.update != "never"}
+    if getattr(args, "tools_action", None) == "rollback":
+        if args.tool not in managed:
+            print(f"{args.tool}: not a tool this runner installs or updates", file=sys.stderr)
+            return 1
+        try:
+            done = tools.rollback(cfg.tools_dir, args.tool)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(
+            f"{args.tool}: new sessions start with {done.version}; {done.previous_version} "
+            "stays for a second rollback; running sessions keep the version they started with"
+        )
+        return 0
+    rows = [
+        tools.report(cfg.tools_dir, h.id, install=h.install, update=h.update,
+                     sessions_on_older=0)  # fmt: skip
+        for h in managed.values()
+    ]
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    if not rows:
+        print("no tool is installed or updated by this runner (harness install / update)")
+    for row in rows:
+        state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
+        print(
+            f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "
+            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}; "
+            f"checked {row['checked_at'] or 'never'}"
+        )
+    return 0
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -717,10 +907,23 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r = rsub.add_parser("loop")
     r.add_argument("--spec", required=True)
     r.set_defaults(handler=lambda a: loop.main(["--spec", a.spec]))
-    # Internal too: the loop's limit file, read on the agents' side (limitread).
+    # Internal too: a file on the agents' side (the loop's limit file, a clone's, a log), read
+    # there without following a link or waiting on a FIFO (limitread).
     r = rsub.add_parser("limitread")
+    r.add_argument("--under", required=True)
+    r.add_argument("--bytes", type=int)
+    r.add_argument("--offset", type=int)
     r.add_argument("path")
-    r.set_defaults(handler=lambda a: limitread.main([a.path]))
+    r.set_defaults(handler=lambda a: limitread.main(
+        ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
+         *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
+    ))  # fmt: skip
+    # Internal too: what a pane's output goes through on an ssh host, holding its log to
+    # limits.log_keep_bytes (logcap).
+    r = rsub.add_parser("logcap")
+    r.add_argument("log")
+    r.add_argument("limit")
+    r.set_defaults(handler=lambda a: logcap.main([a.log, a.limit]))
     # Internal too: Claude Code's folder trust for a clone, recorded on the agents' side (trust).
     r = rsub.add_parser("trust")
     r.add_argument("home")
@@ -791,6 +994,29 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
     r.add_argument("--json", action="store_true", help="print it as JSON")
     r.set_defaults(handler=cmd_status)
+
+    r = rsub.add_parser(
+        "tools",
+        help="the tools this runner installs and updates; `rollback <tool>` goes back",
+        description="List the harness tools this runner installs or updates (harness "
+        "install / update): the version new sessions start with, the one kept, the latest "
+        "found. `rollback <tool>` swaps the two for new sessions; a second rollback swaps "
+        "back. Reads the tools directory only; a running serve picks the change up.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+    r.add_argument("--json", action="store_true", help="print it as JSON")
+    r.set_defaults(handler=cmd_tools)
+    tsub = r.add_subparsers(dest="tools_action")
+    rb = tsub.add_parser(
+        "rollback",
+        help="new sessions start with the kept version",
+        description="Make the kept version the one new sessions start with (§15.16).",
+        formatter_class=fmt,
+    )
+    rb.add_argument("tool", help="a harness id, e.g. codex")
+    rb.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+    rb.set_defaults(handler=cmd_tools, json=False)
 
     r = rsub.add_parser(
         "unit",
