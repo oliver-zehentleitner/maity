@@ -807,14 +807,20 @@ checked before they run:
   shell. It downloads the uv release tarball of `UV_VERSION` as the
   runner user, checks it against `UV_SHA256` with `sha256sum -c`, and
   only then unpacks `uv` and `uvx` into `~/.local/bin`. A checksum that
-  is not 64 hex digits stops the script before the download. A machine
-  that already has uv is not touched.
+  is not 64 lowercase hex digits stops the script before the download.
+  A machine that already has uv is not touched.
 - The k3s install guide downloads `install.sh` from the release tag it
   installs, not from `get.k3s.io`, and checks its sha256 before running
   it; the installer itself checks the k3s binary against the release's
   checksums.
 - cert-manager's chart is pulled as an archive of the pinned version and
-  checked with `sha256sum -c` before `helm install` takes the file.
+  checked with `sha256sum -c` before `helm install` takes the file. Its
+  five images (controller, webhook, cainjector, startupapicheck,
+  acmesolver) are pinned by digest too, through the chart's
+  `*.image.digest` values, each the digest of the multi-arch index.
+- Known limit: the images k3s pulls itself (Traefik, CoreDNS, klipper,
+  metrics server, local-path provisioner) still run by tag. k3s bundles
+  them with its release, so they are outside this install's control.
 - `kind-smoke.sh` runs PostgreSQL by digest too: the pin
   `postgres:17.10@sha256:7958605b…` came with #1751, and this change
   keeps it.

@@ -40,9 +40,9 @@ fi
 if [ ! -x "$HOME_RU/.local/bin/uv" ]; then
   [ "$(uname -m)" = x86_64 ] || { echo "uv is pinned for x86_64 only; this machine is $(uname -m)" >&2; exit 1; }
   case "$UV_SHA256" in
-    *[!0-9a-f]*|'') echo "UV_SHA256 is not a sha256 ('$UV_SHA256'): set the checksum of $UV_TARGET.tar.gz for uv $UV_VERSION" >&2; exit 1;;
+    *[!0-9a-f]*|'') echo "UV_SHA256 is not a sha256 of 64 lowercase hex digits ('$UV_SHA256'): set the checksum of $UV_TARGET.tar.gz for uv $UV_VERSION" >&2; exit 1;;
   esac
-  [ "${#UV_SHA256}" = 64 ] || { echo "UV_SHA256 must be 64 hex digits" >&2; exit 1; }
+  [ "${#UV_SHA256}" = 64 ] || { echo "UV_SHA256 must be 64 lowercase hex digits" >&2; exit 1; }
   # As the runner user, in a directory of its own: download, check, and only then unpack and install.
   as_ru sh -c '
     set -eu
