@@ -11250,6 +11250,33 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await fireIntervals(); await tick(); await tick(); await tick();
     const voText = text(voLi().querySelector(".verdict-list") || { textContent: "" });
     expect(voText.includes("👍 Maintainer agrees") && voText.includes("👎 @guest disagrees"), "read along: the re-read brings a verdict given meanwhile " + voText);
+    // A sentence being typed for Disagree outlives the re-read: a verdict changed meanwhile is taken
+    // over under its message, a new message redraws the list; the field keeps its text and focus.
+    const voProto = Object.getPrototypeOf(main);
+    const voFocus = voProto.focus;
+    voProto.focus = function () { document.activeElement = this; };
+    btn(voLi(), "Disagree").click(); await tick();
+    const voField = () => voLi().querySelector(".verdict-form input");
+    voField().value = "half typed"; voField().dispatch("input");
+    const voTyped = voField();
+    const voItem = voLi();
+    const voWith = (extra) => (p) => (p.startsWith("/projects/guest/guestlab/conversations/cnv-0301/messages?")
+      ? gcOutGet(p).then((r) => Object.assign({}, r, { items: r.items.map((m) => (m.seq === 7001
+        ? Object.assign({}, m, { verdicts: (m.verdicts || []).concat({ by: "hum-guest", value: "agree", sentence: null, at: "2026-10-22T09:12:00Z", seq: 7101 }) }) : m))
+        .concat(extra ? [Object.assign({}, r.items[r.items.length - 1], { seq: 7102, body: "one more line", verdicts: [] })] : []) }))
+      : gcOutGet(p));
+    win.Maity.api.get = voWith(false);
+    await fireIntervals(); await tick(); await tick(); await tick();
+    expect(text(voLi().querySelector(".verdict-list") || { textContent: "" }).includes("👍 @guest agrees") && voLi() === voItem
+      && voField() && voField().value === "half typed" && document.activeElement === voField(),
+      "read along: a verdict changed meanwhile is taken over in place, the sentence being typed untouched");
+    win.Maity.api.get = voWith(true);
+    await fireIntervals(); await tick(); await tick(); await tick();
+    expect(main.querySelectorAll(".group-chat li.msg").length === 2 && voLi() !== voItem && voField() && voField() !== voTyped
+      && voField().value === "half typed" && document.activeElement === voField(),
+      "read along: a new message redraws the list, the sentence being typed and its focus kept");
+    btn(voLi(), "Cancel").click(); await tick();
+    voProto.focus = voFocus; document.activeElement = undefined;
     btn(voLi(), "Take back").click(); for (let k = 0; k < 4; k++) await tick();
     win.Maity.api.get = gcOutGet;
   }

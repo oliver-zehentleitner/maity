@@ -7025,3 +7025,31 @@ from happening by accident.
 - No way to change the sentence but Take back and Disagree again:
   rejected, that writes two events and wakes the agent twice for one
   change of words.
+
+## An open verdict sentence outlives the list being drawn again, and a re-read takes verdicts over in place
+
+**Id:** 839d984c-980f-4d2c-859c-0fe03207b9c1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-q8cd2hh4beq3 (the review A796 of #1874: an owner reading along from outside the project lost a sentence being typed at the 30-second re-read); web/js/group-chat.js `redraw` and the outsider re-read, web/js/chat.js `verdicts`, 2026-11-16
+**Revisit when:** an observer from outside the project gets events, or the group chat stops drawing the whole list again
+
+An observer from outside the project gets no events, so its view reads
+the newest page again every 30 seconds. When only verdicts changed, they
+are taken over under their messages (`takeVerdicts`, as for an event);
+the list is not drawn again. When a message came or was removed, the
+list is drawn again, and an open sentence field comes back: what is typed
+is kept per message (`verdictForms`), and `redraw` gives the field its
+focus and caret back.
+
+**Reason:** the list is a live region, so drawing it again for a verdict
+alone would also announce every message once more. A new message still
+needs the whole list, and the reader may be typing then too.
+
+**Alternatives considered:**
+- Taking verdicts over in place only: rejected, a new message at the
+  re-read still cost the sentence, which A796 had found already at the
+  base of #1874.
+- Keeping the sentence across a redraw only: rejected, a verdict alone
+  would still draw the live region again and announce its messages anew.
