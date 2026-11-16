@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, insert, select, update
 
-from maity_hub import clock, public_pages, public_snapshot, swarm
+from maity_hub import clock, public_design, public_pages, public_snapshot, swarm
 from maity_hub import tables as t
 from maity_hub.ids import new_id
 from tests import factory, flow
@@ -84,8 +84,10 @@ def test_a_person_page_shows_role_and_member_since_and_no_numbers_until_chosen(
     assert anna["member_since"] == since and len(since) == 7  # never the day
     assert anna["online"] is False and anna["statistics"] is None
     page = html(world, "anna")
-    assert f"Member since {since}" in page and '<span class="tag">coder</span>' in page
-    assert "Statistics" not in page and "Online" not in page
+    # The month in words, as the dashboard draws it (public_design.month), never the day.
+    assert f"Member since {public_design.month(since)}" in page
+    assert '<span class="chip role">Coder</span>' in page
+    assert '<section class="band">' not in page and "Online" not in page
 
 
 def test_with_the_profile_off_none_of_the_four_appear_the_numbers_switch_included(
@@ -102,7 +104,7 @@ def test_with_the_profile_off_none_of_the_four_appear_the_numbers_switch_include
         None,
     )
     page = html(world, "anna")
-    assert "Member since" not in page and "Statistics" not in page
+    assert "Member since" not in page and '<section class="band">' not in page
 
 
 def test_public_stats_shows_the_person_s_three_counts_at_once_never_an_agent_s_others(
@@ -124,7 +126,7 @@ def test_public_stats_shows_the_person_s_three_counts_at_once_never_an_agent_s_o
     assert set(numbers) == {"cards_done", "reviews_given", "prs_merged"}
     assert numbers["cards_done"] == 2
     page = html(world, "anna")
-    assert "<li>Cards done: 2</li>" in page
+    assert '<div class="stat"><b>2</b><span class="label">Cards done</span></div>' in page
     assert "Handovers" not in page and "Median" not in page
     assert world.anna.patch("/me", {"public_stats": False}).status_code == 200
     assert data(world, "anna")["statistics"] is None
@@ -137,7 +139,9 @@ def test_online_follows_the_snapshot_and_public_presence_at_once(world: World, h
     assert data(world, "anna")["online"] is False  # not before the snapshot
     worker.run_once()
     assert data(world, "anna")["online"] is True
-    assert "<li>Online</li>" in html(world, "anna")
+    assert '<span class="on"><i class="dot" aria-hidden="true"></i>Online</span>' in html(
+        world, "anna"
+    )
     public_pages.configure(replace(hub, public_pages_render="interval"))
     assert world.anna.patch("/me", {"public_presence": False}).status_code == 200
     assert data(world, "anna")["online"] is None  # the page does not show it
@@ -158,8 +162,11 @@ def test_an_agent_page_shows_role_member_since_and_online(world: World, hub: Any
     public_snapshot.Worker(world.migrated, hub).run_once()
     assert data(world, bot_page(world))["online"] is True
     page = html(world, bot_page(world))
-    assert "<li>Online</li>" in page and "Member since" in page
-    assert '<span class="tag">coder</span>' in page
+    assert (
+        '<span class="on"><i class="dot" aria-hidden="true"></i>Online</span>' in page
+        and "Member since" in page
+    )
+    assert '<span class="chip role">Coder</span>' in page
 
 
 def test_model_and_harness_come_from_the_latest_session_in_a_public_project(
@@ -168,14 +175,16 @@ def test_model_and_harness_come_from_the_latest_session_in_a_public_project(
     before = data(world, bot_page(world))
     assert (before["model"], before["harness"]) == (None, None)  # no session yet
     page = html(world, bot_page(world))
-    assert "Model:" not in page and "Harness:" not in page
+    assert "<dt>Model</dt>" not in page and "<dt>Harness</dt>" not in page
     resumed = world.bot.resume(model="model-one", harness="claude-code", harness_version="9.9")
     assert resumed.status_code == 200, resumed.text
     after = data(world, bot_page(world))  # at once, with the session's start
     assert (after["model"], after["harness"]) == ("model-one", "claude-code")
     page = html(world, bot_page(world))
-    assert "<li>Model: model-one</li>" in page and "<li>Harness: claude-code</li>" in page
-    assert "9.9" not in page and "test" not in page.split("<li>Model")[0][-200:]
+    assert "<div><dt>Model</dt><dd><b>model-one</b></dd></div>" in page
+    assert "<div><dt>Harness</dt><dd><b>claude-code</b></dd></div>" in page
+    facts = page.split('<dl class="facts">')[1].split("</dl>")[0]
+    assert "9.9" not in page and "test" not in facts
     # A later session in a project without a page never counts.
     private = world.owner.post("/projects", {"slug": "private", "name": "Private"})
     assert private.status_code == 201, private.text
@@ -228,7 +237,8 @@ def test_a_session_that_names_no_model_leaves_it_out(
     agent = data(world, bot_page(world))
     assert (agent["model"], agent["harness"]) == (None, "codex")
     page = html(world, bot_page(world))
-    assert "Model:" not in page and "<li>Harness: codex</li>" in page
+    assert "<dt>Model</dt>" not in page
+    assert "<div><dt>Harness</dt><dd><b>codex</b></dd></div>" in page
 
 
 def test_a_new_account_starts_with_public_stats_off(

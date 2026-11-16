@@ -294,9 +294,17 @@ def test_the_person_page_shows_the_links_under_everyone_only(
     assert "example.org" not in anyone.get("/maintainer").text
     patch(who, links_visible="everyone")
     text = anyone.get("/maintainer").text
-    assert '<a href="https://example.org/me" rel="me nofollow">https://example.org/me</a>' in text
-    assert '<a href="https://github.com/octo" rel="me nofollow">octo</a>' in text
-    assert "<li>discord: oz.d</li>" in text and "https://discord" not in text
+    # In the dashboard's design (public_design.profile): the website as its link, the networks as
+    # chips, linked as person_links builds them, Discord as text.
+    assert (
+        '<a class="web" href="https://example.org/me" rel="me nofollow">example.org/me</a>' in text
+    )
+    assert (
+        '<a class="soc" href="https://github.com/octo" rel="me nofollow">'
+        '<span class="net">GitHub</span><span>octo</span></a>'
+    ) in text
+    assert '<span class="soc"><span class="net">Discord</span><span>oz.d</span></span>' in text
+    assert "https://discord" not in text
     # off again: gone at once
     patch(who, links_visible="private")
     assert "example.org" not in anyone.get("/maintainer").text

@@ -655,7 +655,7 @@ the stored page alone (the bare page's policy allows no script, and the row woul
 **Evidence:** confirmed
 **Source:** the card tsk-777vkhtzmq6f (the maintainer saw the old layout for about a second on prod after the redesign of tsk-9482zxza3gs3, 2026-11-15); the lead's choice of 2026-11-15 between the options the card's coder put
 **See:** public-pages.md#a-visitor-gets-the-stored-page-inside-the-app-shell-and-aspublic-the-bare-page — 70c80e4f-bf45-430d-beb2-7abbab2c8e4c — as of 2026-11-15
-**Revisit when:** the person, agent and organisation pages are rendered in the dashboard's design too (tsk-2t7efzj1p8zt), or the dashboard's first view of a public page takes longer than about 3 s
+**Revisit when:** the organisation pages are rendered in the dashboard's design too, or the dashboard's first view of a public page takes longer than about 3 s
 
 The redesign drew a signed-out public page in the dashboard only (`web/js/visitor.js`), while the stored row,
 which the shell carries for crawlers and readers without scripts, kept the plain layout. A visitor saw that
@@ -674,7 +674,9 @@ the hero, and the dashboard's frame adds and removes those stylesheets itself); 
 page whose script fails would stay empty).
 
 Since PR 3 of tsk-zhyqdtt5v59c (2026-11-15) this holds only for a page not yet in the dashboard's design;
-one in it stands in the shell at once (2388f990).
+one in it stands in the shell at once (2388f990). Since PR 4 of that card (2026-11-16) the person and agent
+pages are in that design too, so the wait is left for the organisation pages alone; this entry's first
+trigger fired for the person and agent pages and was narrowed to the organisation pages.
 
 ## A page in the dashboard's design stands in the shell at once
 
@@ -694,10 +696,12 @@ the frame. The dashboard then takes those links over instead of adding its own (
 has none for that file), so each sheet loads once; leaving the frame, even before it ever entered it, turns the
 shell's links off with its own, since landing.css styles the whole document. It draws the same structure over
 the page; smoke compares that structure with the hub's skeletons, element by element. A page not in that design
-keeps the 3 s wait of 6fae1f6f.
+keeps the 3 s wait of 6fae1f6f: since PR 4 of the card (2026-11-16), when the person and agent pages joined the
+design (`public_design.profile`), only the organisation pages. `render.designed` knows a page of that design by
+its opening, the project views' `view-visitor public-view` or the profiles' `view-visitor public-view profile-view`.
 
-**Rejected:** dropping the wait for every page at once (the person, agent and organisation pages are still
-in the old layout until tsk-2t7efzj1p8zt, so they would flash again); the dashboard asking for the sheets
+**Rejected:** dropping the wait for every page at once (the person, agent and organisation pages were then
+still in the old layout, so they would have flashed again; the organisation pages still are); the dashboard asking for the sheets
 without `?v` as before, beside the shell's versioned links (each sheet loaded twice, and the rules of two
 copies applied in turn).
 
@@ -1029,6 +1033,8 @@ The end-to-end round `stored_pages_policy_round` opens every page the sitemap li
 pages, at both addresses, and fails on any refusal.
 Since 2026-11-15 (5262b6b7) a project's stored page is in the dashboard's design, which draws no per-day bars:
 the SVG has left it, and the rule (no inline style, the guard and the run) holds for that design as before.
+Since PR 4 of tsk-zhyqdtt5v59c (2026-11-16) the person and agent pages are in that design too: a missing
+picture is the dashboard's letter (`public_design.face`), and `picture_html` with its `pic none` class is gone.
 
 **Reason:** the shell's policy is the dashboard's and protects it. A page that renders the same everywhere without
 an exception in that policy is the fix that cannot come back by a new inline style; the test guards the store, the
@@ -1119,10 +1125,10 @@ the public set renders them at once, so none keeps a harness from a session it n
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's choice on req-nsstqtq7za1t (2026-11-15) and the lead's agreement to the plan of card tsk-zhyqdtt5v59c (PR 2 of 4); contract `docs/api.md` §16.9 and §16.7.5 as changed by PR 1 of that card; `public_design.page`, `public_pages.FORMAT`, `public_pages.refresh`, `render.stored_in_frame`, `landing_assets/public-sections.css`; `hub/tests/test_public_skeletons.py`, `hub/tests/test_public_page_format.py`
+**Source:** the maintainer's choice on req-nsstqtq7za1t (2026-11-15) and the lead's agreement to the plan of card tsk-zhyqdtt5v59c (PR 2 of 4, and PR 4 for the person and agent pages); contract `docs/api.md` §16.9 and §16.7.5 as changed by PR 1 of that card; `public_design.page`, `public_design.profile`, `public_pages.FORMAT`, `public_pages.refresh`, `render.stored_in_frame`, `landing_assets/public-sections.css`; `hub/tests/test_public_skeletons.py`, `hub/tests/test_public_page_format.py`
 **See:** public-pages.md#visitors-read-the-app-from-one-route-over-stored-rows-and-the-member-routes-stay-closed — eb7fd1c7-d4f1-478f-b77f-bb6878cd515a — as of 2026-11-15
 **See:** public-pages.md#a-stored-page-carries-no-inline-style-the-per-day-bars-are-an-svg-sized-by-attributes-the-placeholder-a-class — a08a0c0d-ded2-483c-b509-19bfe49c3705 — as of 2026-11-15
-**Revisit when:** the dashboard gets a build step that could run one template on both sides, or the person, agent and organisation pages are redesigned (tsk-2t7efzj1p8zt) and join `public_design`
+**Revisit when:** the dashboard gets a build step that could run one template on both sides, or the organisation pages are redesigned and join `public_design`
 
 The stored pages of a project (Overview, Board, Team, Organisation, Why) and of a card are HTML in the
 structure `web/js/visitor.js` draws for a visitor without a session: the same elements, classes, order,
@@ -1134,12 +1140,14 @@ only. `public-sections.css` moved from the dashboard to `landing_assets/` and is
 under `/assets/landing/`, linked by `render.public_frame` and by `web/js/site-chrome.js`. In the frame
 (`?as=public`) such a page stands in `<main>` as it is, where the dashboard puts its view, not in the stored
 pages' column. What the old pages showed beyond the design (the per-day bars, the medians, the per-agent table)
-stays in `data` only. Each row's `inputs` is written `f<FORMAT>:<digest>` (`FORMAT = 2`; a row without the prefix
-is format 1), the digest cut from the end so the whole stays within the column's 64 characters: widening the column
+stays in `data` only. Each row's `inputs` is written `f<FORMAT>:<digest>` (`FORMAT = 3` since PR 4 of the
+card, 2 before it; a row without the prefix is format 1), the digest cut from the end so the whole stays within the column's 64 characters: widening the column
 would have cost a migration for a value that only tells a change from none, and 61 hex digits of a sha256 still do. `refresh` takes every page of a target off when one of them is of a later format and renders none,
 so the later version renders it first as a target without a page (deafb243); a row of an earlier format has
-other `inputs` and is rendered again. The person, agent and organisation pages keep their old HTML and `STYLE`
-for now (tsk-2t7efzj1p8zt). `test_public_skeletons.py` records the elements and classes of each kind for
+other `inputs` and is rendered again. Since PR 4 of the card (2026-11-16) a person's and an agent's page
+are rendered the same way, by `public_design.profile` from their `data` (visitor.js's `profileHero`,
+`profileBand`, `projectCards`, `agentCards`), and the format went to 3 so a hub of PR 2 never puts their old
+HTML back; the organisation pages keep their old HTML and `STYLE`. `test_public_skeletons.py` records the elements and classes of each kind for
 `web/tools/public-pages-fixture.json` in `web/tools/public-skeletons.json` (`make -C web skeletons`), the file
 the dashboard's side is compared with.
 

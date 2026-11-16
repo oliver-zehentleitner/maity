@@ -104,8 +104,11 @@ def test_the_page_lists_the_agents_that_have_a_page_by_default(
     assert answer["kind"] == "person"
     assert answer["data"]["agents"] == shown
     page = main(world, "maintainer")
-    assert f'href="/maintainer/agents/{bot}"' in page and '<span class="tag">coder</span>' in page
-    assert f'src="{picture}?s=64"' in page  # each agent's picture, on the one page
+    assert (
+        f'href="/maintainer/agents/{bot}"' in page
+        and '<span class="chip role">Coder</span>' in page
+    )
+    assert f'src="{picture}?s=128"' in page  # each agent's picture, on the one page
     assert "hidden-bot" not in page and "Hidden Bot" not in page
     # One page: no tabs, no link to an agents page.
     assert "aria-current" not in page and 'href="/maintainer/agents"' not in page
@@ -214,8 +217,10 @@ def test_the_snapshot_brings_an_agent_s_model_and_harness_to_the_page(
     public_snapshot.Worker(world.migrated, hub).run_once()
     (agent,) = listed(world, "maintainer")
     assert (agent["model"], agent["harness"]) == ("model-one", "claude-code")
+    # The page draws an agent's card as the dashboard does: the harness on it, the model in
+    # `data` only (public_design.agent_cards, visitor.js agentCards).
     page = main(world, "maintainer")
-    assert "Model: model-one" in page and "Harness: claude-code" in page
+    assert '<span class="h">claude-code</span>' in page and "model-one" not in page
 
 
 def test_under_all_an_agent_held_by_moderation_is_not_listed(

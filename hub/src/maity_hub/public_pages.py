@@ -56,8 +56,9 @@ BY_ADDRESS = Limiter(60, 60, name="public_pages.BY_ADDRESS")
 # The version of the pages' HTML this hub renders, stored in front of each row's `inputs` as
 # `f<FORMAT>:<digest>` (a row without it is format 1, before the dashboard's design, §16.9). A
 # row of a later format is never replaced by this process, and a row of an earlier one is
-# rendered again (`refresh`; hub/context/public-pages.md).
-FORMAT = 2
+# rendered again (`refresh`; hub/context/public-pages.md). 2: the project pages in the dashboard's
+# design; 3: the person and agent pages as well.
+FORMAT = 3
 # What `public_page.inputs` holds (hub/src/maity_hub/tables.py).
 INPUTS_LENGTH = 64
 

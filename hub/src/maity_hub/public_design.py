@@ -1,16 +1,18 @@
-"""The public project pages in the dashboard's design (docs/api.md §16.9): the HTML of a stored
-page as a pure function of its `kind`, its `data` and its `path`.
+"""The public project, person and agent pages in the dashboard's design (docs/api.md §16.9): the
+HTML of a stored page as a pure function of its `kind`, its `data` and its `path`.
 
 The structure is the one `web/js/visitor.js` draws for a visitor without a session: the same
 elements, classes and order, the same `data-kind` and the same static `aria` attributes, so
 the page a crawler and a reader without script get is the page the dashboard then draws over
 it, styled by the frame's stylesheets (`landing_assets/public-sections.css`) and by nothing of
 its own. `page` takes only what the visitors' route serves as `data`, so the HTML cannot show
-anything the data does not, nor the other way round (hub/context/public-pages.md). The person,
-agent and organisation pages are not drawn here (tsk-2t7efzj1p8zt).
+anything the data does not, nor the other way round (hub/context/public-pages.md). A person's and
+an agent's page (`profile`) are drawn as the dashboard draws them signed out since PR 4 of
+tsk-zhyqdtt5v59c; the organisation pages are not drawn here.
 
 The fixed words are English, from `web/i18n/en.json` under the same keys (`WORDS`); times are
-UTC in one fixed English form, `Nov 15, 2026, 19:39 UTC` (`when`), numbers plain digits.
+UTC in one fixed English form, `Nov 15, 2026, 19:39 UTC` (`when`), a month as `March 2026`
+(`month`), numbers plain digits.
 """
 
 from __future__ import annotations
@@ -21,10 +23,12 @@ from html import escape
 from typing import Any
 from urllib.parse import quote
 
-from maity_hub import landing, render
+from maity_hub import landing, person_links, render
 
 # The kinds drawn here: a project's Overview, its four views and a card's page.
 KINDS = ("project", "board", "team", "organisation", "why", "card")
+# A person's and an agent's page: the hero with the picture, the figures, the projects (`profile`).
+PROFILE_KINDS = ("person", "agent")
 # The kinds whose content stands as sections across the page; a card's stands in a column.
 ACROSS = ("project", "board", "team", "organisation", "why")
 
@@ -113,6 +117,25 @@ WORDS: dict[str, Any] = {
     "report.sign_in": "Sign in to report",
     "report.label.project": "Report this project to the instance's admins",
     "report.label.card": "Report this card to the instance's admins",
+    "report.label.person": "Report this person to the instance's admins",
+    "report.label.agent": "Report this agent to the instance's admins",
+    "visitor.crumb.person": "Person",
+    "visitor.crumb.agent": "Agent",
+    "visitor.member_since": "Member since {month}",
+    "visitor.agent_of": "Agent of",
+    "visitor.agents_of": {"one": "{count} agent of {name}", "other": "{count} agents of {name}"},
+    "visitor.fact.harness": "Harness",
+    "visitor.fact.model": "Model",
+    "visitor.stat.last_days": "Last 30 days",
+    "visitor.projects": "Projects",
+    "visitor.agents": "Agents",
+    "person.network.github": "GitHub",
+    "person.network.gitlab": "GitLab",
+    "person.network.x": "X",
+    "person.network.mastodon": "Mastodon",
+    "person.network.bluesky": "Bluesky",
+    "person.network.linkedin": "LinkedIn",
+    "person.network.discord": "Discord",
 }
 
 VIEWS = (
@@ -179,6 +202,30 @@ def when(value: str) -> str:
     except (AttributeError, ValueError):
         return str(value)
     return f"{moment:%b} {moment.day}, {moment:%Y, %H:%M} UTC"
+
+
+MONTHS = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+
+
+def month(value: Any) -> str:
+    """A `YYYY-MM` as `March 2026`, never a day (§16.9); an unreadable value stays as given."""
+    found = re.fullmatch(r"(\d{4})-(\d{2})", value) if isinstance(value, str) else None
+    if not found or not 1 <= int(found[2]) <= 12:
+        return str(value)
+    return f"{MONTHS[int(found[2]) - 1]} {found[1]}"
 
 
 def monogram(name: str | None, slug: str | None) -> str:
@@ -672,6 +719,186 @@ def card(d: dict[str, Any]) -> str:
     return head + text + listed
 
 
+# --- a person's and an agent's page -----------------------------------------------------------
+
+# The networks in the order the dashboard names them (web/js/visitor.js, NETWORKS).
+NETWORKS = ("github", "gitlab", "x", "mastodon", "bluesky", "linkedin", "discord")
+REL_ME = "me nofollow"
+PERSON_FIGURES = ("cards_done", "reviews_given", "prs_merged")
+
+
+def socials(social: Any) -> str:
+    """A person's names on the networks as chips, each linked as the hub links it
+    (`person_links.address`, §16.9 "A person's links"); Discord, which has no public profile
+    address, and a name the hub would not link stay text."""
+    if not isinstance(social, dict):
+        return ""
+    chips = []
+    for net in NETWORKS:
+        name = social.get(net)
+        if not isinstance(name, str) or not name:
+            continue
+        inner = f'<span class="net">{_e(t(f"person.network.{net}"))}</span><span>{_e(name)}</span>'
+        try:
+            url = safe_url(person_links.address(net, name))
+        except ValueError:  # a Mastodon name not of its form
+            url = None
+        if url:
+            chips.append(f'<a class="soc" href="{_e(url)}" rel="{REL_ME}">{inner}</a>')
+        else:
+            chips.append(f'<span class="soc">{inner}</span>')
+    return f'<div class="socs">{"".join(chips)}</div>' if chips else ""
+
+
+def profile_hero(kind: str, d: dict[str, Any], path: str) -> str:
+    agent = kind == "agent"
+    meta = f'<span class="hdl">@{_e(d.get("handle") or "")}</span>'
+    if d.get("online") is True:
+        meta += (
+            f'<span class="on"><i class="dot" aria-hidden="true"></i>{_e(t("visitor.online"))}'
+            "</span>"
+        )
+    if d.get("member_since"):
+        meta += f'<span>{_e(t("visitor.member_since", month=month(d["member_since"])))}</span>'
+    owner = ""
+    o = d.get("owner") if agent else None
+    if isinstance(o, dict):
+        inner = face(o, "hu", 22) + f'<b>{_e(o.get("name") or "")}</b>'
+        link = (
+            f'<a href="{_e(o["page"])}">{inner}</a>'
+            if is_route(o.get("page"))
+            else f"<span>{inner}</span>"
+        )
+        owner = f'<p class="owner">{_e(t("visitor.agent_of"))} {link}</p>'
+    website = safe_url(d.get("website")) if not agent else None
+    shown_web = re.sub(r"/$", "", re.sub(r"^https://", "", website)) if website else ""
+    facts = (
+        "".join(
+            f"<div><dt>{_e(t(key))}</dt><dd><b>{_e(d[field])}</b></dd></div>"
+            for key, field in (("visitor.fact.harness", "harness"), ("visitor.fact.model", "model"))
+            if d.get(field)
+        )
+        if agent
+        else ""
+    )
+    crumb = t("visitor.crumb.agent" if agent else "visitor.crumb.person")
+    return (
+        '<section class="uhero hero dz"><div class="wrap">'
+        + face(d, "ag" if agent else "hu", 128)
+        + '<div class="uh-main">'
+        + f'<p class="crumb">{_e(crumb)}</p><h1>{_e(d.get("name") or "")}</h1>'
+        + f'<p class="meta">{meta}</p>{owner}'
+        + (f'<p class="sub bio">{_e(d["bio"])}</p>' if not agent and d.get("bio") else "")
+        + (
+            f'<a class="web" href="{_e(website)}" rel="{REL_ME}">{_e(shown_web)}</a>'
+            if website
+            else ""
+        )
+        + ("" if agent else socials(d.get("social")))
+        + (f'<dl class="facts">{facts}</dl>' if facts else "")
+        + report_row(path, kind)
+        + "</div></div></section>"
+    )
+
+
+def profile_band(kind: str, d: dict[str, Any]) -> str:
+    """The figures of the last 30 days as the hub sends them: a 0 is a figure, an empty count
+    (pull requests without a public repository) is none."""
+    totals = d.get("statistics")
+    if not isinstance(totals, dict):
+        return ""
+    keys = COUNTERS if kind == "agent" else PERSON_FIGURES
+    figures = [
+        f'<div class="stat"><b>{totals[key]}</b>'
+        f'<span class="label">{_e(t(f"visitor.stat.{key}"))}</span></div>'
+        for key in keys
+        if isinstance(totals.get(key), int | float) and not isinstance(totals.get(key), bool)
+    ]
+    if not figures:
+        return ""
+    return (
+        '<section class="band"><div class="wrap">'
+        f'<p class="eyebrow">{_e(t("visitor.stat.last_days"))}</p>'
+        f'<div class="stats4">{"".join(figures)}</div></div></section>'
+    )
+
+
+def project_cards(projects: Any) -> str:
+    if not projects:
+        return ""
+    cards = []
+    for p in projects:
+        full = str(p.get("full_name") or "")
+        slug = (full.split("/") + [""])[1]
+        cards.append(
+            f'<a class="pcard" href="/{_e(full)}">'
+            f'<span class="pmark sm" aria-hidden="true">{_e(monogram(p.get("name"), slug))}</span>'
+            f'<span class="mc-t"><b>{_e(p.get("name") or "")}</b><small>{_e(full)}</small></span>'
+            + (
+                f'<span class="chip role">{_e(word_of("role", p["role"]))}</span>'
+                if p.get("role")
+                else ""
+            )
+            + "</a>"
+        )
+    return (
+        '<section class="sec profile-projects"><div class="wrap">'
+        f'<div class="sec-h"><h2>{_e(t("visitor.projects"))}</h2></div>'
+        f'<div class="pgrid">{"".join(cards)}</div></div></section>'
+    )
+
+
+def agent_cards(d: dict[str, Any]) -> str:
+    """A person's agents as the Overview's member cards (§16.9, "A person's agents"); one
+    without a page of its own is no link and shows only its picture, name and handle."""
+    agents = d.get("agents") or []
+    if not agents:
+        return ""
+    cards = []
+    for a in agents:
+        roles = a.get("roles") if isinstance(a.get("roles"), list) else []
+        facts = "".join(f'<span class="chip role">{_e(word_of("role", r))}</span>' for r in roles)
+        if a.get("harness"):
+            facts += f'<span class="h">{_e(a["harness"])}</span>'
+        inner = (
+            face(a, "ag", 44)
+            + f'<span class="mc-t"><b>{_e(a.get("name") or "")}</b>'
+            + f'<small>@{_e(a.get("handle") or "")}</small>'
+            + (f'<span class="mc-m">{facts}</span>' if facts else "")
+            + "</span>"
+        )
+        handle = _e(a.get("handle") or "")
+        if is_route(a.get("page")):
+            cards.append(
+                f'<a class="mcard" href="{_e(a["page"])}" data-agent="{handle}">{inner}</a>'
+            )
+        else:
+            cards.append(f'<div class="mcard" data-agent="{handle}">{inner}</div>')
+    said = t("visitor.agents_of", count=len(agents), name=d.get("name") or "")
+    return (
+        '<section class="sec alt profile-agents"><div class="wrap">'
+        f'<div class="sec-h"><h2>{_e(t("visitor.agents"))}</h2>'
+        f'<p class="muted">{_e(said)}</p></div>'
+        f'<div class="mgrid">{"".join(cards)}</div></div></section>'
+    )
+
+
+def profile(kind: str, data: dict[str, Any], path: str) -> str:
+    """The content of `<main>` for a person's (`/<handle>`) or an agent's
+    (`/<owner>/agents/<handle>`) stored page, from its `data` alone: as visitor.js draws it
+    signed out (`profileHero`, `profileBand`, `projectCards`, `agentCards`)."""
+    if kind not in PROFILE_KINDS:
+        raise ValueError(f"no profile design for the public page kind {kind}")
+    return (
+        f'<section class="view-visitor public-view profile-view" data-kind="{kind}">'
+        + profile_hero(kind, data, path)
+        + profile_band(kind, data)
+        + project_cards(data.get("projects"))
+        + (agent_cards(data) if kind == "person" else "")
+        + "</section>"
+    )
+
+
 # --- the page --------------------------------------------------------------------------------
 
 
@@ -682,6 +909,8 @@ def base_of(path: str) -> str:
 
 def page(kind: str, data: dict[str, Any], path: str) -> str:
     """The content of `<main>` for a stored page of `kind` at `path`, from its `data` alone."""
+    if kind in PROFILE_KINDS:
+        return profile(kind, data, path)
     if kind not in KINDS:
         raise ValueError(f"no design for the public page kind {kind}")
     base = base_of(path)
