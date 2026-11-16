@@ -143,9 +143,10 @@ tabs **Profile** and **Agents** are gone. `public_agents` still decides
 what the list holds, as the superseded entry decided: the agents that
 have a page by default, under `all` also those only in private projects,
 with picture, name and handle only. `/{handle}/agents` names nothing: it
-answers the app shell like any path that names nothing, its visitors'
-route answers `not_found`, the dashboard says "not found", and nothing
-redirects to `/{handle}`.
+answers `404` with the app shell, as an address that can never be a page
+(docs/api.md §16.11, since 2026-11-16), its visitors' route answers
+`not_found`, the dashboard says "not found", and nothing redirects to
+`/{handle}`.
 
 **Reason:** the maintainer approved the mockup and asked for the page as
 drawn, and the mockup has one page with the agents on it. For the old
