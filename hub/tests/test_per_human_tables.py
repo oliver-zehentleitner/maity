@@ -234,6 +234,20 @@ EXPORT_LEAVES_OUT = {
 }
 
 
+# Columns with personal data that do not name a human (so no list above catches them), each
+# with how the deletion and the export treat it. The table's row goes with the account.
+PERSONAL_COLUMNS: dict[tuple[str, str], str] = {
+    # Where a pending address change was asked from, for the notice to the old address
+    # (§18.4); cleared at its verification, replacement, removal, voiding and expiry. Deleted
+    # with the row; left out of the export: a short-lived copy of the session's data, whose
+    # browser and system the export's session list holds (context/notifications.md
+    # 569a1661-3a51-45bb-b7e3-47a3f4368354).
+    ("notification_settings", "pending_browser"): "left out of the export",
+    ("notification_settings", "pending_os"): "left out of the export",
+    ("notification_settings", "pending_ip"): "left out of the export",
+}
+
+
 def _foreign_to_human(column: Any) -> bool:
     return any(fk.column.table.name == ACCOUNT for fk in column.foreign_keys)
 
@@ -324,3 +338,14 @@ def test_the_lists_name_only_what_they_must() -> None:
         assert table in HUMAN_TABLES and not _named_in(export, table), table
     for table, module in EXPORT_THROUGH.items():
         assert table in HUMAN_TABLES and _named_in(module, table), table
+
+
+def test_personal_columns_go_with_the_account_and_stay_out_of_the_export() -> None:
+    columns = {(tb.name, c.name) for tb in metadata.tables.values() for c in tb.columns}
+    for (table, column), export_decision in PERSONAL_COLUMNS.items():
+        assert (table, column) in columns, (table, column)
+        assert table in HUMAN_TABLES and _named_in(account_deletion, table), table
+        assert export_decision == "left out of the export"
+        assert not re.search(rf"\b{column}\b", _code_of(export)), column
+        # The export reads the settings through `view`; the column is never in it.
+        assert column not in inspect.getsource(notification_preferences.view), column

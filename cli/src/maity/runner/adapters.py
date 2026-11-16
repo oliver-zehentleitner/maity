@@ -107,6 +107,16 @@ PULL_REQUEST_PROMPT = (
 # more placeholder that was not seen in a sandboxed run.
 GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
 
+# An OS-made UUID v4 for an agent's Keep-the-Why entries (AGENTS.md, keepthewhy.com): the skill
+# makes every entry's `Id` with an OS command, never from memory. The harnesses with a
+# deny-by-default command allowlist (Claude Code, opencode) refuse the usual sources — `uuidgen`,
+# `node`, `od` on `/dev/urandom` — so a runner agent could record no reasoning (cli/context/
+# runner.md). The kernel's generator is the one allowed: it reads a fresh lowercase v4 (no `tr` to
+# lowercase, as the skill's `uuidgen` needs on macOS), needs no package installed (`uuidgen` is
+# util-linux), and runs read-only. Codex and agy have no command allowlist, so the command already
+# runs there inside their own sandbox (docs/runners.md).
+UUID_COMMAND = "cat /proc/sys/kernel/random/uuid"
+
 READY = ("stub", "claude-code", "codex", "opencode", "antigravity")  # harnesses with an adapter
 SESSION_GIT_CONFIG = {
     "GIT_CONFIG_COUNT": "2",
@@ -312,6 +322,7 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
+    allow += [f"Bash({UUID_COMMAND})"]  # an OS-made UUID v4 for Keep-the-Why entries
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     # Agents commit through git and never edit what makes git run something (GIT_PROTECTED).
@@ -581,7 +592,7 @@ def _codex(ctx: Context, env: dict[str, str]) -> Launch:
 def opencode_config(ctx: Context) -> dict[str, Any]:
     """The catch-all deny comes first: opencode's last matching rule wins (§6.1). With the
     project's configuration switched off, `AGENTS.md` is named as an instruction."""
-    bash = {"*": "deny", "maity *": "allow"}
+    bash = {"*": "deny", "maity *": "allow", UUID_COMMAND: "allow"}
     granted = [cmd for cmd in ctx.grant.allow if config.plain_command(cmd)]
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
