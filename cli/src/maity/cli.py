@@ -1089,10 +1089,9 @@ class _Outage:
     def _report(self, wall: datetime, mono: float) -> bool:
         if self.start is None or self.shown or mono - self.start < OUTAGE_AFTER:
             return False
-        _err(
-            f"{self.reason} since {_utc(self._since(wall, mono))}, still at {_utc(wall)}; "
-            "retrying until the timeout"
-        )
+        # Only what holds when it is printed: whether another read follows is known only
+        # afterwards (the line can come right before exit 3, after the unread-chats note).
+        _err(f"{self.reason} since {_utc(self._since(wall, mono))}, still at {_utc(wall)}")
         self.shown = self.reported = True
         return True
 

@@ -86,11 +86,12 @@ def test_wait_outage_stops_at_deadline(
     assert captured.out == ""
     # failed reads at 0, 2, 6, 14 and 30 s; the minute passes during the last backoff, and
     # the line comes before the window is rested out, not only at a next failed read
-    assert captured.err.count("retrying until the timeout") == 1
+    assert captured.err.count("hub answered 503 since") == 1
     assert (
-        "hub answered 503 since 2026-11-17T10:00:00Z, still at 2026-11-17T10:01:00Z; "
-        "retrying until the timeout" in captured.err
+        "maity: hub answered 503 since 2026-11-17T10:00:00Z, still at 2026-11-17T10:01:00Z\n"
+        in captured.err
     )
+    assert "retrying" not in captured.err
     saved = state.load_state(joined, cli.OUTAGE_FILE)
     assert saved["since"] == "2026-11-17T10:00:00Z" and saved["reported"] is True
 
@@ -314,8 +315,8 @@ def test_a_disconnect_of_a_minute_is_reported_with_utc_times(
     # failed reads at 1, 4, 9, 18 and 35 s, then a backoff to 65 s: 64 s after the first
     assert err.count("hub connection lost since") == 1
     assert (
-        "hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:05Z; "
-        "retrying until the timeout" in err
+        "maity: hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:05Z\n"
+        in err
     )
 
 
@@ -1028,24 +1029,41 @@ def test_a_reported_outage_ends_after_a_quiet_first_poll(
     assert not (joined / cli.OUTAGE_FILE).exists()
 
 
+@pytest.mark.parametrize("timeout", [60, 61, 62, 63, 64])
 def test_an_outage_whose_minute_passes_in_the_unread_note_is_named_before_exit_3(
     joined: Path,
     clock: Clock,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    timeout: int,
 ) -> None:
-    """--timeout 60: the deadline is 55 s, the last backoff ends there, and the unread-chats
-    note blocks on the dead hub for its 5 s: the minute passes in the note, and the line
-    comes before exit 3 (6mn6 A1152)."""
+    """--timeout 60..64: the deadline is 5 s before the end, reads fail at 0, 2, 6, 14 and
+    30 s, the last backoff ends at the deadline, and the unread-chats note blocks on the dead
+    hub for the rest: the minute passes in the note, and the line comes before exit 3, with
+    no read after it and no promise of one (6mn6 A1152, tqgb A1165)."""
+    reads: list[float] = []
 
-    def call(self: hub.Client, method: str, path: str, *args: Any, **kwargs: Any) -> Any:
+    def call(
+        self: hub.Client,
+        method: str,
+        path: str,
+        query: Any = (),
+        body: Any = None,
+        timeout: float | None = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
         if path.endswith("/conversations"):
-            clock.now += 5
+            clock.now += timeout or 0  # the note's read blocks on the dead hub for its budget
+        else:
+            reads.append(clock.now)
         raise hub.HubError("reset", status=None)
 
     monkeypatch.setattr(hub.Client, "call", call)
-    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_TIMEOUT
+    assert cli.main(["wait", "--timeout", str(timeout)]) == cli.EXIT_TIMEOUT
     err = capsys.readouterr().err
-    assert clock.now == 60
+    assert reads == [0, 2, 6, 14, 30] and clock.now == timeout
     assert err.count("hub connection lost since") == 1
-    assert "hub connection lost since 2026-11-17T10:00:00Z, still at 2026-11-17T10:01:00Z" in err
+    still = f"2026-11-17T10:01:{timeout - 60:02d}Z"
+    line = f"maity: hub connection lost since 2026-11-17T10:00:00Z, still at {still}\n"
+    assert line in err and "retrying" not in err

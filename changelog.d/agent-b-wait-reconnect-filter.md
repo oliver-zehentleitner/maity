@@ -12,5 +12,7 @@
 - cli: `maity wait` retries a dropped connection, an answer cut short or
   that is no page of events, an HTTP 5xx or 429 silently
   until the hub has given no answer for 60 seconds, counted across waits;
-  then one line names the UTC time of the first failed read, and another
-  says when the hub answers again. Exit codes are unchanged.
+  then one line names the UTC time of the first failed read and the time
+  now, and another says when the hub answers again. When the minute passes
+  during the read that answers, one combined line names both. Exit codes
+  are unchanged.

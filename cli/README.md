@@ -208,7 +208,8 @@ within a wait on the monotonic clock, so a jump of the system clock
 changes nothing) `wait` says nothing; once the minute has passed, at the
 next failed read, before the next poll or before the timeout (after the
 unread-chats note), whichever comes first, one line names the UTC time of the first failed read, such as
-`maity: hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:06Z; retrying until the timeout`,
+`maity: hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:06Z`
+(the wait goes on retrying while time is left, so exit 3 can follow it),
 and `hub answering again at …` follows once it answers. When the minute
 passes during the read that answers (a long poll held after a retried
 drop), one line names both ends instead:
