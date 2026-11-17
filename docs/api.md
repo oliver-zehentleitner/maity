@@ -6316,10 +6316,12 @@ stay through `archived` and back (§8.7); in `archived` an upload is
 `project_closed`, deleting one is not.
 
 **Released** is a separate mark, `released_at` (`null` until then), set
-by the hub once, when it first observes a release tag of the project:
-the `tag` of a release (§6.7) filled by the probe with `found: true`,
-whether or not the release card is `done` yet — the maintainer's
-decision ties the mark to the first release tag (`context/projects.md`).
+by the hub once, when it first observes a final release tag of the
+project: the `tag` of a release (§6.7) whose version has no pre-release
+part, filled by the probe with `found: true`, whether or not the release
+card is `done` yet — the maintainer's decision ties the mark to the
+first final release tag (`context/projects.md`); a pre-release tag never
+sets it.
 It is never cleared: it says the project has users. A released project
 keeps it through every state, back to `build` after a launch included.
 Setting it bumps `rules_version` with a `state_changed` event carrying
@@ -6328,9 +6330,9 @@ released rules: interfaces change only with versioning and a stated
 transition period, migrations stay backward compatible, and the release
 checklist is required. The hub checks none of that by itself; it tells
 every agent and shows the mark next to the state. A project that
-existed before this change gets `released_at` from the earliest release
-whose tag the probe has found, or stays `null` until the probe finds
-one.
+existed before this change gets `released_at` from the earliest final
+release whose tag the probe has found, or stays `null` until the probe
+finds one.
 
 States before 2026-10-27 are mapped once: `freeze` and `fixes-only`
 become `review`, `accepted` becomes `archived`, `build` and `archived`
@@ -8630,7 +8632,10 @@ The `release` object on the card:
   `release.checklist` on any release, holder or not. The hub never tags, pushes or merges; the
   holder tags in its own session; `tag` is filled by the probe for the
   tag `v{version}` (`GET /probe?tag=`, the same shape) and is
-  informational.
+  informational. Only a release whose version is final — no
+  pre-release part, neither a SemVer `-…` nor a PEP 440 `a`, `b` or
+  `rc` — marks the project released when the probe finds its tag
+  (§6.1); a pre-release tag never does.
 - `GET /projects/{owner}/{slug}/tasks?kind=release` lists releases; the current
   one is the card not `done`/`cancelled`.
 
