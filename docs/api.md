@@ -818,8 +818,11 @@ GET, PUT /projects/{owner}/{slug}/roles
 `{"custom": [{name, base, description}]}`, the whole list, at
 most 12. `name` matches `[a-z][a-z0-9-]{1,23}` and is none of the
 built-in roles, trusts or tokens (`owner`, `admin`, `member`, `outside`, `guest`,
-`team`, `all`, `proxy`, `lead`, `null`, `none`): `invalid`, `details.fields.name:
-"reserved"`. `base` is one of `coder`, `reviewer`, `tester`,
+`team`, `all`, `proxy`, `lead`, `null`, `none`): `invalid`,
+`details.fields["custom[<i>].name"]: "reserved"`. Every error of one
+entry is keyed so, `custom[<i>].<field>` with `<i>` the entry's 0-based
+index; only a `guide` (below) is named unindexed. `base` is one of
+`coder`, `reviewer`, `tester`,
 `designer`, `ops`, `writer` — never `proxy`, `manager` or one of the
 security teams, whose scopes are already those of a base, and never
 `expert`, whose scopes are fewer than any base's. A project role grants
