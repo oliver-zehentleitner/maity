@@ -18218,7 +18218,10 @@ still needed (the owner's decision, req-fdfb49yzqnhv, tsk-34gb7frfbsk7):
 - **Not after the runner's own end.** A placement closed because its
   runner was revoked or removed (`runner_revoked`, `runner_removed`)
   has no runner left to ask the hub; its clones are the operator's
-  (`maity runner stop-all`, `maity runner gc --revoked`).
+  (`maity runner stop-all`), removed by hand. After `runner_revoked`
+  a re-pair brings the runner back (§15.3), and then `maity runner gc
+  --revoked` reaches them too, since gc reads the hub with the runner's
+  credential.
   An owner's `agents: "stop"` revokes the credential of every clone of
   the runner not reported removed, whatever closed its placement
   (§15.3), so none of them still reaches the hub.
@@ -18269,8 +18272,10 @@ agents' shared home, which no removal of a clone reaches:
   own end (`runner_revoked`, `runner_removed`) is not in the closed read,
   and gc cannot read the hub then either: the runner's credential is
   refused (`credential_revoked`), and gc never reads a refused read as
-  "no active placement". That scratch is the operator's to remove by
-  hand once the runner is gone, as the clones are (above).
+  "no active placement". That scratch is the operator's, as the clones
+  are (above): removed by hand. After `runner_revoked` a re-pair brings
+  the runner back, and `maity runner gc --scratch` then reaches it too:
+  those placements are closed, so none of them is in the active list.
 - **Not reported to the hub.** Its size and its removal are the
   operator's: `maity runner status` shows the size of each placement's
   clone and scratch, and the runner writes every removal (when, which
