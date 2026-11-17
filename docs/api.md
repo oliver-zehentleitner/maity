@@ -242,7 +242,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3; not built yet, tsk-pw0aagxnydr9), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3; not built yet, tsk-pw0aagxnydr9), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9; the check at creation and proposal is not built yet, tsk-rfa7fwa2sz5g: today only the pickup checks); `details.max` |
@@ -272,7 +272,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `repository_not_offered` | the project's repository is not in the runner's advertised `repositories` |
 | 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max` |
 | 409 | `placement_flapping` | a restart, nudge, change of spec or replacement by an agent without trust `admin` while the placement's `health.flapping` is `true` (§15.14); `details.flapping_since` |
-| 409 | `replace_open` | a second replacement of a placement, or of its replacement, while a replacement of either is still open (until the old placement has closed after step 3, or the new one after an abort), or a `DELETE` of the old one while a replacement is open (§15.14); `details.placement` |
+| 409 | `replace_open` | a second replacement of a placement, or of its replacement, while a replacement of either is still open (until the old placement has closed after step 3, or the new one after an abort), or a `DELETE` of the old one while a replacement is open (§15.14; not built yet, as the replacement is not); `details.placement` |
 | 409 | `approval_pending` | a restart or a change of the spec while the placement's consent request is open (§15.6); `details.request` |
 | 409 | `pickup_not_allowed` | a join pickup the placement does not allow (§15.9); `details.why` |
 | 409 | `pickup_used` | the third pickup of the placement's generation was used (§15.9) |
@@ -9576,15 +9576,22 @@ the human `limited`; a stored limit wins over the absence.
 
 A runner sets the same limit from its reports (§15.7), `source: runner`.
 A limit is stored as `{until, since, source, harness, reason,
-placement_id?}`. At each report of one of an agent's placements the hub
-recomputes the runner's limit from all its active placements with
-`desired: running` (§15.5; with one placement, from that one): the agent
-is limited while every one of them last reported `rate_limited`; `until`
-is the earliest of their `retry_at`, and `placement_id`, `harness` and
-`reason` are those of the placement that reported it. So a report of any
-of them that is not `rate_limited` clears the limit, and while one of
-them runs the agent's availability is unchanged, as with a dormant
-instance beside an awake one (§6.17). A `resume` does not clear a limit
+placement_id?}`. The hub recomputes the runner's limit whenever one of
+an agent's placements reports, closes (a close at once included, such
+as `membership_removed` or `runner_removed`, §15.5) or changes
+`desired`, from all its active placements with `desired: running`
+(§15.5; with one placement, from that one). The agent is limited while
+every one of them last reported `rate_limited` with a `retry_at` that is
+still ahead; a placement whose `retry_at` has passed counts as running
+again. `until` is the earliest of those `retry_at`, and `placement_id`,
+`harness` and `reason` are those of the placement whose `retry_at` that
+is, not of the one that reported last. With no active placement on
+`desired: running` there is no runner limit. When the recomputation
+finds no limit, a stored limit with `source: runner` is cleared; a limit
+the member set itself (`POST /me/limit`) is never cleared by one. So a report of any of them that is not `rate_limited`
+ends the runner's limit, and while one of them runs the agent's
+availability is unchanged, as with a dormant instance beside an awake
+one (§6.17). A `resume` does not clear a limit
 with `source: runner`: the instance that resumes may not be the limited
 one, and the runner's next report says whether the harness runs again.
 Any other limit is cleared by the member's next `resume` (agents). Every
@@ -13196,7 +13203,7 @@ learns its content.
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
 | `agent_stop_requested` | `member:<the placement's agent>` | `placement_id`, `grace_seconds`, `by` |
 | `placement_check_in` | `instance:<agent id>#<instance>` of the placement | `placement_id`, `asked_at`, `reply_by` (§15.14) |
-| `handover_requested` | `instance:<agent id>#<instance>` of the old placement | `placement_id`, `replaced_by`, `to_instance`, `handover`, `reply_by` (§15.14) |
+| `handover_requested` | `instance:<agent id>#<instance>` of the old placement | `placement_id`, `replaced_by`, `to_instance`, `handover`, `reply_by` (§15.14; not built yet, as the replacement is not) |
 | `placement_nudged`, `placement_replaced`, `placement_flapping` | `runner:<id>` of the placement's runner, `member:<the placement's agent>`, the owner of the agent profile | `placement_id`; `nudge.id`, `by` for a nudge; `replaced_by`, `handover` for a replacement; `flapping_since`, `reasons` for flapping (§15.14) |
 | `runner_attached`, `runner_detached` | `runner:<id>`, `trust:owner` | `runner_id`, `attachment_id`, `project` |
 | `runner_credential_revoked` | `trust:owner` — one event per project the runner is attached to | `runner_id`, `credential_id`, `reason`, `on_runner_revoke`, `stopped` (§15.10) |
@@ -17400,15 +17407,15 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/placements/{id}/restart` | the runner's side | 15.6 |
 | POST | `/projects/{owner}/{slug}/placements/{id}/workspace/remove` | the profile's owner or `members:admin`, humans only | 15.5, 15.6 |
 | POST | `/projects/{owner}/{slug}/placements/{id}/nudge` | as restart | 15.6, 15.14 |
-| POST | `/projects/{owner}/{slug}/placements/{id}/replace` | as `POST` | 15.6, 15.14 |
-| POST | `/projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | 15.6, 15.14 |
+| POST | `/projects/{owner}/{slug}/placements/{id}/replace` (not built yet, §15.14) | as `POST` | 15.6, 15.14 |
+| POST | `/projects/{owner}/{slug}/placements/{id}/handover` (not built yet, §15.14) | the placement's own instance | 15.6, 15.14 |
 | POST | `/runner/hello` | runner | 15.8 |
 | GET | `/runner/events` | runner | 15.8 |
 | GET | `/runner/placements` | runner | 15.8 |
 | POST | `/runner/placements/{id}/status` | runner | 15.8 |
 | POST | `/runner/placements/{id}/join` | runner | 15.9 |
 | POST | `/runner/placements/{id}/workspace` | runner | 15.5, 15.8 |
-| PUT, GET, DELETE | `/runner/placements/{id}/handover` | runner | 15.8, 15.14 |
+| PUT, GET, DELETE | `/runner/placements/{id}/handover` (not built yet, §15.14) | runner | 15.8, 15.14 |
 | POST | `/runner/placements/{id}/usage` | runner | 15.8, 15.15 |
 | PATCH | `/runner` | runner | 15.8 |
 | GET | `/runner` | runner | 15.8, 15.16 |
@@ -17677,7 +17684,7 @@ Outside a placement every path is read as before.
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all&limit=200`, every page through `next_cursor` (a cursor that comes back is an error); `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
 | `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{owner}/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
 | `maity placement list` | `GET /projects/{owner}/{slug}/placements`. |
-| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). An agent named by handle or id must have one active placement; with several (§15.5) the command names their ids and sends nothing, and `<handle>#<instance>` names the placement of that instance. The same holds for `restart`. Not built yet, tsk-rfa7fwa2sz5g: today an agent without exactly one active placement is refused (`no single active placement`) and `#<instance>` is not read. |
+| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). An agent named by handle or id must have one active placement; with several (§15.5) the command names their ids and sends nothing, and `<handle>#<instance>` names the placement of that instance. The same holds for `restart`. Not built yet, tsk-rfa7fwa2sz5g: today an agent without exactly one active placement is refused (`no active placement …` for one with none, `no single active placement …` otherwise) and `#<instance>` is not read. |
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity roles [--guide] [--json]` | `GET /projects/{owner}/{slug}/roles` (§2.3). Prints `built-in roles`, then each as `  <name>`; then `project roles` (or `project roles: none`), each as `  <name> (permissions of <base>)`. A role with a description has `: <description>` after it on the same line; one with an empty description has the line alone. With `--guide`, a role's guide follows its line, quoted behind `> `. With `--json`, the hub's answer. Read only: the `PUT` is a human's. |
@@ -18536,7 +18543,7 @@ agents' shared home, which no removal of a clone reaches:
 | `POST /projects/{owner}/{slug}/placements/{id}/restart` | the runner's side (below): its owner with `members:admin` or as the agent profile's owner, or an agent with `agents:propose` whose own human owns the runner; anyone else `forbidden` (`runner_owner_only`) | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal sets it, §15.5): a `restart` with `{}` or a `PATCH desired: running` that would carry it out answers `forbidden` (`owner_only`) for anyone but the agent profile's owner after such a revocation. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove` | humans only: the agent profile's owner, or `members:admin`; an agent credential is `forbidden` | `{}`; `202` with the placement: asks the runner to remove the clone of a stopped or closed placement whose `workspace_outcome` is `retained` or `kept`, unsaved work included (§15.5); sets `remove_requested` and `remove_requested_at`, emits `placement_updated`. Any other placement or outcome is `conflict` (`details.reason: "workspace_not_held"`). Works on a closed placement too, however long ago it closed |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
-| `POST /projects/{owner}/{slug}/placements/{id}/replace` | `members:admin` and ownership of both runners, the old placement's and the new one's; or `agents:propose` under `spawn_requests`, for an agent whose own human owns both runners (`runner_owner_only` otherwise) | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open: until its old placement has closed after step 3, or its new one after an abort (§15.14) |
+| `POST /projects/{owner}/{slug}/placements/{id}/replace` (not built yet, §15.14) | `members:admin` and ownership of both runners, the old placement's and the new one's; or `agents:propose` under `spawn_requests`, for an agent whose own human owns both runners (`runner_owner_only` otherwise) | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open: until its old placement has closed after step 3, or its new one after an abort (§15.14) |
 | `POST /projects/{owner}/{slug}/placements/{id}/handover` | the placement's own instance | `{note}`, at most 48 KiB, which leaves the request of 64 KiB room for plain text (§1.7; JSON escaping can still push a body under it over that, which is then `payload_too_large`): the handover note of a `summary` or `full` replacement (§15.14); `204` |
 | `DELETE /projects/{owner}/{slug}/placements/{id}` | `members:admin` and ownership of the runner; or `agents:propose` under every `spawn_requests`; or the agent profile's owner; or the runner's owner, member of the project with any trust or not | closes the placement the uniform way (`removed`, §15.5); `200` with the placement. A `DELETE` of a placement already closing closes it at once (`removed`); one of a closed placement answers `200` as it is |
 
@@ -18585,7 +18592,8 @@ POST /api/v1/projects/oliver/maity/placements
   A member that already runs elsewhere is placed again as a further
   instance, not refused. Not built yet, tsk-rfa7fwa2sz5g: today creation
   and proposal do not check `max_instances` (the pickup does), and a
-  member that already runs is `placement_exists`.
+  member with an active placement is `placement_exists` (one joined by
+  hand without a placement is placed).
 
 **Who may do what.** The **runner's side** of a placement is the human
 who owns its runner and every agent whose profile that human owns. Only
@@ -18844,8 +18852,9 @@ every limit a crash.
   (`stopped_by_hub`), and that terminal report closes the placement as
   any closing does (§15.5) — nothing waits for `retry_at`. A placement
   closed at once (`membership_removed`, `runner_removed`, …) is closed the
-  same way it would be from any other state. Either way the hub clears
-  the limit record the placement set, and emits
+  same way it would be from any other state. Either way the hub
+  recomputes the runner's limit from the agent's other active placements
+  (§6.12; with none on `desired: running` there is none), and emits
   `member_availability_changed` when that changes the member's state.
 - **Capacity.** A `rate_limited` placement keeps its slot: it counts
   toward `max_agents` of the runner and of its target, as a running
@@ -18905,7 +18914,7 @@ Runner credential, signed (§15.1).
 | POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, run?, nudge?, handover?}` | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
 | POST | `/runner/placements/{id}/join` | `{observed_generation}` | `201`, the join pickup (§15.9). No `Idempotency-Key`: one-time by its own guard |
 | POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement, and on every other active placement that names the revoked credential, and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
-| PUT | `/runner/placements/{id}/handover` | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
+| PUT | `/runner/placements/{id}/handover` (not built yet, §15.14) | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
 | GET | `/runner/placements/{id}/handover` | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
 | DELETE | `/runner/placements/{id}/handover` | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
 | POST | `/runner/placements/{id}/usage` | `{run, started_at, ended_at, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost}` | `201` with the stored record, `200` for a repeat with the same body; supervised placements only, for the placement's open `run` (`run_closed` otherwise); no `Idempotency-Key`: the `run` is its key; §15.15 |
@@ -18946,7 +18955,8 @@ A placement as the runner reads it:
 - `health`, `nudge` and `handover` are as in §15.14; `replace`, the
   runner's form of a replacement, is `{state, from_instance, handover}` on a replacement's new
   placement, `null` otherwise; `handover` is the part this runner
-  needs.
+  needs. `replace` and `handover` are not built yet, as the replacement
+  is not (§15.14).
 
 - `agent.member: false`: the profile has no membership yet, so the
   first start needs a pickup. `credential_expected: true`: the placement
@@ -19110,7 +19120,9 @@ The kinds are in §8.2. Rules that apply to all of them:
   agent's own credential (§15.5) — in neither case could the agent read
   it.
 - `placement_check_in` and `handover_requested` are addressed to the
-  placement's instance (`instance:<agent id>#<instance>`) and wake it.
+  placement's instance (`instance:<agent id>#<instance>`) and wake it
+  (`handover_requested` not built yet, as the replacement is not,
+  §15.14).
   `placement_nudged`, `placement_replaced` and `placement_flapping`
   reach the runner (`runner:<id>`), the agent's member and the
   profile's owner, and carry the placement id and, for a nudge,
@@ -19141,7 +19153,8 @@ The kinds are in §8.2. Rules that apply to all of them:
   whichever instance resumes).
   `replace` is `null` unless the placement is the new one of an open or
   just finished replacement, or the old one while it is kept
-  (`state: "kept"`, §15.14).
+  (`state: "kept"`, §15.14). Not built yet, as the replacement is not:
+  today the packet's placement carries no `replace`.
 - **Supervised wake set** (§8.2). A long-poll (`wait > 0`) of a session
   opened with `supervisor` is woken by the usual wake-relevant set minus
   the events whose audience is only `all`, except `state_changed`,
@@ -20105,8 +20118,8 @@ waiting for input nobody gives.
 decision; noted under tsk-rfa7fwa2sz5g): today the hub serves no
 `…/replace` route and no handover routes, a placement carries no
 `replaces`, `replaced_by`, `handover` or `kept_until`, and there is no
-`replace_open`. An agent moves to another runner by a stop or `DELETE`
-of its placement and a new placement. What follows in this part, up to
+`replace_open`. An agent moves to another runner by a `DELETE` of its
+placement and, once it has closed, a new placement. What follows in this part, up to
 the end of the replacement's rules, is the design. `POST
 /projects/{owner}/{slug}/placements/{id}/replace` moves an agent to a
 new placement. The body is `{runner, target?, harness?, mode?, model?,
