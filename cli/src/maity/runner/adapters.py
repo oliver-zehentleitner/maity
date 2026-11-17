@@ -596,9 +596,9 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
-    # After the allows: the last match wins. `maity` is allowed only as one plain call, as the
-    # Claude Code hook has it (plaincall); a line that is not one plain call is denied. Without
-    # a sandbox these rules are not a boundary, see cli/context/runner.md.
+    # After the allows: the last match wins. The rules are meant to allow `maity` only as one
+    # plain call, as the Claude Code hook has it (plaincall). Without a sandbox these rules are
+    # not a boundary, see cli/context/runner.md.
     bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
     bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"

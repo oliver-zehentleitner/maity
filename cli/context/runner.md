@@ -1186,7 +1186,7 @@ now held to a plain clone's entries as well.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** runner code on `main` after the R5 adapters (#123, #125) and the offered-harness decision 62bcf506, read 2026-10-22; the coordinator's re-check of 5ed066bf, 2026-10-22
+**Source:** runner code on `main` after the R5 adapters (#123, #125) and the offered-harness decision 62bcf506, read 2026-10-22; the coordinator's re-check of 5ed066bf, 2026-10-22; updated 2026-11-17 when opencode was offered (req-g4d2cskx6zxv), dropping the aside that the configuration refuses it
 **See:** runner.md — 62bcf506-caed-470c-a094-9bea4217b440 — as of 2026-10-22
 **Revisit when:** the configuration accepts a harness without an adapter in this version, or a contract code for "not in this version" is added to §15.7
 
@@ -2868,10 +2868,11 @@ tools, the session runs unsandboxed (`sandbox_unavailable`), with no
 exclusion for the hook to guard. The hook's shell form ends in `|| exit 2`, so a hook that cannot
 start or fails refuses the call on any version; only a timeout needs
 `onFailure`.
-opencode, which runs without a sandbox and gets no hook, allows `maity`
-only as one plain call after its allows; without a sandbox those rules
-are not a boundary, so an opencode agent is treated as able to run any
-command as the agents' OS user (req-kezp8rppfhn5).
+opencode, which runs without a sandbox and gets no hook, has rules meant
+to allow `maity` only as one plain call after its allows; whether these
+rules hold for every line shape is not verified. Without a sandbox those
+rules are not a boundary either, so an opencode agent is treated as able
+to run any command as the agents' OS user (req-kezp8rppfhn5).
 
 **Reason:** only `maity` itself needs to run outside the sandbox. A line
 that holds more than maity's call is held to the rules every other
@@ -3528,7 +3529,7 @@ Rejected:
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-29nmydbzrg5z, the lead's rules for the installers (2026-11-14: no script fetched and run unless its version is pinned, the vendor's package at an exact version, the vendor's checksum checked, refuse rather than fall back, what each tool verifies written down for the security team) and the lead's approval of the agent_user scope (2026-11-14); the vendors' install scripts and documentation read 2026-11-14 (Claude Code's signed `manifest.json`, release key fingerprint 31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE; Codex's GitHub releases with a SHA-256 `digest` per asset and a sigstore bundle); `cli/src/maity/runner/installers.py`, `tools.py`, `keeper.py`
+**Source:** card tsk-29nmydbzrg5z, the lead's rules for the installers (2026-11-14: no script fetched and run unless its version is pinned, the vendor's package at an exact version, the vendor's checksum checked, refuse rather than fall back, what each tool verifies written down for the security team) and the lead's approval of the agent_user scope (2026-11-14); the vendors' install scripts and documentation read 2026-11-14 (Claude Code's signed `manifest.json`, release key fingerprint 31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE; Codex's GitHub releases with a SHA-256 `digest` per asset and a sigstore bundle); `cli/src/maity/runner/installers.py`, `tools.py`, `keeper.py`; updated 2026-11-17 when opencode was offered (req-g4d2cskx6zxv): it still has no installer, and the "not offered to placements yet" wording was dropped
 **Revisit when:** a vendor stops publishing the checksum or signature used here, the runner gains a sigstore verifier, or an operator of the agent_user layout needs managed tools
 **See:** runner.md#the-runner-installs-and-updates-the-harness-tools-and-maity-only-where-its-owner-allows-it-per-tool — 4c984f97-09b8-479b-bd1a-f56bb41057fd — as of 2026-11-14
 

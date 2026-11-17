@@ -710,7 +710,7 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     elif name in NOT_OFFERED_YET:
         why = NOT_OFFERED_WHY.get(name)
         reason = f": {why}" if why else ""
-        problems.append(f"{where}: not offered yet{reason}; the maintainer has not offered it")
+        problems.append(f"{where}: not offered yet{reason}")
     modes = tuple(
         table.get(
             "modes",

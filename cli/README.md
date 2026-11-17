@@ -1237,7 +1237,9 @@ project's own harness configuration is never loaded:
 - **OpenCode (Grok)** (`opencode`) is offered: a configuration naming
   `[harness.opencode]` is accepted. It runs **Grok** (name the Grok model as
   `<provider>/<model>` under `models`, with a `default_model`), installed and
-  signed in once as the agents' user (binary in `~/.local/bin`). opencode
+  signed in once as the agents' user (opencode's installer puts it in
+  `~/.opencode/bin`; add the directory that holds the binary to `agent_path`
+  if the service's `PATH` lacks it). opencode
   runs without a sandbox, so its login and the listed home secrets are not
   kept from an opencode agent — a reason to give it an OS user of its own.
   Each
