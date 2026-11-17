@@ -526,6 +526,23 @@ def test_check_finds_the_harness_and_its_version(
     assert any("(0.40.0)" in line for line in lines(capsys))
 
 
+def test_check_finds_opencode_and_its_version(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `maity runner check` accepts a configuration naming opencode (req-g4d2cskx6zxv) and names
+    # the harness with its version, like codex; opencode has no OS sandbox the runner switches
+    # on, so nothing refuses it here.
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "opencode", "0.5.3")
+    paired.write_text(paired.read_text() + '\n[harness.opencode]\nmodels = ["xai/grok"]\n')
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    out = lines(capsys)
+    assert any("opencode" in line and "(0.5.3)" in line for line in out), out
+    assert not any(line.startswith("error") for line in out), out
+
+
 def test_check_warns_about_inherited_claude_settings(
     paired: Path, bin_dir: Path, home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -683,9 +700,22 @@ def test_default_config_path(home: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert config.path_of("~/x.toml") == home / "x.toml"
 
 
-def test_opencode_is_not_offered_yet() -> None:
-    found = problems(minimal(o="\n[harness.opencode]\n"))
-    assert any(p.startswith("harness.opencode: not offered yet") for p in found), found
+def test_opencode_is_offered() -> None:
+    # Offered (req-g4d2cskx6zxv): a configuration naming opencode is accepted, no longer refused
+    # as "not offered yet" (cli/context/runner.md). Its modes and the Grok model are read, and
+    # NOT_OFFERED_YET is now empty.
+    text = (
+        "\n[harness.opencode]\n"
+        'modes = ["supervised", "interactive"]\n'
+        'models = ["xai/grok"]\n'  # opencode names a model as <provider>/<model>
+        'default_model = "xai/grok"\n'
+    )
+    cfg = parse(minimal(o=text))
+    harness = cfg.harnesses["opencode"]
+    assert harness.modes == ("supervised", "interactive")
+    assert harness.models == ("xai/grok",) and harness.default_model == "xai/grok"
+    assert harness.binary == "opencode"
+    assert config.NOT_OFFERED_YET == ()
 
 
 def test_antigravity_is_offered() -> None:
@@ -748,6 +778,24 @@ def test_runner_check_names_a_refused_gh_rule_and_an_api_host_as_warnings() -> N
     assert "'gh pr create *' is not applied" in texts[0] and "pull_requests = true" in texts[0]
     assert "maity gh pr create" in texts[0]
     assert "api.github.com" in texts[1]
+
+
+def test_runner_check_names_what_codex_starts_without_only_with_codex_configured() -> None:
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["make test"]\npull_requests = true\n'
+    )
+    report = commands.Report()
+    commands._check_repositories(report, parse(minimal(c="\n[harness.codex]\n", grant=grant)))
+    assert not report.failed  # said, never an error: the placement starts
+    texts = [text for level, text in report.lines if level == "warn"]
+    assert len(texts) == 2, texts
+    assert "'make test' is not applied to codex" in texts[0] and "its sandbox" in texts[0]
+    assert "pull_requests is not given to codex" in texts[1] and "maity gh" in texts[1]
+    assert "refused without the sandbox" in texts[0]
+    quiet = commands.Report()
+    commands._check_repositories(quiet, parse(minimal(grant=grant)))
+    assert quiet.lines == []
 
 
 # --- the agents' git identity (cli/context/runner.md, tsk-z27pwcfr03wm) --------------------
