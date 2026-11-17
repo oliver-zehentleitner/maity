@@ -18062,8 +18062,8 @@ owner choose):
   `hermes`, `kimi`, `cline`, `omp`, `stub`. `confinement`: `allowlist`
   (the harness's own command allowlist), `sandbox` (no command allowlist,
   the harness's OS sandbox is the boundary — `codex`; a placement whose
-  repository grant lists commands starts without that list, every command
-  running in the sandbox),
+  repository grant lists commands starts without that list while the
+  sandbox is on, and is refused while it is off, `harness_refused`),
   `pod` (no allowlist; the pod is the only boundary) or `none` (`stub`
   only). A runner advertises the confinement it actually enforces, never
   one it only configures. Whether the harnesses

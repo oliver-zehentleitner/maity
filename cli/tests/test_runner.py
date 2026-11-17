@@ -762,6 +762,7 @@ def test_runner_check_names_what_codex_starts_without_only_with_codex_configured
     assert len(texts) == 2, texts
     assert "'make test' is not applied to codex" in texts[0] and "its sandbox" in texts[0]
     assert "pull_requests is not given to codex" in texts[1] and "maity gh" in texts[1]
+    assert "refused without the sandbox" in texts[0]
     quiet = commands.Report()
     commands._check_repositories(quiet, parse(minimal(grant=grant)))
     assert quiet.lines == []

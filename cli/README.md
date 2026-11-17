@@ -1062,11 +1062,13 @@ links. Under the harness's sandbox no placed session can run gh itself,
 and the runner adds no `api.github.com` to the sandbox (`maity runner
 check` warns when a grant with `pull_requests` lists it). A gh entry in
 `allow` is not applied: `maity runner check` warns about it and the
-runner still starts. A Codex placement starts without the grant's
-`allow` list and `pull_requests`: Codex has no command allowlist, and
-its `maity` runs inside its sandbox, which reaches neither gh's login
-nor the forge's API. `maity runner check` and the runner's log at each
-start name what a Codex placement does not get.
+runner still starts. With its sandbox on, a Codex placement starts
+without the grant's `allow` list and `pull_requests`: Codex has no
+command allowlist, and its `maity` runs inside its sandbox, where
+`maity gh` is not meant to run, so `maity gh` refuses for it. With its
+sandbox off, such a grant refuses the Codex start. `maity runner check`
+and the runner's log at each start name what a Codex placement does not
+get.
 
 Open gaps:
 
@@ -1239,7 +1241,8 @@ project's own harness configuration is never loaded:
   it is advertised as `confinement: sandbox`. A repository's `allow`
   list is not applied to Codex (every command runs in its sandbox,
   listed or not) and `pull_requests` is not given to it (`maity gh`
-  cannot run in its sandbox); `maity runner check` names both.
+  refuses there); `maity runner check` names both. Without its sandbox,
+  a grant with either part refuses the Codex start.
 - **opencode** (built, not offered yet: a configuration that names it is
   refused until the maintainer decides) runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
   runner-written `OPENCODE_CONFIG`: deny everything first, then allow the

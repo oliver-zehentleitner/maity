@@ -841,6 +841,14 @@ class Supervisor:
         on = view.sandbox
         if capabilities.sandbox_refused(harness, on, view.held):
             return ("harness_refused", None)  # no run without it, or held back by its version
+        if harness.id == "codex" and not on:
+            # The grant parts Codex starts without are left out only for its sandbox to take
+            # their place; without it, a grant that asked for them refuses the start.
+            repository = config.normalise_repository(p["workspace"].get("repository") or "")
+            if adapters.codex_left_out(
+                self.cfg.repositories.get(repository, config.RepositoryGrant())
+            ):
+                return ("harness_refused", None)
         if on and harness.id == "claude-code":
             # The sandboxed session relies on the runner's hook; settings that switch hooks
             # off would start it without one. Read at every start: they change without us.

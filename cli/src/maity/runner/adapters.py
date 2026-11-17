@@ -407,19 +407,19 @@ def trust_clone(ctx: Context) -> None:
 def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
     """The parts of a repository's grant a Codex placement starts without, each with why
     (cli/context/runner.md): Codex has no command allowlist, and its `maity` runs inside its
-    sandbox, which reaches neither gh's login nor the forge's API. The sandbox stays the
-    boundary; nothing here widens it."""
+    sandbox, not outside it as `maity gh` needs. Only with its sandbox on: without it, a
+    grant with any of these parts refuses the start (supervisor `_refusal`)."""
     left = []
     if grant.allow:
         listed = ", ".join(repr(rule) for rule in grant.allow)
         left.append(
             f"allow {listed} is not applied to codex: Codex has no command allowlist, so "
-            "every command runs in its sandbox, listed or not"
+            "every command runs in its sandbox, listed or not (refused without the sandbox)"
         )
     if grant.pull_requests:
         left.append(
-            "pull_requests is not given to codex: `maity gh` runs inside Codex's sandbox, "
-            "which reaches neither gh's login nor the forge's API"
+            "pull_requests is not given to codex: its `maity` runs inside its sandbox, "
+            "where `maity gh` is not meant to run, so `maity gh` refuses for it"
         )
     return left
 

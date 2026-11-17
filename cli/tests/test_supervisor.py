@@ -1903,10 +1903,11 @@ def test_codex_starts_without_the_grant_parts_it_cannot_enforce(
     world: Any, grant: config.RepositoryGrant, said: list[str]
 ) -> None:
     """Codex has no command allowlist, and its `maity` runs inside its sandbox, where
-    `maity gh` reaches neither the login nor the forge's API: it starts without those parts,
-    named at each start, instead of being refused (cli/context/runner.md)."""
+    `maity gh` is not meant to run: with its sandbox on it starts without those parts, named
+    at each start, instead of being refused (cli/context/runner.md)."""
     sup, _, reports, _, logs = world
     sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": grant})
+    sup.targets["local"].sandbox["codex"] = True
     assert sup._refusal(placement(harness="codex"), sup.targets["local"]) is None
     sup.update([placement(harness="codex")])
     sup.tick()
@@ -1917,6 +1918,29 @@ def test_codex_starts_without_the_grant_parts_it_cannot_enforce(
         if "codex:" in line and "github.com/oliver-zehentleitner/maity" in line
     ]
     assert len(left) == len(said) and all(any(s in line for line in left) for s in said), left
+
+
+@pytest.mark.parametrize(
+    "grant",
+    [
+        config.RepositoryGrant(allow=("make test",)),
+        config.RepositoryGrant(pull_requests=True),
+    ],
+)
+def test_codex_without_its_sandbox_is_refused_where_the_grant_has_parts_it_leaves_out(
+    world: Any, grant: config.RepositoryGrant
+) -> None:
+    """The left-out parts are left to Codex's sandbox: with it off (`require_sandbox` unset,
+    so the start is not refused for the sandbox alone), such a grant refuses the start."""
+    sup, _, reports, _, _ = world
+    sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": grant})
+    sup.targets["local"].sandbox["codex"] = False
+    assert sup._refusal(placement(harness="codex"), sup.targets["local"]) == (
+        "harness_refused", None,
+    )  # fmt: skip
+    network = config.RepositoryGrant(network=("pypi.org",))
+    sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": network})
+    assert sup._refusal(placement(harness="codex"), sup.targets["local"]) is None
 
 
 def test_claude_code_is_not_told_what_codex_starts_without(world: Any) -> None:
