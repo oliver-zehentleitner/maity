@@ -1613,11 +1613,12 @@ answer time a poll in the middle of the window gets, separate from
 `POLL_SLACK`, which only keeps the window's last poll inside it. A read
 that times out or is cut once the deadline has passed is not reported:
 `wait` ends as any timeout does, with the unread-chats hint and exit 3.
-A connection error before the deadline still prints `hub connection
-lost, retrying until the timeout` and retries with backoff. The exit
-codes are unchanged. Since 2026-11-17 that line comes only after a
-minute without an answer, counted across waits, with its UTC times
-(403fe74d-33d8-41d4-aea5-83578db941e1).
+A connection error before the deadline is still retried with backoff;
+it printed `hub connection lost, retrying until the timeout` at once
+until 2026-11-17. Since then a line comes only after a minute without an
+answer, counted across waits, and names its UTC times without promising
+a retry (`hub connection lost since …Z, still at …Z`,
+403fe74d-33d8-41d4-aea5-83578db941e1). The exit codes are unchanged.
 
 **Reason:** the poll used to be what was left less one second, so the
 last poll of every window gave the hub about a second to answer; a hub
@@ -1650,12 +1651,12 @@ deadline is what the deadline promises, not an outage.
 **See:** commands.md#wait-retries-a-dropped-connection-silently-for-a-minute-counted-across-waits-then-names-the-outage-in-utc — 403fe74d-33d8-41d4-aea5-83578db941e1 — as of 2026-11-17
 
 A `429` on the events long-poll is retried with the same cursor, as a
-`5xx` or a dropped connection is: the first one prints `hub answered
-429, retrying until the timeout`, and the pause is the backoff (2 s up
+`5xx` or a dropped connection is, and the pause is the backoff (2 s up
 to 30 s) or the answer's `Retry-After`, whichever is longer, never past
-the deadline. Since 2026-11-17 that first line waits for a minute
-without an answer, counted across waits
-(403fe74d-33d8-41d4-aea5-83578db941e1). A `429` without `Retry-After`, as a limit on open
+the deadline. Until 2026-11-17 the first one printed `hub answered 429,
+retrying until the timeout`; since then a line waits for a minute
+without an answer, counted across waits, and reads `hub answered 429
+since …Z, still at …Z` (403fe74d-33d8-41d4-aea5-83578db941e1). A `429` without `Retry-After`, as a limit on open
 requests sends it, gets the backoff alone. A wait whose deadline comes
 first ends as any timeout does, with exit 3, so the loop around it
 re-arms. Every other `4xx` still ends `wait` with exit 1.
