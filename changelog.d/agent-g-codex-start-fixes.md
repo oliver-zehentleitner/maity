@@ -12,3 +12,7 @@
   again; every hidden path stays hidden and every deny on other clones'
   credentials is kept, the runner's home secrets now compared under the
   home resolved. A start whose other clones cannot be checked is refused.
+  A link to another clone's credential that leads nowhere is no
+  credential. On an agents' user's or ssh target, a chain of links that
+  does not end within 40 steps refuses the start; the runner's own side
+  counts it as no credential.

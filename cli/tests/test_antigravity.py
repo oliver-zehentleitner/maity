@@ -1068,6 +1068,53 @@ def test_a_loop_of_links_is_no_credential_here_and_refused_elsewhere(
             supervisor.other_credentials(ws, own, as_user)
 
 
+MODES = {  # what lies at agent-4 (and its mode): every side must answer as the runner's own
+    "clone-0111": ("agent-4", 0o111), "clone-0000": ("agent-4", 0o000),
+    "git-0111": ("agent-4/.git", 0o111), "git-0000": ("agent-4/.git", 0o000),
+    "maity-0111": ("agent-4/.git/maity", 0o111), "maity-0000": ("agent-4/.git/maity", 0o000),
+    "project-0111": ("", 0o111), "gitfile": ("agent-4/.git", None),
+}  # fmt: skip
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", ["agent_user", "ssh"])
+@pytest.mark.parametrize("case", sorted(MODES))
+@pytest.mark.parametrize("through_link", [False, True])
+def test_every_side_answers_as_the_runners_own_side_whatever_the_modes(
+    tmp_path: Path, side: str, case: str, through_link: bool
+) -> None:
+    """Directories only searchable, not even that, and a `.git` that is a file (a worktree's):
+    another side lists or refuses exactly as the runner's own side does, also when the clone
+    is reached through a link."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    clone = (tmp_path / "elsewhere" / "agent-4") if through_link else ws / "maity" / "agent-4"
+    (clone / ".git" / "maity").mkdir(parents=True)
+    if through_link:
+        (ws / "maity" / "agent-4").symlink_to(clone)
+    rel, mode = MODES[case]
+    where = (ws / "maity") if rel == "" else clone.joinpath(*rel.split("/")[1:])
+    if mode is None:
+        shutil.rmtree(where)
+        where.write_text("gitdir: /nowhere\n")
+    else:
+        where.chmod(mode)
+
+    def answer(as_user: AsUser) -> object:
+        try:
+            return supervisor.other_credentials(ws, own, as_user)
+        except workspace.Refused:
+            return "refused"
+
+    try:
+        single, other = answer(AsUser()), answer(SIDES[side]())
+    finally:
+        if mode is not None:
+            where.chmod(0o700)
+    assert other == single
+
+
 @pytest.mark.parametrize("side", sorted(SIDES))
 @pytest.mark.parametrize("linked", sorted(SLOTS))
 def test_a_link_that_leads_nowhere_is_no_credential(tmp_path: Path, side: str, linked: str) -> None:

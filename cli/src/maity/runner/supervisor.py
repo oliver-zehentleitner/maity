@@ -1396,9 +1396,11 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     (a clone made later is covered from the agent's next start), listed as the agents' user,
     who owns them and may be the only one able to list them. A listing that is not complete
     fails closed (`workspace.Refused`): an unreadable directory could hide a credential, and
-    the sandbox would start without its deny. Each is named where it lies, as the agents'
-    side resolves it; one inside the workspaces root is named below `workspaces` as given
-    (resolved here), the form the clone's own path and the root's deny have."""
+    the sandbox would start without its deny. A link that leads nowhere is no credential;
+    on a side not the runner's own, a chain of links that does not end within 40 steps fails
+    closed too (here it is none). Each is named where it lies, as the agents' side resolves
+    it; one inside the workspaces root is named below `workspaces` as given (resolved here),
+    the form the clone's own path and the root's deny have."""
     root = workspaces.resolve() if as_user.here else workspaces
     refused = workspace.Refused("harness_refused")
     if as_user.direct:
