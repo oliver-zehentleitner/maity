@@ -499,13 +499,15 @@ hold clones of the same name in two projects.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; why leaving launch is ungated: the Grok review of PR #644, 2026-10-29
+**Source:** the maintainer's decisions in the Maity inbox, 2026-10-27, on the coordinator's concept proposals worked out with him in the chat the same day; why leaving launch is ungated: the Grok review of PR #644, 2026-10-29; narrowed on 2026-11-17 by the owner's decision req-xt164pkgs20b to the first final release tag
 **See:** projects.md#a-closed-project-refuses-additions-never-removal — e9c3b578-c282-43c1-b5f4-4a494ae0464e — as of 2026-10-27
+**See:** https://github.com/oliver-zehentleitner/maity — 1ef92894-f9b7-4b44-9fe8-6936fc010bd3 — as of 2026-11-17
 
 A project's state is plan (concept and contracts, no implementation
 cards), build, review (feature stop, load test, acceptance; the former
 freeze), launch (live) or archived. Separately, 'released' is set once,
-with the first release tag, and never cleared: from then on interfaces
+with the first final release tag (a pre-release tag never sets it), and
+never cleared: from then on interfaces
 change only with versioning and a transition period, migrations stay
 backward compatible and the release checklist is mandatory. After a
 launch the project returns to build, still released. Moving to launch
