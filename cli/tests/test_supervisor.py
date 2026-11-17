@@ -2554,6 +2554,22 @@ def test_a_target_whose_sessions_were_not_read_keeps_every_scratch(world: Any) -
     assert not room.exists() and "plc-0003" in sup.scratch_cleared
 
 
+def test_a_local_tmux_that_cannot_be_read_keeps_every_scratch(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, *_ = world
+    room = scratch_of(sup)
+    (room / "tmp").mkdir(parents=True)
+    sup.closed([CLOSED])
+
+    def unreadable() -> dict[str, tmux.Session]:
+        raise tmux.TmuxError("tmux list-panes failed: lost")
+
+    monkeypatch.setattr(backend, "sessions", unreadable)
+    sup.tick()
+    assert room.is_dir() and "plc-0003" not in sup.scratch_cleared
+
+
 def test_a_closed_placement_without_a_scratch_writes_no_removal(world: Any) -> None:
     sup, *_ = world
     sup.closed([CLOSED, {"id": "../x", "project_id": "maity", "active": False},

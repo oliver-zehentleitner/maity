@@ -78,3 +78,27 @@ def test_the_module_answers_in_one_line_and_says_link_by_its_exit_code(
     assert '"result": "link"' in capsys.readouterr().out
     assert (root / "other").is_dir()
     assert scratchop.main(["bogus"]) == 2
+
+
+def test_a_holder_swapped_for_a_link_after_it_was_opened_leads_nowhere_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "ws"
+    room = _room(root)
+    scratchop.make(str(root), str(room))
+    (room / "tmp" / "evidence").write_text("e")
+    victim = tmp_path / "victim" / "plc-0003"
+    victim.mkdir(parents=True)
+    (victim / "keep").write_text("k")
+    measure = scratchop._size
+
+    def swapped(fd: int) -> int:
+        # Between the walk and the removal: `.scratch` moved away, a link in its place.
+        room.parent.rename(root / "maity" / "moved")
+        room.parent.symlink_to(victim.parent)
+        return measure(fd)
+
+    monkeypatch.setattr(scratchop, "_size", swapped)
+    assert scratchop.remove(str(root), str(room))["result"] == "removed"
+    assert (victim / "keep").read_text() == "k"  # the link's target is untouched
+    assert not (root / "maity" / "moved" / "plc-0003").exists()  # what was opened went

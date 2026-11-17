@@ -440,6 +440,7 @@ def test_gc_scratch_lists_then_removes_what_no_active_placement_names(
     out = capsys.readouterr().out
     assert f"{holder / 'plc-0001'}: removable" in out and "plc-0002" not in out
     assert "not-a-placement: not a placement's; left as it is" in out
+    assert f"{holder / 'plc-0009'}: not a placement's; left as it is" in out  # a link
     assert (holder / "plc-0001").is_dir()  # listed only
     assert cli.main(["runner", "gc", "--scratch", "--yes", "--config", str(path)]) == 0
     assert not (holder / "plc-0001").exists() and (holder / "plc-0002").is_dir()

@@ -225,8 +225,8 @@ def test_a_file_in_the_recorded_scratch_is_read_and_sent(
 @posix
 @walks
 @pytest.mark.parametrize("way", ["beside", "link", "linked-scratch", "linked-holder",
-                                 "linked-project", "no-record", "empty-record",
-                                 "record-in-clone"])  # fmt: skip
+                                 "linked-project", "linked-workspaces", "no-record",
+                                 "empty-record", "record-in-clone"])  # fmt: skip
 def test_only_the_recorded_scratch_is_read_and_never_through_a_link(
     placed: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str],
     way: str,
@@ -240,13 +240,14 @@ def test_only_the_recorded_scratch_is_read_and_never_through_a_link(
             (private / clonecheck.SCRATCH_RECORD).write_text(str(record[way]))
         given = room / "body.json"
         given.write_bytes(CONTENT)
-    elif way in ("linked-scratch", "linked-holder", "linked-project"):
+    elif way in ("linked-scratch", "linked-holder", "linked-project", "linked-workspaces"):
         # The record names the right path; one directory on the way to it is a link the
         # agents could have made after the runner wrote the record.
         real = tmp_path / "elsewhere"
         room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
         linked = {"linked-scratch": room, "linked-holder": room.parent,
-                  "linked-project": room.parent.parent}[way]  # fmt: skip
+                  "linked-project": room.parent.parent,
+                  "linked-workspaces": room.parent.parent.parent}[way]  # fmt: skip
         below = room.relative_to(linked)
         (real / below).mkdir(parents=True)
         (real / below / "body.json").write_bytes(CONTENT)
@@ -268,5 +269,7 @@ def test_only_the_recorded_scratch_is_read_and_never_through_a_link(
     assert not leaked(fake), (way, err)
     plain = "not plain directories"
     reason = {"link": "a link", "linked-scratch": plain, "linked-holder": plain,
-              "linked-project": plain}.get(way, "not a file in this clone")  # fmt: skip
+              "linked-project": plain, "linked-workspaces": plain}.get(
+        way, "not a file in this clone"
+    )  # fmt: skip
     assert reason in err, (way, err)

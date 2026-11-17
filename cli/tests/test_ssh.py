@@ -13,7 +13,7 @@ import pytest
 from test_supervisor import REPO, Clock, FakeTmux, Reports, placement, settle, states
 
 from maity import cli
-from maity.runner import capabilities, config, supervisor, targets, workspace
+from maity.runner import capabilities, config, supervisor, targets, tmux, workspace
 from maity.runner.asuser import Ssh, Unreachable
 
 CONFIG = """\
@@ -704,3 +704,29 @@ def test_claude_codes_sandbox_on_a_host_needs_the_hook_failure_policy(
     target = targets.ssh_hosts(cfg)[1]
     probes, sandbox, held = targets.probe_remote(target.as_user, harnesses, target.agent_path)
     assert probes["claude-code"].version == version and sandbox["claude-code"] is on
+
+
+def test_a_host_whose_sessions_cannot_be_read_keeps_its_scratch(
+    tmp_path: Path, fake_ssh: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The host's own maity, with its fast `runner scratchop`, ahead of any other on PATH.
+    monkeypatch.setenv("PATH", f"{tmp_path / 'remote' / 'bin'}{os.pathsep}{os.environ['PATH']}")
+    sup, backends, _, _, logs = remote_world(tmp_path, fake_ssh)
+    assert sup.cfg.ssh is not None
+    room = sup.cfg.ssh.hosts[0].workspaces / "maity" / ".scratch" / "plc-0003"
+    (room / "tmp").mkdir(parents=True)
+    sup.closed([{"id": "plc-0003", "project_id": "maity", "active": False,
+                 "closed_reason": "deleted"}])  # fmt: skip
+
+    def unreadable() -> dict[str, tmux.Session]:
+        raise tmux.TmuxError("tmux list-panes failed: lost")
+
+    readable = {name: backend.sessions for name, backend in backends.items()}
+    for backend in backends.values():
+        monkeypatch.setattr(backend, "sessions", unreadable)
+    sup.tick()  # a session of it may still run there: unknown means kept
+    assert room.is_dir() and "plc-0003" not in sup.scratch_cleared
+    for name, backend in backends.items():
+        monkeypatch.setattr(backend, "sessions", readable[name])
+    sup.tick()
+    assert not room.exists() and "plc-0003" in sup.scratch_cleared
