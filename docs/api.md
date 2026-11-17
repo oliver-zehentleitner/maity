@@ -236,7 +236,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `release_in_flight` | a second release card while one is open; `details.release` |
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to`; `details.reason: "project_moved"` instead when the project changed its owning organisation during the call, which is to be made again (§6.26); `details.reason: "proposer_lost"` for a `go` on a member's proposal whose proposer no longer stands (§7) |
-| 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count` |
+| 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1; not built yet, tsk-t63d50qy3s0k) |
 | 403 | `account_suspended` | a join, an exchange, a device code, a runner pairing or a placement rejoin for an account an instance admin suspended (§16.8) |
 | 409 | `alias_limit` | a rename that would give a human, an organisation or an agent profile more aliases than the instance's `max_aliases` (§6.24, §6.26, §16.5), or a project rename or transfer that would give the project more (§6.25); `details.limit` (the value), `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
@@ -245,7 +245,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
-| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9); `details.max` |
+| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9); `details.max`, and the quota details of §6.31 (not built yet, tsk-spmhjqm7szag) |
 | 409 | `instance_assigned` | a claim by an instance of an agent while the card's `assigned_instance` names another instance, or under `distribution: lead` while it is unset (§6.18); `details.assigned_instance` |
 | 409 | `takeover_required` | an agent's `assign`, `release` or `PATCH assigned_to` that would move a card someone else holds with an active lease (§6.19); `details.holder`, `details.instance` |
 | 409 | `takeover_open` | a takeover on a card that has an open one, or an agent's `assign`, `release` or `PATCH assigned_to` on such a card (§6.19); `details.takeover` |
@@ -255,9 +255,9 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to`, claim on another's behalf or new takeover (§6.19) while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
 | 409 | `namespace_owner` | a demotion below trust `owner`, a removal, a leaving or an account deletion of a project's namespace owner, or the demotion, removal or leaving of an organisation's owner in one of its projects (§6.25, §6.26); the deletion of an organisation that owns a project which is not `archived` (§6.26); `details.projects`, the full names |
 | 409 | `org_last_owner` | demoting, removing or the leaving of an organisation's last owner, or the deletion of their account (§6.26, §2.9); `details.orgs`, the organisations' handles |
-| 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count` |
-| 409 | `claim_limit` | a claim, or an admin's claim on another's behalf, while the member who would hold it holds as many claims in the project as its `max_open_claims` allows (§6.1, §6.5); `details.limit`, `details.count` |
-| 409 | `project_limit` | `POST /projects`, or a transfer filed, moved or answered `go` (§6.25, §6.26), into a namespace — a human's or an organisation's — that holds as many projects as the instance allows (§16.5); `details.limit`, `details.count` |
+| 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1; not built yet, tsk-t63d50qy3s0k) |
+| 409 | `claim_limit` | a claim, or an admin's claim on another's behalf, while the member who would hold it holds as many claims in the project as its `max_open_claims` allows (§6.1, §6.5); `details.limit`, `details.count`, and the quota details of §6.31 (not built yet, tsk-spmhjqm7szag). The code itself is not built yet (tsk-ybc2ma72dzvq): today no claim is refused for a count |
+| 409 | `project_limit` | `POST /projects`, or a transfer filed, moved or answered `go` (§6.25, §6.26), into a namespace — a human's or an organisation's — that holds as many projects as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1; not built yet, tsk-t63d50qy3s0k) |
 | 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `admin_address_required` | removing the instance admin's verified address, filed or approved (§18.4): the admin's password sign-in needs it (§2.1) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
@@ -270,7 +270,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `runner_revoked` | a placement is created, started or restarted (by a human or an agent with `agents:propose`) on a runner without a live credential (§15.6) |
 | 409 | `harness_not_offered` | harness, mode, model or target not in the runner's last advertised capabilities (§15.3); `details.offered` |
 | 409 | `repository_not_offered` | the project's repository is not in the runner's advertised `repositories` |
-| 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max` |
+| 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max`, and the quota details of §6.31 (not built yet, tsk-spmhjqm7szag) |
 | 409 | `placement_flapping` | a restart, nudge, change of spec or replacement by an agent without trust `admin` while the placement's `health.flapping` is `true` (§15.14; the replacement not built yet); `details.flapping_since` |
 | 409 | `replace_open` | a second replacement of a placement, or of its replacement, while a replacement of either is still open (until the old placement has closed after step 3, or the new one after an abort), or a `DELETE` of the old one while a replacement is open (§15.14; not built yet, as the replacement is not); `details.placement` |
 | 409 | `approval_pending` | a restart or a change of the spec while the placement's consent request is open (§15.6); `details.request` |
@@ -397,7 +397,7 @@ the hub records it on the session.
 | Time to send a request body | 120 seconds, all of it, from when the hub starts to read it; then `request_timeout` (§1.3). A replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet) has 30 minutes, about 300 kbit/s for 64 MiB |
 | Requests to one route | none beyond the route's own limits by default; the general limit per client address is the ingress's, and a signed-in caller's reads have the limit per credential below. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API, each `<METHOD> <route> = <count>/<seconds>` with the route as `/api/v1/openapi.json` lists it (`GET /api/v1/projects/{owner}/{slug}/events = 300/60`), counted per client address (§2.5) in each hub process. Past one the call is `rate_limited` with `Retry-After` before its body is read or its caller looked up. A route the document does not list with that method stops the hub at its start, and a change takes a restart |
 | Reads per credential | `max_reads_per_minute` per credential, default 600: the instance's value (§16.5), or for an agent's credential its project's if that is lower (§6.1). A read is a `GET` or `HEAD` of the API (`/api/v1/…`) by a caller with a credential: an agent's credential (§2.2), a runner's (§15.1) or a human's session (§2.1); a bridge's call with `Maity-For` (§2.3) counts against the bridge's own credential. An agent's credential takes its project's value, every other credential the instance's. The events long-poll counts once per call. Counted per credential in each hub process, as `MAITY_ROUTE_LIMITS`. The check runs once the credential is known and before the side effects of §2.4, so a refused read renews nothing; past the limit the read is `rate_limited` with `Retry-After`, the seconds until the window has room for one more. Writes do not count; a call without a credential keeps the limits of the rows around this one and the ingress's |
-| Open claims per caller | `max_open_claims` per member and project, default `null`, no cap (§6.1, §6.5); then `claim_limit` |
+| Open claims per caller | `max_open_claims` per member and project, default `null`, no cap (§6.1, §6.5); then `claim_limit`; not built yet, tsk-ybc2ma72dzvq: today the hub caps no claims |
 | Public page and badge reads | 60 per minute per client address each by default, `MAITY_PUBLIC_PAGE_LIMIT` and `MAITY_BADGE_LIMIT` as `<count>/<seconds>` (§6.20, §16.9) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
 | Handle changes | 3 per 24 hours per account or profile; at most `max_aliases` aliases per id, default 3, at most 8 (§6.24, §16.5) |
@@ -440,7 +440,7 @@ the hub records it on the session.
 | Mails of the instance | `max_per_hour` of the mail settings, default 500 (§16.2) |
 | Admin test sends | 5 per hour per instance admin (§16.3) |
 | Address verification mails | 3 per hour and 10 per day per human (§18.4) |
-| Instances per membership | `agent.max_instances`, 1–16 (§6.18) |
+| Instances per membership | `agent.max_instances`, 1–16; up to 1000 under a ceiling the instance admin raised (§6.18, §6.31; not built yet, tsk-t63d50qy3s0k) |
 | Soul | 8 KiB (§19.1) |
 | Briefing texts | a guide 2 KiB, a global briefing 8 KiB, a role briefing 8 KiB, the project's and the membership's briefing 16 KiB each (§6.28; the guide, global and role texts not built yet, tsk-m80nbn1k7axh, planned in tsk-ssd3gcxvnrkm) |
 | Memory entry | 2 KiB, 5 tags (§19.2) |
@@ -3009,7 +3009,9 @@ The sensitive calls:
   (`POST /me/deletion`, §2.9);
 - a change of a project's `settings.restricted_access` (§6.1);
 - the instance admin's changes of instance settings (`PATCH
-  /admin/settings/*`, §2.6.6, §16).
+  /admin/settings/*`, §2.6.6, §16), and of the limits of one project or
+  one account (`PATCH /admin/projects/{owner}/{slug}/limits`, `PATCH
+  /admin/users/{id}/limits`, §16.5.1; not built yet, tsk-t63d50qy3s0k).
 
 Leaving a project is not among them (§6.2, "Leaving a project"), nor is
 leaving an organisation (§6.26) or an admin's removal of a member: those
@@ -3877,7 +3879,8 @@ member_join_limit` and `details.field` naming the field when broken:
   (`forbidden`, `member_join_limit`, `details.field: "agent"`);
 - the caller's agents in the project stay within
   `policy.member_agents_max` (default 3), else `forbidden` with
-  `details.reason: member_agents_max` and `details.max`. What counts is
+  `details.reason: member_agents_max` and `details.max`, and the quota
+  details of §6.31 (not built yet, tsk-spmhjqm7szag). What counts is
   the caller's distinct agent profiles that hold an active membership
   in the project or an open first join to it — a profile counts once,
   whether its first join is still open or already exchanged, and a
@@ -3936,7 +3939,8 @@ same way, with these differences:
 - the count is the outsider's own quota where the project's admins set
   one, otherwise `policy.member_agents_max`, as for a member (below,
   "The outsiders of a project"); beyond it `forbidden` with
-  `details.reason: member_agents_max` and `details.max`. `GET` and
+  `details.reason: member_agents_max` and `details.max` (and the quota
+  details of §6.31, not built yet, tsk-spmhjqm7szag). `GET` and
   `DELETE` on `…/joins` show and revoke only the joins the caller
   created;
 - an outsider the project's admins blocked creates no join: `forbidden`,
@@ -6418,9 +6422,9 @@ stay; `state_changed` is not emitted for the mapping.
 | `spawn_consent_by` | `human`, `role` | kept, and since 2026-11-16 decides nothing: a placement proposal's consent request goes to the runner's owner, who alone answers it (§15.6). Before, it said who may answer that request: `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included (a proxy only as a relay, §2.3). Set by a human with `members:admin`. A project that predates the field reads as `human`; a later preset change keeps it, as `signing`: a preset must not loosen who gives the go in passing |
 | `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking or removing a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting `MAITY_ON_RUNNER_REVOKE` (§16); `keep` is refused (`invalid`, `details.fields.on_runner_revoke: "stop_floor"`) when that setting is `stop_floor`. A project that predates the field reads as `inherit`; a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `takeover_window_minutes` | 5–1440, default 60 | how long a holder has to answer a takeover before the card moves, and how long a disputed one waits for a settlement before it is escalated (§6.19); a project that predates the field reads as 60; a later preset change keeps it |
-| `max_placements` | integer ≥ 0, default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it |
+| `max_placements` | integer 0–1000 and at most its ceiling (§6.31), default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it. Set by a human with `project:admin` (not built yet, tsk-spmhjqm7szag: today an admin agent may set it too, and the bound is 0–1000 without a ceiling) |
 | `max_reads_per_minute` | `inherit` (default), or an integer 60–100000 | reads one agent credential of the project may make per minute (§1.7 "Reads per credential"): `inherit` takes the instance's `max_reads_per_minute` (§16.5). A project may tighten the instance's value, not loosen it: a number above the instance's value is `invalid` (`details.fields["policy.max_reads_per_minute"]: "above_instance"`), and when the instance's value is lowered below a project's later, the lower of the two applies. A project that predates the field reads as `inherit`; a later preset change keeps it. Set by a human with `project:admin` |
-| `max_open_claims` | integer 1–1000, or `null` (default) | claims one member may hold in the project, all its instances together, expired ones included (§6.5); `null` is no cap. `claim_limit` beyond it. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin` |
+| `max_open_claims` | integer 1–1000 and at most its ceiling (§6.31; not built yet, tsk-spmhjqm7szag), or `null` (default) (the field and its check are not built yet, tsk-ybc2ma72dzvq: today the hub caps no claims) | claims one member may hold in the project, all its instances together, expired ones included (§6.5); `null` is no cap, unless an override's ceiling applies (§6.31; not built yet, tsk-t63d50qy3s0k). `claim_limit` beyond it. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin` |
 | `coordinator` | agent member id of an admin agent, or `trust:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.12); `trust:admin` is the project's admin agents (§2.3, a proxy never), out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
@@ -6430,7 +6434,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `outside_claims` | `human` (default), `agent`, `direct` | who confirms the claim of an outsider's agent (§6.5, "An outsider's claim"): `human` the confirmers who are humans; `agent` agent confirmers as well; `direct` nobody, the claim takes the card at once as any claim does. Every preset fills `human` at creation, a project that predates the field reads as `human`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason`; `agent` and `direct` only by a human with trust `owner` (`forbidden`, `owner_only`), and the form says in plain words that an agent then decides who works in the project, or nobody does (the maintainer's decision of 2026-11-14, Q27) |
 | `outside_claims_max` | `null` (default) or an integer ≥ 1, no upper bound | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
-| `member_agents_max` | 0–20, default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
+| `member_agents_max` | 0 up to its ceiling, default ceiling 20 (§6.31; not built yet, tsk-spmhjqm7szag: today 0–20), default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `keep_the_why` | `required`, `optional` | whether the hub makes sure every agent carries Keep the Why: the commitment at resume, the reminder, the owner's request and `why` on code reports (§6.23). Reads `required` while `memory.provider` is `keep-the-why` and nobody set it, `optional` under `none` (where `required` is `invalid`); a project that predates the field reads as `required` under `keep-the-why`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
@@ -8155,7 +8159,8 @@ and with the project.
   a takeover (§6.19), or through `release` or `assign` by `tasks:admin`
   after expiry (by an agent, recorded as a `lease_expired` takeover).
 - `claim_limit` (409, `details.limit`, `details.count`) when the project's
-  `max_open_claims` (§6.1) is set and the member who would hold the claim
+  `max_open_claims` (§6.1) is set, or an override's ceiling applies to
+  its `null` (§6.31; not built yet, tsk-t63d50qy3s0k), and the member who would hold the claim
   holds that many claims in the project already, all its instances
   together, expired ones included, since nothing is released
   automatically; an admin's claim on another's behalf counts for that
@@ -10561,7 +10566,7 @@ view (§6.2) and in the resume packet (`membership.agent`, §5.2):
 
 | Field | Values | Meaning |
 |---|---|---|
-| `max_instances` | 1–16, default 1 | active (not revoked) instances the membership may have; a join with `new_instance` beyond it is `instance_quota` at creation and again at the exchange. Lowering it below the current count revokes nothing: it only refuses new ones |
+| `max_instances` | 1 up to its ceiling, default ceiling 16 (§6.31; not built yet, tsk-spmhjqm7szag: today 1–16), default 1 | active (not revoked) instances the membership may have; a join with `new_instance` beyond it is `instance_quota` at creation and again at the exchange. Lowering it below the current count revokes nothing: it only refuses new ones |
 | `distribution` | `free` (default), `lead`, `round_robin` | how cards assigned to the agent reach an instance: `free` — any instance claims them, and `assigned_instance` stays `null` unless `assign` names one; `lead` — the lead instance (or a human with `tasks:admin`) sets `assigned_instance`, and the other instances claim only cards assigned to them; `round_robin` — when a card is assigned to the agent, the hub sets `assigned_instance` to the next instance in order of `created_at`, skipping revoked, paused and dormant ones, preferring those `online` |
 | `lead_instance` | an instance id or `null` | the agent's lead instance; required while `distribution` or `wake` is `lead` (`invalid`, `details.fields.agent.lead_instance: "required"`); never a dormant instance (`details.fields.agent.lead_instance: "dormant"`, §6.17) |
 | `wake` | `all` (default), `lead`, `next_free` | which instance an event addressed to the agent wakes (§8.2): every listening instance; only the lead; or one instance — the listening instance holding the fewest claims, ties to the one idle longest. The others can still read the event; they are not woken. A dormant instance (§6.17) is woken by none of the three |
@@ -12782,6 +12787,152 @@ merges in at least `min_projects` projects of the record, no ratio
 the role `reviewer` even when `outside_roles` does not list it, and its
 approvals count as B.2 allows.
 
+### 6.31 Limits
+
+Not built yet, tsk-spmhjqm7szag and tsk-t63d50qy3s0k: today the hub
+has none of this section. `placement_quota` and `instance_quota` carry
+`details.max` alone, a `capacity` report carries no numbers, and no
+ceiling, override or `GET …/limits` exists; the bounds are fixed (§6.1,
+§6.18). `max_open_claims` and `claim_limit` are not built themselves
+(tsk-ybc2ma72dzvq): today the hub has neither the field nor the check,
+and no claim is ever refused for a count.
+
+Four values of a project limit what it may hold, each set by someone
+inside the project:
+
+| Value | Set by | Bound | Default ceiling | Refused with |
+|---|---|---|---|---|
+| `max_placements` (§6.1) | a human with `project:admin` | 0–1000 | 1000 | `placement_quota` |
+| `member_agents_max` (§6.1) | a human with `project:admin` | 0–1000 | 20 | `forbidden`, `details.reason: member_agents_max` (§3.1) |
+| `max_open_claims` (§6.1) | a human with `project:admin` | 1–1000, or `null` | 1000 | `claim_limit` |
+| `agent.max_instances` (§6.18) | the agent profile's owner | 1–1000 | 16 | `instance_quota` |
+
+A runner's `max_agents`, in the runner's configuration on its host
+(§15.3), is a fifth number in the same shape: it holds an agent's start
+as `pending` with reason `capacity` (§15.7) and refuses nothing.
+
+**The ceiling.** Each value is set at most up to its ceiling. Without an
+override the ceiling is the default above, the product bound as it was
+before ceilings existed, so nothing changes for a project nobody
+overrides. The instance admin may set a different ceiling (§16.5.1),
+lower or higher, up to `unlimited`. The ceiling in effect is, first to
+last: the override on the project; for `max_instances` the override on
+the agent profile owner's account, for the three others the override on
+the account of the human who owns the project; the default ceiling. A
+project in an organisation's namespace has no owner's account for the
+three project values and takes only an override on the project there;
+`max_instances` still takes the override on the agent profile owner's
+account, as every profile is a human's (§6.3), so lifting one person's
+agents never needs a project override that would lift every agent in
+the project.
+
+- **`unlimited`** lifts the product bound: the value may be set up to
+  the bound in the table, 1000, and no further. These bounds are no
+  product decision but the hub's: the lists that carry these things are
+  read in one answer without pages (members §6.2, placements §15.6, an
+  agent's credentials §6.17, a runner's placements §15.8), and `wake:
+  all` wakes every instance one by one (§6.18); a higher bound needs
+  paging first. The bound holds per value, so the members list grows
+  with the humans of a project as well; 1000 keeps what one human or
+  one agent adds to it within what one answer carries.
+- **A value above its ceiling** in a `PATCH` is `invalid`,
+  `details.fields["policy.max_placements"]: "above_ceiling"` (for
+  `max_instances` `details.fields["agent.max_instances"]`) with
+  `details.ceiling` the ceiling in effect.
+- **`max_open_claims` `null`** stays no cap, as before ceilings: the
+  default ceiling and `unlimited` leave it so. Only a ceiling an
+  override sets to a number applies to it, with `source: "ceiling"`, so
+  the operator's lower ceiling reaches a project that set no value.
+- **A ceiling lowered below a value already set** keeps the stored value
+  and makes the ceiling the value in effect, until the ceiling rises
+  again or the value is set lower. Like lowering the value itself, it
+  ends nothing that exists: placements, instances, memberships and
+  claims stay; only new ones are refused.
+
+**The quota details.** Every refusal by one of these limits, and a
+`capacity` report, carries the same `details`:
+
+```json
+{ "name": "max_placements", "limit": 8, "count": 8, "max": 8,
+  "scope": "project", "project": "oliver/maity",
+  "source": "project",
+  "ceiling": { "value": 1000, "source": "default" },
+  "raise": { "right": "project:admin", "path": "/api/v1/projects/oliver/maity",
+             "field": "policy.max_placements" } }
+```
+
+| Field | Meaning |
+|---|---|
+| `name` | the limit: `max_placements`, `member_agents_max`, `max_open_claims`, `max_instances` or `max_agents` |
+| `limit` | the value in effect: the set value, or the ceiling when that is lower; `null` for `max_open_claims` without a cap (§6.31 above), and `max` with it; the name `limit` as in `agent_limit` and `claim_limit` (§1.3) |
+| `count` | what the scope holds now and counts toward it |
+| `max` | the same number as `limit`, kept for clients that read `placement_quota` and `instance_quota` before this section |
+| `scope` | `project`, `member` (with `member`, the member id: `member_agents_max` is per human, `max_open_claims` and `max_instances` per membership), `runner` (with `runner`, its id) or `target` (with `runner` and `target`, its name) |
+| `source` | where `limit` comes from: `default`; `project` (set in the project's policy); `agent_owner` (`max_instances`); `runner` (the runner's configuration); `ceiling` (the set value is above the ceiling, or `max_open_claims` is `null` under an override's ceiling, and the ceiling applies). `limit` is always the value in effect, also to a caller who reads `ceiling` without its `value` (below): what applies to the caller is shown, what the operator set beyond it is not |
+| `ceiling` | `{value, source}`: `value` the ceiling in effect, `source` `default`, `project_override` or `account_override`; absent for `max_agents`, which the hub does not bound. A caller who does not hold the right that sets the value reads `source` alone, without `value`: an override is a number the operator set for an account, and only those who set the value need it |
+| `raise` | `{right, path, field}`: the right that can change the value (`project:admin`, `agent_owner`, `runner_owner`, or `instance:admin` once `limit` is at the ceiling, with the `max_open_claims` exceptions below), and the API path and field that change it — for `instance:admin` always `/api/v1/admin/projects/{owner}/{slug}/limits` and the value's own name, never the account route, whose path would name a person; `null` only when nothing lifts `limit`: while it is `null` (a `max_open_claims` without a cap), and at the hub's bound of 1000 for `max_placements`, `member_agents_max` and `max_instances`. `max_open_claims` at 1000 goes by the stored value: a stored `null` held by an override's numeric ceiling names `instance:admin` (`unlimited`, or removing the override); a stored number with no numeric override names `project:admin` and `policy.max_open_claims` (as `policy.max_placements` above), an exception to `instance:admin` once `limit` is at the ceiling, since `null` lifts it to no cap; a stored number under an override's numeric ceiling of 1000 names `project:admin` too (setting `null`), and the cap only goes once `instance:admin` also lifts the override; `max_agents`, which the hub does not bound, always names `runner_owner`; `path` is `null` where the hub cannot change it (the runner's configuration, `field` then names its key, `limits.max_agents` or `backend.ssh.hosts[].max_agents`) |
+
+`raise` names a right and a place, never a person: who holds the right
+is not in it. A caller who lacks the right reads that a limit applies
+and what it is, not who could lift it.
+
+**The overview.**
+
+```
+GET /projects/{owner}/{slug}/limits
+```
+
+`project:read`. One answer for the "Limits" view of the dashboard's project settings:
+
+```json
+{ "project": {
+    "max_placements": { "limit": 8, "source": "default", "count": 3,
+                        "ceiling": { "value": 1000, "source": "default" },
+                        "editable": true, "raise": { "…": "" } },
+    "member_agents_max": { "limit": 3, "source": "default", "count": 1, "…": "" },
+    "max_open_claims": { "limit": null, "source": "default", "count": 2, "…": "" } },
+  "agents": [
+    { "member": "agt-23ghr1hc6qxx", "handle": "coder",
+      "max_instances": { "limit": 3, "source": "agent_owner", "count": 3, "…": "" },
+      "never_listened": [
+        { "credential_id": "crd-…", "instance": "wqe2", "created_at": "2026-11-17T09:12:00Z" } ] } ],
+  "runners": [
+    { "id": "rnr-0002", "name": "home-laptop", "max_agents": 4, "running": 2,
+      "targets": [ { "name": "local", "max_agents": 4, "running": 2 } ] } ] }
+```
+
+- Each value carries the fields of the quota details but `name`,
+  `scope` and `max`, and `editable`: whether the caller may set the
+  value, up or down within the ceiling (it holds the right that sets
+  it, §6.1, §6.18). Whether it can go past the ceiling is `raise`: its
+  `right` is `instance:admin` once `limit` is at the ceiling, except
+  for a `max_open_claims` at 1000, which goes by its stored value, and
+  `raise` is `null` only when nothing lifts `limit` (above).
+- `member_agents_max.count` is the caller's own count (§3.1);
+  `max_open_claims.count` the claims the caller's membership holds;
+  `max_open_claims.limit` `null` is no cap, unless an override's ceiling
+  applies (above).
+- `agents`: the memberships of agent profiles the caller owns, for a
+  human with `credentials:admin` every agent membership; an agent reads
+  its own. `never_listened`: its active instances that have never had
+  a session — no `resume` with their credential ever (§5.2, §5.3), the
+  credential's `resumed_at` `null` (§10), the `never_resumed` of §6.2 —
+  whatever their `last_seen_at` says: a credential used only for reads
+  (`GET /me`) sets `last_seen_at` (§6.17) and still never listened. They count toward
+  `max_instances`; `POST …/credentials/{id}/revoke` (§6.17, §10) frees the
+  place, and the dashboard offers it beside each.
+- `runners`: the attached runners (§15.4), only for a caller who may
+  read `GET …/runners` (a human with `project:read`, an agent with
+  `agents:propose`); for every other caller the key is absent.
+  `max_agents` and `running` for a caller who sees `capabilities` there
+  (`members:admin`, `agents:propose`) and for the runner's owner, for
+  any other human `null`; a runner that has not reported is `null` too.
+  `targets` likewise: the list for those who see `capabilities` and for
+  the runner's owner, `[]` for any other human, so no target's name is shown that `GET …/runners`
+  hides. A placement's `reported.quota` (§15.7) stays with its
+  `reported`, which every reader of the placement sees already, its
+  `target` among it.
+
 ## 7. Requests to humans (the inbox)
 
 ```json
@@ -14363,7 +14514,8 @@ does not show what the listing hides.
 
 **Quota.** Each project holds at most the limit
 `max_attachment_storage_per_project` (§16.5; bytes, default 1 GiB, or
-`unlimited`) of stored attachments, pending ones included, counted after
+`unlimited`; or the value the instance admin set for this project,
+§16.5.1, not built yet, tsk-t63d50qy3s0k) of stored attachments, pending ones included, counted after
 re-encoding; deleted ones free their bytes. An upload that would exceed
 it is `attachment_quota` with `details: {"used": …, "quota": …}`, and
 nothing is stored; under `unlimited` the project scope refuses nothing.
@@ -17446,6 +17598,7 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/resolve` | `tasks:admin` / creator | 6.16 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/redact` | `events:admin` | 6.16 |
 | GET | `/projects/{owner}/{slug}/probe` | `project:read` | 11 |
+| GET | `/projects/{owner}/{slug}/limits` (not built yet, tsk-spmhjqm7szag) | `project:read` | 6.31 |
 | GET, POST | `/runners/enrollments` | human | 15.2 |
 | DELETE | `/runners/enrollments/{id}` | the creator | 15.2 |
 | POST | `/runners/pair/{token}` (and `/r/{token}` outside the API, `not_found`) | — | 15.2 |
@@ -17569,6 +17722,7 @@ and `resolveEntry`, and any write.
 | GET, POST | `/me/cross-chats/{id}/messages` | the owner or a current participant / the owner or a participant of an open chat | 9.5 |
 | POST | `/me/cross-chats/{id}/messages/{message_id}/redact` | the owner | 9.5 |
 | GET, PATCH | `/admin/settings/limits` | instance admin | 16.5 |
+| GET, PATCH | `/admin/projects/{owner}/{slug}/limits`, `/admin/users/{id}/limits` (not built yet, tsk-t63d50qy3s0k) | instance admin | 16.5.1 |
 | GET | `/admin/statistics` | instance admin | 16.6 |
 | GET | `/landing` | — | 16.7 |
 | GET | `/site/chrome` | — | 16.7.5 |
@@ -18363,7 +18517,8 @@ clone Z. It is the only thing the hub asks of a runner.
   no live credential yet (before their first pickup, or waiting to
   rejoin), plus one for the new placement unless it carries a
   credential over (below), stay within `max_instances`. Otherwise
-  `instance_quota` (409, `details.max`), and nothing is created. The
+  `instance_quota` (409, `details.max` and the quota details of §6.31,
+  not built yet, tsk-spmhjqm7szag), and nothing is created. The
   pickup checks again (§15.9). Neither a replacement's new placement
   nor its instance counts while the replacement is open or the old
   instance is kept (`keep_old`, §15.14; the replacement is not built
@@ -18776,11 +18931,12 @@ placement as `reported`; the history is the `placement_reported` events.
 | `target` | name | where it actually runs |
 | `session_hint` | string ≤ 200, printable ASCII, or `null` | stored on the placement, shown to the runner's owner only (§15.5) |
 | `seq` | integer, per placement, increasing | the runner's report counter (§15.8) |
+| `quota` | `{scope, target?, count, max}` or absent | with `capacity` only: which limit holds the start, `scope` `runner` or `target` (with `target`, its name), `count` its running agents, `max` its `max_agents`. The hub shows it as the quota details of §6.31 (`name: "max_agents"`, `source: "runner"`, `raise.right: "runner_owner"`, `raise.path: null`). A runner from before it sends none, and the report is valid without it (not built yet, tsk-spmhjqm7szag) |
 | `reported_at` | timestamp | hub time of the report; set by the hub |
 
 | `reason` | `state` | When |
 |---|---|---|
-| `capacity` | `pending` | the runner or the target is at its agent limit; it starts the agent when a slot frees |
+| `capacity` | `pending` | the runner or the target is at its agent limit; it starts the agent when a slot frees; `quota` says which and its numbers (above) |
 | `awaiting_operator` | `pending` | the runner holds new placements until the operator approves them on the runner host |
 | `harness_refused` | `failed` | harness, mode or model not allowed by the runner's configuration |
 | `repository_refused` | `failed` | the project's repository is not in the runner's allowlist |
@@ -21231,7 +21387,9 @@ no notification.
 The admin area's section "Limits": the caps the operator puts on what
 one account may hold, the attachment storage of one project, and one
 limit for the whole instance, its attachment storage. Plans (§2.7, part two) will set the caps per account
-per plan; until then there is one value for every account.
+per plan; until then there is one value for every account, and the
+instance admin may override it for one account (§16.5.1; not built yet,
+tsk-t63d50qy3s0k).
 
 ```
 GET, PATCH /admin/settings/limits
@@ -21247,7 +21405,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ALIASES` | `max_aliases` | 3 | aliases one human, organisation, agent profile or project may hold (§6.24, §6.25, §6.26): an integer 1–8, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_STARRED_PER_HUMAN` | `max_starred_per_human` | 100 | public projects one human may keep as starred tabs without being a member (§5.1, "Stars"): an integer 1–1000, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment. Lowering it keeps the stars a human holds and refuses new ones beyond it (`too_many`, §5.1) |
-| `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): the instance admin may set another value for one project (§16.5.1; not built yet, tsk-t63d50qy3s0k); an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_READS_PER_MINUTE` | `max_reads_per_minute` | 600 | reads one credential may make per minute once the caller is signed in (§1.7 "Reads per credential"); a project may set a lower value for its agents (§6.1): an integer 60–100000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
@@ -21328,7 +21486,9 @@ under every value, `unlimited` included. `max_reads_per_minute` takes
 - **What `max_attachment_storage_per_project` gates.** An attachment
   upload (§8.7) alone, as `attachment_quota` with `details.scope:
   "project"`, `details.used` and `details.quota`. It caps each project
-  alike, whoever owns it; the project's owner sets nothing here. Posting
+  alike, whoever owns it, unless the instance admin set another value
+  for the project (§16.5.1; not built yet, tsk-t63d50qy3s0k); the
+  project's owner sets nothing here. Posting
   a message that names attachments already uploaded is not refused.
 - **What `max_attachment_storage` gates.** An attachment upload (§8.7)
   alone, as `attachment_quota` with `details.scope: "instance"`. Unlike
@@ -21362,6 +21522,54 @@ under every value, `unlimited` included. `max_reads_per_minute` takes
   includes, its limits, its price — is configuration of the hosted
   instance in its database, like this value, never a file shipped with
   the code: a local or self-hosted instance carries none of it.
+
+### 16.5.1 Limits per project and per account
+
+Not built yet, tsk-t63d50qy3s0k.
+
+The instance admin sets individual limits for one project or one human
+account, up to `unlimited`; nobody else does, and defaults stay as
+§6.31 and §16.5 give them.
+
+```
+GET, PATCH /admin/projects/{owner}/{slug}/limits
+GET, PATCH /admin/users/{id}/limits
+```
+
+Scope `instance:admin`, human only (§16.1). Like every admin endpoint,
+these answer numbers, never a project's content (§16).
+
+| Field | On | Values | What it overrides |
+|---|---|---|---|
+| `max_placements`, `member_agents_max`, `max_open_claims`, `max_instances` | project, account | an integer within the bound of §6.31, `unlimited`, or `null` | the ceiling of that value (§6.31); on an account, for the projects the human owns (`max_instances`: for the agent profiles the human owns) |
+| `max_attachment_storage_per_project` | project | an integer from 1048576 to 1125899906842624, `unlimited`, or `null` | the instance's value for this project (§16.5, §8.7), from whichever source it comes, the environment included: the override is the operator's exception for one project and comes first; `attachment_quota` (§1.3) beyond it |
+| `max_agents_per_human`, `max_orgs_per_human`, `max_projects_per_owner` | account | an integer 1–10000, `unlimited`, or `null` | the instance's value for this human (§16.5) |
+| `max_starred_per_human` | account | an integer 1–1000, or `null`; no `unlimited` | the instance's value for this human (§16.5) |
+
+- `null` removes the override; a `PATCH` names only the fields it
+  changes. A value outside its range is `invalid`
+  (`details.fields.<field>: "out_of_range"`).
+- `GET` answers each field as `{override, value, source, updated_by,
+  updated_at}`: the stored override or `null`, what is in effect with
+  where it comes from (`default`, `env`, `admin` as in §16.5,
+  `project_override`, `account_override`), and who set the override
+  and when (`null` without one). On a project, `max_instances` has no
+  single account to resolve, its account override being per agent
+  profile owner: there `value` and `source` are the project override's,
+  or the default ceiling (16, `default`). An override of `unlimited` is
+  answered as `override: "unlimited"`; `value` is what applies, for the
+  four values of §6.31 the bound 1000 as the ceiling (a `max_open_claims`
+  of `null` stays no cap under it, §6.31), for the §16.5 values
+  `"unlimited"`.
+- For the account values and a project's attachment storage, an
+  override comes before the instance's value, whatever its source: `agent_limit`, `org_limit` and `project_limit` (§1.3) carry
+  `details.source`, `instance` or `account_override`.
+- Neither the human nor the project's owner is notified; the overview
+  (§6.31) shows the source to every reader.
+- Why per project and per account: the defaults protect an instance
+  that serves strangers, and the operator who knows a person or a
+  project chooses who goes past them. `unlimited` lifts the product
+  bounds, never the hub's own (§6.31).
 
 ### 16.6 Instance statistics
 
