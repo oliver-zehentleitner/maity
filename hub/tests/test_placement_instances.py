@@ -183,3 +183,36 @@ def test_one_running_placement_keeps_the_agent_available(
     assert (now["state"], now["source"], now["until"]) == ("limited", "runner", soon)
     assert report(setup, second, 3).status_code == 200  # it runs again
     assert availability()["state"] != "limited"
+
+
+def test_the_runners_limit_is_recomputed_and_a_resume_keeps_it(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """§6.12: each report recomputes the limit from every placement that should run; a
+    resume does not clear a limit with `source: runner`."""
+    allow_instances(setup.engine, setup.agent.id, 4)
+    first, second, third = placed(setup), placed(setup), placed(setup)
+    base = clock.now().replace(microsecond=0)
+    soon, later = clock.rfc3339(base + timedelta(hours=1)), clock.rfc3339(base + timedelta(hours=3))
+    limited = {"state": "rate_limited", "reason": "quota", "exit_code": 2}
+    assert report(setup, first, 1, **limited, retry_at=later).status_code == 200
+    assert report(setup, second, 1, **limited, retry_at=soon).status_code == 200
+    stopped = setup.owner.patch(
+        f"/projects/maintainer/maity/placements/{third['id']}", {"desired": "stopped"}
+    )
+    assert stopped.status_code == 200, stopped.text
+    # The third no longer counts; its report recomputes from the two that should run.
+    assert report(setup, third, 1, state="stopped").status_code == 200
+
+    def availability() -> dict[str, Any]:
+        found: dict[str, Any] = setup.owner.get(f"{MEMBERS}/{setup.agent.id}").json()[
+            "availability"
+        ]
+        return found
+
+    shown = availability()
+    assert (shown["state"], shown["source"], shown["until"]) == ("limited", "runner", soon)
+    assert setup.agent.resume().status_code == 200  # another instance resumes
+    assert availability()["state"] == "limited"
+    assert report(setup, first, 2, state="starting").status_code == 200
+    assert availability()["state"] != "limited"

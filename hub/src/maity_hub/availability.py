@@ -759,36 +759,35 @@ def absence_changed(conn: Connection, project: Any, until: datetime | None, acto
 def runner_reported(
     conn: Connection, placement: Any, state: str, retry_at: datetime | None, actor: Actor
 ) -> None:
-    """A placement's report (§15.7): `rate_limited` stores the agent's limit with
-    `source: runner`; a later report of the same placement that is not clears it. With
-    several active placements the agent is limited only while each of them that should run
-    is `rate_limited`, until the earliest `retry_at` (§6.12): one that runs keeps it
-    available, as an awake instance beside a dormant one does."""
+    """A placement's report (§15.7, §6.12): at each report the runner's limit is computed
+    again from every active placement of the agent with `desired: running`. The agent is
+    limited while each of them last reported `rate_limited`, until the earliest
+    `retry_at`; so a report of any of them that is not `rate_limited` ends it, and one
+    that runs keeps the agent available, as an awake instance beside a dormant one does."""
     row = conn.execute(
         select(t.membership).where(t.membership.c.id == placement.membership_id)
     ).first()
     if row is None or row.active is not True:
         return
-    if state == "rate_limited" and retry_at is not None:
-        found = _all_limited(conn, row.id, placement.id, retry_at)
-        if found is not None:
-            until, by = found
-            if (row.limit_until, row.limit_placement_id) != (until, by.id):
-                set_agent_limit(
-                    conn,
-                    row,
-                    until,
-                    source="runner",
-                    harness=by.harness,
-                    reason="quota",
-                    placement_id=by.id,
-                    actor=actor,
-                )
-            return
+    limited = retry_at if state == "rate_limited" else None
+    found = _all_limited(conn, row.id, placement.id, limited)
+    if found is not None:
+        until, by = found
+        if (row.limit_until, row.limit_placement_id) != (until, by.id):
+            set_agent_limit(
+                conn,
+                row,
+                until,
+                source="runner",
+                harness=by.harness,
+                reason="quota",
+                placement_id=by.id,
+                actor=actor,
+            )
+        return
     if row.limit_placement_id is not None:
-        # A runner's limit holds only while every placement is limited, and this report
-        # says one is not (or a sibling still runs): it ends. A limit the agent declared
-        # itself (`source: self`) names no placement and stays.
+        # Not every placement that should run is limited now: the runner's limit ends. A
+        # limit the agent declared itself (`source: self`) names no placement and stays.
         set_agent_limit(
             conn,
             row,
@@ -802,11 +801,12 @@ def runner_reported(
 
 
 def _all_limited(
-    conn: Connection, membership_id: int, reporting: str, retry_at: datetime
+    conn: Connection, membership_id: int, reporting: str, retry_at: datetime | None
 ) -> tuple[datetime, Any] | None:
     """When every active placement of the membership with `desired: running` is
-    `rate_limited` (the reporting one by this report), the earliest `retry_at` and the
-    placement that named it; otherwise None (§6.12)."""
+    `rate_limited` (the reporting one by this report: `retry_at` None when it is not), the
+    earliest `retry_at` and the placement that named it; otherwise None, also when none
+    should run (§6.12)."""
     rows = conn.execute(
         select(t.placement).where(
             t.placement.c.membership_id == membership_id,
@@ -817,6 +817,8 @@ def _all_limited(
     earliest: tuple[datetime, Any] | None = None
     for p in rows:
         if p.id == reporting:
+            if retry_at is None:
+                return None
             at = retry_at
         else:
             reported = p.reported or {}

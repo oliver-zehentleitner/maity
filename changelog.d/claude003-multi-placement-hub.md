@@ -16,4 +16,5 @@
   created or proposed (`instance_quota`), no longer only at the runner's
   pickup.
 - hub: a runner's rate limit makes the agent `limited` only while every
-  running placement of it is rate-limited.
+  running placement of it is rate-limited: each report recomputes it from
+  all of them, and a resume no longer clears a limit the runner set.

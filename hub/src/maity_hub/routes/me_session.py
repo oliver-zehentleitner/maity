@@ -358,9 +358,10 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         )
         if previous is not None:
             _announce_model_change(conn, mine, caller, previous, harness, model, session_id)
-        # The member's next resume clears its limit (§6.12); a returning agent is
-        # announced before its packet is built.
-        if mine.row.limit_until is not None:
+        # The member's next resume clears its limit (§6.12), but not a runner's: the
+        # instance resuming may not be the limited one, and the runner's next report
+        # decides. A returning agent is announced before its packet is built.
+        if mine.row.limit_until is not None and mine.row.limit_source != "runner":
             conn.execute(
                 update(t.membership)
                 .where(t.membership.c.id == mine.id)
