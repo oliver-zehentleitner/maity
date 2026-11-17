@@ -542,6 +542,55 @@ so a custom role can never be a way around trust.
 - Leaving a project role on `reviewer` out of `role:reviewer`: it holds
   the reviewer's rights but would never be woken for a review.
 
+## A project's roles list carries a version; a save on a stale one is refused, never last-write-wins
+
+**Id:** 2e1ad5ca-8ffb-4688-8ba4-b74609ec61ca
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pw0aagxnydr9 (the maintainer's request of 2026-11-17 for real protection against concurrent edits of the roles list, not only the dashboard's read before saving); the review lead's decision on the split and the form, 2026-11-17; contract `docs/api.md` §2.3 "Version."
+**See:** trust.md#a-writer-role-for-content-and-project-roles-that-name-work-without-granting-more — 7a9066c6-949a-4ea6-812b-2c38a2b4d74a — as of 2026-11-17
+**See:** cards.md#editing-or-redacting-a-note-names-the-version-it-was-made-on — 23165436-966c-48d6-94f4-80ea0638abf6 — as of 2026-11-17
+**Revisit when:** the API takes conditional request headers (`If-Match`, ETags) for writes, or `PUT …/roles` stops replacing the whole list
+
+`GET …/roles` answers the list's `version` (`project.roles_version`), and
+`PUT …/roles` must name the version it was made on as `base_version`.
+Without one it is `invalid`. When it is no longer current, the answer is
+`conflict` with `current_version` and `base_version`, and nothing
+changes. The hub reads the version under the project's lock and bumps
+it in the same UPDATE as the list. A `PUT` whose list equals the stored
+one keeps the version and answers `200`.
+
+**Reason:** the `PUT` replaces the whole list. Without a version, an
+admin whose page was read before someone else's save removes the role
+that save added, and nobody is told. Since every removal checks
+`role_in_use`, the overwrite can also move members to another base
+unseen. The dashboard's read just before saving (#1911) narrowed that
+window, but it still left the race between that read and the write;
+the maintainer asked for it done properly. The shape is the one the
+contract already uses for a card's restricted text, a note and a soul
+(§6.4, §6.16, §19.1), so clients and the CLI handle one pattern. It is
+required because the overwrite happens exactly in the client that sends
+nothing. The only clients that save roles are the dashboard and the
+hub's own tests, so nothing outside this change breaks. A save that
+changes nothing is answered with success whatever version it names,
+because its result is the list that is stored anyway.
+
+**Rejected alternatives:**
+- Last write wins, the behaviour before: a stale page silently removes
+  roles others added, and through a base change moves their members.
+- `If-Match` with an ETag and `412 Precondition Failed`: the API uses
+  no conditional headers for writes, and the note precondition already
+  rejected a second way to say the same thing (see above).
+- An optional `base_version`, as for a human's preferences: a client
+  that leaves it out is exactly the one that overwrites.
+- Only the dashboard reading the list again before saving (#1911): this
+  catches a stale page but not two saves in the same instant, and it
+  protects no other client.
+- Merging a stale list into the stored one: a removal and an addition
+  of the same role cannot be told apart from a list alone. Refusing,
+  and letting the person reload, says what happened.
+
 ## A manager leads a line of the org chart, not the project
 
 **Id:** ce60da47-9ad3-43c7-a719-45ed778d5bf2
