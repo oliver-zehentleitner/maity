@@ -750,6 +750,23 @@ def test_runner_check_names_a_refused_gh_rule_and_an_api_host_as_warnings() -> N
     assert "api.github.com" in texts[1]
 
 
+def test_runner_check_names_what_codex_starts_without_only_with_codex_configured() -> None:
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["make test"]\npull_requests = true\n'
+    )
+    report = commands.Report()
+    commands._check_repositories(report, parse(minimal(c="\n[harness.codex]\n", grant=grant)))
+    assert not report.failed  # said, never an error: the placement starts
+    texts = [text for level, text in report.lines if level == "warn"]
+    assert len(texts) == 2, texts
+    assert "'make test' is not applied to codex" in texts[0] and "its sandbox" in texts[0]
+    assert "pull_requests is not given to codex" in texts[1] and "maity gh" in texts[1]
+    quiet = commands.Report()
+    commands._check_repositories(quiet, parse(minimal(grant=grant)))
+    assert quiet.lines == []
+
+
 # --- the agents' git identity (cli/context/runner.md, tsk-z27pwcfr03wm) --------------------
 
 

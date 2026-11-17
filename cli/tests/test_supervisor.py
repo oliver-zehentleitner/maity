@@ -1888,30 +1888,47 @@ def test_a_rejoin_happens_once_per_generation(world: Any, monkeypatch: pytest.Mo
     assert len(calls) == 1 and len(backend.started) == 2
 
 
-def test_codex_is_refused_where_the_repository_grants_commands(world: Any) -> None:
-    sup, backend, reports, _, _ = world
+@pytest.mark.parametrize(
+    ("grant", "said"),
+    [
+        (config.RepositoryGrant(allow=("make test",)), ["'make test' is not applied to codex"]),
+        (config.RepositoryGrant(pull_requests=True), ["pull_requests is not given to codex"]),
+        (
+            config.RepositoryGrant(allow=("make test",), pull_requests=True),
+            ["'make test' is not applied to codex", "pull_requests is not given to codex"],
+        ),
+    ],
+)
+def test_codex_starts_without_the_grant_parts_it_cannot_enforce(
+    world: Any, grant: config.RepositoryGrant, said: list[str]
+) -> None:
+    """Codex has no command allowlist, and its `maity` runs inside its sandbox, where
+    `maity gh` reaches neither the login nor the forge's API: it starts without those parts,
+    named at each start, instead of being refused (cli/context/runner.md)."""
+    sup, _, reports, _, logs = world
+    sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": grant})
+    assert sup._refusal(placement(harness="codex"), sup.targets["local"]) is None
+    sup.update([placement(harness="codex")])
+    sup.tick()
+    assert ("failed", "harness_refused", None) not in states(reports)
+    left = [
+        line
+        for line in logs
+        if "codex:" in line and "github.com/oliver-zehentleitner/maity" in line
+    ]
+    assert len(left) == len(said) and all(any(s in line for line in left) for s in said), left
+
+
+def test_claude_code_is_not_told_what_codex_starts_without(world: Any) -> None:
+    sup, _, _, _, logs = world
     sup.cfg = replace(
         sup.cfg,
         repositories={"github.com/oliver-zehentleitner/maity": config.RepositoryGrant(
-            allow=("make test",))},
+            allow=("make test",), pull_requests=True)},
     )  # fmt: skip
-    sup.update([placement(harness="codex")])
+    sup.update([placement(harness="stub")])
     sup.tick()
-    assert states(reports) == [("failed", "harness_refused", None)]
-
-
-def test_codex_is_refused_where_the_repository_grants_pull_requests(world: Any) -> None:
-    """Codex's `maity` runs inside its sandbox, where `maity gh` reaches neither the login
-    nor the forge's API (cli/context/runner.md 9f43804d)."""
-    sup, backend, reports, _, _ = world
-    sup.cfg = replace(
-        sup.cfg,
-        repositories={"github.com/oliver-zehentleitner/maity": config.RepositoryGrant(
-            pull_requests=True)},
-    )  # fmt: skip
-    sup.update([placement(harness="codex")])
-    sup.tick()
-    assert states(reports) == [("failed", "harness_refused", None)]
+    assert not [line for line in logs if "codex" in line]
 
 
 # --- the project namespace (§6.25, §15.5) ------------------------------------------------------

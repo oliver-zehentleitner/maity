@@ -268,8 +268,9 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
     """A gh rule in a grant's `allow` is not applied: agents open their pull requests with
     `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). With
     antigravity configured, a command grant is not applied to agy (adapters.agy_grants): it is
-    named as left out and runs in agy's sandbox like an unlisted command. Said, never an
-    error, so a restart before the table is edited keeps every placement running."""
+    named as left out and runs in agy's sandbox like an unlisted command. With codex
+    configured, the grant parts a Codex placement starts without (adapters.codex_left_out).
+    Said, never an error, so a restart before the table is edited keeps every placement running."""
     for name, grant in cfg.repositories.items():
         if grant.refused:
             listed = ", ".join(repr(rule) for rule in grant.refused)
@@ -287,6 +288,10 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
                     f"repositories.{name}: allow {rule!r} is left out for antigravity and runs "
                     f"in agy's sandbox like an unlisted command: {why}"
                 )
+        if "codex" in cfg.harnesses:
+            # Codex starts without what it cannot enforce, said here and at each start.
+            for part in adapters.codex_left_out(grant):
+                report.warn(f"repositories.{name}: {part}")
         if grant.pull_requests and "api.github.com" in grant.network:
             report.warn(
                 f"repositories.{name}: network api.github.com is not needed for pull requests "
