@@ -108,19 +108,22 @@ class _Unreadable(ValueError):
 def _words(line: str) -> list[tuple[str, bool]]:
     """The line's words as the shell splits and unquotes them, each with whether the shell
     would still expand it (`$`, a backtick, a glob, a brace), so that its final text is not
-    known here. Words end at unquoted spaces, tabs and operators; a backslash-newline joins
+    known here; a word that starts with an unquoted `~` and holds no `/` counts as one too.
+    Words end at unquoted spaces, tabs and operators; a backslash-newline joins
     the lines; nothing is expanded and comments are read like any other text. Raises
     _Unreadable for a quote that is never closed."""
     words: list[tuple[str, bool]] = []
     chars: list[str] = []
-    started = expands = False
+    started = expands = tilde = False
     i, n = 0, len(line)
 
     def end() -> None:
-        nonlocal chars, started, expands
+        nonlocal chars, started, expands, tilde
         if started:
-            words.append(("".join(chars), expands))
-        chars, started, expands = [], False, False
+            text = "".join(chars)
+            # `~`, `~-`, `~+`, `~user` alone: the shell puts a directory in their place.
+            words.append((text, expands or (tilde and "/" not in text)))
+        chars, started, expands, tilde = [], False, False, False
 
     def closing(start: int, escapes: bool) -> int:
         """The index of the `'` that closes the quote opened before `start`."""
@@ -165,6 +168,7 @@ def _words(line: str) -> list[tuple[str, bool]]:
             if i >= n:
                 raise _Unreadable(line)
         else:
+            tilde = tilde or (c == "~" and not started)
             started = True
             expands = expands or c in _EXPANDS
             chars.append(c)
@@ -177,23 +181,25 @@ def calls_runner(command: str, depth: int = 0) -> bool:
     """Whether the line may run `maity runner`: a word `maity` (`_is_maity`) is followed
     anywhere later on the line by a word `runner` (in any case). Neither has to be the
     command word, and operators between them do not matter. A word the shell would still
-    expand counts as `runner` after a `maity` word and as `maity` before a `runner` word.
+    expand (`_words` says which) counts as `runner` after a `maity` word and as `maity`
+    before a `runner` word.
     Quoted text that holds spaces or operators is read again the same way, as another shell
-    would read it. A line whose quotes never close counts when it holds `runner` at all."""
+    would read it, up to `_NESTING` levels deep; text below that counts when it holds
+    `runner` at all. A line whose quotes never close counts when it holds `maity` or
+    `runner` at all."""
     try:
         words = _words(command)
     except _Unreadable:
-        return "runner" in command.lower()
+        low = command.lower()
+        return "runner" in low or "maity" in low
     seen_maity = seen_open = False
     for text, expands in words:
         if text.lower() == "runner" and (seen_maity or seen_open):
             return True
         if expands and seen_maity:
             return True
-        if (
-            depth < _NESTING
-            and any(c in " \t" or c in _SEPARATORS for c in text)
-            and calls_runner(text, depth + 1)
+        if any(c in " \t" or c in _SEPARATORS for c in text) and (
+            calls_runner(text, depth + 1) if depth < _NESTING else "runner" in text.lower()
         ):
             return True
         seen_maity = seen_maity or _is_maity(text)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -137,6 +138,14 @@ RUNNER_ANYWHERE = [
     "maity say --to lotse 'maity runner status'",
     "maity task create maity --body runner",
     "echo maity; runner status",
+    # a quote that never closes, with `maity` and an expanding word
+    "FOO=1 maity $R status # it's",
+    "FOO=1 maity $'\\x72unner' status # it's",
+    "FOO=1 maity 'r'unner status # it's",
+    "FOO=1 maity r\\unner status # it's",
+    # words the shell puts a directory in place of
+    "maity ~- status",
+    "maity ~ status",
 ]
 NOT_RUNNER = [
     "maity runners",
@@ -147,7 +156,26 @@ NOT_RUNNER = [
     "cp $SRC $DST",
     "echo 'never closed",
     "echo $'it\\'s the runner'",  # ANSI-C quoting closes where the shell closes it
+    "maity files get fil-1 -o ~/out.txt",
 ]
+
+
+def nested(line: str, levels: int) -> str:
+    """`line` run by `sh -c`, `levels` times over."""
+    for _ in range(levels):
+        line = "sh -c " + shlex.quote(line)
+    return line
+
+
+@pytest.mark.parametrize("levels", [1, 4, 5, 6, 12])
+def test_a_runner_call_nested_in_any_depth_of_quoted_text_is_refused(levels: int) -> None:
+    assert plaincall.refusal(bash(nested("maity runner status", levels))) == (
+        plaincall.RUNNER_REFUSED
+    )
+
+
+def test_nested_text_without_runner_passes_at_any_depth() -> None:
+    assert plaincall.refusal(bash(nested("maity task show tsk-x", 12))) is None
 
 
 @pytest.mark.parametrize("command", RUNNER_ANYWHERE)
@@ -197,11 +225,6 @@ def test_every_line_maitys_parser_reads_as_runner_is_refused(words: list[str]) -
 @pytest.mark.parametrize("command", RUNNER)
 def test_a_line_that_runs_maity_runner_is_refused(command: str) -> None:
     assert plaincall.refusal(bash(command)) == runner_refusal(command)
-
-
-@pytest.mark.parametrize("command", NOT_RUNNER)
-def test_runner_as_a_word_elsewhere_is_not_a_runner_call(command: str) -> None:
-    assert plaincall.refusal(bash(command)) != plaincall.RUNNER_REFUSED
 
 
 @pytest.mark.parametrize("command", REFUSED)
