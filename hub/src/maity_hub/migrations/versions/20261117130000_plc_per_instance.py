@@ -10,7 +10,7 @@ key needs an index that starts with `membership_id` at every moment.
 A downgrade restores the old key and therefore refuses while a membership holds two active
 placements: close one of them first.
 
-Revision ID: 20261117130000_placement_per_instance
+Revision ID: 20261117130000_plc_per_instance
 Revises: 20261115000000_address_where
 Create Date: 2026-11-17
 """
@@ -20,7 +20,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "20261117130000_placement_per_instance"
+revision: str = "20261117130000_plc_per_instance"
 down_revision: str | None = "20261115000000_address_where"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
