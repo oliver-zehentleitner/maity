@@ -2187,11 +2187,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   srProto.focus = function () { document.activeElement = this; };
   srCancel().click(); await tick();
   await srOpen();
+  // Opened anew, the form is free: no "Placing" left, the button not held (review of #1919).
+  expect(!srCreate().disabled && srSaid() === "",
+    "placements: a panel cancelled during a POST opens again free, its button not held, nothing said " + JSON.stringify([srCreate().disabled, srSaid()]));
   byId("join-handle").value = "draft-x";
+  byId("placement-new-clone").value = "draft-clone";
   srRelease(); for (let k = 0; k < 8; k++) await tick();
-  expect(srForm() && byId("join-handle").value === "draft-x" && byId("join-agent") === document.activeElement
+  expect(srForm() && byId("join-handle").value === "draft-x" && byId("placement-new-clone").value === "draft-clone"
+    && byId("join-agent") === document.activeElement && !srCreate().disabled && srSaid() === ""
     && text(srBox().querySelector(".join-slot")).includes("Agent F is placed on home-laptop."),
-    "placements: a POST answered after its panel was cancelled leaves the panel opened since, with its draft and the focus");
+    "placements: a POST answered after its panel was cancelled leaves the panel opened since, its draft, its runner fields, its button and the focus");
+  // The new profile's fields, hidden once an agent is chosen, are off too: a handle its pattern
+  // refuses no longer blocks the form (review of #1558, #1919).
+  byId("join-handle").value = "INVALID"; byId("join-handle").dispatch("input");
+  byId("join-agent").value = "agt-a"; byId("join-agent").dispatch("change");
+  const srOff = [byId("join-handle").disabled, byId("join-display").disabled];
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  expect(srOff[0] && srOff[1] && !byId("join-handle").disabled && !byId("join-display").disabled,
+    "join: the new profile's fields are off while hidden, on again when shown " + JSON.stringify(srOff));
   srCancel().click(); await tick();
   srProto.focus = srFocus;
   expect(srMade.length === 3 && JSON.stringify(srMade[2]) === JSON.stringify({ agent: { handle: "agent-f", display_name: "Agent F" }, trust: "member", role: "coder",

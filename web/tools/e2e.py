@@ -6340,8 +6340,8 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
 
 def page_heads_step(run: Run, page: Page) -> None:
     """The heads of a project's Agents and Team pages (tsk-vkyp71qp95n9): the heading, the buttons at
-    the right end, the tabs under them, each the page's full width; Join an agent a menu of its two
-    ways, Add any agent and Start an agent on a runner, the same on both pages."""
+    the right end, the tabs under them, each the page's full width; Join an agent one button that
+    opens the join panel, the same on both pages (tsk-hdczmsq2r431; once a menu)."""
     run.step("page heads: Agents and Team carry the heading, the buttons at the right end, the tabs under them")
     for path, title, buttons, tab_names in (
         ("agents", "Agents", ["New agent profile", "Join an agent"], ["Agents", "Managed agents", "Organisation"]),
@@ -6370,19 +6370,25 @@ def page_heads_step(run: Run, page: Page) -> None:
             assert abs(box["tabs"][1] - box["head"][1]) <= 1 and abs(box["tabs"][0] - box["head"][0]) <= 1, f"{path} tabs not the full width at {width} px: {box}"
             assert abs(box["last"][0] - box["bar"][1]) <= 1, f"{path} buttons not at the right end at {width} px: {box}"
             assert box["last"][1] <= box["tabs"][2] + 1, f"{path} tabs not under the buttons at {width} px: {box}"
-            head.get_by_role("button", name="Join an agent", exact=True).click()
-            items = page.locator(".page-head .menu [role=menuitem]")
-            expect(items).to_have_text(["Add any agent", "Start an agent on a runner"])
+            opener = head.get_by_role("button", name="Join an agent", exact=True)
+            expect(opener).not_to_have_attribute("aria-haspopup", re.compile(".*"))
+            opener.click()
+            panel = page.locator("main .join-slot .join-panel")
+            expect(panel).to_be_visible()
             run.shot(page, f"page-head-{path}-{width}")
-            page.keyboard.press("Escape")
+            panel.get_by_role("button", name="Cancel", exact=True).click()
+            expect(panel).to_be_hidden()
+            expect(opener).to_be_focused()
             run.a11y(page, f"{path} page head, {width} px")
     page.set_viewport_size({"width": 1280, "height": 900})
-    run.step("page heads: Add any agent on Team opens the join panel there")
+    run.step("page heads: Join an agent on Team opens the join panel there")
     page.goto(f"{run.base}/owner/e2e-alpha/team")
     join_any(page)
-    expect(page.locator("main .join-menu-slot .join-panel")).to_be_visible()
+    panel = page.locator("main .join-slot .join-panel")
+    expect(panel).to_be_visible()
     expect(page.locator("#join-agent")).to_be_visible()
-    page.keyboard.press("Escape")
+    panel.get_by_role("button", name="Cancel", exact=True).click()
+    expect(panel).to_be_hidden()
     no_problems(run, "page heads")
 
 

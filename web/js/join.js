@@ -208,6 +208,9 @@ window.Maity = window.Maity || {};
       const fresh = (m ? m.id : "") !== shownFor;
       shownFor = m ? m.id : "";
       newFields.hidden = agentSelect.value !== "";
+      // Hidden, the new profile's fields are off too: a handle typed for one and refused by its
+      // pattern no longer blocks the form once an agent is chosen (review of #1558, #1919).
+      handle.disabled = display.disabled = newFields.hidden;
       instanceBox.hidden = !m;
       membershipFields.forEach((f) => { f.hidden = !!m; });
       memberReportsField.hidden = !m;
@@ -480,21 +483,25 @@ window.Maity = window.Maity || {};
       try {
         made = await M.api.post(ctx.base + "/placements", req);
       } catch (err) {
-        // Closed meanwhile: nothing said in a panel no one sees.
-        if (mine !== submission) { status.done(); return; }
+        // Closed meanwhile: close() freed the form, and a form opened since is not this
+        // submission's to touch (review of #1919).
+        if (mine !== submission) return;
+        create.disabled = false;
         status.fail(M.t("placements.new.failed"), viaRunner.said(err));
         const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
         if (fields.handle === "taken" && agent.handle) { refused.add(agent.handle); checkHandle(); handle.focus(); }
         return;
-      } finally {
-        create.disabled = false;
       }
-      status.done();
       // Made even when the panel was closed meanwhile: the line says so all the same, and a form
-      // opened since keeps its draft and the focus.
-      if (mine === submission) close(true);
-      // The agent placed now is placed: the part reads again before it is offered next.
-      viaRunner.reread();
+      // opened since keeps its draft, its button and the focus.
+      if (mine === submission) {
+        create.disabled = false;
+        status.done();
+        close(true);
+      }
+      // The agent placed now is placed: the part reads again before it is offered next; in a
+      // form opened meanwhile, at its next opening, not under the fields being typed.
+      if (panel.hidden) viaRunner.reread();
       append(clear(listStatus.el), h("span", { class: "ok" }, M.t("placements.new.done",
         { name: made.agent.display_name || made.agent.handle, runner: made.runner.name })), " ",
       h("a", { href: ctx.link("placements") }, M.t("placements.title")));
@@ -739,6 +746,9 @@ window.Maity = window.Maity || {};
       // A code question still open belongs to the submission being closed: it ends
       // with it, and the next submission sends the fields then shown.
       submission++;
+      // A submission still waiting ends with it: the form opens again free (review of #1919).
+      create.disabled = false;
+      status.done();
       M.stepUp.cancel(stepSlot);
       panel.hidden = true;
       showForm();

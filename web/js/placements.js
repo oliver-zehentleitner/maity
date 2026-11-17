@@ -281,7 +281,7 @@ window.Maity = window.Maity || {};
     if (missed) reread();
     append(box, heading(),
       opts.own ? null : h("p", { class: "muted" }, M.t("placements.hint")), list, status.el);
-    // A start from the page's Join an agent menu lists its placement at once, not only on its event.
+    // A start from the page's Join an agent form lists its placement at once, not only on its event.
     sections.set(box, reread);
     return box;
   }

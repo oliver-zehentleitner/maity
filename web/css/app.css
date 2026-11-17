@@ -1623,7 +1623,7 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .agents-head-actions button { min-height: 40px; }
 /* The head of a page with tabs (js/page-head.js; the project's Agents and Team pages,
    tsk-vkyp71qp95n9): the heading, the buttons at the right end, the tab bar under them, all at the
-   page's full width. Join an agent opens its menu of two ways under its right edge. */
+   page's full width. Join an agent opens the join panel under the head (tsk-hdczmsq2r431). */
 .page-head { display: block; width: 100%; }
 .page-head-bar { margin-bottom: 8px; }
 .page-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-inline-start: auto; }
