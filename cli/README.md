@@ -1237,8 +1237,8 @@ project's own harness configuration is never loaded:
   made, and with nobody attached, the runner answers "Open restricted"
   once it shows (the folder stays untrusted). It never answers a prompt
   that would trust it: the log says the session waits on a first-run
-  prompt, someone attaches to answer it, and no idle line is typed into
-  it. Codex has no per-command allowlist, so
+  prompt, someone attaches to answer it, and until then no idle line is
+  typed into it. Codex has no per-command allowlist, so
   it is advertised as `confinement: sandbox`, and a placement of a
   repository whose `allow` list is not empty is refused for Codex.
 - **opencode** (built, not offered yet: a configuration that names it is

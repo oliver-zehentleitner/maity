@@ -147,7 +147,7 @@ An interactive agent listens by running `maity wait`. If that stops (a full disk
 
 The runner never types while someone is attached to the session: attaching pauses the check.
 
-**Codex's folder prompt.** An interactive Codex asks at its start about the clone, which the runner marks untrusted so that the repository's own Codex configuration is not loaded. Within three minutes of a start it made, and with nobody attached, the runner answers that prompt with its restricted choice ("Open restricted"), which keeps the clone untrusted, and logs it. It never answers a prompt that would trust the folder: the log then says the session is `waiting on a first-run prompt`, and someone has to attach and answer it. The runner sends no idle line into such a session.
+**Codex's folder prompt.** An interactive Codex asks at its start about the clone, which the runner marks untrusted so that the repository's own Codex configuration is not loaded. Within three minutes of a start it made, and with nobody attached, the runner answers that prompt with its restricted choice ("Open restricted"), which keeps the clone untrusted, and logs it. It never answers a prompt that would trust the folder: the log then says the session is `waiting on a first-run prompt`, and someone has to attach and answer it. Until the prompt is gone, the runner does not check that session for silence, so it types no line into it; once someone has answered it, the check runs as before.
 
 ## Git in an agent's session
 

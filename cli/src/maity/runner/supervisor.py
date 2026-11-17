@@ -257,7 +257,8 @@ class Record:
     unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
     left_typed: bool = False  # a dropped nudge's line may still sit in the input: not again
     # Codex's folder prompt at an interactive start: None while looked for, else `answered`,
-    # `left` (a prompt the runner does not answer) or `none` (not seen in time).
+    # `left` (a prompt the runner does not answer, until it is gone) or `none` (not seen in
+    # time, or gone).
     folder_prompt: str | None = None
 
     def calm(self) -> None:
@@ -657,6 +658,11 @@ class Supervisor:
         without it (one that would trust the folder) is never answered: said in the log, as
         a harness waiting on a first-run prompt. Looked for only `FOLDER_PROMPT_WITHIN` after
         the start; the pane's text is only matched, never kept (Tmux.pane_has)."""
+        if rec.folder_prompt == "left":  # answered by someone, or gone: checked as before
+            shown = backend.pane_has(session.name, (FOLDER_PROMPT,))
+            if shown is not None and FOLDER_PROMPT not in shown:
+                rec.folder_prompt = "none"
+            return
         if rec.folder_prompt is not None or rec.started_at is None:
             return
         if now - rec.started_at > FOLDER_PROMPT_WITHIN:
@@ -667,8 +673,10 @@ class Supervisor:
             return
         if OPEN_RESTRICTED not in shown or TRUST_FOLDER in shown:
             rec.folder_prompt = "left"
-            self.log(f"{session.name}: waiting on a first-run prompt: Codex asks about its "
-                     "folder without offering to open it restricted; not answered")  # fmt: skip
+            self.log(
+                f"{session.name}: waiting on a first-run prompt: Codex asks about its folder "
+                "without offering only to open it restricted; not answered"
+            )
             return
         if backend.attached(session.name) is not False:  # a person there answers it
             return
