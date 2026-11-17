@@ -521,3 +521,24 @@ def test_under_a_placement_the_cites_are_checked_in_the_clone_from_its_folder(
     else:
         assert result == cli.EXIT_ERROR
         assert "it stands on line 2" in err
+
+
+def test_under_a_placement_whose_clone_cannot_be_named_nothing_is_sent(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`MAITY_PLACEMENT` without `GIT_COMMON_DIR`: the cites are not checked from the current
+    directory instead (cli/context/runner.md b4a8030d); the review is refused, unsent."""
+    monkeypatch.setenv("MAITY_STATE_DIR", str(state.resolve_state_dir()))
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
+    monkeypatch.delenv("GIT_COMMON_DIR", raising=False)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(REVIEW)))
+    before = len(fake.seen)
+    result = cli.main(_say("Approve.", "--review-file", "-"))
+    err = capsys.readouterr().err
+    assert result == cli.EXIT_ERROR, err
+    assert "without GIT_COMMON_DIR" in err and "not checked" not in err
+    assert not [s for s in fake.seen[before:] if s.method == "POST"]

@@ -2503,11 +2503,9 @@ def _review_clone() -> Path:
     """Where a review's cites are checked: under a runner placement the runner's clone,
     whatever directory the agent works in (for agy the workspace folder that holds it as
     `repo`, §15.5); else the current directory. A placement whose clone cannot be named is
-    checked from the current directory, where maity's git refuses it as before."""
-    try:
-        root = clonecheck.placement_root()
-    except clonecheck.Refused:
-        root = None
+    refused before anything is sent (CommandError): maity never falls back to the current
+    directory there (cli/context/runner.md b4a8030d)."""
+    root = _placement_clone()
     return root if root is not None else Path.cwd()
 
 
