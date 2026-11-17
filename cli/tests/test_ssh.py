@@ -612,7 +612,7 @@ def test_a_hosts_deny_lists_name_the_hosts_paths(tmp_path: Path, fake_ssh: Path)
     assert remote_home / ".ssh" in ctx.private and remote_home / ".codex" in ctx.private
     assert sibling in ctx.private and place.credential.parent not in ctx.private
     assert sup.cfg.state_dir not in ctx.private and sup.cfg.state_dir.resolve() not in ctx.private
-    assert "-path" in fake_ssh.read_text()  # listed on the host, over ssh
+    assert "-mindepth 2 -maxdepth 2 -print0" in fake_ssh.read_text()  # listed on the host, over ssh
 
 
 def test_codexs_sandbox_is_tried_on_the_host(tmp_path: Path, fake_ssh: Path) -> None:

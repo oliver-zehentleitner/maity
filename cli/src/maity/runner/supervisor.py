@@ -126,6 +126,12 @@ def run_join(
 
 
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
+# Codex's folder prompt at an interactive start (Codex 0.169, tui/src/onboarding): the
+# runner answers only its restricted choice, looked for this long after the start.
+FOLDER_PROMPT = "Folder access"
+OPEN_RESTRICTED = "Open restricted"
+TRUST_FOLDER = "Trust and continue"
+FOLDER_PROMPT_WITHIN = 180.0
 # The harnesses whose run without their OS sandbox is reported (`sandbox_unavailable`): those
 # whose allowlist relies on it. Codex's sandbox is its whole confinement and is checked apart.
 UNCONFINED_REPORTED = ("claude-code", "antigravity")
@@ -267,6 +273,10 @@ class Record:
     clone_bytes: int | None = None
     scratch_bytes: int | None = None
     sized_at: float | None = None
+    # Codex's folder prompt at an interactive start: None while looked for, else `answered`,
+    # `left` (a prompt the runner does not answer, until it is gone) or `none` (not seen in
+    # time, or gone).
+    folder_prompt: str | None = None
 
     def calm(self) -> None:
         """Forget the idle check: a new start, or an agent that is listening again."""
@@ -648,6 +658,9 @@ class Supervisor:
             backend.kill(mine.name)
             mine = None
         if mine is not None and not mine.dead:
+            if rec.state in ("starting", "running") and p.get("mode") == "interactive":
+                if self.cfg.harnesses[p["harness"]].id == "codex":
+                    self._folder_prompt(rec, mine, backend, now)
             if rec.state != "stopping" and (self.first_tick or rec.state not in LIVE):
                 rec.enter(now, "running", "adopted", started_at=None)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
@@ -659,7 +672,8 @@ class Supervisor:
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
             elif rec.state == "running" and p.get("mode") == "interactive":
-                self._idle(p, rec, mine, backend, now)
+                if not self._prompt_shown(p, mine, backend):  # no line into a prompt
+                    self._idle(p, rec, mine, backend, now)
             return 0
         if mine is not None and mine.dead:
             self._exited(rec, mine, now, backend, target)
@@ -735,6 +749,51 @@ class Supervisor:
         else:
             rec.enter(now, "exited", exit_code=code, crashes=decision.crashes,
                       retry_at=decision.retry_at)  # fmt: skip
+
+    def _folder_prompt(self, rec: Record, session: Session, backend: Tmux, now: float) -> None:
+        """Codex asks at an interactive start about a folder it is told not to trust (the
+        clone, `trust_level = "untrusted"`, so the clone's own `.codex` configuration is not
+        loaded), and nobody answers: the agent never starts. Its first choice, already
+        highlighted, is "Open restricted", which keeps the folder untrusted and saves nothing;
+        the runner presses Enter once that shows, with nobody attached. A folder prompt
+        without it (one that would trust the folder) is never answered: said in the log, as
+        a harness waiting on a first-run prompt. Looked for only `FOLDER_PROMPT_WITHIN` after
+        the start; the pane's text is only matched, never kept (Tmux.pane_has)."""
+        if rec.folder_prompt is not None or rec.started_at is None:
+            return
+        if now - rec.started_at > FOLDER_PROMPT_WITHIN:
+            rec.folder_prompt = "none"
+            return
+        shown = backend.pane_has(session.name, (FOLDER_PROMPT, OPEN_RESTRICTED, TRUST_FOLDER))
+        if shown is None or FOLDER_PROMPT not in shown:
+            return
+        if OPEN_RESTRICTED not in shown or TRUST_FOLDER in shown:
+            rec.folder_prompt = "left"
+            self.log(
+                f"{session.name}: waiting on a first-run prompt: Codex asks about its folder "
+                "without offering only to open it restricted; not answered"
+            )
+            return
+        if backend.attached(session.name) is not False:  # a person there answers it
+            return
+        try:
+            backend.submit(session.name)
+        except TmuxError as exc:
+            self.log(f"{session.name}: cannot answer Codex's folder prompt: {exc}")
+            return
+        rec.folder_prompt = "answered"
+        self.log(f"{session.name}: answered Codex's folder prompt with \"Open restricted\"; "
+                 "the clone stays untrusted")  # fmt: skip
+
+    def _prompt_shown(self, p: dict[str, Any], session: Session, backend: Tmux) -> bool:
+        """Whether a Codex session's pane may show its folder prompt, looked at on every
+        check, before the idle check may type: a prompt shown, or a look that cannot tell,
+        keeps the idle line out of it, however long it stays and whenever it shows; one look
+        that misses it decides that check only."""
+        if self.cfg.harnesses[p["harness"]].id != "codex":
+            return False
+        shown = backend.pane_has(session.name, (FOLDER_PROMPT,))
+        return shown is None or FOLDER_PROMPT in shown
 
     def _idle(
         self, p: dict[str, Any], rec: Record, session: Session, backend: Tmux, now: float
@@ -1019,6 +1078,7 @@ class Supervisor:
             return 0
         retrying = rec.state in ("exited", "rate_limited")
         rec.calm()
+        rec.folder_prompt = None
         rec.enter(now, "starting", retry_at=None, started_at=now)
         rec.sandbox = view.sandbox
         if retrying:
@@ -1445,7 +1505,11 @@ def private_paths(
         return path.resolve() if here else path
 
     clone = norm(clone)
-    found = [*((norm(state_dir),) if state_dir else ()), *(home / n for n in HOME_SECRETS)]
+    # The home resolved too: with a link in its path, its secrets and the runner's own
+    # configuration (resolved) would no longer be seen as one inside the other
+    # (adapters.outermost).
+    found = [*((norm(state_dir),) if state_dir else ()),
+             *(norm(home) / n for n in HOME_SECRETS)]  # fmt: skip
     found += [*others, *(norm(path) for path in extra)]
     return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
 
@@ -1454,9 +1518,12 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     """The credential directories of the other clones under `workspaces` as they stand now,
     a workspace folder's clone `repo` included
     (a clone made later is covered from the agent's next start), listed as the agents' user,
-    who owns them and may be the only one able to list them. A listing that is not complete
-    fails closed (`workspace.Refused`): an unreadable directory could hide a credential, and
-    the sandbox would start without its deny."""
+    who owns them and may be the only one able to list them. A start whose other clones
+    cannot be checked completely is refused (`workspace.Refused`): an unreadable directory
+    could hide a credential, and the sandbox would start without its deny. Each is named
+    where it lies, as the agents' side resolves it; one inside the workspaces root is named
+    below `workspaces` as given (resolved here), the form the clone's own path and the
+    root's deny have."""
     root = workspaces.resolve() if as_user.here else workspaces
     refused = workspace.Refused("harness_refused")
     if as_user.direct:
@@ -1469,18 +1536,101 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
                               if (c / ".git" / "maity").is_dir()]  # fmt: skip
         except OSError as exc:
             raise refused from exc
+        real_root, real_clone = root, clone.resolve()
     elif not as_user.exists(root, "-d"):
-        found = []  # no clone yet: nothing to hide
+        return []  # no clone yet: nothing to hide
     else:
-        # Depth 4 for a clone, 5 for the clone `repo` in a workspace folder (§15.5); a nested
-        # repository's at depth 5 in a plain clone is listed too, which only hides more.
-        done = as_user.run(["find", str(root), "-mindepth", "4", "-maxdepth", "5", "-type", "d",
-                            "-path", "*/.git/maity", "-print0"])  # fmt: skip
-        if done.returncode != 0:  # some directory could not be read: the list may be short
-            raise refused
-        found = [Path(p) for p in done.stdout.split("\0") if p]
-    own = (clone.resolve() if as_user.here else clone) / ".git" / "maity"
-    return sorted(p for p in found if p != own)
+        real_root, real_clone = _canonical([root, clone], as_user, refused)
+        found = _listed(real_root, as_user, refused)
+    own = _below_root(real_clone, real_root, root) / ".git" / "maity"
+    named = {_below_root(p, real_root, root) for p in _canonical(found, as_user, refused)}
+    return sorted(named - {own})
+
+
+# For each clone entry given: its two places for a credential, looked at through a link as
+# Path.is_dir does on the direct side, one NUL after each found. A place that cannot be
+# looked at (a directory on its way, where it lies, that cannot be searched) ends the
+# listing with 3, as a PermissionError does there: it could hide one. Only `test` and
+# `readlink -n` (no `realpath -m`, which not every system has; `-n` keeps a name's own
+# last line break on every system). Links the system does not resolve are followed here
+# one by one; what cannot be checked completely (a loop, a chain too long to follow, a
+# place that cannot be searched) ends the listing with 3: the start is refused.
+_SLOTS = r"""blocked() (
+  q=$1 n=${3:-0}
+  if [ -e "$q" ]; then
+    if [ "$2" = self ] && [ -d "$q" ] && ! [ -x "$q" ]; then exit 0; fi
+    exit 1
+  fi
+  p=${q%/*}
+  [ -n "$p" ] || p=/
+  if [ "$p" != "$q" ] && blocked "$p" self "$n"; then exit 0; fi
+  [ -L "$q" ] || exit 1
+  [ "$n" -lt 40 ] || exit 0
+  t=$(readlink -n -- "$q" && printf x) || exit 0
+  t=${t%x}
+  case $t in /*) ;; *) t=${p%/}/$t ;; esac
+  blocked "$t" "$2" $((n + 1))
+)
+for d; do
+  for c in "$d" "$d/repo"; do
+    for q in "$c" "$c/.git"; do
+      if blocked "$q" self; then exit 3; fi
+    done
+    if blocked "$c/.git/maity" parent; then exit 3; fi
+    if [ -d "$c/.git/maity" ]; then printf '%s\0' "$c/.git/maity"; fi
+  done
+done"""
+
+
+# Each path resolved, one NUL after each, its name kept exactly (a trailing newline too).
+_REALPATHS = r"""for p; do
+  r=$(realpath -- "$p" && printf x) || exit 3
+  printf '%s\0' "${r%?x}"
+done"""
+
+
+def _listed(root: Path, as_user: AsUser, refused: workspace.Refused) -> list[Path]:
+    """The credential directories under the real directory `root`, listed as the agents'
+    user on their side, as the direct side lists them: every clone's two places for one
+    (`<clone>/.git/maity`, `<clone>/repo/.git/maity`) under every project that is not a
+    link, looked at through a link."""
+    entries = as_user.run(["find", str(root), "-mindepth", "2", "-maxdepth", "2", "-print0"])
+    if entries.returncode != 0:  # some directory could not be read: the list may be short
+        raise refused
+    clones = [d for d in entries.stdout.split("\0") if d]
+    if not clones:
+        return []
+    checked = as_user.run(["sh", "-c", _SLOTS, "sh", *clones])
+    if checked.returncode != 0:
+        raise refused
+    return [Path(p) for p in checked.stdout.split("\0") if p]
+
+
+def _below_root(path: Path, real_root: Path, root: Path) -> Path:
+    """`path`, resolved on the agents' side, named below `root` when it lies in `real_root`
+    (what `root` resolves to there); a path outside it stays as it was resolved."""
+    try:
+        return root / path.relative_to(real_root)
+    except ValueError:
+        return path
+
+
+def _canonical(paths: list[Path], as_user: AsUser, refused: workspace.Refused) -> list[Path]:
+    """`paths` as the agents' side resolves them, so that a path's place in the listing is
+    its place on disk (adapters.outermost compares them as written). Resolved where the
+    agents run, as their user; any path that cannot be resolved fails closed."""
+    if not paths:
+        return []
+    if as_user.direct:
+        try:
+            return [path.resolve(strict=True) for path in paths]
+        except OSError as exc:
+            raise refused from exc
+    done = as_user.run(["sh", "-c", _REALPATHS, "sh", *(str(path) for path in paths)])
+    resolved = [Path(p) for p in done.stdout.split("\0")[:-1]]
+    if done.returncode != 0 or len(resolved) != len(paths):
+        raise refused
+    return resolved
 
 
 def agents_user(cfg: config.Config) -> AsUser:
