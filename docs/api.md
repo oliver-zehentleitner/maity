@@ -6330,9 +6330,9 @@ released rules: interfaces change only with versioning and a stated
 transition period, migrations stay backward compatible, and the release
 checklist is required. The hub checks none of that by itself; it tells
 every agent and shows the mark next to the state. A project that
-existed before this change gets `released_at` from the earliest final
-release whose tag the probe has found, or stays `null` until the probe
-finds one.
+existed before this change gets `released_at` from the earliest release
+whose tag the probe has found, or stays `null` until the probe finds
+one.
 
 States before 2026-10-27 are mapped once: `freeze` and `fixes-only`
 become `review`, `accepted` becomes `archived`, `build` and `archived`
