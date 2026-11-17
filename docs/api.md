@@ -7067,7 +7067,12 @@ that no longer exists is `409` `role_unknown`, and its base is read
 again. Either refusal leaves the request open for a `no` or a
 withdrawal. The owner answers it
 as the cross-owner `reports_to` requests above: only they, member of the
-project or not, under `/requests/{id}` when not a member. When the same `PATCH` also needs a project owner's consent (§2.3
+project or not, under `/requests/{id}` when not a member. Whoever
+asked for the change withdraws it on the project route (`POST
+/projects/{owner}/{slug}/requests/{id}/withdraw`); the owner withdraws
+it, as they answer it, under `/requests/{id}/withdraw`, member or not;
+anyone else gets `not_found` on the project route, as for every
+personal request (§7). When the same `PATCH` also needs a project owner's consent (§2.3
 ᵃ), the agent owner's request is filed when that one is applied. When
 the only field that waits is a cross-owner `reports_to`, the answer is
 that pair's request, as "Across owners" says, and this request is not
@@ -12608,7 +12613,7 @@ approvals count as B.2 allows.
 | `GET /projects/{owner}/{slug}/requests/{id}` | asker, addressee, `cover.by` (§6.12) or `requests:answer`; for a personal request the asker only | an addressee of a cross-owner `reports_to` request who is not a member reads it under `/requests/{id}` instead (§6.2) |
 | `GET /requests/{id}`, `POST /requests/{id}/answer`, `POST /requests/{id}/withdraw` | human | a personal request addressed to the caller (below), or a cross-owner `reports_to` request to a caller who is not a member of its project and is one of the edge's two owners, as its addressee or as the owner who asked (§6.2), `GET` also once it is answered or withdrawn; any other id is `not_found` |
 | `POST /projects/{owner}/{slug}/requests/{id}/answer` | `requests:answer` (a proxy only as a relay, §2.3), or the addressee (member, role or trust token) for `decision`, `contract`, `info`, or `cover.by` as the addressee would (§6.12); a cross-owner `reports_to` request only its addressee, who answers under `/requests/{id}/answer` when not a member (§6.2); a personal request is `not_found` here, as for `GET` (below) | exactly one of `{"reply_id"}`, `{"text"}`, `{"talk": true}`; `text` may accompany `reply_id` or `talk`, and on the request to chat with the owner's agents `chat_access` may accompany an allow `reply_id` (§9.6, under `/requests/{id}/answer`); `request_not_open` otherwise; `self_answer` when the answerer asked it or it was filed on their behalf. `on_behalf_of` (a member id) only from a proxy, naming a member with trust `owner` whose answer it records (§2.3); from anyone else `invalid` (`details.fields.on_behalf_of: "proxy_only"`), for a name that is no active member `not_a_member` and for one without that trust `not_an_owner`, and a proxy's answer without it, of any class, is `forbidden` (`proxy_relays_only`); a request carrying `action` only a human with trust `owner` answers, directly, and any other answer is `forbidden` (`action_needs_owner`, §2.3) |
-| `POST /projects/{owner}/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a cross-owner `reports_to` request also the edge's two owners, and of the agents only the asker (§6.2, §2.3); an owner who is not a member withdraws under `/requests/{id}/withdraw` instead; a personal request is `not_found` here for every caller (below) | `{"reason"?}`; status `withdrawn`; the card's status is restored |
+| `POST /projects/{owner}/{slug}/requests/{id}/withdraw` | the asker or `requests:answer`; a cross-owner `reports_to` request also the edge's two owners, and of the agents only the asker (§6.2, §2.3); an owner who is not a member withdraws under `/requests/{id}/withdraw` instead; any other personal request is `not_found` here for every caller, except a change of another owner's agent (its asker, §6.2), a bridge owner's consent (§2.3) and a consent to a transfer into an organisation (§6.26), which have a rule of their own; all four are `not_found` to every caller their rule does not name (below, "Withdrawing") | `{"reason"?}`; status `withdrawn`; the card's status is restored |
 
 Readings fixed with the first implementation: a `contract` request
 without `to` goes to `policy.contract_arbiter`; an agent asker whose human
@@ -12745,7 +12750,19 @@ project's request list:
   withdraw a personal request. Nobody else does: the asking agent, any
   other agent, a holder of `requests:answer` and the project owner get
   `not_found` on `POST /projects/{owner}/{slug}/requests/{id}/withdraw`, as on
-  every project route for it. When a profile's owner changes, the
+  every project route for it. Four personal requests have a withdrawal
+  rule of their own on that route instead, and a caller it does not name
+  gets `not_found` there as above: a cross-owner `reports_to` request,
+  withdrawn by its asker, the edge's two owners and every human with
+  `requests:answer` or `members:admin`, an agent other than the asker
+  getting `forbidden` (`pending_consent`, §6.2, "Across owners"); a
+  change of another owner's agent, withdrawn by whoever asked for it
+  (§6.2, "Another owner's agent"); the bridge owner's consent to a
+  connection, withdrawn by its asker, the two owners and every human with
+  `members:admin`, an agent other than the asker getting `forbidden`
+  likewise (§2.3, "The bridge"); and the consent to a transfer into an
+  organisation, withdrawn by the human who started the transfer (§6.26).
+  When a profile's owner changes, the
   profile also leaves every cross-project group chat of the old owner
   (§9.5).
 - **Filed by the hub** (`filed_by: "hub"`, above). No instance asked
@@ -17451,7 +17468,7 @@ Outside a placement every path is read as before.
 | `maity task restricted show <card> [--json]`, `maity task restricted set <card> --file FILE\|-`, `maity task restricted clear <card>` | the card's restricted text (§6.4, "Restricted text"), for a member in the project's restricted-access set (§6.1). `show` is `GET …/tasks/{id}/restricted`; it prints a head line with the card, the version and who changed it when, the text quoted as data with control, bidi and tag characters escaped as `maity wait` does, then the history one line per change; `no restricted text` when `text` is `null`; `--json` is the answer as the hub sent it. `set` takes the text only from the file or, with `-`, from stdin, **never as an argument**: a command line is visible to every user of the machine in the process list and stays in the shell's history, so the CLI has no option that carries the text and refuses a third positional argument (`usage`, exit 2) before it calls the hub. It drops one final line ending (a file or a here-document ends with one), sends the rest unchanged and leaves every other check to the hub. `set` and `clear` read the version with a `GET …/restricted` just before and send it: `PUT` with `{text, base_version}`, `DELETE` with `?base_version=`; each prints the new version. On `conflict` the CLI writes nothing more and never retries: it prints the current version and who changed it when from a fresh `GET`, never the text, and exits 1. `forbidden` with `details.reason` `restricted` prints that the caller is not in the set; `restricted_quota`, `rate_limited` (with `Retry-After`) and `invalid` print the hub's code and details. The CLI keeps the text in memory only: never in its state directory, a log, a temporary file or a child process's arguments. |
 | `maity ack keep-the-why` | `POST /me/keep-the-why/ack` (§6.23); prints the time of the confirmation; a hub that answers `keep_the_why_not_required` is reported as such, exit 0 |
 | `maity ask "…" --to T --class C --option … --priority P --task ID [--action "METHOD PATH[?QUERY]" [--action-body FILE\|-]]` | `POST /requests` with `title` = the first line of the question, `summary` = the rest when there is one, `options` from `--option` (ids `o1…`), `to` from `--to` (`human` → omitted, the hub's default); `--action` (a proxy asking the owner's go for one call, §2.3) sends `action: {method, path, query, body}`, `body` read verbatim from `--action-body`; the later `maity api … --on-request` must send the same bytes |
-| `maity request withdraw <request> [--reason R]` | `POST /projects/{owner}/{slug}/requests/{id}/withdraw` with `{reason}` for a request the caller asked, or with `requests:answer` any open request of the project that is not personal (§7); prints `withdrawn`. The hub's refusals as they come, `not_found` for a personal request among them. Beside `request forward` and `request claim`, not under `maity ask`, so that a question that starts with the word stays a question |
+| `maity request withdraw <request> [--reason R]` | `POST /projects/{owner}/{slug}/requests/{id}/withdraw` with `{reason}` for a request the caller asked, or with `requests:answer` any open request of the project that is not personal (§7); prints `withdrawn`. The hub's refusals as they come, `not_found` for a personal request among them, except the four with a withdrawal rule of their own (a cross-owner `reports_to` request, a change of another owner's agent, a bridge owner's consent, a consent to a transfer into an organisation; §7, "Withdrawing"). Beside `request forward` and `request claim`, not under `maity ask`, so that a question that starts with the word stays a question |
 | `maity claim <card> [--reason R]` | `POST /tasks/{id}/claim` |
 | `maity claim renew [card]` (not built yet, tsk-p55zyn4pz0wd) | `POST …/claims/renew` (§6.5); renews every claim of the calling instance, whatever the argument, and prints one line per renewed card, `renewed <card> (<title>); lease until <lease_until>`, or `no claims` (exit 0). With a card, only that card's line, and `not holding <card>` (exit 1) when the renewal did not include it. `renew` is no card id (those start with `tsk-`), so it never shadows `maity claim <card>` |
 | `maity takeover <card> --reason R [--to ADDR]` | `POST /tasks/{id}/takeover`; prints the takeover and its window. |

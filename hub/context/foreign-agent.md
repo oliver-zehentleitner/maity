@@ -7,7 +7,7 @@
 **Status:** active
 **Evidence:** inferred
 **Verification:** corroborated — the implementation matches this entry (`foreign_agent.py`, `jcs.py`, the member PATCH)
-**Source:** docs/api.md §6.2 "Another owner's agent" and "Across owners", the maintainer's decisions of 2026-10-30 and 2026-11-04 recorded there; the implementation
+**Source:** docs/api.md §6.2 "Another owner's agent" and "Across owners", the maintainer's decisions of 2026-10-30 and 2026-11-04 recorded there; the implementation; the lead's decision of 2026-11-17 that the contract states the asker's withdrawal on the project route (card tsk-hbehkvr07s9s)
 **Revisit when:** a field outside the consent's list becomes one an owner must agree to, or the go's refusal codes are named differently
 **See:** manager.md#a-cross-owner-reports_to-is-a-pair-of-personal-consent-requests-that-set-the-edge-at-the-last-go — 5d9be0ad-ef77-487e-b95a-1cf9ea2674d4 — as of 2026-10-30
 
@@ -78,7 +78,8 @@ asked, decided so: it is the owner of that very agent who agrees to exactly the 
 
 **Not covered, and decided so:**
 - The withdrawal of the request by anyone but the asker on the project route (the owner withdraws and
-  answers under `/requests/{id}`); the contract gives no further rule.
+  answers under `/requests/{id}`); the contract now states this rule (§6.2 "Another owner's agent", §7
+  "Withdrawing"), decided by the lead on 2026-11-17.
 - A caller with `members:admin` never takes the manager's path, so a manager who also holds
   `members:admin` asks the agent's owner even for a member of its reach; only a `line:lead` caller
   without `members:admin` changes another owner's agent in its reach at once. Rejected: checking the
@@ -142,7 +143,8 @@ decided so: it is the owner of that very agent who agrees to exactly the values 
 
 **Not covered, and decided so:**
 - The withdrawal of the request by anyone but the asker on the project route (the owner withdraws and
-  answers under `/requests/{id}`); the contract gives no further rule.
+  answers under `/requests/{id}`); the contract now states this rule (§6.2 "Another owner's agent", §7
+  "Withdrawing"), decided by the lead on 2026-11-17.
 - A caller with `members:admin` never takes the manager's path (`line_lead` is false for it), so a manager
   who also holds `members:admin` asks the agent's owner even for a member of its reach; only a `line:lead`
   caller without `members:admin` changes another owner's agent in its reach at once. Rejected: checking the
