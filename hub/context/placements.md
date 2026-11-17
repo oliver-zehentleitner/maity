@@ -780,8 +780,7 @@ that owner). Everything else is `forbidden` with `details.reason:
 start of a placement whose credential is revoked, not only on `rejoin:
 true` and not only once a `rejoin` is stored: a `rejoin` the clone's removal
 stores is carried out by a `restart` with `{}` or a `PATCH desired:
-running` too, and so is one it stores after the start
-(`routes/placements._check_rejoin`). A removal reported for a running
+running` too (`routes/placements._check_rejoin`). A removal reported for a running
 placement whose credential was revoked that way stores the `rejoin` and
 stops the placement as well (`placements._removed`, no new `generation`),
 so the rejoin waits for a start the check lets through.
@@ -798,9 +797,8 @@ runner's own report, and its placement is meant to join anew at its next
 start (§15.5) without waiting for the owner. Not storing `rejoin` on the
 removal when the credential was already revoked otherwise: the owner's
 next plain start should still join anew. A check at the start alone,
-once a `rejoin` is stored: a start can come before the removal, so the
-check runs whether a `rejoin` is stored or not, and the removal stops a
-placement that runs. A check at the runner's pickup instead: the pickup
+once a `rejoin` is stored: the check runs whether a `rejoin` is stored or
+not, and the removal stops a placement that runs. A check at the runner's pickup instead: the pickup
 cannot tell whose start it carries out, so it would refuse the owner's
 own rejoin, or need a stored record of who started; the start already
 knows who asks.
