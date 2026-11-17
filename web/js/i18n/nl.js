@@ -2436,7 +2436,7 @@ window.MAITY_I18N["nl"] = {
   "mail.kinds.hint": "Een overzicht bevat alles wat nog ongelezen is als het verstuurd wordt. Een gewijzigde tweede factor, een gewijzigd adres en het verwijderen van een account worden altijd meteen gemaild.",
   "mail.kinds.legend": "Wanneer elk soort wordt gemaild",
   "mail.last_hour": "Laatste uur: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
-  "mail.last_hour_own": "Eigen budgetten, laatste uur: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
+  "mail.last_hour_own": "Verder in het laatste uur: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Dagelijks overzicht",
   "mail.mode.hourly": "Overzicht per uur",
   "mail.mode.immediate": "Meteen",

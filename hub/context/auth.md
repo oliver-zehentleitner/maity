@@ -977,22 +977,25 @@ but the scan does not would carry an escaped credential past it.
 - Scanning only the decoded strings: the raw scan is what covers a
   body that is not JSON, or JSON that does not decode, and the query.
 
-## Anonymous mail requests are capped per recipient, and limits per source address count an IPv6 client by its /64
+## Anonymous mail requests are capped per recipient in source networks, and limits per source address count an IPv6 client by its /64
 
 **Id:** ad4dc104-7b44-4049-a9e4-ebcf7aef9dd2
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** docs/api.md §2.5, §2.6.4, §2.7.3; tsk-q4zynccy5t0b; `hub/src/maity_hub/net.py` `Origin.limit_key`, `hub/src/maity_hub/auth/email_links.py` `recipient_over`
+**Evidence:** confirmed
+**Source:** docs/api.md §2.5, §2.6.4, §2.7.3; tsk-q4zynccy5t0b and its review (a single source spent an address's hour under the first design), counting in networks decided by the maintainer on 2026-11-17; `hub/src/maity_hub/net.py` `Origin.limit_key`, `hub/src/maity_hub/auth/email_links.py` `recipient_over`; tests in `hub/tests/test_email_link_state.py`, `test_password_reset.py` and `test_registration.py`, red when every mail counts
 **See:** auth.md#the-resets-request-limits-are-buckets-of-their-own-and-an-empty-code-is-no-guess — 0e98bef7-6601-4f00-b10c-6c1a4c19222e — as of 2026-11-13
 
-`POST /auth/email-link`, `POST /auth/password-reset` and `POST /auth/register` each keep, beside the pair limits, a silent limit per recipient keyed on a digest of the normalised address alone: 5 mails per hour and 20 per day, in buckets of each path's own (registration's day limit of 20 was already there, now under a digest key). A request counts there only once its pair limit let it through. Every limit keyed on the caller's address takes `Origin.limit_key`: an IPv4 address as it is, an IPv6 address as its /64, an IPv4-mapped address as its IPv4; the session's address, a mail's text and the known sources keep the whole address.
+`POST /auth/email-link`, `POST /auth/password-reset` and `POST /auth/register` each keep, beside the pair limits, a silent limit per recipient, in buckets of each path's own: 5 places per hour and 20 per day, counted in source networks, not in mails. A network is `Origin.limit_key` (an IPv4 address as it is, an IPv6 address as its /64, an IPv4-mapped address as its IPv4); its first mail to the address in a window takes a place, its further ones take none and are held by its pair limit alone. A request counts only once its pair limit let it through, and a network the address had no place for is not marked as holding one. Every limit keyed on the caller's address takes `Origin.limit_key`; the session's address, a mail's text and the known sources keep the whole address.
 
-**Reason:** the pair limits bound one source, not the mails one address receives from many. Counting only what the pair limit passed keeps a single source from spending the address's own budget. One bucket per path keeps the reset and the sign-in link apart as before (0e98bef7). A /64 is what one IPv6 client is usually given, so a limit per full IPv6 address would count one client as many.
+**Reason:** the pair limits bound one source, not the mails one address receives from many. Counted in mails, the cap let one source spend the address's hour with its pair limit's 3 + 2 requests, and two sources asking all day kept the owner from ever getting a link. Counted in networks, one to four networks cannot stop the owner's own network, and the cap still bounds the mailbox. What stays: requests from five distinct networks in an hour (twenty in a day) stop further mails to the address until the window has passed — any fixed per-address cap allows that; sessions, the password and the device code are unaffected. The price is the mailbox: up to 5 × 10 mails an hour and 20 × 10 a day to one address, each network at most its pair limit, under each path's instance-wide hourly budget as the outer bound. One bucket per path keeps the reset and the sign-in link apart as before (0e98bef7). A /64 is what one IPv6 client is usually given, so a limit per full IPv6 address would count one client as many.
 
 **Rejected alternatives:**
+- Counting mails against the recipient, only those the pair limit passed (the first design): one source spends the address's hour, two its day.
+- Counting every request against the recipient, refused by the pair limit or not: one source alone could then stop the address's mails at once.
+- One mail per network and hour to the address, keeping the mailbox bound at 5 an hour: the owner gets no second link within the hour, and one network would still spend 24 of the day's 20 without a separate day share.
+- No per-recipient cap at all: no lock-out, but no bound on a stranger's mailbox beyond the instance budget.
 - One recipient bucket shared by the three paths: requests of one kind would refuse the mails of another.
-- Counting every request against the recipient, refused by the pair limit or not: one source alone could then stop the address's mails.
 - /56 or /48: wider prefixes put unrelated customers of one provider into one count; /64 is the smallest prefix a client is commonly handed whole.
 
 ## The in-process limiter keeps its keys in order of their newest attempt and forgets idle ones from the front

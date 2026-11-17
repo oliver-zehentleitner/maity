@@ -2436,7 +2436,7 @@ window.MAITY_I18N["fr"] = {
   "mail.kinds.hint": "Un résumé contient tout ce qui est encore non lu au moment de son envoi. Un second facteur modifié, une adresse modifiée et une suppression de compte sont toujours envoyés immédiatement.",
   "mail.kinds.legend": "Quand chaque type est envoyé",
   "mail.last_hour": "Dernière heure : {notifications}, {security}, {sign_in}, {failures} ; {queued}.",
-  "mail.last_hour_own": "Budgets propres, dernière heure : {verification}, {invitation}, {second_factor}, {dropped} ; {waiting}.",
+  "mail.last_hour_own": "Aussi dans la dernière heure : {verification}, {invitation}, {second_factor}, {dropped} ; {waiting}.",
   "mail.mode.daily": "Résumé quotidien",
   "mail.mode.hourly": "Résumé toutes les heures",
   "mail.mode.immediate": "Immédiatement",

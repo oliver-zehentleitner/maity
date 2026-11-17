@@ -2384,7 +2384,7 @@ window.MAITY_I18N["ko"] = {
   "mail.kinds.hint": "요약 메일에는 보내는 시점에 아직 읽지 않은 모든 항목이 담겨요. 2단계 인증 변경, 주소 변경, 계정 삭제는 항상 즉시 메일로 보내요.",
   "mail.kinds.legend": "종류별 메일 발송 시점",
   "mail.last_hour": "최근 1시간: {notifications}, {security}, {sign_in}, {failures}, {queued}.",
-  "mail.last_hour_own": "전용 예산, 최근 1시간: {verification}, {invitation}, {second_factor}, {dropped}, {waiting}.",
+  "mail.last_hour_own": "그 밖에 최근 1시간: {verification}, {invitation}, {second_factor}, {dropped}, {waiting}.",
   "mail.mode.daily": "일일 요약",
   "mail.mode.hourly": "시간별 요약",
   "mail.mode.immediate": "즉시",

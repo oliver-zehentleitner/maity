@@ -20,7 +20,7 @@ from maity_hub import catalog, clock
 from maity_hub import tables as t
 from maity_hub.auth import totp
 from maity_hub.codes import digest as digest  # auth/password_resets.py imports it from here
-from maity_hub.ratelimit import Limiter
+from maity_hub.ratelimit import Limiter, Mark
 
 LIFETIME = timedelta(minutes=15)
 
@@ -226,18 +226,44 @@ def mail_body(
     )
 
 
-# Mails one address is sent in answer to anonymous requests, from all sources together
-# (§2.6.4): per hour and per day, each path in buckets of its own.
+# Mails one address is sent in answer to anonymous requests (§2.6.4), each path in buckets of
+# its own: per hour and per day, counted in source networks, not in mails. A network's first
+# mail to the address in a window takes one of these places; its further mails there take none
+# and are held by the pair limits alone. One network can so never spend the address's budget,
+# nor can up to four: only five distinct networks in an hour (twenty in a day) stop further
+# mails to the address until the window has passed.
 RECIPIENT_PER_HOUR = 5
 RECIPIENT_PER_DAY = 20
 
 
-def recipient_over(hour: Limiter, day: Limiter, normalised: str) -> bool:
-    """Count one mail to the address against its hour and its day; True when either is
-    spent, and then nothing is sent. Keyed on the digest of the address alone, whatever the
-    source."""
-    key = digest(f"recipient\0{normalised}")
-    return bool(hour.hit(key) or day.hit(key))
+def recipient_over(
+    limiters: tuple[Limiter, Limiter, Limiter, Limiter], normalised: str, asker: str
+) -> bool:
+    """Count one mail to the address for `asker`, the source network (`Origin.limit_key`) or,
+    for a verification mail, the asking account; True when the address has no place left for
+    it, and then nothing is sent and nothing is recorded.
+
+    `limiters` are the address's hour and day, and the askers holding a place in each (limit
+    1, the same windows); each is an attribute of its own where it is held, so that the tests
+    find and reset it. An asker takes a place in a window only with its first mail there; one
+    marked but refused would later pass without a place, so it is marked only when the address
+    had one for it."""
+    hour, day, hour_askers, day_askers = limiters
+    address = digest(f"recipient\0{normalised}")
+    pair = digest(f"recipient\0{normalised}\0{asker}")
+    placed: list[tuple[Limiter, str, Mark]] = []
+    for budget, askers in ((hour, hour_askers), (day, day_askers)):
+        wait, mark = askers.place(pair)
+        if wait:
+            continue  # the asker holds a place in this window already
+        placed.append((askers, pair, mark))
+        wait, mark = budget.place(address)
+        if wait:
+            for limiter, key, held in placed:
+                limiter.release(key, held)
+            return True
+        placed.append((budget, address, mark))
+    return False
 
 
 class RequestLimits:
@@ -255,6 +281,12 @@ class RequestLimits:
         self.recipient_day = Limiter(
             RECIPIENT_PER_DAY, 86400, name="auth.email_links.recipient_day"
         )
+        self.recipient_hour_networks = Limiter(
+            1, 3600, name="auth.email_links.recipient_hour_networks"
+        )
+        self.recipient_day_networks = Limiter(
+            1, 86400, name="auth.email_links.recipient_day_networks"
+        )
 
     def take(self, address: str, source: str) -> tuple[int, bool]:
         wait = self.by_source.hit(source)
@@ -266,6 +298,13 @@ class RequestLimits:
         day = self.pair_day.hit(key)
         if quarter or day:
             return 0, False
-        # Counted only for a mail the pair limits let through: one source alone cannot spend
-        # the address's own budget.
-        return 0, not recipient_over(self.recipient_hour, self.recipient_day, normalised)
+        # Counted in networks, only for a mail the pair limits let through (`recipient_over`).
+        return 0, not recipient_over(self.recipient(), normalised, source)
+
+    def recipient(self) -> tuple[Limiter, Limiter, Limiter, Limiter]:
+        return (
+            self.recipient_hour,
+            self.recipient_day,
+            self.recipient_hour_networks,
+            self.recipient_day_networks,
+        )

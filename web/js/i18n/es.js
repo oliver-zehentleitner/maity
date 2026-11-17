@@ -2436,7 +2436,7 @@ window.MAITY_I18N["es"] = {
   "mail.kinds.hint": "Un resumen reúne todo lo que sigue sin leer cuando sale. Un segundo factor cambiado, una dirección cambiada y la eliminación de la cuenta se envían siempre al momento.",
   "mail.kinds.legend": "Cuándo se envía cada tipo",
   "mail.last_hour": "Última hora: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
-  "mail.last_hour_own": "Presupuestos propios, última hora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
+  "mail.last_hour_own": "Además, en la última hora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Resumen diario",
   "mail.mode.hourly": "Resumen cada hora",
   "mail.mode.immediate": "Al momento",

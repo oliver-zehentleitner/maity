@@ -17986,7 +17986,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The admin cases below count the mail settings' writes only.
   for (let i = adminWrites.length - 1; i >= 0; i--) if (adminWrites[i][0] === "/admin/settings/limits") adminWrites.splice(i, 1);
   expect(byId("mail-host").attrs.disabled === "" && text(main).includes("Set by the environment."), "admin: environment field cannot be edited");
-  expect(text(main.querySelector("p.mail-last-hour-own")) === "Own budgets, last hour: 0 verification mails, 0 invitation mails, 0 second-factor mails, 0 second-factor mails dropped; 0 verification or invitation mails waiting.",
+  expect(text(main.querySelector("p.mail-last-hour-own")) === "Also in the last hour: 0 verification mails, 0 invitation mails, 0 second-factor mails, 0 second-factor mails dropped; 0 verification or invitation mails waiting.",
     "admin: the kinds with a budget of their own have a last-hour line too " + text(main.querySelector("p.mail-last-hour-own")));
   byId("mail-host").value = "ignored.example"; byId("mail-reply_to").value = "reply@example.org"; byId("mail-password").value = "temporary-test-value";
   main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
@@ -18032,7 +18032,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     verification_sent_last_hour: 2, invitation_sent_last_hour: 3, second_factor_sent_last_hour: 5,
     second_factor_dropped_last_hour: 7, verification_queued: 11, invitation_queued: 13, security_queued: 17 })) : adminGet(path);
   await go("#/all"); await go("#/admin");
-  expect(text(main.querySelector("p.mail-last-hour-own")) === "Own budgets, last hour: 2 verification mails, 3 invitation mails, 5 second-factor mails, 7 second-factor mails dropped; 24 verification or invitation mails waiting.",
+  expect(text(main.querySelector("p.mail-last-hour-own")) === "Also in the last hour: 2 verification mails, 3 invitation mails, 5 second-factor mails, 7 second-factor mails dropped; 24 verification or invitation mails waiting.",
     "admin: each own-budget counter feeds its own slot " + text(main.querySelector("p.mail-last-hour-own")));
   win.Maity.api.get = (path) => path === "/admin/settings/mail" ? Promise.reject(new win.Maity.api.ApiError("denied", 403, path, "forbidden")) : adminGet(path);
   await go("#/all"); await go("#/admin");

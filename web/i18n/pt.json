@@ -2436,7 +2436,7 @@
   "mail.incomplete": "A configuração de e-mail está incompleta: {missing}.",
   "mail.keys": "Chave de assinatura: {signing}. Chave de criptografia da instância: {secret}. As chaves são configuradas no ambiente.",
   "mail.last_hour": "Última hora: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
-  "mail.last_hour_own": "Orçamentos próprios, última hora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
+  "mail.last_hour_own": "Além disso, na última hora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Não salvo: {reason}",
   "mail.not_set": "não definida",
   "mail.password.both": "Escolha uma nova senha ou exclua a armazenada, não as duas.",

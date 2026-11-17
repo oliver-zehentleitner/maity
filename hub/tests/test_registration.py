@@ -444,7 +444,26 @@ def test_many_sources_get_an_address_few_mails_and_every_answer_alike(
         answered = register(other)
         answers.append((answered.status_code, answered.json()))
     assert answers == [(202, {"expires_in": 86400})] * 12
-    assert len(SENT) == 5  # the address's hour, whichever sources asked
+    assert len(SENT) == 5  # the address's hour: five networks, whichever they are
+
+
+def test_two_networks_asking_again_and_again_leave_the_owner_a_mail(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    # A1014 P1 for registration: each network takes one place of the address, not one a mail.
+    client = open_hub(make_client, migrated)
+    settings = client.app.state.settings
+
+    def from_(peer: str) -> Any:
+        return make_client(peer=peer, mail=settings.mail, registration=settings.registration)
+
+    for peer in ("2001:db8:a::1", "2001:db8:b::1"):
+        source = from_(peer)
+        for _ in range(4):  # one more than its pair limit lets through
+            assert register(source).status_code == 202
+    assert len(SENT) == 6  # 3 + 3: more mails than the address's five, from two places
+    assert register(from_("2001:db8:c::1")).status_code == 202
+    assert len(SENT) == 7  # the owner's, from a third network
 
 
 def test_the_per_source_limit_answers_429_and_the_pair_limit_stays_silent(

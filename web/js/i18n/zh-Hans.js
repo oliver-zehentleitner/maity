@@ -2384,7 +2384,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.kinds.hint": "摘要包含发送时仍未读的全部内容。第二因素变更、地址变更和账户删除总是立即发送邮件。",
   "mail.kinds.legend": "每类内容何时发送邮件",
   "mail.last_hour": "最近一小时：{notifications}、{security}、{sign_in}、{failures}；{queued}。",
-  "mail.last_hour_own": "专用预算，最近一小时：{verification}、{invitation}、{second_factor}、{dropped}；{waiting}。",
+  "mail.last_hour_own": "此外，最近一小时：{verification}、{invitation}、{second_factor}、{dropped}；{waiting}。",
   "mail.mode.daily": "每日摘要",
   "mail.mode.hourly": "每小时摘要",
   "mail.mode.immediate": "立即",

@@ -2436,7 +2436,7 @@
   "mail.incomplete": "E-mailconfiguratie is onvolledig: {missing}.",
   "mail.keys": "Ondertekeningssleutel: {signing}. Versleutelingssleutel van de instantie: {secret}. Sleutels worden in de omgeving ingesteld.",
   "mail.last_hour": "Laatste uur: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
-  "mail.last_hour_own": "Eigen budgetten, laatste uur: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
+  "mail.last_hour_own": "Verder in het laatste uur: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Niet opgeslagen: {reason}",
   "mail.not_set": "niet ingesteld",
   "mail.password.both": "Kies een nieuw wachtwoord of verwijder het opgeslagen wachtwoord, niet allebei.",

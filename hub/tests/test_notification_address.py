@@ -679,6 +679,23 @@ def test_one_address_gets_three_verification_mails_an_hour_from_all_accounts(
     assert len(rows) == 3
 
 
+def test_two_accounts_asking_again_and_again_leave_the_owner_a_verification_mail(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    # A1014 F2: the address's places are counted in asking accounts, not in mails, so two
+    # accounts asking up to their own limit hold two of its three, and the owner gets the third.
+    for n in range(2):
+        asker = with_mail(make_client, migrated, f"asker-{n}")
+        for _ in range(3):  # the most an account may ask in an hour
+            answer = asker.patch(S, {"email": {"address": "Target@Example.org"}})
+            assert answer.status_code == 200, answer.text
+    assert len(_verifications(migrated)) == 6  # 3 + 3: more than the address's three
+    owner = with_mail(make_client, migrated, "owner")
+    assert owner.patch(S, {"email": {"address": "target@example.org"}}).status_code == 200
+    rows = _verifications(migrated)
+    assert len(rows) == 7 and rows[-1].human_id == owner.id
+
+
 def test_the_address_mails_read_exactly_as_composed(
     make_client: ClientFactory, migrated: Engine
 ) -> None:

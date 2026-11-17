@@ -2053,15 +2053,28 @@ for `POST /auth/password-reset` reset mails, for the rest of the hour,
 nothing else, and the device code and the password
 are unaffected.
 
-**No lock-out through the limits.** The pair limit counts per
+**No lock-out through one source.** The pair limit counts per
 (address, source address), so requests from elsewhere do not spend the
 budget of the human's own network, nor void the human's link (§2.6.3).
-Above it, an address is sent at most 5 mails per hour and 20 per day
-in answer to these requests, whichever sources they come from; a request
-counts there only once its pair limit let it through. Someone who knows
-the address can spend that budget and delay the human's next sign-in
-mail to the next hour, at most to the next day, but cannot fill the
-mailbox. Whoever controls enough source
+Above it, an address has 5 places per hour and 20 per day for mails in
+answer to these requests, counted in source networks, not in mails. A
+network is a source address as the per-source limit counts it: IPv4 as
+it is, IPv6 by its /64. A network's first mail to the address in the
+window takes a place; its further mails take none and are held by its
+pair limit alone. A request counts only once its pair limit let it
+through, and a network the address had no place for holds none
+afterwards. So one network can never spend the address's budget, nor
+can two to four: the human's own network still gets its mail. Only
+requests from at least five distinct networks within the hour (twenty
+within the day) stop further mails to that address until the window
+has passed; the human's sessions, the password and the device code
+are unaffected. The price is the mailbox: one address can be sent up
+to 5 × 10 = 50 of these mails in an hour and 20 × 10 = 200 in a day,
+each network at most its pair limit, and never more than the path's
+instance cap, which is the outer bound: `sign_in_max_per_hour` (default
+60) for sign-in links, `password_reset_max_per_hour` (default 30) for
+reset links, `registration_max_per_hour` (default 30) for registration
+mails (§2.7.3), each across all addresses. Whoever controls enough source
 addresses can spend the instance cap and stop sign-in mails for
 everyone until the hour ends — the same accepted kind of denial as the
 device-code breaker above, limited to the mail link. Reset mails (§2.10)
@@ -2621,7 +2634,7 @@ contract. `GET /me` carries `member.terms` (§5.1) for a human.
 |---|---|
 | `POST /auth/register` per source address | 10 per hour; `rate_limited` (`429`) — the one limit that answers `429`, since it speaks only about the caller |
 | per (address, source address) | 3 per 15 minutes, 10 per day, existing account or not; over it `202` and nothing is sent |
-| per address, all sources | 5 per hour and 20 per day; over it `202` and nothing is sent, so the instance cannot be used to fill a stranger's mailbox |
+| per address, counted in source networks | 5 networks per hour and 20 per day, as §2.6.4 counts them: a network's first mail to the address in the window takes a place, its further ones only its pair limit; over it `202` and nothing is sent. A stranger's mailbox so gets at most 5 × 10 mails an hour and 20 × 10 a day, never more than `registration_max_per_hour` |
 | instance breaker | more than `MAITY_REGISTRATION_BREAKER` requests (default 120) per minute across the instance, every request counted: every `POST /auth/register` is `rate_limited` for a minute |
 | registration mails | `registration_max_per_hour` (§16.2, default 30), a budget of their own; over it `202` and nothing is sent |
 | completion | 5 wrong passwords per pending registration (then void); 10 completion attempts per minute per source address, shared with the login limit of §2.1 |
@@ -2631,9 +2644,11 @@ The breaker is the same accepted denial as the device-code breaker
 (§2.6.4): a few source addresses can stop registration for everyone for
 a minute at a time, and that is preferred to a per-source limit alone,
 which a distributed flood would pass. It never touches sign-in, mail
-of any other kind, or existing accounts. Someone who knows an address
-can spend its per-address hour (5 requests) or day (20) and delay that
-person's registration to the next hour or day; nothing more.
+of any other kind, or existing accounts. One source network cannot
+spend an address's places, nor can up to four; someone asking from at
+least five distinct networks in an hour (twenty in a day) can, and
+delays that person's registration to the end of that hour or day;
+nothing more.
 
 #### 2.7.4 Handle and display name
 
@@ -24780,8 +24795,20 @@ device; the browser's own permission is per browser and is not stored.
   keeps receiving until the new one is verified. A human asks for at
   most 3 verification mails an hour and 10 a day (`rate_limited` with
   `Retry-After` beyond it, nothing changed), and one recipient address
-  gets at most 3 an hour and 10 a day from all accounts together;
-  beyond that the address is pending as usual but no mail goes out. The verification mail
+  has places for 3 asking accounts an hour and 10 a day: an account's
+  first verification mail to the address in the window takes a place,
+  its further ones only its own limit, so the address gets at most
+  3 × 3 = 9 an hour and 10 × 10 = 100 a day, within
+  `verification_max_per_hour` (§16.2). Beyond that the address is
+  pending as usual but no mail goes out. One or two accounts asking
+  again and again so leave a third its mail; three distinct accounts in
+  an hour (ten in a day) hold the address's places, and another account
+  asking for it then has it pending without a mail until the window has
+  passed; nothing else of that account changes. Where one source can make active accounts —
+  open registration with `approval: automatic`, 10 registrations an hour
+  per source address (§2.7.3) within `max_new_accounts_per_hour` (§16.4,
+  default 20) — one source can so hold an address's hour with three of
+  them and its day with ten. The verification mail
   carries the address, the instance's public URL, the link and "If you
   did not ask for this, ignore this mail" — never the human's handle,
   display name or projects, since it goes to an address nobody has

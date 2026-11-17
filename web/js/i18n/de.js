@@ -2552,7 +2552,7 @@ window.MAITY_I18N["de"] = {
   "mail.kinds.hint": "Eine Sammelmail enthält alles, was beim Versand noch ungelesen ist. Ein geänderter zweiter Faktor, eine geänderte Adresse und eine Kontolöschung werden immer sofort gemailt.",
   "mail.kinds.legend": "Wann jede Art gemailt wird",
   "mail.last_hour": "Letzte Stunde: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
-  "mail.last_hour_own": "Eigene Budgets, letzte Stunde: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
+  "mail.last_hour_own": "Außerdem in der letzten Stunde: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Tägliche Sammelmail",
   "mail.mode.hourly": "Stündliche Sammelmail",
   "mail.mode.immediate": "Sofort",

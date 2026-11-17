@@ -28,7 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import admin, catalog, clock, languages
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
-from maity_hub.codes import digest
+from maity_hub.auth.email_links import recipient_over
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
@@ -42,11 +42,19 @@ WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 CONTENT_KINDS = ("chat", "mention")
 VERIFY_FOR = timedelta(hours=24)
 # Verification mails (§18.4): 3 an hour and 10 a day per human, refused beyond; and per
-# recipient address, from every account together, not sent beyond, silently.
+# recipient address, counted in asking accounts, not in mails: an account's first mail to the
+# address in a window takes one of 3 places an hour and 10 a day, its further ones none (they
+# are held by its own limit). Not sent beyond, silently (`email_links.recipient_over`).
 VERIFY_BY_HUMAN_HOUR = Limiter(3, 3600, name="notifications.verify.human_hour")
 VERIFY_BY_HUMAN_DAY = Limiter(10, 86400, name="notifications.verify.human_day")
 VERIFY_BY_RECIPIENT_HOUR = Limiter(3, 3600, name="notifications.verify.recipient_hour")
 VERIFY_BY_RECIPIENT_DAY = Limiter(10, 86400, name="notifications.verify.recipient_day")
+VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS = Limiter(
+    1, 3600, name="notifications.verify.recipient_hour_accounts"
+)
+VERIFY_BY_RECIPIENT_DAY_ACCOUNTS = Limiter(
+    1, 86400, name="notifications.verify.recipient_day_accounts"
+)
 APPROVER_AGE = timedelta(hours=24)
 HELD_FOR = timedelta(days=7)
 # The requesting session's data kept with a pending address, cleared with it.
@@ -675,7 +683,7 @@ def apply_address(
         },
     )
     link = f"{public_url}/mail/verify/{token}"
-    if _recipient_over(wanted):
+    if _recipient_over(wanted, human_id):
         return  # the address had its share: the link stays pending, no mail is sent
     # Never the handle, the name or projects: nobody confirmed this address yet (§18.4).
     # The language is the human's own (§6.2); it names nobody.
@@ -691,11 +699,16 @@ def apply_address(
     )
 
 
-def _recipient_over(address: str) -> bool:
-    """Count one verification mail to `address` against its hour and its day, from every
-    account together; True when either is spent."""
-    key = digest(f"verify-recipient\0{addresses.normalized(address)}")
-    return bool(VERIFY_BY_RECIPIENT_HOUR.hit(key) or VERIFY_BY_RECIPIENT_DAY.hit(key))
+def _recipient_over(address: str, human_id: str) -> bool:
+    """Count one verification mail to `address`, asked by `human_id`, against the address's
+    hour and day in asking accounts; True when the address has no place left for it."""
+    limiters = (
+        VERIFY_BY_RECIPIENT_HOUR,
+        VERIFY_BY_RECIPIENT_DAY,
+        VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS,
+        VERIFY_BY_RECIPIENT_DAY_ACCOUNTS,
+    )
+    return recipient_over(limiters, f"verify\0{addresses.normalized(address)}", human_id)
 
 
 def verify(

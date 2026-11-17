@@ -2563,7 +2563,7 @@
   "mail.incomplete": "Mail configuration is incomplete: {missing}.",
   "mail.keys": "Signing key: {signing}. Instance encryption key: {secret}. Keys are configured in the environment.",
   "mail.last_hour": "Last hour: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
-  "mail.last_hour_own": "Own budgets, last hour: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
+  "mail.last_hour_own": "Also in the last hour: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Not saved: {reason}",
   "mail.not_set": "not set",
   "mail.password.both": "Choose a new password or delete the stored one, not both.",

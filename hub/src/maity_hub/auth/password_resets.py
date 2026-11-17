@@ -177,6 +177,12 @@ class RequestLimits:
         self.recipient_day = Limiter(
             RECIPIENT_PER_DAY, 86400, name="auth.password_resets.recipient_day"
         )
+        self.recipient_hour_networks = Limiter(
+            1, 3600, name="auth.password_resets.recipient_hour_networks"
+        )
+        self.recipient_day_networks = Limiter(
+            1, 86400, name="auth.password_resets.recipient_day_networks"
+        )
 
     def take(self, address: str, source: str) -> tuple[int, bool]:
         wait = self.by_source.hit(source)
@@ -188,7 +194,13 @@ class RequestLimits:
         day = self.pair_day.hit(key)
         if quarter or day:
             return 0, False
-        return 0, not recipient_over(self.recipient_hour, self.recipient_day, normalised)
+        recipient = (
+            self.recipient_hour,
+            self.recipient_day,
+            self.recipient_hour_networks,
+            self.recipient_day_networks,
+        )
+        return 0, not recipient_over(recipient, normalised, source)
 
 
 def password_changed(conn: Connection, human_id: str) -> None:

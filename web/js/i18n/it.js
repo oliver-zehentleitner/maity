@@ -2436,7 +2436,7 @@ window.MAITY_I18N["it"] = {
   "mail.kinds.hint": "Un riepilogo contiene tutto ciò che è ancora non letto quando parte. Un secondo fattore cambiato, un indirizzo cambiato e l'eliminazione di un account vengono sempre inviati subito.",
   "mail.kinds.legend": "Quando viene inviato ogni tipo",
   "mail.last_hour": "Ultima ora: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
-  "mail.last_hour_own": "Budget propri, ultima ora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
+  "mail.last_hour_own": "Inoltre, nell’ultima ora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Riepilogo giornaliero",
   "mail.mode.hourly": "Riepilogo orario",
   "mail.mode.immediate": "Subito",

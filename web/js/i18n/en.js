@@ -2561,7 +2561,7 @@ window.MAITY_I18N["en"] = {
   "mail.kinds.hint": "A digest holds everything still unread when it goes out. A changed second factor, a changed address and an account deletion are always mailed at once.",
   "mail.kinds.legend": "When each kind is mailed",
   "mail.last_hour": "Last hour: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
-  "mail.last_hour_own": "Own budgets, last hour: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
+  "mail.last_hour_own": "Also in the last hour: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Daily digest",
   "mail.mode.hourly": "Hourly digest",
   "mail.mode.immediate": "At once",

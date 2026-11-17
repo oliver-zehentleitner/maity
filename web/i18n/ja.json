@@ -2384,7 +2384,7 @@
   "mail.incomplete": "メール設定が未完了です: {missing}。",
   "mail.keys": "署名キー: {signing}。インスタンスの暗号化キー: {secret}。キーは環境変数で設定します。",
   "mail.last_hour": "直近 1 時間: {notifications}、{security}、{sign_in}、{failures}、{queued}。",
-  "mail.last_hour_own": "専用の予算、直近 1 時間: {verification}、{invitation}、{second_factor}、{dropped}、{waiting}。",
+  "mail.last_hour_own": "同じく直近 1 時間: {verification}、{invitation}、{second_factor}、{dropped}、{waiting}。",
   "mail.not_saved": "保存されませんでした: {reason}",
   "mail.not_set": "未設定",
   "mail.password.both": "新しいパスワードを設定するか、保存済みのものを削除するか、どちらか一方を選んでください。",

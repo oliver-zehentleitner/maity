@@ -1337,20 +1337,22 @@ module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
   key, beside the one that parses and uses it.
 - `instance_settings`: it stores the fallback, but knows nothing of keys.
 
-## A verification mail is limited per human and per recipient address
+## A verification mail is limited per human and per recipient address, the latter in asking accounts
 
 **Id:** aedbf93a-563a-4753-9cdf-8a9bae72e43b
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** docs/api.md §18.4; tsk-q4zynccy5t0b; `hub/src/maity_hub/notifications/preferences.py` `apply_address`, `_recipient_over`
+**Evidence:** confirmed
+**Source:** docs/api.md §18.4; tsk-q4zynccy5t0b and its review, counting in asking accounts decided by the maintainer on 2026-11-17; `hub/src/maity_hub/notifications/preferences.py` `apply_address`, `_recipient_over`; `hub/src/maity_hub/auth/email_links.py` `recipient_over`; `hub/tests/test_notification_address.py`, red when every mail counts
 **See:** mail.md#mails-anyone-can-send-to-an-address-have-budgets-of-their-own-and-wait-over-them-verification-and-invitation — d3113259-e9eb-4321-8a8a-70080feaf52b — as of 2026-11-14
+**See:** auth.md#anonymous-mail-requests-are-capped-per-recipient-in-source-networks-and-limits-per-source-address-count-an-ipv6-client-by-its-64 — ad4dc104-7b44-4049-a9e4-ebcf7aef9dd2 — as of 2026-11-17
 
-Setting a pending address takes, per human, at most 3 verification mails an hour and 10 a day; past that the `PATCH` answers `rate_limited` and nothing changes. Per recipient (a digest of the normalised address, key `verify-recipient`) at most 3 an hour and 10 a day go out from all accounts together; past that the change is stored but no mail is queued, and the answer is the same.
+Setting a pending address takes, per human, at most 3 verification mails an hour and 10 a day; past that the `PATCH` answers `rate_limited` and nothing changes. Per recipient (a digest of the normalised address) there are places for 3 asking accounts an hour and 10 a day: an account's first verification mail to the address in a window takes one, its further ones none. Past that the change is stored but no mail is queued, and the answer is the same.
 
-**Reason:** the budget of its own (d3113259) keeps verification mail from holding up security mail, but alone it lets one account fill it, or many accounts flood one stranger's inbox. The per-human limit tells the caller, who is signed in and owns the attempts; the per-recipient one stays silent so that it reveals nothing about what other accounts asked for that address.
+**Reason:** the budget of its own (d3113259) keeps verification mail from holding up security mail, but alone it lets one account fill it, or many accounts flood one stranger's inbox. Counted in mails, the per-recipient limit equalled the per-human one, so one account asking three times spent the address's hour and the owner's own verification waited; counted in accounts, one or two cannot. Three distinct accounts in an hour (ten in a day) still hold the address's places; where one source can make active accounts (open registration with automatic approval: 10 registrations an hour per source address, within the instance's new accounts per hour), one source can so hold them — an accepted limit for now, a further cap per address is a separate decision. The mailbox price: up to 9 mails an hour and 100 a day to one address. The per-human limit tells the caller, who is signed in and owns the attempts; the per-recipient one stays silent so that it reveals nothing about what other accounts asked for that address.
 
 **Rejected alternatives:**
+- Counting mails per recipient from all accounts together (the first design): one account spends the address's hour.
 - Refuse over the per-recipient limit too: it would tell one account that others are trying the same address.
 - Only the per-human limit: many accounts could still each send a stranger three mails an hour.
 

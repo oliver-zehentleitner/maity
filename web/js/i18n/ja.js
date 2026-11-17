@@ -2384,7 +2384,7 @@ window.MAITY_I18N["ja"] = {
   "mail.kinds.hint": "まとめには、送信時にまだ未読のものがすべて入ります。第2要素の変更、アドレスの変更、アカウントの削除は、常にすぐメールで届きます。",
   "mail.kinds.legend": "種類ごとのメールの送信",
   "mail.last_hour": "直近 1 時間: {notifications}、{security}、{sign_in}、{failures}、{queued}。",
-  "mail.last_hour_own": "専用の予算、直近 1 時間: {verification}、{invitation}、{second_factor}、{dropped}、{waiting}。",
+  "mail.last_hour_own": "同じく直近 1 時間: {verification}、{invitation}、{second_factor}、{dropped}、{waiting}。",
   "mail.mode.daily": "毎日のまとめ",
   "mail.mode.hourly": "1 時間ごとのまとめ",
   "mail.mode.immediate": "すぐに",

@@ -53,11 +53,13 @@ BY_SOURCE = Limiter(
 # Silent limits: over them the answer is still 202 and nothing is sent (§2.7.3).
 BY_PAIR_SHORT = Limiter(3, 900, name="routes.registration.BY_PAIR_SHORT")
 BY_PAIR_DAY = Limiter(10, 86400, name="routes.registration.BY_PAIR_DAY")
-# Per address, whatever the source (`email_links.recipient_over`).
+# Per address, counted in source networks (`email_links.recipient_over`).
 BY_ADDRESS_HOUR = Limiter(
     links.RECIPIENT_PER_HOUR, 3600, name="routes.registration.BY_ADDRESS_HOUR"
 )
 BY_ADDRESS_DAY = Limiter(links.RECIPIENT_PER_DAY, 86400, name="routes.registration.BY_ADDRESS_DAY")
+BY_ADDRESS_HOUR_NETWORKS = Limiter(1, 3600, name="routes.registration.BY_ADDRESS_HOUR_NETWORKS")
+BY_ADDRESS_DAY_NETWORKS = Limiter(1, 86400, name="routes.registration.BY_ADDRESS_DAY_NETWORKS")
 
 
 class OriginIn(BaseModel):
@@ -196,7 +198,11 @@ def _store(
     over = (
         BY_PAIR_SHORT.hit(pair)
         or BY_PAIR_DAY.hit(pair)
-        or links.recipient_over(BY_ADDRESS_HOUR, BY_ADDRESS_DAY, normalized)
+        or links.recipient_over(
+            (BY_ADDRESS_HOUR, BY_ADDRESS_DAY, BY_ADDRESS_HOUR_NETWORKS, BY_ADDRESS_DAY_NETWORKS),
+            normalized,
+            limit_key(source),
+        )
     )
     address.prepare(engine, hub.secret_key)  # before the lock's transaction
     with engine.begin() as conn:

@@ -2554,7 +2554,7 @@
   "mail.incomplete": "Die Mail-Konfiguration ist unvollständig: {missing}.",
   "mail.keys": "Signaturschlüssel: {signing}. Verschlüsselungsschlüssel der Instanz: {secret}. Schlüssel werden in der Umgebung konfiguriert.",
   "mail.last_hour": "Letzte Stunde: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
-  "mail.last_hour_own": "Eigene Budgets, letzte Stunde: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
+  "mail.last_hour_own": "Außerdem in der letzten Stunde: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Nicht gespeichert: {reason}",
   "mail.not_set": "nicht gesetzt",
   "mail.password.both": "Wähle ein neues Passwort oder lösche das gespeicherte, nicht beides.",

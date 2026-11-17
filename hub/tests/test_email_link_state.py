@@ -10,6 +10,7 @@ from maity_hub import clock, db
 from maity_hub import tables as t
 from maity_hub.auth import email_links as links
 from maity_hub.auth import totp
+from maity_hub.net import limit_key
 
 KEY = b"test-mail-key-not-a-live-secret"
 HUMAN = "hum-email-state"
@@ -237,12 +238,58 @@ def test_an_address_gets_few_mails_however_many_sources_ask() -> None:
     assert limits.take("other@example.org", "192.0.2.1") == (0, True)
 
 
-def test_a_request_the_pair_limit_refused_spends_nothing_of_the_address() -> None:
+def test_one_network_takes_one_place_of_the_address_however_often_it_asks() -> None:
     limits = links.RequestLimits()
-    for _ in range(10):  # one source: three get through its pair limit, the rest not
-        limits.take("human@example.org", "192.0.2.1")
-    delivered = [limits.take("human@example.org", f"198.51.100.{n}")[1] for n in range(1, 4)]
-    assert delivered == [True, True, False]  # 3 + 2 = the hour's five
+    sent = [limits.take("human@example.org", "192.0.2.1")[1] for _ in range(10)]
+    assert sent == [True] * 3 + [False] * 7  # its pair limit, three a quarter of an hour
+    delivered = [limits.take("human@example.org", f"198.51.100.{n}")[1] for n in range(1, 6)]
+    assert delivered == [True] * 4 + [False]  # 1 + 4 = the hour's five networks
+
+
+def test_two_networks_asking_all_hour_never_stop_the_owners_mail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A1014 P1: two sources in different /64s ask for the address's link again and again;
+    # the owner, from a third, still gets one, at every quarter of the hour and the day after.
+    now = [0.0]
+
+    class Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    limits = links.RequestLimits()
+    attackers = [limit_key("2001:db8:a::1"), limit_key("2001:db8:b::1")]
+    owner = limit_key("2001:db8:c::1")
+    for quarter in range(4 * 30):  # thirty hours
+        now[0] = quarter * 900.0
+        for source in attackers:
+            for _ in range(3):
+                limits.take("human@example.org", source)
+        now[0] += 2.0
+        assert limits.take("human@example.org", owner) == (0, True), quarter
+        limits.pair_quarter.reset()  # the owner asks once a quarter: its pair limit aside
+        limits.pair_day.reset()
+        limits.by_source.reset()
+
+
+def test_addresses_of_one_slash_64_are_one_network_of_the_address() -> None:
+    limits = links.RequestLimits()
+    for n in range(1, 4):
+        assert limits.take("human@example.org", limit_key(f"2001:db8:a::{n}")) == (0, True)
+    others = [limits.take("human@example.org", f"198.51.100.{n}")[1] for n in range(1, 6)]
+    assert others == [True] * 4 + [False]
+
+
+def test_a_network_the_address_refused_does_not_hold_a_place_after() -> None:
+    limits = links.RequestLimits()
+    for n in range(1, 6):
+        assert limits.take("human@example.org", f"198.51.100.{n}") == (0, True)
+    assert limits.take("human@example.org", "203.0.113.9") == (0, False)
+    # Refused, it was not marked as holding a place: asked again, it is refused again.
+    assert limits.take("human@example.org", "203.0.113.9") == (0, False)
+    assert limits.take("human@example.org", "198.51.100.1") == (0, True)  # holds one
 
 
 def test_the_address_limit_has_a_day_as_well(monkeypatch: pytest.MonkeyPatch) -> None:
