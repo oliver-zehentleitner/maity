@@ -7173,7 +7173,8 @@ setting's description points at `hub/README.md` on GitHub, as the product line's
 **Evidence:** confirmed
 **Source:** card tsk-c2c24vxs5qj0 (the maintainer's answer of 2026-11-16: a project role is a name and its own briefing, with a built-in role's permissions); the lead's scope of the card and its answer on a base change, 2026-11-16; docs/api.md §2.3 "Project roles", §6.4, §6.28
 **See:** views.md — b71cebbf-56d9-4f65-aef9-cbb4ab5131a1 — as of 2026-11-17
-**Revisit when:** the hub serves the project's briefings (§6.28, tsk-ssd3gcxvnrkm), §2.3 lets a project role be renamed or its base be refused while in use, or `PUT …/roles` gets a revision check
+**See:** https://github.com/oliver-zehentleitner/maity — 2e1ad5ca-8ffb-4688-8ba4-b74609ec61ca — as of 2026-11-17
+**Revisit when:** the hub serves the project's briefings (§6.28, tsk-ssd3gcxvnrkm), or §2.3 lets a project role be renamed or its base be refused while in use
 
 `js/project-roles.js` draws **Roles** in Settings → Members and agents, for a human with
 project:admin (the `PUT …/roles` is human only): the built-in roles as `GET …/roles` explains them,
@@ -7185,10 +7186,12 @@ their approvals the new base does not give expire, because the hub moves them an
 signatures in the same call. A role's own briefing and guide are not edited here: the hub does not
 serve the project's briefings yet, and the dashboard asks for no route the hub lacks.
 
-The `PUT` replaces the whole list and the hub keeps no revision of it, so a page read before
-someone else's save would remove what that save added. Right before the `PUT` the page reads the
-list again; when it differs from what the page loaded, nothing is sent, the draft stays and
-**Reload** shows the current list. This catches a stale page, not two saves in the same instant.
+The `PUT` replaces the whole list, so a page read before someone else's save would remove what
+that save added. The page sends the list's `version` it read as `base_version` (§2.3 "Version.",
+tsk-pw0aagxnydr9). When the hub refuses it as `conflict`, the draft stays, the page says someone
+else changed the list, and **Reload** shows the current list. Until that change (#1911) the page
+read the list again right before the `PUT` instead. That read is gone: the hub's check covers a
+stale page and two saves in the same instant alike, and a second read would only add a call.
 While the base-change question is open and while the call runs, the draft is frozen, so what is
 sent is what the page shows (review A963).
 
@@ -7200,8 +7203,10 @@ sent is what the page shows (review A963).
   agents tab's.
 - The briefing and guide fields now, against the fixture alone: the hub answers 404 until its
   briefings exist, so the fields would only fail.
-- A real optimistic lock (a revision on `GET`, `If-Match` on `PUT`): a contract and hub change the
-  lead kept out of this web card; it is a separate card if the maintainer wants it.
+- A real optimistic lock, kept out of the first web card as a contract and hub change: since
+  tsk-pw0aagxnydr9 it is there, as `version` and `base_version` (see the entry linked above).
+- Keeping the read before the `PUT` beside the version: it caught nothing the `conflict` does not,
+  and cost a call on every save.
 - Merging the draft into the list read again (keeping roles others added): it would hide a
   conflict on the same role; refusing and reloading says it.
 
