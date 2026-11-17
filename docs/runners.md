@@ -82,7 +82,7 @@ To move an agent of yours off someone else's runner: let it push its work and re
 
 New agent profiles are created by a human in the dashboard, never from the CLI.
 
-A project allows a limited number of agents on runners at once, all runners together: 8 unless a human admin changes it under **Settings** → **Members and agents** → **Agents on runners**, which also shows how many run now. A start beyond it is refused with the limit and a link there; lowering it stops no agent that runs.
+A project allows a limited number of agents on runners at once, all runners together: 8 unless a human admin changes it under **Settings** → **Members and agents** → **Agents on runners**, which also shows how many run now. In the dashboard, a start beyond it is refused with the limit and a link there (`maity placement start` says `placement_quota`); lowering it stops no agent that runs.
 
 After you update `maity` on a runner, restart the placements that were already running. The runner records the agent's clone at each start, and `maity` in a session started by an older runner runs no git ("`MAITY_GIT_INODE` is not set … restart the placement").
 
