@@ -227,42 +227,62 @@ def mail_body(
 
 
 # Mails one address is sent in answer to anonymous requests (§2.6.4), each path in buckets of
-# its own: per hour and per day, counted in source networks, not in mails. A network's first
-# mail to the address in a window takes one of these places; its further mails there take none
-# and are held by the pair limits alone. One network can so never spend the address's budget,
-# nor can up to four: only five distinct networks in an hour (twenty in a day) stop further
-# mails to the address until the window has passed.
+# its own. Places per hour and per day, counted in source networks: a network's first mail to
+# the address in a window takes a place, its further mails take none and are held by its pair
+# limits alone. One network can so never spend the address's places, nor can up to four: only
+# five distinct networks in an hour (twenty in a day) leave a further network without one.
 RECIPIENT_PER_HOUR = 5
 RECIPIENT_PER_DAY = 20
+# And the mails themselves, from all networks together, in any hour and any day: the windows
+# slide, so a place passes from one network to the next within them, and the places alone do
+# not bound the mails. Four networks at their pair limits (10 a day each) send at most 40 in
+# any hour or day, so these never stop fewer than five.
+RECIPIENT_MAILS_PER_HOUR = 50
+RECIPIENT_MAILS_PER_DAY = 200
+# A mark that a network holds a place lives this much shorter than the place: it is taken a
+# moment after the place, and must never outlast it.
+MARK_EARLY = 10.0
+
+Recipient = tuple[Limiter, Limiter, Limiter, Limiter, Limiter, Limiter]
 
 
-def recipient_over(
-    limiters: tuple[Limiter, Limiter, Limiter, Limiter], normalised: str, asker: str
-) -> bool:
+def recipient_over(limiters: Recipient, normalised: str, asker: str) -> bool:
     """Count one mail to the address for `asker`, the source network (`Origin.limit_key`) or,
-    for a verification mail, the asking account; True when the address has no place left for
-    it, and then nothing is sent and nothing is recorded.
+    for a verification mail, the asking account; True when it may not go out, and then
+    nothing is recorded.
 
-    `limiters` are the address's hour and day, and the askers holding a place in each (limit
-    1, the same windows); each is an attribute of its own where it is held, so that the tests
-    find and reset it. An asker takes a place in a window only with its first mail there; one
-    marked but refused would later pass without a place, so it is marked only when the address
-    had one for it."""
-    hour, day, hour_askers, day_askers = limiters
+    `limiters`: the address's places per hour and per day, the marks of the askers holding
+    one (limit 1, windows `MARK_EARLY` shorter), and its mails per hour and per day; each is an
+    attribute of its own where it is held, so that the tests find and reset it. The places
+    are taken first, then the mails; a mark is set only once all of them were had, and never
+    given back, so a mark seen by a concurrent request is a place really held. Two concurrent
+    first requests of one asker both take a place; the one that finds the mark set after
+    gives its place back."""
+    hour, day, hour_askers, day_askers, mails_hour, mails_day = limiters
     address = digest(f"recipient\0{normalised}")
     pair = digest(f"recipient\0{normalised}\0{asker}")
-    placed: list[tuple[Limiter, str, Mark]] = []
+    taken: list[tuple[Limiter, Mark, Limiter | None]] = []
+
+    def give_back() -> bool:
+        for limiter, mark, _ in taken:
+            limiter.release(address, mark)
+        return True
+
     for budget, askers in ((hour, hour_askers), (day, day_askers)):
-        wait, mark = askers.place(pair)
-        if wait:
-            continue  # the asker holds a place in this window already
-        placed.append((askers, pair, mark))
+        if askers.blocked(pair):
+            continue  # the asker holds a place in this window
         wait, mark = budget.place(address)
         if wait:
-            for limiter, key, held in placed:
-                limiter.release(key, held)
-            return True
-        placed.append((budget, address, mark))
+            return give_back()
+        taken.append((budget, mark, askers))
+    for mails in (mails_hour, mails_day):
+        wait, mark = mails.place(address)
+        if wait:
+            return give_back()
+        taken.append((mails, mark, None))
+    for limiter, mark, marks in taken:
+        if marks is not None and marks.hit(pair):
+            limiter.release(address, mark)  # a concurrent request marked it with its own place
     return False
 
 
@@ -282,10 +302,22 @@ class RequestLimits:
             RECIPIENT_PER_DAY, 86400, name="auth.email_links.recipient_day"
         )
         self.recipient_hour_networks = Limiter(
-            1, 3600, name="auth.email_links.recipient_hour_networks"
+            1, 3600 - MARK_EARLY, name="auth.email_links.recipient_hour_networks"
         )
         self.recipient_day_networks = Limiter(
-            1, 86400, name="auth.email_links.recipient_day_networks"
+            1, 86400 - MARK_EARLY, name="auth.email_links.recipient_day_networks"
+        )
+        self.recipient_mails_hour = Limiter(
+            RECIPIENT_MAILS_PER_HOUR,
+            3600,
+            name="auth.email_links.recipient_mails_hour",
+            exact=True,
+        )
+        self.recipient_mails_day = Limiter(
+            RECIPIENT_MAILS_PER_DAY,
+            86400,
+            name="auth.email_links.recipient_mails_day",
+            exact=True,
         )
 
     def take(self, address: str, source: str) -> tuple[int, bool]:
@@ -301,10 +333,12 @@ class RequestLimits:
         # Counted in networks, only for a mail the pair limits let through (`recipient_over`).
         return 0, not recipient_over(self.recipient(), normalised, source)
 
-    def recipient(self) -> tuple[Limiter, Limiter, Limiter, Limiter]:
+    def recipient(self) -> Recipient:
         return (
             self.recipient_hour,
             self.recipient_day,
             self.recipient_hour_networks,
             self.recipient_day_networks,
+            self.recipient_mails_hour,
+            self.recipient_mails_day,
         )

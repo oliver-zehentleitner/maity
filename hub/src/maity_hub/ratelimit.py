@@ -28,12 +28,21 @@ EXACT_UP_TO = 20
 
 class Limiter:
     def __init__(
-        self, limit: int, window_seconds: float, *, name: str, local: bool = False
+        self,
+        limit: int,
+        window_seconds: float,
+        *,
+        name: str,
+        local: bool = False,
+        exact: bool = False,
     ) -> None:
         self.limit = limit
         self.window = window_seconds
         self.name = name  # the bucket the counts share across replicas
-        self.exact = limit <= EXACT_UP_TO  # across replicas: a row per attempt
+        # Across replicas a row per attempt: always up to EXACT_UP_TO, and above it where a
+        # stated bound must hold in any window, not only as the two-window estimate.
+        self.always_exact = exact
+        self.exact = exact or limit <= EXACT_UP_TO
         # Counted in this process only, never in `shared_counts`: a limit asked of every call
         # of a route (MAITY_ROUTE_LIMITS) would otherwise write to the database each time.
         self.local = local
@@ -49,7 +58,7 @@ class Limiter:
         others count; the shared rows age out with the window."""
         self.limit = limit
         self.window = window_seconds
-        self.exact = limit <= EXACT_UP_TO
+        self.exact = self.always_exact or limit <= EXACT_UP_TO
         with self._lock:
             self._hits.clear()
 

@@ -466,6 +466,20 @@ def test_two_networks_asking_again_and_again_leave_the_owner_a_mail(
     assert len(SENT) == 7  # the owner's, from a third network
 
 
+def test_two_addresses_of_one_slash_64_take_one_place_of_the_address(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client = open_hub(make_client, migrated)
+    settings = client.app.state.settings
+
+    def from_(peer: str) -> Any:
+        return make_client(peer=peer, mail=settings.mail, registration=settings.registration)
+
+    for peer in ("2001:db8:a::1", "2001:db8:a::2", *(f"198.51.100.{n}" for n in range(1, 5))):
+        assert register(from_(peer)).status_code == 202
+    assert len(SENT) == 6  # one network and four more: the address's five places
+
+
 def test_the_per_source_limit_answers_429_and_the_pair_limit_stays_silent(
     make_client: ClientFactory, migrated: Engine
 ) -> None:

@@ -854,3 +854,106 @@ def test_a_change_asked_before_the_hub_kept_where_names_nothing(
     owner.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}")
     notice = outbox_rows(migrated)[-1]
     assert notice.recipient == "old@example.org" and "From:" not in notice.body
+
+
+# --- the recipient's verification mails in any hour and any day (A1019 P10/P11) --------------
+
+
+def _verify_clock(monkeypatch: pytest.MonkeyPatch) -> tuple[list[float], list[float], Any]:
+    """A clock for the limits, the moments of the verification mails sent to one address,
+    and `ask(human, times)`: the per-human limits as `apply_address` keeps them, then the
+    recipient's."""
+    now = [0.0]
+
+    class Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    sent: list[float] = []
+
+    def ask(human: str, times: int = 1) -> int:
+        got = 0
+        for _ in range(times):
+            if preferences.VERIFY_BY_HUMAN_HOUR.blocked(human):
+                continue
+            if preferences.VERIFY_BY_HUMAN_DAY.blocked(human):
+                continue
+            preferences.VERIFY_BY_HUMAN_HOUR.hit(human)
+            preferences.VERIFY_BY_HUMAN_DAY.hit(human)
+            if not preferences._recipient_over("target@example.org", human):
+                sent.append(now[0])
+                got += 1
+        return got
+
+    return now, sent, ask
+
+
+def _most_in(times: list[float], width: float) -> int:
+    most, start = 0, 0
+    for end, at in enumerate(times):
+        while times[start] <= at - width:
+            start += 1
+        most = max(most, end - start + 1)
+    return most
+
+
+def test_an_address_gets_at_most_9_verification_mails_in_any_hour(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Three accounts take the hour's places with one mail each and ask twice more late in
+    # their hold; three more take the places as they come free and ask three times at once.
+    # Without a count of the mails, 15 in one hour.
+    now, sent, ask = _verify_clock(monkeypatch)
+    for human in ("a0", "a1", "a2"):
+        ask(human)
+    now[0] = 2700.0
+    for human in ("a0", "a1", "a2"):
+        ask(human, 2)
+    now[0] = 3600.0
+    for human in ("b0", "b1", "b2"):
+        ask(human, 3)
+    assert _most_in(sent, 3600) == 9
+
+
+def test_an_address_gets_at_most_100_verification_mails_in_any_day(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Ten accounts take the day's places with one mail each and send their other nine late
+    # in their hold, three accounts an hour; ten more take the places as they come free.
+    # Without a count of the mails, 186 in one day.
+    now, sent, ask = _verify_clock(monkeypatch)
+    early = [f"a{n}" for n in range(10)]
+    for n, human in enumerate(early):
+        now[0] = n // 3 * 3600.0
+        ask(human)
+    turns = early * 3
+    for k in range(10):
+        now[0] = (14 + k) * 3600.0
+        for human in turns[3 * k : 3 * k + 3]:
+            ask(human, 3)
+    late = [f"b{n}" for n in range(10)]
+    for hour in range(24, 48):
+        now[0] = hour * 3600.0
+        chosen = 0
+        for human in late:
+            if chosen == 3:
+                break
+            if not preferences.VERIFY_BY_HUMAN_DAY.blocked(human) and ask(human, 3):
+                chosen += 1
+    assert _most_in(sent, 86400) == 100
+    assert _most_in(sent, 3600) <= 9
+
+
+def test_two_accounts_at_their_own_limits_never_reach_the_verification_mail_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now, sent, ask = _verify_clock(monkeypatch)
+    for hour in range(48):
+        now[0] = hour * 3600.0
+        for human in ("a0", "a1"):
+            ask(human, 3)
+    # Each its own 10 a day, all delivered: the count of the mails never refused one.
+    assert len(sent) == 2 * 20
+    assert _most_in(sent, 3600) == 6 and _most_in(sent, 86400) == 20

@@ -2063,18 +2063,25 @@ it is, IPv6 by its /64. A network's first mail to the address in the
 window takes a place; its further mails take none and are held by its
 pair limit alone. A request counts only once its pair limit let it
 through, and a network the address had no place for holds none
-afterwards. So one network can never spend the address's budget, nor
-can two to four: the human's own network still gets its mail. Only
-requests from at least five distinct networks within the hour (twenty
-within the day) stop further mails to that address until the window
-has passed; the human's sessions, the password and the device code
-are unaffected. The price is the mailbox: one address can be sent up
-to 5 × 10 = 50 of these mails in an hour and 20 × 10 = 200 in a day,
-each network at most its pair limit, and never more than the path's
-instance cap, which is the outer bound: `sign_in_max_per_hour` (default
+afterwards. A place is marked as held only once it was had, so
+concurrent requests from one network take no mail past it. The windows
+slide, so a place passes from one network to the next within an hour or
+a day; the mails themselves are therefore counted too: an address is sent
+at most 50 of these mails in any hour and 200 in any day, from all
+networks together, and over that `202` and nothing is sent. Four
+networks at their pair limits (10 a day each) send at most 40 in any
+hour or day, so the count never stops fewer than five. So one network
+can never spend the address's budget, nor can two to four: the human's
+own network still gets its mail. Only requests from at least five
+distinct networks within the hour (twenty within the day) leave a
+further network without a place, or reach the count of the mails, until
+the window has passed; the human's sessions, the password and the device
+code are unaffected. The price is the mailbox: those 50 in any hour and
+200 in any day, and never more than the path's instance cap, which is
+the outer bound across all addresses: `sign_in_max_per_hour` (default
 60) for sign-in links, `password_reset_max_per_hour` (default 30) for
 reset links, `registration_max_per_hour` (default 30) for registration
-mails (§2.7.3), each across all addresses. Whoever controls enough source
+mails (§2.7.3). Whoever controls enough source
 addresses can spend the instance cap and stop sign-in mails for
 everyone until the hour ends — the same accepted kind of denial as the
 device-code breaker above, limited to the mail link. Reset mails (§2.10)
@@ -2634,7 +2641,7 @@ contract. `GET /me` carries `member.terms` (§5.1) for a human.
 |---|---|
 | `POST /auth/register` per source address | 10 per hour; `rate_limited` (`429`) — the one limit that answers `429`, since it speaks only about the caller |
 | per (address, source address) | 3 per 15 minutes, 10 per day, existing account or not; over it `202` and nothing is sent |
-| per address, counted in source networks | 5 networks per hour and 20 per day, as §2.6.4 counts them: a network's first mail to the address in the window takes a place, its further ones only its pair limit; over it `202` and nothing is sent. A stranger's mailbox so gets at most 5 × 10 mails an hour and 20 × 10 a day, never more than `registration_max_per_hour` |
+| per address, counted in source networks | 5 networks per hour and 20 per day, as §2.6.4 counts them: a network's first mail to the address in the window takes a place, its further ones only its pair limit; and at most 50 mails in any hour and 200 in any day from all networks; over either `202` and nothing is sent. A stranger's mailbox gets no more, and never more than `registration_max_per_hour` |
 | instance breaker | more than `MAITY_REGISTRATION_BREAKER` requests (default 120) per minute across the instance, every request counted: every `POST /auth/register` is `rate_limited` for a minute |
 | registration mails | `registration_max_per_hour` (§16.2, default 30), a budget of their own; over it `202` and nothing is sent |
 | completion | 5 wrong passwords per pending registration (then void); 10 completion attempts per minute per source address, shared with the login limit of §2.1 |
@@ -24797,9 +24804,12 @@ device; the browser's own permission is per browser and is not stored.
   `Retry-After` beyond it, nothing changed), and one recipient address
   has places for 3 asking accounts an hour and 10 a day: an account's
   first verification mail to the address in the window takes a place,
-  its further ones only its own limit, so the address gets at most
-  3 × 3 = 9 an hour and 10 × 10 = 100 a day, within
-  `verification_max_per_hour` (§16.2). Beyond that the address is
+  its further ones only its own limit. The windows slide, so a place
+  passes from one account to the next; the address is therefore sent at
+  most 9 verification mails in any hour and 100 in any day from all
+  accounts, within `verification_max_per_hour` (§16.2). Two accounts at
+  their own limits send at most 6 in any hour and 20 in any day, so that
+  count never stops fewer than three. Beyond either the address is
   pending as usual but no mail goes out. One or two accounts asking
   again and again so leave a third its mail; three distinct accounts in
   an hour (ten in a day) hold the address's places, and another account

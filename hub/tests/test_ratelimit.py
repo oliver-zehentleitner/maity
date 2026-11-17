@@ -304,6 +304,27 @@ def test_a_small_limit_counts_every_attempt_exactly_across_replicas(
     assert second.hit("ada") == 0  # exactly ten minutes after the first
 
 
+def test_a_large_limit_asked_exact_counts_every_attempt_across_replicas(
+    shared: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bound stated for any window (the mails to one address, §2.6.4) holds across replicas
+    only with a row per attempt: the two-window estimate lets a burst at a window's end pass."""
+    from maity_hub import shared_counts
+
+    now = [datetime(2026, 11, 17, 0, 9, 50, tzinfo=UTC)]  # late in a fixed window
+    monkeypatch.setattr(shared_counts, "_now", lambda: now[0])
+    first = Limiter(30, 600, name="test.exact", exact=True)
+    second = Limiter(30, 600, name="test.exact", exact=True)
+    assert first.exact and not Limiter(30, 600, name="test.estimate").exact
+    for n in range(30):
+        assert (first if n % 2 else second).hit("ada") == 0
+    now[0] += timedelta(seconds=20)  # the next fixed window: the estimate would weigh these
+    assert first.hit("ada") > 0 and second.hit("ada") > 0
+    first.configure(30, 600)  # the settings' configure keeps it exact
+    assert first.exact
+    assert shared_counts.log_read("test.exact", "ada", 600).total == 30
+
+
 def test_an_exact_limit_gives_back_exactly_what_was_taken(shared: None) -> None:
     limiter = Limiter(3, 60, name="test.exact.back")
     wait, one = limiter.place("ada")

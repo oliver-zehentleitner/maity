@@ -19,6 +19,9 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.auth.email_links import (
+    MARK_EARLY,
+    RECIPIENT_MAILS_PER_DAY,
+    RECIPIENT_MAILS_PER_HOUR,
     RECIPIENT_PER_DAY,
     RECIPIENT_PER_HOUR,
     digest,
@@ -178,10 +181,22 @@ class RequestLimits:
             RECIPIENT_PER_DAY, 86400, name="auth.password_resets.recipient_day"
         )
         self.recipient_hour_networks = Limiter(
-            1, 3600, name="auth.password_resets.recipient_hour_networks"
+            1, 3600 - MARK_EARLY, name="auth.password_resets.recipient_hour_networks"
         )
         self.recipient_day_networks = Limiter(
-            1, 86400, name="auth.password_resets.recipient_day_networks"
+            1, 86400 - MARK_EARLY, name="auth.password_resets.recipient_day_networks"
+        )
+        self.recipient_mails_hour = Limiter(
+            RECIPIENT_MAILS_PER_HOUR,
+            3600,
+            name="auth.password_resets.recipient_mails_hour",
+            exact=True,
+        )
+        self.recipient_mails_day = Limiter(
+            RECIPIENT_MAILS_PER_DAY,
+            86400,
+            name="auth.password_resets.recipient_mails_day",
+            exact=True,
         )
 
     def take(self, address: str, source: str) -> tuple[int, bool]:
@@ -199,6 +214,8 @@ class RequestLimits:
             self.recipient_day,
             self.recipient_hour_networks,
             self.recipient_day_networks,
+            self.recipient_mails_hour,
+            self.recipient_mails_day,
         )
         return 0, not recipient_over(recipient, normalised, source)
 

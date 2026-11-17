@@ -28,7 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import admin, catalog, clock, languages
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
-from maity_hub.auth.email_links import recipient_over
+from maity_hub.auth.email_links import MARK_EARLY, recipient_over
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
@@ -42,18 +42,26 @@ WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 CONTENT_KINDS = ("chat", "mention")
 VERIFY_FOR = timedelta(hours=24)
 # Verification mails (§18.4): 3 an hour and 10 a day per human, refused beyond; and per
-# recipient address, counted in asking accounts, not in mails: an account's first mail to the
-# address in a window takes one of 3 places an hour and 10 a day, its further ones none (they
-# are held by its own limit). Not sent beyond, silently (`email_links.recipient_over`).
+# recipient address, counted in asking accounts: an account's first mail to the address in a
+# window takes one of 3 places an hour and 10 a day, its further ones none (they are held by
+# its own limit); and at most 9 mails in any hour and 100 in any day from all accounts, which
+# two accounts at their own limits (6 an hour, 20 a day) never reach. Not sent beyond,
+# silently (`email_links.recipient_over`).
 VERIFY_BY_HUMAN_HOUR = Limiter(3, 3600, name="notifications.verify.human_hour")
 VERIFY_BY_HUMAN_DAY = Limiter(10, 86400, name="notifications.verify.human_day")
 VERIFY_BY_RECIPIENT_HOUR = Limiter(3, 3600, name="notifications.verify.recipient_hour")
 VERIFY_BY_RECIPIENT_DAY = Limiter(10, 86400, name="notifications.verify.recipient_day")
 VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS = Limiter(
-    1, 3600, name="notifications.verify.recipient_hour_accounts"
+    1, 3600 - MARK_EARLY, name="notifications.verify.recipient_hour_accounts"
 )
 VERIFY_BY_RECIPIENT_DAY_ACCOUNTS = Limiter(
-    1, 86400, name="notifications.verify.recipient_day_accounts"
+    1, 86400 - MARK_EARLY, name="notifications.verify.recipient_day_accounts"
+)
+VERIFY_BY_RECIPIENT_MAILS_HOUR = Limiter(
+    9, 3600, name="notifications.verify.recipient_mails_hour", exact=True
+)
+VERIFY_BY_RECIPIENT_MAILS_DAY = Limiter(
+    100, 86400, name="notifications.verify.recipient_mails_day", exact=True
 )
 APPROVER_AGE = timedelta(hours=24)
 HELD_FOR = timedelta(days=7)
@@ -707,6 +715,8 @@ def _recipient_over(address: str, human_id: str) -> bool:
         VERIFY_BY_RECIPIENT_DAY,
         VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS,
         VERIFY_BY_RECIPIENT_DAY_ACCOUNTS,
+        VERIFY_BY_RECIPIENT_MAILS_HOUR,
+        VERIFY_BY_RECIPIENT_MAILS_DAY,
     )
     return recipient_over(limiters, f"verify\0{addresses.normalized(address)}", human_id)
 
