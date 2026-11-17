@@ -12840,7 +12840,8 @@ project's request list:
 - **Withdrawing.** Only the hub — when what it was filed for ends, as
   a request to chat with the owner's agents when no agent waits for it
   any more and no free work message is held for it (§9.6); as
-  a takeover notice when its takeover closes (§6.19); the owner's digest
+  a takeover notice when its takeover closes (§6.19; that notice is not
+  built yet, tsk-m80nbn1k7axh); the owner's digest
   when what it shows changes, a new one following, or none is away any
   more (§5.3); an outage notice
   when the placement recovers, is stopped or deleted, the project is

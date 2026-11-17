@@ -60,9 +60,9 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the code at main 43e2c728 (`routes/requests.py` and every module that files a personal request, found by its `file_*` calls and `to_kind` writes; `tables.py` `to_shape`, `personal_shape`, `scope_known`); review A977 of #1916 (the two jour fixe shapes); docs/api.md §7 "Personal requests", §6.2, §6.26; the clean-up card tsk-jy01skphpb6y; the lead's decision of 2026-11-17 on the §7 withdrawal wording (card tsk-hbehkvr07s9s); the `scope_known` CHECK came with commit aec28415 (organisations, part 2), `to_kind: "human"` with 49263526 (a human's preferences, §19.4)
+**Source:** the code at main 43e2c728 (`routes/requests.py` and every module that files a personal request, found by its `file_*` calls and `to_kind` writes; `tables.py` `to_shape`, `personal_shape`, `scope_known`); review A977 of #1916 (the two jour fixe shapes); docs/api.md §7 "Personal requests", §6.2, §6.26; the clean-up card tsk-jy01skphpb6y; the lead's decision of 2026-11-17 on the §7 withdrawal wording (card tsk-hbehkvr07s9s); review A992 of #1916 and the lead's decision of 2026-11-17 that the contract says what is built (card tsk-m80nbn1k7axh); the `scope_known` CHECK came with commit aec28415 (organisations, part 2), `to_kind: "human"` with 49263526 (a human's preferences, §19.4)
 **See:** requests.md#a-personal-request-is-a-request-row-with-the-askers-project-hidden-from-every-project-route-but-the-askers — a753a0f6-a606-43dd-86db-3431a1679721 — as of 2026-11-17
-**Revisit when:** a personal request needs a table of its own, or a request without a project gets an asker or events
+**Revisit when:** a personal request needs a table of its own, a request without a project gets an asker or events, or the hub starts to file the cross-owner takeover notice or the project-texts notice and consent (the open point below)
 
 A personal request is still an ordinary `request` row with `personal` true, tied by the
 `personal_shape` CHECK to one of two addressings, which only the hub writes:
