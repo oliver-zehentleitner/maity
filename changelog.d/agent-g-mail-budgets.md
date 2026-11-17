@@ -9,8 +9,10 @@
 - hub: a per-recipient cap on sign-in, reset and registration mails, counted in source networks
   (IPv4 address, IPv6 /64): 5 networks per hour and 20 per day per address, each network's
   further mails held by its pair limit, and at most 50 mails in any hour and 200 in any day per
-  address; one to four networks cannot stop the owner's mail (but for the moment two first
-  requests of one network run at once), and the answer stays the same
+  address; through these limits one to four networks cannot stop the owner's mail (but for the
+  moment two or three first requests of one network run at once), while the path's
+  instance-wide hourly budget stays a separate cap that three networks reach for resets and
+  registration at the default 30, and the answer stays the same
 - hub: rate limits per source address count an IPv6 client by its /64
 - hub: the in-process rate limiter forgets idle keys without scanning them all
 - hub: address verification mails have a budget of their own (`verification_max_per_hour`,

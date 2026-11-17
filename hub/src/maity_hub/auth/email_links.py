@@ -230,8 +230,10 @@ def mail_body(
 # its own. Places per hour and per day, counted in source networks: a network's first mail to
 # the address in a window takes a place, its further mails take none and are held by its pair
 # limits alone. One network can so never spend the address's places, nor can up to four, but
-# for the moment two first requests of one network run at once (`recipient_over`): only five
-# distinct networks in an hour (twenty in a day) leave a further network without one.
+# for the moment two or three first requests of one network run at once (`recipient_over`):
+# beyond it, only five distinct networks in an hour (twenty in a day) leave a further network
+# without one. The path's instance-wide hourly budget is a separate cap (mail/settings.py),
+# which fewer networks reach: three at their 10 an hour spend the default 30 of resets.
 RECIPIENT_PER_HOUR = 5
 RECIPIENT_PER_DAY = 20
 # And the mails themselves, from all networks together, in any hour and any day: the windows
@@ -256,8 +258,8 @@ def recipient_over(limiters: Recipient, normalised: str, asker: str) -> bool:
     moment (`Limiter.place(at=)`), so that mark and place leave the window together, and it
     is never given back: a mark seen by a concurrent request is a place really held, and once
     its requests are done a network without a mark holds no place. Two concurrent first
-    requests of one asker both take a place, so for that moment it holds two; the one that
-    finds the mark set after gives its place back."""
+    requests of one asker each take a place (two or three, its quarter limit), so for that
+    moment it holds as many; each that finds the mark set after gives its place back."""
     hour, day, hour_askers, day_askers, mails_hour, mails_day = limiters
     address = digest(f"recipient\0{normalised}")
     pair = digest(f"recipient\0{normalised}\0{asker}")

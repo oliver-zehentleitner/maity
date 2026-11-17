@@ -2066,20 +2066,27 @@ through, and a network the address had no place for holds none
 afterwards. A place is marked as held only once it was had, and the
 mark ends with the place, so concurrent requests from one network take
 no mail past it, and a network keeps at most one place once its
-requests are done: two of its first requests at once may both take one
-for that moment (longer when one of them stalls), and one gives it
-back. The windows slide, so a place passes from one network to the
+requests are done: two or three of its first requests at once (its
+quarter limit) may each take one for that moment (longer when one of
+them stalls), and all but one give theirs back. The windows slide, so a place passes from one network to the
 next within an hour or a day; the mails themselves are therefore counted too: an address is sent
 at most 50 of these mails in any hour and 200 in any day, from all
 networks together, and over that `202` and nothing is sent. Four
 networks at their pair limits (10 a day each) send at most 40 in any
-hour or day, so the count never stops fewer than five. So one network
-can never spend the address's budget, nor can two to four: the human's
-own network still gets its mail, but for that moment of two requests
-at once. Only requests from at least five distinct networks within the
-hour (twenty within the day) leave a further network without a place, or reach the count of the mails, until
-the window has passed; the human's sessions, the password and the device
-code are unaffected. The price is the mailbox: those 50 in any hour and
+hour or day, so the count never stops fewer than five. So through the
+limits per address one network can never spend the address's budget,
+nor can two to four: the human's own network still gets its mail, but
+for that moment of first requests at once. Beyond that moment, only
+requests from at least five distinct networks within the hour (twenty
+within the day) leave a further network without a place, or reach the
+count of the mails, until the window has passed; the human's sessions,
+the password and the device code are unaffected. The path's instance
+cap below is a separate bound across all addresses, which fewer
+networks can reach: at the defaults, three networks at their 10
+requests an hour per source address spend the 30 reset or registration
+mails of an hour, and six the 60 sign-in mails; the owner's mail of
+that kind is then not sent either, until the hour has passed. The
+price is the mailbox: those 50 in any hour and
 200 in any day, and never more than the path's instance cap, which is
 the outer bound across all addresses: `sign_in_max_per_hour` (default
 60) for sign-in links, `password_reset_max_per_hour` (default 30) for
@@ -2655,10 +2662,14 @@ The breaker is the same accepted denial as the device-code breaker
 a minute at a time, and that is preferred to a per-source limit alone,
 which a distributed flood would pass. It never touches sign-in, mail
 of any other kind, or existing accounts. One source network cannot
-spend an address's places, nor can up to four; someone asking from at
-least five distinct networks in an hour (twenty in a day) can, and
-delays that person's registration to the end of that hour or day;
-nothing more.
+spend an address's places, nor can up to four, but for the moment two
+or three first requests of one network run at once (§2.6.4); someone
+asking from at least five distinct networks in an hour (twenty in a
+day) can, and delays that person's registration to the end of that
+hour or day; nothing more. The registration mails' instance cap is a
+separate bound: at the default 30, three networks at their 10 requests
+an hour spend it, and no registration mail goes out until the hour has
+passed (§2.6.4).
 
 #### 2.7.4 Handle and display name
 
