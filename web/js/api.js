@@ -5409,7 +5409,7 @@ window.Maity = window.Maity || {};
     // policy.outside_roles on a base an outsider may hold. A removal is refused while a membership
     // or policy.outside_roles names the role; the hub's other uses (joins, invitations, cards,
     // requests, placements, the check-in, substitutes, role memory) are not kept here. `outside` is
-    // reserved as §2.3 says, where the hub does not refuse it yet (tsk-2s1x6rjck05x).
+    // reserved as §2.3 says.
     // A new base moves its members.
     ["PUT", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => {
       if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
