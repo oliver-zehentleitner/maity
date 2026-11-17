@@ -352,6 +352,24 @@ def test_the_inbox_defaults_to_open_requests_addressed_to_me(
     assert len(everything) == 3  # the owner answers every class
 
 
+def test_the_project_list_filters_by_a_list_of_statuses_and_refuses_an_unknown_one(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    still = asked(agent)
+    done = asked(agent)
+    answer(owner, done, text="x")
+    path = "/projects/maintainer/maity/requests"
+    listed = owner.get(path, params={"status": "answered,withdrawn,"}).json()["items"]
+    assert [r["id"] for r in listed] == [done["id"]]
+    both = owner.get(path, params={"status": "open,answered"}).json()["items"]
+    assert {r["id"] for r in both} == {still["id"], done["id"]}
+    for status in ("bogus", "open,bogus"):
+        refused = owner.get(path, params={"status": status})
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["error"]["details"]["fields"] == {"status": "unknown"}
+
+
 def test_without_requests_answer_to_all_is_mine_and_addressed(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
