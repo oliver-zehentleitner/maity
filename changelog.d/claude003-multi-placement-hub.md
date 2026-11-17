@@ -16,5 +16,8 @@
   created or proposed (`instance_quota`), no longer only at the runner's
   pickup.
 - hub: a runner's rate limit makes the agent `limited` only while every
-  running placement of it is rate-limited: each report recomputes it from
-  all of them, and a resume no longer clears a limit the runner set.
+  running placement of it is rate-limited: each report, close or change
+  of `desired` recomputes it from all of them, until the earliest
+  `retry_at` still ahead. A change to `desired: stopped` ends it at once,
+  a resume no longer clears a limit the runner set, and a runner's limit
+  no longer replaces a limit the agent set itself.

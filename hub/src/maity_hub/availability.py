@@ -774,15 +774,19 @@ def recompute_runner_limit(
     """The runner's limit of an agent from every active placement of it with `desired:
     running` (§6.12), after a report, a close or a change of `desired`. The agent is
     limited while each of them last reported `rate_limited` with a `retry_at` still ahead,
-    until the earliest of those, and the record names the placement whose `retry_at` that
-    is. Otherwise, with none that should run included, the runner's limit ends; a limit
-    the agent declared itself (`source: self`) names no placement and stays. One that runs
-    keeps the agent available, as an awake instance beside a dormant one does."""
+    until the earliest of those; the record names the placement that reported it, the one
+    created first on a tie. Otherwise, with none that should run included, the runner's
+    limit ends. One that runs keeps the agent available, as an awake instance beside a
+    dormant one does. A recomputation creates, changes or clears only a limit with
+    `source: runner`: while one the agent declared itself (`POST /me/limit`) is stored,
+    it stores nothing, and that limit ends as a self-set limit does."""
     if membership_id is None:
         return
     row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).first()
     if row is None or row.active is not True:
         return
+    if row.limit_source != "runner" and _live(row.limit_until, clock.now()):
+        return  # the agent's own limit: never replaced or cleared by a runner's (§6.12)
     found = _all_limited(conn, row.id, reporting)
     if found is not None:
         until, by = found
@@ -819,14 +823,16 @@ def _all_limited(
     """When every active placement of the membership with `desired: running` is
     `rate_limited` with a `retry_at` still ahead (`reporting`: a placement's id and the
     `retry_at` of the report it just made, None when that report is not `rate_limited`),
-    the earliest `retry_at` and the placement that named it; otherwise None, also when
-    none should run (§6.12)."""
+    the earliest `retry_at` and the placement that named it, the one created first on a
+    tie; otherwise None, also when none should run (§6.12)."""
     rows = conn.execute(
-        select(t.placement).where(
+        select(t.placement)
+        .where(
             t.placement.c.membership_id == membership_id,
             t.placement.c.active.is_(True),
             t.placement.c.desired == "running",
         )
+        .order_by(t.placement.c.created_at, t.placement.c.id)
     ).all()
     now = clock.now()
     earliest: tuple[datetime, Any] | None = None
@@ -842,7 +848,7 @@ def _all_limited(
                 at = datetime.fromisoformat(stored)  # stored by `clock.rfc3339`
         if at is None or at <= now:
             return None  # it runs, or will again: its `retry_at` has passed
-        if earliest is None or at < earliest[0]:
+        if earliest is None or at < earliest[0]:  # strictly: a tie keeps the older one
             earliest = (at, p)
     return earliest
 

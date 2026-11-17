@@ -234,6 +234,33 @@ def test_a_closed_placement_hands_the_limit_to_the_rest(setup: Setup) -> None:
     assert _limit(setup) == (None, None)
 
 
+def test_a_tie_on_retry_at_names_the_placement_created_first(setup: Setup) -> None:
+    allow_instances(setup.engine, setup.agent.id, 3)
+    p1, p2 = placed(setup), placed(setup)
+    same = clock.rfc3339(clock.now().replace(microsecond=0) + timedelta(hours=2))
+    limited = {"state": "rate_limited", "reason": "quota", "exit_code": 2}
+    assert report(setup, p2, 1, **limited, retry_at=same).status_code == 200
+    assert report(setup, p1, 1, **limited, retry_at=same).status_code == 200
+    assert _limit(setup) == (same, p1["id"])  # not the one that reported last
+
+
+def test_a_recompute_never_touches_a_limit_the_agent_set_itself(setup: Setup) -> None:
+    """§6.12: a recomputation creates, changes or clears only `source: runner`."""
+    allow_instances(setup.engine, setup.agent.id, 3)
+    p1, p2 = placed(setup), placed(setup)
+    base = clock.now().replace(microsecond=0)
+    own, later = clock.rfc3339(base + timedelta(hours=5)), clock.rfc3339(base + timedelta(hours=1))
+    declared = setup.agent.post("/me/limit", {"until": own, "reason": "my own"})
+    assert declared.status_code == 200, declared.text
+    limited = {"state": "rate_limited", "reason": "quota", "exit_code": 2}
+    assert report(setup, p1, 1, **limited, retry_at=later).status_code == 200
+    assert report(setup, p2, 1, **limited, retry_at=later).status_code == 200
+    shown = setup.owner.get(f"{MEMBERS}/{setup.agent.id}").json()["availability"]
+    assert (shown["state"], shown["source"], shown["until"]) == ("limited", "self", own)
+    assert report(setup, p1, 2, state="starting").status_code == 200  # not cleared either
+    assert _limit(setup) == (own, None)
+
+
 def test_a_retry_at_that_has_passed_counts_as_running(setup: Setup) -> None:
     allow_instances(setup.engine, setup.agent.id, 3)
     p1, p2 = placed(setup), placed(setup)
