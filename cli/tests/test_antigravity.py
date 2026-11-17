@@ -962,6 +962,87 @@ def test_on_a_host_whose_root_lies_below_a_link_its_own_credential_is_not_listed
     assert adapters.outermost((ws, *found), opened=(own,)) == (ws,)
 
 
+SLOTS = {"clone": ("agent-4",), "repo": ("agent-4", "repo"), "git": ("agent-4", ".git"),
+         "maity": ("agent-4", ".git", "maity")}  # fmt: skip
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_a_place_that_cannot_be_looked_at_refuses_the_start(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    """A clone's place for a credential reached through a link into a directory the agents'
+    user cannot search: it could hide one, so the listing fails closed on every side."""
+    ws, locked = tmp_path / "ws", tmp_path / "elsewhere" / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    (locked / slot.name).mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(locked / slot.name)
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused) as refused:
+            supervisor.other_credentials(ws, own, SIDES[side]())
+        assert refused.value.reason == "harness_refused"
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_a_link_that_leads_nowhere_is_no_credential(tmp_path: Path, side: str, linked: str) -> None:
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(tmp_path / "gone")
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_every_side_lists_what_the_runners_own_side_lists(tmp_path: Path, side: str) -> None:
+    """Names with a line break (one at the end too) are listed whole, and only a clone's two
+    places count: what lies deeper in a clone, readable or not, is not looked at."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    for name in ("agent-4\nx", "agent-5\n", "agent-6"):
+        (ws / "maity" / name / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-6" / "repo" / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-6" / "sub" / "deeper" / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-6" / "repo" / "sub" / ".git" / "maity").mkdir(parents=True)
+    closed = ws / "maity" / "agent-6" / "closed"
+    closed.mkdir()
+    closed.chmod(0)
+    try:
+        found = supervisor.other_credentials(ws, own, SIDES[side]())
+        single = supervisor.other_credentials(ws, own, AsUser())
+    finally:
+        closed.chmod(0o700)
+    base = ws.resolve() if SIDES[side]().here else ws
+    clones = ("agent-4\nx", "agent-5\n", "agent-6", "agent-6/repo")
+    assert found == sorted(base / "maity" / c / ".git" / "maity" for c in clones)
+    assert found == single
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_a_clone_reached_through_a_link_never_lists_its_own_credential(
+    tmp_path: Path, side: str
+) -> None:
+    ws, real = tmp_path / "ws", tmp_path / "elsewhere" / "agent-3"
+    (real / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git" / "maity").mkdir(parents=True)
+    own = ws / "maity" / "agent-3"
+    own.symlink_to(real)
+    found = supervisor.other_credentials(ws, own, SIDES[side]())
+    base = ws.resolve() if SIDES[side]().here else ws
+    assert found == [base / "maity" / "agent-4" / ".git" / "maity"]
+
+
 def test_the_agents_home_hides_agys_directory_from_other_sandboxes(tmp_path: Path) -> None:
     clone = tmp_path / "ws" / "maity" / "agent-3"
     assert tmp_path / "home" / ".gemini" in supervisor.private_paths(None, tmp_path / "home", clone)

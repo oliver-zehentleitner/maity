@@ -1411,38 +1411,64 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
                               if (c / ".git" / "maity").is_dir()]  # fmt: skip
         except OSError as exc:
             raise refused from exc
-        real_root = root
+        real_root, real_clone = root, clone.resolve()
     elif not as_user.exists(root, "-d"):
         return []  # no clone yet: nothing to hide
     else:
-        (real_root,) = _canonical([root], as_user, refused)
+        real_root, real_clone = _canonical([root, clone], as_user, refused)
         found = _listed(real_root, as_user, refused)
-    own = (clone.resolve() if as_user.here else clone) / ".git" / "maity"
+    own = _below_root(real_clone, real_root, root) / ".git" / "maity"
     named = {_below_root(p, real_root, root) for p in _canonical(found, as_user, refused)}
     return sorted(named - {own})
 
 
+# For each clone entry given: its two places for a credential, looked at through a link as
+# Path.is_dir does on the direct side, one NUL after each found. A place that cannot be
+# looked at (a directory on its way, where it lies, that cannot be searched) ends the
+# listing with 3, as a PermissionError does there: it could hide one. A link that leads
+# nowhere is no credential, as there.
+_SLOTS = r"""blocked() {
+  r=$(realpath -m -- "$1" && printf x) || return 0
+  p=${r%?x}
+  [ "$2" = self ] || p=${p%/*}
+  while [ -n "$p" ]; do
+    if [ -d "$p" ] && ! [ -x "$p" ]; then return 0; fi
+    p=${p%/*}
+  done
+  return 1
+}
+for d; do
+  for c in "$d" "$d/repo"; do
+    for q in "$c" "$c/.git"; do
+      if blocked "$q" self; then exit 3; fi
+    done
+    if blocked "$c/.git/maity" parent; then exit 3; fi
+    if [ -d "$c/.git/maity" ]; then printf '%s\0' "$c/.git/maity"; fi
+  done
+done"""
+
+# Each path resolved, one NUL after each, its name kept exactly (a trailing newline too).
+_REALPATHS = r"""for p; do
+  r=$(realpath -- "$p" && printf x) || exit 3
+  printf '%s\0' "${r%?x}"
+done"""
+
+
 def _listed(root: Path, as_user: AsUser, refused: workspace.Refused) -> list[Path]:
     """The credential directories under the real directory `root`, listed as the agents'
-    user on their side: every clone's two places for one (`<clone>/.git/maity`, `<clone>/
-    repo/.git/maity`), looked at through a link as on the direct side, and any other
-    `.git/maity` directory at a clone's depth (depth 5: a nested repository's too, which
-    only hides more)."""
+    user on their side, as the direct side lists them: every clone's two places for one
+    (`<clone>/.git/maity`, `<clone>/repo/.git/maity`) under every project that is not a
+    link, looked at through a link."""
     entries = as_user.run(["find", str(root), "-mindepth", "2", "-maxdepth", "2", "-print0"])
-    plain = as_user.run(["find", str(root), "-mindepth", "4", "-maxdepth", "5", "-type", "d",
-                         "-path", "*/.git/maity", "-print0"])  # fmt: skip
-    if entries.returncode != 0 or plain.returncode != 0:  # some directory could not be read
+    if entries.returncode != 0:  # some directory could not be read: the list may be short
         raise refused
-    places = [str(Path(d) / sub / ".git" / "maity") for d in entries.stdout.split("\0") if d
-              for sub in ("", workspace.REPO)]  # fmt: skip
-    found = [Path(p) for p in plain.stdout.split("\0") if p]
-    if places:
-        checked = as_user.run(["sh", "-c", 'for p; do [ -d "$p" ] && printf "%s\\0" "$p"; done; :',
-                               "sh", *places])  # fmt: skip
-        if checked.returncode != 0:
-            raise refused
-        found += [Path(p) for p in checked.stdout.split("\0") if p]
-    return found
+    clones = [d for d in entries.stdout.split("\0") if d]
+    if not clones:
+        return []
+    checked = as_user.run(["sh", "-c", _SLOTS, "sh", *clones])
+    if checked.returncode != 0:
+        raise refused
+    return [Path(p) for p in checked.stdout.split("\0") if p]
 
 
 def _below_root(path: Path, real_root: Path, root: Path) -> Path:
@@ -1465,8 +1491,8 @@ def _canonical(paths: list[Path], as_user: AsUser, refused: workspace.Refused) -
             return [path.resolve(strict=True) for path in paths]
         except OSError as exc:
             raise refused from exc
-    done = as_user.run(["realpath", "--", *(str(path) for path in paths)])
-    resolved = [Path(line) for line in done.stdout.split("\n") if line]
+    done = as_user.run(["sh", "-c", _REALPATHS, "sh", *(str(path) for path in paths)])
+    resolved = [Path(p) for p in done.stdout.split("\0")[:-1]]
     if done.returncode != 0 or len(resolved) != len(paths):
         raise refused
     return resolved
