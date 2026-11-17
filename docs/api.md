@@ -18411,7 +18411,7 @@ clone Z. It is the only thing the hub asks of a runner.
 
 | Cause | `closed_reason` | How it closes |
 |---|---|---|
-| `DELETE` of the placement | `removed` | uniform: `desired: stopped`; closed by the runner's next terminal report for it — `stopped`, `failed`, or `exited` with `retry_at: null` (a `rate_limited` placement is stopped, not waited for: §15.7) — or at once if the runner never acted on it (no report yet) or has no live credential (nobody can report) |
+| `DELETE` of the placement | `removed` | uniform: `desired: stopped` and `closing` set; closed by the runner's next accepted terminal report for the current generation (`observed_generation` equal to `generation`) — `stopped`, `failed`, or `exited` with `retry_at: null` (a `rate_limited` placement is stopped, not waited for: §15.7). At once instead when nobody will report or nothing runs: its `approval.status` is not `approved`, the runner never acted on it (no report yet), the runner has no live credential, or its last report is terminal and for the current generation (`reported_current`). A terminal report of an older generation, such as the last one before a restart or a change of spec, does not close it at once |
 | detaching the runner from the project | `detached` | uniform, as above |
 | the project moves to `archived` | `project_archived` | uniform, as above |
 | consent answered `no` | `refused` | at once: a pending placement was never seen by the runner |
@@ -18427,7 +18427,8 @@ A placement closing the uniform way is still active and reads as
 `desired: stopped` until a terminal report closes it: under `desired:
 stopped` a `failed` or a final `exit` ends it as surely as `stopped`.
 `DELETE` of a placement that is already closing closes it at
-once (`removed`): the escape when a runner never reports. `DELETE` of a
+once (`removed`), whatever the runner last reported: the escape when a
+runner never reports. `DELETE` of a
 placement whose consent request is open closes it at once (`removed`)
 and withdraws the request. The hub never deletes a workspace; the
 runner will remove it once the placement has stopped for its retention
@@ -18679,8 +18680,9 @@ routes, in this order:
    owner's to save; nothing of the clone goes over.
 2. `desired: stopped`, and `workspace_retention` as they wish.
 3. `DELETE` the placement and wait until it is closed (`active: false`).
-   The first `DELETE` of a placement the runner acted on answers `200`
-   while it is still `closing`; if the runner never reports, a second
+   The first `DELETE` of a placement the runner may still be running
+   (§15.5, **Closing**) answers `200` while it is still `closing`; if the
+   runner never reports, a second
    `DELETE` closes it at once (§15.5).
 4. Revoke the old instance's credential (`POST …/credentials/{id}/revoke`,
    §10, which the agent's owner may), which a `DELETE` alone does not
@@ -19056,8 +19058,8 @@ A placement as the runner reads it:
   `observed_generation` is below the current generation is recorded as
   a `placement_reported` event and does not move `reported`; one above
   it is `stale_generation`. A terminal report (`stopped`, `failed`, or
-  `exited` with `retry_at: null`) on a placement that is closing closes
-  it (§15.5). A report on a placement closed meanwhile answers `200` and
+  `exited` with `retry_at: null`) of the current generation on a
+  placement that is closing closes it (§15.5). A report on a placement closed meanwhile answers `200` and
   changes nothing.
 - `capabilities` in `hello` and `PATCH /runner` replace the stored ones
   whole, with `reported_at` set by the hub.
