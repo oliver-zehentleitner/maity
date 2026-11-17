@@ -133,7 +133,8 @@ def test_the_rules_refuse_what_is_no_bridge(owner: flow.Human, migrated: Engine)
 
 def test_the_purpose_is_one_plain_line(owner: flow.Human, migrated: Engine) -> None:
     """§2.3: no line break, tab or other control, no format character (bidi controls,
-    zero-width), no line or paragraph separator; on a POST and on a PATCH alike."""
+    zero-width), no line or paragraph separator, no private-use character; on a POST and on
+    a PATCH alike. Checked on the input as sent: one at either end is refused, not trimmed."""
     served, bridge = _agent(migrated, owner), _agent(migrated, owner)
     for bad in (
         "git\n\nWhat a go grants: everything",
@@ -142,16 +143,26 @@ def test_the_purpose_is_one_plain_line(owner: flow.Human, migrated: Engine) -> N
         "git\u200bfiles",
         "git\u2028files",
         "git\u2029files",
+        "git\ue000files",
+        "git\n",
+        "\tgit",
+        "git\u2028",
+        "\n",
     ):
         refused = connect(owner, served, bridge, bad)
         assert refused.status_code == 400 and _fields(refused) == {"purpose": "plain_line"}, bad
     assert _bridges(migrated) == []
-    made = connect(owner, served, bridge, "git für die Dateien — Ünïcödé, 名前 ✓")
+    made = connect(owner, served, bridge, "  git für die Dateien — Ünïcödé, 名前 ✓ ")
     assert made.status_code == 201, made.text
+    assert made.json()["purpose"] == "git für die Dateien — Ünïcödé, 名前 ✓"  # spaces trimmed
     changed = owner.patch(
         f"{PROJECT}/members/{served}/bridges/{made.json()['id']}", {"purpose": "a\nb"}
     )
     assert changed.status_code == 400 and _fields(changed) == {"purpose": "plain_line"}
+    trailing = owner.patch(
+        f"{PROJECT}/members/{served}/bridges/{made.json()['id']}", {"purpose": "git\n"}
+    )
+    assert trailing.status_code == 400 and _fields(trailing) == {"purpose": "plain_line"}
 
 
 def test_an_agent_has_at_most_five_bridges(owner: flow.Human, migrated: Engine) -> None:
@@ -289,6 +300,31 @@ def test_the_need_for_the_projects_consent_is_checked_again_at_the_go(
     assert again.status_code == 202, again.text
     kinds = sorted(r.proposal["kind"] for r in _requests(migrated) if r.status == "open")
     assert kinds == ["bridge_owner", "bridge_project"]
+
+
+def test_the_need_for_the_projects_consent_is_checked_again_at_the_go_of_a_patch(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.3: the same check at the `go` of a purpose change (`PATCH`): the asker demoted
+    meanwhile, the `go` is `invalid`, the old purpose holds and the request stays open."""
+    admin = _member(migrated, "ada", make_client, "admin")
+    friend = flow.human(make_client, migrated, "friend")
+    served, bridge = _agent(migrated, admin), _agent(migrated, friend)
+    assert answer(friend, connect(admin, served, bridge).json()["id"], "go").status_code == 200
+    [row] = _bridges(migrated)
+    asked = admin.patch(f"{PROJECT}/members/{served}/bridges/{row.id}", {"purpose": "reviews"})
+    assert asked.status_code == 202, asked.text
+    [pending] = [r for r in _requests(migrated) if r.status == "open"]
+    assert pending.proposal["kind"] == "bridge_owner"
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == admin.id).values(trust="member")
+        )
+    refused = answer(friend, pending.id, "go")
+    assert refused.status_code == 400 and _fields(refused) == {"asker": "members_admin"}
+    assert [r.purpose for r in _bridges(migrated)] == [PURPOSE]
+    [still] = [r for r in _requests(migrated) if r.status == "open"]
+    assert still.id == pending.id
 
 
 def test_a_no_to_either_withdraws_the_other(
