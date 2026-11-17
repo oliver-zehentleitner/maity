@@ -173,6 +173,24 @@ def _walk(
         os.close(fd)
 
 
+def located(root: Path, given: str, what: str, scratch: Path | None) -> tuple[list[str], bool]:
+    """The names down to the file `given` names, and whether they start at the placement's
+    `scratch` (recorded_scratch) rather than the clone's root: on the text alone, as
+    `names`. Refused, naming both, when the path leads out of the clone and the scratch."""
+    try:
+        return names(root, given, what), False
+    except Refused:
+        if scratch is None:
+            raise
+    try:
+        return names(scratch, given, what), True
+    except Refused:
+        raise Refused(
+            f"{what} {given}: not a file in this clone ({root}) or in the placement's"
+            f" scratch ({scratch})"
+        ) from None
+
+
 def read(
     root: Path,
     given: str,
@@ -187,22 +205,10 @@ def read(
     `scratch` (recorded_scratch) a file under the placement's scratch is read the same way,
     the walk starting at `/`: no directory on the way to the scratch or below it is a
     link."""
-    try:
-        path = names(root, given, what)
-    except Refused:
-        if scratch is None:
-            raise
-        try:
-            path = names(scratch, given, what)
-        except Refused:
-            raise Refused(
-                f"{what} {given}: not a file in this clone ({root}) or in the placement's"
-                f" scratch ({scratch})"
-            ) from None
-        root, opened, from_top = scratch, None, True
-    else:
-        from_top = False
-    with _walk(root, path[:-1], opened, given, what, None, from_top) as directory:
+    path, in_scratch = located(root, given, what, scratch)
+    if in_scratch and scratch is not None:
+        root, opened = scratch, None
+    with _walk(root, path[:-1], opened, given, what, None, in_scratch) as directory:
         fd = _open_at(directory, path[-1], os.O_RDONLY | os.O_NONBLOCK, given, what)
     try:
         found = os.fstat(fd)

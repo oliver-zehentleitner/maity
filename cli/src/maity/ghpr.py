@@ -136,13 +136,8 @@ def body_file(root: Path, given: str, opened: clonecheck.Opened | None = None) -
     checked (`opened`), outside that `.git`, or in the placement's scratch (783e476c), with
     no other hard link, of at most BODY_MAX bytes (cli/context/runner.md 9f43804d)."""
     scratch = inclone.recorded_scratch(root, opened.git if opened else None)
-    try:  # a path out of the clone and its scratch says so everywhere
-        try:
-            inclone.names(root, given, "--body-file")
-        except inclone.Refused:
-            if scratch is None:
-                raise
-            inclone.names(scratch, given, "--body-file")
+    try:  # a path out of the clone and its scratch says so everywhere, with both named
+        inclone.located(root, given, "--body-file", scratch)
     except inclone.Refused as exc:
         raise Refused(str(exc)) from None
     if not WALKS:  # Windows
