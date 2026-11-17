@@ -54,7 +54,7 @@ Pairing is how the machine joins. You create a pairing line under **Runners** in
 
 A placement is the hub's record that one agent should run on one runner, with one harness. A harness is the program the agent runs in, such as Claude Code. Only the runner's owner places agents on a runner, wherever it is attached: attaching it to a project shows it there and lets nobody else start an agent on it. An agent of the runner's owner may propose one. By default, its proposal does not start anything: the hub asks the runner's owner in person, and only that human answers, never an agent. The runner's owner, when they administer the project, can start or change a placement directly (in the dashboard: **Join an agent** → **Start an agent on a runner** on the project's Agents or Team page), and that action is their own consent. A project can refuse agent proposals or accept them without a question; who answers the question it cannot change.
 
-A harness adapter turns an approved placement into the launch: the command, the environment and the files the session needs. The runner offers Claude Code, Codex and Antigravity. An adapter for OpenCode is built, and the runner does not offer it yet: a configuration that names it is refused. On the runner service, the sessions run inside tmux ([Runners](../runners.md)).
+A harness adapter turns an approved placement into the launch: the command, the environment and the files the session needs. The runner offers Claude Code, Codex, Antigravity and OpenCode. On the runner service, the sessions run inside tmux ([Runners](../runners.md)).
 
 The runner only acts on a placement that has been approved. Until then it is not asked to start that agent.
 
