@@ -1091,6 +1091,11 @@ class _Outage:
         if self.start is not None and self.reported:
             since = _utc(self._since(wall, mono))
             _err(f"hub answering again at {_utc(wall)}, unreachable since {since}")
+        elif self.start is not None and mono - self.start >= OUTAGE_AFTER:
+            # The minute passed during the read that answered (a long poll held after a
+            # retried drop): never reported, so one line names both ends.
+            since = _utc(self._since(wall, mono))
+            _err(f"{self.reason} since {since}; hub answering again at {_utc(wall)}")
         self.start = None
         self.reported = False
         with contextlib.suppress(OSError):

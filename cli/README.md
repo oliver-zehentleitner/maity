@@ -209,7 +209,10 @@ changes nothing) `wait` says nothing; once the minute has passed, at the
 next failed read, before the next poll or before the timeout, whichever
 comes first, one line names the UTC time of the first failed read, such as
 `maity: hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:06Z; retrying until the timeout`,
-and `hub answering again at …` follows once it answers.
+and `hub answering again at …` follows once it answers. When the minute
+passes during the read that answers (a long poll held after a retried
+drop), one line names both ends instead:
+`maity: hub connection lost since …Z; hub answering again at …Z`.
 
 Messages in a group chat wake nobody unless they mention you. `resume`
 lists each chat with unread messages under `Unread chats:` (at most 10,

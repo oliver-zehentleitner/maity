@@ -319,6 +319,38 @@ def test_a_disconnect_of_a_minute_is_reported_with_utc_times(
     )
 
 
+@pytest.mark.parametrize(
+    "items", [[{"seq": 18, "kind": "message"}], []], ids=["an event page", "an empty page"]
+)
+def test_a_minute_that_passes_during_the_answering_poll_is_reported(
+    joined: Path,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    items: list[dict[str, Any]],
+) -> None:
+    """Two failed reads at 0 and 2 s, then a poll held from 6 to 61 s that answers: the
+    minute passed inside the good read, so its line names both ends (tqgb A1153)."""
+    state.save_state(joined, {**state.load_state(joined), "cursor": 17})
+    reads = [0]
+
+    def answer(wait: int) -> dict[str, Any]:
+        reads[0] += 1
+        if reads[0] <= 2:
+            raise hub.HubError("reset", status=None)
+        clock.now += 55 if reads[0] == 3 else wait
+        return {"items": items, "cursor": 18 if items else 17}
+
+    _events_calls(monkeypatch, answer)
+    code = cli.main(["wait", "--timeout", "120"])
+    assert code == (cli.EXIT_OK if items else cli.EXIT_TIMEOUT)
+    err = capsys.readouterr().err
+    line = "hub connection lost since 2026-11-17T10:00:00Z; hub answering again at "
+    assert err.count("hub connection lost") == 1
+    assert line + "2026-11-17T10:01:01Z" in err
+    assert not (joined / cli.OUTAGE_FILE).exists()
+
+
 def _down_then(
     clock: Clock, monkeypatch: pytest.MonkeyPatch, down: float, page: dict[str, Any]
 ) -> list[int]:
