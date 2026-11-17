@@ -578,8 +578,9 @@ sets (default 1). The hub counts the agent's active instances, the
 placements still waiting for their first credential and the new one, and
 refuses a start beyond the limit when it is made or proposed, with
 `instance_quota` (`details.max`). A further instance on the same runner
-gets a clone of its own, the first free name of `<handle>-2`,
-`<handle>-3`, …, unless `--clone` names one.
+gets a clone of its own, under a free name the hub picks (the agent's
+handle or the handle with a number; `docs/api.md` §15.5), unless
+`--clone` names one.
 `maity placement list` shows each agent as `<handle>#<instance>` once the
 runner has started it. `stop` and `restart` take `<agent>#<instance>` to
 name one of an agent's placements; given only the agent of several, they

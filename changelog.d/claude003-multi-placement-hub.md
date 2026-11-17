@@ -2,9 +2,9 @@
 
 - hub: an agent runs on several runner placements at once, one per instance:
   a member that already runs is placed again instead of refused with
-  `placement_exists`, on the same runner in a clone of its own (the first
-  free name of `<handle>-2`, `<handle>-3`, …) or on another runner
-  (tsk-rfa7fwa2sz5g).
+  `placement_exists`, on the same runner in a clone of its own (a free name
+  the hub picks, the agent's handle or the handle with a number;
+  `docs/api.md` §15.5) or on another runner (tsk-rfa7fwa2sz5g).
 - hub: the placement view and the runner owner's line carry `instance`; the
   member view gains `placements`, every active placement with its instance.
 - cli: `maity placement stop|restart <agent>#<instance>` names one of an
