@@ -134,7 +134,7 @@ class RunSlotTest(unittest.TestCase):
     def test_a_run_logs_its_start_and_its_end(self) -> None:
         env = {**self.env, "MAITY_RUN_NAME": "coder#ab\tcd"}
         result = subprocess.run(
-            [SCRIPT, "sh", "-c", "sleep 1.2; echo $$", "x\ny"],
+            [SCRIPT, "sh", "-c", "sleep 1.2; echo $$"],
             env=env,
             capture_output=True,
             text=True,
@@ -156,6 +156,20 @@ class RunSlotTest(unittest.TestCase):
         self.assertEqual(end[2:4], ["slot=0", f"pid={pid}"])
         self.assertRegex(end[4], r"^secs=[1-9]\d*$")
         self.assertEqual((self.tmp / "slots" / "log").stat().st_mode & 0o777, 0o640)
+
+    def test_tabs_and_line_breaks_in_who_and_cmd_become_spaces(self) -> None:
+        env = {**self.env, "MAITY_RUN_NAME": "coder#a\tb\nc\rd"}
+        subprocess.run([SCRIPT, "true", "x\ty\nz\rw"], env=env, check=True, timeout=30)
+        lines = self.log_lines(2)
+        self.assertEqual(len(lines), 2, lines)  # a start and an end line, nothing broken off
+        start, end = lines
+        self.assertEqual(len(start), 7, start)
+        self.assertEqual(start[0], "start")
+        self.assertEqual(start[5:], ["who=coder#a b c d", "cmd=true x y z w"])
+        self.assertEqual(end[0], "end")
+        text = (self.tmp / "slots" / "log").read_text()
+        self.assertEqual(text.count("\n"), 2, text)
+        self.assertNotIn("\r", text)
 
     def test_only_the_program_and_its_first_argument_are_kept(self) -> None:
         subprocess.run(
@@ -223,6 +237,24 @@ class RunSlotTest(unittest.TestCase):
         self.assertEqual(result.returncode, 3)
         self.assertEqual(result.stderr, "")
 
+    @unittest.skipIf(os.geteuid() == 0, "root writes a read-only file")
+    def test_a_log_file_that_is_read_only_does_not_stop_the_run(self) -> None:
+        slots = self.tmp / "slots"
+        slots.mkdir()
+        (slots / "log").touch()
+        (slots / "log").chmod(0o400)  # a regular file: the append is tried and fails
+        marker = self.tmp / "ran"
+        result = subprocess.run(
+            [SCRIPT, "sh", "-c", f"touch {marker}; exit 3"],
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertTrue(marker.exists(), "the command never ran")
+        self.assertEqual(result.stderr, "")
+
     def test_a_log_that_is_a_fifo_does_not_hold_the_run(self) -> None:
         slots = self.tmp / "slots"
         slots.mkdir()
@@ -239,19 +271,46 @@ class RunSlotTest(unittest.TestCase):
         self.assertTrue(marker.exists(), "the command never ran")
         self.assertEqual(result.stderr, "")
 
-    @unittest.skipIf(shutil.which("setsid") is None, "needs util-linux setsid")
-    def test_a_run_cancelled_with_its_process_group_still_logs_its_end(self) -> None:
+    def watcher_ids(self, pid: int) -> tuple[int, int]:
+        """The process group and session of the watcher for the run `pid`, found in /proc."""
+        deadline = time.monotonic() + 30
+        while True:
+            for entry in Path("/proc").iterdir():
+                if not entry.name.isdigit():
+                    continue
+                try:
+                    args = (entry / "cmdline").read_bytes().split(b"\0")[:-1]
+                    stat = (entry / "stat").read_text()
+                except OSError:
+                    continue
+                if b"run_slot-watcher" in args and args[-1] == str(pid).encode():
+                    # pid (comm) state ppid pgrp session ...: comm may hold spaces, so split
+                    # after its closing parenthesis.
+                    fields = stat[stat.rindex(")") + 2 :].split()
+                    return int(fields[2]), int(fields[3])
+            self.assertLess(time.monotonic(), deadline, "no watcher found")
+            time.sleep(0.05)
+
+    def cancel_group_and_expect_the_end(
+        self, sig: signal.Signals, env: dict[str, str], in_own_session: bool
+    ) -> None:
+        """Starts a run in a session of its own, as a supervisor would (the run leads its
+        process group), checks where its watcher runs, sends `sig` to the run's group and
+        expects the end line all the same."""
         ready = self.tmp / "ready"
-        # A session of its own, as a supervisor would start it: the run leads its process group.
         run = subprocess.Popen(
-            [SCRIPT, "sh", "-c", f"touch {ready}; sleep 60"],
-            env=self.env,
-            start_new_session=True,
+            [SCRIPT, "sh", "-c", f"touch {ready}; sleep 60"], env=env, start_new_session=True
         )
         try:
             self.wait_for(ready)
-            os.killpg(run.pid, signal.SIGTERM)
-            self.assertEqual(run.wait(timeout=30), -signal.SIGTERM)
+            pgid, sid = self.watcher_ids(run.pid)
+            if in_own_session:
+                self.assertNotEqual(pgid, run.pid, "the watcher is in the run's process group")
+                self.assertNotEqual(sid, run.pid, "the watcher is in the run's session")
+            else:
+                self.assertEqual(pgid, run.pid, "the test means a watcher in the run's group")
+            os.killpg(run.pid, sig)
+            self.assertEqual(run.wait(timeout=30), -sig)
             start, end = self.log_lines(2)  # waits up to 30 s for the watcher's end line
             self.assertEqual(start[0], "start")
             self.assertEqual(start[3], f"pid={run.pid}")
@@ -266,6 +325,30 @@ class RunSlotTest(unittest.TestCase):
                 run.wait(timeout=30)
             except subprocess.TimeoutExpired:
                 pass
+
+    @unittest.skipIf(shutil.which("setsid") is None, "needs util-linux setsid")
+    @unittest.skipUnless(Path("/proc/self/stat").exists(), "needs /proc")
+    def test_a_run_cancelled_with_its_process_group_still_logs_its_end(self) -> None:
+        self.cancel_group_and_expect_the_end(signal.SIGTERM, self.env, in_own_session=True)
+
+    @unittest.skipIf(shutil.which("setsid") is None, "needs util-linux setsid")
+    @unittest.skipUnless(Path("/proc/self/stat").exists(), "needs /proc")
+    def test_the_watcher_s_own_session_keeps_it_from_a_signal_it_does_not_ignore(self) -> None:
+        # USR1 is not ignored: only the session of its own keeps the watcher alive.
+        self.cancel_group_and_expect_the_end(signal.SIGUSR1, self.env, in_own_session=True)
+
+    @unittest.skipUnless(Path("/proc/self/stat").exists(), "needs /proc")
+    def test_without_setsid_the_ignored_term_keeps_the_watcher(self) -> None:
+        # A PATH with only the tools the run needs, setsid not among them: the watcher stays in
+        # the run's process group, and only its ignoring TERM keeps it alive.
+        bin_dir = self.tmp / "bin"
+        bin_dir.mkdir()
+        for tool in ("bash", "sh", "flock", "mkdir", "date", "sleep", "touch", "cat"):
+            found = shutil.which(tool)
+            self.assertIsNotNone(found, tool)
+            (bin_dir / tool).symlink_to(found)
+        env = {**self.env, "PATH": str(bin_dir)}
+        self.cancel_group_and_expect_the_end(signal.SIGTERM, env, in_own_session=False)
 
     def test_the_watcher_holds_neither_the_slot_nor_the_output(self) -> None:
         env = {**self.env, "MAITY_RUN_SLOTS": "1"}

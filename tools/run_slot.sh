@@ -93,15 +93,17 @@ while :; do
       # The watcher for the end line: started twice removed, so it is no child of the command (a
       # command that waits for all its children would wait for it too), without fd 7 (it would
       # hold the slot) and without the run's output (a reader would wait for its end). It ignores
-      # INT, HUP and TERM from the start (an ignored signal stays ignored across exec) and runs in
-      # a session of its own, so a supervisor that cancels the command's process group does not
+      # INT, HUP and TERM from the start: the outer subshell ignores them before it forks the
+      # watcher, so the watcher has them ignored before the command is exec'd and no group signal
+      # can come first (an ignored signal stays ignored across fork and exec). It runs in a
+      # session of its own, so a supervisor that cancels the command's process group does not
       # cancel the watcher, and the run keeps its end line. setsid execs at once here: the
       # subshell is no process group leader (no job control), and without --wait it never waits.
       # Without setsid the watcher stays in the command's group, still ignoring those signals.
       (
+        trap '' INT HUP TERM
         (
           exec 7>&- </dev/null >/dev/null 2>&1
-          trap '' INT HUP TERM
           watcher="$(declare -f log_line)"'
             log=$1 slot=$2 pid=$3
             began=$SECONDS

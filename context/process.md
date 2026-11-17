@@ -1938,7 +1938,9 @@ tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
 - The watcher's own session (review A1081): created before the `exec`, it was in the command's
   process group, and a supervisor that sent TERM to that group (an ordinary cancellation) took the
   watcher along, so exactly the interrupted runs lost their end line. `setsid` comes from
-  util-linux, like `flock`; without it the watcher only ignores the signals. Only a regular file
+  util-linux, like `flock`; without it the watcher only ignores the signals. They are ignored
+  before the watcher is forked (review A1093), so a group signal right after the `exec` cannot
+  reach it ahead of the trap. Only a regular file
   (or none yet) is opened as the log: an append open of a FIFO without a reader blocks, and it
   came after the slot was taken and before the command started, so the run held its slot without
   running.
