@@ -2192,6 +2192,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     harness: "claude-code", mode: "interactive", model: null, workspace: { clone: "agent-f-web", branch: "main" } })
     && srBox().querySelectorAll("li.placement").length === 6 && text(srBox()).includes("Agent F on home-laptop"),
     "placements: a new profile is sent with its join fields, as in a join " + JSON.stringify(srMade[2]));
+  // The project's limit of placements reached (§6.1 max_placements, tsk-6s5n7egy4e5r): the refusal names
+  // the limit and links to where a human admin raises it. Six are active now; the limit set to six.
+  await win.Maity.api.patch("/projects/maintainer/maity", { policy: { max_placements: 6 }, reason: "the quota case" });
+  await srOpen();
+  byId("placement-new-handle").value = "agent-q"; byId("placement-new-name").value = "Agent Q";
+  srForm().requestSubmit(); for (let k = 0; k < 8; k++) await tick();
+  const srQuota = srForm() && srForm().querySelector(".send-status");
+  const srQuotaLink = srQuota && srQuota.querySelector("a.placement-quota-link");
+  expect(srQuota && text(srQuota) === "Not placed on the runner: the project's limit of 6 active placements on runners is reached. Raise the limit in Settings, Members and agents."
+    && srQuotaLink && srQuotaLink.getAttribute("href") === "#/maintainer/maity/settings/members" && srBox().querySelectorAll("li.placement").length === 6,
+    "placements: placement_quota names the project's limit and links to Members and agents in Project settings " + (srQuota && text(srQuota)));
+  srCancel().click(); await tick();
+  await win.Maity.api.patch("/projects/maintainer/maity", { policy: { max_placements: 8 }, reason: "back for the tests" });
+  srMade.pop();
   // Only runners that offer the project's repository, matched as the hub's fnmatch does (tsk-wn6qp27090qy):
   // one with a foreign repository is left out, one whose pattern matches is offered; with none, why.
   const srGetAll = win.Maity.api.getAll, srGet = win.Maity.api.get;
@@ -4142,6 +4156,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(maPatches.length === 1 && JSON.stringify(maPatches[0][1]) === JSON.stringify({ policy: { member_agents_max: 5 }, reason: "a bigger team" }),
     "own agents: only what changed is sent, with its reason " + JSON.stringify(maPatches[0] && maPatches[0][1]));
   await win.Maity.api.patch("/projects/maintainer/maity", { policy: { member_agents_max: 3 }, reason: "back for the tests" });
+  // Beside it, the project's placements on runners: n of max, changed by a human admin with a reason
+  // (§6.1 max_placements, tsk-6s5n7egy4e5r); out of range is said at the field and nothing is sent.
+  await go("#/maintainer/maity/inbox"); await projectSettings("members"); for (let k = 0; k < 4; k++) await tick();
+  maPatches.length = 0;
+  const mpForms = main.querySelectorAll("form").map((f) => f.getAttribute("class") || "");
+  const mpAt = mpForms.findIndex((c) => c.includes("max-placements-form"));
+  expect(mpAt > 0 && mpForms[mpAt - 1].includes("member-agents-form") && byId("max-placements").value === "8"
+    && /^Placements on runners: \d+ of 8$/.test(text(byId("max-placements-count"))),
+    "placements limit: Project settings show it next to members' own agents, with n of max " + text(byId("max-placements-count") || main));
+  byId("max-placements").value = "1001"; byId("max-placements-reason").value = "two runners";
+  main.querySelector("form.max-placements-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!maPatches.length && text(byId("max-placements-error")) === "Placements on runners: a whole number from 0 to 1000.",
+    "placements limit: out of range is said at the field, nothing is sent");
+  byId("max-placements").value = "16"; byId("max-placements-reason").value = "";
+  main.querySelector("form.max-placements-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!maPatches.length, "placements limit: no reason, nothing is sent");
+  byId("max-placements-reason").value = "two runners";
+  main.querySelector("form.max-placements-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(maPatches.length === 1 && JSON.stringify(maPatches[0][1]) === JSON.stringify({ policy: { max_placements: 16 }, reason: "two runners" })
+    && byId("max-placements") && byId("max-placements").value === "16" && /^Placements on runners: \d+ of 16$/.test(text(byId("max-placements-count"))),
+    "placements limit: the new value is sent alone with its reason and shown after the save " + JSON.stringify(maPatches[0] && maPatches[0][1]));
+  await maPatch("/projects/maintainer/maity", { policy: { max_placements: 8 }, reason: "back for the tests" });
+  // An admin agent has no such field: the policy is a human's (§2.3).
+  const mxGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mxGet(p).then((x) => Object.assign({}, x, { member: Object.assign({}, x.member, { kind: "agent" }) })) : mxGet(p));
+  await go("#/maintainer/maity/inbox"); await projectSettings("members"); for (let k = 0; k < 4; k++) await tick();
+  expect(!byId("max-placements") && !byId("member-agents-max"), "placements limit: not offered to an agent, as members' own agents");
+  win.Maity.api.get = mxGet;
   win.Maity.api.patch = maPatch;
   await go("#/maintainer/maity/inbox");
 
@@ -5102,11 +5144,60 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Copy beside a runner command is no action on the placement.
   const plActs = () => plBox().querySelectorAll("button").filter((b) => !b.getAttribute("aria-label") || !b.getAttribute("aria-label").startsWith("Copy the "));
   expect(plBox() && !plActs().length, "placements: a runner someone else owns gives a project admin no actions");
-  // One's own runner gives the rights, also over agents someone else owns.
+  // The hub computes `foreign` (placements.py, docs/api.md §15.5): true exactly when the agent profile's owner
+  // is not the runner's owner. Each case below gives the rows the value the hub would send for its owners.
+  const plForeign = (foreign) => (r) => ({ ...r, items: r.items.map((x) => ({ ...x, foreign })) });
+  // One's own runner gives the rights, also over agents someone else owns: placed before only the runner's
+  // owner could, so `foreign`, and Remove is offered as the hub allows the runner's owner the DELETE (§15.6).
   win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-maintainer")
+    : p === "/projects/maintainer/maity/placements" ? plGetAll(p).then(plForeign(true))
     : p === "/projects/maintainer/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})), next_cursor: null })) : plGetAll(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
-  expect(plBox() && btn(plRow("plc-0003"), "Restart"), "placements: one's own runner gives a project admin the actions, also over another owner's agent");
+  expect(plBox() && btn(plRow("plc-0003"), "Restart") && btn(plRow("plc-0003"), "Remove"),
+    "placements: one's own runner gives a project admin the actions, Remove too, also over another owner's agent (foreign)");
+  // The case of tsk-44x5grp6fcsq: one's own agent on one's own runner, so not `foreign`. Its owner may DELETE it
+  // (§15.6) to start it on another runner, so Remove is offered, where it used to be offered on a foreign one only.
+  // Remove asks first; declined it sends nothing, confirmed it is one DELETE.
+  {
+    const ownDels = [];
+    const ownDel = win.Maity.api.del, ownConfirm = win.confirm;
+    let ownAsked = null;
+    win.Maity.api.del = (p) => { ownDels.push(p); return Promise.resolve({}); };
+    win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-maintainer")
+      : p === "/projects/maintainer/maity/placements" ? plGetAll(p).then(plForeign(false)) : plGetAll(p));
+    win.Maity.api.get = plGet;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+    const ownRun = plRow("plc-0001"), ownOther = plRow("plc-0002");
+    const marked = [ownRun, ownOther].some((li) => text(li.querySelector(".placement-head")).includes("placed by someone other than the runner's owner"));
+    const removes = [ownRun, ownOther].map((li) => btn(li, "Remove"));
+    win.confirm = (q) => { ownAsked = q; return false; };
+    if (removes[0]) removes[0].click(); for (let k = 0; k < 4; k++) await tick();
+    const declined = ownDels.length;
+    win.confirm = () => true;
+    if (removes[1]) removes[1].click(); for (let k = 0; k < 6; k++) await tick();
+    win.confirm = ownConfirm; win.Maity.api.del = ownDel;
+    expect(!marked && removes.every(Boolean)
+      && removes[0].getAttribute("aria-label") === "Remove Agent B"
+      && ownAsked === "Remove Agent B from this runner? The agent stops there and the placement closes; its owner can place it again on a runner of their own."
+      && declined === 0 && JSON.stringify(ownDels) === JSON.stringify(["/projects/maintainer/maity/placements/plc-0002"]),
+      "placements: one's own agent on one's own runner, not foreign, offers Remove; Remove asks, then one DELETE "
+        + JSON.stringify({ marked, removes: removes.map(Boolean), ownAsked, ownDels }));
+    win.Maity.api.getAll = plGetAll;
+  }
+  // One's own agent on a runner someone else owns, placed before only the runner's owner could: `foreign`. Its
+  // profile's owner may DELETE it (§15.6) and place it again on a runner of their own, so Stop and Remove are
+  // offered; Start and Restart stay the runner's side.
+  {
+    win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-other")
+      : p === "/projects/maintainer/maity/placements" ? plGetAll(p).then(plNoHints).then(plForeign(true)) : plGetAll(p));
+    win.Maity.api.get = plGet;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+    const shown = [plRow("plc-0001"), plRow("plc-0002")].map((li) => li.querySelectorAll("button").map((b) => b.textContent));
+    // Both are wanted running by now (the restarts above), so each row shows Stop beside Remove.
+    expect(JSON.stringify(shown) === JSON.stringify([["Stop", "Remove"], ["Stop", "Remove"]]),
+      "placements: one's own agent, foreign, on another's runner offers Stop and Remove, no Start or Restart " + JSON.stringify(shown));
+    win.Maity.api.getAll = plGetAll;
+  }
   // No agent yet: the section is still there for a placement that creates its profile.
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? plGet(p).then((r) => Object.assign({}, r, { items: r.items.filter((x) => x.kind !== "agent") })) : plGet(p));
   win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.filter((x) => x.kind !== "agent"), next_cursor: null })) : plGetAll(p));

@@ -8097,7 +8097,7 @@ def project_tabs_step(run: Run, page: Page) -> None:
 SETTINGS_SECTIONS = {
     "General": ["Project language", "Project state", "Repository", "Links", "Project name", "Public page",
                 "README badge", "Change ticker", "Forge webhook", "Logo and banner"],
-    "Members and agents": ["Members' own agents", "Agents of owners who are not members", "Onboarding",
+    "Members and agents": ["Members' own agents", "Agents on runners", "Agents of owners who are not members", "Onboarding",
                            "Restricted access", "Agent signing", "Roles"],
     "Way of working": ["Who closes a card", "Memory", "Keep the Why commitment", "Keep the Why personal settings",
                        "Jour fixe series"],

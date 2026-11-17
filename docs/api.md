@@ -6384,8 +6384,7 @@ project: the `tag` of a release (§6.7) whose version has no pre-release
 part, filled by the probe with `found: true`, whether or not the release
 card is `done` yet — the maintainer's decision ties the mark to the
 first final release tag (`context/projects.md`); a pre-release tag never
-sets it. Not built yet (tsk-2t82evzkxwym): today any release tag the
-probe finds sets it.
+sets it.
 It is never cleared: it says the project has users. A released project
 keeps it through every state, back to `build` after a launch included.
 Setting it bumps `rules_version` with a `state_changed` event carrying
@@ -8622,9 +8621,7 @@ with `releases:write` and:
   zeros. Anything else — `.post` and `.dev` releases, epochs, local
   versions, a leading `v`, a spelling PEP 440 would normalize
   (`0.1.0alpha4`, `0.1.0.a4`, `0.1.0A4`) — is `invalid` with
-  `details.fields.release.version: not_a_version`. Not built yet
-  (tsk-2t82evzkxwym): today only SemVer is accepted, and anything else
-  is refused with `details.fields.release.version: not_semver`. The tag the probe
+  `details.fields.release.version: not_a_version`. The tag the probe
   looks for is `v` followed by the version exactly as given (`0.1.0a4` →
   `v0.1.0a4`, `1.2.0-rc.1` → `v1.2.0-rc.1`). Versions are compared as
   text: unique per project (`version_exists`), so `0.1.0-alpha.4` and
@@ -8721,8 +8718,7 @@ The `release` object on the card:
   informational. Only a release whose version is final — no
   pre-release part, neither a SemVer `-…` nor a PEP 440 `a`, `b` or
   `rc` — marks the project released when the probe finds its tag
-  (§6.1); a pre-release tag never does. Not built yet
-  (tsk-2t82evzkxwym): today any found release tag marks it.
+  (§6.1); a pre-release tag never does.
 - `GET /projects/{owner}/{slug}/tasks?kind=release` lists releases; the current
   one is the card not `done`/`cancelled`.
 
@@ -18417,7 +18413,7 @@ clone Z. It is the only thing the hub asks of a runner.
 
 | Cause | `closed_reason` | How it closes |
 |---|---|---|
-| `DELETE` of the placement | `removed` | uniform: `desired: stopped`; closed by the runner's next terminal report for it — `stopped`, `failed`, or `exited` with `retry_at: null` (a `rate_limited` placement is stopped, not waited for: §15.7) — or at once if the runner never acted on it (no report yet) or has no live credential (nobody can report) |
+| `DELETE` of the placement | `removed` | uniform: `desired: stopped` and `closing` set; closed by the runner's next accepted terminal report for the current generation (`observed_generation` equal to `generation`) — `stopped`, `failed`, or `exited` with `retry_at: null` (a `rate_limited` placement is stopped, not waited for: §15.7). At once instead when nobody will report or nothing runs: its `approval.status` is not `approved`, the runner never acted on it (no report yet), the runner has no live credential, or its last report is terminal and for the current generation (`reported_current`). A terminal report of an older generation, such as the last one before a restart or a change of spec, does not close it at once |
 | detaching the runner from the project | `detached` | uniform, as above |
 | the project moves to `archived` | `project_archived` | uniform, as above |
 | consent answered `no` | `refused` | at once: a pending placement was never seen by the runner |
@@ -18433,7 +18429,8 @@ A placement closing the uniform way is still active and reads as
 `desired: stopped` until a terminal report closes it: under `desired:
 stopped` a `failed` or a final `exit` ends it as surely as `stopped`.
 `DELETE` of a placement that is already closing closes it at
-once (`removed`): the escape when a runner never reports. `DELETE` of a
+once (`removed`), whatever the runner last reported: the escape when a
+runner never reports. `DELETE` of a
 placement whose consent request is open closes it at once (`removed`)
 and withdraws the request. The hub never deletes a workspace; the
 runner will remove it once the placement has stopped for its retention
@@ -18696,8 +18693,9 @@ routes, in this order:
    owner's to save; nothing of the clone goes over.
 2. `desired: stopped`, and `workspace_retention` as they wish.
 3. `DELETE` the placement and wait until it is closed (`active: false`).
-   The first `DELETE` of a placement the runner acted on answers `200`
-   while it is still `closing`; if the runner never reports, a second
+   The first `DELETE` of a placement the runner may still be running
+   (§15.5, **Closing**) answers `200` while it is still `closing`; if the
+   runner never reports, a second
    `DELETE` closes it at once (§15.5).
 4. Revoke the old instance's credential (`POST …/credentials/{id}/revoke`,
    §10, which the agent's owner may), which a `DELETE` alone does not
@@ -19073,8 +19071,8 @@ A placement as the runner reads it:
   `observed_generation` is below the current generation is recorded as
   a `placement_reported` event and does not move `reported`; one above
   it is `stale_generation`. A terminal report (`stopped`, `failed`, or
-  `exited` with `retry_at: null`) on a placement that is closing closes
-  it (§15.5). A report on a placement closed meanwhile answers `200` and
+  `exited` with `retry_at: null`) of the current generation on a
+  placement that is closing closes it (§15.5). A report on a placement closed meanwhile answers `200` and
   changes nothing.
 - `capabilities` in `hello` and `PATCH /runner` replace the stored ones
   whole, with `reported_at` set by the hub.
