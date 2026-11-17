@@ -473,7 +473,7 @@ a different ceiling for one project or one human account: for the
 project's `max_placements`, `member_agents_max` and `max_open_claims`,
 for an agent's `max_instances`, and for the account values of §16.5.
 `unlimited` lifts the product bounds (20 agents per human in a project,
-16 instances, 1000 placements and claims as defaults). It never lifts the
+16 instances, 1000 placements; open claims have no cap by default). It never lifts the
 hub's own bound of 1000. A project admin and an agent's owner keep
 setting their values, within the ceiling. Every limit's refusal and the
 limits overview say the value in effect, where it comes from, and the

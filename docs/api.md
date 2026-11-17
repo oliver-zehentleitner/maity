@@ -6419,7 +6419,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `takeover_window_minutes` | 5–1440, default 60 | how long a holder has to answer a takeover before the card moves, and how long a disputed one waits for a settlement before it is escalated (§6.19); a project that predates the field reads as 60; a later preset change keeps it |
 | `max_placements` | integer 0–1000 and at most its ceiling (§6.31), default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it. Set by a human with `project:admin` (not built yet, tsk-spmhjqm7szag: today an admin agent may set it too, and the bound is 0–1000 without a ceiling) |
 | `max_reads_per_minute` | `inherit` (default), or an integer 60–100000 | reads one agent credential of the project may make per minute (§1.7 "Reads per credential"): `inherit` takes the instance's `max_reads_per_minute` (§16.5). A project may tighten the instance's value, not loosen it: a number above the instance's value is `invalid` (`details.fields["policy.max_reads_per_minute"]: "above_instance"`), and when the instance's value is lowered below a project's later, the lower of the two applies. A project that predates the field reads as `inherit`; a later preset change keeps it. Set by a human with `project:admin` |
-| `max_open_claims` | integer 1–1000 and at most its ceiling (§6.31; not built yet, tsk-spmhjqm7szag), or `null` (default) (the field and its check are not built yet, tsk-ybc2ma72dzvq: today the hub caps no claims) | claims one member may hold in the project, all its instances together, expired ones included (§6.5); `null` is no cap. `claim_limit` beyond it. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin` |
+| `max_open_claims` | integer 1–1000 and at most its ceiling (§6.31; not built yet, tsk-spmhjqm7szag), or `null` (default) (the field and its check are not built yet, tsk-ybc2ma72dzvq: today the hub caps no claims) | claims one member may hold in the project, all its instances together, expired ones included (§6.5); `null` is no cap, unless an override's ceiling applies (§6.31; not built yet, tsk-t63d50qy3s0k). `claim_limit` beyond it. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin` |
 | `coordinator` | agent member id of an admin agent, or `trust:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.12); `trust:admin` is the project's admin agents (§2.3, a proxy never), out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
@@ -8154,7 +8154,8 @@ and with the project.
   a takeover (§6.19), or through `release` or `assign` by `tasks:admin`
   after expiry (by an agent, recorded as a `lease_expired` takeover).
 - `claim_limit` (409, `details.limit`, `details.count`) when the project's
-  `max_open_claims` (§6.1) is set and the member who would hold the claim
+  `max_open_claims` (§6.1) is set, or an override's ceiling applies to
+  its `null` (§6.31; not built yet, tsk-t63d50qy3s0k), and the member who would hold the claim
   holds that many claims in the project already, all its instances
   together, expired ones included, since nothing is released
   automatically; an admin's claim on another's behalf counts for that
@@ -12803,10 +12804,10 @@ default ceiling.
   `details.fields["policy.max_placements"]: "above_ceiling"` (for
   `max_instances` `details.fields["agent.max_instances"]`) with
   `details.ceiling` the ceiling in effect.
-- **`max_open_claims` `null`** sets no value of the project's own: the
-  ceiling applies, by default 1000, with `source: "ceiling"`. Before
-  ceilings `null` meant no cap at all; as neither the field nor its
-  check is built (tsk-ybc2ma72dzvq), nothing that runs changes.
+- **`max_open_claims` `null`** stays no cap, as before ceilings: the
+  default ceiling and `unlimited` leave it so. Only a ceiling an
+  override sets to a number applies to it, with `source: "ceiling"`, so
+  the operator's lower ceiling reaches a project that set no value.
 - **A ceiling lowered below a value already set** keeps the stored value
   and makes the ceiling the value in effect, until the ceiling rises
   again or the value is set lower. Like lowering the value itself, it
@@ -12832,7 +12833,7 @@ default ceiling.
 | `count` | what the scope holds now and counts toward it |
 | `max` | the same number as `limit`, kept for clients that read `placement_quota` and `instance_quota` before this section |
 | `scope` | `project`, `member` (with `member`, the member id: `member_agents_max` is per human, `max_open_claims` and `max_instances` per membership), `runner` (with `runner`, its id) or `target` (with `runner` and `target`, its name) |
-| `source` | where `limit` comes from: `default`; `project` (set in the project's policy); `agent_owner` (`max_instances`); `runner` (the runner's configuration); `ceiling` (the set value is above the ceiling, which applies) |
+| `source` | where `limit` comes from: `default`; `project` (set in the project's policy); `agent_owner` (`max_instances`); `runner` (the runner's configuration); `ceiling` (the set value is above the ceiling, or `max_open_claims` is `null` under an override's ceiling, and the ceiling applies). `limit` is always the value in effect, also to a caller who reads `ceiling` without its `value` (below): what applies to the caller is shown, what the operator set beyond it is not |
 | `ceiling` | `{value, source}`: `value` the ceiling in effect, `source` `default`, `project_override` or `account_override`; absent for `max_agents`, which the hub does not bound. A caller who does not hold the right that sets the value reads `source` alone, without `value`: an override is a number the operator set for an account, and only those who set the value need it |
 | `raise` | `{right, path, field}`: the right that can change the value (`project:admin`, `agent_owner`, `runner_owner`, or `instance:admin` once `limit` is at the ceiling), and the API path and field that change it; `null` once `limit` is at the hub's bound of 1000, which nobody raises; `path` is `null` where the hub cannot change it (the runner's configuration, `field` then names its key, `limits.max_agents` or `backend.ssh.hosts[].max_agents`) |
 
@@ -12854,7 +12855,7 @@ GET /projects/{owner}/{slug}/limits
                         "ceiling": { "value": 1000, "source": "default" },
                         "editable": true, "raise": { "…": "" } },
     "member_agents_max": { "limit": 3, "source": "default", "count": 1, "…": "" },
-    "max_open_claims": { "limit": 1000, "source": "ceiling", "count": 2, "…": "" } },
+    "max_open_claims": { "limit": null, "source": "default", "count": 2, "…": "" } },
   "agents": [
     { "member": "agt-23ghr1hc6qxx", "handle": "coder",
       "max_instances": { "limit": 3, "source": "agent_owner", "count": 3, "…": "" },
@@ -12873,8 +12874,8 @@ GET /projects/{owner}/{slug}/limits
   `raise` is `null` once it is at the hub's bound.
 - `member_agents_max.count` is the caller's own count (§3.1);
   `max_open_claims.count` the claims the caller's membership holds;
-  with the project's value `null`, `max_open_claims.limit` is the
-  ceiling (above).
+  `max_open_claims.limit` `null` is no cap, unless an override's ceiling
+  applies (above).
 - `agents`: the memberships of agent profiles the caller owns, for a
   human with `credentials:admin` every agent membership; an agent reads
   its own. `never_listened`: its active instances that have never
