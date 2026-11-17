@@ -1664,9 +1664,11 @@ request = Table(
     "request",
     metadata,
     _id(primary_key=True),
-    # Null only for a personal request that concerns an organisation and no project: an
-    # invitation (§7, §6.26); then `org_id` is set and `asked_by` is null, the inviter being
-    # `asked_by_human`.
+    # Null only for a personal request that belongs to no project (`scope_known` below): an
+    # organisation's invitation (§7, §6.26), with `org_id` set and the inviter as
+    # `asked_by_human`; or one the hub files with no asker and no organisation, the owner's
+    # digest (§5.3), the request about a new abuse report (§16.8) and the request to chat
+    # with an owner's agents (§9.6).
     _ref("project_id", "project.id"),
     _ref("org_id", "org.id"),
     Column("class", String(16), nullable=False),
@@ -1676,14 +1678,15 @@ request = Table(
     Column("mentions", JSON_VALUE),  # resolved from `summary` and `tried` (§8.6)
     Column("options", JSON_VALUE, nullable=False),
     Column("priority", String(16), nullable=False),
-    # `to`: a member, a role, the project's owner, or (filed by the hub only) the human who
-    # owns an agent profile, member of the project or not: a personal request (§7).
-    Column("to_kind", String(16), nullable=False),  # member, role, owner, profile_owner
+    # `to`: a member, a role, the project's owner, or (filed by the hub only) a human, member
+    # of the project or not: the owner of an agent profile, or a human in person (§19.4): a
+    # personal request (§7).
+    Column("to_kind", String(16), nullable=False),  # member, role, owner, profile_owner, human
     _membership_ref("to_member"),
     Column("to_instance", String(INSTANCE)),  # the address as written: `<member>#<id>` (§7)
     Column("to_role", String(32)),  # the whole token: `trust:admin`, `role:designer` (§2.3)
     _ref("to_profile", "agent_profile.id"),
-    _ref("to_human", "human.id"),  # the profile's owner when the hub filed it
+    _ref("to_human", "human.id"),  # the profile's owner when the hub filed it, or `human`'s
     Column("personal", Boolean, nullable=False, server_default=false()),
     # "hub" on a request the hub files on an agent's behalf (§7): the notice of an agent's
     # outage (§15.7); its events reach the owner only, and no project route shows it.
@@ -1691,7 +1694,9 @@ request = Table(
     # A closed personal request's card as it was when it closed (§7): a non-member owner
     # does not follow the card after the outcome.
     Column("task_snapshot", JSON_VALUE),
-    _membership_ref("asked_by"),  # null with `project_id`: the human is `asked_by_human`
+    # Null for a human who asks without a membership (`asked_by_human`: an organisation's
+    # inviter, an owner outside the project, §6.2) and for the hub's own requests above.
+    _membership_ref("asked_by"),
     _ref("asked_by_human", "human.id"),
     Column("asked_session_id", String(ID)),
     _membership_ref("on_behalf_of"),
@@ -1757,9 +1762,11 @@ request = Table(
         " OR (NOT personal AND to_kind NOT IN ('profile_owner', 'human'))",
         name="personal_shape",
     ),
-    # No project: a personal request that concerns an organisation (§7, §6.26), or the owner's
-    # digest of agent instances that are not listening, which concerns every project of the
-    # human's agents at once and has no asker (§5.3).
+    # No project: a personal request that concerns an organisation (§7, §6.26), or one the hub
+    # files with no asker and no organisation: the owner's digest of agent instances that are
+    # not listening, which concerns every project of the human's agents at once (§5.3), the
+    # request about a new abuse report (§16.8) and the request to chat with an owner's agents
+    # (§9.6).
     CheckConstraint(
         "project_id IS NOT NULL"
         " OR (org_id IS NOT NULL AND personal AND asked_by IS NULL)"

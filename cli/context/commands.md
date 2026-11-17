@@ -856,7 +856,8 @@ cannot both come from standard input, which is read once (1be5edbf).
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-nbt2kam9raxz; reviews on #975, #1001 and #1010 carried cites that do not stand at the head
+**Source:** the card tsk-nbt2kam9raxz; reviews on #975, #1001 and #1010 carried cites that do not stand at the head; the placement paragraph from card tsk-9qcbs5kjkqsj (a review finding on #1914, the lead's ruling, 2026-11-17)
+**See:** runner.md — b4a8030d-3b24-4b76-81cc-a84b0ca84c11 — as of 2026-11-17
 **Revisit when:** a valid cite is refused in practice, or an invented quote passes because the text once stood in the file's history
 
 The card asks for a refusal when a quote is not on the named line or not in the file, and for a
@@ -873,9 +874,17 @@ A shallow clone can't show that: `git log -S` stops at its depth, so a real remo
 be refused. There such a cite is sent, with a note on stderr saying it wasn't checked, as with a
 missing commit.
 
+Under a runner placement the clone is the runner's, so "no clone" does not apply: when maity's
+git refuses that clone (its checks in b4a8030d: a configuration key that runs code, a `.git` not
+laid out like a plain clone's, a missing runner record), the review is not sent and the command
+exits 1 (`proc.ToolRefused`, `citecheck.Result.refused`). A commit missing from the clone is
+still sent with a note, as anywhere: `git fetch` brings it.
+
 **Rejected alternatives:**
 - Refusing when the commit is missing: the card separates this case from a bad quote.
 - Taking the base from `origin/main` for removed quotes: wrong for a stacked pull request.
+- Sending unchecked under a placement whose clone maity's git refuses, as for a missing clone:
+  the review then goes out checked nowhere, while the clone it should stand in is right there.
 
 ## `say --review-file` refuses a quote longer than the hub takes, with or without a clone
 

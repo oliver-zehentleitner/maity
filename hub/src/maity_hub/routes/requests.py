@@ -232,19 +232,7 @@ def _known(conn: Connection, rows: Sequence[Any], members: Iterable[int] = ()) -
     needs = dict(zip([r.id for r in stored], shaped, strict=True))
     pictured = agent_ids | human_ids
     pictured |= {n["member_id"] for n in needs.values() if not n.get("deleted")}
-    sessions = {r.asked_session_id for r in rows if r.asked_session_id is not None}
-    instances: dict[tuple[str, int], str | None] = (
-        {
-            (found.id, found.membership_id): found.instance
-            for found in conn.execute(
-                select(t.agent_session.c.id, t.credential.c.membership_id, t.credential.c.instance)
-                .join(t.credential, t.agent_session.c.credential_id == t.credential.c.id)
-                .where(t.agent_session.c.id.in_(sessions))
-            ).all()
-        }
-        if sessions
-        else {}
-    )
+    instances = _instances(conn, {r.asked_session_id for r in rows})
     task_ids = {r.task_id for r in rows if r.task_id is not None}
     cards = (
         {
@@ -281,6 +269,26 @@ def _known(conn: Connection, rows: Sequence[Any], members: Iterable[int] = ()) -
         reports=reports,
         needs=needs,
     )
+
+
+def _instances(
+    conn: Connection, sessions: Iterable[str | None]
+) -> dict[tuple[str, int], str | None]:
+    """The instance of the credential behind each session, keyed by the session and the
+    credential's membership: a request's asking instance is the entry of its
+    `(asked_session_id, asked_by)`, and a session of another membership (a bridge's, §2.3)
+    has none for it."""
+    wanted = {s for s in sessions if s is not None}
+    if not wanted:
+        return {}
+    return {
+        (found.id, found.membership_id): found.instance
+        for found in conn.execute(
+            select(t.agent_session.c.id, t.credential.c.membership_id, t.credential.c.instance)
+            .join(t.credential, t.agent_session.c.credential_id == t.credential.c.id)
+            .where(t.agent_session.c.id.in_(wanted))
+        ).all()
+    }
 
 
 def _person(known: _Known, membership_id: int | None, session_id: str | None) -> Any:
@@ -456,7 +464,9 @@ def _to(known: _Known, row: Any) -> str:
 
 
 def _holder_of(known: _Known, row: Any) -> str:
-    """`_holder` with the member id from the page's memberships."""
+    """Who holds the request now (§7): `to` until its first forward, then a member id, or
+    `trust:admin` while it is open to the admins and nobody has claimed it; the member id
+    from the page's memberships."""
     if row.holder_member is not None:
         return known.principal(row.holder_member)
     if row.holder_pool:
@@ -486,15 +496,8 @@ def _refuse_a_report_request(row: Any) -> None:
 
 
 def _holder(conn: Connection, row: Any) -> str:
-    """Who holds the request now (§7): `to` until its first forward, then a member id, or
-    `trust:admin` while it is open to the admins and nobody has claimed it."""
-    if row.holder_member is not None:
-        found = principal_id(conn, row.holder_member)
-        assert found is not None
-        return found
-    if row.holder_pool:
-        return "trust:admin"
-    return inbox.addressee_of(row).text(conn)
+    """`_holder_of` for one row: a page of one, as `request_view` is."""
+    return _holder_of(_known(conn, [row]), row)
 
 
 def _is_agent(conn: Connection, membership_id: int | None) -> bool:
@@ -788,7 +791,7 @@ def create_request(
         # An agent of another owner that `to` reaches without its owner's yes is held (§9.6):
         # decided now, for good; a later yes admits the next request, not this one.
         audience, held = chat_gate.gate(
-            conn, mine.project.id, mine, _addressee_audience(conn, mine, to)
+            conn, mine.project.id, mine, _audience_of(conn, mine.project.id, to)
         )
         # Links only: a mention in a request pings nobody (§8.6).
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary") + (
@@ -880,7 +883,8 @@ def _is_addressee(conn: Connection, mine: Membership, to: inbox.Addressee, membe
 def _locked(conn: Connection, mine: Membership) -> Membership:
     """The caller's membership with the project row and its own row as read under the
     project lock, as `tasks._locked`: a role change takes the same lock, so a scope checked
-    on what this returns holds until the write commits (§2.3 "The expert")."""
+    on what this returns holds until the write commits (§2.3 "The expert"), and a demotion
+    or a removal that commits first is never overtaken (as #271 and #283)."""
     project = lock_project(conn, mine.project.id)
     row = conn.execute(
         select(t.membership).where(t.membership.c.id == mine.id, t.membership.c.active.is_(True))
@@ -890,19 +894,8 @@ def _locked(conn: Connection, mine: Membership) -> Membership:
     return replace(mine, project=project, row=row)
 
 
-def _locked_member(conn: Connection, caller: Caller, slug: str) -> Membership:
-    """The caller's membership read again after the project lock: a demotion or a removal
-    that commits first is never overtaken (as #271 and #283)."""
-    lock_project(conn, membership(conn, caller, slug).project.id)
-    return membership(conn, caller, slug)
-
-
-def _addressee_audience(conn: Connection, mine: Membership, to: inbox.Addressee) -> list[str]:
-    """`to` resolved to `member:` or `role:` (§8.2); `owner` is the owner's member id."""
-    return _audience_of(conn, mine.project.id, to)
-
-
 def _audience_of(conn: Connection, project_id: str, to: inbox.Addressee) -> list[str]:
+    """`to` resolved to `member:` or `role:` (§8.2); `owner` is the owner's member id."""
     if to.kind == "role":
         return [str(to.role)]
     if to.kind == "owner":
@@ -921,15 +914,7 @@ def _asking_instance(conn: Connection, row: Any) -> str | None:
     filed for the asker, whose session is the bridge's own membership's (§2.3)."""
     if row.asked_session_id is None:
         return None
-    instance: str | None = conn.execute(
-        select(t.credential.c.instance)
-        .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
-        .where(
-            t.agent_session.c.id == row.asked_session_id,
-            t.credential.c.membership_id == row.asked_by,
-        )
-    ).scalar()
-    return instance
+    return _instances(conn, [row.asked_session_id]).get((row.asked_session_id, row.asked_by))
 
 
 def _asker_audience(conn: Connection, row: Any) -> list[str]:
@@ -998,11 +983,9 @@ def _filtered(
     query = select(t.request).where(
         t.request.c.project_id == mine.project.id, t.request.c.personal.is_(False)
     )
+    _check_status(status)
     if status != "all":
-        wanted = [s for s in status.split(",") if s]
-        if any(s not in inbox.STATUSES for s in wanted):
-            raise invalid({"status": "unknown"})
-        query = query.where(t.request.c.status.in_(wanted))
+        query = query.where(t.request.c.status.in_([s for s in status.split(",") if s]))
     if class_ is not None:
         query = query.where(t.request.c["class"] == class_)
     if asked_by is not None:
@@ -1181,8 +1164,9 @@ def _render(conn: Connection) -> Callable[[list[dict[str, Any]]], list[dict[str,
 
 
 def _check_status(status: str) -> None:
-    """Checked before any project is read: a caller without memberships gets the same
-    answer for a bad filter as a member does."""
+    """The `status` filter (`_filtered`); `GET /requests` checks it before any project is
+    read, so a caller without memberships gets the same answer for a bad filter as a member
+    does."""
     if status != "all" and any(s not in inbox.STATUSES for s in status.split(",") if s):
         raise invalid({"status": "unknown"})
 
@@ -1432,8 +1416,7 @@ def answer(
         if row.filed_by == "hub":
             raise not_found()  # no asker reads a hub notice through the project (§7)
         if row.personal:  # answered by its human through POST /requests/{id}/answer (§7)
-            # TODO(§6.17): the asking instance, once instances exist; same-team instances
-            # share the member id until then.
+            # `self_answer` is the membership's: every instance of the asking agent asked it.
             if inbox.is_asker(row, mine):
                 raise _self_answer()
             raise not_found()
@@ -1593,7 +1576,7 @@ def _holder_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
 def _filed_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
     """`to` as filed, as an audience, with each agent it was held for (§9.6) named
     `held:<id>` in place of its own tokens, as the request's first event named it."""
-    audience = _addressee_audience(conn, mine, inbox.addressee_of(row))
+    audience = _audience_of(conn, mine.project.id, inbox.addressee_of(row))
     held = list(row.held or [])
     if not held:
         return audience
@@ -1718,7 +1701,7 @@ def forward(
     slug: str, request_id: str, body: ForwardIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked_member(conn, caller, slug)
+        mine = _locked(conn, membership(conn, caller, slug))
         row = _open_decision(conn, mine, request_id)
         if not _holds(conn, row, mine):
             raise _not_holder()
@@ -1792,7 +1775,7 @@ def forward(
 @router.post("/projects/{owner}/{slug}/requests/{request_id}/claim")
 def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked_member(conn, caller, slug)
+        mine = _locked(conn, membership(conn, caller, slug))
         row = _open_decision(conn, mine, request_id)
         if "trust:admin" not in tokens_of(mine.trust, mine.role, mine.role_base):
             raise ApiError(
@@ -2157,7 +2140,7 @@ def file_consent(
         conn,
         mine.project.id,
         "request_created",
-        _addressee_audience(conn, mine, to),
+        _audience_of(conn, mine.project.id, to),
         request_view(conn, _row(conn, request_id)),
         actor=caller.actor(mine.id),
         subject=("request", request_id),

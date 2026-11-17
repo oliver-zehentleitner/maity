@@ -3708,3 +3708,42 @@ disk to one limit per placement.
   ssh per log and tick, racing the writer's appends.
 - Emptying the log when it is full: drops the output that led up to the
   limit, usually the part someone wants to read.
+
+## A placement's scratch lives beside its clone, one per placement, and is never kept
+
+**Id:** 03fee927-492a-4983-a4cc-738d192e26f0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's go on the design note for tsk-dpe3d5g5eh4k, 2026-11-17; the maintainer's card after the agents' VM filled with leftovers, 2026-11-16; the lead's decision on the gc refusal rules and the runner's own end after the reviews of #1915, 2026-11-17
+**See:** runner.md — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-17
+**Revisit when:** agy's sandbox is shown to write somewhere the runner can name per placement; opencode's adapter grants its file tools a writable path outside the clone; a harness needs its scratch reported to the hub
+
+Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`,
+passed as `MAITY_SCRATCH` with `TMPDIR` inside it. The runner removes it
+when the placement closes and after a stop on the clone's clock; nothing
+in it counts as unsaved work, and only the operator sees its size and
+removals (`maity runner status`, `removed.jsonl`). Only Claude Code and
+Codex get one, the harnesses whose sandbox the runner can open for it;
+agy's sandbox is not shown to write there, and opencode's adapter has
+no proven writable scratch (its file tools are denied paths outside the
+clone, `external_directory: deny`).
+maity reads a named file there as in the clone, which widens the
+clone-only read (the entry under See) to the path the runner recorded.
+
+**Reason:** reviews and tests left evidence folders, temporary clones and
+virtual environments in the agents' shared home, which no removal of a
+clone reaches. A known place per placement can be removed when the
+placement ends without asking what in it matters.
+
+**Rejected alternatives:**
+- Inside the clone: git sees it, and the clone's removal keeps a clone
+  with untracked files as unsaved work, so the leftovers would keep
+  the clone.
+- Inside an `antigravity` workspace folder: the runner refuses a folder
+  holding anything but `repo`, since agy loads what is there.
+- One scratch per clone instead of per placement: a placement that
+  continues a clone would inherit another's leftovers, and the scratch's
+  end is the placement's.
+- Its size in `workspace_outcome`: a new field for something the
+  operator alone acts on; the lead kept the hub out of it.
