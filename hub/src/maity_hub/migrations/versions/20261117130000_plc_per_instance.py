@@ -11,7 +11,7 @@ A downgrade restores the old key and therefore refuses while a membership holds 
 placements: close one of them first.
 
 Revision ID: 20261117130000_plc_per_instance
-Revises: 20261115000000_address_where
+Revises: 20261117100000_roles_version
 Create Date: 2026-11-17
 """
 
@@ -21,7 +21,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261117130000_plc_per_instance"
-down_revision: str | None = "20261115000000_address_where"
+down_revision: str | None = "20261117100000_roles_version"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
