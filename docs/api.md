@@ -823,7 +823,10 @@ built-in roles, trusts or tokens (`owner`, `admin`, `member`, `outside`, `guest`
 entry is keyed one of three ways: `custom[<i>].<field>`, with `<i>` the
 entry's 0-based index; `custom[<i>]` alone, `"not_an_object"`, for an
 entry that is not an object; and `custom[].guide`, unindexed, for a
-`guide` (below). `base` is one of `coder`, `reviewer`, `tester`,
+`guide` (below). An error of the body as a whole is keyed apart from
+these: `custom: "missing"` when it is left out, `"not_a_list"` when it
+is no list, `"too_many"` past 12, and `<property>: "extra_forbidden"`
+for any other property of the body. `base` is one of `coder`, `reviewer`, `tester`,
 `designer`, `ops`, `writer` — never `proxy`, `manager` or one of the
 security teams, whose scopes are already those of a base, and never
 `expert`, whose scopes are fewer than any base's. A project role grants
