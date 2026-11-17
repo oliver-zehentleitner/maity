@@ -2366,6 +2366,10 @@ window.MAITY_I18N["it"] = {
     "one": "{count} errore",
     "other": "{count} errori"
   },
+  "mail.count.invitation": {
+    "one": "{count} e-mail di invito",
+    "other": "{count} e-mail di invito"
+  },
   "mail.count.notifications": {
     "one": "{count} email di notifica",
     "other": "{count} email di notifica"
@@ -2374,6 +2378,14 @@ window.MAITY_I18N["it"] = {
     "one": "{count} email di sicurezza in coda",
     "other": "{count} email di sicurezza in coda"
   },
+  "mail.count.second_factor": {
+    "one": "{count} e-mail del secondo fattore",
+    "other": "{count} e-mail del secondo fattore"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} e-mail del secondo fattore scartata",
+    "other": "{count} e-mail del secondo fattore scartate"
+  },
   "mail.count.security": {
     "one": "{count} email di sicurezza",
     "other": "{count} email di sicurezza"
@@ -2381,6 +2393,14 @@ window.MAITY_I18N["it"] = {
   "mail.count.sign_in": {
     "one": "{count} email di accesso",
     "other": "{count} email di accesso"
+  },
+  "mail.count.verification": {
+    "one": "{count} e-mail di verifica",
+    "other": "{count} e-mail di verifica"
+  },
+  "mail.count.waiting": {
+    "one": "{count} e-mail di verifica o di invito in attesa",
+    "other": "{count} e-mail di verifica o di invito in attesa"
   },
   "mail.daily_at": "Riepiloghi giornalieri e settimanali alle",
   "mail.day.fri": "venerdì",
@@ -2416,6 +2436,7 @@ window.MAITY_I18N["it"] = {
   "mail.kinds.hint": "Un riepilogo contiene tutto ciò che è ancora non letto quando parte. Un secondo fattore cambiato, un indirizzo cambiato e l'eliminazione di un account vengono sempre inviati subito.",
   "mail.kinds.legend": "Quando viene inviato ogni tipo",
   "mail.last_hour": "Ultima ora: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Budget propri, ultima ora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Riepilogo giornaliero",
   "mail.mode.hourly": "Riepilogo orario",
   "mail.mode.immediate": "Subito",

@@ -127,6 +127,14 @@ window.Maity = window.Maity || {};
         sign_in: M.t("mail.count.sign_in", { count: current.sign_in_sent_last_hour || 0 }),
         failures: M.t("mail.count.failures", { count: current.failed_last_hour || 0 }),
         queued: M.t("mail.count.queued", { count: current.security_queued || 0 }),
+      })), h("p", { class: "muted mail-last-hour-own" }, M.t("mail.last_hour_own", {
+        // The kinds with a budget of their own (§16.2): verification and invitation mails wait
+        // over it, second-factor mails are dropped.
+        verification: M.t("mail.count.verification", { count: current.verification_sent_last_hour || 0 }),
+        invitation: M.t("mail.count.invitation", { count: current.invitation_sent_last_hour || 0 }),
+        second_factor: M.t("mail.count.second_factor", { count: current.second_factor_sent_last_hour || 0 }),
+        dropped: M.t("mail.count.second_factor_dropped", { count: current.second_factor_dropped_last_hour || 0 }),
+        waiting: M.t("mail.count.waiting", { count: (current.verification_queued || 0) + (current.invitation_queued || 0) }),
       })));
       drawTest();
     }

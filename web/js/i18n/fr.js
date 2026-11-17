@@ -2366,6 +2366,10 @@ window.MAITY_I18N["fr"] = {
     "one": "{count} échec",
     "other": "{count} échecs"
   },
+  "mail.count.invitation": {
+    "one": "{count} e-mail d’invitation",
+    "other": "{count} e-mails d’invitation"
+  },
   "mail.count.notifications": {
     "one": "{count} e-mail de notification",
     "other": "{count} e-mails de notification"
@@ -2374,6 +2378,14 @@ window.MAITY_I18N["fr"] = {
     "one": "{count} e-mail de sécurité en attente",
     "other": "{count} e-mails de sécurité en attente"
   },
+  "mail.count.second_factor": {
+    "one": "{count} e-mail du second facteur",
+    "other": "{count} e-mails du second facteur"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} e-mail du second facteur abandonné",
+    "other": "{count} e-mails du second facteur abandonnés"
+  },
   "mail.count.security": {
     "one": "{count} e-mail de sécurité",
     "other": "{count} e-mails de sécurité"
@@ -2381,6 +2393,14 @@ window.MAITY_I18N["fr"] = {
   "mail.count.sign_in": {
     "one": "{count} e-mail de connexion",
     "other": "{count} e-mails de connexion"
+  },
+  "mail.count.verification": {
+    "one": "{count} e-mail de vérification",
+    "other": "{count} e-mails de vérification"
+  },
+  "mail.count.waiting": {
+    "one": "{count} e-mail de vérification ou d’invitation en attente",
+    "other": "{count} e-mails de vérification ou d’invitation en attente"
   },
   "mail.daily_at": "Résumés quotidiens et hebdomadaires à",
   "mail.day.fri": "vendredi",
@@ -2416,6 +2436,7 @@ window.MAITY_I18N["fr"] = {
   "mail.kinds.hint": "Un résumé contient tout ce qui est encore non lu au moment de son envoi. Un second facteur modifié, une adresse modifiée et une suppression de compte sont toujours envoyés immédiatement.",
   "mail.kinds.legend": "Quand chaque type est envoyé",
   "mail.last_hour": "Dernière heure : {notifications}, {security}, {sign_in}, {failures} ; {queued}.",
+  "mail.last_hour_own": "Budgets propres, dernière heure : {verification}, {invitation}, {second_factor}, {dropped} ; {waiting}.",
   "mail.mode.daily": "Résumé quotidien",
   "mail.mode.hourly": "Résumé toutes les heures",
   "mail.mode.immediate": "Immédiatement",

@@ -2366,6 +2366,10 @@ window.MAITY_I18N["pt"] = {
     "one": "{count} falha",
     "other": "{count} falhas"
   },
+  "mail.count.invitation": {
+    "one": "{count} e-mail de convite",
+    "other": "{count} e-mails de convite"
+  },
   "mail.count.notifications": {
     "one": "{count} e-mail de notificação",
     "other": "{count} e-mails de notificação"
@@ -2374,6 +2378,14 @@ window.MAITY_I18N["pt"] = {
     "one": "{count} e-mail de segurança na fila",
     "other": "{count} e-mails de segurança na fila"
   },
+  "mail.count.second_factor": {
+    "one": "{count} e-mail do segundo fator",
+    "other": "{count} e-mails do segundo fator"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} e-mail do segundo fator descartado",
+    "other": "{count} e-mails do segundo fator descartados"
+  },
   "mail.count.security": {
     "one": "{count} e-mail de segurança",
     "other": "{count} e-mails de segurança"
@@ -2381,6 +2393,14 @@ window.MAITY_I18N["pt"] = {
   "mail.count.sign_in": {
     "one": "{count} e-mail de acesso",
     "other": "{count} e-mails de acesso"
+  },
+  "mail.count.verification": {
+    "one": "{count} e-mail de verificação",
+    "other": "{count} e-mails de verificação"
+  },
+  "mail.count.waiting": {
+    "one": "{count} e-mail de verificação ou convite em espera",
+    "other": "{count} e-mails de verificação ou convite em espera"
   },
   "mail.daily_at": "Resumos diários e semanais às",
   "mail.day.fri": "sexta-feira",
@@ -2416,6 +2436,7 @@ window.MAITY_I18N["pt"] = {
   "mail.kinds.hint": "Um resumo traz tudo o que ainda não foi lido quando ele sai. Um segundo fator alterado, um endereço alterado e a exclusão de uma conta são sempre enviados na hora.",
   "mail.kinds.legend": "Quando cada tipo é enviado",
   "mail.last_hour": "Última hora: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Orçamentos próprios, última hora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Resumo diário",
   "mail.mode.hourly": "Resumo de hora em hora",
   "mail.mode.immediate": "Na hora",

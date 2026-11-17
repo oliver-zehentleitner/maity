@@ -2366,6 +2366,10 @@ window.MAITY_I18N["nl"] = {
     "one": "{count} mislukking",
     "other": "{count} mislukkingen"
   },
+  "mail.count.invitation": {
+    "one": "{count} uitnodigingsmail",
+    "other": "{count} uitnodigingsmails"
+  },
   "mail.count.notifications": {
     "one": "{count} meldingsmail",
     "other": "{count} meldingsmails"
@@ -2374,6 +2378,14 @@ window.MAITY_I18N["nl"] = {
     "one": "{count} beveiligingsmail in de wachtrij",
     "other": "{count} beveiligingsmails in de wachtrij"
   },
+  "mail.count.second_factor": {
+    "one": "{count} mail voor de tweede factor",
+    "other": "{count} mails voor de tweede factor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} mail voor de tweede factor verworpen",
+    "other": "{count} mails voor de tweede factor verworpen"
+  },
   "mail.count.security": {
     "one": "{count} beveiligingsmail",
     "other": "{count} beveiligingsmails"
@@ -2381,6 +2393,14 @@ window.MAITY_I18N["nl"] = {
   "mail.count.sign_in": {
     "one": "{count} inlogmail",
     "other": "{count} inlogmails"
+  },
+  "mail.count.verification": {
+    "one": "{count} verificatiemail",
+    "other": "{count} verificatiemails"
+  },
+  "mail.count.waiting": {
+    "one": "{count} verificatie- of uitnodigingsmail wacht",
+    "other": "{count} verificatie- of uitnodigingsmails wachten"
   },
   "mail.daily_at": "Dagelijkse en wekelijkse overzichten om",
   "mail.day.fri": "vrijdag",
@@ -2416,6 +2436,7 @@ window.MAITY_I18N["nl"] = {
   "mail.kinds.hint": "Een overzicht bevat alles wat nog ongelezen is als het verstuurd wordt. Een gewijzigde tweede factor, een gewijzigd adres en het verwijderen van een account worden altijd meteen gemaild.",
   "mail.kinds.legend": "Wanneer elk soort wordt gemaild",
   "mail.last_hour": "Laatste uur: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Eigen budgetten, laatste uur: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Dagelijks overzicht",
   "mail.mode.hourly": "Overzicht per uur",
   "mail.mode.immediate": "Meteen",

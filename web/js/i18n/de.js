@@ -2482,6 +2482,10 @@ window.MAITY_I18N["de"] = {
     "one": "{count} Fehler",
     "other": "{count} Fehler"
   },
+  "mail.count.invitation": {
+    "one": "{count} Einladungsmail",
+    "other": "{count} Einladungsmails"
+  },
   "mail.count.notifications": {
     "one": "{count} Benachrichtigungsmail",
     "other": "{count} Benachrichtigungsmails"
@@ -2490,6 +2494,14 @@ window.MAITY_I18N["de"] = {
     "one": "{count} Sicherheitsmail in der Warteschlange",
     "other": "{count} Sicherheitsmails in der Warteschlange"
   },
+  "mail.count.second_factor": {
+    "one": "{count} Mail für den zweiten Faktor",
+    "other": "{count} Mails für den zweiten Faktor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} Mail für den zweiten Faktor verworfen",
+    "other": "{count} Mails für den zweiten Faktor verworfen"
+  },
   "mail.count.security": {
     "one": "{count} Sicherheitsmail",
     "other": "{count} Sicherheitsmails"
@@ -2497,6 +2509,14 @@ window.MAITY_I18N["de"] = {
   "mail.count.sign_in": {
     "one": "{count} Anmeldemail",
     "other": "{count} Anmeldemails"
+  },
+  "mail.count.verification": {
+    "one": "{count} Bestätigungsmail",
+    "other": "{count} Bestätigungsmails"
+  },
+  "mail.count.waiting": {
+    "one": "{count} Bestätigungs- oder Einladungsmail wartet",
+    "other": "{count} Bestätigungs- oder Einladungsmails warten"
   },
   "mail.daily_at": "Tägliche und wöchentliche Sammelmails um",
   "mail.day.fri": "Freitag",
@@ -2532,6 +2552,7 @@ window.MAITY_I18N["de"] = {
   "mail.kinds.hint": "Eine Sammelmail enthält alles, was beim Versand noch ungelesen ist. Ein geänderter zweiter Faktor, eine geänderte Adresse und eine Kontolöschung werden immer sofort gemailt.",
   "mail.kinds.legend": "Wann jede Art gemailt wird",
   "mail.last_hour": "Letzte Stunde: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Eigene Budgets, letzte Stunde: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Tägliche Sammelmail",
   "mail.mode.hourly": "Stündliche Sammelmail",
   "mail.mode.immediate": "Sofort",

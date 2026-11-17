@@ -8915,6 +8915,10 @@
     "en": "567da5e03ff731cc",
     "text": "e6c2ce6ce42f3a98"
   },
+  "mail.count.invitation": {
+    "en": "afb850023735f0fe",
+    "text": "efff05b305cd1a69"
+  },
   "mail.count.notifications": {
     "en": "cf4244089b4d2a59",
     "text": "c78922345ad94b2b"
@@ -8923,6 +8927,14 @@
     "en": "426e163f99eb2205",
     "text": "262728bb92f53888"
   },
+  "mail.count.second_factor": {
+    "en": "1fdf5a41382421f7",
+    "text": "4d84f7ceb0e1a743"
+  },
+  "mail.count.second_factor_dropped": {
+    "en": "8b46799280621ba5",
+    "text": "b8c87386332342ab"
+  },
   "mail.count.security": {
     "en": "adf52a828041cc88",
     "text": "f9e63c5f4f85d3e0"
@@ -8930,6 +8942,14 @@
   "mail.count.sign_in": {
     "en": "bcc7dccc569cd7b6",
     "text": "dfc538f853b3dd25"
+  },
+  "mail.count.verification": {
+    "en": "3fc58fcda4039acb",
+    "text": "376b534af6a489ac"
+  },
+  "mail.count.waiting": {
+    "en": "9ccd882b8c02b169",
+    "text": "a2d86aadac40b632"
   },
   "mail.daily_at": {
     "en": "369ed1844262c810",
@@ -9066,6 +9086,10 @@
   "mail.last_hour": {
     "en": "e5837bcc394066d8",
     "text": "1b63ef2aaaf6b8e2"
+  },
+  "mail.last_hour_own": {
+    "en": "7d5ef33d10f82c6d",
+    "text": "ff764a3e559df365"
   },
   "mail.mode.daily": {
     "en": "e1bd7da6f2ab099f",

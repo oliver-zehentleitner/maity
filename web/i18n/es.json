@@ -2401,6 +2401,26 @@
     "one": "{count} correo de inicio de sesión",
     "other": "{count} correos de inicio de sesión"
   },
+  "mail.count.verification": {
+    "one": "{count} correo de verificación",
+    "other": "{count} correos de verificación"
+  },
+  "mail.count.invitation": {
+    "one": "{count} correo de invitación",
+    "other": "{count} correos de invitación"
+  },
+  "mail.count.second_factor": {
+    "one": "{count} correo del segundo factor",
+    "other": "{count} correos del segundo factor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} correo del segundo factor descartado",
+    "other": "{count} correos del segundo factor descartados"
+  },
+  "mail.count.waiting": {
+    "one": "{count} correo de verificación o invitación en espera",
+    "other": "{count} correos de verificación o invitación en espera"
+  },
   "mail.enable": "Activar el correo",
   "mail.field.from_address": "Dirección del remitente",
   "mail.field.from_name": "Nombre del remitente",
@@ -2416,6 +2436,7 @@
   "mail.incomplete": "La configuración del correo está incompleta: {missing}.",
   "mail.keys": "Clave de firma: {signing}. Clave de cifrado de la instancia: {secret}. Las claves se configuran en el entorno.",
   "mail.last_hour": "Última hora: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Presupuestos propios, última hora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "No se guardó: {reason}",
   "mail.not_set": "sin definir",
   "mail.password.both": "Elige una contraseña nueva o elimina la guardada, no ambas cosas.",

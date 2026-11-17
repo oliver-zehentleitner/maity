@@ -2323,17 +2323,32 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.count.failures": {
     "other": "{count} 次失败"
   },
+  "mail.count.invitation": {
+    "other": "邀请邮件 {count} 封"
+  },
   "mail.count.notifications": {
     "other": "{count} 封通知邮件"
   },
   "mail.count.queued": {
     "other": "{count} 封安全邮件排队中"
   },
+  "mail.count.second_factor": {
+    "other": "第二因素邮件 {count} 封"
+  },
+  "mail.count.second_factor_dropped": {
+    "other": "已丢弃的第二因素邮件 {count} 封"
+  },
   "mail.count.security": {
     "other": "{count} 封安全邮件"
   },
   "mail.count.sign_in": {
     "other": "{count} 封登录邮件"
+  },
+  "mail.count.verification": {
+    "other": "验证邮件 {count} 封"
+  },
+  "mail.count.waiting": {
+    "other": "等待中的验证或邀请邮件 {count} 封"
   },
   "mail.daily_at": "每日和每周摘要的发送时间",
   "mail.day.fri": "星期五",
@@ -2369,6 +2384,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.kinds.hint": "摘要包含发送时仍未读的全部内容。第二因素变更、地址变更和账户删除总是立即发送邮件。",
   "mail.kinds.legend": "每类内容何时发送邮件",
   "mail.last_hour": "最近一小时：{notifications}、{security}、{sign_in}、{failures}；{queued}。",
+  "mail.last_hour_own": "专用预算，最近一小时：{verification}、{invitation}、{second_factor}、{dropped}；{waiting}。",
   "mail.mode.daily": "每日摘要",
   "mail.mode.hourly": "每小时摘要",
   "mail.mode.immediate": "立即",

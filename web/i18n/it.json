@@ -2401,6 +2401,26 @@
     "one": "{count} email di accesso",
     "other": "{count} email di accesso"
   },
+  "mail.count.verification": {
+    "one": "{count} e-mail di verifica",
+    "other": "{count} e-mail di verifica"
+  },
+  "mail.count.invitation": {
+    "one": "{count} e-mail di invito",
+    "other": "{count} e-mail di invito"
+  },
+  "mail.count.second_factor": {
+    "one": "{count} e-mail del secondo fattore",
+    "other": "{count} e-mail del secondo fattore"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} e-mail del secondo fattore scartata",
+    "other": "{count} e-mail del secondo fattore scartate"
+  },
+  "mail.count.waiting": {
+    "one": "{count} e-mail di verifica o di invito in attesa",
+    "other": "{count} e-mail di verifica o di invito in attesa"
+  },
   "mail.enable": "Abilita email",
   "mail.field.from_address": "Indirizzo del mittente",
   "mail.field.from_name": "Nome del mittente",
@@ -2416,6 +2436,7 @@
   "mail.incomplete": "La configurazione email è incompleta: {missing}.",
   "mail.keys": "Chiave di firma: {signing}. Chiave di cifratura dell'istanza: {secret}. Le chiavi si configurano nell'ambiente.",
   "mail.last_hour": "Ultima ora: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Budget propri, ultima ora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Non salvato: {reason}",
   "mail.not_set": "non impostata",
   "mail.password.both": "Scegli una nuova password o elimina quella memorizzata, non entrambe.",

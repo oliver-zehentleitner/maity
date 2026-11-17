@@ -2401,6 +2401,26 @@
     "one": "{count} inlogmail",
     "other": "{count} inlogmails"
   },
+  "mail.count.verification": {
+    "one": "{count} verificatiemail",
+    "other": "{count} verificatiemails"
+  },
+  "mail.count.invitation": {
+    "one": "{count} uitnodigingsmail",
+    "other": "{count} uitnodigingsmails"
+  },
+  "mail.count.second_factor": {
+    "one": "{count} mail voor de tweede factor",
+    "other": "{count} mails voor de tweede factor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} mail voor de tweede factor verworpen",
+    "other": "{count} mails voor de tweede factor verworpen"
+  },
+  "mail.count.waiting": {
+    "one": "{count} verificatie- of uitnodigingsmail wacht",
+    "other": "{count} verificatie- of uitnodigingsmails wachten"
+  },
   "mail.enable": "E-mail inschakelen",
   "mail.field.from_address": "Afzenderadres",
   "mail.field.from_name": "Afzendernaam",
@@ -2416,6 +2436,7 @@
   "mail.incomplete": "E-mailconfiguratie is onvolledig: {missing}.",
   "mail.keys": "Ondertekeningssleutel: {signing}. Versleutelingssleutel van de instantie: {secret}. Sleutels worden in de omgeving ingesteld.",
   "mail.last_hour": "Laatste uur: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Eigen budgetten, laatste uur: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Niet opgeslagen: {reason}",
   "mail.not_set": "niet ingesteld",
   "mail.password.both": "Kies een nieuw wachtwoord of verwijder het opgeslagen wachtwoord, niet allebei.",

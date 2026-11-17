@@ -2401,6 +2401,26 @@
     "one": "{count} e-mail de connexion",
     "other": "{count} e-mails de connexion"
   },
+  "mail.count.verification": {
+    "one": "{count} e-mail de vérification",
+    "other": "{count} e-mails de vérification"
+  },
+  "mail.count.invitation": {
+    "one": "{count} e-mail d’invitation",
+    "other": "{count} e-mails d’invitation"
+  },
+  "mail.count.second_factor": {
+    "one": "{count} e-mail du second facteur",
+    "other": "{count} e-mails du second facteur"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} e-mail du second facteur abandonné",
+    "other": "{count} e-mails du second facteur abandonnés"
+  },
+  "mail.count.waiting": {
+    "one": "{count} e-mail de vérification ou d’invitation en attente",
+    "other": "{count} e-mails de vérification ou d’invitation en attente"
+  },
   "mail.enable": "Activer l'e-mail",
   "mail.field.from_address": "Adresse de l'expéditeur",
   "mail.field.from_name": "Nom de l'expéditeur",
@@ -2416,6 +2436,7 @@
   "mail.incomplete": "La configuration e-mail est incomplète : {missing}.",
   "mail.keys": "Pour la signature : {signing}. Pour le chiffrement de l'instance : {secret}. Les clés se configurent dans l'environnement.",
   "mail.last_hour": "Dernière heure : {notifications}, {security}, {sign_in}, {failures} ; {queued}.",
+  "mail.last_hour_own": "Budgets propres, dernière heure : {verification}, {invitation}, {second_factor}, {dropped} ; {waiting}.",
   "mail.not_saved": "Non enregistré : {reason}",
   "mail.not_set": "non défini",
   "mail.password.both": "Choisissez un nouveau mot de passe ou supprimez celui qui est enregistré, pas les deux.",

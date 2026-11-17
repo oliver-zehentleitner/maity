@@ -17986,6 +17986,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The admin cases below count the mail settings' writes only.
   for (let i = adminWrites.length - 1; i >= 0; i--) if (adminWrites[i][0] === "/admin/settings/limits") adminWrites.splice(i, 1);
   expect(byId("mail-host").attrs.disabled === "" && text(main).includes("Set by the environment."), "admin: environment field cannot be edited");
+  expect(text(main.querySelector("p.mail-last-hour-own")) === "Own budgets, last hour: 0 verification mails, 0 invitation mails, 0 second-factor mails, 0 second-factor mails dropped; 0 verification or invitation mails waiting.",
+    "admin: the kinds with a budget of their own have a last-hour line too " + text(main.querySelector("p.mail-last-hour-own")));
   byId("mail-host").value = "ignored.example"; byId("mail-reply_to").value = "reply@example.org"; byId("mail-password").value = "temporary-test-value";
   main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(adminWrites[0]) === JSON.stringify(["/admin/settings/mail", { reply_to: "reply@example.org", password: "temporary-test-value" }]), "admin: only changed writable fields, password once");

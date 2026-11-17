@@ -2491,6 +2491,10 @@ window.MAITY_I18N["en"] = {
     "one": "{count} failure",
     "other": "{count} failures"
   },
+  "mail.count.invitation": {
+    "one": "{count} invitation mail",
+    "other": "{count} invitation mails"
+  },
   "mail.count.notifications": {
     "one": "{count} notification mail",
     "other": "{count} notification mails"
@@ -2499,6 +2503,14 @@ window.MAITY_I18N["en"] = {
     "one": "{count} security mail queued",
     "other": "{count} security mails queued"
   },
+  "mail.count.second_factor": {
+    "one": "{count} second-factor mail",
+    "other": "{count} second-factor mails"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} second-factor mail dropped",
+    "other": "{count} second-factor mails dropped"
+  },
   "mail.count.security": {
     "one": "{count} security mail",
     "other": "{count} security mails"
@@ -2506,6 +2518,14 @@ window.MAITY_I18N["en"] = {
   "mail.count.sign_in": {
     "one": "{count} sign-in mail",
     "other": "{count} sign-in mails"
+  },
+  "mail.count.verification": {
+    "one": "{count} verification mail",
+    "other": "{count} verification mails"
+  },
+  "mail.count.waiting": {
+    "one": "{count} verification or invitation mail waiting",
+    "other": "{count} verification or invitation mails waiting"
   },
   "mail.daily_at": "Daily and weekly digests at",
   "mail.day.fri": "Friday",
@@ -2541,6 +2561,7 @@ window.MAITY_I18N["en"] = {
   "mail.kinds.hint": "A digest holds everything still unread when it goes out. A changed second factor, a changed address and an account deletion are always mailed at once.",
   "mail.kinds.legend": "When each kind is mailed",
   "mail.last_hour": "Last hour: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Own budgets, last hour: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Daily digest",
   "mail.mode.hourly": "Hourly digest",
   "mail.mode.immediate": "At once",

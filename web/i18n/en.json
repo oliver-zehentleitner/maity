@@ -2528,6 +2528,26 @@
     "one": "{count} sign-in mail",
     "other": "{count} sign-in mails"
   },
+  "mail.count.verification": {
+    "one": "{count} verification mail",
+    "other": "{count} verification mails"
+  },
+  "mail.count.invitation": {
+    "one": "{count} invitation mail",
+    "other": "{count} invitation mails"
+  },
+  "mail.count.second_factor": {
+    "one": "{count} second-factor mail",
+    "other": "{count} second-factor mails"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} second-factor mail dropped",
+    "other": "{count} second-factor mails dropped"
+  },
+  "mail.count.waiting": {
+    "one": "{count} verification or invitation mail waiting",
+    "other": "{count} verification or invitation mails waiting"
+  },
   "mail.enable": "Enable mail",
   "mail.field.from_address": "Sender address",
   "mail.field.from_name": "Sender name",
@@ -2543,6 +2563,7 @@
   "mail.incomplete": "Mail configuration is incomplete: {missing}.",
   "mail.keys": "Signing key: {signing}. Instance encryption key: {secret}. Keys are configured in the environment.",
   "mail.last_hour": "Last hour: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Own budgets, last hour: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Not saved: {reason}",
   "mail.not_set": "not set",
   "mail.password.both": "Choose a new password or delete the stored one, not both.",

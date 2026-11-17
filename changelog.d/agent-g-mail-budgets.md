@@ -3,6 +3,9 @@
 - hub: mails for the second factor have a budget of their own (`second_factor_max_per_hour`,
   `MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR`, default 60), with `second_factor_sent_last_hour` and
   `second_factor_dropped_last_hour` in the admin view; the web admin shows the setting
+- web: the mail settings show a second last-hour line for the kinds with a budget of their own:
+  verification, invitation and second-factor mails sent, second-factor mails dropped, and
+  verification or invitation mails waiting
 - hub: a per-recipient cap on sign-in, reset and registration mails: 5 per hour and 20 per day per
   address, whichever sources ask; the answer stays the same
 - hub: rate limits per source address count an IPv6 client by its /64

@@ -82,10 +82,11 @@ def test_a_hit_forgets_idle_keys_without_scanning_the_live_ones(
     for i in range(100):
         limiter.hit(f"another-{i}")
     assert max(looked) == 1
-    # A key hit again moves behind the others: it is not forgotten with its first window.
-    now[0] += 29
+    # A key hit again, while the others of its batch are still live, moves behind them: once
+    # they are idle the front pass forgets them and stops at the live ones, not at it.
+    now[0] += 20  # 1081: the new-* keys, hit at 1030, are still inside the window
     limiter.hit("new-0")
-    now[0] += 2
+    now[0] += 11  # 1092: those hit only at 1030 are idle now
     limiter.hit("fresh-2")
     assert "new-0" in limiter._hits and "new-1" not in limiter._hits
 
