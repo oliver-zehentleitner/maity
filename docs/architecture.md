@@ -133,7 +133,8 @@ The project's **state** is one of `plan`, `build`, `review`, `launch` and
 needs the owner. `archived` refuses new cards and claims. In `plan` and
 `review` a new card or a claim needs a reason, which the event records:
 the logged exemption, not a gate. **Released** is a separate mark, set
-once when the hub first sees a release tag of the project; from then on
+once when the hub first sees a final release tag of the project (a
+pre-release tag never sets it); from then on
 the project's rules include the released rules (§6.1).
 
 The **policy** fields, such as who may claim, who may close a card, who
