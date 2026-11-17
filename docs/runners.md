@@ -141,6 +141,37 @@ So agy is given only `command(maity)` and the `read_url` hosts; a repository's `
 
 Two things have not been tried in a real session yet: whether `git fetch` and `git push` reach the forge from inside agy's sandbox, and whether the deny on `.git/config` reaches the sandbox too. The runner gives each agy session the same three git settings as a sandboxed Claude Code session (below), so git works either way.
 
+## OpenCode (Grok)
+
+The runner has an adapter for the OpenCode CLI, `opencode`, running **Grok**, and **now offers the `opencode` harness.** A configuration with `[harness.opencode]` is accepted by `maity runner check` and `serve`.
+
+**opencode's command and permission rules are not a security boundary.** opencode has no OS-level sandbox the runner switches on, so the deny/allow rules the runner writes are model-steering configuration, not a boundary. **Treat an opencode agent as able to run any command as the agents' OS user** — anything that user can read, write or reach, it can. **Run opencode's agents as a separate OS user**, isolated from the runner and from the other harnesses, so that what an opencode agent can reach is only that user's own files. The owner accepted this residual risk (`req-kezp8rppfhn5`, "ship now, harden next"); the planned hardening is an OS-level sandbox for opencode, for example bubblewrap (`tsk-nynpvag9zvhh`). opencode was first offered under `req-g4d2cskx6zxv`, on the evidence of a 2026-11-15 spike that ran opencode green (5/5), passed the limit run and ran Grok reviews.
+
+It is configured as:
+
+```toml
+[harness.opencode]
+modes = ["supervised", "interactive"]
+models = ["grok"]
+default_model = "grok"
+```
+
+**Models.** opencode runs **Grok**. Name the Grok model your provider gives under `models`, and set `default_model` to the one a placement uses when it names none; `maity runner check` refuses a `default_model` that is not in `models`. The model passes through to `opencode --model`.
+
+**Modes.** `supervised` runs `opencode run` on each event and continues the same conversation with `--continue`. `interactive` runs `opencode --prompt` with the start prompt in the tmux pane. opencode's exit code for a provider limit is not known yet, so a limit ends a run like any other failure.
+
+**Install and sign in as the agents' user.** Install opencode for the user the agents run as (`~/.local/bin/opencode`; add that to `agent_path` if the service's `PATH` lacks it) and sign in once by running `opencode` as that user, so its login lands in that user's home where opencode finds it. The runner neither signs in nor reads that login; opencode's login and configuration are among the home paths the runner hides from the agents. Keep that home free of anything agents should not run, ideally with a user of its own for the agents.
+
+**The permission configuration the runner writes.** These rules steer the model and shape what an agent normally does; they are configuration, not a security boundary (above). Before each start the runner writes an `opencode.json` in its own directory for the agent and points opencode at it with `OPENCODE_CONFIG`, with `OPENCODE_DISABLE_PROJECT_CONFIG=1` so the repository's own `opencode.json` and `.opencode/` directories (agents, commands, plugins) do not win over it. The configuration denies tools by default and then allows:
+
+- `bash`: `maity *`, the fixed Keep the Why UUID command, the named `git` subcommands and the repository's `allow` command list; `maity` runs outside opencode, as it does for every harness, and is allowed only as one plain call;
+- `read` everything but the clone's `.git/maity` (the agent's credential); `edit` everything but the clone's `.git`; `list` on; `grep` and `glob` off;
+- `webfetch` and directories outside the clone denied.
+
+`AGENTS.md` is named as an instruction, since the project configuration is switched off.
+
+**The runner advertises `sandbox: off`.** opencode has no OS sandbox the runner switches on, so the permission configuration above is not an OS boundary. Assume an opencode agent can run any command as the agents' OS user, so keep that user away from the runner's own state and from the other harnesses' clones and logins — a separate OS user for opencode's agents. The owner accepted this residual risk (`req-kezp8rppfhn5`); the planned fix is an OS-level sandbox for opencode, for example bubblewrap (`tsk-nynpvag9zvhh`).
+
 ## When an agent goes quiet
 
 An interactive agent listens by running `maity wait`. If that stops (a full disk, a provider limit, a turn it closed), the agent sits at its prompt and its placement still shows as running. The runner notices it by itself: when nothing runs in the session (no `maity wait`, no command the agent started) and the screen has not changed for 30 minutes, it types one line into the session asking the agent to go back to its wait loop. Any answer counts. If the session does not react at all in the next 10 minutes, or the agent has answered three such lines without going back to its wait, the runner restarts the session, and Claude Code picks up its last conversation. **Managed agents** then shows the restart as `hung`. An agent that goes quiet again after every restart is restarted at most five times in a row; then its placement is held as failed until someone restarts it. Once it runs its wait again, the count starts over. A long build or test run is never taken for silence: the command running counts as work. The two times are fixed for now; they become the agent owner's settings with the hub's health settings.

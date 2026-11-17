@@ -906,6 +906,46 @@ f8a7b727's limit). Rejected because the owner chose to accept the residual
 risk and offer the harness now, building the confinement step by step, rather
 than block every antigravity placement until that work lands.
 
+## OpenCode (Grok) is offered; its command rules are not a security boundary
+
+**Id:** a94f2e01-c227-4d4f-baeb-d88c5f0d3c86
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's acceptance on decision request req-kezp8rppfhn5 ("ship now, harden next"), 2026-11-17, after an independent review found opencode's command rules do not bound what an agent can run; the original offer decision req-g4d2cskx6zxv and the 2026-11-15 spike (opencode 5/5 green, the limit run passed, Grok reviews ran); maintainer order tsk-sn90s6wzp9s7
+**Revisit when:** the OS-level sandbox for opencode (tsk-nynpvag9zvhh) lands, so the harness runs confined, or the owner withdraws the accepted risk
+
+`opencode` is dropped from `config.NOT_OFFERED_YET`, which is now empty
+(`()`), so a `runner.toml` naming `[harness.opencode]` is accepted by
+`maity runner check` and `serve` instead of refused as "not offered yet".
+opencode is offered running Grok.
+
+opencode has no OS sandbox the runner switches on (`sandbox: off`), so the
+command and permission rules the runner writes for it are model-steering
+configuration, **not a security boundary**. An opencode agent must be treated
+as able to run any command as the agents' OS user — whatever that user can
+read, write or reach. The mitigation is operational, not in the settings: run
+opencode's agents as a **separate OS user**, isolated from the runner and from
+the other harnesses, so the blast radius is that user's own files. This is
+stated plainly in docs/runners.md and the CLI README, without any bypass
+detail.
+
+**Reason:** the owner decided (req-kezp8rppfhn5, "ship now, harden next") that
+opencode should run now carrying this known residual risk rather than stay
+held back. It was first offered under req-g4d2cskx6zxv on a 2026-11-15 spike's
+evidence (opencode green 5/5, the limit run passed, Grok reviews ran); an
+independent review then showed the command rules do not bound what an agent
+can run, and the owner accepted that and re-stated the risk generically. The
+planned hardening is an OS-level sandbox for opencode, for example bubblewrap
+(tsk-nynpvag9zvhh), which would make the harness runs confined.
+
+**Rejected alternative:** keep opencode in `NOT_OFFERED_YET` until
+tsk-nynpvag9zvhh gives it an OS sandbox, so its rules would be backed by a
+real boundary. Rejected because the owner chose to accept the residual risk
+and offer the harness now, with the separate-OS-user mitigation, rather than
+block every opencode placement until that work lands.
+
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
 **Id:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908
@@ -969,28 +1009,30 @@ shared case safer than an operator would choose anyway.
 safer default on paper, but it puts sudo configuration in front of a
 first run.
 
-## For now the runner offers Claude Code, Codex and Antigravity
+## For now the runner offers Claude Code, Codex, Antigravity and OpenCode
 
 **Id:** 62bcf506-caed-470c-a094-9bea4217b440
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
 **Source:** maintainer decision on the runner design's question 4, relayed 2026-10-22
-**Revisit when:** the maintainer decides on opencode and the harnesses without a command allowlist when the runner goes into use
+**Revisit when:** the maintainer decides on the harnesses without a command allowlist when the runner goes into use
 
-A configuration may name `claude-code`, `codex`, `antigravity` and
-`stub` (`antigravity` was held back here on 2026-10-22 and re-offered
-later, req-9spwe33neh1z). `opencode` is refused as "not offered yet"
-even though its adapter is built. `pi`, `hermes`, `kimi`, `cline` and
-`omp` stay refused because they have no command allowlist (design §6.3).
+A configuration may name `claude-code`, `codex`, `antigravity`,
+`opencode` and `stub` (`antigravity` was held back here on 2026-10-22 and
+re-offered later, req-9spwe33neh1z; `opencode` likewise, offered later,
+req-g4d2cskx6zxv). `pi`, `hermes`, `kimi`, `cline` and `omp` stay refused
+because they have no command allowlist (design §6.3).
 
 **Reason:** the maintainer wants to discuss the rest once the runner is
-in use, with real runs behind the discussion. The opencode adapter stays
-in the code so that the decision costs a line, not a slice.
+in use, with real runs behind the discussion. The opencode adapter stayed
+in the code while held back so that offering it cost a line, not a slice;
+a 2026-11-15 spike supplied the real runs behind the decision.
 
-**Rejected alternative:** offering every built adapter: opencode's
-project-configuration switch and `instructions` path are still
-unverified (design §6.1).
+**Rejected alternative:** offering every built adapter at once (back when
+opencode's project-configuration switch and `instructions` path were still
+unverified, design §6.1): each harness is offered on its own evidence
+instead, opencode once the spike verified it.
 
 ## Model access is the operator's to arrange
 

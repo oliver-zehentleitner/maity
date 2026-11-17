@@ -41,7 +41,12 @@ NOT_UNATTENDED = ("pi", "hermes", "kimi", "cline", "omp")
 # Antigravity was held back while its one command grant was unconfined; the owner has now
 # accepted that residual risk (req-9spwe33neh1z) and the harness is offered again, while the
 # OS-level confinement of command(maity) is added incrementally (tsk-zjv2xyhyggnm).
-NOT_OFFERED_YET = ("opencode",)
+# OpenCode (Grok) is likewise offered now (req-g4d2cskx6zxv). opencode's command rules are not a
+# security boundary: it has no OS sandbox the runner switches on, so an opencode agent must be
+# treated as able to run any command as the agents' OS user (run them as a separate OS user).
+# The owner accepted that residual risk (req-kezp8rppfhn5, "ship now, harden next"), with an
+# OS-level sandbox the planned hardening (tsk-nynpvag9zvhh). The tuple is now empty.
+NOT_OFFERED_YET: tuple[str, ...] = ()
 # Why a not-offered harness is held back, where there is a specific reason to name.
 NOT_OFFERED_WHY: dict[str, str] = {}
 BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode",

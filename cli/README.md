@@ -1235,14 +1235,26 @@ project's own harness configuration is never loaded:
   in the repository is not loaded. Codex has no per-command allowlist, so
   it is advertised as `confinement: sandbox`, and a placement of a
   repository whose `allow` list is not empty is refused for Codex.
-- **opencode** (built, not offered yet: a configuration that names it is
-  refused until the maintainer decides) runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
-  runner-written `OPENCODE_CONFIG`: deny everything first, then allow the
-  file tools (not on `.git/maity`; `grep` and `glob` are off, because opencode
-  asks about them by the pattern typed, not the path searched), `maity *`, named `git` subcommands
-  and the repository's `allow` list; deny `webfetch` and directories
-  outside the clone. `AGENTS.md` is named as
-  an instruction.
+- **OpenCode (Grok)** (`opencode`) is offered: a configuration naming
+  `[harness.opencode]` is accepted. It runs **Grok** (name the model under
+  `models`, with a `default_model`), signed in once as the agents' user
+  (`~/.local/bin/opencode`; its login is among the hidden home paths). Each
+  session runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a runner-written
+  `OPENCODE_CONFIG` that denies tools by default and then allows the file
+  tools (not on `.git/maity`; `.git` is not editable; `grep` and `glob` are
+  off), `maity *`, the Keep the Why UUID command, named `git` subcommands and
+  the repository's `allow` list; it denies `webfetch` and directories outside
+  the clone. `AGENTS.md` is named as an instruction. `supervised` runs
+  `opencode run` and continues with `--continue`, `interactive` runs
+  `opencode --prompt`. **opencode has no OS sandbox the runner switches on**
+  (`sandbox: off`), so those permission rules are **not a security
+  boundary**: treat an opencode agent as able to run any command as the
+  agents' OS user, and run opencode's agents as a **separate OS user**,
+  isolated from the runner and the other harnesses. The owner accepted this
+  residual risk (`req-kezp8rppfhn5`, "ship now, harden next"); the planned
+  hardening is an OS-level sandbox for opencode, e.g. bubblewrap
+  (`tsk-nynpvag9zvhh`). First offered under `req-g4d2cskx6zxv`.
+  [`docs/runners.md`](../docs/runners.md#opencode-grok) has the details.
 - **Antigravity** (`agy`) starts in a workspace folder the runner makes
   per placement, `<workspaces>/<project id>/<clone>`, with the clone as
   `repo` in it, never in the clone: agy loads its start directory's own
