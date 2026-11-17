@@ -1062,8 +1062,15 @@ links. Under the harness's sandbox no placed session can run gh itself,
 and the runner adds no `api.github.com` to the sandbox (`maity runner
 check` warns when a grant with `pull_requests` lists it). A gh entry in
 `allow` is not applied: `maity runner check` warns about it and the
-runner still starts. A Codex placement is refused for a repository whose
-grant has `allow` or `pull_requests`.
+runner still starts. With its sandbox on, a Codex placement starts
+without the grant's `allow` list and `pull_requests`: Codex has no
+command allowlist, and its `maity` runs inside its sandbox, while the
+runner sets up `maity gh` only for a `maity` outside it, so the runner
+gives a Codex placement no pull-request grant. It does not enforce that
+a Codex agent opens none. With its
+sandbox off, such a grant refuses the Codex start. `maity runner check`
+and the runner's log at each start name what a Codex placement does not
+get.
 
 Open gaps:
 
@@ -1232,8 +1239,11 @@ project's own harness configuration is never loaded:
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
   is linked in. The clone is marked untrusted, so a `.codex/config.toml`
   in the repository is not loaded. Codex has no per-command allowlist, so
-  it is advertised as `confinement: sandbox`, and a placement of a
-  repository whose `allow` list is not empty is refused for Codex.
+  it is advertised as `confinement: sandbox`. A repository's `allow`
+  list is not applied to Codex (every command runs in its sandbox,
+  listed or not) and `pull_requests` is not given to it (the runner sets
+  up no pull-request grant for it, without enforcing that); `maity runner check` names both. Without its sandbox,
+  a grant with either part refuses the Codex start.
 - **OpenCode (Grok)** (`opencode`) is offered: a configuration naming
   `[harness.opencode]` is accepted. It runs **Grok** (name the Grok model as
   `<provider>/<model>` under `models`, with a `default_model`), installed and

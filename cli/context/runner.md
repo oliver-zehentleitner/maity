@@ -503,7 +503,8 @@ own Codex still works. A link keeps one file for both.
 
 **Id:** c2acd907-0f26-4850-8272-063390f1d6a7
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 79837674-493a-43dd-8670-e8b163309bca
 **Evidence:** confirmed
 **Source:** review of runner slice R5b by a member who runs Codex, 2026-10-22, and the coordinator's ruling on it
 **Revisit when:** Codex gains a per-command allowlist the runner can write (an exec policy it honours in `exec` and the TUI), or the contract settles another `confinement` value
@@ -526,6 +527,51 @@ runner's profile, and one reviewer saw that switch the sandbox off.
   cannot keep.
 - Build an exec-policy layer for Codex now: unverified against the
   shipped Codex, and the sandbox already sets the boundary that matters.
+
+## Codex starts without the grant parts it cannot enforce
+
+**Id:** 79837674-493a-43dd-8670-e8b163309bca
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer, 2026-11-17 (req-0t1qj70vh3st): one ChatGPT reviewer on each runner, refused on a runner whose repositories grant commands and pull requests to the Claude Code coders; the lead's approval of the plan on card tsk-fgnag2jvv4fx, 2026-11-17
+**Revisit when:** Codex gains a per-command allowlist the runner can write, or a way for one command to leave its sandbox, so that `maity gh` could run outside it
+
+With its sandbox on, a Codex placement starts on a repository whose
+grant has an `allow` list or `pull_requests`. It does not get those two
+parts (`adapters.codex_left_out`): the `allow` list is not applied, so
+every command runs in Codex's sandbox, listed or not, and the runner
+writes no pull-request grant for it (an empty record, no word of `maity
+gh` in its prompt), as without the grant; it does not enforce that a
+Codex agent opens no pull request. With its sandbox off (`require_sandbox` unset, so the start is not
+refused for the sandbox alone), such a grant refuses the start
+(`harness_refused`), as every such grant did before.
+`maity runner check` warns about each part for every such repository
+when `[harness.codex]` is configured, and the runner logs them at each
+Codex start. Codex is still advertised with `confinement: "sandbox"`,
+and its network list (`network`) still applies inside the sandbox.
+
+**Reason:** the grant is per repository, so its Claude Code parts kept
+every Codex placement off that repository. Starting it with its sandbox
+on widens nothing: with an empty `allow` list Codex already runs every
+command in its sandbox. Without the sandbox nothing would take the
+list's place, so the refusal stays for that case. What the refusal also
+guarded against was a list that looks honoured while it is ignored, and
+naming the left-out parts in `check` and in the log keeps that visible.
+`maity gh` is built to run outside a harness's sandbox, as every
+`maity` call does for Claude Code; Codex's `maity` runs inside it, so
+Codex gets no pull-request record.
+
+**Rejected alternatives:**
+- Keep refusing (c2acd907): one harness's grant blocked another harness
+  on the same repository.
+- A grant section per harness (`[repositories."…".harness.codex]`): a
+  larger shape than needed once nothing a harness cannot enforce blocks
+  its start.
+- `maity gh` for Codex inside its sandbox: what `maity gh` reads to
+  open a pull request would then be readable by the repository's code.
+- Start a Codex without its sandbox and only say so in the log: nothing
+  would stand in for the left-out `allow` list.
 
 ## Antigravity starts in a workspace folder that holds only the clone, in a mode the runner sets
 
@@ -797,7 +843,8 @@ and runs in agy's sandbox like every unlisted command. An entry with another
 a rule word is matched on its own. So agy now gets no `command(...)` allow
 from a grant's command list at all: only `command(maity)`, the `read_url`
 hosts and the file and command denies stand. The same `allow` command list
-reaches Claude Code and Codex unchanged.
+reaches Claude Code unchanged, OpenCode takes it into its own rules, and
+Codex does not get it (79837674-493a-43dd-8670-e8b163309bca).
 
 **Reason:** agy does not match a `command(...)` rule the way Claude Code
 matches `Bash(...)`. It reads the invoked command from the line first,
@@ -825,9 +872,9 @@ way at the settings level to keep either an exact or a prefix command grant
 for agy. Dropping both is the only sound choice: such a command then runs
 inside the sandbox, like an unlisted one. This narrows agy grants (a
 command that needs to run outside agy's sandbox through the `allow` list no
-longer can — arrange it another way, or run it under Claude Code or Codex;
+longer can — arrange it another way, or run it under Claude Code;
 docs/runners.md, CHANGELOG), while the `allow` list stays unchanged for the
-other harnesses.
+other harnesses that apply it.
 
 **Limit:** one command grant remains that agy cannot be given more tightly —
 `command(maity)`. The runner must let the session reach the hub, so `maity`
@@ -2097,7 +2144,7 @@ message says are no boundary.
 - The handle verbatim as a directory name: valid handles such as `con`,
   `nul` or `com1` are device names Windows refuses as directory names.
 - Ignoring `--allow` for `codex`: the person would believe a restriction
-  applied that nothing enforces (§15.3 refuses such placements too).
+  applied that nothing enforces (a runner, §15.3, leaves a grant's list out for Codex and names it in `maity runner check`, 79837674).
 - "The hub needs no change", leaving supervised sessions out as before:
   a local mode stopped by Ctrl-C, a closed console or a crash would hold
   a session that never counts as not listening, and the lead would not
@@ -3002,10 +3049,11 @@ plus `comments` with `--comments`) and prints them as text itself. gh's text vie
 by gh's version, and an older gh (2.46, a distribution's package) asks for `projectCards`, which the
 forge now refuses, so every plain `gh pr view` failed on such a runner (the E2E of #1663). An `allow` entry naming gh is not applied:
 `maity runner check` warns about it and names `pull_requests`, and the
-runner still starts. Codex is refused for a repository whose grant has
-`allow` or `pull_requests`. Codex cannot honour a command allowlist, and
-its `maity` runs inside its sandbox, where `maity gh` reaches neither the
-login nor the forge's API.
+runner still starts. Codex gets neither `allow` nor `pull_requests`
+(79837674-493a-43dd-8670-e8b163309bca): it cannot honour a command
+allowlist, and its `maity` runs inside its sandbox, while `maity gh` is
+set up only for a `maity` outside it. Without its sandbox, such a grant
+refuses the start.
 
 **Reason:** before this, an agent could push but could not open its pull
 request, and the card's test needs it to. The forge login on the machine
