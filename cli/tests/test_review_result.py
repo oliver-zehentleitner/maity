@@ -542,3 +542,44 @@ def test_under_a_placement_whose_clone_cannot_be_named_nothing_is_sent(
     assert result == cli.EXIT_ERROR, err
     assert "without GIT_COMMON_DIR" in err and "not checked" not in err
     assert not [s for s in fake.seen[before:] if s.method == "POST"]
+
+
+@posix  # under a placement a named file is read only where descriptors walk (not Windows)
+def test_under_a_placement_a_clone_its_git_refuses_sends_nothing(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The runner's clone, but one maity's git does not run in (clonecheck): not "no clone
+    here", so the review is not sent unchecked (cli/context/commands.md 7f3c1e52)."""
+    _commit("b.txt", "first\nsecond\n")
+    clone = Path.cwd()
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    subprocess.run(["git", "config", "--remove-section", "url." + str(clone.parent / "remote.git")],
+                   check=True)  # fmt: skip
+    # A key that runs code: maity's git refuses the clone (clonecheck.UNSUPPORTED_KEYS).
+    subprocess.run(["git", "config", "core.fsmonitor", "true"], check=True)
+    cite = {"path": "b.txt", "line": 2, "quote": "second"}
+    (clone / "review.json").write_text(
+        json.dumps({"subject": "#1", "head": head, "verdict": "approve", "cites": [cite]})
+    )
+    monkeypatch.setenv("MAITY_STATE_DIR", str(state.resolve_state_dir()))
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
+    monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    private = clone.parent / "agent-git"
+    private.mkdir()
+    git = shutil.which("git")
+    assert git is not None
+    (private / "git").write_text(git)
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
+    before = len(fake.seen)
+    result = cli.main(_say("Approve.", "--review-file", "review.json"))
+    err = capsys.readouterr().err
+    assert result == cli.EXIT_ERROR, err
+    assert "not sent: the review's cites cannot be checked: maity runs no git here" in err
+    assert not [s for s in fake.seen[before:] if s.method == "POST"]
