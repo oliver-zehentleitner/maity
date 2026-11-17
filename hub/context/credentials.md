@@ -45,8 +45,10 @@ scheme is unchanged.
 - **Sealed only:** `MAITY_SEALED_VERIFIERS_ONLY=1` (default off) makes a plain row verify
   nothing. It needs `MAITY_SEAL_VERIFIERS=1` (a configuration error otherwise), since without
   sealing every new join would write a plain row that is refused at once. The hub does not
-  start while a live plain row is left: the error names the count and `seal-verifiers`, so a
-  rollout stalls with the old pods still serving instead of locking agents out. Revoked rows do
+  start while a live plain row is left: the error names the count and `seal-verifiers`, so in a
+  rolling update the rollout stalls with the old pods still serving instead of locking agents
+  out; with `Recreate` (the chart's single-pod default) or a single process the hub stays down
+  until `seal-verifiers` has run or the setting is unset again. Revoked rows do
   not count there; they are refused anyway, and the command still seals them.
 - **The refusal says nothing new:** a refused plain row takes the path of a sealed row the key
   does not open: 401 `unauthenticated` on a bearer call (what an unknown id gets) and 401
