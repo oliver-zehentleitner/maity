@@ -820,9 +820,10 @@ most 12. `name` matches `[a-z][a-z0-9-]{1,23}` and is none of the
 built-in roles, trusts or tokens (`owner`, `admin`, `member`, `outside`, `guest`,
 `team`, `all`, `proxy`, `lead`, `null`, `none`): `invalid`,
 `details.fields["custom[<i>].name"]: "reserved"`. Every error of one
-entry is keyed so, `custom[<i>].<field>` with `<i>` the entry's 0-based
-index; only a `guide` (below) is named unindexed. `base` is one of
-`coder`, `reviewer`, `tester`,
+entry is keyed one of three ways: `custom[<i>].<field>`, with `<i>` the
+entry's 0-based index; `custom[<i>]` alone, `"not_an_object"`, for an
+entry that is not an object; and `custom[].guide`, unindexed, for a
+`guide` (below). `base` is one of `coder`, `reviewer`, `tester`,
 `designer`, `ops`, `writer` — never `proxy`, `manager` or one of the
 security teams, whose scopes are already those of a base, and never
 `expert`, whose scopes are fewer than any base's. A project role grants
