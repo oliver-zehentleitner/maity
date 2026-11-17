@@ -397,7 +397,7 @@ the hub records it on the session.
 | Time to send a request body | 120 seconds, all of it, from when the hub starts to read it; then `request_timeout` (§1.3). A replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet) has 30 minutes, about 300 kbit/s for 64 MiB |
 | Requests to one route | none beyond the route's own limits by default; the general limit per client address is the ingress's, and a signed-in caller's reads have the limit per credential below. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API, each `<METHOD> <route> = <count>/<seconds>` with the route as `/api/v1/openapi.json` lists it (`GET /api/v1/projects/{owner}/{slug}/events = 300/60`), counted per client address (§2.5) in each hub process. Past one the call is `rate_limited` with `Retry-After` before its body is read or its caller looked up. A route the document does not list with that method stops the hub at its start, and a change takes a restart |
 | Reads per credential | `max_reads_per_minute` per credential, default 600: the instance's value (§16.5), or for an agent's credential its project's if that is lower (§6.1). A read is a `GET` or `HEAD` of the API (`/api/v1/…`) by a caller with a credential: an agent's credential (§2.2), a runner's (§15.1) or a human's session (§2.1); a bridge's call with `Maity-For` (§2.3) counts against the bridge's own credential. An agent's credential takes its project's value, every other credential the instance's. The events long-poll counts once per call. Counted per credential in each hub process, as `MAITY_ROUTE_LIMITS`. The check runs once the credential is known and before the side effects of §2.4, so a refused read renews nothing; past the limit the read is `rate_limited` with `Retry-After`, the seconds until the window has room for one more. Writes do not count; a call without a credential keeps the limits of the rows around this one and the ingress's |
-| Open claims per caller | `max_open_claims` per member and project, default `null`, no cap (§6.1, §6.5); then `claim_limit` |
+| Open claims per caller | `max_open_claims` per member and project, default `null`, no cap (§6.1, §6.5); then `claim_limit`; not built yet, tsk-ybc2ma72dzvq: today the hub caps no claims |
 | Public page and badge reads | 60 per minute per client address each by default, `MAITY_PUBLIC_PAGE_LIMIT` and `MAITY_BADGE_LIMIT` as `<count>/<seconds>` (§6.20, §16.9) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
 | Handle changes | 3 per 24 hours per account or profile; at most `max_aliases` aliases per id, default 3, at most 8 (§6.24, §16.5) |
@@ -3009,7 +3009,9 @@ The sensitive calls:
   (`POST /me/deletion`, §2.9);
 - a change of a project's `settings.restricted_access` (§6.1);
 - the instance admin's changes of instance settings (`PATCH
-  /admin/settings/*`, §2.6.6, §16).
+  /admin/settings/*`, §2.6.6, §16), and of the limits of one project or
+  one account (`PATCH /admin/projects/{owner}/{slug}/limits`, `PATCH
+  /admin/users/{id}/limits`, §16.5.1; not built yet, tsk-t63d50qy3s0k).
 
 Leaving a project is not among them (§6.2, "Leaving a project"), nor is
 leaving an organisation (§6.26) or an admin's removal of a member: those
@@ -12787,9 +12789,13 @@ overrides. The instance admin may set a different ceiling (§16.5.1),
 lower or higher, up to `unlimited`. The ceiling in effect is, first to
 last: the override on the project; for `max_instances` the override on
 the agent profile owner's account, for the three others the override on
-the account of the human who owns the project (a project in an
-organisation's namespace takes only an override on the project); the
-default ceiling.
+the account of the human who owns the project; the default ceiling. A
+project in an organisation's namespace has no owner's account for the
+three project values and takes only an override on the project there;
+`max_instances` still takes the override on the agent profile owner's
+account, as every profile is a human's (§6.3), so lifting one person's
+agents never needs a project override that would lift every agent in
+the project.
 
 - **`unlimited`** lifts the product bound: the value may be set up to
   the bound in the table, 1000, and no further. These bounds are no
@@ -12835,7 +12841,7 @@ default ceiling.
 | `scope` | `project`, `member` (with `member`, the member id: `member_agents_max` is per human, `max_open_claims` and `max_instances` per membership), `runner` (with `runner`, its id) or `target` (with `runner` and `target`, its name) |
 | `source` | where `limit` comes from: `default`; `project` (set in the project's policy); `agent_owner` (`max_instances`); `runner` (the runner's configuration); `ceiling` (the set value is above the ceiling, or `max_open_claims` is `null` under an override's ceiling, and the ceiling applies). `limit` is always the value in effect, also to a caller who reads `ceiling` without its `value` (below): what applies to the caller is shown, what the operator set beyond it is not |
 | `ceiling` | `{value, source}`: `value` the ceiling in effect, `source` `default`, `project_override` or `account_override`; absent for `max_agents`, which the hub does not bound. A caller who does not hold the right that sets the value reads `source` alone, without `value`: an override is a number the operator set for an account, and only those who set the value need it |
-| `raise` | `{right, path, field}`: the right that can change the value (`project:admin`, `agent_owner`, `runner_owner`, or `instance:admin` once `limit` is at the ceiling), and the API path and field that change it; `null` once `limit` is at the hub's bound of 1000, which nobody raises; `path` is `null` where the hub cannot change it (the runner's configuration, `field` then names its key, `limits.max_agents` or `backend.ssh.hosts[].max_agents`) |
+| `raise` | `{right, path, field}`: the right that can change the value (`project:admin`, `agent_owner`, `runner_owner`, or `instance:admin` once `limit` is at the ceiling), and the API path and field that change it — for `instance:admin` always `/api/v1/admin/projects/{owner}/{slug}/limits` and the value's own name, never the account route, whose path would name a person; `null` once `limit` is at the hub's bound of 1000, which nobody raises; `path` is `null` where the hub cannot change it (the runner's configuration, `field` then names its key, `limits.max_agents` or `backend.ssh.hosts[].max_agents`) |
 
 `raise` names a right and a place, never a person: who holds the right
 is not in it. A caller who lacks the right reads that a limit applies
@@ -12880,7 +12886,7 @@ GET /projects/{owner}/{slug}/limits
   human with `credentials:admin` every agent membership; an agent reads
   its own. `never_listened`: its active instances that have never
   listened (`last_seen_at` `null`, §6.17). They count toward
-  `max_instances`; `POST …/credentials/{id}/revoke` (§6.17) frees the
+  `max_instances`; `POST …/credentials/{id}/revoke` (§6.17, §10) frees the
   place, and the dashboard offers it beside each.
 - `runners`: the attached runners (§15.4), only for a caller who may
   read `GET …/runners` (a human with `project:read`, an agent with
@@ -12888,6 +12894,11 @@ GET /projects/{owner}/{slug}/limits
   `max_agents` and `running` for a caller who sees `capabilities` there
   (`members:admin`, `agents:propose`) and for the runner's owner, for
   any other human `null`; a runner that has not reported is `null` too.
+  `targets` likewise: the list for those who see `capabilities`, `[]`
+  for any other human, so no target's name is shown that `GET …/runners`
+  hides. A placement's `reported.quota` (§15.7) stays with its
+  `reported`, which every reader of the placement sees already, its
+  `target` among it.
 
 ## 7. Requests to humans (the inbox)
 
@@ -21366,7 +21377,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ALIASES` | `max_aliases` | 3 | aliases one human, organisation, agent profile or project may hold (§6.24, §6.25, §6.26): an integer 1–8, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_STARRED_PER_HUMAN` | `max_starred_per_human` | 100 | public projects one human may keep as starred tabs without being a member (§5.1, "Stars"): an integer 1–1000, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment. Lowering it keeps the stars a human holds and refuses new ones beyond it (`too_many`, §5.1) |
-| `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): the instance admin may set another value for one project (§16.5.1; not built yet, tsk-t63d50qy3s0k); an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_READS_PER_MINUTE` | `max_reads_per_minute` | 600 | reads one credential may make per minute once the caller is signed in (§1.7 "Reads per credential"); a project may set a lower value for its agents (§6.1): an integer 60–100000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
@@ -21501,6 +21512,7 @@ these answer numbers, never a project's content (§16).
 | Field | On | Values | What it overrides |
 |---|---|---|---|
 | `max_placements`, `member_agents_max`, `max_open_claims`, `max_instances` | project, account | an integer within the bound of §6.31, `unlimited`, or `null` | the ceiling of that value (§6.31); on an account, for the projects the human owns (`max_instances`: for the agent profiles the human owns) |
+| `max_attachment_storage_per_project` | project | an integer from 1048576 to 1125899906842624, `unlimited`, or `null` | the instance's value for this project (§16.5, §8.7); `attachment_quota` (§1.3) beyond it |
 | `max_agents_per_human`, `max_orgs_per_human`, `max_projects_per_owner` | account | an integer 1–10000, `unlimited`, or `null` | the instance's value for this human (§16.5) |
 | `max_starred_per_human` | account | an integer 1–1000, or `null`; no `unlimited` | the instance's value for this human (§16.5) |
 
@@ -21511,7 +21523,13 @@ these answer numbers, never a project's content (§16).
   updated_at}`: the stored override or `null`, what is in effect with
   where it comes from (`default`, `env`, `admin` as in §16.5,
   `project_override`, `account_override`), and who set the override
-  and when (`null` without one).
+  and when (`null` without one). On a project, `max_instances` has no
+  single account to resolve, its account override being per agent
+  profile owner: there `value` and `source` are the project override's,
+  or the default ceiling (16, `default`). An override of `unlimited` is
+  answered as `override: "unlimited"`; `value` is what applies, for the
+  four values of §6.31 the bound 1000, for the §16.5 values
+  `"unlimited"`.
 - For the account values, an override comes before the instance's
   value: `agent_limit`, `org_limit` and `project_limit` (§1.3) carry
   `details.source`, `instance` or `account_override`.
