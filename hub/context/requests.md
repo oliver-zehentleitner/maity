@@ -60,7 +60,7 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the code at main 43e2c728 (`routes/requests.py`, `org_invitations.py`, `chat_request.py`, `tables.py` `to_shape`, `personal_shape`, `scope_known`); docs/api.md §7 "Personal requests", §6.2, §6.26; the clean-up card tsk-jy01skphpb6y; the `scope_known` CHECK came with commit aec28415 (organisations, part 2), `to_kind: "human"` with 49263526 (a human's preferences, §19.4)
+**Source:** the code at main 43e2c728 (`routes/requests.py` and every module that files a personal request, found by its `file_*` calls and `to_kind` writes; `tables.py` `to_shape`, `personal_shape`, `scope_known`); review A977 of #1916 (the two jour fixe shapes); docs/api.md §7 "Personal requests", §6.2, §6.26; the clean-up card tsk-jy01skphpb6y; the `scope_known` CHECK came with commit aec28415 (organisations, part 2), `to_kind: "human"` with 49263526 (a human's preferences, §19.4)
 **See:** requests.md#a-personal-request-is-a-request-row-with-the-askers-project-hidden-from-every-project-route-but-the-askers — a753a0f6-a606-43dd-86db-3431a1679721 — as of 2026-11-17
 **Revisit when:** a personal request needs a table of its own, a request without a project gets an asker or events, or §7's withdrawal bullet and §6.2/§6.26 are brought into one wording
 
@@ -68,12 +68,22 @@ A personal request is still an ordinary `request` row with `personal` true, tied
 `personal_shape` CHECK to one of two addressings, which only the hub writes:
 
 - `to_kind: "profile_owner"`: the owner of an agent profile (`to_profile`), its owner at
-  filing time in `to_human` (soul, takeover, outage, Keep the Why and isolation notices,
-  `file_personal`, `file_hub_notice`);
-- `to_kind: "human"`: a human in person, `to_human` alone (a preferences proposal, a
-  placement's consent to the runner's owner, a consent to a human across owners, an
-  organisation's invitation and transfer, the owner's digest, the report request, the
-  request to chat with an owner's agents).
+  filing time in `to_human`. At 43e2c728 every such row comes from two functions: the soul
+  proposal (`file_personal`, routes/memory.py) and the hub's notices of an outage, an
+  unconfirmed Keep the Why commitment and an isolation (`file_hub_notice`). §7 also names
+  a takeover notice and a change of another owner's project texts; neither is filed this
+  way in the code.
+- `to_kind: "human"`: a human in person, `to_human` alone. At 43e2c728, every place that
+  writes one: a preferences proposal (routes/preferences.py); a project invitation by
+  handle (invitations.py); a placement's consent to the runner's owner
+  (routes/placements.py); the consents of a cross-owner `reports_to` pair, from a member or
+  from an owner outside the project (cross_owner.py), of a bridge's owner (bridges.py) and
+  of another owner's agent (foreign_agent.py); an organisation's invitation
+  (org_invitations.py) and a transfer into an organisation (project_names.py); a jour fixe
+  moderator consent to a human, from a member (`file_to_human`) or filed by the hub
+  (jourfixe/moderators.py); a jour fixe triage decision to a series keeper who is no longer
+  a member (jourfixe/triage.py, §20.6); the owner's digest; the report request; and the
+  request to chat with an owner's agents.
 
 `project_id` is the asking member's project for most of them. It is null, as the
 `scope_known` CHECK allows, for two shapes: an organisation's invitation (`org_id` set,

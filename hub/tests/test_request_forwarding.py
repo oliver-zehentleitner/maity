@@ -217,3 +217,70 @@ def test_a_demotion_that_commits_first_ends_the_claim(
             select(t.request.c.holder_member).where(t.request.c.id == request["id"])
         ).scalar()
     assert holder is None
+
+
+def _readded_under_the_lock(human: flow.Human, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Right before the project's lock returns, the human's membership ends and a new one,
+    the same in every column but its id, begins: removed and added again meanwhile."""
+    real = events.lock_project
+
+    def readded_meanwhile(conn: Any, project: str) -> Any:
+        m = t.membership.c
+        old = conn.execute(
+            select(t.membership).where(m.human_id == human.id, m.active.is_(True))
+        ).one()
+        conn.execute(t.membership.update().where(m.id == old.id).values(active=None))
+        again = {k: v for k, v in old._mapping.items() if k != "id"}
+        conn.execute(t.membership.insert().values(again))
+        return real(conn, project)
+
+    monkeypatch.setattr("maity_hub.routes.requests.lock_project", readded_meanwhile)
+
+
+def test_a_claim_by_a_membership_that_ended_under_the_lock_is_not_found(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The membership read under the lock is the one the call started with (`_locked`), as
+    for an answer: the new membership of a human added again does not claim in its place."""
+    agent = flow.agent(make_client, owner)
+    admin = admin_human(make_client, migrated, "admin")
+    request = asked(agent, to="trust:admin")
+    _readded_under_the_lock(admin, monkeypatch)
+    late = claim(admin, request)
+    assert late.status_code == 404, late.text
+    assert late.json()["error"]["code"] == "not_found"
+    with migrated.connect() as conn:
+        holder = conn.execute(
+            select(t.request.c.holder_member).where(t.request.c.id == request["id"])
+        ).scalar()
+    assert holder is None
+
+
+def test_a_forward_by_a_membership_that_ended_under_the_lock_is_not_found(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = flow.agent(make_client, owner)
+    admin = admin_human(make_client, migrated, "admin")
+    request = asked(agent)
+    assert forward(owner, request, admin.id).status_code == 200
+    _readded_under_the_lock(admin, monkeypatch)
+    late = forward(admin, request, owner.id)
+    assert late.status_code == 404, late.text
+    assert late.json()["error"]["code"] == "not_found"
+    with migrated.connect() as conn:
+        holder, steps = conn.execute(
+            select(t.request.c.holder_member, t.request.c.forwarding).where(
+                t.request.c.id == request["id"]
+            )
+        ).one()
+        # The refusal rolled the whole call back, the remove-and-add with it.
+        first = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.human_id == admin.id)
+        ).scalar_one()
+    assert (holder, len(steps)) == (first, 1)  # still the admin's, one step
