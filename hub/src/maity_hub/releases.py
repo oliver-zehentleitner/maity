@@ -39,6 +39,16 @@ def valid_version(text: str) -> bool:
     return bool(SEMVER.fullmatch(text) or PEP440.fullmatch(text))
 
 
+# The final form both syntaxes share: three numbers, no pre-release part.
+_FINAL = re.compile(rf"{_NUM}\.{_NUM}\.{_NUM}")
+
+
+def is_final(version: str) -> bool:
+    """A final version: no SemVer `-…` and no PEP 440 a/b/rc part. Only its found tag
+    marks the project released (§6.1)."""
+    return bool(_FINAL.fullmatch(version))
+
+
 def checklist_item(number: int, text: str) -> dict[str, Any]:
     return {"id": f"chk-{number}", "text": text, "done": False, "by": None, "at": None}
 

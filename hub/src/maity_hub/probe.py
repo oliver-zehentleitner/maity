@@ -396,9 +396,12 @@ def _announce_for_release(
 
 
 def _mark_released(conn: Connection, project_id: str, ref: str, observed_at: datetime) -> None:
-    """`released_at` once, when the found tag is a release's, done or not (§6.1)."""
+    """`released_at` once, when the found tag is a final release's, done or not (§6.1).
+    A pre-release tag never marks it."""
+    if not ref.startswith("v") or not releases.is_final(ref[1:]):
+        return
     project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
-    if project.released_at is not None or not ref.startswith("v"):
+    if project.released_at is not None:
         return
     release = conn.execute(
         select(t.card.c.id).where(

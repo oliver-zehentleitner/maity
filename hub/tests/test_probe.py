@@ -251,7 +251,7 @@ def test_a_pep440_release_finds_its_tag(
     owner: flow.Human, migrated: Engine, github: FakeGitHub
 ) -> None:
     """§6.7: a release `0.1.0a4` looks for the tag `v0.1.0a4`, the way the repository
-    tags its releases, and the found tag marks the project released (§6.1)."""
+    tags its releases; a pre-release tag found does not mark the project released (§6.1)."""
     release = owner.post(
         "/projects/maintainer/maity/tasks",
         {"title": "0.1.0a4", "kind": "release", "release": {"version": "0.1.0a4"}},
@@ -265,6 +265,33 @@ def test_a_pep440_release_finds_its_tag(
         "tag"
     ]
     assert (tag["name"], tag["found"], tag["sha"]) == ("v0.1.0a4", True, SHA)
+    assert _project(migrated).released_at is None
+
+
+def test_a_semver_pre_release_tag_does_not_mark_the_project_released(
+    owner: flow.Human, migrated: Engine, github: FakeGitHub
+) -> None:
+    """§6.1: a found `v1.0.0-rc.1` leaves `released_at` null; the final `v1.0.0` after it
+    sets it."""
+    release = owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "1.0.0-rc.1", "kind": "release", "release": {"version": "1.0.0-rc.1"}},
+    ).json()
+    github.tag("v1.0.0-rc.1")
+    project_id = _project(migrated).id
+    probe.observe_release(migrated, READER, project_id)
+    assert owner.get(f"/projects/maintainer/maity/tasks/{release['id']}").json()["release"]["tag"][
+        "found"
+    ]
+    assert _project(migrated).released_at is None
+    assert not [e for e in _events(migrated, "state_changed") if "released_at" in e.payload]
+    owner.patch(f"/projects/maintainer/maity/tasks/{release['id']}", {"status": "cancelled"})
+    owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "1.0.0", "kind": "release", "release": {"version": "1.0.0"}},
+    )
+    github.tag("v1.0.0")
+    probe.observe_release(migrated, READER, project_id, max_age=0)
     assert _project(migrated).released_at is not None
 
 

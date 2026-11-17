@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, delete, insert, select, update
 
-from maity_hub import clock
+from maity_hub import clock, releases
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.probe import Worker
@@ -213,6 +213,29 @@ def test_versions_are_compared_as_text(owner: flow.Human) -> None:
     )
     assert (again.status_code, again.json()["error"]["code"]) == (409, "version_exists")
     assert again.json()["error"]["details"] == {"release": pep440["id"]}
+
+
+@pytest.mark.parametrize(
+    ("version", "final"),
+    [
+        ("0.1.0", True),
+        ("1.0.0", True),
+        ("10.20.30", True),
+        ("0.1.0a4", False),
+        ("0.1.0b1", False),
+        ("0.1.0rc1", False),
+        ("1.0.0-rc.1", False),
+        ("0.1.0-alpha.8", False),
+        ("1.0.0-0", False),
+        ("01.0.0", False),
+        ("1.0", False),
+        ("1.0.0 ", False),
+        ("1٠.0.0", False),
+    ],
+)
+def test_only_a_version_without_a_pre_release_is_final(version: str, final: bool) -> None:
+    """§6.1: only a final version's found tag marks the project released."""
+    assert releases.is_final(version) is final
 
 
 def test_one_release_in_flight_and_each_version_once(owner: flow.Human) -> None:
