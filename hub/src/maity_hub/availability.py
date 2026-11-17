@@ -764,25 +764,28 @@ def runner_reported(
     """A placement's report (§15.7, §6.12): the runner's limit computed again, with this
     report standing for the placement's state (it may not be stored yet)."""
     limited = retry_at if state == "rate_limited" else None
-    recompute_runner_limit(conn, placement.membership_id, actor, (placement.id, limited))
+    recompute_runner_limit(conn, placement.membership_id, actor, (placement.id, state, limited))
 
 
 def recompute_runner_limit(
     conn: Connection,
     membership_id: int | None,
     actor: Actor | None,
-    reporting: tuple[str, datetime | None] | None = None,
+    reporting: tuple[str, str, datetime | None] | None = None,
     continues: bool = False,
 ) -> None:
     """The runner's limit of an agent from every active placement of it with `desired:
     running` (§6.12), after a report, a close, a change of `desired` or the end of a limit
     the agent set itself (at its `until`, by a resume, or by `POST /me/limit` with
-    `until: null`). The agent is
-    limited while each of them last reported `rate_limited` with a `retry_at` still ahead,
-    until the earliest of those; the record names the placement that reported it, the one
-    created first on a tie. Otherwise, with none that should run included, the runner's
-    limit ends. One that runs keeps the agent available, as an awake instance beside a
-    dormant one does. A recomputation creates, changes or clears only a limit with
+    `until: null`); creating or proposing a placement recomputes nothing, since a new one
+    has not reported and is neutral. The agent is limited while at least one of them last
+    reported `rate_limited` with a `retry_at` still ahead and none of them runs (last
+    report `starting` or `running`, or `rate_limited` with its `retry_at` passed), until
+    the earliest of those `retry_at`; the record names the placement that reported it, the
+    one created first on a tie. A placement that has not reported, or last reported
+    anything else (`pending`, `failed`, …), is neutral. Otherwise the runner's limit ends.
+    One that runs keeps the agent available, as an awake instance beside a dormant one
+    does. A recomputation creates, changes or clears only a limit with
     `source: runner`: while one the agent declared itself (`POST /me/limit`) is stored,
     it stores nothing, and that limit ends as a self-set limit does. `continues`: a
     limit was live until this moment, so a runner's limit stored now is no new start."""
@@ -810,7 +813,7 @@ def recompute_runner_limit(
             )
         return
     if row.limit_placement_id is not None:
-        # Not every placement that should run is limited now: the runner's limit ends. A
+        # One that should run runs, or none is limited any more: the runner's limit ends. A
         # limit the agent declared itself (`source: self`) names no placement and stays.
         set_agent_limit(
             conn,
@@ -825,13 +828,20 @@ def recompute_runner_limit(
 
 
 def _all_limited(
-    conn: Connection, membership_id: int, reporting: tuple[str, datetime | None] | None
+    conn: Connection,
+    membership_id: int,
+    reporting: tuple[str, str, datetime | None] | None,
 ) -> tuple[datetime, Any] | None:
-    """When every active placement of the membership with `desired: running` is
-    `rate_limited` with a `retry_at` still ahead (`reporting`: a placement's id and the
-    `retry_at` of the report it just made, None when that report is not `rate_limited`),
-    the earliest `retry_at` and the placement that named it, the one created first on a
-    tie; otherwise None, also when none should run (§6.12)."""
+    """When at least one active placement of the membership with `desired: running` is
+    `rate_limited` with a `retry_at` still ahead and none of them runs, the earliest
+    `retry_at` and the placement that named it, the one created first on a tie; otherwise
+    None, also when none should run (§6.12, variant (a) of tsk-rfa7fwa2sz5g). `reporting`:
+    a placement's id, the state of the report it just made and its `retry_at` (None when
+    that report is not `rate_limited`). A placement runs when its last report is `starting`
+    or `running`, or `rate_limited` with a `retry_at` that has passed (the runner starts it
+    again then). Every other one is neutral and neither sets nor ends the limit: one that
+    has not reported (just created, proposed, waiting for its approval), or that last
+    reported `pending` (`capacity` among others), `failed`, `exited`, `hung`, …"""
     rows = conn.execute(
         select(t.placement)
         .where(
@@ -844,17 +854,23 @@ def _all_limited(
     now = clock.now()
     earliest: tuple[datetime, Any] | None = None
     for p in rows:
+        state: str | None
         at: datetime | None
         if reporting is not None and p.id == reporting[0]:
-            at = reporting[1]
+            state, at = reporting[1], reporting[2]
         else:
             reported = p.reported or {}
+            state = reported.get("state")
             stored = reported.get("retry_at")
             at = None
-            if reported.get("state") == "rate_limited" and isinstance(stored, str):
+            if state == "rate_limited" and isinstance(stored, str):
                 at = datetime.fromisoformat(stored)  # stored by `clock.rfc3339`
+        if state in ("starting", "running"):
+            return None  # it runs: the runner's limit ends
+        if state != "rate_limited":
+            continue  # neutral: not reported yet, pending, failed, …
         if at is None or at <= now:
-            return None  # it runs, or will again: its `retry_at` has passed
+            return None  # rate-limited, but runs again: its `retry_at` has passed
         if earliest is None or at < earliest[0]:  # strictly: a tie keeps the older one
             earliest = (at, p)
     return earliest

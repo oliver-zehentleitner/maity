@@ -16,7 +16,15 @@ from maity_hub.availability import sweep
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_join_pickup import exchange, pick_up
-from tests.test_placements import REPOSITORY, Setup, allow_instances, place, placed, report
+from tests.test_placements import (
+    REPOSITORY,
+    Setup,
+    admin_agent,
+    allow_instances,
+    place,
+    placed,
+    report,
+)
 from tests.test_runner_stream import attach, hello
 from tests.test_runners import Runner, error, paired
 from tests.test_tasks import task
@@ -343,6 +351,85 @@ def test_a_gapless_handover_from_an_own_limit_stalls_the_holder_once(setup: Setu
     sweep(setup.engine)
     assert _shown(setup) == ("limited", "runner", eighteen)
     assert _stalled(setup) == 1
+
+
+LIMITED = {"state": "rate_limited", "reason": "quota", "exit_code": 2}
+
+
+def test_a_sibling_waiting_for_capacity_does_not_end_the_limit(setup: Setup) -> None:
+    """Review A1089's probe, variant (a) of §6.12: P2 waits with `pending`/`capacity`, then
+    P1 reports `rate_limited` two hours ahead. P2 does not run, so the agent is `limited`;
+    P2 reporting `running` then ends it."""
+    allow_instances(setup.engine, setup.agent.id, 3)
+    p1, p2 = placed(setup), placed(setup)
+    two_hours = clock.rfc3339(clock.now().replace(microsecond=0) + timedelta(hours=2))
+    waiting = report(setup, p2, 1, state="pending", reason="capacity")
+    assert waiting.status_code == 200, waiting.text
+    assert report(setup, p1, 1, **LIMITED, retry_at=two_hours).status_code == 200
+    assert _shown(setup) == ("limited", "runner", two_hours)
+    assert _limit(setup) == (two_hours, p1["id"])
+    assert report(setup, p2, 2).status_code == 200  # P2 runs now
+    assert _shown(setup)[0] != "limited"
+    assert _limit(setup) == (None, None)
+
+
+def test_a_failed_sibling_is_neutral_and_the_last_limited_one_decides(setup: Setup) -> None:
+    """§6.12: a `failed` sibling neither sets nor ends the limit; the limited one's own
+    `failed` report leaves none limited, and the limit ends."""
+    allow_instances(setup.engine, setup.agent.id, 3)
+    p1, p2 = placed(setup), placed(setup)
+    two_hours = clock.rfc3339(clock.now().replace(microsecond=0) + timedelta(hours=2))
+    failed = {"state": "failed", "reason": "crash_loop"}
+    assert report(setup, p2, 1, **failed).status_code == 200
+    assert report(setup, p1, 1, **LIMITED, retry_at=two_hours).status_code == 200
+    assert _limit(setup) == (two_hours, p1["id"])
+    assert report(setup, p1, 2, **failed).status_code == 200
+    assert _limit(setup) == (None, None)
+
+
+def _p1_started_and_rate_limited(
+    setup: Setup, make_client: ClientFactory
+) -> tuple[dict[str, Any], str]:
+    allow_instances(setup.engine, setup.agent.id, 3)
+    p1 = placed(setup)
+    started(setup, p1, make_client)
+    two_hours = clock.rfc3339(clock.now().replace(microsecond=0) + timedelta(hours=2))
+    assert report(setup, p1, 1, **LIMITED, retry_at=two_hours).status_code == 200
+    assert _limit(setup) == (two_hours, p1["id"])
+    return p1, two_hours
+
+
+def test_neutral_unreported_sibling_preserves_runner_limit(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """Review A1090 (corrected, seq 154660): creating P2 recomputes nothing, and under
+    variant (a) an unreported P2 is neutral, so P1's unchanged repeated report keeps the
+    same limit. At b1d6f3d9 the repeat cleared it ((None, None))."""
+    p1, two_hours = _p1_started_and_rate_limited(setup, make_client)
+    p2 = placed(setup)  # stays unreported
+    assert p2["reported"] is None
+    assert _limit(setup) == (two_hours, p1["id"])
+    assert report(setup, p1, 2, **LIMITED, retry_at=two_hours).status_code == 200
+    assert _limit(setup) == (two_hours, p1["id"])
+
+
+def test_a_proposed_sibling_preserves_runner_limit(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """The same for a proposed P2 (§6.12): neither the proposal, its go nor P1's unchanged
+    repeated report changes the limit while P2 has not reported."""
+    p1, two_hours = _p1_started_and_rate_limited(setup, make_client)
+    proposed = place(setup, admin_agent(make_client, setup), reason="a second pair of hands")
+    assert proposed.status_code == 201, proposed.text
+    assert proposed.json()["approval"]["status"] == "pending"
+    assert _limit(setup) == (two_hours, p1["id"])
+    assert report(setup, p1, 2, **LIMITED, retry_at=two_hours).status_code == 200
+    assert _limit(setup) == (two_hours, p1["id"])
+    request_id = proposed.json()["approval"]["request_id"]
+    go = setup.owner.post(f"/requests/{request_id}/answer", {"reply_id": "go"})
+    assert go.status_code == 200, go.text
+    assert report(setup, p1, 3, **LIMITED, retry_at=two_hours).status_code == 200
+    assert _limit(setup) == (two_hours, p1["id"])
 
 
 def test_a_retry_at_that_has_passed_counts_as_running(setup: Setup) -> None:

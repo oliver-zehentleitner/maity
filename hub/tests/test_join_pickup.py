@@ -611,9 +611,13 @@ def test_each_agent_sees_its_own_placement(setup: Setup, make_client: ClientFact
 
 
 def test_each_instance_sees_its_own_placement(setup: Setup, make_client: ClientFactory) -> None:
-    _allow_instances(setup.engine, setup.agent.id, 3)
+    """§15.11: each instance's packet names the placement that runs it, and an instance
+    joined by hand, which no placement runs, gets none, never a sibling's."""
+    _allow_instances(setup.engine, setup.agent.id, 4)
     first, second = placed(setup), placed(setup)
-    exchange(make_client(), pick_up(setup, second).json())
+    client = make_client()
+    joined = exchange(client, pick_up(setup, second).json())
+    assert joined.status_code == 201, joined.text
     runs(setup, first, setup.agent)  # the joined clone runs the first
     assert setup.agent.resume().json()["membership"]["placement"]["id"] == first["id"]
     with setup.engine.connect() as conn:
@@ -621,6 +625,20 @@ def test_each_instance_sees_its_own_placement(setup: Setup, make_client: ClientF
             select(t.placement.c.credential_id).where(t.placement.c.id == second["id"])
         ).scalar_one()
     assert bound != setup.agent.credential_id  # the second runs an instance of its own
+    picked_up = flow.Agent(
+        client,
+        joined.text,
+        joined.headers["Maity-Credential-Id"],
+        joined.headers["Maity-Member-Id"],
+        joined.headers["Maity-Instance"],
+    )
+    assert picked_up.credential_id == bound
+    resumed = picked_up.resume()
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["membership"]["placement"]["id"] == second["id"]
+    by_hand = flow.agent(make_client, setup.owner, agent={"id": setup.agent.id}, new_instance=True)
+    assert by_hand.id == setup.agent.id and by_hand.instance not in ("", picked_up.instance)
+    assert by_hand.resume().json()["membership"]["placement"] is None
 
 
 def test_a_supervisor_is_a_runners_name(setup: Setup) -> None:

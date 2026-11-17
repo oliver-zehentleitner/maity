@@ -9593,7 +9593,7 @@ same way:
 
 | Endpoint | Scope | Body |
 |---|---|---|
-| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<full_name>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway; a slug of a project the human is not a member of is `invalid` (`not_a_member`), and `harness` from a human is `invalid` (`agents_only`). `{"until": null}` clears the caller's stored limit, from an agent or a human; for an agent, whichever limit it cleared (its own or a runner's), the hub then recomputes the runner's limit (below), so while every placement that should run is still `rate_limited` the agent stays limited by the runner |
+| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<full_name>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway; a slug of a project the human is not a member of is `invalid` (`not_a_member`), and `harness` from a human is `invalid` (`agents_only`). `{"until": null}` clears the caller's stored limit, from an agent or a human; for an agent, whichever limit it cleared (its own or a runner's), the hub then recomputes the runner's limit (below), so while a placement that should run is still `rate_limited` and none of them runs the agent stays limited by the runner |
 
 For a human, `offline` is shown and triggers nothing: a human who is
 out for long enough to be covered says so, with `POST /me/limit` or, as
@@ -9609,11 +9609,22 @@ as `membership_removed` or `runner_removed`, §15.5) or changes
 by a `resume`), and at every `POST /me/limit` with `until: null` from
 the agent, a runner's limit it cleared included, from all its
 active placements with `desired: running`
-(§15.5; with one placement, from that one):
-- The agent is limited while every one of them last reported
-  `rate_limited` with a `retry_at` still ahead; a placement whose
-  `retry_at` has passed counts as running again. With no active
-  placement on `desired: running` there is no runner limit.
+(§15.5; with one placement, from that one). These are all the triggers:
+creating or proposing a placement, its approval and its pickup recompute
+nothing. A new placement has not reported, and an unreported placement
+is neutral (below), so a recomputation at that moment would give the
+same result.
+- A placement **runs** while its last report is `starting` or
+  `running`; one whose last report is `rate_limited` with a `retry_at`
+  that has passed counts as running again, since the runner starts it
+  then. One that is `rate_limited` with a `retry_at` still ahead is
+  **limited**. Every other one is **neutral** and neither sets nor ends
+  the limit: one that has not reported yet (just created, proposed or
+  waiting for its approval), or whose last report is `pending` (such as
+  `pending`/`capacity`), `failed`, `exited` or any other state.
+- The agent is limited while at least one of them is limited and none
+  of them runs. With no active placement on `desired: running`, or
+  none limited, there is no runner limit.
 - `until` is the earliest of those `retry_at`. `placement_id`, `harness`
   and `reason` are those of the placement that reported it, the one
   created first when several reported the same `retry_at`; never simply
@@ -9630,11 +9641,17 @@ active placements with `desired: running`
   extends leases as any stored limit does, but emits no second
   `holder_stalled` (§6.5).
 
-So a report of any of them that is not `rate_limited` ends the runner's
-limit, and so does a change to `desired: stopped` of the last one that
-should run, at the change, not at its later `stopped` report. While one
-of them runs, the agent's availability is unchanged, as with a dormant
-instance beside an awake one (§6.17). A `resume` does not clear a limit
+So a report of `starting` or `running` from any of them ends the
+runner's limit, and so does a report that leaves none of them limited
+(the last limited one reporting `failed`, say) or a change to `desired:
+stopped` of the last limited one, at the change, not at its later
+`stopped` report. A sibling that has not reported, waits with
+`pending`/`capacity`, has `failed` or waits for its approval ends
+nothing: with one placement `rate_limited` until 18:00 and a second
+one `pending`/`capacity`, the agent is limited until 18:00, whichever
+of the two reported first and however often the limited one repeats
+its report. While one of them runs, the agent's availability is
+unchanged, as with a dormant instance beside an awake one (§6.17). A `resume` does not clear a limit
 with `source: runner`: the instance that resumes may not be the limited
 one, and the runner's next report says whether the harness runs again.
 A self-set limit is cleared by the member's next `resume` (agents). Every
@@ -18844,11 +18861,14 @@ as any other. The hub recomputes the agent's runner limit (§6.12) at
 each report, close or change of `desired` of its placements, and at the
 end of a limit the agent set itself (at its `until` or by a `resume`),
 and at every `POST /me/limit` with `until: null` from the agent:
-`source: runner`, `until` the earliest `retry_at` still ahead while every
-placement that should run is `rate_limited`, `harness` that placement's;
-it ends with a report of any of them that is not `rate_limited`, or when
-none is left to run; while a self-set limit is stored it stores
-nothing.
+`source: runner`, `until` the earliest `retry_at` still ahead while at
+least one placement that should run is `rate_limited` and none of them
+runs (`starting` or `running`), `harness` that placement's; a placement
+that has not reported, or reports `pending`, `failed` or any other state,
+is neutral. It ends with a `starting` or `running` report of any of
+them, or when none of them is `rate_limited` any more or none is left
+to run; while a self-set limit is stored it stores nothing. Creating or
+proposing a placement recomputes nothing (§6.12).
 A harness exit the runner does not recognise as a limit stays a crash.
 `rate_limited` is its own state rather than `exited` with a `retry_at`
 (the restart policy's wait after an ordinary exit, §15.5) because it
@@ -18900,7 +18920,10 @@ every limit a crash.
   toward `max_agents` of the runner and of its target, as a running
   placement does, until it starts again or is stopped, so another placement waits with `pending`/`capacity` and the
   restart at `retry_at` never does. Its member is `limited`, never
-  `available` (§6.12), unless another of its placements runs (§6.12).
+  `available` (§6.12), unless another of its placements runs (its last
+  report `starting` or `running`, §6.12). A sibling that waits with
+  `pending`/`capacity` does not run: it is neutral and keeps the member
+  `limited`, whichever of the two reported first.
 
 Reachability is not a reason: an unreachable target keeps its
 placements' last reported state, and the runner advertises
@@ -18978,6 +19001,7 @@ A placement as the runner reads it:
 {
   "id": "plc-0003", "project": "oliver/maity", "generation": 4, "desired": "running",
   "agent": { "id": "agt-b", "handle": "agent-b", "member": true, "credential_expected": true },
+  "instance": "wqe2",
   "harness": "claude-code", "mode": "interactive", "model": "opus",
   "target": null,
   "workspace": { "clone": "agent-b", "branch": null,

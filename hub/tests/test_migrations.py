@@ -1122,6 +1122,50 @@ def test_the_mail_factor_downgrade_refuses_while_email_is_stored(engine: Engine)
     downgrade(engine, _before(engine, revision))
 
 
+def test_the_per_instance_placement_downgrade_refuses_while_a_membership_holds_two(
+    make_client: Any, migrated: Engine
+) -> None:
+    """20261117130000 down (§15.5): the old key allows one active placement per membership,
+    so the downgrade refuses while one holds two, and goes through once one is closed."""
+    from sqlalchemy import select, update
+
+    from maity_hub import tables as t
+    from tests import flow
+    from tests.test_placements import REPOSITORY, Setup, allow_instances, placed
+    from tests.test_runner_stream import attach, hello
+    from tests.test_runners import paired
+
+    revision = "20261117130000_plc_per_instance"
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, repository={"url": REPOSITORY})
+    runner = paired(make_client, owner)
+    attach(owner, runner)
+    client = make_client()
+    assert hello(client, runner).status_code == 200
+    agent = flow.agent(make_client, owner, role="member")
+    s = Setup(owner, runner, client, agent, migrated)
+    allow_instances(migrated, agent.id, 3)
+    first, second = placed(s), placed(s)
+    with pytest.raises(RuntimeError, match="more than one active placement"):
+        downgrade(migrated, _before(migrated, revision))
+    # PostgreSQL and SQLite roll the whole run back; MariaDB cannot roll DDL back, so it stays
+    # at the refusing revision, and the recorded revision has to name the schema it has.
+    stays_at = (
+        revision if migrated.dialect.name in ("mariadb", "mysql") else head_revision(migrated)
+    )
+    assert current_revision(migrated) == stays_at
+    with migrated.begin() as conn:  # one of the two closed
+        conn.execute(
+            update(t.placement).where(t.placement.c.id == second["id"]).values(active=None)
+        )
+    downgrade(migrated, _before(migrated, revision))
+    assert current_revision(migrated) == _before(migrated, revision)
+    with migrated.connect() as conn:
+        assert conn.execute(
+            select(t.placement.c.id).where(t.placement.c.active.is_(True))
+        ).scalars().all() == [first["id"]]
+
+
 def test_profiles_public_switches_every_account_on_and_indexes_every_page(engine: Engine) -> None:
     """20261102110000 up: every account's `public_profile` is on (§16.9, tsk-my5gvj4warte), a
     new account defaults to on, and every stored page is `indexed` until it renders again. It

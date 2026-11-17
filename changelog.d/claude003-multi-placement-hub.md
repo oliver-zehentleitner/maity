@@ -15,11 +15,15 @@
 - hub: a placement beyond the agent's `max_instances` is refused when it is
   created or proposed (`instance_quota`), no longer only at the runner's
   pickup.
-- hub: a runner's rate limit makes the agent `limited` only while every
-  running placement of it is rate-limited: each report, close or change
-  of `desired` recomputes it from all of them, until the earliest
-  `retry_at` still ahead. A change to `desired: stopped` ends it at once,
-  a resume no longer clears a limit the runner set, and a runner's limit
+- hub: a runner's rate limit makes the agent `limited` while at least one
+  of its placements that should run is rate-limited and none of them runs
+  (last report `starting` or `running`); a placement that has not
+  reported, waits with `pending`/`capacity`, has `failed` or waits for its
+  approval is neutral and ends nothing. Each report, close or change of
+  `desired` recomputes it from all of them, until the earliest `retry_at`
+  still ahead; creating or proposing a placement recomputes nothing. A
+  change to `desired: stopped` of the last placement that should run ends
+  it at once, a resume no longer clears a limit the runner set, and a runner's limit
   no longer replaces a limit the agent set itself. When that own limit
   ends (at its `until` or by a resume), and at every `POST /me/limit` with
   `until: null`, the runner's limit is recomputed, so a rate limit still

@@ -5701,10 +5701,16 @@ def build_parser() -> argparse.ArgumentParser:
         "start, list, stop or restart agents on runners (agents:propose)",
         "Placements say which agent runs on which runner (§15.6). With agents:propose an agent "
         "may propose a start for an existing member (under consent the owner gives the go) and "
-        "stop, start, restart and list placements. An agent is named by its handle or id.",
+        "stop, start, restart and list placements. An agent is named by its handle or id. An "
+        "agent may run on several placements, one per instance, within its max_instances "
+        "(instance_quota beyond it): name one as <agent>#<instance> or by its placement id.",
     )
     psub = p.add_subparsers(dest="placement_command", metavar="<action>", required=True)
-    r = psub.add_parser("list", help="the project's active placements", formatter_class=fmt)
+    r = psub.add_parser(
+        "list",
+        help="the project's active placements, each agent as <handle>#<instance>",
+        formatter_class=fmt,
+    )
     _json_flag(r)
     r.set_defaults(handler=cmd_placement_list)
     r = psub.add_parser(
@@ -5720,20 +5726,32 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--mode", choices=("interactive", "supervised"), help="default: the tool's")
     r.add_argument("--model", help="one of the runner's models for the tool")
     r.add_argument("--target", help="a target the runner advertises")
-    r.add_argument("--clone", help="the clone name (default: the agent's handle)")
+    r.add_argument(
+        "--clone",
+        help="the clone name (default: the agent's handle, <handle>-2 … for a further "
+        "instance on the same runner)",
+    )
     r.add_argument("--branch", help="a starting branch")
     r.add_argument("--reason", required=True, help="why this agent should run there")
     _json_flag(r)
     _on_request_flag(r)
     r.set_defaults(handler=cmd_placement_start)
     r = psub.add_parser("stop", help="stop an agent's placement", formatter_class=fmt)
-    r.add_argument("which", help="the placement id, or the agent's handle or id")
+    r.add_argument(
+        "which",
+        help="the placement id, or the agent's handle or id, or <agent>#<instance> for one "
+        "of several (an agent with several placements is refused, with their ids)",
+    )
     r.add_argument("--grace", type=_grace, metavar="N", help="seconds to park the work (0-900)")
     _json_flag(r)
     _on_request_flag(r)
     r.set_defaults(handler=cmd_placement_stop)
     r = psub.add_parser("restart", help="restart an agent's placement", formatter_class=fmt)
-    r.add_argument("which", help="the placement id, or the agent's handle or id")
+    r.add_argument(
+        "which",
+        help="the placement id, or the agent's handle or id, or <agent>#<instance> for one "
+        "of several (an agent with several placements is refused, with their ids)",
+    )
     r.add_argument(
         "--rejoin",
         action="store_true",
