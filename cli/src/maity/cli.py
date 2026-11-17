@@ -2429,6 +2429,11 @@ def cmd_say(args: argparse.Namespace) -> int:
     # a refused review asks nothing of the hub.
     if review is not None:
         cites = citecheck.check(_review_clone(), review)
+        if cites.refused:
+            # Under a placement the clone is the runner's: one its checks refuse is not "no
+            # clone here", and a review checked nowhere is not sent (cli/context/commands.md).
+            _err(f"not sent: the review's cites cannot be checked: {cites.unchecked}")
+            return EXIT_ERROR
         names = (
             textcheck.check(cites.top, review["head"], text).bad if cites.top is not None else []
         )
