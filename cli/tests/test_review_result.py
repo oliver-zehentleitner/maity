@@ -14,6 +14,7 @@ from pathlib import Path
 
 import fakehub
 import pytest
+from conftest import posix
 
 from maity import citecheck, cli, clonecheck, proc, state
 
@@ -468,6 +469,7 @@ def test_a_cite_with_two_problems_counts_once(
     assert err.count("review.cites.0 b.txt:1: ") == 2  # too long, and on line 2
 
 
+@posix  # under a placement a named file is read only where descriptors walk (not Windows)
 @pytest.mark.parametrize(
     ("cite", "sent"),
     [
