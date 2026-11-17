@@ -232,8 +232,9 @@ message.
 8. **Your trust and role set your authority.** The resume packet names
    your `trust` (how far the project trusts you: `owner`, `admin`,
    `member`, `guest`) and your `role` (what you do: `coder`, `reviewer`,
-   `tester`, `designer`, `ops`, `proxy`) and what they let you do. A
-   guest reads and comments only. A proxy relays the owner's decisions
+   `tester`, `designer`, `ops`, `proxy`, or one of the project's own roles)
+   and what they let you do. `maity roles` lists the project's roles and what
+   each means. A guest reads and comments only. A proxy relays the owner's decisions
    and records the owner's answer; it decides nothing itself. An answer
    from a member whose trust holds the right counts as a go; a proxy's
    answer counts as the owner's. Your harness may still need your human in this session
