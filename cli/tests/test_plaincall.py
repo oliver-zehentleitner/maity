@@ -79,6 +79,17 @@ NOT_DECIDED = [
     "sh -c 'echo maity'",
     "cd cli && python -m pytest -k maity",
     "ls",
+    "grep -rn maity src | head",
+    "git commit -m \"$(cat <<'EOF'\nfix the maity runner\nmaity is fine\nEOF\n)\"",
+    "cat > body.md <<'EOF'\nmaity starts this line\nEOF",
+    "cat <<EOF\nmaity a\nEOF",
+    "python3 -m maity x",
+    "for f in a b; do echo $f; done",
+    "case $x in a) echo a;; esac",
+    "x=$(git rev-parse HEAD); echo $x",
+    "{ make test; }",
+    "echo '{a,b}'",
+    "git log --format='%H %s' -3",
 ]
 # `maity` anywhere but as the line's first word: behind a variable, a wrapper, a shell or
 # another command. The wrappers come from the one list, plaincall.WRAPPERS.
@@ -131,8 +142,36 @@ BEHIND = [
     "echo $(maity a)",
     "echo `maity a`",
     "cat <(maity a)",
-    "cat <<EOF\nmaity a\nEOF",
     "env 'unclosed maity a",
+    "env ma''ity x",
+    "env m''aity x",
+    'env "ma"ity x',
+    'env "ma""ity" x',
+    "env ma\\ity x",
+    "env m\\aity x",
+    "X=1 ma''ity x",
+    "env ma\\\nity x",
+    "env $'\\x6daity' x",
+    "ma''ity x",
+    "timeout 5 m[a]ity x",
+    "X=1 /usr/local/bin/ma?ty x",
+    "a=ma; b=ity; $a$b x",
+    "env mai{t,}y x",
+    "find . -maxdepth 0 -exec maity x \\;",
+    "ssh localhost maity x",
+    "alias m=maity; m x",
+    "env -- maity",
+    "nohup maity &",
+    "watch maity",
+    "xargs maity <f",
+    "bash <<EOF\nmaity x\nEOF",
+    "echo maity x | sh",
+    "cat <<EOF > f\n$(maity x)\nEOF",
+    "env --split-string=maity x",
+    "env -S 'maity x'",
+    "env ${M:-maity} x",
+    "\\maity x",
+    "for f in a; do env maity $f; done",
 ]
 
 
@@ -152,7 +191,7 @@ def test_a_line_that_runs_maity_behind_something_is_refused(command: str) -> Non
 
 
 def test_every_wrapper_on_the_list_is_refused_in_front_of_maity() -> None:
-    for wrapper in sorted(plaincall.WRAPPERS):
+    for wrapper in sorted(plaincall.WRAPPERS | plaincall.KEYWORDS):
         # `{` and `!` start no word, so the line counts as a maity line that is not plain
         expected = plaincall.BEHIND if wrapper[0].isalnum() else plaincall.REFUSED
         assert plaincall.refusal(bash(f"{wrapper} maity a")) == expected, wrapper

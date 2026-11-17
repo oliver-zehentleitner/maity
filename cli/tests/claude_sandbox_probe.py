@@ -104,6 +104,8 @@ PREFIXED = (
     ("after another command", "true && maity probe {T}"),
     ("nice in front", "nice maity probe {T}"),
     ("timeout in front", "timeout 60 maity probe {T}"),
+    ("quoted name, env in front", "env ma''ity probe {T}"),
+    ("quoted name, assignment in front", "X=1 m'a'ity probe {T}"),
 )
 
 

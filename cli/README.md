@@ -1334,10 +1334,9 @@ does not run outside the sandbox (the runner's permission rules refuse
 it, and past them it runs inside). This is the harness's behaviour, not
 a contract: with another Claude Code version the runner still starts the
 agent, and `maity runner check` and the runner's log say that the
-version was not checked. The runner's hook also refuses `maity`
-anywhere but as the first word of its line: after a variable, a wrapper
-such as `env`, `command`, `exec`, `nice` or `timeout`, a shell or
-`eval` running it, or another command. A repository's grant may only add plain
+version was not checked. The runner's hook also decides on the words
+the shell runs: it refuses a line that would run `maity` other than as
+the plain first word. A repository's grant may only add plain
 commands (below, under the configuration); a rule with a variable or
 `env` in front, or that names `maity`, is refused when the configuration
 is read. Not covered: Codex. Where it does not hold, a prefixed call would run as the

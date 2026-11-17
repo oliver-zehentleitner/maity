@@ -7,7 +7,6 @@
 
 ### Security
 
-- cli: the runner's Claude Code hook refuses a line that runs `maity`
-  anywhere but as its first word. That covers a variable, a path or a
-  wrapper such as `env`, `command`, `exec`, `nice` or `timeout` in front
-  of it, a shell or `eval` running it, and `maity` after another command.
+- cli: the runner's Claude Code hook decides on the words the shell runs,
+  and refuses a line that would run `maity` other than as the plain first
+  word of its line.
