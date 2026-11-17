@@ -3736,7 +3736,8 @@ disk to one limit per placement.
 
 Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`,
 passed as `MAITY_SCRATCH` with `TMPDIR` inside it. The runner removes it
-when the placement closes and after a stop on the clone's clock; nothing
+when the placement closes; after a stop it is to go on the clone's clock,
+which is not built yet (tsk-34gb7frfbsk7). Nothing
 in it counts as unsaved work, and only the operator sees its size and
 removals (`maity runner status`, `removed.jsonl`). `maity runner gc
 --scratch` removes one only when the hub's list says its placement is
@@ -3749,6 +3750,10 @@ no proven writable scratch (its file tools are denied paths outside the
 clone, `external_directory: deny`).
 maity reads a named file there as in the clone, which widens the
 clone-only read (the entry under See) to the path the runner recorded.
+The runner's scratch operation refuses to run for an agent and works
+only on a placement's scratch below the root it is given; an agent's
+scratch of another placement of the same OS user stays reachable until
+the operation has a runner-only entry (tsk-54492gk4xp69).
 
 **Reason:** reviews and tests left evidence folders, temporary clones and
 virtual environments in the agents' shared home, which no removal of a

@@ -6,8 +6,9 @@ Every operation is anchored at the workspaces root the runner was given (`under`
 directory is opened, and each one below it is opened from the one before without following a
 link, so a name swapped for a link after any check is refused, never followed out. The last
 directory is held open by its descriptor for the whole operation: what is made is made in it,
-what is measured or removed is reached from it (`shutil.rmtree` with `dir_fd`, which opens
-each level the same way). The runner calls this in its own process when the agents are its
+what is measured or removed is reached from it, each level below opened from the one above
+(`os.fwalk`); the emptied directory itself is removed from its parent only while that name
+is still the directory held. The runner calls this in its own process when the agents are its
 own user; through sudo or on an ssh host it starts this module there (`python -I -m
 maity.runner.scratchop`, `maity runner scratchop`), which prints its answer as one JSON line.
 
@@ -20,13 +21,18 @@ import contextlib
 import errno
 import json
 import os
-import shutil
-import stat
+import re
 import sys
 from collections.abc import Iterator, Sequence
 from pathlib import PurePath
 
 OPS = ("make", "size", "remove")
+# A clone's or project's name as the runner takes it (workspace.locate).
+TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+# A placement's scratch (§15.5): `<workspaces>/<project_id>/.scratch/<placement id>`. A clone's
+# name starts with a letter or digit (TOKEN), so `.scratch` is never one.
+SCRATCH = ".scratch"
+SCRATCH_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")  # a placement id, as the supervisor takes it
 LINK = 4  # the exit code for a link (or no directory) on the way: nothing was done
 _FOLDER = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
 
@@ -40,18 +46,20 @@ def supported() -> bool:
     removes a tree from a descriptor (not Windows)."""
     return (
         hasattr(os, "O_NOFOLLOW") and os.open in os.supports_dir_fd
-        and getattr(shutil.rmtree, "avoids_symlink_attacks", False)
+        and os.rmdir in os.supports_dir_fd and hasattr(os, "fwalk")
     )  # fmt: skip
 
 
 def _below(path: str, under: str) -> list[str]:
-    """The names from `under` down to `path`, which must lie below it: no `..` and no `.`."""
+    """The names from `under` down to `path`, which must be a scratch's path and nothing
+    else: `<under>/<project>/.scratch/<placement id>`."""
     try:
         names = PurePath(path).relative_to(PurePath(under)).parts
     except ValueError:
         raise OSError(f"{path} is not inside {under}") from None
-    if not names or any(name in ("", ".", "..") for name in names):
-        raise OSError(f"{path} is not inside {under}")
+    if not (len(names) == 3 and TOKEN.match(names[0]) and names[1] == SCRATCH
+            and SCRATCH_ID.match(names[2])):  # fmt: skip
+        raise OSError(f"{path} is not a placement's scratch under {under}")
     return list(names)
 
 
@@ -72,7 +80,7 @@ def _step(fd: int, name: str, make: int | None) -> int:
 @contextlib.contextmanager
 def _opened(under: str, names: Sequence[str], make: bool) -> Iterator[int]:
     """The descriptor of the directory `names` lead to from `under`, each opened from the one
-    before (`make`: created when missing, the last one 0700)."""
+    before (`make`: created when missing, the innermost one 0700)."""
     fd = os.open(under, _FOLDER)  # the root the runner was configured with
     try:
         for index, name in enumerate(names):
@@ -97,9 +105,8 @@ def _size(fd: int) -> int:
 
 
 def make(under: str, path: str) -> dict[str, object]:
-    """The scratch at `path` with `tmp` in it, made as needed (the workspaces root too, as
-    `mkdir -p` would)."""
-    os.makedirs(under, exist_ok=True)
+    """The scratch at `path` with `tmp` in it, made as needed below the workspaces root,
+    which must be there (the runner makes it with the clone)."""
     with _opened(under, [*_below(path, under), "tmp"], make=True):
         return {"result": "made"}
 
@@ -130,20 +137,41 @@ def remove(under: str, path: str) -> dict[str, object]:
 
 
 def _remove_in(parent: int, name: str) -> dict[str, object]:
-    """The directory `name` in the open `parent` removed, with its size before."""
+    """The directory `name` in the open `parent` removed, with its size before: measured and
+    emptied through the one descriptor opened for it, and removed from `parent` only while
+    `name` there is still that directory."""
     try:
-        found = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        fd = _step(parent, name, None)
     except FileNotFoundError:
         return {"result": "missing"}
-    if not stat.S_ISDIR(found.st_mode):
-        raise OnTheWay(f"{name} is a link or not a directory; nothing done")
-    fd = _step(parent, name, None)
     try:
         before = _size(fd)
+        _empty(fd)
+        held = os.fstat(fd)
+        found = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        if (found.st_dev, found.st_ino) != (held.st_dev, held.st_ino):
+            raise OnTheWay(f"{name} was replaced while it was removed; left as it is")
+        os.rmdir(name, dir_fd=parent)
     finally:
         os.close(fd)
-    shutil.rmtree(name, dir_fd=parent)  # each level opened without following a link
     return {"result": "removed", "bytes": before}
+
+
+def _empty(fd: int) -> None:
+    """Everything under the open directory `fd` removed, deepest first, each level reached
+    from the one above it without following a link (a link is removed, never entered)."""
+    for _top, dirs, files, top_fd in os.fwalk(".", dir_fd=fd, topdown=False,
+                                              follow_symlinks=False):  # fmt: skip
+        for entry in files:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(entry, dir_fd=top_fd)
+        for entry in dirs:
+            try:
+                os.rmdir(entry, dir_fd=top_fd)
+            except NotADirectoryError:  # a link to a directory: the link goes
+                os.unlink(entry, dir_fd=top_fd)
+            except FileNotFoundError:
+                pass
 
 
 def run(op: str, under: str, path: str) -> dict[str, object]:

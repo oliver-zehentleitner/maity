@@ -51,6 +51,13 @@ class Refused(Exception):
     """The command is refused before anything is sent; exits 2 like a usage error."""
 
 
+# The `maity runner` subcommands that run inside a placed session, started there by the
+# runner's own launch (the loop on an ssh host, the stub, Claude Code's hook, the pane's log):
+# the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
+# runner's own, and an agent's call of it is refused (cli.main).
+IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
+
+
 # --- pair ------------------------------------------------------------------------------------
 
 

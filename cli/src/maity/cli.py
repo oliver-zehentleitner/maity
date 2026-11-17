@@ -6038,6 +6038,13 @@ def _main(argv: Sequence[str] | None = None) -> int:
             "Run it inside WSL; every other maity command works here"
         )
         return EXIT_REFUSED
+    if (
+        args.command == "runner"
+        and clonecheck.PLACEMENT_ENV in os.environ  # set, even empty: a placed session
+        and args.runner_command not in runner_commands.IN_SESSION
+    ):
+        _err("`maity runner` is the operator's: it does not run for a placed agent")
+        return EXIT_REFUSED
     try:
         _load_texts(args)
         return handler(args)

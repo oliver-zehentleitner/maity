@@ -7,7 +7,10 @@
   placement's clone and scratch size, and `--removed` the last removals.
   `maity runner gc --scratch [--yes]` lists and removes the scratch of placements that are
   no longer active and have no session left on the machine. Under a placement maity also reads a file the agent names in the
-  scratch the runner recorded, on the same terms as in the clone.
+  scratch the runner recorded, on the same terms as in the clone. The scratch
+  operation refuses to run for an agent and works only on a placement's scratch below
+  the runner's own root, and `maity runner` refuses to run for a placed agent, apart
+  from what the runner itself starts in the session.
 - hub: the reviewer's and tester's role text says, where `$MAITY_SCRATCH` is set (a runner
   placement under Claude Code or Codex), to keep evidence, scratch clones and venvs there
   and to delete them after reporting.

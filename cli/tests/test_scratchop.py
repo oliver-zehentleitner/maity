@@ -23,6 +23,7 @@ def _room(root: Path) -> Path:
 
 def test_made_with_tmp_measured_and_removed(tmp_path: Path) -> None:
     root = tmp_path / "ws"
+    root.mkdir()
     room = _room(root)
     assert scratchop.make(str(root), str(room)) == {"result": "made"}
     assert stat.S_IMODE((room / "tmp").stat().st_mode) == 0o700
@@ -58,8 +59,41 @@ def test_nothing_is_made_or_removed_through_a_link_on_the_way(tmp_path: Path, li
     assert (outside / "keep").read_text() == "k"
 
 
+@pytest.mark.parametrize(
+    "name", ["maity/agent-3", "maity/.scratch", "maity/.scratch/plc-0003/tmp", "maity/x/plc-0003",
+             ".scratch/plc-0003", "maity/.scratch/agent-3", "Maity/.scratch/plc-0003"],
+)  # fmt: skip
+def test_only_a_placements_scratch_is_made_measured_or_removed(tmp_path: Path, name: str) -> None:
+    """A clone, the holder `.scratch` itself, anything below a scratch or of another shape:
+    refused for every operation, and nothing there is touched."""
+    root = tmp_path / "ws"
+    target = root / name
+    (target / "tmp").mkdir(parents=True)
+    (target / "keep").write_text("k")
+    for op in (scratchop.make, scratchop.size, scratchop.remove):
+        with pytest.raises(OSError) as refused:
+            op(str(root), str(target))
+        assert not isinstance(refused.value, scratchop.OnTheWay)
+    assert (target / "keep").read_text() == "k"
+
+
+def test_a_scratch_shaped_path_under_another_root_is_refused(tmp_path: Path) -> None:
+    room = _room(tmp_path / "other")
+    (room / "tmp").mkdir(parents=True)
+    with pytest.raises(OSError):
+        scratchop.remove(str(tmp_path / "ws"), str(room))
+    assert (room / "tmp").is_dir()
+
+
+def test_the_workspaces_root_is_not_made(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    with pytest.raises(FileNotFoundError):
+        scratchop.make(str(root), str(_room(root)))
+    assert not root.exists()
+
+
 def test_a_path_outside_the_root_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(OSError, match="not inside"):
+    with pytest.raises(OSError, match="not a placement's scratch"):
         scratchop.remove(str(tmp_path / "ws"), str(tmp_path / "ws" / ".." / "x"))
     with pytest.raises(OSError, match="not inside"):
         scratchop.remove(str(tmp_path / "ws"), str(tmp_path / "other"))
@@ -69,6 +103,7 @@ def test_the_module_answers_in_one_line_and_says_link_by_its_exit_code(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = tmp_path / "ws"
+    root.mkdir()
     room = _room(root)
     assert scratchop.main(["make", "--under", str(root), str(room)]) == 0
     assert capsys.readouterr().out.strip() == '{"result": "made"}'
@@ -85,6 +120,7 @@ def test_a_holder_swapped_for_a_link_after_it_was_opened_leads_nowhere_else(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = tmp_path / "ws"
+    root.mkdir()
     room = _room(root)
     scratchop.make(str(root), str(room))
     (room / "tmp" / "evidence").write_text("e")
@@ -103,6 +139,47 @@ def test_a_holder_swapped_for_a_link_after_it_was_opened_leads_nowhere_else(
     assert scratchop.remove(str(root), str(room))["result"] == "removed"
     assert (victim / "keep").read_text() == "k"  # the link's target is untouched
     assert not (root / "maity" / "moved" / "plc-0003").exists()  # what was opened went
+
+
+def test_a_scratch_swapped_for_a_link_while_it_is_removed_leads_nowhere_else(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The scratch itself replaced by a link between measuring and removing: what was
+    measured is what is emptied, the link's target is untouched, and the name is left."""
+    root = tmp_path / "ws"
+    root.mkdir()
+    room = _room(root)
+    scratchop.make(str(root), str(room))
+    (room / "tmp" / "evidence").write_text("e")
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "keep").write_text("k")
+    measure = scratchop._size
+
+    def swapped(fd: int) -> int:
+        room.rename(room.parent / "moved")
+        room.symlink_to(victim)
+        return measure(fd)
+
+    monkeypatch.setattr(scratchop, "_size", swapped)
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.remove(str(root), str(room))
+    assert (victim / "keep").read_text() == "k"
+    assert room.is_symlink() and not (room.parent / "moved" / "tmp").exists()
+
+
+def test_the_size_counts_a_link_not_what_it_points_to(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    room = _room(root)
+    scratchop.make(str(root), str(room))
+    big = tmp_path / "big"
+    big.mkdir()
+    (big / "blob").write_bytes(b"z" * 200_000)
+    (room / "tmp" / "to-dir").symlink_to(big)
+    (room / "tmp" / "to-file").symlink_to(big / "blob")
+    found = scratchop.size(str(root), str(room))
+    assert isinstance(found["bytes"], int) and found["bytes"] < 64 * 1024
 
 
 def test_through_sudo_or_ssh_a_link_on_the_way_is_its_own_answer(tmp_path: Path) -> None:

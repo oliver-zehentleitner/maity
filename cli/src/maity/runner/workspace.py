@@ -34,8 +34,10 @@ from typing import Any
 from .. import clonecheck, proc, redact, state
 from . import config
 from .asuser import RUNNER, AsUser
+from .scratchop import SCRATCH as SCRATCH  # defined there: it runs with `-I`
+from .scratchop import SCRATCH_ID as SCRATCH_ID
+from .scratchop import TOKEN as TOKEN
 
-TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 # A project as the hub names it since the namespace (§6.25): `<owner>/<slug>`.
 FULL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}$")
 RECORDS = "workspaces.json"
@@ -46,10 +48,6 @@ PROTOCOLS = ("https", "ssh")
 FOLDER_HARNESSES = ("antigravity",)
 REPO = "repo"
 FOLDER, CLONE = "folder", "clone"  # the layouts, as the record names them
-# A placement's scratch (§15.5): `<workspaces>/<project_id>/.scratch/<placement id>`. A clone's
-# name starts with a letter or digit (TOKEN), so `.scratch` is never one.
-SCRATCH = ".scratch"
-SCRATCH_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")  # a placement id, as the supervisor takes it
 # The harnesses whose session is told its scratch and whose sandbox the runner opens for it
 # (adapters). agy's sandbox is not shown to write there yet; opencode keeps its file tools
 # inside the clone.

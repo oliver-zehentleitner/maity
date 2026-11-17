@@ -2617,6 +2617,7 @@ def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(world: Any) ->
         harness = config.Harness(harness_id, ("supervised",), "supervised")
         assert sup._scratch(placement(), harness, target) is None
     assert not scratch_of(sup).exists()
+    sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)  # made with the clone, first
     made = sup._scratch(placement(), config.Harness("codex", ("supervised",), "supervised"), target)
     assert made == scratch_of(sup) and (made / "tmp").is_dir()
 
