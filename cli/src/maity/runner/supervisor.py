@@ -1426,17 +1426,24 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
 # Path.is_dir does on the direct side, one NUL after each found. A place that cannot be
 # looked at (a directory on its way, where it lies, that cannot be searched) ends the
 # listing with 3, as a PermissionError does there: it could hide one. A link that leads
-# nowhere is no credential, as there.
-_SLOTS = r"""blocked() {
-  r=$(realpath -m -- "$1" && printf x) || return 0
-  p=${r%?x}
-  [ "$2" = self ] || p=${p%/*}
-  while [ -n "$p" ]; do
-    if [ -d "$p" ] && ! [ -x "$p" ]; then return 0; fi
-    p=${p%/*}
-  done
-  return 1
-}
+# nowhere is no credential, as there. Only `test` and `readlink` (no `realpath -m`,
+# which not every system has); a chain of links too long to follow ends it with 3 too.
+_SLOTS = r"""blocked() (
+  q=$1 n=${3:-0}
+  [ "$n" -lt 40 ] || exit 0
+  if [ -e "$q" ]; then
+    if [ "$2" = self ] && [ -d "$q" ] && ! [ -x "$q" ]; then exit 0; fi
+    exit 1
+  fi
+  p=${q%/*}
+  [ -n "$p" ] || p=/
+  if [ "$p" != "$q" ] && blocked "$p" self $((n + 1)); then exit 0; fi
+  [ -L "$q" ] || exit 1
+  t=$(readlink -- "$q" && printf x) || exit 0
+  t=${t%?x}
+  case $t in /*) ;; *) t=$p/$t ;; esac
+  blocked "$t" "$2" $((n + 1))
+)
 for d; do
   for c in "$d" "$d/repo"; do
     for q in "$c" "$c/.git"; do
@@ -1446,6 +1453,7 @@ for d; do
     if [ -d "$c/.git/maity" ]; then printf '%s\0' "$c/.git/maity"; fi
   done
 done"""
+
 
 # Each path resolved, one NUL after each, its name kept exactly (a trailing newline too).
 _REALPATHS = r"""for p; do

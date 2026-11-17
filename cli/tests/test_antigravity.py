@@ -990,6 +990,84 @@ def test_a_place_that_cannot_be_looked_at_refuses_the_start(
         locked.chmod(0o700)
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_the_check_needs_no_realpath_option_a_host_may_lack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, linked: str
+) -> None:
+    """A host's `realpath` may take no option but `--` (BSD, macOS): the listing still
+    finds and still refuses what the runner's own side does."""
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    real = shutil.which("realpath")
+    assert real is not None
+    (shim / "realpath").write_text(
+        "#!/bin/sh\nfor a; do case $a in --) break ;; -*) exit 64 ;; esac; done\n"
+        f'exec {real} "$@"\n'
+    )
+    (shim / "realpath").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim}:{os.environ['PATH']}")
+    ws, locked = tmp_path / "ws", tmp_path / "elsewhere" / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    (locked / slot.name).mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(locked / slot.name)
+    (ws / "maity" / "agent-5" / ".git" / "maity").mkdir(parents=True)
+    linked_one = [locked / "maity"] if linked == "maity" else []  # it is a credential itself
+    assert supervisor.other_credentials(ws, own, Remote("a")) == sorted(
+        [*linked_one, ws / "maity" / "agent-5" / ".git" / "maity"]
+    )
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, Remote("a"))
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_a_credential_lying_under_a_name_with_a_line_break_is_named_whole(
+    tmp_path: Path, side: str
+) -> None:
+    ws, elsewhere = tmp_path / "ws", tmp_path / "else\nwhere"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    for name in ("agent-4", "agent-5"):
+        (ws / "maity" / name / ".git").mkdir(parents=True)
+    (elsewhere / "ends\n").mkdir(parents=True)  # the whole path ends in the line break
+    (elsewhere / "mid\ndle").mkdir()
+    (ws / "maity" / "agent-4" / ".git" / "maity").symlink_to(elsewhere / "ends\n")
+    (ws / "maity" / "agent-5" / ".git" / "maity").symlink_to(elsewhere / "mid\ndle")
+    found = supervisor.other_credentials(ws, own, SIDES[side]())
+    assert found == sorted([elsewhere / "ends\n", elsewhere / "mid\ndle"])
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_a_loop_of_links_is_no_credential_here_and_refused_elsewhere(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    """A loop leads nowhere: the runner's own side sees no credential in it; another side,
+    which follows the links itself, gives up after a bound and refuses the start (stricter,
+    never a missing deny)."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "loop-a").symlink_to(tmp_path / "loop-b")
+    (tmp_path / "loop-b").symlink_to(tmp_path / "loop-a")
+    slot.symlink_to(tmp_path / "loop-a")
+    as_user = SIDES[side]()
+    if as_user.direct:
+        assert supervisor.other_credentials(ws, own, as_user) == []
+    else:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, as_user)
+
+
 @pytest.mark.parametrize("side", sorted(SIDES))
 @pytest.mark.parametrize("linked", sorted(SLOTS))
 def test_a_link_that_leads_nowhere_is_no_credential(tmp_path: Path, side: str, linked: str) -> None:
