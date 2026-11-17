@@ -3754,26 +3754,28 @@ placement ends without asking what in it matters.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-9f69y1hr1m6z (an agent placed again with antigravity on a clone name a Claude Code placement had used was stuck twice on a runner host, 2026-11-17: `workspace_in_use`/`workspace_unrecorded` until the old clone was moved by hand, then `join_failed`/`credential_missing` until the profile's owner revoked and rejoined); the lead's decision on the card's plan, seq 152381, and on the set-aside clone's removal, seq 152442; docs/api.md §15.5, §15.7, docs/runners.md
+**Source:** card tsk-9f69y1hr1m6z (an agent placed again with antigravity on a clone name a Claude Code placement had used was stuck twice on a runner host, 2026-11-17: `workspace_in_use`/`workspace_unrecorded` until the old clone was moved by hand, then `join_failed`/`credential_missing` until the profile's owner revoked and rejoined); the lead's decision on the card's plan, seq 152381, and on the set-aside clone's removal, seq 152442; the review of PR #1930 (A1056) and the review lead's fix order; docs/api.md §15.5, §15.7, docs/runners.md
 **See:** https://github.com/oliver-zehentleitner/maity — 4edeef48-8684-4495-96dc-6063e25e31c7 — as of 2026-11-17
 **See:** runner.md#local-mode-one-agent-in-the-foreground-no-pairing-also-on-windows — dd77eab8-46a3-45dd-9f08-bde11f926942 — as of 2026-11-17
 **See:** runner.md#a-stopped-agents-clone-stays-for-its-retention-time-then-the-runner-removes-it — 161d5507-5b44-45d6-8bec-cacd58de58a2 — as of 2026-11-17
-**Revisit when:** clone paths stop being shared by the two layouts (one path per instance, tsk-rfa7fwa2sz5g), or a harness gets a third layout; or the dashboard should reach a set-aside clone (today only the runner's log, `maity runner status` and `gc --revoked` do, lead's decision seq 152442)
+**Revisit when:** clone paths stop being shared by the two layouts (one path per instance, tsk-rfa7fwa2sz5g), or a harness gets a third layout; or the dashboard should reach a set-aside clone (in this contract only the runner's log, `maity runner status` and `gc --revoked` do, lead's decision seq 152442)
 
 Contracted, not built yet. Both layouts use `<workspaces>/<project_id>/<clone>`:
 a plain clone, or for `antigravity` a folder with the clone as `repo`.
 When a start finds there a path the runner recorded for this placement's
 agent in the other layout (a new placement of that agent on this runner
 and clone, or a changed harness), no symbolic link and nothing using it,
-the runner renames it whole to `.replaced-<time>-<clone>` beside it, runs
-no git and reads nothing in it, reports `set_aside` and waits for the hub
-to take it, then makes the new clone under the new epoch and joins with
-the rejoin the hub set. The report names `detail: workspace_set_aside`,
-the log the old and the new path. The set-aside clone is kept as a
-stopped clone is: the placement's `workspace_retention` from the
-set-aside, then removed under the same checks, and kept with unsaved work
-until a person removes it (`maity runner gc --revoked`, its credential
-being revoked). Every other path in the other layout stays
+the runner reports `set_aside` first; once the hub took it, it renames the
+path whole to `.replaced-<time>-<clone>` beside it, runs no git and reads
+nothing in it, then makes the new clone under the new epoch and joins (a
+`replaces` join when the hub set `rejoin`, the ordinary one when the
+placement named no credential). A refused report or a failed rename moves
+nothing and fails the start (`workspace_in_use`, `workspace_set_aside`).
+The report names `detail: workspace_set_aside`, the log the old and the
+new path. The set-aside clone is kept as a stopped clone is: the
+placement's `workspace_retention` from the set-aside, then removed under
+the same checks, and kept with unsaved work until a person removes it
+(`maity runner gc --revoked`). Every other path in the other layout stays
 `workspace_in_use`. The rule "no clone moves between the two layouts"
 stands.
 
