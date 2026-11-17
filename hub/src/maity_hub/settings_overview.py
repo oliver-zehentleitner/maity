@@ -171,6 +171,24 @@ ENTRIES: tuple[Entry, ...] = (
         _mail("registration_max_per_hour"),
         admin=MAIL,
     ),
+    Entry(
+        "MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR",
+        "mail",
+        _mail("second_factor_max_per_hour"),
+        admin=MAIL,
+    ),
+    Entry(
+        "MAITY_MAIL_VERIFICATION_MAX_PER_HOUR",
+        "mail",
+        _mail("verification_max_per_hour"),
+        admin=MAIL,
+    ),
+    Entry(
+        "MAITY_MAIL_INVITATION_MAX_PER_HOUR",
+        "mail",
+        _mail("invitation_max_per_hour"),
+        admin=MAIL,
+    ),
     Entry("MAITY_MAIL_ONLINE_GRACE_MINUTES", "mail", _mail("online_grace_minutes"), admin=MAIL),
     Entry("MAITY_MAIL_SIGNING_KEY", "mail", secret=True),
     # agents
