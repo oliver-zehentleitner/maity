@@ -90,6 +90,20 @@ NOT_DECIDED = [
     "{ make test; }",
     "echo '{a,b}'",
     "git log --format='%H %s' -3",
+    "time -p pytest",
+    "env PYTHONPATH=$PWD/src pytest -q",
+    "git commit -F msg.txt",
+    "make test 2>&1 | tail -20",
+    "ls *.py",
+    "[ -f x ] && echo y",
+    "sudo apt-get install -y graphviz",
+    "nohup make serve &",
+    "python3 - <<'EOF'\nprint('maity')\nEOF",
+    "trap 'rm -f out.txt' EXIT",
+    "echo $((1+2))",
+    "diff <(git show HEAD:a) a",
+    "source .venv/bin/activate && pytest -q",
+    "while read -r line; do echo $line; done < list.txt",
 ]
 # `maity` anywhere but as the line's first word: behind a variable, a wrapper, a shell or
 # another command. The wrappers come from the one list, plaincall.WRAPPERS.
@@ -172,6 +186,53 @@ BEHIND = [
     "env ${M:-maity} x",
     "\\maity x",
     "for f in a; do env maity $f; done",
+    "time -p maity x",
+    "time -- maity x",
+    "time -p env maity x",
+    "time -p nohup maity x",
+    "if time -p maity x; then :; fi",
+    "function f { maity x; }; f",
+    "coproc NAME { maity x; }",
+    "env -Smaity x",
+    "env -S'maity x'",
+    "env '-Smaity x'",
+    "env --split-string='maity x'",
+    'env -S"maity x"',
+    "env -u X -S'maity x'",
+    "env -vS'maity x'",
+    "echo $[1<<2]\nmaity x",
+    "trap 'maity x' EXIT",
+    "env ma@(i)ty x",
+    "ma@(i)ty x",
+    "source <(echo maity x)",
+    ". <(echo maity x)",
+    "su -c'maity x'",
+    "'' ; env maity x",
+    '"" x; time maity x',
+    "eval \"ma''ity\"",
+    "bash -c \"ma''ity\"",
+    "printf '%s' mai ty | sh",
+    "source <(printf '%s' mai ty)",
+    "X='1' maity x",
+    'X="1" maity x',
+    "X=1'2' maity x",
+    "exec {fd}>f; maity x",
+    'echo ${x:-"}"} maity x',
+    "hash -p /usr/bin/maity ls; ls",
+    "cat x | bash",
+    "bash < script.sh",
+    "bash <<EOF\necho $(date)\nEOF",
+    "cat <<EOF\nmaity x",
+    "true; (( $(maity x) ))",
+    "echo $((1+$(maity x)))",
+]
+# Lines that may not run `maity` but that the hook refuses on purpose: an expansion handed to a
+# program that runs others, or `maity` named in its arguments.
+REFUSED_ON_PURPOSE = [
+    "timeout 60 $PYTHON -m pytest",
+    "git ls-files | xargs grep -n maity",
+    '"$VENV/bin/python" -m pytest',
+    "command -v maity",
 ]
 
 
@@ -191,11 +252,21 @@ def test_a_line_that_runs_maity_behind_something_is_refused(command: str) -> Non
 
 
 def test_every_wrapper_on_the_list_is_refused_in_front_of_maity() -> None:
-    for wrapper in sorted(plaincall.WRAPPERS | plaincall.KEYWORDS):
+    for wrapper in sorted(plaincall.WRAPPERS | plaincall.STRUCTURE):
         # `{` and `!` start no word, so the line counts as a maity line that is not plain
-        expected = plaincall.BEHIND if wrapper[0].isalnum() else plaincall.REFUSED
+        expected = plaincall.REFUSED if wrapper in ("{", "!") else plaincall.BEHIND
         assert plaincall.refusal(bash(f"{wrapper} maity a")) == expected, wrapper
         assert plaincall.refusal(bash(f"{wrapper} make test")) is None, wrapper
+
+
+@pytest.mark.parametrize("command", REFUSED_ON_PURPOSE)
+def test_some_lines_are_refused_although_they_may_not_run_maity(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.BEHIND
+
+
+def test_an_empty_program_is_refused_inside_the_hook() -> None:
+    assert plaincall.behind("'' x") is True
+    assert plaincall.refusal(bash('"" ; ls')) == plaincall.BEHIND
 
 
 @pytest.mark.parametrize("command", NOT_DECIDED)

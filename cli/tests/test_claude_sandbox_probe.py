@@ -134,6 +134,10 @@ def test_a_stream_is_read_into_calls_with_their_results() -> None:
     step = probe.Step("x", "x", "Bash", "ls", "runner", "refused")
     assert probe.complied(step, "ls", calls) and probe.complied(step, " ls ", calls)
     assert not probe.complied(step, "ls -a", calls)
+    assert not probe.complied(step, "ls  ", [probe.Call("Bash", {"command": "l s"})])
+    cat = probe.Step("x", "x", "Bash", "cat /a b", "open", "hidden")
+    for changed in ("cat\n/a b", "cat /a  b", "cat\t/a b", "cat /a\nb"):
+        assert not probe.complied(cat, "cat /a b", [probe.Call("Bash", {"command": changed})])
     assert not probe.complied(step, "ls", [*calls, *calls])
 
 

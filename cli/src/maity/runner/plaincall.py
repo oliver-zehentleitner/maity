@@ -5,9 +5,10 @@ starts with `maity` through only when it is one plain call: words of letters, di
 `_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
 redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is refused before
 the command runs (cli/context/runner.md). For any other line the hook decides on the words
-the shell runs (`behind`): one that would run `maity` other than as the plain first word is
-refused. Any other tool call, and a command line that does not run `maity`, is left to the
-permission rules: the hook prints nothing and exits 0.
+the shell runs (`behind`) and passes it only when it can tell what every command in it runs:
+one that may run `maity` other than as the plain first word is refused, and so is one it
+cannot vouch for. Any other tool call, and a line it passes, is left to the permission
+rules: the hook prints nothing and exits 0.
 
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
 stderr. Input it cannot read is refused too.
@@ -50,13 +51,27 @@ WRAPPERS = frozenset({
     "timeout", "nohup", "setsid", "stdbuf", "unbuffer", "xargs", "parallel", "time", "sudo",
     "doas", "su", "runuser", "setpriv", "chpst", "flock", "script", "watch", "strace", "ltrace",
     "systemd-run", "busybox", "unshare", "nsenter", "chroot", "firejail", "caffeinate", "alias",
-    "ssh",
+    "ssh", "trap", "source", ".", "hash", "bind", "complete", "compgen", "mapfile",
+    "readarray", "fc",
     "sh", "bash", "dash", "zsh", "ksh", "mksh", "ash", "fish", "csh", "tcsh", "pwsh",
     "powershell",
 })  # fmt: skip
 # Shell words after which the next word is in command position again.
-KEYWORDS = frozenset({"then", "do", "else", "elif", "if", "while", "until", "!", "{", "time",
-                      "coproc"})  # fmt: skip
+STRUCTURE = frozenset({"then", "do", "else", "elif", "if", "while", "until", "!", "{"})
+# Shell words that end a construct, and ones whose own words are data, not programs.
+CLOSERS = frozenset({"fi", "done", "esac", "}", "]]"})
+DATA = frozenset({"for", "select", "case"})
+# Shell words the hook does not take apart: a line with one is refused.
+REFUSED_WORDS = frozenset({"function", "coproc"})
+# Programs on WRAPPERS that take a script from their input: fed by a pipe or a file, they run
+# what the hook cannot see.
+CODE_READERS = frozenset({
+    "sh", "bash", "dash", "zsh", "ksh", "mksh", "ash", "fish", "csh", "tcsh", "pwsh",
+    "powershell", "busybox", "source", ".", "ssh", "su", "eval", "sudo", "doas", "runuser",
+    "script", "xargs", "parallel",
+})  # fmt: skip
+# A program word the hook vouches for: plain characters only.
+_PROGRAM = re.compile(r"[A-Za-z0-9_.+/@%:,~\[\]-]+")
 # `find` runs what follows one of these.
 FIND_RUNS = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
 _NAMES = frozenset({"maity", "maity.exe", "maity.cmd", "maity.bat"})
@@ -79,6 +94,12 @@ class Word:
     dynamic: bool = False
     pattern: bool = False
     quoted: bool = False
+    lead: str = ""  # its literal start, before any quoting or expansion
+
+    @property
+    def literal(self) -> bool:
+        """Plain text: nothing quoted, expanded or matched, and not empty."""
+        return bool(self.text) and not (self.quoted or self.dynamic or self.pattern)
 
 
 @dataclass
@@ -88,7 +109,8 @@ class Command:
 
     words: list[Word] = field(default_factory=list)
     bodies: list[str] = field(default_factory=list)
-    fed: bool = False
+    fed: bool = False  # a pipe or a file feeds it: input the hook does not see
+    expanded_body: bool = False  # a here-document whose body the shell expands first
 
 
 class _Shell:
@@ -101,6 +123,11 @@ class _Shell:
         self.text, self.i, self.depth = text, 0, depth
         self.commands: list[Command] = []
         self.heredocs: list[tuple[str, bool, bool, Command]] = []
+        # Here-document bodies with no closing line: not taken as data.
+        self.open_bodies: list[str] = []
+        # The text of arithmetic, which never names a program.
+        self.arithmetic_texts: list[str] = []
+        self.word_end = -1
 
     def peek(self, n: int = 1) -> str:
         return self.text[self.i : self.i + n]
@@ -111,7 +138,34 @@ class _Shell:
         inner.i = self.i
         inner.run(stop)
         self.i = inner.i
+        self.absorb(inner)
+
+    def absorb(self, inner: _Shell) -> None:
         self.commands += inner.commands
+        self.open_bodies += inner.open_bodies
+        self.arithmetic_texts += inner.arithmetic_texts
+
+    def arithmetic(self, close: str) -> None:
+        """Arithmetic up to `close`: only its substitutions run."""
+        start, depth = self.i, 0
+        opening = "(" if close == "))" else "["
+        closing = close[0]
+        while self.i < len(self.text):
+            if depth == 0 and self.text.startswith(close, self.i):
+                break
+            c = self.peek()
+            if c == "$" and self.peek(2)[1:2] in ("(", "{", "["):
+                self.dollar(Word())
+                continue
+            if c == "`":
+                self.dollar(Word())
+                continue
+            depth += 1 if c == opening else -1 if c == closing else 0
+            self.i += 1
+        else:
+            raise Unreadable(f"no closing {close}")
+        self.arithmetic_texts.append(self.text[start : self.i])
+        self.i += len(close)
 
     def run(self, stop: str | None = None) -> None:
         cur, fed = Command(), False
@@ -140,6 +194,10 @@ class _Shell:
             elif c == "#":
                 while self.i < len(self.text) and self.peek() != "\n":
                     self.i += 1
+            elif self.peek(2) == "((":
+                self.i += 2
+                self.arithmetic("))")
+                end()
             elif c == "(" or (c in "<>" and self.peek(2)[1:] == "("):
                 if c != "(":
                     self.i += 1
@@ -153,6 +211,10 @@ class _Shell:
             elif (m := _REDIRECT.match(self.text, self.i)) and (
                 m.group(0)[0] in "<>&" or self.text[self.i : m.start(1)].isdigit()
             ):
+                if cur.words and self.i == self.word_end and not cur.words[-1].literal:
+                    raise Unreadable("a redirect glued to a word it does not take")
+                if cur.words and self.i == self.word_end and cur.words[-1].text.startswith("{"):
+                    raise Unreadable("a redirect to a named descriptor")
                 self.i = m.end()
                 self.redirect(m.group(1), cur)
             elif op := next((o for o in _OPERATORS if self.text.startswith(o, self.i)), None):
@@ -160,6 +222,7 @@ class _Shell:
                 end(piped=op in ("|", "|&"))
             else:
                 cur.words.append(self.word(stop))
+                self.word_end = self.i
         if stop is not None:
             raise Unreadable(f"no closing {stop}")
         end()
@@ -172,37 +235,48 @@ class _Shell:
         target = self.word(None)
         if op in ("<<", "<<-"):
             self.heredocs.append((target.text, target.quoted, op == "<<-", cur))
-            cur.fed = True
+            if not target.quoted:
+                cur.expanded_body = True
         elif op == "<<<":
             cur.bodies.append(target.text)
-            cur.fed = True
+            cur.expanded_body = cur.expanded_body or target.dynamic
         elif op in ("<", "<>", "<&"):
             cur.fed = True
 
     def read_heredocs(self) -> None:
         for delimiter, quoted, tabs, command in self.heredocs:
             lines: list[str] = []
+            closed = False
             while self.i < len(self.text):
                 nl = self.text.find("\n", self.i)
                 line = self.text[self.i :] if nl < 0 else self.text[self.i : nl]
                 self.i = len(self.text) if nl < 0 else nl + 1
                 if (line.lstrip("\t") if tabs else line) == delimiter:
+                    closed = True
                     break
                 lines.append(line)
             body = "\n".join(lines)
             command.bodies.append(body)
+            if not closed:
+                self.open_bodies.append(body)
             if not quoted:  # its substitutions run, as in double quotes
                 inner = _Shell(body, self.depth + 1)
                 inner.double_quoted(end_on_quote=False)
-                self.commands += inner.commands
+                self.absorb(inner)
         self.heredocs = []
 
     def word(self, stop: str | None) -> Word:
-        w, braced = Word(), False
+        w, braced, bracketed = Word(), False, False
         while self.i < len(self.text):
             c = self.peek()
             if c in " \t\n;&|()<>" or (stop is not None and c == stop):
                 break
+            if (
+                w.lead == w.text
+                and c not in "\\'\"$`"
+                and not (c in "@!+*?" and self.peek(2)[1:] == "(")
+            ):
+                w.lead += c
             if c == "\\":
                 nxt = self.peek(2)[1:]
                 self.i += 2
@@ -224,15 +298,31 @@ class _Shell:
                 w.dynamic = w.dynamic or dynamic
             elif c == "$" or c == "`":
                 self.dollar(w)
+            elif c in "@!+*?" and self.peek(2)[1:] == "(":
+                depth, j = 0, self.i + 1
+                while j < len(self.text):
+                    depth += {"(": 1, ")": -1}.get(self.text[j], 0)
+                    if depth == 0:
+                        break
+                    j += 1
+                if j >= len(self.text):
+                    raise Unreadable("unclosed pattern")
+                w.text += self.text[self.i : j + 1]
+                w.pattern = True
+                self.i = j + 1
             else:
-                if c in "*?[":
+                if c in "*?":
                     w.pattern = True
+                elif c == "[":
+                    bracketed = True
                 elif c == "{":
                     braced = True
                 w.text += c
                 self.i += 1
         if braced and re.search(r"\{[^}]*(,|\.\.)[^}]*\}", w.text):
             w.pattern = True  # a brace expansion
+        if bracketed and re.search(r"\[.+\]", w.text):
+            w.pattern = True  # a bracket expression
         if not w.text and not w.quoted and not w.dynamic:
             raise Unreadable(f"unexpected {self.peek()!r}")
         return w
@@ -243,6 +333,11 @@ class _Shell:
         if self.peek() == "`":
             self.i += 1
             self.nested("`")
+        elif self.peek(3) == "$((":
+            self.i += 3
+            self.arithmetic("))")
+        elif self.peek(2) == "$[":
+            raise Unreadable("legacy arithmetic")
         elif self.peek(2) == "$(":
             self.i += 2
             self.nested(")")
@@ -255,9 +350,11 @@ class _Shell:
                 j += 1
             if j >= len(self.text):
                 raise Unreadable("unclosed ${")
+            if re.search(r"['\"`\\]|\$\(", self.text[self.i + 2 : j]):
+                raise Unreadable("quoting or a substitution inside ${…}")
             inner = _Shell(self.text[self.i + 2 : j], self.depth + 1)
             inner.double_quoted(end_on_quote=False)
-            self.commands += inner.commands
+            self.absorb(inner)
             self.i = j + 1
         elif self.peek(2) in ("$'", '$"'):
             self.i += 1
@@ -291,7 +388,7 @@ class _Shell:
                 self.i += 2
             elif c in "$`" and (
                 c == "`"
-                or self.peek(2)[1:2] in ("(", "{")
+                or self.peek(2)[1:2] in ("(", "{", "[")
                 or self.peek(2)[1:2].isalnum()
                 or self.peek(2)[1:2] in "_@*#?-$!"
             ):
@@ -310,74 +407,99 @@ def _segments(text: str) -> list[str]:
     """The parts of a word that could name a program: the word, and what an option or an
     assignment in it holds, each by its last path element."""
     parts = [text, *re.split(r"[=:,]", text)]
-    return [re.split(r"[/\\]", part)[-1].lower() for part in parts if part]
+    return [re.split(r"[/\\]", part)[-1].lower() for part in parts if part] or [""]
 
 
-def _names_maity(word: Word, *, anywhere: bool = False) -> bool:
-    """Whether the word, as the shell runs it, can be `maity`: its value names it, or its
-    value depends on an expansion, a glob or a brace and so may. `anywhere`: an option or
-    assignment inside the word counts too (a wrapper's arguments)."""
-    if word.dynamic or word.pattern:
-        return True
-    names = _segments(word.text) if anywhere else _segments(word.text)[:1]
-    return any(name in _NAMES for name in names)
+def _assignment(word: Word) -> bool:
+    """A `NAME=value` word: the shell sets the name, whatever quoting the value has."""
+    return _ASSIGNMENT.match(word.lead) is not None
 
 
-def _wrapped(words: list[Word], depth: int) -> bool:
-    """Whether a wrapper's arguments run `maity`: one of them names it, or holds a command
-    line that does."""
+def _candidates(text: str) -> list[str]:
+    """What a program that runs others may take from one argument as a program or a command
+    line: the argument, what follows each `=`, and for an option every rest of it."""
+    found = [text, *(text[m.end() :] for m in re.finditer("=", text))]
+    if text.startswith("-"):
+        found += [text[i:] for i in range(1, len(text))]
+    return found
+
+
+def _runs_maity(words: list[Word], depth: int) -> bool:
+    """Whether the arguments of a program that runs others may run `maity`. Every argument
+    must be plain text, each of its candidates read as a command line of its own; only an
+    assignment's value may be an expansion."""
     for word in words:
-        if _names_maity(word, anywhere=True):
+        if _assignment(word):
+            value = word.text.split("=", 1)[1]
+            texts = [] if word.dynamic or word.pattern else [value, *_candidates(value)[1:]]
+        elif word.dynamic or word.pattern:
             return True
-        if re.search(r"[\s;&|<>()`$]", word.text) and behind(word.text, depth + 1):
-            return True
+        else:
+            texts = _candidates(word.text)
+        for text in texts:
+            if any(name in _NAMES for name in _segments(text)):
+                return True
+            if text and behind(text, depth + 1):
+                return True
     return False
 
 
-def _mentions(commands: list[Command]) -> bool:
-    texts = [w.text for c in commands for w in c.words] + [b for c in commands for b in c.bodies]
-    return any("maity" in text.lower() or "$" in text for text in texts)
+def _refused(cmd: Command, depth: int) -> bool:
+    """Whether one simple command may run `maity` or is one the hook cannot vouch for."""
+    words = list(cmd.words)
+    while words:
+        first = words[0]
+        if _assignment(first):
+            words.pop(0)
+        elif first.literal and first.text in STRUCTURE:
+            words.pop(0)
+        elif first.literal and first.text == "time":
+            words.pop(0)
+            while words and words[0].literal and words[0].text in ("-p", "--"):
+                words.pop(0)
+        else:
+            break
+    if not words:
+        return False
+    program, args = words[0], words[1:]
+    if program.literal and program.text in CLOSERS:
+        return False
+    if not program.literal or not _PROGRAM.fullmatch(program.text):
+        return True
+    name = _segments(program.text)[0]
+    if name in _NAMES or name in REFUSED_WORDS:
+        return True
+    if name in DATA or name in CLOSERS:
+        return False
+    if name == "find":
+        runs = [i for i, w in enumerate(args) if w.literal and w.text in FIND_RUNS]
+        return bool(runs) and _runs_maity(args[runs[0] + 1 :], depth)
+    if name.removesuffix(".exe") not in WRAPPERS:
+        return False
+    if _runs_maity(args, depth):
+        return True
+    reads_code = name.removesuffix(".exe") in CODE_READERS
+    if reads_code and cmd.fed:
+        return True  # a script from a pipe or a file: not something the hook can read
+    if cmd.bodies and (cmd.expanded_body or reads_code and cmd.fed):
+        return True
+    return any(behind(body, depth + 1) or "maity" in body.lower() for body in cmd.bodies)
 
 
 def behind(command: str, depth: int = 0) -> bool:
-    """Whether the line runs `maity` other than as the plain first word of a line the hook
-    has already decided: it decides on the words the shell runs, after quoting, escapes and
-    line continuations. A word in command position that can become `maity` counts, and so
-    do a wrapper's arguments and the scripts it is given. A line it cannot take apart
-    counts, whatever it holds."""
+    """Whether the line may run `maity` other than as the plain first word of a line the
+    hook has already decided, or is one the hook cannot take apart: it passes a line only
+    when it can tell what every command in it runs."""
     try:
         shell = _Shell(command, depth)
         shell.run()
     except (Unreadable, RecursionError):
         return True
-    for cmd in shell.commands:
-        words = list(cmd.words)
-        while words and (
-            (_ASSIGNMENT.match(words[0].text) and not words[0].quoted)
-            or (words[0].text in KEYWORDS and not words[0].quoted and not words[0].dynamic)
-        ):
-            words.pop(0)
-        if not words:
-            continue
-        program, args = words[0], words[1:]
-        if _names_maity(program):
-            return True
-        name = _segments(program.text)[0].removesuffix(".exe")
-        if name == "find":
-            runs = [i for i, w in enumerate(args) if w.text in FIND_RUNS]
-            if runs and _wrapped(args[runs[0] + 1 :], depth):
-                return True
-            continue
-        if name not in WRAPPERS:
-            continue
-        if _wrapped(args, depth):
-            return True
-        for body in cmd.bodies:
-            if behind(body, depth + 1) or "maity" in body.lower():
-                return True
-        if cmd.fed and not cmd.bodies and _mentions(shell.commands):
-            return True
-    return False
+    if any("maity" in text.lower() for text in shell.arithmetic_texts):
+        return True
+    if shell.open_bodies:
+        return True
+    return any(_refused(cmd, depth) for cmd in shell.commands)
 
 
 def applies(command: str) -> bool:
@@ -436,7 +558,10 @@ def refusal(payload: object) -> str | None:
             return REFUSED
         # `maity` itself, not a path to a program of that name or a quoted spelling
         return None if command.split()[0].lower() == "maity" else BEHIND
-    return BEHIND if behind(command) else None
+    try:
+        return BEHIND if behind(command) else None
+    except Exception:  # noqa: BLE001 - anything unforeseen refuses the call
+        return BEHIND
 
 
 def main(args: Sequence[str] | None = None) -> int:

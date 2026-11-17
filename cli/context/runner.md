@@ -1367,8 +1367,10 @@ user settings, and the credentials and `.git` paths it hides. It starts
 from the runner's own launch (`adapters.launch`) and reads each result
 from the file system, not from what the model says. Someone runs it by
 hand on a machine where Claude Code is installed and signed in. Its
-output goes into the pull request, and `capabilities.CHECKED` is raised
-in a later commit, only after every step passed.
+counts go into the pull request and its full output to the lead.
+`capabilities.CHECKED` is raised in a later commit, only after the steps
+the bump rests on passed: at least the prefixed calls (`--only 1`). The
+bump's own entry names the steps that ran and those that did not.
 
 **Reason:** the earlier checks were `claude -p` runs in which the model
 made the probe calls, so a re-check needs a model login. The session that
@@ -1388,21 +1390,26 @@ way, and the steps are visible in review.
   workflow change, so they are the maintainer's decision, raised on the
   card.
 
-## The hook refuses a line that would run `maity` other than as its plain first word
+## The hook passes a line only when it can tell what the line runs
 
 **Id:** 5dd6c8a0-c108-412b-ae18-afbdf9478b94
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-nnmgvz773z5n; the sandbox probe's run with Claude Code 2.1.326 on the agents' VM, 2026-11-17 (the particulars held to DM with the lead and the review lead); the lead's decision for two layers, not one, 2026-11-17; the review of #1931 (A1064), whose particulars were held to DM as well, 2026-11-17
+**Source:** card tsk-nnmgvz773z5n; the sandbox probe's run with Claude Code 2.1.326 on the agents' VM, 2026-11-17 (the particulars held to DM with the lead and the review lead); the lead's decision for two layers, not one, 2026-11-17; the reviews of #1931 (A1064, A1074, A1075, A1076), whose particulars were held to DM as well, and the lead's decision that the hook fails closed, 2026-11-17
 **See:** runner.md — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-17
 **Revisit when:** the probe or a review shows a line that runs `maity` and passes the hook; Claude Code offers a documented way to run one exact command outside its sandbox
 
-The runner's `plaincall` hook decides on the words the shell runs. It
-refuses a line that would run `maity` other than as the plain first word
-of its line, `env` in front among them. A line that only mentions `maity`
-as data of another program, such as a commit message or a file's
-contents, is left to the permission rules.
+The runner's `plaincall` hook decides on the words the shell runs, and it
+passes a line only when it can tell what every command in it runs. A line
+that may run `maity` other than as the plain first word, `env` in front
+among them, is refused, and so is a line the hook cannot vouch for. A
+line that only carries `maity` as data of another program, such as a
+commit message or a file's contents, is left to the permission rules.
+Some lines that would not run `maity` are refused as well, for instance
+an expansion handed to a program that runs other programs; an agent
+writes such a line out in full. An assignment in front of a command
+stays allowed, an expansion in its value included.
 
 **Reason:** the README promises two layers for a call with something in
 front of `maity`: the permission rules refuse it, and past them it stays

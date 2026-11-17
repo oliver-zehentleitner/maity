@@ -7,6 +7,6 @@
 
 ### Security
 
-- cli: the runner's Claude Code hook decides on the words the shell runs,
-  and refuses a line that would run `maity` other than as the plain first
-  word of its line.
+- cli: the runner's Claude Code hook decides on the words the shell runs
+  and passes a line only when it can tell what the line runs; one that may
+  run `maity` other than as the plain first word is refused.

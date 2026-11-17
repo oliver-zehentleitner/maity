@@ -18,9 +18,9 @@ What it checks (cli/context/runner.md, the sandbox entries):
 1. A call with something in front of `maity` does not run outside the sandbox, with the
    runner's permission rules (1a) and with Bash opened up (1b); a plain `maity` call does.
    1a is the settings the runner writes. 1b is not a configuration the runner produces: it
-   takes the runner's permission rules away and keeps its hook and the sandbox, the second
-   layer the README promises. A FAIL in 1b alone means that layer no longer holds for that
-   prefix, while the runner's rules still refuse it.
+   adds Bash to the allow list and keeps the runner's deny rules, its hook and the sandbox,
+   the second layer the README promises. A FAIL in 1b alone means that layer no longer holds
+   for that prefix, while the runner's rules still refuse it.
 2. The runner's hook refuses a `maity` line that is not one plain call, and a hook that
    cannot start, exits 1 or times out refuses the call (`onFailure: "block"`).
 3. `disableAllHooks` and `allowManagedHooksOnly` in the managed settings (file and drop-in)
@@ -114,7 +114,7 @@ def steps() -> list[Step]:
     out: list[Step] = []
     for part, variant, rules in (
         ("1a", "runner", "runner's rules"),
-        ("1b", "open", "rules removed"),
+        ("1b", "open", "Bash allowed"),
     ):
         out.append(Step(f"{part}.1", f"plain call, {rules} (control)", "Bash",
                         "maity probe {T}", variant, "escapes"))  # fmt: skip
@@ -352,11 +352,13 @@ def parse_stream(text: str) -> list[Call]:
 
 
 def complied(step: Step, target: str, calls: Sequence[Call]) -> bool:
-    """Whether the model made exactly the one call asked for."""
+    """Whether the model made exactly the one call asked for: the same text, but for spaces,
+    tabs and newlines at either end. Any other difference, inside the text too, is another
+    call."""
     if len(calls) != 1 or calls[0].tool != step.tool:
         return False
     key = "command" if step.tool == "Bash" else "file_path"
-    return " ".join(str(calls[0].input.get(key, "")).split()) == " ".join(target.split())
+    return str(calls[0].input.get(key, "")).strip(" \t\n") == target.strip(" \t\n")
 
 
 @dataclass(frozen=True)
