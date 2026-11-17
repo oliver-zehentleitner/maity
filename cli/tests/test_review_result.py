@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -14,7 +15,7 @@ from pathlib import Path
 import fakehub
 import pytest
 
-from maity import citecheck, cli, proc, state
+from maity import citecheck, cli, clonecheck, proc, state
 
 P = "/api/v1/projects/oliver/maity"
 REVIEW = {
@@ -465,3 +466,56 @@ def test_a_cite_with_two_problems_counts_once(
     err = capsys.readouterr().err
     assert "not sent: 1 cite(s)" in err
     assert err.count("review.cites.0 b.txt:1: ") == 2  # too long, and on line 2
+
+
+@pytest.mark.parametrize(
+    ("cite", "sent"),
+    [
+        ({"path": "b.txt", "line": 2, "quote": "second"}, True),
+        ({"path": "b.txt", "line": 1, "quote": "second"}, False),
+    ],
+)
+def test_under_a_placement_the_cites_are_checked_in_the_clone_from_its_folder(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    events: None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    cite: dict[str, object],
+    sent: bool,
+) -> None:
+    """agy works in the workspace folder that holds the clone as `repo` (§15.5): the cites
+    stand or fall in the runner's clone, not in the folder, which is no clone."""
+    _commit("b.txt", "first\nsecond\n")
+    clone = Path.cwd()
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    # A runner's clone is plain (clonecheck): the fixture's redirect to its local remote goes;
+    # the cite check needs no remote.
+    subprocess.run(["git", "config", "--remove-section", "url." + str(clone.parent / "remote.git")],
+                   check=True)  # fmt: skip
+    # Under a placement maity reads a named file only inside the clone (inclone).
+    (clone / "review.json").write_text(
+        json.dumps({"subject": "#1", "head": head, "verdict": "approve", "cites": [cite]})
+    )
+    monkeypatch.setenv("MAITY_STATE_DIR", str(state.resolve_state_dir()))
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
+    monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    private = clone.parent / "agent-git"
+    private.mkdir()
+    git = shutil.which("git")
+    assert git is not None
+    (private / "git").write_text(git)  # the git the runner recorded for the clone
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
+    monkeypatch.chdir(clone.parent)
+    review = os.path.join(clone.name, "review.json")
+    result = cli.main(_say("Approve.", "--review-file", review))
+    err = capsys.readouterr().err
+    assert "not checked" not in err
+    if sent:
+        assert result == cli.EXIT_OK, err
+    else:
+        assert result == cli.EXIT_ERROR
+        assert "it stands on line 2" in err
