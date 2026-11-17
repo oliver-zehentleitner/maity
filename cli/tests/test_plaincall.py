@@ -73,6 +73,14 @@ NOT_DECIDED = [
 ]
 
 
+def runner_refusal(command: str) -> str:
+    """The reason a runner call is refused with: a `maity` line that is not one plain call is
+    refused as that, its reason naming the way out."""
+    if plaincall.applies(command) and not plaincall.plain(command):
+        return plaincall.REFUSED
+    return plaincall.RUNNER_REFUSED
+
+
 RUNNER = [
     "maity runner status",
     "maity runner loop --spec loop.json",
@@ -98,18 +106,97 @@ RUNNER = [
     "(maity runner status)",
     "maity runner status > out.txt",
 ]
-NOT_RUNNER = [
-    "maity runners",
+# A word `maity` followed anywhere later by a word `runner`, however the line spells them.
+RUNNER_ANYWHERE = [
+    # a quoted or escaped operator is a word, not the end of a command
+    "maity --for ';' runner status",
+    "maity --for '|' runner status",
+    'maity --for "&&" runner status',
+    "maity --for \\; runner status",
+    "maity --fo ')' runner status",
+    # end-of-options markers, however many
+    "maity -- -- runner status",
+    "maity -- -- -- runner status",
+    # quotes the line never closes, or that the hook reads differently from a comment
+    "FOO=1 maity runner status # it's",
+    "git status # it's\nmaity runner status",
+    "echo $'a\\'b'; maity runner status",
+    "echo 'never closed runner",
+    # a backslash-newline joins the lines
+    "FOO=1 mai\\\nty runner status",
+    # words the shell still expands
+    "maity $'runner' status",
+    "maity $R status",
+    "$M runner status",
+    "FOO=1 maity $R status",
+    # quoted text another shell reads again
+    "sh -c 'maity runner status'",
+    'bash -c "true; maity runner status"',
+    # text: refused all the same, the reason names --body-file
     "maity say lotse runner",
     "maity say --to lotse 'maity runner status'",
-    "git commit -m 'about maity runner status'",
+    "maity task create maity --body runner",
     "echo maity; runner status",
 ]
+NOT_RUNNER = [
+    "maity runners",
+    "maity say lotse 'the runner is up'",
+    "maity task show tsk-x",
+    "ls runner/",
+    "git log --oneline runner",
+    "cp $SRC $DST",
+    "echo 'never closed",
+    "echo $'it\\'s the runner'",  # ANSI-C quoting closes where the shell closes it
+]
+
+
+@pytest.mark.parametrize("command", RUNNER_ANYWHERE)
+def test_a_runner_word_after_a_maity_word_is_refused_in_any_spelling(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == runner_refusal(command)
+
+
+@pytest.mark.parametrize("command", NOT_RUNNER)
+def test_a_line_without_a_runner_word_after_a_maity_word_is_not_a_runner_call(
+    command: str,
+) -> None:
+    assert plaincall.refusal(bash(command)) != plaincall.RUNNER_REFUSED
+
+
+# Words after `maity`, as its own parser reads them on this Python: every shape whose
+# subcommand it takes as `runner` is refused by the hook.
+PARSER_SHAPES = [
+    ["runner", "status"],
+    ["--", "runner", "status"],
+    ["--", "--", "runner", "status"],
+    ["--", "--", "--", "runner", "status"],
+    ["--for", "x", "runner", "status"],
+    ["--for", "x", "--", "--", "runner", "status"],
+    ["--for=;", "runner", "status"],
+    ["--fo", "|", "runner", "status"],
+    ["--f", "&&", "--", "runner", "status"],
+    ["--for", "--", "runner", "status"],
+]
+
+
+@pytest.mark.parametrize("words", PARSER_SHAPES)
+def test_every_line_maitys_parser_reads_as_runner_is_refused(words: list[str]) -> None:
+    from maity import cli
+
+    try:
+        args, _ = cli.build_parser().parse_known_args(words)
+        command = args.command
+    except SystemExit:
+        command = None
+    line = "maity " + " ".join("'" + word + "'" for word in words)
+    if command == "runner":
+        assert plaincall.refusal(bash(line)) == plaincall.RUNNER_REFUSED
+    else:
+        assert plaincall.refusal(bash(line)) in (plaincall.RUNNER_REFUSED, None)
 
 
 @pytest.mark.parametrize("command", RUNNER)
 def test_a_line_that_runs_maity_runner_is_refused(command: str) -> None:
-    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+    assert plaincall.refusal(bash(command)) == runner_refusal(command)
 
 
 @pytest.mark.parametrize("command", NOT_RUNNER)

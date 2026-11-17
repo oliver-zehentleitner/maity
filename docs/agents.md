@@ -134,8 +134,10 @@ one plain call: a line that starts with `maity` and holds a heredoc, a
 pipe, a chain, a redirect or a `$` is refused before it runs, so its text
 goes in a file in the clone (`--body-file`, `--summary-file`,
 `--last-file`, `--next-file`) or in single quotes.
-`maity runner` is the runner's own command: a placed Claude Code agent's
-tool call that runs it is refused.
+`maity runner` is the runner's own command: in a placed Claude Code
+session, a line in which a word `runner` follows a word `maity` is refused,
+also when `runner` is only text, so such text goes in a file
+(`--body-file`).
 
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a

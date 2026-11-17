@@ -4,11 +4,12 @@
 starts with `maity` through only when it is one plain call: words of letters, digits and
 `_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
 redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is refused before
-the command runs (cli/context/runner.md). A line that calls `maity runner` anywhere is
-refused outright, whatever it starts with: those commands are the runner's own, and the runner
-never starts them through an agent's tool call. Any other tool call, and a command line
-that does not start with `maity`, is left to the permission rules: the hook prints nothing and
-exits 0.
+the command runs (cli/context/runner.md). On any line, a word `maity` followed anywhere
+later by a word `runner` is refused as well (`calls_runner`, which says how it reads words):
+those commands are the runner's own, and the runner never starts them through an agent's tool
+call. A command the shell builds only from expansions or from input is not read; such a line
+is not one plain `maity` call, so its `maity` runs inside the sandbox. Any other tool call is
+left to the permission rules: the hook prints nothing and exits 0.
 
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
 stderr. Input it cannot read is refused too.
@@ -18,7 +19,6 @@ from __future__ import annotations
 
 import json
 import re
-import shlex
 import sys
 from collections.abc import Sequence
 
@@ -31,15 +31,19 @@ NOT_IN_DOUBLE_QUOTES = frozenset("$`!\n")
 # `maity`, so a line counts as a maity call however the harness trims it.
 _MAITY = re.compile(r"[^0-9A-Za-z]*maity", re.IGNORECASE)
 
-# `maity`'s options that come before its subcommand and take a value (`--for AGENT`); argparse
-# also takes an unambiguous prefix of an option.
-_VALUE_OPTIONS = ("--for",)
-# Characters that end one command on a line and start the next (or a redirect's target).
-_SEPARATORS = "();<>|&\n"
+# Unquoted characters that end a word, besides spaces and tabs: the shell's operators.
+_SEPARATORS = frozenset("();<>|&\n")
+# Unquoted characters after which the shell may still change a word: an expansion, a glob, a
+# brace.
+_EXPANDS = frozenset("$`*?[{")
+# How deep quoted text is read again as a line of its own (`sh -c '...'`).
+_NESTING = 4
 
 RUNNER_REFUSED = (
     "`maity runner` is the runner's own command and does not run from a placed session's tool "
-    "call. Use the other `maity` commands."
+    "call: a line where a word `runner` follows a word `maity` is refused. Use the other "
+    "`maity` commands; text that holds both words goes in a file in this clone, passed with "
+    "`--body-file`."
 )
 REFUSED = (
     "A `maity` command runs only as one plain call: nothing piped, chained, redirected, sent to "
@@ -92,53 +96,108 @@ def plain(command: str) -> bool:
 
 
 def _is_maity(word: str) -> bool:
-    """Whether a word names `maity`, by any path and however the harness trims it."""
+    """Whether a word names `maity`: by any path, in any case, however its start is trimmed."""
     name = word.rsplit("/", 1)[-1]
     return re.sub(r"^[^0-9A-Za-z]+", "", name).lower() == "maity"
 
 
-def _runs_runner(words: Sequence[str]) -> bool:
-    """Whether a `maity` word in one command is followed by `runner` as its subcommand,
-    after the options maity takes before one. Any `maity` word counts, not only the command
-    word, so one behind an assignment or a wrapper (`env`, `nohup`, ...) counts too."""
-    for start, word in enumerate(words):
-        if not _is_maity(word):
-            continue
-        i = start + 1
-        while i < len(words) and words[i].startswith("-"):
-            option = words[i]
+class _Unreadable(ValueError):
+    """A quote the line never closes: its words are not known."""
+
+
+def _words(line: str) -> list[tuple[str, bool]]:
+    """The line's words as the shell splits and unquotes them, each with whether the shell
+    would still expand it (`$`, a backtick, a glob, a brace), so that its final text is not
+    known here. Words end at unquoted spaces, tabs and operators; a backslash-newline joins
+    the lines; nothing is expanded and comments are read like any other text. Raises
+    _Unreadable for a quote that is never closed."""
+    words: list[tuple[str, bool]] = []
+    chars: list[str] = []
+    started = expands = False
+    i, n = 0, len(line)
+
+    def end() -> None:
+        nonlocal chars, started, expands
+        if started:
+            words.append(("".join(chars), expands))
+        chars, started, expands = [], False, False
+
+    def closing(start: int, escapes: bool) -> int:
+        """The index of the `'` that closes the quote opened before `start`."""
+        j = start
+        while j < n and line[j] != "'":
+            j += 2 if escapes and line[j] == "\\" else 1
+        if j >= n:
+            raise _Unreadable(line)
+        return j
+
+    while i < n:
+        c = line[i]
+        if c in " \t" or c in _SEPARATORS:
+            end()
+        elif c == "\\":
+            if i + 1 < n and line[i + 1] != "\n":
+                started = True
+                chars.append(line[i + 1])
+            i += 1  # a backslash-newline is a line continuation: nothing
+        elif c == "$" and i + 1 < n and line[i + 1] == "'":
+            end_at = closing(i + 2, escapes=True)  # $'...': the shell decodes its escapes
+            started = expands = True
+            chars.append(line[i + 2 : end_at])
+            i = end_at
+        elif c == "'":
+            end_at = closing(i + 1, escapes=False)
+            started = True
+            chars.append(line[i + 1 : end_at])
+            i = end_at
+        elif c == '"':
+            started = True
             i += 1
-            if option == "--":
-                break
-            if "=" not in option and any(
-                len(option) > 2 and name.startswith(option) for name in _VALUE_OPTIONS
-            ):
-                i += 1  # the option's value
-        if i < len(words) and words[i] == "runner":
-            return True
-    return False
-
-
-def calls_runner(command: str) -> bool:
-    """Whether any command on the line is `maity runner`: the line is split into words as the
-    shell splits it, and into commands at `;`, `&`, `|`, `(`, `)`, `<`, `>` and newlines. A
-    line the shell could not split is not looked at here (`plain` decides a `maity` line)."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=_SEPARATORS)
-    lexer.whitespace = " \t\r"
-    lexer.commenters = ""  # a comment ends at a newline the lexer would swallow with it
-    lexer.whitespace_split = True
-    try:
-        tokens = list(lexer)
-    except ValueError:
-        return False
-    words: list[str] = []
-    for token in [*tokens, ";"]:
-        if token and all(c in _SEPARATORS for c in token):
-            if _runs_runner(words):
-                return True
-            words = []
+            while i < n and line[i] != '"':
+                if line[i] == "\\" and i + 1 < n and line[i + 1] in '$`"\\\n':
+                    if line[i + 1] != "\n":
+                        chars.append(line[i + 1])
+                    i += 2
+                    continue
+                expands = expands or line[i] in "$`"
+                chars.append(line[i])
+                i += 1
+            if i >= n:
+                raise _Unreadable(line)
         else:
-            words.append(token)
+            started = True
+            expands = expands or c in _EXPANDS
+            chars.append(c)
+        i += 1
+    end()
+    return words
+
+
+def calls_runner(command: str, depth: int = 0) -> bool:
+    """Whether the line may run `maity runner`: a word `maity` (`_is_maity`) is followed
+    anywhere later on the line by a word `runner` (in any case). Neither has to be the
+    command word, and operators between them do not matter. A word the shell would still
+    expand counts as `runner` after a `maity` word and as `maity` before a `runner` word.
+    Quoted text that holds spaces or operators is read again the same way, as another shell
+    would read it. A line whose quotes never close counts when it holds `runner` at all."""
+    try:
+        words = _words(command)
+    except _Unreadable:
+        return "runner" in command.lower()
+    seen_maity = seen_open = False
+    for text, expands in words:
+        if text.lower() == "runner" and (seen_maity or seen_open):
+            return True
+        if expands and seen_maity:
+            return True
+        if (
+            depth < _NESTING
+            and any(c in " \t" or c in _SEPARATORS for c in text)
+            and calls_runner(text, depth + 1)
+        ):
+            return True
+        seen_maity = seen_maity or _is_maity(text)
+        seen_open = seen_open or expands
     return False
 
 
@@ -150,11 +209,11 @@ def refusal(payload: object) -> str | None:
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     if not isinstance(command, str):
         return None
+    if applies(command) and not plain(command):
+        return REFUSED  # refused either way; this reason names the way out
     if calls_runner(command):
         return RUNNER_REFUSED
-    if not applies(command) or plain(command):
-        return None
-    return REFUSED
+    return None
 
 
 def main(args: Sequence[str] | None = None) -> int:
