@@ -199,7 +199,8 @@ Reviews and tests leave things behind: evidence folders, a clone of another head
 Nothing in a scratch counts as unsaved work. Once the hub reads the placement as closed and no session of it runs, the runner removes the scratch, writes a line to its log and adds the removal (when, which placement, path, size, why) to `removed.jsonl` in its state directory. A restart, a rejoin and an adoption keep it. Removing it after a stop, on the clone's retention clock, comes with the clone's removal (below), which is not built yet. The runner never removes through a link: a scratch, or a `.scratch` above it, that is a link stays and is logged once.
 
 - `maity runner status` shows the size of each placement's clone and scratch, measured at most every ten minutes. `maity runner status --removed` also shows the last removals.
-- `maity runner gc --scratch` lists every scratch whose placement is no longer active, including one left by a revoked or removed runner. `--yes` removes them.
+- `maity runner gc --scratch` lists every scratch whose placement is no longer active. `--yes` removes them, and holds the service's lock, so stop the service first. gc asks the hub which placements are active: when it cannot ask, or one entry of the answer cannot be read, it removes nothing.
+- A runner whose own credential was revoked or removed cannot ask the hub any more, so gc cannot help there. Once the runner is gone, delete `<workspaces>/<project_id>/.scratch/` by hand, as you do its clones.
 
 Neither the sizes nor the removals go to the hub.
 

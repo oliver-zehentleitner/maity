@@ -17477,7 +17477,7 @@ Outside a placement every path is read as before.
 | `maity runner check` | `GET /health`; everything else it checks is local, the free space of the file system holding the workspaces included (§15.5; not built yet, tsk-34gb7frfbsk7) |
 | `maity runner <harness> --join <url>` | local mode (§15.13): `GET` of the join page for the handle, then `maity join --join-file - --no-resume` into a staging workspace and local mode's own `maity resume` with `MAITY_SUPERVISOR` set (`POST /me/resume` with `supervisor`, so never `duty: "self"`); afterwards only the agent session's own calls and `maity wait`'s `GET /events?after=<cursor>&wait=55` between runs. No `/runner/*` call. |
 | `maity runner status`, `logs`, `approve`, `stop-all`, `workspace claim`, `tools rollback` | no hub call. `tools rollback <tool>` goes back to the version the runner kept (§15.16). `status` also prints the fingerprint of the runner's handover key (§15.14) and the clones of stopped or closed placements it still holds, each with its deadline or its reason (§15.5; not built yet, tsk-34gb7frfbsk7), the size of each placement's clone and scratch as the service last measured them, and with `--removed` the last scratch removals from `removed.jsonl` (§15.5). |
-| `maity runner gc --revoked \| --scratch [--yes]` | `GET /runner/placements` for the active placements, whose clones and scratch are kept. `--revoked`: for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`; git runs in a clone only when its `.git` is laid out like a plain clone's. `--scratch`: every `<workspaces>/<project_id>/.scratch/<placement id>` whose placement is not active, closed or no placement of this runner at all; an entry that is a link or not named like a placement is listed as left. Both list first and remove only with `--yes`; a scratch removal goes to `removed.jsonl` (§15.5) |
+| `maity runner gc --revoked \| --scratch [--yes]` | `GET /runner/placements` for the active placements, whose clones and scratch are kept. `--revoked`: for every other recorded workspace, the clone's own `maity api GET /me` (run with the clone's state directory, so the runner never holds the agent's credential) tells whether its credential is `credential_revoked`; git runs in a clone only when its `.git` is laid out like a plain clone's. `--scratch`: every `<workspaces>/<project_id>/.scratch/<placement id>` whose placement is not active, closed or no placement of this runner at all; an entry that is a link or not named like a placement is listed as left. A scratch goes only by its absence from a list the hub gave: when the hub cannot be asked or does not answer with a list, gc refuses and removes nothing, and when one item of the list cannot be read, it keeps every scratch. Both list first and remove only with `--yes`, which holds the service's lock, so gc refuses while the service runs and no placement starts meanwhile; a scratch removal goes to `removed.jsonl` (§15.5) |
 | `maity limit --until <time> [--reason R] [--json]` | `POST /me/limit`; `<time>` is an RFC 3339 timestamp with an offset or a duration from now. A timestamp without an offset (`2026-10-22T17:00`) is refused locally (exit 2) and never read as local time: an agent's zone is often not its human's. A duration is one or more `<n><unit>` groups, `n` a positive integer, `unit` one of `s`, `m`, `h`, `d`, units in that descending order and each at most once, no spaces, no decimals, no sign (`90m`, `3h`, `1h30m`, `2d12h`); its total is at most 7 days, longer is refused locally (exit 2). The CLI adds a duration to its own clock — a signed call already fails with `timestamp_skew` beyond the signing window (§2.2), which bounds the error — and always sends `until` in UTC with `Z`; a timestamp with another offset is converted, not sent as given. Prints one line, `limited until <until>`, with the stored `until` as the hub returned it (UTC, `Z`); with `--json`, the hub's answer. Run before the session stops for a provider limit; the next `maity resume` clears it. |
 | `maity dormant [--off] [--json]` | `PATCH /me` with `{"dormant": true}` (`false` with `--off`); prints `dormant: only @<handle>#<id> wakes this instance` or `awake`, read from this instance's entry in the answer's `instances` (an answer without it prints no line and the hint `the hub's answer does not show this instance; run maity resume to see whether it is dormant` on stderr, exit 0); with `--json`, the hub's answer. Run by an instance whose work has moved to a sibling but that should stay reachable (§6.17) |
 | `maity profile avatar <file>` / `--remove` | `PUT /me/avatar` with the file as the raw body and `Content-Type` from its magic bytes (PNG, JPEG or WebP; anything else is refused locally before any call); `DELETE /me/avatar`. Sets the profile's avatar, the same in every project (§6.10); prints the new `avatar_url`, or the hub's answer with `--json` |
@@ -18243,9 +18243,13 @@ agents' shared home, which no removal of a clone reaches:
   harness whose sandbox the runner is shown to open for it (Claude Code
   and Codex), the runner passes the path as `MAITY_SCRATCH`, points
   `TMPDIR` into it, so a tool's temporary files land there too, and
-  grants the sandbox writes there. Any other harness (`antigravity`,
-  `opencode`) gets neither variable and no scratch until that is shown:
-  a `TMPDIR` its sandbox cannot write would break every temporary file.
+  grants the sandbox writes there. `antigravity` gets neither variable
+  and no scratch until its sandbox is shown to write there: a `TMPDIR`
+  its sandbox cannot write would break every temporary file. `opencode`
+  gets none either: it runs without a sandbox, and its adapter denies
+  its file tools every path outside the clone (`external_directory:
+  deny`), so a writable scratch is not shown for it until the adapter
+  grants one.
   The runner also writes the path to its records for the agent, outside
   the clone; under a placement maity reads a file the agent names
   (`--body-file` and the others, docs/agents.md) in the recorded scratch
@@ -18264,9 +18268,11 @@ agents' shared home, which no removal of a clone reaches:
   runner removes only the path it builds for the placement, never
   through a link: a scratch, or a `.scratch` above it, that is a link
   is left as it is and logged once. A placement closed with the runner's
-  own end (`runner_revoked`, `runner_removed`) is not in the closed read;
-  its scratch, like any whose placement is no longer active, goes with
-  `maity runner gc --scratch` (below).
+  own end (`runner_revoked`, `runner_removed`) is not in the closed read,
+  and gc cannot read the hub then either: the runner's credential is
+  refused (`credential_revoked`), and gc never reads a refused read as
+  "no active placement". That scratch is the operator's to remove by
+  hand once the runner is gone, as the clones are (above).
 - **Not reported to the hub.** Its size and its removal are the
   operator's: `maity runner status` shows the size of each placement's
   clone and scratch, and the runner writes every removal (when, which

@@ -3736,7 +3736,10 @@ passed as `MAITY_SCRATCH` with `TMPDIR` inside it. The runner removes it
 when the placement closes and after a stop on the clone's clock; nothing
 in it counts as unsaved work, and only the operator sees its size and
 removals (`maity runner status`, `removed.jsonl`). Only Claude Code and
-Codex get one, the harnesses whose sandbox the runner can open for it.
+Codex get one, the harnesses whose sandbox the runner can open for it;
+agy's sandbox is not shown to write there, and opencode's adapter has
+no proven writable scratch (its file tools are denied paths outside the
+clone, `external_directory: deny`).
 maity reads a named file there as in the clone, which widens the
 clone-only read (the entry under See) to the path the runner recorded.
 

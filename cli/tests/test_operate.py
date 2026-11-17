@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from conftest import git
 
-from maity import cli, state
+from maity import cli, hub, state
 from maity.runner import config, operate, scratch, serve, supervisor, tmux, workspace
 
 CONFIG = """\
@@ -463,3 +463,47 @@ def test_status_shows_the_sizes_and_the_removals(
     view = json.loads(capsys.readouterr().out)
     assert view["placements"][0]["scratch_bytes"] == 512
     assert view["removed"][0]["placement"] == "plc-0001"
+
+
+class _Answer:
+    def __init__(self, answer: Any) -> None:
+        self.answer = answer
+
+    def call(self, method: str, path: str, **kwargs: Any) -> Any:
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+def _hub_answers(monkeypatch: pytest.MonkeyPatch, answer: Any) -> None:
+    service = type("S", (), {"client": _Answer(answer)})()
+    monkeypatch.setattr(serve, "open_service", lambda cfg, state_: service)
+
+
+def test_gc_scratch_keeps_every_scratch_unless_the_hub_gave_a_whole_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    assert cfg.local is not None
+    room = cfg.local.workspaces / "maity" / workspace.SCRATCH / "plc-0001"
+    room.mkdir(parents=True)
+    argv = ["runner", "gc", "--scratch", "--yes", "--config", str(path)]
+    # A failed read is never "nothing active": gc refuses.
+    _hub_answers(monkeypatch, hub.HubError("401 credential_revoked", code="credential_revoked",
+                                           status=401))  # fmt: skip
+    assert cli.main(argv) == cli.EXIT_USAGE
+    assert "cannot ask the hub which placements are active" in capsys.readouterr().err
+    # An answer that is not a list refuses too.
+    _hub_answers(monkeypatch, {"items": None})
+    assert cli.main(argv) == cli.EXIT_USAGE
+    assert "did not answer with a list" in capsys.readouterr().err
+    # One item it cannot read: every scratch is kept.
+    _hub_answers(monkeypatch, {"items": [{"id": "not-a-placement"}]})
+    assert cli.main(argv) == 0
+    assert "every scratch is kept" in capsys.readouterr().out
+    assert room.is_dir()
+    # A whole list without it: removed.
+    _hub_answers(monkeypatch, {"items": []})
+    assert cli.main(argv) == 0
+    assert not room.exists()

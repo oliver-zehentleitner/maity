@@ -268,9 +268,11 @@ def unsaved_work(path: Path, as_user: AsUser = RUNNER) -> list[str] | None:
     return lines
 
 
-def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str], set[str]]:
+def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str], set[str] | None]:
     """(project, clone) pairs, agents and ids of every active placement, asked of the hub: a
-    clone a new placement continues names an old placement in its record until it starts."""
+    clone a new placement continues names an old placement in its record until it starts.
+    The ids are None when an item of the hub's list could not be read: a scratch goes only by
+    its absence from a whole list (§15.5). A failed read refuses, never reads as empty."""
     runner_state = state.load_state(cfg.state_dir, name=serve.RUNNER_FILE)
     try:
         service = serve.open_service(cfg, runner_state)
@@ -279,11 +281,16 @@ def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str], set[str
         raise Refused(f"cannot ask the hub which placements are active ({exc})") from None
     pairs: set[tuple[str, str]] = set()
     agents: set[str] = set()
-    ids: set[str] = set()
-    for p in (answer.get("items") if isinstance(answer, dict) else None) or []:
+    ids: set[str] | None = set()
+    items = answer.get("items") if isinstance(answer, dict) else None
+    if not isinstance(items, list):
+        raise Refused("the hub did not answer with a list of the active placements")
+    for p in items:
         if not supervisor.valid(p):
+            ids = None
             continue
-        ids.add(p["id"])
+        if ids is not None:
+            ids.add(p["id"])
         pairs.add((p["project_id"], p["workspace"]["clone"]))
         agent = p.get("agent") or {}
         agents.update(v for v in (agent.get("id"), agent.get("handle")) if isinstance(v, str))
@@ -332,11 +339,15 @@ def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
-def _collect_scratch(cfg: config.Config, active: set[str], remove: bool) -> None:
+def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) -> None:
     """Every scratch under the workspaces root whose placement the hub does not list as
     active (§15.5): closed, or no placement of this runner at all. Listed, and with `remove`
     removed and written to `removed.jsonl`. Nothing in a scratch is kept as unsaved work."""
     assert cfg.local is not None  # noqa: S101 - cmd_gc checks it
+    if active is None:
+        print("scratch  none listed: an active placement in the hub's answer could not be "
+              "read, so every scratch is kept")  # fmt: skip
+        return
     as_user = _as_user(cfg)
     root = cfg.local.workspaces
     try:
