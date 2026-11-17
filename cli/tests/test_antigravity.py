@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import tomllib
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -888,6 +888,402 @@ def test_other_folders_credentials_are_private(tmp_path: Path, direct: bool) -> 
     found = supervisor.other_credentials(ws, own, AsUser() if direct else Agents("a"))
     assert found == [ws / "maity" / "agent-4" / "repo" / ".git" / "maity",
                      ws / "maity" / "agent-5" / ".git" / "maity"]  # fmt: skip
+
+
+class Remote(Agents):
+    """An ssh host's side, run here: not this machine's paths (`here` false)."""
+
+    @property
+    def here(self) -> bool:
+        return False
+
+
+SIDES: dict[str, Callable[[], AsUser]] = {
+    "single": AsUser,
+    "agent_user": lambda: Agents("a"),
+    "ssh": lambda: Remote("a"),
+}
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", ["clone", "repo", "git", "maity"])
+def test_other_credentials_are_listed_where_they_lie(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    """A clone's credential reached through a link (the clone, its `repo`, its `.git` or the
+    directory itself) is listed where it lies, on every side the runner reaches."""
+    ws, elsewhere = tmp_path / "ws", tmp_path / "elsewhere"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-5" / ".git" / "maity").mkdir(parents=True)
+    slot = {"clone": ws / "maity" / "agent-4", "repo": ws / "maity" / "agent-4" / "repo",
+            "git": ws / "maity" / "agent-4" / ".git",
+            "maity": ws / "maity" / "agent-4" / ".git" / "maity"}[linked]  # fmt: skip
+    target = elsewhere / slot.name
+    real = {"clone": target / ".git" / "maity", "repo": target / ".git" / "maity",
+            "git": target / "maity", "maity": target}[linked]  # fmt: skip
+    real.mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(target)
+    found = supervisor.other_credentials(ws, own, SIDES[side]())
+    inside = ws / "maity" / "agent-5" / ".git" / "maity"
+    assert real.resolve() in found and inside in found
+    assert own / ".git" / "maity" not in found
+    kept = adapters.outermost((ws, *found), opened=(own,))
+    assert real.resolve() in kept and inside not in kept
+
+
+@pytest.mark.parametrize("side", ["agent_user", "ssh"])
+def test_a_linked_workspaces_root_still_lists_every_clone(tmp_path: Path, side: str) -> None:
+    real = tmp_path / "disk" / "ws"
+    for agent in ("agent-3", "agent-4"):
+        (real / "maity" / agent / ".git" / "maity").mkdir(parents=True)
+    ws = tmp_path / "ws"
+    ws.symlink_to(real)
+    as_user = SIDES[side]()
+    found = supervisor.other_credentials(ws, ws / "maity" / "agent-3", as_user)
+    base = ws.resolve() if as_user.here else ws  # named as the runner names the clone there
+    assert found == [base / "maity" / "agent-4" / ".git" / "maity"]
+
+
+def test_on_a_host_whose_root_lies_below_a_link_its_own_credential_is_not_listed(
+    tmp_path: Path,
+) -> None:
+    """An ssh host's workspaces below a linked directory: the clone's own credential is
+    told apart, and the others stay below the root as configured, so its deny covers them."""
+    (tmp_path / "mnt" / "data").mkdir(parents=True)
+    (tmp_path / "data").symlink_to(tmp_path / "mnt" / "data")
+    ws = tmp_path / "data" / "ws"
+    own = ws / "maity" / "agent-3"
+    for agent in ("agent-3", "agent-4"):
+        (ws / "maity" / agent / ".git" / "maity").mkdir(parents=True)
+    found = supervisor.other_credentials(ws, own, Remote("a"))
+    assert found == [ws / "maity" / "agent-4" / ".git" / "maity"]
+    assert adapters.outermost((ws, *found), opened=(own,)) == (ws,)
+
+
+SLOTS = {"clone": ("agent-4",), "repo": ("agent-4", "repo"), "git": ("agent-4", ".git"),
+         "maity": ("agent-4", ".git", "maity")}  # fmt: skip
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_a_place_that_cannot_be_looked_at_refuses_the_start(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    """A clone's place for a credential reached through a link into a directory the agents'
+    user cannot search: it could hide one, so the listing fails closed on every side."""
+    ws, locked = tmp_path / "ws", tmp_path / "elsewhere" / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    (locked / slot.name).mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(locked / slot.name)
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused) as refused:
+            supervisor.other_credentials(ws, own, SIDES[side]())
+        assert refused.value.reason == "harness_refused"
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_the_check_needs_no_realpath_option_a_host_may_lack(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, linked: str
+) -> None:
+    """A host's `realpath` may take no option but `--` (BSD, macOS): the listing still
+    finds and still refuses what the runner's own side does."""
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    real = shutil.which("realpath")
+    assert real is not None
+    (shim / "realpath").write_text(
+        "#!/bin/sh\nfor a; do case $a in --) break ;; -*) exit 64 ;; esac; done\n"
+        f'exec {real} "$@"\n'
+    )
+    (shim / "realpath").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim}:{os.environ['PATH']}")
+    ws, locked = tmp_path / "ws", tmp_path / "elsewhere" / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    (locked / slot.name).mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(locked / slot.name)
+    (ws / "maity" / "agent-5" / ".git" / "maity").mkdir(parents=True)
+    linked_one = [locked / "maity"] if linked == "maity" else []  # it is a credential itself
+    assert supervisor.other_credentials(ws, own, Remote("a")) == sorted(
+        [*linked_one, ws / "maity" / "agent-5" / ".git" / "maity"]
+    )
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, Remote("a"))
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_a_credential_lying_under_a_name_with_a_line_break_is_named_whole(
+    tmp_path: Path, side: str
+) -> None:
+    ws, elsewhere = tmp_path / "ws", tmp_path / "else\nwhere"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    for name in ("agent-4", "agent-5"):
+        (ws / "maity" / name / ".git").mkdir(parents=True)
+    (elsewhere / "ends\n").mkdir(parents=True)  # the whole path ends in the line break
+    (elsewhere / "mid\ndle").mkdir()
+    (ws / "maity" / "agent-4" / ".git" / "maity").symlink_to(elsewhere / "ends\n")
+    (ws / "maity" / "agent-5" / ".git" / "maity").symlink_to(elsewhere / "mid\ndle")
+    found = supervisor.other_credentials(ws, own, SIDES[side]())
+    assert found == sorted([elsewhere / "ends\n", elsewhere / "mid\ndle"])
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_a_loop_of_links_is_no_credential_here_and_refused_elsewhere(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    """A loop leads nowhere: the runner's own side sees no credential in it; another side,
+    which follows the links itself, gives up after a bound and refuses the start (stricter,
+    never a missing deny)."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "loop-a").symlink_to(tmp_path / "loop-b")
+    (tmp_path / "loop-b").symlink_to(tmp_path / "loop-a")
+    slot.symlink_to(tmp_path / "loop-a")
+    as_user = SIDES[side]()
+    if as_user.direct:
+        assert supervisor.other_credentials(ws, own, as_user) == []
+    else:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, as_user)
+
+
+MODES = {  # what lies at agent-4 (and its mode): every side must answer as the runner's own
+    "clone-0111": ("agent-4", 0o111), "clone-0000": ("agent-4", 0o000),
+    "git-0111": ("agent-4/.git", 0o111), "git-0000": ("agent-4/.git", 0o000),
+    "maity-0111": ("agent-4/.git/maity", 0o111), "maity-0000": ("agent-4/.git/maity", 0o000),
+    "project-0111": ("", 0o111), "gitfile": ("agent-4/.git", None),
+}  # fmt: skip
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", ["agent_user", "ssh"])
+@pytest.mark.parametrize("case", sorted(MODES))
+@pytest.mark.parametrize("through_link", [False, True])
+def test_every_side_answers_as_the_runners_own_side_whatever_the_modes(
+    tmp_path: Path, side: str, case: str, through_link: bool
+) -> None:
+    """Directories only searchable, not even that, and a `.git` that is a file (a worktree's):
+    another side lists or refuses exactly as the runner's own side does, also when the clone
+    is reached through a link."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    clone = (tmp_path / "elsewhere" / "agent-4") if through_link else ws / "maity" / "agent-4"
+    (clone / ".git" / "maity").mkdir(parents=True)
+    if through_link:
+        (ws / "maity" / "agent-4").symlink_to(clone)
+    rel, mode = MODES[case]
+    where = (ws / "maity") if rel == "" else clone.joinpath(*rel.split("/")[1:])
+    if mode is None:
+        shutil.rmtree(where)
+        where.write_text("gitdir: /nowhere\n")
+    else:
+        where.chmod(mode)
+
+    def answer(as_user: AsUser) -> object:
+        try:
+            return supervisor.other_credentials(ws, own, as_user)
+        except workspace.Refused:
+            return "refused"
+
+    try:
+        single, other = answer(AsUser()), answer(SIDES[side]())
+    finally:
+        if mode is not None:
+            where.chmod(0o700)
+    assert other == single
+
+
+def bsd_readlink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`readlink` as BSD and macOS print it without `-n`: a line break added only when the
+    name does not end in one already (with `-n`, as everywhere, none)."""
+    shim = tmp_path / "bsd-bin"
+    shim.mkdir()
+    (shim / "readlink").write_text(
+        "#!/usr/bin/env python3\nimport os, sys\n"
+        "args = [a for a in sys.argv[1:] if a != '--']\n"
+        "plain = args[0] == '-n'\nname = os.readlink(args[-1])\n"
+        "sys.stdout.write(name if plain or name.endswith('\\n') else name + '\\n')\n"
+    )
+    (shim / "readlink").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim}:{os.environ['PATH']}")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", ["agent_user", "ssh"])
+@pytest.mark.parametrize("bsd", [False, True])
+def test_a_link_whose_target_ends_in_a_line_break_is_followed_to_where_it_leads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, side: str, bsd: bool
+) -> None:
+    """A credential's place linked to a name ending in a line break, itself a link into a
+    directory that cannot be searched: refused as on the runner's own side, whatever
+    `readlink` prints."""
+    if bsd:
+        bsd_readlink(tmp_path, monkeypatch)
+    ws, locked = tmp_path / "ws", tmp_path / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git").mkdir(parents=True)
+    (locked / "maity").mkdir(parents=True)
+    hop = tmp_path / "hop\n"
+    hop.symlink_to(locked / "maity")
+    (ws / "maity" / "agent-4" / ".git" / "maity").symlink_to(hop)
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, AsUser())
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, SIDES[side]())
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("depth", [38, 45])
+def test_a_link_into_a_long_missing_path_is_no_credential(
+    tmp_path: Path, side: str, depth: int
+) -> None:
+    """Only links count towards the bound on following them: a link into a path of many
+    directories that do not exist leads nowhere, as on the runner's own side."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git").mkdir(parents=True)
+    gone = tmp_path.joinpath(*(f"d{i}" for i in range(depth)))
+    (ws / "maity" / "agent-4" / ".git" / "maity").symlink_to(gone)
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+def chain(start: Path, links: int, end: Path, where: Path) -> None:
+    """`start` -> `where/l1` -> ... -> `where/l<links-1>` -> `end`: `links` links in all."""
+    hops = [start, *(where / f"l{i}" for i in range(1, links))]
+    for here, there in zip(hops, [*hops[1:], end], strict=True):
+        here.symlink_to(there)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize(("linked", "links"), [("clone", 36), ("repo", 37), ("git", 38),
+                                                ("maity", 39), ("maity", 40)])  # fmt: skip
+def test_a_dead_chain_of_up_to_forty_links_is_no_credential(
+    tmp_path: Path, side: str, linked: str, links: int
+) -> None:
+    """Every slot, the longest dead chains found to be refused before: none of them is a
+    credential, as on the runner's own side."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "hops").mkdir()
+    chain(slot, links, tmp_path / "gone", tmp_path / "hops")
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", ["clone", "repo"])
+def test_one_dead_link_into_a_deep_missing_path_is_no_credential(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(tmp_path.joinpath("gone", *(f"d{i}" for i in range(35))))
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("links", [41, 60, 72])  # 72: within 32 + 40 on BSD too
+def test_a_chain_the_system_does_not_resolve_is_no_credential_on_every_side(
+    tmp_path: Path, side: str, links: int
+) -> None:
+    """A finite chain to a real credential, longer than the system follows a path's links:
+    the runner's own side sees no credential there, and neither does any other."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git").mkdir(parents=True)
+    (tmp_path / "real" / "maity").mkdir(parents=True)
+    (tmp_path / "hops").mkdir()
+    chain(ws / "maity" / "agent-4" / ".git" / "maity", links, tmp_path / "real" / "maity",
+          tmp_path / "hops")  # fmt: skip
+    assert supervisor.other_credentials(ws, own, AsUser()) == []
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_a_link_that_leads_nowhere_is_no_credential(tmp_path: Path, side: str, linked: str) -> None:
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(tmp_path / "gone")
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_every_side_lists_what_the_runners_own_side_lists(tmp_path: Path, side: str) -> None:
+    """Names with a line break (one at the end too) are listed whole, and only a clone's two
+    places count: what lies deeper in a clone, readable or not, is not looked at."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    for name in ("agent-4\nx", "agent-5\n", "agent-6"):
+        (ws / "maity" / name / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-6" / "repo" / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-6" / "sub" / "deeper" / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-6" / "repo" / "sub" / ".git" / "maity").mkdir(parents=True)
+    closed = ws / "maity" / "agent-6" / "closed"
+    closed.mkdir()
+    closed.chmod(0)
+    try:
+        found = supervisor.other_credentials(ws, own, SIDES[side]())
+        single = supervisor.other_credentials(ws, own, AsUser())
+    finally:
+        closed.chmod(0o700)
+    base = ws.resolve() if SIDES[side]().here else ws
+    clones = ("agent-4\nx", "agent-5\n", "agent-6", "agent-6/repo")
+    assert found == sorted(base / "maity" / c / ".git" / "maity" for c in clones)
+    assert found == single
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_a_clone_reached_through_a_link_never_lists_its_own_credential(
+    tmp_path: Path, side: str
+) -> None:
+    ws, real = tmp_path / "ws", tmp_path / "elsewhere" / "agent-3"
+    (real / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git" / "maity").mkdir(parents=True)
+    own = ws / "maity" / "agent-3"
+    own.symlink_to(real)
+    found = supervisor.other_credentials(ws, own, SIDES[side]())
+    base = ws.resolve() if SIDES[side]().here else ws
+    assert found == [base / "maity" / "agent-4" / ".git" / "maity"]
 
 
 def test_the_agents_home_hides_agys_directory_from_other_sandboxes(tmp_path: Path) -> None:

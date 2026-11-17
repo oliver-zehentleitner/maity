@@ -1280,7 +1280,13 @@ project's own harness configuration is never loaded:
   false`). The
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
   is linked in. The clone is marked untrusted, so a `.codex/config.toml`
-  in the repository is not loaded. Codex has no per-command allowlist, so
+  in the repository is not loaded. An interactive Codex then asks about
+  the folder at its start; within three minutes of a start the runner
+  made, and with nobody attached, the runner answers "Open restricted"
+  once it shows (the folder stays untrusted). It never answers a prompt
+  that would trust it: the log says the session waits on a first-run
+  prompt, and someone attaches to answer it. No idle line or key is sent
+  while the folder prompt shows. Codex has no per-command allowlist, so
   it is advertised as `confinement: sandbox`. A repository's `allow`
   list is not applied to Codex (every command runs in its sandbox,
   listed or not) and `pull_requests` is not given to it (the runner sets

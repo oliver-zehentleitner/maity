@@ -415,7 +415,7 @@ def test_the_deny_lists_come_from_the_agents_side(
     assert agent_home / ".claude" in ctx.private and agent_home / ".ssh" in ctx.private
     assert cfg.local.agent_files.resolve() in ctx.private
     assert sibling.resolve() in ctx.private
-    assert "-path */.git/maity" in fake_sudo.read_text()  # listed as maity-agent
+    assert "-mindepth 2 -maxdepth 2 -print0" in fake_sudo.read_text()  # listed as maity-agent
 
 
 def test_a_partial_clone_listing_refuses_the_start(
