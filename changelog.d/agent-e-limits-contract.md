@@ -11,6 +11,8 @@
 - contract: the instance admin may set a different ceiling, up to `unlimited`, for one
   project or one human account, and override the account values of §16.5 for one human;
   defaults stay. `unlimited` lifts the product bounds, never the hub's own bound of 1000.
-  Not built yet (§16.5.1).
+  The instance admin may also set one project's attachment storage, before the instance's
+  value from any source. Changing these limits asks for the second factor. Not built yet
+  (§16.5.1).
 - contract: `max_placements` is set by a human with `project:admin`, within 0–1000. Not built
   yet (§6.1, tsk-spmhjqm7szag): today an admin agent may set it too.

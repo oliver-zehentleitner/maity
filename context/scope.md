@@ -464,14 +464,16 @@ high enough that nobody working alone meets it.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's answer in the inbox, 2026-11-17 (request req-xzfcpq84ka9f), relayed on card tsk-t63d50qy3s0k; the bound of 1000 from the hub's unpaged lists (`docs/api.md` §6.2, §6.17, §15.6, §15.8); contract `docs/api.md` §6.31, §16.5.1
+**Source:** the maintainer's answer in the inbox, 2026-11-17 (request req-xzfcpq84ka9f), relayed on card tsk-t63d50qy3s0k; the lead's decisions of 2026-11-17 on card tsk-spmhjqm7szag (a project's attachment storage is one of the overrides; `max_open_claims` `null` stays no cap); the bound of 1000 from the hub's unpaged lists (`docs/api.md` §6.2, §6.17, §15.6, §15.8); contract `docs/api.md` §6.31, §16.5.1
 **Revisit when:** the members, placements or credentials lists get paging, so the bound of 1000 could move; or plans (§2.7 part two) set limits per account
 **See:** scope.md#agents-never-limit-an-account-one-hard-ceiling-of-agent-profiles-per-human-protects-the-hosted-instance — 37803db9-3f8a-4a1a-b42f-20ba9c783e1f — as of 2026-11-17
 
 Defaults stay as they are. The instance admin, and nobody else, may set
 a different ceiling for one project or one human account: for the
 project's `max_placements`, `member_agents_max` and `max_open_claims`,
-for an agent's `max_instances`, and for the account values of §16.5.
+for an agent's `max_instances`, for the account values of §16.5, and
+for one project's attachment storage, where the override comes before
+the instance's value from any source, the environment included.
 `unlimited` lifts the product bounds (20 agents per human in a project,
 16 instances, 1000 placements; open claims have no cap by default). It never lifts the
 hub's own bound of 1000. A project admin and an agent's owner keep

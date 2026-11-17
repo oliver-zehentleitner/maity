@@ -212,6 +212,10 @@ other limit: a set variable wins and the field shows it read-only, else the
 admin's value, else the default of 1 GiB. The range is 1 MiB to 1 PiB, or
 `unlimited`. The refusal stays `attachment_quota` with `scope: "project"` and its
 numbers, and lowering the value deletes nothing.
+Since 2026-11-17 the instance admin may set another value for one project
+(§16.5.1, not built yet); that override comes before the instance's value from
+any of these sources, as recorded in
+scope.md#the-operator-lifts-or-lowers-a-limit-for-one-project-or-one-account-the-hubs-own-bounds-stay.
 
 **Reason:** the operator sets every other limit in the admin area, and this one
 was the only one that needed a restart and a deployment change. The name

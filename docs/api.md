@@ -12836,7 +12836,7 @@ the project.
 | Field | Meaning |
 |---|---|
 | `name` | the limit: `max_placements`, `member_agents_max`, `max_open_claims`, `max_instances` or `max_agents` |
-| `limit` | the value in effect: the set value, or the ceiling when that is lower; the name `limit` as in `agent_limit` and `claim_limit` (§1.3) |
+| `limit` | the value in effect: the set value, or the ceiling when that is lower; `null` for `max_open_claims` without a cap (§6.31 above), and `max` with it; the name `limit` as in `agent_limit` and `claim_limit` (§1.3) |
 | `count` | what the scope holds now and counts toward it |
 | `max` | the same number as `limit`, kept for clients that read `placement_quota` and `instance_quota` before this section |
 | `scope` | `project`, `member` (with `member`, the member id: `member_agents_max` is per human, `max_open_claims` and `max_instances` per membership), `runner` (with `runner`, its id) or `target` (with `runner` and `target`, its name) |
@@ -12895,8 +12895,8 @@ GET /projects/{owner}/{slug}/limits
   `max_agents` and `running` for a caller who sees `capabilities` there
   (`members:admin`, `agents:propose`) and for the runner's owner, for
   any other human `null`; a runner that has not reported is `null` too.
-  `targets` likewise: the list for those who see `capabilities`, `[]`
-  for any other human, so no target's name is shown that `GET …/runners`
+  `targets` likewise: the list for those who see `capabilities` and for
+  the runner's owner, `[]` for any other human, so no target's name is shown that `GET …/runners`
   hides. A placement's `reported.quota` (§15.7) stays with its
   `reported`, which every reader of the placement sees already, its
   `target` among it.
@@ -14482,7 +14482,8 @@ does not show what the listing hides.
 
 **Quota.** Each project holds at most the limit
 `max_attachment_storage_per_project` (§16.5; bytes, default 1 GiB, or
-`unlimited`) of stored attachments, pending ones included, counted after
+`unlimited`; or the value the instance admin set for this project,
+§16.5.1, not built yet, tsk-t63d50qy3s0k) of stored attachments, pending ones included, counted after
 re-encoding; deleted ones free their bytes. An upload that would exceed
 it is `attachment_quota` with `details: {"used": …, "quota": …}`, and
 nothing is stored; under `unlimited` the project scope refuses nothing.
@@ -21460,7 +21461,9 @@ under every value, `unlimited` included. `max_reads_per_minute` takes
 - **What `max_attachment_storage_per_project` gates.** An attachment
   upload (§8.7) alone, as `attachment_quota` with `details.scope:
   "project"`, `details.used` and `details.quota`. It caps each project
-  alike, whoever owns it; the project's owner sets nothing here. Posting
+  alike, whoever owns it, unless the instance admin set another value
+  for the project (§16.5.1; not built yet, tsk-t63d50qy3s0k); the
+  project's owner sets nothing here. Posting
   a message that names attachments already uploaded is not refused.
 - **What `max_attachment_storage` gates.** An attachment upload (§8.7)
   alone, as `attachment_quota` with `details.scope: "instance"`. Unlike
@@ -21514,7 +21517,7 @@ these answer numbers, never a project's content (§16).
 | Field | On | Values | What it overrides |
 |---|---|---|---|
 | `max_placements`, `member_agents_max`, `max_open_claims`, `max_instances` | project, account | an integer within the bound of §6.31, `unlimited`, or `null` | the ceiling of that value (§6.31); on an account, for the projects the human owns (`max_instances`: for the agent profiles the human owns) |
-| `max_attachment_storage_per_project` | project | an integer from 1048576 to 1125899906842624, `unlimited`, or `null` | the instance's value for this project (§16.5, §8.7); `attachment_quota` (§1.3) beyond it |
+| `max_attachment_storage_per_project` | project | an integer from 1048576 to 1125899906842624, `unlimited`, or `null` | the instance's value for this project (§16.5, §8.7), from whichever source it comes, the environment included: the override is the operator's exception for one project and comes first; `attachment_quota` (§1.3) beyond it |
 | `max_agents_per_human`, `max_orgs_per_human`, `max_projects_per_owner` | account | an integer 1–10000, `unlimited`, or `null` | the instance's value for this human (§16.5) |
 | `max_starred_per_human` | account | an integer 1–1000, or `null`; no `unlimited` | the instance's value for this human (§16.5) |
 
@@ -21530,10 +21533,11 @@ these answer numbers, never a project's content (§16).
   profile owner: there `value` and `source` are the project override's,
   or the default ceiling (16, `default`). An override of `unlimited` is
   answered as `override: "unlimited"`; `value` is what applies, for the
-  four values of §6.31 the bound 1000, for the §16.5 values
+  four values of §6.31 the bound 1000 as the ceiling (a `max_open_claims`
+  of `null` stays no cap under it, §6.31), for the §16.5 values
   `"unlimited"`.
-- For the account values, an override comes before the instance's
-  value: `agent_limit`, `org_limit` and `project_limit` (§1.3) carry
+- For the account values and a project's attachment storage, an
+  override comes before the instance's value, whatever its source: `agent_limit`, `org_limit` and `project_limit` (§1.3) carry
   `details.source`, `instance` or `account_override`.
 - Neither the human nor the project's owner is notified; the overview
   (§6.31) shows the source to every reader.
