@@ -200,6 +200,9 @@ def test_two_admins_on_the_same_version_exactly_one_wins(
                 [owner, admin],
             )
         )
+    # On a server database both really were past their reads at once; SQLite let one wait
+    # at BEGIN, so the other's wait gave up.
+    assert both_checked.broken is (migrated.dialect.name == "sqlite")
     statuses = sorted(a.status_code for a in answers)
     assert statuses == [200, 409], [a.text for a in answers]
     [won] = [a for a in answers if a.status_code == 200]
