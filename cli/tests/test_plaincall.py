@@ -73,6 +73,50 @@ NOT_DECIDED = [
 ]
 
 
+RUNNER = [
+    "maity runner status",
+    "maity runner loop --spec loop.json",
+    "maity runner logcap out.log 100",
+    "maity runner plaincall",
+    "maity runner stub --exit-code 0",
+    "MAITY_PLACEMENT= maity runner status",
+    "FOO=1 maity runner status",
+    "env -u MAITY_PLACEMENT maity runner status",
+    "nohup maity runner status",
+    "/usr/local/bin/maity runner status",
+    "maity --for lotse runner status",
+    "maity --for=lotse runner status",
+    "maity --fo lotse runner status",
+    "maity -- runner status",
+    "maity 'runner' status",
+    'maity run""ner status',
+    "MAITY runner status",
+    "true; maity runner status",
+    "git status && maity runner status",
+    "echo x\nmaity runner status",
+    "echo x # note\nmaity runner status",
+    "(maity runner status)",
+    "maity runner status > out.txt",
+]
+NOT_RUNNER = [
+    "maity runners",
+    "maity say lotse runner",
+    "maity say --to lotse 'maity runner status'",
+    "git commit -m 'about maity runner status'",
+    "echo maity; runner status",
+]
+
+
+@pytest.mark.parametrize("command", RUNNER)
+def test_a_line_that_runs_maity_runner_is_refused(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+@pytest.mark.parametrize("command", NOT_RUNNER)
+def test_runner_as_a_word_elsewhere_is_not_a_runner_call(command: str) -> None:
+    assert plaincall.refusal(bash(command)) != plaincall.RUNNER_REFUSED
+
+
 @pytest.mark.parametrize("command", REFUSED)
 def test_a_maity_line_that_is_not_one_plain_call_is_refused(command: str) -> None:
     assert plaincall.refusal(bash(command)) == plaincall.REFUSED
@@ -118,3 +162,9 @@ def test_the_hook_process_refuses_with_exit_2_and_the_reason_on_stderr() -> None
     done = run_hook(json.dumps(bash("maity task show tsk-x")).encode())
     assert done.returncode == 0 and done.stdout == "" and done.stderr == ""
     assert run_hook(b"not json").returncode == 2
+
+
+def test_the_hook_process_refuses_a_runner_call() -> None:
+    done = run_hook(json.dumps(bash("maity runner status")).encode())
+    assert done.returncode == 2 and done.stdout == ""
+    assert done.stderr.strip() == plaincall.RUNNER_REFUSED
