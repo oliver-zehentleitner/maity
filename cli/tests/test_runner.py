@@ -535,7 +535,7 @@ def test_check_finds_opencode_and_its_version(
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
     fake_tool(bin_dir, "opencode", "0.5.3")
-    paired.write_text(paired.read_text() + '\n[harness.opencode]\nmodels = ["grok"]\n')
+    paired.write_text(paired.read_text() + '\n[harness.opencode]\nmodels = ["xai/grok"]\n')
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
     out = lines(capsys)
@@ -707,13 +707,13 @@ def test_opencode_is_offered() -> None:
     text = (
         "\n[harness.opencode]\n"
         'modes = ["supervised", "interactive"]\n'
-        'models = ["grok"]\n'
-        'default_model = "grok"\n'
+        'models = ["xai/grok"]\n'  # opencode names a model as <provider>/<model>
+        'default_model = "xai/grok"\n'
     )
     cfg = parse(minimal(o=text))
     harness = cfg.harnesses["opencode"]
     assert harness.modes == ("supervised", "interactive")
-    assert harness.models == ("grok",) and harness.default_model == "grok"
+    assert harness.models == ("xai/grok",) and harness.default_model == "xai/grok"
     assert harness.binary == "opencode"
     assert config.NOT_OFFERED_YET == ()
 

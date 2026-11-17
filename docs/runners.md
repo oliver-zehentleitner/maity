@@ -152,19 +152,19 @@ It is configured as:
 ```toml
 [harness.opencode]
 modes = ["supervised", "interactive"]
-models = ["grok"]
-default_model = "grok"
+models = ["<provider>/<model>"]
+default_model = "<provider>/<model>"
 ```
 
-**Models.** opencode runs **Grok**. Name the Grok model your provider gives under `models`, and set `default_model` to the one a placement uses when it names none; `maity runner check` refuses a `default_model` that is not in `models`. The model passes through to `opencode --model`.
+**Models.** opencode runs **Grok**. opencode names a model as `<provider>/<model>` (its own model selector), so name the Grok model that way under `models` — the provider and Grok model id your account uses — and set `default_model` to the one a placement uses when it names none; `maity runner check` refuses a `default_model` that is not in `models`. The value passes through to `opencode --model`.
 
 **Modes.** `supervised` runs `opencode run` on each event and continues the same conversation with `--continue`. `interactive` runs `opencode --prompt` with the start prompt in the tmux pane. opencode's exit code for a provider limit is not known yet, so a limit ends a run like any other failure.
 
-**Install and sign in as the agents' user.** Install opencode for the user the agents run as (`~/.local/bin/opencode`; add that to `agent_path` if the service's `PATH` lacks it) and sign in once by running `opencode` as that user, so its login lands in that user's home where opencode finds it. The runner neither signs in nor reads that login; opencode's login and configuration are among the home paths the runner hides from the agents. Keep that home free of anything agents should not run, ideally with a user of its own for the agents.
+**Install and sign in as the agents' user.** Install opencode for the user the agents run as (its binary lands in `~/.local/bin`; add that directory to `agent_path` if the service's `PATH` lacks it) and sign in once by running `opencode` as that user, so its login lands in that user's home where opencode finds it. The runner neither signs in nor reads that login. The runner hides the listed home secrets from the sandboxed harnesses, but opencode runs without a sandbox, so an opencode agent is not kept from them: give opencode's agents an OS user of their own, whose home holds nothing other agents or the runner rely on.
 
 **The permission configuration the runner writes.** These rules steer the model and shape what an agent normally does; they are configuration, not a security boundary (above). Before each start the runner writes an `opencode.json` in its own directory for the agent and points opencode at it with `OPENCODE_CONFIG`, with `OPENCODE_DISABLE_PROJECT_CONFIG=1` so the repository's own `opencode.json` and `.opencode/` directories (agents, commands, plugins) do not win over it. The configuration denies tools by default and then allows:
 
-- `bash`: `maity *`, the fixed Keep the Why UUID command, the named `git` subcommands and the repository's `allow` command list; `maity` runs outside opencode, as it does for every harness, and is allowed only as one plain call;
+- `bash`: `maity *`, the fixed Keep the Why UUID command, the named `git` subcommands and the repository's `allow` command list; `maity` is allowed only as one plain call;
 - `read` everything but the clone's `.git/maity` (the agent's credential); `edit` everything but the clone's `.git`; `list` on; `grep` and `glob` off;
 - `webfetch` and directories outside the clone denied.
 

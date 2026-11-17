@@ -37,15 +37,15 @@ HARNESSES = (
 # No command allowlist in their own configuration (runner design §6.3): refused unless they
 # run in a pod and the operator says so for each.
 NOT_UNATTENDED = ("pi", "hermes", "kimi", "cline", "omp")
-# Built but not offered: the maintainer decides on these when the runner goes into use.
-# Antigravity was held back while its one command grant was unconfined; the owner has now
-# accepted that residual risk (req-9spwe33neh1z) and the harness is offered again, while the
-# OS-level confinement of command(maity) is added incrementally (tsk-zjv2xyhyggnm).
-# OpenCode (Grok) is likewise offered now (req-g4d2cskx6zxv). opencode's command rules are not a
-# security boundary: it has no OS sandbox the runner switches on, so an opencode agent must be
-# treated as able to run any command as the agents' OS user (run them as a separate OS user).
-# The owner accepted that residual risk (req-kezp8rppfhn5, "ship now, harden next"), with an
-# OS-level sandbox the planned hardening (tsk-nynpvag9zvhh). The tuple is now empty.
+# Built but not offered yet: a harness named here is refused until the maintainer offers it.
+# Empty now -- both earlier entries were offered. Antigravity was held back while its one
+# command grant was unconfined; the owner accepted that residual risk (req-9spwe33neh1z) and it
+# is offered again, with OS-level confinement of command(maity) added incrementally
+# (tsk-zjv2xyhyggnm). OpenCode (Grok) is likewise offered now (req-g4d2cskx6zxv): it has no OS
+# sandbox the runner switches on, so its command rules are not a security boundary and an
+# opencode agent must be treated as able to run any command as the agents' OS user (give it a
+# separate OS user). The owner accepted that residual risk (req-kezp8rppfhn5, "ship now, harden
+# next"), with an OS-level sandbox the planned hardening (tsk-nynpvag9zvhh).
 NOT_OFFERED_YET: tuple[str, ...] = ()
 # Why a not-offered harness is held back, where there is a specific reason to name.
 NOT_OFFERED_WHY: dict[str, str] = {}
@@ -710,10 +710,7 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     elif name in NOT_OFFERED_YET:
         why = NOT_OFFERED_WHY.get(name)
         reason = f": {why}" if why else ""
-        problems.append(
-            f"{where}: not offered yet{reason}; for now the runner runs claude-code, codex and"
-            " antigravity (and stub)"
-        )
+        problems.append(f"{where}: not offered yet{reason}; the maintainer has not offered it")
     modes = tuple(
         table.get(
             "modes",

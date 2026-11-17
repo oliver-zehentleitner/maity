@@ -1194,11 +1194,10 @@ project's own harness configuration is never loaded:
   `-c`, `--no-index` and paths under `.git/maity` are denied.
 
   These lists stop accidents and naive prompt injection; they are not a
-  security boundary. `git diff /dev/null <file>` reads a file outside the
-  work tree without saying `--no-index`, and allowed build and test
-  commands run repository code. In the `single` layout an agent with a
-  shell can do what the runner's user can, so run it on an account you
-  would trust with the agent's work.
+  security boundary. git can still read files outside the work tree, and
+  allowed build and test commands run repository code. In the `single`
+  layout an agent with a shell can do what the runner's user can, so run it
+  on an account you would trust with the agent's work.
 - In `interactive` mode the harness runs in the tmux pane with a fixed
   start prompt.
 - In `supervised` mode `maity.runner.loop` runs it headless on each event
@@ -1236,9 +1235,12 @@ project's own harness configuration is never loaded:
   it is advertised as `confinement: sandbox`, and a placement of a
   repository whose `allow` list is not empty is refused for Codex.
 - **OpenCode (Grok)** (`opencode`) is offered: a configuration naming
-  `[harness.opencode]` is accepted. It runs **Grok** (name the model under
-  `models`, with a `default_model`), signed in once as the agents' user
-  (`~/.local/bin/opencode`; its login is among the hidden home paths). Each
+  `[harness.opencode]` is accepted. It runs **Grok** (name the Grok model as
+  `<provider>/<model>` under `models`, with a `default_model`), installed and
+  signed in once as the agents' user (binary in `~/.local/bin`). opencode
+  runs without a sandbox, so its login and the listed home secrets are not
+  kept from an opencode agent — a reason to give it an OS user of its own.
+  Each
   session runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a runner-written
   `OPENCODE_CONFIG` that denies tools by default and then allows the file
   tools (not on `.git/maity`; `.git` is not editable; `grep` and `glob` are

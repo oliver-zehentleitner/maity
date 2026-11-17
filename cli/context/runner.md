@@ -442,7 +442,7 @@ with free arguments.
 **Status:** superseded
 **Superseded by:** b2cbf1a7-e25c-4803-8bc4-845c488512fc
 **Evidence:** confirmed
-**Source:** runner design v2 §6.1 ("`Bash(git *)` is not a boundary"); the coordinator's review of runner slice R5a, 2026-10-22 (`git diff --no-index` printed the clone's credential)
+**Source:** runner design v2 §6.1 ("`Bash(git *)` is not a boundary"); the coordinator's review of runner slice R5a, 2026-10-22 (a git read printed the clone's credential)
 **Revisit when:** the `agent_user` layout (R7) or the Kubernetes backend makes the OS user or the pod the boundary
 
 The runner grants named `git` subcommands, not `git *`. It denies `-c`,
@@ -456,7 +456,7 @@ sandbox, and for Codex and opencode, any repository code an allowed
 build or test command runs can read the clone's credential.
 
 **Reason:** git runs programs through its options and configuration, and
-`diff --no-index` reads any file. A wildcard grant therefore meant "may
+git can read any file. A wildcard grant therefore meant "may
 run anything", and in the `single` layout that includes reading the
 agent's own credential and the runner's state. Naming subcommands and
 denying the known escape routes stops accidents and naive prompt
@@ -884,7 +884,8 @@ docs/runners.md, with no example.
 **Revisit when:** tsk-zjv2xyhyggnm lands the OS-level confinement of `maity` (the residual risk can then be re-assessed and the grant possibly tightened), or the owner withdraws the accepted risk
 **See:** runner.md#agy-command-grants-are-dropped-exact-and-prefix-agy-reads-the-command-past-a-leading-assignment-or-wrapper — f8a7b727-8c1f-4df9-98eb-8f9ef8879352 — as of 2026-11-16
 
-`antigravity` is dropped from `config.NOT_OFFERED_YET` (`("opencode",)` now),
+`antigravity` is dropped from `config.NOT_OFFERED_YET` (empty now, `()`,
+after opencode was offered too),
 so a `runner.toml` naming `[harness.antigravity]` is accepted by
 `maity runner check` and `serve` instead of refused. agy is offered again.
 
@@ -1015,8 +1016,9 @@ first run.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** maintainer decision on the runner design's question 4, relayed 2026-10-22
+**Source:** maintainer decision on the runner design's question 4, relayed 2026-10-22; the offer of opencode on req-g4d2cskx6zxv, 2026-11-17
 **Revisit when:** the maintainer decides on the harnesses without a command allowlist when the runner goes into use
+**See:** runner.md#opencode-grok-is-offered-its-command-rules-are-not-a-security-boundary — a94f2e01-c227-4d4f-baeb-d88c5f0d3c86 — as of 2026-11-17
 
 A configuration may name `claude-code`, `codex`, `antigravity`,
 `opencode` and `stub` (`antigravity` was held back here on 2026-10-22 and
@@ -1188,10 +1190,10 @@ now held to a plain clone's entries as well.
 **See:** runner.md — 62bcf506-caed-470c-a094-9bea4217b440 — as of 2026-10-22
 **Revisit when:** the configuration accepts a harness without an adapter in this version, or a contract code for "not in this version" is added to §15.7
 
-A placement whose harness is not in this runner's configuration, opencode
-included (the configuration refuses it), is reported as
-`failed`/`harness_refused`; a mode or model the configuration does not
-list is `harness_refused` with `mode_unsupported` or `model_unsupported`.
+A placement whose harness is not in this runner's configuration is
+reported as `failed`/`harness_refused`; a mode or model the configuration
+does not list is `harness_refused` with `mode_unsupported` or
+`model_unsupported`.
 Every harness the configuration accepts has an adapter, so the earlier
 "logged, not reported" case for a harness without one cannot arise; the
 supervisor keeps that check only as a guard. A start that fails in tmux
@@ -1235,8 +1237,8 @@ workspaces root, plus the credential of every other clone that exists
 when the agent starts. A clone made later stays readable to it until its
 next start. Both keep the clone's own credential readable, because the
 agent's `maity` needs it. The forge login stays readable, because pushing
-needs it. opencode's `grep` and `glob` are off: opencode checks them
-against the pattern typed, not the path searched. maity and the runner
+needs it. opencode's `grep` and `glob` are off, since they cannot be
+scoped to a path. maity and the runner
 run git only through `proc.GIT`, a clone into a missing directory, and
 `gc`'s pinned read; a test pins that.
 
@@ -2831,7 +2833,7 @@ do, and hid that the cause was the shape of its own command.
 **Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
 **See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
-**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295 even with `require_sandbox = false`; opencode is offered, or its scanner is checked against a redirect or a substitution on a `maity` line
+**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295 even with `require_sandbox = false`; opencode gets an OS-level sandbox (tsk-nynpvag9zvhh)
 
 Under its sandbox, a placed Claude Code session runs a hook before every
 tool call (`runner/plaincall.py`), written by the runner into the
@@ -2866,10 +2868,10 @@ tools, the session runs unsandboxed (`sandbox_unavailable`), with no
 exclusion for the hook to guard. The hook's shell form ends in `|| exit 2`, so a hook that cannot
 start or fails refuses the call on any version; only a timeout needs
 `onFailure`.
-opencode, which runs without a sandbox and gets no hook, denies
-`maity *<c>*` for each of `;&|<>$`, a backtick and a newline, after its
-allows; whether its scanner hands a redirect to the rule with the
-command is not checked.
+opencode, which runs without a sandbox and gets no hook, allows `maity`
+only as one plain call after its allows; without a sandbox those rules
+are not a boundary, so an opencode agent is treated as able to run any
+command as the agents' OS user (req-kezp8rppfhn5).
 
 **Reason:** only `maity` itself needs to run outside the sandbox. A line
 that holds more than maity's call is held to the rules every other
@@ -3549,7 +3551,7 @@ passes, before anything is unpacked or run:
   runner has no verifier for it; that trust is GitHub's and the vendor's
   account over HTTPS.
 - **opencode** has no installer: its install route offers no checksum,
-  and the runner does not offer it to placements yet.
+  so the runner installs and updates no opencode (the operator installs it).
 
 The versions live in `~/.local/share/maity-runner/tools`, not in the
 state directory: the state directory is hidden from every sandboxed

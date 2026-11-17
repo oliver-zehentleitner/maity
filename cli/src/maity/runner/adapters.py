@@ -64,11 +64,10 @@ SUPERVISED_PROMPT = (
     "turn; do not run `maity wait`: you are started again on the next event."
 )
 
-# git subcommands an agent needs for project work. Not `git *`: options such as `-c`,
-# `--config-env` or `--exec-path` run arbitrary programs. `diff` still reads a file outside
-# the work tree without `--no-index` (`git diff /dev/null <path>`), so these lists stop
-# accidents and naive injection only; the boundary is the harness's OS sandbox and the OS
-# user, see cli/context/runner.md.
+# git subcommands an agent needs for project work. Not `git *`: some git options run programs,
+# and git can still read files outside the work tree, so these lists stop accidents and naive
+# injection only; the boundary is the harness's OS sandbox and the OS user, see
+# cli/context/runner.md.
 GIT_SUBCOMMANDS = (
     "status", "diff", "log", "show", "add", "commit", "push", "pull", "fetch", "checkout",
     "switch", "branch", "merge", "rebase", "restore", "rm", "mv", "stash", "tag", "rev-parse",
@@ -597,9 +596,9 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
-    # After the allows: the last match wins. A `maity` call only as one plain call, as the
-    # Claude Code hook has it (plaincall): opencode checks each command its scanner finds,
-    # and a redirect or a substitution on maity's line would pass `maity *`.
+    # After the allows: the last match wins. `maity` is allowed only as one plain call, as the
+    # Claude Code hook has it (plaincall); a line that is not one plain call is denied. Without
+    # a sandbox these rules are not a boundary, see cli/context/runner.md.
     bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
     bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
@@ -611,8 +610,7 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
         "$schema": "https://opencode.ai/config.json",
         "permission": {
             "*": "deny",
-            # grep and glob are asked about the pattern typed, not the path searched, so a path
-            # rule cannot keep them off .git/maity: they are off.
+            # grep and glob cannot be scoped to a path here, so they are off.
             "read": read, "glob": "deny", "grep": "deny", "list": "allow",
             "edit": edit,
             "bash": bash,
