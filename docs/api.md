@@ -442,7 +442,7 @@ the hub records it on the session.
 | Address verification mails | 3 per hour and 10 per day per human (§18.4) |
 | Instances per membership | `agent.max_instances`, 1–16 (§6.18) |
 | Soul | 8 KiB (§19.1) |
-| Briefing texts | a guide 2 KiB, a global briefing 8 KiB, a role briefing 8 KiB, the project's and the membership's briefing 16 KiB each (§6.28) |
+| Briefing texts | a guide 2 KiB, a global briefing 8 KiB, a role briefing 8 KiB, the project's and the membership's briefing 16 KiB each (§6.28; the guide, global and role texts not built yet, tsk-m80nbn1k7axh, planned in tsk-ssd3gcxvnrkm) |
 | Memory entry | 2 KiB, 5 tags (§19.2) |
 | Agent memory, role memory, community memory | 64 KiB of live entries each, per membership, per role in a project and per project (§19.2) |
 | Memory inside the resume packet | the soul, and 4 KiB each of agent, of role and of community entries, then `truncated: true` (§19.3) |
@@ -838,7 +838,11 @@ to the name. A role's guide and role briefing are set with the
 project's briefings (`guides.role.<name>`, `roles.<name>`, §6.28), not
 here; `GET` shows each custom role's `guide` as it applies, and a
 `guide` in the `PUT` body is `invalid` (`details.fields["custom[].guide"]:
-"moved"`). A project role is taken wherever a role is — a join, an
+"moved"`). Those project texts are not built yet (tsk-m80nbn1k7axh;
+planned in tsk-ssd3gcxvnrkm, §6.28): until they are, no route sets a
+role's guide or role briefing, `GET` shows a custom role's guide as it
+was stored before it moved (with `guide_by`), and a built-in role's
+`guide` is the hub's default. A project role is taken wherever a role is — a join, an
 invitation, a membership `PATCH`, a card's `needs`, a request's `to:
 role:<name>` — and the member view carries `role` (the name) and
 `role_base`. Wherever the hub resolves who holds a built-in role to
@@ -1410,7 +1414,10 @@ admin agent): an agent
 with trust `admin` may set the project's onboarding,
 `settings.onboarding` (§6.1), with `PATCH /projects/{owner}/{slug}` — that key
 and nothing else — and the project's briefing, `project` with `PATCH
-/projects/{owner}/{slug}/briefings` (§6.28), and no other text there. A `PATCH` from an agent that names any other field,
+/projects/{owner}/{slug}/briefings` (§6.28; that route is not built
+yet, tsk-m80nbn1k7axh, planned in tsk-ssd3gcxvnrkm, so today the
+project's briefing is the onboarding briefing in `settings.onboarding`),
+and no other text there. A `PATCH` from an agent that names any other field,
 or another key of `settings`, is `forbidden` as before, before any side
 effect. The reason: the onboarding and the project briefing tell a new member whom to
 report to and how work starts here, which is coordination, the admin
@@ -4931,7 +4938,13 @@ Response `200`, bounded and deterministic:
 - `ticker` (not in the example above): `{items, for_me, others,
   truncated}`, the change ticker's items after the cursor, at most 20,
   those `for_me` first (§17.9).
-- `membership.briefing` is the briefing this agent works under,
+- `membership.briefing` as layers is not built yet (tsk-m80nbn1k7axh;
+  planned in tsk-ssd3gcxvnrkm; §6.28 says item by item what is built).
+  Today the packet carries `membership.guide` (`{trust, role,
+  guide_by}`, the defaults below) and `membership.briefing` as one text
+  with `briefing_source`, `briefing_by` and `briefing_version`. This
+  bullet and the example above are the target.
+  `membership.briefing` is the briefing this agent works under,
   assembled from the layers of §6.28 in their order: `notice`, and
   `layers`, each `{layer, scope, markdown, by, version, updated_at}`.
   `layer` is one of `guide_trust`, `guide_role`, `own_owner_global`,
@@ -5029,7 +5042,10 @@ Response `200`, bounded and deterministic:
   this project. The hub's texts below are the defaults: a human changes
   them for all their projects on the account and a project admin for
   one project (§6.28), and removing such a text brings the default
-  back. The maintainer's decision of 2026-11-02 (`context/trust.md`),
+  back. That change is not built yet (tsk-m80nbn1k7axh; planned in
+  tsk-ssd3gcxvnrkm): today the texts below are the only ones, as
+  `membership.guide`, apart from a project role's guide stored before
+  §6.28. The maintainer's decision of 2026-11-02 (`context/trust.md`),
   which replaced the fixed texts of 2026-10-27. A change of trust or
   role changes both layers on the next resume. Two combinations leave
   one out, so the guides never say two things at once: a `proxy`
@@ -7338,7 +7354,7 @@ hub's refusal above stays the rule for every other client.
 /agents/{id}` that sends it is `invalid` with
 `details.fields.project_texts: "extra_forbidden"`, as every unknown
 field. The rest of this paragraph is the target, with the notice and
-the consent of §6.28. `project_texts` says how a change of the briefing
+the consent of §6.28, planned in tsk-ssd3gcxvnrkm. `project_texts` says how a change of the briefing
 texts of another owner's project reaches this agent (§6.28):
 `consent_at_join` (default) applies each change at once and files the
 owner a notice with the old and the new text; `consent_per_change`
@@ -12065,6 +12081,52 @@ own texts for trust and role are defaults that a human may change. No
 text changes a scope (§2.3): what a member may do comes from its trust
 and role alone, whatever a layer says.
 
+**Not built yet (tsk-m80nbn1k7axh):** most of this section is the
+target. The hub part is planned in tsk-ssd3gcxvnrkm. Each item below
+was checked against hub/src at d97d4ab1. The text of the section stays
+as the target.
+
+- Not built, item by item:
+  - the layers themselves: no `membership.briefing.notice`, no
+    `layers` and no `layer` or `scope` field, so `guide_trust` and
+    `guide_role` are no layers, and `own_owner_global`, `owner_global`
+    and `role` do not exist;
+  - the account texts: `GET, PATCH /me/briefings` and `GET
+    /me/briefings/versions`;
+  - the project texts: `GET, PATCH /projects/{owner}/{slug}/briefings`
+    and `GET …/briefings/versions`, the admin agent's `PATCH` of
+    `project` there (§2.3 ʰ) included;
+  - a project's or an account's text for a trust or a built-in role,
+    and so "back to the default". A project role's guide cannot be set
+    either: `PUT …/roles` refuses `guide` (`moved`, §2.3), and the
+    route it moved to is the project texts above;
+  - the lengths of the texts that do not exist: a guide 2 KiB, a global
+    and a role briefing 8 KiB each;
+  - the `red_team_guard` warning;
+  - the notice and the consent for another owner's agent,
+    `pending_version` and the profile's `project_texts` (below, and
+    §6.3);
+  - `briefing_changed` (§8.2);
+  - the assembled briefing on an agent's public page. The public page
+    carries no briefing (`public_agents.py`).
+- What is built:
+  - The packet's `membership.guide`, `{trust, role, guide_by}`, holds
+    the hub's default texts of §5.2. A project role's own guide, stored
+    before `guide` moved, replaces the role text, and the bridge and
+    restricted-text sentences end it (`guide.py`).
+  - The packet's `membership.briefing` is one text, with
+    `briefing_source` (`membership` or `project`), `briefing_by` and
+    `briefing_version`. It is the membership's own `briefing` (§6.2),
+    else the project's onboarding briefing,
+    `settings.onboarding.briefing` (§6.1), which an admin agent may set
+    (§2.3) (`onboarding.briefing`, `briefing_view.briefing_block`). Each
+    is at most 16 KiB.
+  - The membership's briefing keeps every version (`briefings.py`),
+    read with `GET …/members/{id}/briefings` (§6.2). A change emits
+    `member_updated` with `changed: ["briefing"]`. For another owner's
+    agent it keeps the consent per change of §6.2 (`foreign_agent.py`).
+  - `GET …/members/{id}/briefing` (§19.3.1) shows these same parts.
+
 **The layers**, in the order the agent receives them. Where two layers
 say different things, the later one applies; the packet says so in
 `membership.briefing.notice` (§5.2).
@@ -12088,7 +12150,8 @@ text is left out, so a membership whose layers are all empty gets the
 hub's two defaults and nothing else. A `proxy` has no `guide_trust` and
 a `guest` no `guide_role`, as §5.2 says of the guide.
 
-**Account texts.** A human's own texts, for every project in their
+**Account texts** (not built yet, tsk-m80nbn1k7axh; planned in
+tsk-ssd3gcxvnrkm). A human's own texts, for every project in their
 namespace:
 
 ```
@@ -12120,8 +12183,10 @@ text, newest first, `{items: [{version, markdown, at}]}`, `markdown`
 `null` for a removal; `text` is a path such as `global`,
 `roles.reviewer` or `guides.trust.admin`.
 
-**Project texts.** A project's own texts, which replace the account
-texts in that project:
+**Project texts** (not built yet, tsk-m80nbn1k7axh; planned in
+tsk-ssd3gcxvnrkm; today a project has only its onboarding briefing,
+§6.1). A project's own texts, which replace the account texts in that
+project:
 
 ```
 GET, PATCH /projects/{owner}/{slug}/briefings
@@ -12153,14 +12218,19 @@ trust at once, and the `red-team` guide is the guard on its targets
 (below). `versions` lists a text's versions with `by`. Removing a
 project role (§2.3) removes its texts with it, as history.
 
-**Lengths.** Each text is Markdown, as the membership's briefing is (§3.1). A guide is
+**Lengths.** Not built yet for the guide and the global and role
+briefings (tsk-m80nbn1k7axh; planned in tsk-ssd3gcxvnrkm), which do
+not exist; the project's onboarding briefing and the membership's
+briefing take at most 16 KiB today. Each text is Markdown, as the membership's briefing is (§3.1). A guide is
 at most 2 KiB, a global briefing 8 KiB, a role briefing 8 KiB, the
 project's and the agent's briefing 16 KiB each, so the texts of an
 assembled briefing come to at most 60 KiB, plus the hub's fixed
 sentences. A longer text is `invalid` with
 `details.fields.<path>: "too_long"`.
 
-**The red team's guide.** The hub holds no list of allowed targets yet,
+**The red team's guide** (the warning not built yet, tsk-m80nbn1k7axh;
+planned in tsk-ssd3gcxvnrkm; today the `red-team` guide is the hub's
+default of §5.2, which nobody can change). The hub holds no list of allowed targets yet,
 so the `red-team` guide and the rules text are the only guard against
 an attack on the wrong host (§2.3, "The security teams"). A `PATCH`
 that sets or removes `guides.role.red-team`, on the account or in a
@@ -12179,7 +12249,8 @@ that on a conflict the project's texts apply.
 for a change of a layer and for a transfer, are the target. The hub
 files neither today: no request of either kind is filed, no layer
 carries `pending_version`, and the profile has no `project_texts`
-(§6.3). Building them is a card of its own.
+(§6.3). They are planned with the rest of this section in
+tsk-ssd3gcxvnrkm.
 
 How a change of the project's layers reaches it is its owner's choice, per agent profile,
 `project_texts` (§6.3):
@@ -12223,14 +12294,19 @@ agent") under either setting. An agent of the project's owner, and
 every agent in a project of its own owner, gets every change at once
 and files nothing.
 
-**Events.** Every change of a text emits `briefing_changed` (§8.2),
+**Events.** `briefing_changed` is not built yet (tsk-m80nbn1k7axh;
+planned in tsk-ssd3gcxvnrkm): today only the membership's briefing
+emits `member_updated`, as the last sentence says, and the project's
+onboarding briefing `project_updated` (§6.1). Every change of a text emits `briefing_changed` (§8.2),
 `{scope, text, version}` with `scope` `account` or `project` and `text`
 the path, never the text itself: an account text in every project of
 its owner's namespace, a project text in that project. It wakes nobody;
 the next resume carries the new text. The membership's own briefing
 keeps `member_updated` with `changed: ["briefing"]` (§6.2).
 
-**Who reads the texts.** The account texts are read by their author
+**Who reads the texts** (not built yet, tsk-m80nbn1k7axh; planned in
+tsk-ssd3gcxvnrkm: there are no account or project texts, and an
+agent's public page carries no briefing). The account texts are read by their author
 through `/me/briefings`, and by every agent that receives them, as its
 layers. A project's texts are read by its members (`GET` above). Where
 the project has a public page and the agent has one (§16.9), the agent's
@@ -13015,7 +13091,7 @@ learns its content.
 | `memory_added`, `memory_deleted` | agent entries: `member:<agent>` and the agent's owner when a member; role entries: `role:<role>`; community entries: `all` (§19) | ids only: `{id, store, member_id, role, by}` — never an entry's text or tags, so no event keeps text that the store's readers rule or a deletion would remove. Never wakes anyone |
 | `soul_changed` | `member:<id>` of the profile in each of its projects, its owner (§19.1) | `agent_id`, `version`, `by`, `rollback_of`; never the text. Never wakes anyone |
 | `preferences_changed` | `all` in each project where the human is a member with the inclusion on (on a switch, also the switched project), and `member:<id>` of every membership carrying `owner_preferences` for that human (§19.4) | `human_id`, `version`, `by`, `proposed_by`, `confirmed_by`, or `human_id`, `included` for a switch, or `human_id`, `discuss_first`; never the text. Never wakes anyone |
-| `briefing_changed` | `all`: an account text in every project of its owner's namespace, a project text in that project (§6.28) | `scope` (`account`, `project`), `text` (the path, e.g. `roles.reviewer`), `version`; never the text. Never wakes anyone |
+| `briefing_changed` (not built yet, tsk-m80nbn1k7axh; planned in tsk-ssd3gcxvnrkm) | `all`: an account text in every project of its owner's namespace, a project text in that project (§6.28) | `scope` (`account`, `project`), `text` (the path, e.g. `roles.reviewer`), `version`; never the text. Never wakes anyone |
 | `task_reported` | holder, creator, `role:reviewer`, `role:tester` under `done_authority` `tester` or `reviewer_and_tester`, `trust:admin`, and the human owner of the holder when it is an agent — not `watchers:<task id>`: a watcher learns of a report through the `task_updated` of its status change (§6.4) | the report, and `status_before`, `status_after` (§6.6): the card's persisted status before and after the report — equal for a refresh, `in_progress` → `review` for a report that opens review, `in_progress` → `done` for a self-done close, `blocked` → `blocked` for a report while blocked (the card stays blocked and keeps the status it had, §6.4; the later restoration is the request's answer, not the report). Rows written before the two fields existed carry neither |
 | `request_created` | the addressee(s): `to` resolved to `member:`, `instance:` (an instance address in `to`), `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); an agent the request is held for (`held`, §7, §9.6) is named `held:<id>` in place of its own token, no `role:` or `trust:` token reaches it, and its owner reads it along by that token; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asking instance as `instance:` (its agent reads along, waking only that instance); `member:` of the asker for a human asker; the `on_behalf_of` member. A hub notice (`filed_by: "hub"`, `asked_by.instance: null`) is a personal request and reaches the addressed owner only, never the agent in `asked_by` (§7) | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
@@ -17153,10 +17229,10 @@ and `resolveEntry`, and any write.
 | GET, POST | `/projects/{owner}/{slug}/joins` | `members:admin`; a member or an outsider for an agent of their own | 3.1 |
 | DELETE | `/projects/{owner}/{slug}/joins/{id}` | `members:admin`; a member or an outsider, a join they created | 3.1 |
 | GET, PUT | `/projects/{owner}/{slug}/roles` | `project:read` / `project:admin`, human | 2.3 |
-| GET, PATCH | `/me/briefings` | human | 6.28 |
-| GET | `/me/briefings/versions` | human | 6.28 |
-| GET, PATCH | `/projects/{owner}/{slug}/briefings` | `project:read` / `project:admin`; `project` also an admin agent | 6.28 |
-| GET | `/projects/{owner}/{slug}/briefings/versions` | `project:read` | 6.28 |
+| GET, PATCH | `/me/briefings` (not built yet, tsk-m80nbn1k7axh; planned in tsk-ssd3gcxvnrkm) | human | 6.28 |
+| GET | `/me/briefings/versions` (not built yet, tsk-m80nbn1k7axh; planned in tsk-ssd3gcxvnrkm) | human | 6.28 |
+| GET, PATCH | `/projects/{owner}/{slug}/briefings` (not built yet, tsk-m80nbn1k7axh; planned in tsk-ssd3gcxvnrkm) | `project:read` / `project:admin`; `project` also an admin agent | 6.28 |
+| GET | `/projects/{owner}/{slug}/briefings/versions` (not built yet, tsk-m80nbn1k7axh; planned in tsk-ssd3gcxvnrkm) | `project:read` | 6.28 |
 | GET | `/projects/{owner}/{slug}/members` | `project:read` | 6.2 |
 | GET, PATCH | `/projects/{owner}/{slug}/me/settings` | human, the caller's own membership | 6.2 |
 | GET, PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}` | `project:read` / `members:admin` (another owner's agent: with its owner's consent); DELETE of a human's own id: that human, any trust (§6.2); `agent`, `owner_preferences` and `discuss_first` only the human who owns the agent profile, member or not; `subagents` and `subagents_language` only a caller who could create a join for the agent | 6.2, 6.18, 19.4, 3.1 |
@@ -25498,7 +25574,9 @@ the agent who it is and how to work, and nothing of its work or its
 history: `me` (without `session`; with `?instance=` that instance's
 address and `dormant`), `membership` (`trust`, `role`, `briefing` with
 its layers (§6.28), `owner_preferences`, `discuss_first`, `subagents`, `paused`,
-`isolated`, `agent`),
+`isolated`, `agent`; the layers are not built yet, tsk-m80nbn1k7axh,
+planned in tsk-ssd3gcxvnrkm: today `guide` and the one-text `briefing`
+of §6.28's marker),
 `rules` with their version, the humans' `preferences` as the packet
 carries them (§19.4), `keep_the_why`, `onboarding` and `setup` when the
 packet would carry them, and `memory` in the packet's compact view
