@@ -17481,6 +17481,7 @@ Outside a placement every path is read as before.
 | `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). |
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
+| `maity roles [--guide] [--json]` | `GET /projects/{owner}/{slug}/roles` (§2.3). Prints `built-in roles`, then each as `  <name>`; then `project roles` (or `project roles: none`), each as `  <name> (permissions of <base>)`. A role with a description has `: <description>` after it on the same line; one with an empty description has the line alone. With `--guide`, a role's guide follows its line, quoted behind `> `. With `--json`, the hub's answer. Read only: the `PUT` is a human's. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |
 | `maity runner serve` | `POST /runner/hello`, then `GET /runner/events?wait=55` in a loop, `GET /runner/placements` after every wake, `GET /runner` at most once a minute while a tool is updated daily, for the owner's `Update now` (§15.16), `POST /runner/placements/{id}/status`, `POST /runner/placements/{id}/join`, `PUT`, `GET` and `DELETE /runner/placements/{id}/handover` for a replacement's transcript (§15.14), `POST /runner/placements/{id}/usage` after each supervised run that reported usage (§15.15), `GET /runner/placements?closed=true` after every wake and `POST /runner/placements/{id}/workspace` for each clone of a stopped or closed placement as it retains, removes or keeps it (§15.5; the hub answers both, the runner does not call them yet, tsk-34gb7frfbsk7), `PATCH /runner`. |
 | `maity runner check` | `GET /health`; everything else it checks is local, the free space of the file system holding the workspaces included (§15.5; not built yet, tsk-34gb7frfbsk7) |
@@ -22578,9 +22579,12 @@ a leading `@` except where the form says so:
 | `linkedin` | `[A-Za-z0-9-]{3,100}` |
 | `discord` | `[a-z0-9_.]{2,32}` |
 
-The hub lower-cases `mastodon`'s host and `bluesky`'s handle first and
-then checks the form, so `@Anna@Mastodon.Social` is valid and stored as
-`@Anna@mastodon.social`; every other name is checked and stored as
+The hub refuses a `mastodon` or `bluesky` value with a character
+outside ASCII first, as §6.1 refuses a Unicode host, then lower-cases
+`mastodon`'s host and `bluesky`'s handle and then checks the form, so
+`@Anna@Mastodon.Social` is valid and stored as `@Anna@mastodon.social`,
+while a host or handle with U+212A (KELVIN SIGN), which lower-cases to
+`k`, is `format`; every other name is checked and stored as
 given, and `gitlab`'s `.git`/`.atom` test ignores case. A value not of its form is `invalid`
 (`details.fields.social.<network>: "format"`), an unknown key is
 `invalid` (`details.fields.social.<key>: "unknown"`). `social` in a
