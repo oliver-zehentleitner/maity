@@ -12842,7 +12842,7 @@ the project.
 | `scope` | `project`, `member` (with `member`, the member id: `member_agents_max` is per human, `max_open_claims` and `max_instances` per membership), `runner` (with `runner`, its id) or `target` (with `runner` and `target`, its name) |
 | `source` | where `limit` comes from: `default`; `project` (set in the project's policy); `agent_owner` (`max_instances`); `runner` (the runner's configuration); `ceiling` (the set value is above the ceiling, or `max_open_claims` is `null` under an override's ceiling, and the ceiling applies). `limit` is always the value in effect, also to a caller who reads `ceiling` without its `value` (below): what applies to the caller is shown, what the operator set beyond it is not |
 | `ceiling` | `{value, source}`: `value` the ceiling in effect, `source` `default`, `project_override` or `account_override`; absent for `max_agents`, which the hub does not bound. A caller who does not hold the right that sets the value reads `source` alone, without `value`: an override is a number the operator set for an account, and only those who set the value need it |
-| `raise` | `{right, path, field}`: the right that can change the value (`project:admin`, `agent_owner`, `runner_owner`, or `instance:admin` once `limit` is at the ceiling), and the API path and field that change it — for `instance:admin` always `/api/v1/admin/projects/{owner}/{slug}/limits` and the value's own name, never the account route, whose path would name a person; `null` only when nothing lifts `limit`: while it is `null` (a `max_open_claims` without a cap), and at the hub's bound of 1000 for `max_placements`, `member_agents_max` and `max_instances`. A numeric `max_open_claims` at 1000 is still lifted, to no cap, by setting the value `null` (`project:admin`) or, under an override's numeric ceiling, by `instance:admin` setting `unlimited`; `max_agents`, which the hub does not bound, always names `runner_owner`; `path` is `null` where the hub cannot change it (the runner's configuration, `field` then names its key, `limits.max_agents` or `backend.ssh.hosts[].max_agents`) |
+| `raise` | `{right, path, field}`: the right that can change the value (`project:admin`, `agent_owner`, `runner_owner`, or `instance:admin` once `limit` is at the ceiling — for `max_open_claims` see below), and the API path and field that change it — for `instance:admin` always `/api/v1/admin/projects/{owner}/{slug}/limits` and the value's own name, never the account route, whose path would name a person; `null` only when nothing lifts `limit`: while it is `null` (a `max_open_claims` without a cap), and at the hub's bound of 1000 for `max_placements`, `member_agents_max` and `max_instances`. `max_open_claims` goes by the stored value, not by the ceiling: a stored number names `project:admin` and `policy.max_open_claims`, at any `limit`, 1000 included, since only `null` lifts it past that number — to no cap, or, under an override's numeric ceiling, to that ceiling (`source: "ceiling"`), whose `raise` then names `instance:admin`; a stored `null` held by such a ceiling names `instance:admin`, which lifts it to no cap by `unlimited` or by removing the override; `max_agents`, which the hub does not bound, always names `runner_owner`; `path` is `null` where the hub cannot change it (the runner's configuration, `field` then names its key, `limits.max_agents` or `backend.ssh.hosts[].max_agents`) |
 
 `raise` names a right and a place, never a person: who holds the right
 is not in it. A caller who lacks the right reads that a limit applies
@@ -12877,8 +12877,9 @@ GET /projects/{owner}/{slug}/limits
   `scope` and `max`, and `editable`: whether the caller may set the
   value, up or down within the ceiling (it holds the right that sets
   it, §6.1, §6.18). Whether it can go past the ceiling is `raise`: its
-  `right` is `instance:admin` once `limit` is at the ceiling, and
-  `raise` is `null` only when nothing lifts `limit` (above).
+  `right` is `instance:admin` once `limit` is at the ceiling, but for
+  `max_open_claims`, which goes by its stored value, and `raise` is
+  `null` only when nothing lifts `limit` (above).
 - `member_agents_max.count` is the caller's own count (§3.1);
   `max_open_claims.count` the claims the caller's membership holds;
   `max_open_claims.limit` `null` is no cap, unless an override's ceiling
@@ -12886,7 +12887,8 @@ GET /projects/{owner}/{slug}/limits
 - `agents`: the memberships of agent profiles the caller owns, for a
   human with `credentials:admin` every agent membership; an agent reads
   its own. `never_listened`: its active instances that have never had
-  a session — no `resume` with their credential ever (§5.2, §5.3) —
+  a session — no `resume` with their credential ever (§5.2, §5.3), the
+  credential's `resumed_at` `null` (§10), the `never_resumed` of §6.2 —
   whatever their `last_seen_at` says: a credential used only for reads
   (`GET /me`) sets `last_seen_at` (§6.17) and still never listened. They count toward
   `max_instances`; `POST …/credentials/{id}/revoke` (§6.17, §10) frees the
