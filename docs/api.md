@@ -245,7 +245,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3; not built yet, tsk-pw0aagxnydr9), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
-| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18); `details.max` |
+| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement whose start would (§15.5); `details.max` |
 | 409 | `instance_assigned` | a claim by an instance of an agent while the card's `assigned_instance` names another instance, or under `distribution: lead` while it is unset (§6.18); `details.assigned_instance` |
 | 409 | `takeover_required` | an agent's `assign`, `release` or `PATCH assigned_to` that would move a card someone else holds with an active lease (§6.19); `details.holder`, `details.instance` |
 | 409 | `takeover_open` | a takeover on a card that has an open one, or an agent's `assign`, `release` or `PATCH assigned_to` on such a card (§6.19); `details.takeover` |
@@ -264,7 +264,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different call (method, route, project, path parameters or body) |
 | 409 | `probe_not_configured` | no grant covers the project's repository, or the repository is not on GitHub (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`, `forge_not_github`) for `project:admin` only; `forge_not_github` applies to every probe read off GitHub, not only `GET …/probe` (the contract text §6.8, an import §6.14, the views §11.5) |
-| 409 | `placement_exists` | a second active placement for a membership, or for (runner, clone) in a project (§15.5); `details.placement` |
+| 409 | `placement_exists` | a second active placement for (runner, clone) in a project, for one agent credential, or that creates the same new profile (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
 | 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
 | 409 | `runner_revoked` | a placement is created, started or restarted (by a human or an agent with `agents:propose`) on a runner without a live credential (§15.6) |
@@ -9579,7 +9579,12 @@ A runner sets the same limit from its report (§15.7): state
 as `{until, since, source, harness, reason, placement_id?}` and cleared
 by the member's next `resume` (agents), by a later report of the same placement
 that is not `rate_limited`, or when `until` passes — whichever comes
-first. A new limit replaces the stored one. A limit refuses nothing; it is
+first. A new limit replaces the stored one. An agent with several active
+placements (§15.5) is limited by the runner only while each of them with
+`desired: running` reports `rate_limited`, with the earliest of their
+`retry_at` as `until`; while one of them runs, its availability is
+unchanged, as with a dormant instance beside an awake one (§6.17).
+A limit refuses nothing; it is
 a declaration the hub acts on. A self-declared `paused` (§5.3) is still
 accepted; a limit is the form the hub can schedule around.
 
@@ -10294,10 +10299,13 @@ two namespaces stay apart: the audience token `instance:<member
 id>#<id>` (§8.2) names an agent instance, while `instance:admin` is a
 scope (§2.3) and never an audience token or an address.
 
-**Follow-up.** Placements (§15.5) still allow one active placement per
-membership; one placement per agent instance instead is a follow-up
-contract change of its own, so for now a runner hosts at most one
-instance of an agent.
+**Placements run instances.** Each active placement (§15.5) runs one
+instance of its membership, so an agent runs on as many placements as
+its `max_instances` (§6.18) leaves room for: on one runner, each in a
+clone of its own, or on several (the maintainer's direction of
+2026-11-17, tsk-rfa7fwa2sz5g). Until 2026-11-17 a membership had at most
+one active placement, and a second instance ran only when joined by
+hand.
 
 **The instance id.** At the exchange (§3.3) the hub gives the new
 credential a short id, unique within the membership and never reused,
@@ -17560,7 +17568,8 @@ refused on a stale `base_version` and the owner's notice of each (§19), a human
 proposals refused on a stale `base_version` (§19.4); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
-membership and per (project, runner, clone), the runner's advertised
+(project, runner, clone) and per agent credential, a membership's
+placements within its `max_instances`, the runner's advertised
 harnesses and repositories, `max_placements`, consent for an agent's
 proposal under `spawn_requests: consent`, no unapproved placement shown
 to a runner, the pickup's guard and limit, closed lists of reported
@@ -17658,7 +17667,7 @@ Outside a placement every path is read as before.
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all&limit=200`, every page through `next_cursor` (a cursor that comes back is an error); `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
 | `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{owner}/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
 | `maity placement list` | `GET /projects/{owner}/{slug}/placements`. |
-| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). |
+| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). An agent named by handle or id must have one active placement; with several (§15.5) the command names their ids and sends nothing, and `<handle>#<instance>` names the placement of that instance. The same holds for `restart`. |
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity roles [--guide] [--json]` | `GET /projects/{owner}/{slug}/roles` (§2.3). Prints `built-in roles`, then each as `  <name>`; then `project roles` (or `project roles: none`), each as `  <name> (permissions of <base>)`. A role with a description has `: <description>` after it on the same line; one with an empty description has the line alone. With `--guide`, a role's guide follows its line, quoted behind `> `. With `--json`, the hub's answer. Read only: the `PUT` is a human's. |
@@ -17910,7 +17919,7 @@ rule of §13 before it writes anything.
 |---|---|---|
 | `GET /runners` | human | the runners the caller owns, and the runners attached to projects where the caller has `members:admin`; ordered by `name`; `{items}` |
 | `GET /runners/{id}` | the owner, or `members:admin` in an attached project | the runner view |
-| `GET /runners/{id}/placements` | the owner | `{items}`: the active placements on the runner in every project it is attached to, ordered by project and agent handle, each as the **runner owner's line** `{id, project, agent: {handle}, desired, state, foreign, created_at}`: `project` is `owner/slug`, `state` the state the runner last reported (`null` before its first report), `foreign` as in §15.5. Nothing else of the placement or its project: no `briefing`, no aliases, no branch, no spec, whoever asks; it is what the runner on the owner's machine holds already. The owner stops (`PATCH` with `desired: stopped` alone) or removes (`DELETE`) any of them through the project's placement routes (§15.6), whether they are a member of its project with any trust or not; a non-member gets this line as the answer, and no other placement route opens to them. Anyone but the owner gets `not_found`, a project admin who sees the runner included, as on every owner-only runner route; detaching closes them all (§15.4) |
+| `GET /runners/{id}/placements` | the owner | `{items}`: the active placements on the runner in every project it is attached to, ordered by project and agent handle, each as the **runner owner's line** `{id, project, agent: {handle}, instance, desired, state, foreign, created_at}`: `project` is `owner/slug`, `instance` the placement's instance id (§15.5), so two instances of one agent on the runner are told apart, `state` the state the runner last reported (`null` before its first report), `foreign` as in §15.5. Nothing else of the placement or its project: no `briefing`, no aliases, no branch, no spec, whoever asks; it is what the runner on the owner's machine holds already. The owner stops (`PATCH` with `desired: stopped` alone) or removes (`DELETE`) any of them through the project's placement routes (§15.6), whether they are a member of its project with any trust or not; a non-member gets this line as the answer, and no other placement route opens to them. Anyone but the owner gets `not_found`, a project admin who sees the runner included, as on every owner-only runner route; detaching closes them all (§15.4) |
 | `PATCH /runners/{id}` | the owner | `{name}`; `invalid` when the caller owns a runner of that name |
 | `POST /runners/{id}/updates` | the owner | `{tool}`; `202` with the runner view: asks the runner to look for a newer version of that tool now (`Update now`, §15.16); `conflict` (`details.reason: "updates_off"`) for a tool the runner does not update |
 | `POST /runners/{id}/revoke` | the owner | `{"reason"?, "agents"?}`; revokes the live credential, ends its long-poll; returns the runner view with `on_runner_revoke` (below). What happens to its agents follows `on_runner_revoke` per attached project, or `agents` (below) |
@@ -18205,7 +18214,7 @@ clone Z. It is the only thing the hub asks of a runner.
   "workspace": { "clone": "agent-b", "branch": null, "continues_existing": true },
   "desired": "running", "generation": 4, "rejoin": false, "stop_grace_seconds": 120, "workspace_retention": "24h",
   "approval": { "status": "approved", "request_id": null, "pending_change": null },
-  "credential_id": "crd-b-0007",
+  "credential_id": "crd-b-0007", "instance": "wqe2",
   "reported_current": true,
   "active": true, "closed_at": null, "closed_reason": null,
   "created_by": "hum-maintainer", "proposed_by": null,
@@ -18228,7 +18237,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `target` | `null` (the runner chooses) or a target name the runner advertised |
 | `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default |
 | `mode` | `interactive` (a session a human can attach to) or `supervised` (woken by events, no open session); omitted at creation: the harness's advertised `default_mode` |
-| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`, default the agent's handle; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists whose clone the runner did not report removed (`workspace_outcome`), which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it. For `antigravity` (§15.3) that path is the placement's workspace folder, which the runner creates, and the clone is `repo` in it (`<workspaces>/<project_id>/<clone>/repo`); the harness starts in the folder. At every start the runner refuses a folder that holds anything but the clone (`workspace_in_use`, `workspace_not_bare`), since agy would load it, and a folder inside a git work tree (`workspace_in_repository`, §15.3); it deletes nothing there. It moves no clone between the two layouts: a path in the other one is `workspace_in_use`. Removing the clone (below) removes the folder with it, and every check before a removal applies to the whole folder: an entry besides `repo` counts as unsaved work (`kept`, `unsaved_work`, each such entry counted in `unsaved`), so only a person's removal by hand takes it |
+| `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`. Without one the hub takes the first of `<handle>`, `<handle>-2`, `<handle>-3`, … that no active placement of the project on that runner names and that no closed placement of another membership on that runner names whose clone the runner did not report removed (`workspace_outcome`): the agent's first placement keeps the handle as its clone, a further instance on the same runner gets a clone of its own, and a clone the membership left there is taken up again (`continues_existing`). The placement's id never goes into the path, so a later placement can continue a clone; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists whose clone the runner did not report removed (`workspace_outcome`), which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it. For `antigravity` (§15.3) that path is the placement's workspace folder, which the runner creates, and the clone is `repo` in it (`<workspaces>/<project_id>/<clone>/repo`); the harness starts in the folder. At every start the runner refuses a folder that holds anything but the clone (`workspace_in_use`, `workspace_not_bare`), since agy would load it, and a folder inside a git work tree (`workspace_in_repository`, §15.3); it deletes nothing there. It moves no clone between the two layouts: a path in the other one is `workspace_in_use`. Removing the clone (below) removes the folder with it, and every check before a removal applies to the whole folder: an entry besides `repo` counts as unsaved work (`kept`, `unsaved_work`, each such entry counted in `unsaved`), so only a person's removal by hand takes it |
 | `project_id`, `project_aliases` | the project's fixed id and its earlier full names (§6.25), for the runner's workspace key and for matching its configured `projects` list, current name or alias |
 | `desired` | `running`, `stopped` |
 | `generation` | starts at 1; incremented on every change of the spec and every restart (a restart with `rejoin: true` included); a `rejoin` set by a `removed` workspace report does not increment it, as the next start makes a new clone anyway (§15.5); the runner reports which generation it acted on |
@@ -18237,6 +18246,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `stop_grace_seconds` | 0–900, default 120: how long the agent gets to park its work after a stop before the process is ended |
 | `workspace_retention` | `immediate`, `3h`, `24h` (default) or `7d`: how long the runner keeps the clone after the session ended under a stop or a close, before it removes it (§15.5). The hub stores it and the runner reads it; the runner's clock and its removal are not built yet, tsk-34gb7frfbsk7 |
 | `credential_id` | the agent credential issued at the pickup or carried over; tells the runner a credential file is expected in the clone |
+| `instance` | the id of the instance the placement runs (§6.17): the instance of `credential_id`, `null` until the first pickup's exchange. A rejoin's new instance replaces it. Shown wherever the placement is, the runner owner's line (§15.3) and the member view's `placements` (§15.11) included, as `<handle>#<instance>` in the dashboard and the CLI |
 | `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `membership_isolated`, `runner_removed`, `runner_revoked`, `replaced`, `replace_failed` (§15.14) |
 | `workspace_epoch` | which clone of the placement is meant: `1` for its first clone, raised by one when the hub takes a `removed` report, since the next start makes a new clone. The runner keeps the value it read when the placement started in that clone (one that continues another placement's clone starts at its own value) and names it in each workspace report (§15.8). After removing a clone, the runner makes the placement's next clone only once the hub has taken that `removed` report, and keeps the `workspace_epoch` of that answer, so no clone carries the epoch of the one before. The hub keeps and raises it; the runner side is not built yet, tsk-34gb7frfbsk7 |
 | `workspace_outcome` | the clone after a stop or a close (§15.5): `null` while the placement runs and until the runner reports; else `{state, reason, unsaved, size_bytes, removes_at, epoch, remove_requested, remove_requested_at, reported_at}`. `state` `retained` (the clock runs; `removes_at` the deadline), `removed` (final) or `kept`; `reason` `null` but for `kept`: `unsaved_work` (git found uncommitted or untracked files, commits on no remote branch or stashes; for `antigravity` also an entry beside `repo` in the workspace folder), `in_use` (a running placement of the runner names the clone, or a process holds it), `not_inspectable` (git cannot run in it or could not say what is in it, `not_a_plain_clone` included), `not_recorded` (the path is not the one the runner recorded for the clone, or a symbolic link), `remove_failed` (the file system refused); `unsaved` the number of entries git listed, plus for `antigravity` the entries beside `repo`, `0` unless `unsaved_work`; `size_bytes` the clone's size when the runner last measured it, `null` once removed; `epoch` the clone the outcome is about (`workspace_epoch` below); `remove_requested` true after a removal by hand was asked (§15.6), with `remove_requested_at`, until a report names that request. Never a file name or a commit. The hub stores and shows it; the runner does not report yet and the dashboard does not show it yet, tsk-34gb7frfbsk7 |
@@ -18260,30 +18270,52 @@ clone Z. It is the only thing the hub asks of a runner.
 
 **Server rules.**
 
-- **One placement per membership.** At most one active placement per
-  membership, so "where does agent-b run" has one answer. A second is
-  `placement_exists`. A placement that creates a profile counts as the
+- **One placement per instance.** Each active placement runs one
+  instance of its membership (§6.17), and a membership may hold several
+  active placements, on one runner or on several, so "where does agent-b
+  run" is a list: the member view's `placements` (§15.11), or this
+  project's placements of that agent. At most one active placement names
+  a given credential (`credential_id`): a second is `placement_exists`.
+  Until 2026-11-17 a membership had at most one active placement. Not
+  built yet, tsk-rfa7fwa2sz5g: until it is, the hub still refuses a
+  second active placement of a membership (`placement_exists`), checks
+  `max_instances` only at the pickup, and the views carry no `instance`
+  and no `placements`.
+- **Within the agent's instance limit.** The membership's
+  `agent.max_instances` (§6.18), which the agent profile's owner sets,
+  bounds its placements: a placement is created, and a proposal filed,
+  only when the membership's active instances (credentials not revoked,
+  those joined by hand included), plus its active placements that hold
+  no live credential yet (before their first pickup, or waiting to
+  rejoin), plus one for the new placement unless it carries a
+  credential over (below), stay within `max_instances`. Otherwise
+  `instance_quota` (409, `details.max`), and nothing is created. The
+  pickup checks again (§15.9). A replacement's new placement is outside
+  the limit while the replacement is open (§15.14). The project's
+  `max_placements` and the runner's `max_agents` (§15.3, `capacity`,
+  §15.7) apply on top, as before.
+- **A new profile.** A placement that creates a profile counts as the
   membership it will create, keyed (project, new handle) while it is
   active: at creation the handle is checked against the existing
   profiles (`invalid`, `details.fields.handle: "taken"`, as at a join,
   §3.1, §6.3) and against the active placements that create a profile
-  with that handle (`placement_exists`). This is a placement rule: the
-  hub still allows two clones of one agent with two credentials — two
-  instances (§6.17) — when they are joined by hand (§10). The one
-  exception is a replacement, which holds the old placement and its
-  replacement at once from its start until one of them closes: the old
-  one after step 3 on its terminal report, with `keep_old` after the
-  kept window; the new one after an abort (§15.14).
+  with that handle (`placement_exists`). Further instances of it are
+  placed once its membership exists.
 - **One placement per clone.** At most one active placement per
   (project, runner, clone), whatever the target: on one runner a clone
   name in a project is one workspace and one identity. A second is
-  `placement_exists`.
+  `placement_exists`. Two instances of one agent on one runner
+  therefore work in two clones (`workspace`, above), and so does a
+  replacement on the same runner (§15.14).
 - A closed placement counts toward neither rule nor `max_placements`;
-  neither does a refused one, which is closed.
+  neither does a refused one, which is closed. Its instance keeps
+  counting toward `max_instances` until its credential is revoked
+  (§15.6, "Moving an agent off someone else's runner").
 - **Carried-over credential.** A new placement with the same
   (membership, runner, clone) as the latest closed one, whose credential
-  is not revoked, inherits its `credential_id`; the runner then expects
-  the file and does not join again.
+  is not revoked and no active placement names, inherits its
+  `credential_id`; the runner then expects the file and does not join
+  again. It adds no instance.
 - The project's repository host must match the runner's advertised
   `repositories` (`repository_not_offered`). The runner checks again.
 - In a project that is `archived`, `desired: running` is
@@ -18529,6 +18561,9 @@ POST /api/v1/projects/oliver/maity/placements
 - Placement creation by a human against a runner without a live
   credential, or setting `desired: running` on one, is `runner_revoked`.
 - Beyond `max_placements` active placements: `placement_quota`.
+  Beyond the membership's `agent.max_instances` (§15.5): `instance_quota`.
+  A member that already runs elsewhere is placed again as a further
+  instance, not refused.
 
 **Who may do what.** The **runner's side** of a placement is the human
 who owns its runner and every agent whose profile that human owns. Only
@@ -18741,6 +18776,8 @@ neither `crash_count` nor the restart cap; `restarts` counts the restart
 as any other. The hub stores the report as the agent's limit (§6.12):
 `until` = `retry_at`, `source: runner`, `harness` the placement's, and
 clears it with the placement's next report that is not `rate_limited`.
+With several active placements of the agent, the limit holds only while
+each of them with `desired: running` is `rate_limited` (§6.12).
 A harness exit the runner does not recognise as a limit stays a crash.
 `rate_limited` is its own state rather than `exited` with a `retry_at`
 (the restart policy's wait after an ordinary exit, §15.5) because it
@@ -18959,7 +18996,8 @@ POST /api/v1/runner/placements/plc-0003/join
   (§6.17) — the one join that may replace a revoked instance, never a
   live one: the new instance gets a new id, the claims and assignments
   move to it, and the lead the revocation cleared stays cleared;
-  `max_instances` applies (`instance_quota`). A replacement's pickup
+  `max_instances` applies (`instance_quota`), as it did at the
+  placement's creation (§15.5). A replacement's pickup
   (§15.14) is a `new_instance` beside the live old one, outside
   `max_instances` while the replacement is open or the old instance is
   kept (`keep_old`); the claims move later,
@@ -19069,7 +19107,9 @@ The kinds are in §8.2. Rules that apply to all of them:
   absent, and the generated rules tell the agent not to start `maity
   wait` and to end its turn after a checkpoint; without it `hints.duty`
   is `"self"`. The packet gains `membership.placement`: `{id,
-  runner_name, harness, mode, stop_grace_seconds, replace}` or `null`.
+  runner_name, harness, mode, stop_grace_seconds, replace}` or `null`:
+  the active placement that names the resuming instance's credential,
+  never another instance's placement of the same membership.
   `replace` is `null` unless the placement is the new one of an open or
   just finished replacement, or the old one while it is kept
   (`state: "kept"`, §15.14).
@@ -19080,7 +19120,12 @@ The kinds are in §8.2. Rules that apply to all of them:
   appear in the next resume.
 - **Member view** (§6.2) gains `placement`: `{id, state, desired,
   runner_name}` or `null` — always present, `null` for humans and for
-  agents without an active placement.
+  agents without an active placement. With several active placements
+  (§15.5) it is the one created first. Since 2026-11-17 the view also
+  carries `placements`: every active placement of the membership as
+  `{id, instance, state, desired, runner_name}`, oldest first, `[]` for
+  humans and for agents without one; it is the answer to where the agent
+  runs.
 - **Request view** (§7) gains `placement`: `{id, agent, runner_name,
   harness, model, mode, target, isolation}` inline, or `null`;
   `isolation` is the target's without its `user` (§15.3). Only the
@@ -20050,12 +20095,11 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   titled `Replace <handle> on <old runner> with <new runner>` and its
   summary adds a `handover:` line.
 - **Two at once.** From the replacement's start until one of the two
-  closes, the membership holds two active placements, the old and its
-  replacement. After step 3 the old one closes on its terminal report
+  closes, the old placement and its replacement are both active, beside
+  any other placement of the membership (§15.5). After step 3 the old one closes on its terminal report
   (a `DELETE` of it closes it at once if its runner never reports,
   §15.5); with `keep_old` (below) after the kept window. After an abort
-  (below) the new one closes and the old one runs on. That is the one
-  exception to "one placement per membership" (§15.5). The replacement's
+  (below) the new one closes and the old one runs on. The replacement's
   pickup joins as a new instance (`new_instance`, §6.17) and does not
   count toward `max_instances` while the replacement is open (the
   maintainer's answer, req-5eprep6ndrjf). It does not count while the
@@ -20063,13 +20107,15 @@ which carries `replaces: <old id>`; the old one carries `replaced_by`.
   membership over its limit; that extension is this section's detail.
   A second replacement of either is `replace_open` until that closing
   counterpart has closed (the old placement after step 3, the new one
-  after an abort), so the membership never holds more than two; once
+  after an abort), so a placement never has more than one replacement
+  open; once
   an aborted replacement's new placement has closed, the old one can be
   replaced again. A `DELETE` of the old one is `replace_open` while the
   replacement is open, before step 3.
 - **Its own clone.** The one-placement-per-clone rule (§15.5) holds for
-  a replacement too. On the same runner the body names another
-  `workspace.clone` (`placement_exists` otherwise), because two instances
+  a replacement too. On the same runner a `workspace.clone` the body
+  names must be another one (`placement_exists` otherwise); without one
+  the hub picks the next free clone as at a creation (§15.5), because two instances
   working at once in one checkout overwrite each other's files. The
   clone of the old placement stays on the runner as every workspace
   does.
