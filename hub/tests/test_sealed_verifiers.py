@@ -337,9 +337,9 @@ def test_reseal_on_use_leaves_a_row_replaced_meanwhile_alone(
     column = t.credential.c.verifier
     with migrated.begin() as conn:
         conn.execute(
-            t.credential.update().where(t.credential.c.id == holder.credential_id).values(
-                verifier=replaced
-            )
+            t.credential.update()
+            .where(t.credential.c.id == holder.credential_id)
+            .values(verifier=replaced)
         )
         conn.execute(
             t.credential.update()
@@ -375,7 +375,7 @@ def test_sealed_only_refuses_a_plain_row_as_a_sealed_row_the_key_does_not_open(
     factory.membership(migrated, project_id, human_id=owner.id)
     written = factory.agent(migrated, project_id, owner.id)  # plain, as an old pod writes
     plain = Holder(written.credential_id, written.value)
-    plain_runner = paired(_sealing_off(make_client), owner)
+    plain_runner = paired(_sealing_off(make_client), owner, name="old-pod")
     verifiers.configure(*as_only)
     refused = (
         only.get("/api/v1/me", headers={"Authorization": f"Bearer {plain.value}"}),

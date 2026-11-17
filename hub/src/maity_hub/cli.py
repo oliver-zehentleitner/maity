@@ -550,7 +550,9 @@ def _seal_verifiers(settings: Settings, dry_run: bool = False) -> int:
         left=sum(c.left for c in counted.values()),
     )
     for name, line in (*counted.items(), ("total", total)):
-        print(f"{name}: sealed {line.sealed}, already sealed {line.already}, plain left {line.left}")
+        print(
+            f"{name}: sealed {line.sealed}, already sealed {line.already}, plain left {line.left}"
+        )
     if dry_run:
         print("dry run: nothing written")
         return 0
