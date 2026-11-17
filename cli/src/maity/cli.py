@@ -5728,8 +5728,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--target", help="a target the runner advertises")
     r.add_argument(
         "--clone",
-        help="the clone name (default: the agent's handle, <handle>-2 … for a further "
-        "instance on the same runner)",
+        help="the clone name (default: the agent's handle; for a further instance on the "
+        "same runner the first free one of <handle>-2, <handle>-3, …)",
     )
     r.add_argument("--branch", help="a starting branch")
     r.add_argument("--reason", required=True, help="why this agent should run there")

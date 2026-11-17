@@ -18860,7 +18860,8 @@ end of a limit the agent set itself (at its `until` or by a `resume`),
 and at every `POST /me/limit` with `until: null` from the agent:
 `source: runner`, `until` the earliest `retry_at` still ahead while at
 least one placement that should run is `rate_limited` and none of them
-runs (`starting` or `running`), `harness` that placement's; a placement
+runs (its last report `starting` or `running`, or `rate_limited` with a
+`retry_at` that has passed, §6.12), `harness` that placement's; a placement
 that has not reported, or reports `pending`, `failed` or any other state,
 is neutral. It ends with a `starting` or `running` report of any of
 them, or when none of them is `rate_limited` any more or none is left
@@ -18918,7 +18919,8 @@ every limit a crash.
   placement does, until it starts again or is stopped, so another placement waits with `pending`/`capacity` and the
   restart at `retry_at` never does. Its member is `limited`, never
   `available` (§6.12), unless another of its placements runs (its last
-  report `starting` or `running`, §6.12). A sibling that waits with
+  report `starting` or `running`, or `rate_limited` with a `retry_at`
+  that has passed, §6.12). A sibling that waits with
   `pending`/`capacity` does not run: it is neutral and keeps the member
   `limited`, whichever of the two reported first.
 

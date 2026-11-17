@@ -215,7 +215,9 @@ its owner sets: the hub checks it when a placement is created or
 proposed, counting active instances, placements still waiting for their
 first credential and the new one, and again at the pickup;
 `instance_quota` beyond it. Two instances on one runner work in two
-clones, `<handle>` and `<handle>-2`, the hub's default. Where an agent
+clones, by the hub's default `<handle>` and the first free name of
+`<handle>-2`, `<handle>-3`, … (`-3` when another member's clone,
+not reported removed, holds `-2`). Where an agent
 runs is a list (`placements` in the member view); the single
 `placement` stays as the oldest one. A runner's rate limit makes the
 agent `limited` while at least one placement that should run is

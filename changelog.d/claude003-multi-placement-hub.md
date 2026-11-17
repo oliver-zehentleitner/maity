@@ -2,8 +2,9 @@
 
 - hub: an agent runs on several runner placements at once, one per instance:
   a member that already runs is placed again instead of refused with
-  `placement_exists`, on the same runner in a clone of its own (`<handle>-2`,
-  …) or on another runner (tsk-rfa7fwa2sz5g).
+  `placement_exists`, on the same runner in a clone of its own (the first
+  free name of `<handle>-2`, `<handle>-3`, …) or on another runner
+  (tsk-rfa7fwa2sz5g).
 - hub: the placement view and the runner owner's line carry `instance`; the
   member view gains `placements`, every active placement with its instance.
 - cli: `maity placement stop|restart <agent>#<instance>` names one of an
@@ -17,7 +18,8 @@
   pickup.
 - hub: a runner's rate limit makes the agent `limited` while at least one
   of its placements that should run is rate-limited and none of them runs
-  (last report `starting` or `running`); a placement that has not
+  (last report `starting` or `running`, or `rate_limited` with a `retry_at`
+  that has passed); a placement that has not
   reported, waits with `pending`/`capacity`, has `failed` or waits for its
   approval is neutral and ends nothing. Each report, close or change of
   `desired` recomputes it from all of them, until the earliest `retry_at`
