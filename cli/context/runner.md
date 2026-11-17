@@ -3758,7 +3758,7 @@ placement ends without asking what in it matters.
 **See:** https://github.com/oliver-zehentleitner/maity — 4edeef48-8684-4495-96dc-6063e25e31c7 — as of 2026-11-17
 **See:** runner.md#local-mode-one-agent-in-the-foreground-no-pairing-also-on-windows — dd77eab8-46a3-45dd-9f08-bde11f926942 — as of 2026-11-17
 **See:** runner.md#a-stopped-agents-clone-stays-for-its-retention-time-then-the-runner-removes-it — 161d5507-5b44-45d6-8bec-cacd58de58a2 — as of 2026-11-17
-**Revisit when:** clone paths stop being shared by the two layouts (one path per instance, tsk-rfa7fwa2sz5g), or a harness gets a third layout; or the dashboard should reach a set-aside clone (in this contract only the runner's log, `maity runner status` and `gc --revoked` do, lead's decision seq 152442)
+**Revisit when:** clone paths stop being shared by the two layouts (tsk-rfa7fwa2sz5g kept them shared: a new placement still continues the membership's held clone), or a harness gets a third layout; or the dashboard should reach a set-aside clone (in this contract only the runner's log, `maity runner status` and `gc --revoked` do, lead's decision seq 152442)
 
 Contracted, not built yet. Both layouts use `<workspaces>/<project_id>/<clone>`:
 a plain clone, or for `antigravity` a folder with the clone as `repo`.

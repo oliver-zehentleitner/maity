@@ -806,7 +806,7 @@ every way a start comes.
 **Evidence:** confirmed
 **Source:** card tsk-9f69y1hr1m6z (an agent placed again with antigravity on a clone name a Claude Code placement had used was stuck twice on a runner host, 2026-11-17: `workspace_in_use` until the old clone was moved by hand, then `join_failed`/`credential_missing` until the profile's owner revoked and rejoined); the lead's decision on the card's plan, seq 152381; the review of PR #1930 (A1056) and the review lead's fix order; docs/api.md §10, §15.5, §15.6, §15.8
 **See:** placements.md#who-revoked-decides-with-the-reason-whether-anyone-but-the-owner-may-rejoin — 44fe553d-74c0-495d-80c4-e1af00a65f57 — as of 2026-11-17
-**Revisit when:** a placement can keep its credential outside the clone, or clone paths stop being shared by the two layouts (one path per instance, tsk-rfa7fwa2sz5g)
+**Revisit when:** a placement can keep its credential outside the clone, or clone paths stop being shared by the two layouts (tsk-rfa7fwa2sz5g kept them shared: a new placement still continues the membership's held clone)
 
 Contracted, not built yet. Before a runner sets an agent's clone of the
 other layout aside (cli/context/runner.md, entry 66b73260), it reports
@@ -822,7 +822,9 @@ the same owner rule as revoke. With no `credential_id` it revokes nothing
 and sets no `rejoin`; the start picks up the placement's ordinary join.
 When another running placement names the credential the report is
 `conflict` (`credential_in_use`) and changes nothing, so the runner moves
-nothing. The restart rule counts `workspace_set_aside` with `revoked_by`
+nothing; since one placement per instance (tsk-rfa7fwa2sz5g) no two
+active placements name one credential, so this guards only a row that
+breaks that rule. The restart rule counts `workspace_set_aside` with `revoked_by`
 null among the revocations anyone with the restart's right may follow with
 a rejoin; `owner_only` after a person's revocation stays. The start's
 report names it with `detail: workspace_set_aside`.
