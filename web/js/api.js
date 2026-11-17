@@ -6043,6 +6043,10 @@ window.Maity = window.Maity || {};
     // browser's clock is off the hub's, for judging expiry as the hub does.
     const served = res.headers && res.headers.get ? Date.parse(res.headers.get("Maity-Server-Time") || "") : NaN;
     if (!Number.isNaN(served)) skew = served - Date.now();
+    // Maity-Web-Version on every answer (docs/api.md §1.1): a newer dashboard deployed under
+    // this page offers a reload (js/new-version.js).
+    const web = res.headers && res.headers.get ? res.headers.get("Maity-Web-Version") : null;
+    if (web && M.newVersion) M.newVersion.seen(web);
     if (!res.ok) {
       let detail = res.statusText;
       let code = res.headers && res.headers.get ? res.headers.get("Maity-Error") : null;
