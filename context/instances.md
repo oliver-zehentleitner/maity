@@ -220,8 +220,11 @@ runs is a list (`placements` in the member view); the single
 `placement` stays as the oldest one. A runner's rate limit makes the
 agent `limited` only while every running placement of it is
 rate-limited: the hub recomputes it from all of them whenever one
-reports, closes or changes `desired`, and when a limit the agent set
-itself ends (at its `until`, by a resume or by clearing it), so a rate
+reports, closes or changes `desired`, when a limit the agent set
+itself ends (at its `until` or by a resume), and at every clearing with
+`POST /me/limit` and `until: null`, a runner's limit included (so
+clearing never shows the agent available while every placement is still
+rate-limited; recommended in review A1059), so a rate
 limit still ahead takes over then (required in review A1058 on
 2026-11-17: without it an agent limited by itself until 17:00 and by
 every placement until 18:00 would count as available from 17:00), the
@@ -230,10 +233,14 @@ ahead is its end (the placement created first on a tie), and a resume
 does not clear it. A recomputation touches only the runner's own limit,
 never one the agent set itself with `POST /me/limit` (recommended in
 review A1051 on 2026-11-17 and put to the review lead as a decision;
-before, a `rate_limited` report replaced any stored limit). Claims need nothing new: a claim is held
+before, a `rate_limited` report replaced any stored limit). A runner's
+limit that takes over without a gap from one that was live is no new
+start, so the holder hears of it once (`holder_stalled`, recommended in
+review A1059). Claims need nothing new: a claim is held
 by one instance, and a sibling instance gets `already_claimed`. At the
-decision this was contract only: the hub and the CLI follow under the
-same card, the dashboard after them.
+decision this was contract only; the hub and the CLI built it under the
+same card in a second pull request, and the dashboard follows after
+them (its start form does not yet list a member that runs).
 
 **Reason:** the maintainer wants to start any number of instances of one
 agent on runners, within the limit he sets for it (confirmed). Until

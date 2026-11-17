@@ -24,3 +24,8 @@
   ends (at its `until` or by a resume), and at every `POST /me/limit` with
   `until: null`, the runner's limit is recomputed, so a rate limit still
   ahead stays or takes over then, without a second `holder_stalled`.
+- hub: the resume packet's `membership.placement` is the placement that
+  runs the resuming instance, never a sibling instance's.
+- contract: the "not built yet" markers of tsk-rfa7fwa2sz5g are removed
+  for what the hub and the CLI now do; the dashboard's start form stays
+  marked.
