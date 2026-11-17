@@ -2905,9 +2905,9 @@ expanding nothing. A word the shell expands counts as `runner` after a
 `maity` word and as `maity` before a `runner` word; a word that starts
 with an unquoted `~` and holds no `/` counts as one the shell expands.
 Quoted text that holds spaces or operators is read again the same way,
-four levels deep; text below that is refused when it holds `runner` at
-all. A line whose quotes never close is refused when it holds `maity` or
-`runner` at all. Text is not told apart from a call: `maity say … runner`
+four levels deep; a line with such text nested deeper is refused,
+whatever it holds. A line whose quotes never close is refused, whatever
+it holds. Text is not told apart from a call: `maity say … runner`
 is refused too, and the reason points to `--body-file`. Those commands
 are the runner's own: it starts its in-session ones through the launch,
 the pane's pipe and this hook, never through an agent's tool call, so no
@@ -2915,8 +2915,8 @@ placed session needs one (tsk-54492gk4xp69, part 1).
 
 Not read: a command the shell builds only from expansions or from input
 (no literal `maity` before a literal `runner`, no expanding word next to
-either). Such a line does not start with `maity` as one plain call, so it
-is not one the sandbox exclusion matches and its `maity` runs inside the
+either). Such a command does not start with a literal `maity` word, so the
+sandbox exclusion does not match it and its `maity` runs inside the
 sandbox (runner.md#a-placed-claude-code-agent-runs-maity-alone). A line
 that starts with `maity` and passes as one plain call has `maity` as its
 first word, so a later `runner` word or any expanding word refuses it.
@@ -2927,8 +2927,10 @@ Rejected: reading the line the way `maity`'s parser and the shell would
 (the first version of this check: commands split at operators, maity's
 leading options walked to its subcommand). Each rule it had to mirror was
 one more place to differ from the real parsers, and review found such
-differences; refusing every `maity … runner` word order fails closed, at
-the cost of refusing text that holds both words, which has a way out.
+differences. Refusing every `maity … runner` word order, and every line
+the check cannot read to the end, costs refusing text that holds both
+words, deeply nested quoting and lines with an unclosed quote; each has a
+way out (a file with `--body-file`, or a line without the nesting).
 
 The hook is the runner's own interpreter and module (`-I -m
 maity.runner.plaincall`; on an ssh host `<maity> runner plaincall` with
