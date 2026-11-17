@@ -16175,6 +16175,186 @@
     "en": "257b1c9993993b7f",
     "text": "0f74291ef3fe4c99"
   },
+  "roles.actions": {
+    "en": "aa6d82bdb3cc1d9a",
+    "text": "7bf984080ce75752"
+  },
+  "roles.add": {
+    "en": "c906e9e041a18a11",
+    "text": "e31548c98ee98f4a"
+  },
+  "roles.base": {
+    "en": "f82c5d28b1548b2f",
+    "text": "9a1a909ccf354f71"
+  },
+  "roles.briefings_later": {
+    "en": "a16c7eb5b11b5625",
+    "text": "c2358cc81c05fe4c"
+  },
+  "roles.builtin.title": {
+    "en": "40975e432fc6fbd3",
+    "text": "ded8a56879c46efb"
+  },
+  "roles.custom.hint": {
+    "en": "8b8c9c5b206edc11",
+    "text": "d456d3a8b64387d0"
+  },
+  "roles.custom.title": {
+    "en": "57549b5c4276fce8",
+    "text": "f28ab80ecf6b0e1b"
+  },
+  "roles.description": {
+    "en": "6e0d190c847ecfe3",
+    "text": "497142b6fd9f0aa7"
+  },
+  "roles.error.at": {
+    "en": "0dcab122e0556fe3",
+    "text": "0dcab122e0556fe3"
+  },
+  "roles.error.base": {
+    "en": "2de1803f46eb4956",
+    "text": "278ffc31f0ddf54b"
+  },
+  "roles.error.duplicate": {
+    "en": "bbfcdcba346bc175",
+    "text": "083dc92c2c376144"
+  },
+  "roles.error.format": {
+    "en": "795478a15ca951b8",
+    "text": "36bf6889ad9b1056"
+  },
+  "roles.error.outside_roles": {
+    "en": "546299af47d4c495",
+    "text": "fcfa1c3438ed2dbc"
+  },
+  "roles.error.reserved": {
+    "en": "3150064a97d6995f",
+    "text": "a3362a0b638b54db"
+  },
+  "roles.error.too_long": {
+    "en": "adb05a05de1ac603",
+    "text": "346a35cddd6f6504"
+  },
+  "roles.error.too_many": {
+    "en": "e21ccebf4c30547b",
+    "text": "bc70ef0c049b4ce6"
+  },
+  "roles.guide": {
+    "en": "1344ea2602e3aa9e",
+    "text": "4230893a5b0ccc4c"
+  },
+  "roles.hint": {
+    "en": "587f4b5161ad22fe",
+    "text": "169971ce9d7d4183"
+  },
+  "roles.in_use": {
+    "en": "5150ce4bdd074a18",
+    "text": "828ab468ace9a6b2"
+  },
+  "roles.load_failed": {
+    "en": "9f72d67abcb75c0f",
+    "text": "35a32bab13434c67"
+  },
+  "roles.loading": {
+    "en": "dcbec69305eb36c2",
+    "text": "6814bf8404acdd25"
+  },
+  "roles.move.approvals": {
+    "en": "62c6b1c01db81b0c",
+    "text": "534973927d263ed9"
+  },
+  "roles.move.back": {
+    "en": "7ceade8f25b58fe9",
+    "text": "1dbabbaf9df98363"
+  },
+  "roles.move.go": {
+    "en": "b5fddcd7cfce26e2",
+    "text": "7b8d63ebcee95934"
+  },
+  "roles.move.members": {
+    "en": "fefb0dc2ac1439fe",
+    "text": "29ffbb24a90c67e3"
+  },
+  "roles.name": {
+    "en": "6cc5df35f0338e23",
+    "text": "6cc5df35f0338e23"
+  },
+  "roles.none": {
+    "en": "149f818466642207",
+    "text": "711cc058839c0e10"
+  },
+  "roles.not_saved": {
+    "en": "e54cd6683f64ef55",
+    "text": "bf56cc3294dd9b63"
+  },
+  "roles.remove": {
+    "en": "9469a102f04ea196",
+    "text": "1050589a96b5a37d"
+  },
+  "roles.remove_named": {
+    "en": "9a8bd0b7e67b24d3",
+    "text": "7dd6bac763168c69"
+  },
+  "roles.row": {
+    "en": "965e4604a2dc07bd",
+    "text": "ec22ae46a07b6da7"
+  },
+  "roles.save": {
+    "en": "c09653b1f722214a",
+    "text": "5d501cba5a23748a"
+  },
+  "roles.saved": {
+    "en": "e0d121ad4d92d0fd",
+    "text": "cb66fbd90ef048b7"
+  },
+  "roles.title": {
+    "en": "b4aba51bf4160c74",
+    "text": "c923cec3e2f90f6a"
+  },
+  "roles.unchanged": {
+    "en": "47edb6b9c072e29c",
+    "text": "89afae945f632a91"
+  },
+  "roles.use.card": {
+    "en": "49017f6c2cd858f3",
+    "text": "c422f96884e25648"
+  },
+  "roles.use.check_in_with": {
+    "en": "9681b3f7e35a8701",
+    "text": "4f73ea27c74521a8"
+  },
+  "roles.use.invitation": {
+    "en": "a859e25a93883367",
+    "text": "db4e81528cbcae9d"
+  },
+  "roles.use.join": {
+    "en": "90deec45105053b8",
+    "text": "709a3a0d3f257ecd"
+  },
+  "roles.use.membership": {
+    "en": "143cf0bd95096942",
+    "text": "69e7bbb61f621407"
+  },
+  "roles.use.memory": {
+    "en": "ae7f3c05eb8f2c1d",
+    "text": "95c6e2e2e9f6b2f6"
+  },
+  "roles.use.outside_roles": {
+    "en": "1fa379041095a968",
+    "text": "5888ad4a367f7782"
+  },
+  "roles.use.placement": {
+    "en": "cafe9e7b6ee76e22",
+    "text": "368317a41c1727de"
+  },
+  "roles.use.request": {
+    "en": "b10050e55b522b9b",
+    "text": "821c732c948ea83c"
+  },
+  "roles.use.substitutes": {
+    "en": "b8f7fe81e74c0b0c",
+    "text": "c0c9f870d5365b40"
+  },
   "runners.allowed_in": {
     "en": "a96c6d138c5c62d6",
     "text": "ead6f3e9ae956fd2"

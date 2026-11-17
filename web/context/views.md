@@ -3497,7 +3497,7 @@ handle, and is clicked away too easily.
 
 **Id:** 43c080d3-e47c-45a3-9add-3da834cdf588
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy)
 **Revisit when:** §2.3 adds or drops a built-in role, or a project's own roles (§2.3) get a place in the pickers
@@ -3540,7 +3540,7 @@ form it explains.
 
 **Id:** b71cebbf-56d9-4f65-aef9-cbb4ab5131a1
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §2.3 (trust × role, owner_only, the guest's limits) and the card for the dashboard's part (tsk-tx9qcehevfnk), which replaces the interim mapping at the API boundary, 2026-10-28
 **Revisit when:** a project's own roles (§2.3) get a place in the dashboard, or the hub lets a non-owner grant trust admin
@@ -7164,3 +7164,33 @@ setting's description points at `hub/README.md` on GitHub, as the product line's
 - A tab of its own: two sections answering what this hub runs, one of them only the version.
 - Values as inputs for the settings an admin can also set: those have their own sections, where the
   environment's value wins; the overview names that section instead.
+
+## A project's roles are a section of Settings → Members and agents, the built-in ones explained, a base change of a role in use asked first
+
+**Id:** 33a23fd5-b8cd-4b98-bb06-66974fb904f9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-c2c24vxs5qj0 (the maintainer's answer of 2026-11-16: a project role is a name and its own briefing, with a built-in role's permissions); the lead's scope of the card and its answer on a base change, 2026-11-16; docs/api.md §2.3 "Project roles", §6.4, §6.28
+**See:** views.md — b71cebbf-56d9-4f65-aef9-cbb4ab5131a1 — as of 2026-11-17
+**Revisit when:** the hub serves the project's briefings (§6.28, tsk-ssd3gcxvnrkm), or §2.3 lets a project role be renamed or its base be refused while in use
+
+`js/project-roles.js` draws **Roles** in Settings → Members and agents, for a human with
+project:admin (the `PUT …/roles` is human only): the built-in roles as `GET …/roles` explains them,
+each with its guide folded, and the project's own roles as rows of name, base and description, sent
+as the whole list. A saved name is read-only, since §2.3 has no rename. The page checks a name as the
+hub does before it sends, and says the hub's `invalid` fields and a `role_in_use` with its uses at
+the rows. A base change of a role that members hold asks first, with how many move along and that
+their approvals the new base does not give expire, because the hub moves them and drops those
+signatures in the same call. A role's own briefing and guide are not edited here: the hub does not
+serve the project's briefings yet, and the dashboard asks for no route the hub lacks.
+
+**Rejected alternatives:**
+- Refusing a base change while the role is in use (new role, move, remove, as for a name): the
+  contract's recorded behaviour is that the members move along with their signatures dropped (§2.3,
+  §6.4); the lead withdrew the idea once that was shown.
+- A tab of its own: the roles are the same question as who joins on what terms, the Members and
+  agents tab's.
+- The briefing and guide fields now, against the fixture alone: the hub answers 404 until its
+  briefings exist, so the fields would only fail.
+

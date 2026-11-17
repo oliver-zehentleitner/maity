@@ -5214,7 +5214,9 @@ window.Maity = window.Maity || {};
           fail(409, "namespace_owner", "the project's namespace owner stays an owner", path, { projects: [fullOf(m[1])] });
         }
       }
-      if ("role" in body && !HUB_ROLES.includes(body.role)) errors.role = "unknown";
+      // A project role is taken wherever a role is (§2.3), its base kept beside it.
+      const projectRole = (project(m[1], path).roles || []).find((r) => r.name === body.role) || null;
+      if ("role" in body && !HUB_ROLES.includes(body.role) && !projectRole) errors.role = "unknown";
       if (!errors.trust && !errors.role && ("trust" in body || "role" in body) && newRole === "proxy" && newTrust !== "admin") errors.role = "proxy_needs_admin";
       if (who.member.kind === "human" && trustIn(m[1]) !== "owner" && ("trust" in body || "role" in body)
         && ((["owner", "admin"].includes(newTrust) && newTrust !== target.trust) || (newRole === "proxy" && target.role !== "proxy") || (target.trust === "owner" && newTrust !== "owner"))) {
@@ -5256,6 +5258,8 @@ window.Maity = window.Maity || {};
         // A role change away from expert clears its fields (§6.2 "An expert's fields").
         if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
         target.role = body.role;
+        if (projectRole) target.role_base = projectRole.base;
+        else delete target.role_base;
       }
       if ("reports_to" in body) target.reports_to = body.reports_to;
       if (applies("areas")) target.areas = [...new Set(body.areas)];
@@ -5383,6 +5387,43 @@ window.Maity = window.Maity || {};
     // fixtures were first read, so an open one stays open.
     // §2.3 "Project roles": the project's own roles, read by every member.
     ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ builtin: BUILTIN_ROLES.map((r) => ({ ...r, scopes: r.scopes.slice() })), custom: (project(m[1], path).roles || []).slice() })],
+    // PUT …/roles (§2.3): the whole list, by a human with project:admin; a role still named by a
+    // membership cannot go (the hub's other uses are not kept here); a new base moves its members.
+    ["PUT", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      if (!governing(mineIn(m[1]))) fail(403, "forbidden", "project:admin", path, { scope: "project:admin" });
+      const raw = body.custom;
+      if (!Array.isArray(raw)) fail(400, "invalid", "custom: not a list", path, { fields: { custom: "not_a_list" } });
+      if (raw.length > 12) fail(400, "invalid", "custom: too many", path, { fields: { custom: "too_many" } });
+      const bases = ["coder", "reviewer", "tester", "designer", "writer", "ops"];
+      const reserved = ["owner", "admin", "member", "outside", "guest", "team", "all", "proxy", "lead", "null", "none"];
+      const fields = {};
+      const seen = new Set();
+      raw.forEach((r, i) => {
+        const at = "custom[" + i + "]";
+        if (Object.hasOwn(r || {}, "guide")) fields["custom[].guide"] = "moved";
+        if (typeof r.name !== "string" || !/^[a-z][a-z0-9-]{1,23}$/.test(r.name)) fields[at + ".name"] = "format";
+        else if (BUILTIN_ROLES.some((x) => x.name === r.name) || reserved.includes(r.name)) fields[at + ".name"] = "reserved";
+        else if (seen.has(r.name)) fields[at + ".name"] = "duplicate";
+        else seen.add(r.name);
+        if (!bases.includes(r.base)) fields[at + ".base"] = "unknown";
+        if (typeof (r.description || "") !== "string" || [...(r.description || "")].length > 200) fields[at + ".description"] = "too_long";
+      });
+      if (Object.keys(fields).length) fail(400, "invalid", "invalid roles", path, { fields });
+      const proj = project(m[1], path);
+      const old = proj.roles || [];
+      const members = file(m[1], "members.json", path).items;
+      old.filter((r) => !raw.some((x) => x.name === r.name)).forEach((r) => {
+        if (members.some((x) => x.role === r.name)) fail(409, "conflict", "the role " + r.name + " is still in use", path, { reason: "role_in_use", role: r.name, uses: ["membership"] });
+      });
+      const next = raw.map((r) => {
+        const before = old.find((x) => x.name === r.name) || {};
+        return { name: r.name, base: r.base, description: r.description || "", guide: before.guide || "", guide_by: before.guide_by || null };
+      });
+      next.forEach((r) => members.filter((x) => x.role === r.name).forEach((x) => { x.role_base = r.base; }));
+      proj.roles = next;
+      return { custom: next.map((r) => ({ ...r })) };
+    }],
     ["GET", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
       const list = file(m[1], "joins.json", path);
       list.items.forEach((j) => {

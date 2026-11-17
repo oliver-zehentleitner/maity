@@ -817,6 +817,9 @@ window.Maity = window.Maity || {};
     // project:admin changes it after a step-up; an admin agent reads its mode alone.
     { tab: "members", when: (ctx) => ctx.canAdmin && !!M.restricted, build: (ctx) => M.restricted.settingsSection(ctx, (said) => { settingsSaved = said; render(); }) },
     { tab: "members", when: (ctx) => ctx.canAdmin, build: (ctx, save) => signingForm(ctx, save) },
+    // The project's roles (§2.3): the built-in ones explained, the project's own added, changed
+    // and removed by a human admin, as the PUT is human only.
+    { tab: "members", when: (ctx) => humanAdminOf(ctx) && !!M.projectRoles, build: (ctx) => M.projectRoles.settingsSection(ctx, (said) => { settingsSaved = said; render(); }) },
     // Way of working: how a card is closed and what the agents keep. Humans only, as every
     // policy field (§2.3 ʰ); the commitment follows the memory provider.
     { tab: "work", when: humanAdminOf, build: (ctx, save) => doneAuthorityForm(ctx, save) },
