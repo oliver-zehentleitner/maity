@@ -13072,6 +13072,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       const refusedLinks = await win.Maity.api.patch("/me", { website: "http://x", social: { github: "https://github.com/a", mastodon: "anna", nope: "a" }, links_visible: "all" }).catch((e) => e);
       const f = refusedLinks.details.fields;
       expect(f.website === "format" && f["social.github"] === "format" && f["social.mastodon"] === "format" && f["social.nope"] === "unknown" && f.links_visible === "unknown", "profile links: the fixture hub refuses as the hub " + JSON.stringify(f));
+      // U+212A (KELVIN SIGN) lower-cases to "k": non-ASCII is refused before lower-casing.
+      const kelvin = await win.Maity.api.patch("/me", { website: "https://K.example/a", social: { mastodon: "@a@K.example", bluesky: "K.example" } }).catch((e) => e);
+      const kf = (kelvin.details && kelvin.details.fields) || {};
+      expect(kf.website === "format" && kf["social.mastodon"] === "format" && kf["social.bluesky"] === "format", "profile links: a non-ASCII host or handle is refused before lower-casing, as the hub " + JSON.stringify(kf));
+      const idn = await win.Maity.api.patch("/me", { website: "https://XN--bcher-kva.example/a", social: { mastodon: "@a@XN--bcher-kva.Example", bluesky: "Oz.XN--bcher-kva.Example" } });
+      expect(idn.member.social.mastodon === "@a@xn--bcher-kva.example" && idn.member.social.bluesky === "oz.xn--bcher-kva.example" && idn.member.website === "https://XN--bcher-kva.example/a", "profile links: an xn-- host in upper case is accepted and lower-cased " + JSON.stringify(idn.member.social));
+      await win.Maity.api.patch("/me", { website: null, social: null });
       const set = await win.Maity.api.patch("/me", { website: "https://example.org/me", social: { github: "anna", mastodon: "@Anna@Mastodon.Social" }, links_visible: "everyone" });
       expect(set.member.social.mastodon === "@Anna@mastodon.social" && set.member.website === "https://example.org/me", "profile links: stored, the host lower-cased");
       const merged = await win.Maity.api.patch("/me", { social: { github: null } });

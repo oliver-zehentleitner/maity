@@ -22578,9 +22578,12 @@ a leading `@` except where the form says so:
 | `linkedin` | `[A-Za-z0-9-]{3,100}` |
 | `discord` | `[a-z0-9_.]{2,32}` |
 
-The hub lower-cases `mastodon`'s host and `bluesky`'s handle first and
-then checks the form, so `@Anna@Mastodon.Social` is valid and stored as
-`@Anna@mastodon.social`; every other name is checked and stored as
+The hub refuses a `mastodon` or `bluesky` value with a character
+outside ASCII first, as §6.1 refuses a Unicode host, then lower-cases
+`mastodon`'s host and `bluesky`'s handle and then checks the form, so
+`@Anna@Mastodon.Social` is valid and stored as `@Anna@mastodon.social`,
+while a host or handle with U+212A (KELVIN SIGN), which lower-cases to
+`k`, is `format`; every other name is checked and stored as
 given, and `gitlab`'s `.git`/`.atom` test ignores case. A value not of its form is `invalid`
 (`details.fields.social.<network>: "format"`), an unknown key is
 `invalid` (`details.fields.social.<key>: "unknown"`). `social` in a
