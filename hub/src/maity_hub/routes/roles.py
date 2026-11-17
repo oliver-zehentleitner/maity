@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import Field
+from pydantic import Field, StrictInt
 from sqlalchemy import Connection, select, update
 
 from maity_hub import events, guide, idempotency, policy, project_roles, rules
@@ -22,8 +22,9 @@ router = APIRouter(route_class=ProjectRoute)
 
 class RolesIn(Strict):
     custom: Any  # checked by `project_roles.parse`, every bad field named
-    # Required, refused as `"required"` after the body (§2.3 "Version.").
-    base_version: int | None = Field(default=None, ge=0)
+    # Required, refused as `"required"` after the body (§2.3 "Version."). A JSON integer
+    # only: lax pydantic would read `true`, `"1"` or `1.0` as a version.
+    base_version: StrictInt | None = Field(default=None, ge=0)
 
 
 def _view(conn: Connection, project_id: str) -> dict[str, Any]:

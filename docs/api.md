@@ -863,10 +863,13 @@ add the new name, move the members, remove the old one. A `PUT` emits
 **Version.** `GET` also answers the list's `version` (`"version": 3`),
 and a `PUT` answers `{custom, version}`. It is 0 for a project that
 never had a role of its own, grows by one with every `PUT` that changes
-the list, and is never reset. `base_version` is required on `PUT`
-(`invalid`, `details.fields.base_version: "required"`; a value that is
-no whole number from 0 is `invalid` too). A `PUT` whose `base_version`
-is not the current `version` is `conflict` (§1.3) with
+the list, and is never reset. `base_version` is required on `PUT`: a
+missing or `null` one is `invalid` with
+`details.fields.base_version: "required"`. It is a JSON integer from 0:
+a negative one is `invalid` with `"greater_than_equal"`, and any other
+value — a boolean, a string such as `"1"`, a number with a decimal point
+or an exponent such as `1.0` or `1e0` — with `"int_type"`. A `PUT` whose
+`base_version` is not the current `version` is `conflict` (§1.3) with
 `details.current_version` and `details.base_version` and no `reason`,
 and nothing changes: two admins saving at once, or a page read before
 someone else's save, never remove a role the other added unread — one

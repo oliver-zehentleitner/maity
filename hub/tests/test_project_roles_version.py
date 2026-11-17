@@ -95,13 +95,43 @@ def test_without_a_version_the_put_is_invalid(owner: flow.Human, migrated: Engin
     assert stored(migrated) == (None, 0)
 
 
-@pytest.mark.parametrize("value", [-1, 1.5, "one", [0], {"v": 0}])
-def test_a_version_that_is_no_whole_number_from_0_is_invalid(
-    owner: flow.Human, migrated: Engine, value: Any
+@pytest.mark.parametrize(
+    ("value", "reason"),
+    [
+        (-1, "greater_than_equal"),
+        (1.5, "int_type"),
+        ("one", "int_type"),
+        ([0], "int_type"),
+        ({"v": 0}, "int_type"),
+        # A JSON integer only (§2.3 "Version."): neither a boolean nor a number in a
+        # string nor a number with a fraction is read as one, though each names 0 or 1.
+        (False, "int_type"),
+        (True, "int_type"),
+        ("0", "int_type"),
+        ("1", "int_type"),
+        (0.0, "int_type"),
+        (1.0, "int_type"),
+    ],
+)
+def test_a_version_that_is_no_json_integer_from_0_is_invalid(
+    owner: flow.Human, migrated: Engine, value: Any, reason: str
 ) -> None:
     bad = raw_put(owner, {"custom": [LEGAL], "base_version": value})
     assert bad.status_code == 400, bad.text
-    assert set(bad.json()["error"]["details"]["fields"]) == {"base_version"}
+    error = bad.json()["error"]
+    assert error["code"] == "invalid"
+    assert error["details"]["fields"] == {"base_version": reason}
+    assert stored(migrated) == (None, 0)
+
+
+def test_a_version_with_an_exponent_is_no_json_integer(owner: flow.Human, migrated: Engine) -> None:
+    bad = owner.client.put(
+        f"/api/v1{BASE}/roles",
+        content=b'{"custom": [], "base_version": 0e0}',
+        headers={"X-CSRF-Token": owner.csrf, "Content-Type": "application/json"},
+    )
+    assert bad.status_code == 400, bad.text
+    assert bad.json()["error"]["details"]["fields"] == {"base_version": "int_type"}
     assert stored(migrated) == (None, 0)
 
 
