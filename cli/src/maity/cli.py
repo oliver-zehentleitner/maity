@@ -2083,8 +2083,9 @@ def _placed_read(
     given: str, flag: str, limit: int = PLACED_READ_MAX, *, quiet: bool = False
 ) -> bytes | None:
     """Under a placement: the bytes of the file `given` names, read only inside the clone,
-    outside its `.git`, never through a link or a file with another hard link (inclone.read,
-    cli/context/runner.md). None outside a placement, where the caller reads as before.
+    outside its `.git`, or in the placement's scratch when it has one, never through a link
+    or a file with another hard link (inclone.read, cli/context/runner.md). None outside a
+    placement, where the caller reads as before.
     `quiet` leaves the path out of a refusal (a restricted text given there by mistake)."""
     root = _placement_clone()
     if root is None:

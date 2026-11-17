@@ -1,6 +1,6 @@
 """Files maity reads or writes for an agent under a runner placement: only inside the clone,
-outside its `.git` (an attachment saved without `-o`: in `.git/maity-files/`), never
-through a link.
+outside its `.git` (an attachment saved without `-o`: in `.git/maity-files/`), or, for a
+read, in the placement's scratch when it has one; never through a link.
 
 Under a placement maity runs outside the harness's sandbox (cli/context/runner.md), so a
 path the agent names must not take maity where the sandbox keeps the agent out. Every name

@@ -3133,7 +3133,7 @@ removed. POSIX has no unlink only while a name holds a given inode; the
 window is accepted, since the name is maity's own unpredictable one in
 the clone and code that can put a file there can remove it itself.
 
-## Under a placement maity reads a file for the agent only inside the clone, and writes no attachment to standard output
+## Under a placement maity reads a file for the agent only inside the clone or the placement's scratch, and writes no attachment to standard output
 
 **Id:** 783e476c-3975-43de-9c4e-7c3a5da57be7
 **Type:** decision

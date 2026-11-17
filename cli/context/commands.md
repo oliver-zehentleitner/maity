@@ -333,7 +333,7 @@ d1d6b49d.
 **Evidence:** inferred
 **Source:** card tsk-7jstyhznnmte (lotse, seq 127806: test runners collected files from `./maity-files/`, and `git add -A` committed them); `docs/api.md` §13 (`files get`); decision 3a8f1852 above; it moves the folder of context/attachments.md b623825e out of the work tree
 **Revisit when:** an agent needs an attachment inside its work tree often enough that `-o` is not enough, a harness's sandbox keeps the agent from reading the clone's `.git`, or git or a test runner starts reading `.git/maity-files/`
-**See:** runner.md#under-a-placement-maity-reads-a-file-for-the-agent-only-inside-the-clone-and-writes-no-attachment-to-standard-output — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-13
+**See:** runner.md#under-a-placement-maity-reads-a-file-for-the-agent-only-inside-the-clone-or-the-placements-scratch-and-writes-no-attachment-to-standard-output — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-13
 
 Without `-o`, `files get` saves into `files/` in the state directory,
 `<git common dir>/maity/files/` unless `MAITY_STATE_DIR` names another
