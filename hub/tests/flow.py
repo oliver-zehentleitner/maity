@@ -71,6 +71,9 @@ class Agent:
     def patch(self, path: str, json: Any = None) -> Any:
         return self.client.patch(f"/api/v1{path}", json=json, headers=self.auth | self.key())
 
+    def delete(self, path: str) -> Any:
+        return self.client.delete(f"/api/v1{path}", headers=self.auth | self.key())
+
     def resume(self, **body: Any) -> Any:
         return self.client.post(
             "/api/v1/me/resume", json={"client": "test", **body}, headers=self.auth
