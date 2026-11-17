@@ -21,6 +21,8 @@ NOT_ROUTED = {
     ("DELETE", "/projects/{}/{}/outsiders/{}/block"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
     ("DELETE", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
+    ("GET", "/admin/projects/{}/{}/limits"),  # no route yet: tsk-t63d50qy3s0k, limits
+    ("GET", "/admin/users/{}/limits"),  # no route yet: tsk-t63d50qy3s0k, limits
     ("GET", "/agents/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
@@ -29,10 +31,13 @@ NOT_ROUTED = {
     ("GET", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/projects/{}/{}/contribution"),  # no route yet: tsk-yr3ckca01b9q, outsiders
+    ("GET", "/projects/{}/{}/limits"),  # no route yet: tsk-spmhjqm7szag, limits
     ("GET", "/projects/{}/{}/members/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/projects/{}/{}/outsiders"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("GET", "/projects/{}/{}/tasks/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
+    ("PATCH", "/admin/projects/{}/{}/limits"),  # no route yet: tsk-t63d50qy3s0k, limits
+    ("PATCH", "/admin/users/{}/limits"),  # no route yet: tsk-t63d50qy3s0k, limits
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("PATCH", "/me/preferences"),  # no route yet: tsk-k0k3jzrkpza2, "discuss first"
     ("PATCH", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
