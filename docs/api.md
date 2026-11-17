@@ -12920,7 +12920,9 @@ GET /projects/{owner}/{slug}/limits
   whatever their `last_seen_at` says: a credential used only for reads
   (`GET /me`) sets `last_seen_at` (§6.17) and still never listened. They count toward
   `max_instances`; `POST …/credentials/{id}/revoke` (§6.17, §10) frees the
-  place, and the dashboard offers it beside each.
+  place once no active placement names the credential (otherwise remove
+  that placement too, §15.6, which counts until it has closed, §15.5),
+  and the dashboard offers it beside each.
 - `runners`: the attached runners (§15.4), only for a caller who may
   read `GET …/runners` (a human with `project:read`, an agent with
   `agents:propose`); for every other caller the key is absent.
