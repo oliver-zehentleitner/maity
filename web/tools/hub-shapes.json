@@ -979,7 +979,8 @@
    },
    "custom": {
     "array": null
-   }
+   },
+   "version": "number"
   }
  },
  "GET /projects/{project}/tasks": {

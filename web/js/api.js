@@ -5407,14 +5407,16 @@ window.Maity = window.Maity || {};
     // A fixture join with expires_in_seconds expires that long after the
     // fixtures were first read, so an open one stays open.
     // §2.3 "Project roles": the project's own roles, read by every member.
-    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ builtin: BUILTIN_ROLES.map((r) => ({ ...r, scopes: r.scopes.slice() })), custom: (project(m[1], path).roles || []).slice() })],
+    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ builtin: BUILTIN_ROLES.map((r) => ({ ...r, scopes: r.scopes.slice() })), custom: (project(m[1], path).roles || []).slice(), version: project(m[1], path).roles_version || 0 })],
     // PUT …/roles (§2.3): the whole list, by a human with project:admin, checked as
     // project_roles.parse and routes/roles.py check it: the list, each entry's fields, a role in
     // policy.outside_roles on a base an outsider may hold. A removal is refused while a membership
     // or policy.outside_roles names the role; the hub's other uses (joins, invitations, cards,
     // requests, placements, the check-in, substitutes, role memory) are not kept here. `outside` is
     // reserved as §2.3 says.
-    // A new base moves its members.
+    // A new base moves its members. `base_version` is required and checked after the body and
+    // before a removal (§2.3 "Version."): a stale one is `conflict` without a `reason`; a list
+    // equal to the stored one keeps the version whatever it names.
     ["PUT", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => {
       if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
       if (!governing(mineIn(m[1]))) fail(403, "forbidden", "project:admin", path, { scope: "project:admin" });
@@ -5448,8 +5450,15 @@ window.Maity = window.Maity || {};
           fail(400, "invalid", "the role " + r.name + " is in policy.outside_roles", path, { fields: { ["custom[" + i + "].base"]: "outside_roles" } });
         }
       });
+      const given = body.base_version;
+      if (given === undefined || given === null) fail(400, "invalid", "name the roles' version you read", path, { fields: { base_version: "required" } });
+      if (!Number.isInteger(given) || given < 0) fail(400, "invalid", "base_version", path, { fields: { base_version: Number.isInteger(given) ? "greater_than_equal" : "int_type" } });
       const proj = project(m[1], path);
       const old = proj.roles || [];
+      const version = proj.roles_version || 0;
+      const same = raw.length === old.length && raw.every((r, i) => r.name === old[i].name && r.base === old[i].base && (r.description || "") === (old[i].description || ""));
+      if (same) return { custom: old.map((r) => ({ ...r })), version };
+      if (given !== version) fail(409, "conflict", "the roles changed since you read them; read them and decide again", path, { current_version: version, base_version: given });
       const members = file(m[1], "members.json", path).items;
       old.filter((r) => !raw.some((x) => x.name === r.name)).forEach((r) => {
         const uses = [members.some((x) => x.role === r.name) ? "membership" : null, outside.includes(r.name) ? "outside_roles" : null].filter(Boolean);
@@ -5461,7 +5470,8 @@ window.Maity = window.Maity || {};
       });
       next.forEach((r) => members.filter((x) => x.role === r.name).forEach((x) => { x.role_base = r.base; }));
       proj.roles = next;
-      return { custom: next.map((r) => ({ ...r })) };
+      proj.roles_version = version + 1;
+      return { custom: next.map((r) => ({ ...r })), version: version + 1 };
     }],
     ["GET", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
       const list = file(m[1], "joins.json", path);

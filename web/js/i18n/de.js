@@ -4392,7 +4392,7 @@ window.MAITY_I18N["de"] = {
   "roles.row": "Zeile {number}",
   "roles.save": "Rollen speichern",
   "roles.saved": "Rollen gespeichert.",
-  "roles.stale": "Die Rollen wurden inzwischen von jemand anderem geändert, daher wurde nichts gesendet. Lade sie neu, um sie zu sehen; deine Änderungen bleiben, bis du neu lädst oder die Seite verlässt.",
+  "roles.stale": "Die Rollen wurden inzwischen von jemand anderem geändert, daher wurde deine Änderung nicht übernommen. Lade sie neu, um sie zu sehen; deine Änderungen bleiben, bis du neu lädst oder die Seite verlässt.",
   "roles.title": "Rollen",
   "roles.unchanged": "Nichts geändert.",
   "roles.use.card": "offene Karten",

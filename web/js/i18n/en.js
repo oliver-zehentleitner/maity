@@ -4402,7 +4402,7 @@ window.MAITY_I18N["en"] = {
   "roles.row": "row {number}",
   "roles.save": "Save roles",
   "roles.saved": "Roles saved.",
-  "roles.stale": "Roles were changed by someone else since this page read them, so nothing was sent. Reload to see them; your changes are kept until you reload or leave.",
+  "roles.stale": "Roles were changed by someone else since this page read them, so your save was not applied. Reload to see them; your changes are kept until you reload or leave.",
   "roles.title": "Roles",
   "roles.unchanged": "Nothing changed.",
   "roles.use.card": "open cards",
