@@ -3747,3 +3747,58 @@ placement ends without asking what in it matters.
   end is the placement's.
 - Its size in `workspace_outcome`: a new field for something the
   operator alone acts on; the lead kept the hub out of it.
+
+## An agent's clone of the other layout is set aside whole, and the agent joins anew
+
+**Id:** 66b73260-77a7-421a-bba0-ef5b140f161d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9f69y1hr1m6z (an agent placed again with antigravity on a clone name a Claude Code placement had used was stuck twice on a runner host, 2026-11-17: `workspace_in_use`/`workspace_unrecorded` until the old clone was moved by hand, then `join_failed`/`credential_missing` until the profile's owner revoked and rejoined); the lead's decision on the card's plan, seq 152381, and on the set-aside clone's removal, seq 152442; docs/api.md §15.5, §15.7, docs/runners.md
+**See:** https://github.com/oliver-zehentleitner/maity — 4edeef48-8684-4495-96dc-6063e25e31c7 — as of 2026-11-17
+**See:** runner.md#local-mode-one-agent-in-the-foreground-no-pairing-also-on-windows — dd77eab8-46a3-45dd-9f08-bde11f926942 — as of 2026-11-17
+**See:** runner.md#a-stopped-agents-clone-stays-for-its-retention-time-then-the-runner-removes-it — 161d5507-5b44-45d6-8bec-cacd58de58a2 — as of 2026-11-17
+**Revisit when:** clone paths stop being shared by the two layouts (one path per instance, tsk-rfa7fwa2sz5g), or a harness gets a third layout; or the dashboard should reach a set-aside clone (today only the runner's log, `maity runner status` and `gc --revoked` do, lead's decision seq 152442)
+
+Contracted, not built yet. Both layouts use `<workspaces>/<project_id>/<clone>`:
+a plain clone, or for `antigravity` a folder with the clone as `repo`.
+When a start finds there a path the runner recorded for this placement's
+agent in the other layout (a new placement of that agent on this runner
+and clone, or a changed harness), no symbolic link and nothing using it,
+the runner renames it whole to `.replaced-<time>-<clone>` beside it, runs
+no git and reads nothing in it, reports `set_aside` and waits for the hub
+to take it, then makes the new clone under the new epoch and joins with
+the rejoin the hub set. The report names `detail: workspace_set_aside`,
+the log the old and the new path. The set-aside clone is kept as a
+stopped clone is: the placement's `workspace_retention` from the
+set-aside, then removed under the same checks, and kept with unsaved work
+until a person removes it (`maity runner gc --revoked`, its credential
+being revoked). Every other path in the other layout stays
+`workspace_in_use`. The rule "no clone moves between the two layouts"
+stands.
+
+**Reason:** the shared path made the old clone and its record block the
+new layout, and the credential, which lives in the clone, was then
+expected at the new layout's place. Renaming moves the whole tree in one
+step without touching its content, so uncommitted files, unpushed
+commits, stashes and agy's entries beside `repo` survive, as in local
+mode's `.replaced-*`. A name with a leading `.` is never a clone token, so
+nothing starts there. Revoking the old credential leaves the copy in the
+set-aside tree dead.
+
+**Rejected alternatives:**
+- Moving the old clone into the new layout (into `repo`, or out of it)
+  and keeping its credential: one layout's clone would carry what the
+  other harness's runs left (agy's entries beside `repo`, a clone an
+  earlier harness configured), and the records keyed on the clone's path
+  (folder trust, the recorded `.git`) would point at a moved tree. The
+  lead chose the set-aside.
+- Reporting the move as `removed`: the clone is still on the disk; the
+  hub has a state of its own for it (`set_aside`, the hub entry).
+- An operator setting that turns it on: the owner made the new placement,
+  so the intent is there; the narrow condition keeps every other
+  `workspace_in_use` refused.
+- A retention of its own for set-aside clones: the lead kept one rule,
+  that of a stopped clone.
+- Deleting the old clone, or moving only its credential: deletes unsaved
+  work, or puts the runner's hands on a credential it never holds.

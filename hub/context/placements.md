@@ -766,14 +766,17 @@ them, so each calls the same clearing step instead.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-8hq77ns50kyf (the lead's security review of 2026-11-13: "a revocation by a person, or because of a leak, is never undone by anyone else"); the contract's restart row (docs/api.md §15.6)
+**Source:** card tsk-8hq77ns50kyf (the lead's security review of 2026-11-13: "a revocation by a person, or because of a leak, is never undone by anyone else"); the contract's restart row (docs/api.md §15.6); widened on 2026-11-17 by the lead's decision on card tsk-9f69y1hr1m6z (seq 152381) to the hub's own revocation of a clone set aside for a layout change, which this entry's Revisit-when named
+**See:** placements.md#a-clone-set-aside-for-a-layout-change-revokes-its-credential-and-rejoins-like-a-removed-one — 4edeef48-8684-4495-96dc-6063e25e31c7 — as of 2026-11-17
 **Revisit when:** a new revocation reason is added that the hub sets without a person, or the member routes stop taking a free-text reason
 
 A rejoin (`restart` with `rejoin: true`) gives the agent a new credential.
 The agent profile's owner may ask for one after any revocation. Anyone else
 with the restart's right, the runner's owner or a proposing agent, may only
 after a revocation no person chose for that agent: the hub's own after the
-runner removed the clone (`workspace_removed` with `revoked_by` null) or the
+runner removed the clone (`workspace_removed` with `revoked_by` null) or set
+it aside for a layout change (`workspace_set_aside` with `revoked_by` null;
+contracted, not built yet, tsk-9f69y1hr1m6z), or the
 runner owner's revocation of the runner (`runner_revoked` with `revoked_by`
 that owner). Everything else is `forbidden` with `details.reason:
 "owner_only"` (`routes/placements._undone_by_anyone`). The check runs on
@@ -795,3 +798,47 @@ start (§15.5) without waiting for the owner. Not storing `rejoin` on the
 removal when the credential was already revoked otherwise: the owner's
 next plain start should still join anew, and a check at the start covers
 every way a start comes.
+
+## A clone set aside for a layout change revokes its credential and rejoins, like a removed one
+
+**Id:** 4edeef48-8684-4495-96dc-6063e25e31c7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9f69y1hr1m6z (an agent placed again with antigravity on a clone name a Claude Code placement had used was stuck twice on a runner host, 2026-11-17: `workspace_in_use` until the old clone was moved by hand, then `join_failed`/`credential_missing` until the profile's owner revoked and rejoined); the lead's decision on the card's plan, seq 152381; docs/api.md §10, §15.5, §15.6, §15.8
+**See:** https://github.com/oliver-zehentleitner/maity — 66b73260-77a7-421a-bba0-ef5b140f161d — as of 2026-11-17
+**See:** placements.md#who-revoked-decides-with-the-reason-whether-anyone-but-the-owner-may-rejoin — 44fe553d-74c0-495d-80c4-e1af00a65f57 — as of 2026-11-17
+**Revisit when:** a placement can keep its credential outside the clone, or clone paths stop being shared by the two layouts (one path per instance, tsk-rfa7fwa2sz5g)
+
+Contracted, not built yet. When a runner sets an agent's clone of the
+other layout aside (cli's entry, the first See line), it reports `set_aside` on the
+workspace route for the placement's current epoch. The hub then does what
+a `removed` report does: it revokes the placement's credential with its own
+reason, `workspace_set_aside`, `revoked_by` null, unless another running
+placement names it; sets `rejoin` on the placement and every other active
+placement that names it; raises `workspace_epoch`; does not stop the
+placement and bumps no generation. A repeat or a late report changes
+nothing. `set_aside` is taken only for an active placement under
+`desired: running`. The restart rule counts `workspace_set_aside` with
+`revoked_by` null among the revocations anyone with the restart's right may
+follow with a rejoin; `owner_only` after a person's revocation stays. The
+start's report names it with `detail: workspace_set_aside`.
+
+**Reason:** the credential's file is in the clone, so the new layout's
+clone has none while the placement still names one, and a rejoin needed
+the owner's revocation first. The runner's side made the change (a new
+placement or a harness change is the runner owner's), so a new instance is
+what that person asked for; the copy left in the set-aside clone is revoked
+and reaches nothing.
+
+**Rejected alternatives:**
+- Reporting the set-aside clone as `removed` and revoking with
+  `workspace_removed`: the clone is still on the disk, `removed` is a fact
+  about the disk, and the dashboard and the runner's records would say
+  something false.
+- Moving the clone between the layouts and keeping its credential: lifts
+  the contract's "no clone moves between the two layouts" (cli's entry).
+- A setting the operator turns on first: the owner made the new placement,
+  which is the intent; every other `workspace_in_use` stays refused.
+- A retention rule of its own for the set-aside clone: it is kept as a
+  stopped clone is (161d5507 in cli), no third rule.
