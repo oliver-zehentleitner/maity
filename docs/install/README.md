@@ -610,8 +610,11 @@ settings are off by default, and an upgrade switches neither on):
 3. Once it prints `plain left 0` and the startup log counts no unsealed
    verifier, set `MAITY_SEALED_VERIFIERS_ONLY=1` in a rollout of its own.
    A hub with it does not start while a live plain verifier is left: the
-   error names the count and the command, and the processes of the earlier
-   rollout keep serving. A plain verifier written after the start verifies
+   error names the count and the command. In a rolling update the
+   processes of the earlier rollout keep serving; with `Recreate` (the
+   chart's default single pod) or a single process the hub stays down
+   until `maity-hub seal-verifiers` has run or the setting is unset again.
+   A plain verifier written after the start verifies
    nothing; its agent or runner joins (or pairs) again.
 
 To go back, unset `MAITY_SEALED_VERIFIERS_ONLY` and restart; nothing is
