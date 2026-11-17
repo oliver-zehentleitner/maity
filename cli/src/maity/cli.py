@@ -20,7 +20,7 @@ import time
 import unicodedata
 import urllib.parse
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO, Any, NoReturn, TypeGuard
 
@@ -827,6 +827,9 @@ RELATED_RULE_KINDS = frozenset({"state_changed", "policy_changed", "rules_change
 # Presence and profile changes, which name the coordinator, a boss or an owner as observers
 # by `member:`: related only when they are about the reader itself.
 MEMBER_STATUS_KINDS = frozenset({"member_joined", "member_updated", "member_availability_changed"})
+# Audience tokens the hub resolves into a private list of members and delivers only to a
+# reader on it (§8.2): an event that reached the reader by one is meant for it.
+PRIVATE_LIST_TOKENS = ("watchers:", "restricted:")
 
 
 def _related(
@@ -838,10 +841,14 @@ def _related(
     `mentions` name the reader; (d) an event about the reader, its `subject` the member or its
     `payload.member_id`; (e) an event whose audience names the reader itself: `member:<id>`,
     this instance's `instance:` token (any of the agent's with no instance and no bridge, as
-    `_meant_for`), or a card's `watchers:` list; except a presence or profile change
-    (MEMBER_STATUS_KINDS) about another member. Anything else reached the reader only through
-    `all`, a `role:` or `trust:` token or another instance's token, and is read past. A
-    bridge (`carried`) reads for the served agent, which has no instance there."""
+    `_meant_for`), or a private list the hub delivers only to readers on it
+    (PRIVATE_LIST_TOKENS: a card's watchers, and one further such list); except
+    a presence or profile change (MEMBER_STATUS_KINDS) about another member. Of the audience
+    tokens the hub writes, the rest (`held:` and `waiting:`, which reach the agent's owner,
+    never the agent, and `runner:`) never deliver an event to the agent by themselves, so
+    anything else reached the reader only through `all`, a `role:` or `trust:` token or
+    another instance's token, and is read past. A bridge (`carried`) reads for the served
+    agent, which has no instance there."""
     if not member:
         return True  # nobody to compare with: keep everything rather than guess
     kind = event.get("kind")
@@ -866,7 +873,7 @@ def _related(
     own = f"instance:{member}#"
     return any(
         token == f"member:{member}"
-        or token.startswith("watchers:")
+        or token.startswith(PRIVATE_LIST_TOKENS)
         or (
             token.startswith(own)
             and (token == f"{own}{instance}" or (instance is None and not carried))
@@ -989,69 +996,97 @@ class _Outage:
     """The clock of a hub that does not answer `wait` (tsk-3kbpak51yqyn): a short drop, such
     as the proxy closing a held poll, is retried silently; only OUTAGE_AFTER seconds without
     a good answer, counted from the first failed read, print a line with the UTC times, once
-    per wait, and the first good answer after that says so. The clock outlives the process in
-    OUTAGE_FILE, so an outage that spans several short waits is still reported; a saved clock
-    whose last failure is more than OUTAGE_AFTER old (a wait killed during an outage, then a
-    pause), or in the future, is stale and starts afresh. A file of its own, because
-    `Session.save` writes the whole state.json it read at the start and would put an older
-    cursor back. Neither reading nor writing it can cost the wait: a failure there only loses
-    the clock."""
+    per wait, and the first good answer after that says so. `check` also runs before every
+    poll and before the timeout, so the threshold passing during a backoff or the rest of the
+    window is reported too.
+
+    Within a wait the elapsed time is the monotonic clock's: a wall-clock jump neither starts
+    the clock afresh nor makes an outage of a short drop. The wall clock only names the times
+    (the first failed read printed as now less the elapsed time) and carries the clock to the
+    next wait: it outlives the process in OUTAGE_FILE, so an outage that spans several short
+    waits is still reported, and a saved clock whose last failure is more than OUTAGE_AFTER
+    old (a wait killed during an outage, then a pause), or in the future, is stale and starts
+    afresh. A file of its own, because `Session.save` writes the whole state.json it read at
+    the start and would put an older cursor back. Neither reading nor writing it can cost the
+    wait: an unreadable, undecodable or malformed file only loses the clock."""
 
     def __init__(self, state_dir: Path) -> None:
         self.dir = state_dir
         self.loaded = False
-        self.since: datetime | None = None
-        self.last: datetime | None = None
+        self.start: float | None = None  # monotonic time of the first failed read
+        self.reason = ""
         self.reported = False  # by this wait or an earlier one
         self.shown = False  # by this wait
 
-    def _load(self, now: datetime) -> None:
+    def _load(self, wall: datetime, mono: float) -> None:
         if self.loaded:
             return
         self.loaded = True
         try:
             data = state.load_state(self.dir, OUTAGE_FILE)
-        except (state.StateError, OSError):
+        except (state.StateError, OSError, ValueError):  # ValueError: not UTF-8, for one
             return
         since, last = _parse_utc(data.get("since")), _parse_utc(data.get("last"))
-        if since is None or last is None or not since <= last <= now:
+        if since is None or last is None or not since <= last <= wall:
             return
-        if (now - last).total_seconds() > OUTAGE_AFTER:
+        if (wall - last).total_seconds() > OUTAGE_AFTER:
             return  # stale: nobody knows what the hub did in between
-        self.since, self.last = since, last
+        self.start = mono - (wall - since).total_seconds()
         self.reported = data.get("reported") is True
 
-    def _save(self) -> None:
-        if self.since is None or self.last is None:
+    def _since(self, wall: datetime, mono: float) -> datetime:
+        """The first failed read's time on the wall clock as it reads now."""
+        return wall - timedelta(seconds=mono - (mono if self.start is None else self.start))
+
+    def _save(self, wall: datetime, mono: float) -> None:
+        if self.start is None:
             return
-        data = {"since": _utc(self.since), "last": _utc(self.last), "reported": self.reported}
+        data = {
+            "since": _utc(self._since(wall, mono)),
+            "last": _utc(wall),
+            "reported": self.reported,
+        }
         with contextlib.suppress(state.StateError, OSError):
             state.save_state(self.dir, data, OUTAGE_FILE)
 
     def failed(self, reason: str) -> None:
         """A read that the wait retries failed for `reason`."""
-        now = _utc_now()
-        self._load(now)
-        if self.since is None or self.last is None or now < self.last:
-            self.since, self.reported = now, False
-        self.last = now
-        if (now - self.since).total_seconds() >= OUTAGE_AFTER and not self.shown:
-            _err(
-                f"{reason} since {_utc(self.since)}, still at {_utc(now)}; "
-                "retrying until the timeout"
-            )
-            self.shown = self.reported = True
-        self._save()
+        wall, mono = _utc_now(), time.monotonic()
+        self._load(wall, mono)
+        if self.start is None:
+            self.start, self.reported = mono, False
+        self.reason = reason
+        self._report(wall, mono)
+        self._save(wall, mono)
+
+    def check(self) -> None:
+        """Between reads: report an outage whose threshold passed since the last failure."""
+        if self.start is None or self.shown:
+            return
+        wall, mono = _utc_now(), time.monotonic()
+        if self._report(wall, mono):
+            self._save(wall, mono)
+
+    def _report(self, wall: datetime, mono: float) -> bool:
+        if self.start is None or self.shown or mono - self.start < OUTAGE_AFTER:
+            return False
+        _err(
+            f"{self.reason} since {_utc(self._since(wall, mono))}, still at {_utc(wall)}; "
+            "retrying until the timeout"
+        )
+        self.shown = self.reported = True
+        return True
 
     def answered(self) -> None:
         """A good answer: the outage, if any, is over."""
-        if self.loaded and self.since is None:
+        if self.loaded and self.start is None:
             return  # the usual case: nothing to read or remove
-        now = _utc_now()
-        self._load(now)
-        if self.since is not None and self.reported:
-            _err(f"hub answering again at {_utc(now)}, unreachable since {_utc(self.since)}")
-        self.since = self.last = None
+        wall, mono = _utc_now(), time.monotonic()
+        self._load(wall, mono)
+        if self.start is not None and self.reported:
+            since = _utc(self._since(wall, mono))
+            _err(f"hub answering again at {_utc(wall)}, unreachable since {since}")
+        self.start = None
         self.reported = False
         with contextlib.suppress(OSError):
             (self.dir / OUTAGE_FILE).unlink(missing_ok=True)
@@ -1178,6 +1213,9 @@ def cmd_wait(args: argparse.Namespace) -> int:
     paused = False
     version_checked = False
     while True:
+        # An outage whose minute passed during a backoff or the rest of the window is named
+        # before the next poll, and before the timeout at the latest.
+        outage.check()
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             _unread_note(session, end - time.monotonic())
@@ -4895,7 +4933,8 @@ def build_parser() -> argparse.ArgumentParser:
         "with --keep-cursor; with --kind, both must match). Related: a message or request "
         "event; a project state, policy or rules change; an event that mentions you or is "
         "about you; one whose audience names you (member:, this instance's instance:, or a "
-        "card's watchers:) unless it is another member's presence or profile change. "
+        "private list the hub delivers only to readers on it, such as a card's watchers:) "
+        "unless it is another member's presence or profile change. "
         "Skipped: everything else, such as what reached you only through all, a role or "
         "trust token (a task_reported to role:reviewer too), and another member's "
         "member_availability_changed, member_updated or member_joined",

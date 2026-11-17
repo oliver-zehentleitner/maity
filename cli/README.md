@@ -192,7 +192,8 @@ maity: unread chats: 3 in 1 chats (0 mentions): maity chats
 `--related` keeps a message or request, a project state, policy or rules
 change, an event that mentions you or is about you (its `subject` or
 `payload.member_id`), and one whose audience names you (`member:`, this
-instance's `instance:`, or a card's `watchers:`), except another
+instance's `instance:`, or a private list the hub delivers only to the
+readers on it, such as a card's `watchers:`), except another
 member's `member_joined`, `member_updated` or
 `member_availability_changed`. Everything else, which reached you only
 through `all`, a role or a trust token, is read past and acknowledged as
@@ -201,9 +202,11 @@ event must pass both.
 
 A dropped connection, an HTTP 5xx or 429 is retried with the same cursor
 until the timeout. While the hub has given no good answer for less than
-a minute (counted across waits, kept in `outage.json` beside the state)
-`wait` says nothing; after that one line names the UTC time of the
-first failed read, such as
+a minute (counted across waits, kept in `outage.json` beside the state;
+within a wait on the monotonic clock, so a jump of the system clock
+changes nothing) `wait` says nothing; once the minute has passed, at the
+next failed read, before the next poll or before the timeout, whichever
+comes first, one line names the UTC time of the first failed read, such as
 `maity: hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:06Z; retrying until the timeout`,
 and `hub answering again at …` follows once it answers.
 

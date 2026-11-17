@@ -40,6 +40,9 @@ KEPT = {
     ),
     "my card's pull request merged": _event("link_observed", ["all", f"member:{ME}"]),
     "a card I watch": _event("task_updated", ["watchers:tsk-1"]),
+    "a further private list the hub delivers to me": _event(
+        "restricted_changed", ["restricted:tsk-1"], payload={"task_id": "tsk-1"}
+    ),
     "a report of mine stalled, to me as its boss": _event(
         "holder_stalled", [f"member:{ME}", "trust:admin"], **_about("agt-x")
     ),
@@ -106,6 +109,20 @@ def test_wait_related_acknowledges_what_it_reads_past_and_waits_on(
     assert cli.main(["wait", "--timeout", "2", "--related"]) == cli.EXIT_TIMEOUT
     assert capsys.readouterr().out == ""
     assert state.load_state(joined)["cursor"] == 11
+
+
+def test_wait_related_returns_an_event_of_a_private_list(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An event the hub delivered by a private list (PRIVATE_LIST_TOKENS) is printed, not
+    acknowledged unseen."""
+    fake.events += [
+        _event("link_observed", ["all"], 17),
+        _event("restricted_changed", ["restricted:tsk-1"], 18, payload={"task_id": "tsk-1"}),
+    ]
+    assert cli.main(["wait", "--timeout", "5", "--related"]) == cli.EXIT_OK
+    assert [e["seq"] for e in json.loads(capsys.readouterr().out)] == [18]
+    assert state.load_state(joined)["cursor"] == 18
 
 
 def test_wait_related_and_kind_must_both_match(

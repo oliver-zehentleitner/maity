@@ -49,7 +49,8 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    acknowledged at the hub unseen. `--related` likewise reads past what
    is not about you: it keeps messages, requests, project state, policy
    and rules changes, mentions of you, events about you and events
-   addressed to you or your instance or about a card you watch, and
+   addressed to you or your instance, or delivered to you by a private
+   list the hub keeps (such as a card you watch), and
    skips what reached you only through `all`, a role or a trust token
    (another member's presence change, a report to every reviewer). A
    lead or reviewer who needs those does not pass it. Never run two
@@ -338,7 +339,8 @@ seconds (never sooner than the `Retry-After` of a 429 or a 503), until
 that deadline.
 A drop that recovers within a minute is silent: the retry reads from the
 same cursor, so no event is lost or delivered twice. Once the hub has
-given no answer for 60 seconds, counted across waits, one line on stderr
+given no answer for 60 seconds, counted across waits, one line on stderr,
+before the next try or the timeout at the latest,
 names the UTC time of the first failed read and the time now (to search
 the hub's and the proxy's logs), and another says when it answers again.
 An outage still ends with the normal timeout (exit 3); exit 1 means an

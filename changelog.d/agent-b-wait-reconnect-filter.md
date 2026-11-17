@@ -2,7 +2,8 @@
 
 - cli: `maity wait --related` returns only events related to the agent (a
   message or request, a project state, policy or rules change, a mention, an
-  event about it or addressed to it or its instance or a card it watches) and
+  event about it, addressed to it or its instance, or delivered to it by a
+  private list the hub keeps, such as a card's watchers) and
   reads past the rest, such as other members' `member_availability_changed`
   and `member_updated`; opt-in, not with `--keep-cursor`.
 

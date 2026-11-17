@@ -81,10 +81,15 @@ def test_wait_outage_stops_at_deadline(
     assert state.load_state(joined)["cursor"] == 17
     captured = capsys.readouterr()
     assert captured.out == ""
-    # failed reads at 0, 2, 6, 14 and 30 s, then the window is rested out: 30 s without an
-    # answer is no outage yet (test_a_disconnect_of_a_minute_is_reported_with_utc_times)
-    assert "retrying until the timeout" not in captured.err
-    assert state.load_state(joined, cli.OUTAGE_FILE)["since"] == "2026-11-17T10:00:00Z"
+    # failed reads at 0, 2, 6, 14 and 30 s; the minute passes during the last backoff, and
+    # the line comes before the window is rested out, not only at a next failed read
+    assert captured.err.count("retrying until the timeout") == 1
+    assert (
+        "hub answered 503 since 2026-11-17T10:00:00Z, still at 2026-11-17T10:01:00Z; "
+        "retrying until the timeout" in captured.err
+    )
+    saved = state.load_state(joined, cli.OUTAGE_FILE)
+    assert saved["since"] == "2026-11-17T10:00:00Z" and saved["reported"] is True
 
 
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 409])
@@ -303,10 +308,10 @@ def test_a_disconnect_of_a_minute_is_reported_with_utc_times(
     _events_calls(monkeypatch, answer)
     assert cli.main(["wait", "--timeout", "120"]) == cli.EXIT_TIMEOUT
     err = capsys.readouterr().err
-    # failed reads at 1, 4, 9, 18, 35 and 66 s: the one at 66 s is 65 s after the first
+    # failed reads at 1, 4, 9, 18 and 35 s, then a backoff to 65 s: 64 s after the first
     assert err.count("hub connection lost since") == 1
     assert (
-        "hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:06Z; "
+        "hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:05Z; "
         "retrying until the timeout" in err
     )
 
@@ -352,22 +357,23 @@ def test_an_outage_is_counted_across_waits_and_its_end_is_reported(
     state.save_state(joined, {**state.load_state(joined), "cursor": 17})
     event = {"seq": 18, "kind": "message", "payload": {"type": "notice", "body": "hi"}}
     _down_then(clock, monkeypatch, 1000, {"items": [event], "cursor": 18})
-    # each wait of 40 s fails for 35 s: the first two stay under a minute since 10:00:01
+    # waits of 30 s, each ending 25 s in: the first two stay under a minute since 10:00:01
     for _ in range(2):
-        assert cli.main(["wait", "--timeout", "40"]) == cli.EXIT_TIMEOUT
+        assert cli.main(["wait", "--timeout", "30"]) == cli.EXIT_TIMEOUT
         assert "connection lost" not in capsys.readouterr().err
     saved = state.load_state(joined, cli.OUTAGE_FILE)
     assert saved["since"] == "2026-11-17T10:00:01Z" and saved["reported"] is False
-    assert cli.main(["wait", "--timeout", "40"]) == cli.EXIT_TIMEOUT
+    # the third fails at 51, 54 and 59 s; the minute passes in the backoff after that
+    assert cli.main(["wait", "--timeout", "30"]) == cli.EXIT_TIMEOUT
     err = capsys.readouterr().err
     assert err.count("hub connection lost since") == 1
-    assert "hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:11Z" in err
+    assert "hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:07Z" in err
     afters = _down_then(clock, monkeypatch, 0, {"items": [event], "cursor": 18})  # back
-    clock.now = 120
-    assert cli.main(["wait", "--timeout", "40"]) == cli.EXIT_OK
+    clock.now = 100
+    assert cli.main(["wait", "--timeout", "30"]) == cli.EXIT_OK
     captured = capsys.readouterr()
     assert (
-        "hub answering again at 2026-11-17T10:02:01Z, unreachable since 2026-11-17T10:00:01Z"
+        "hub answering again at 2026-11-17T10:01:41Z, unreachable since 2026-11-17T10:00:01Z"
         in captured.err
     )
     assert [e["seq"] for e in json.loads(captured.out)] == [18]
@@ -414,16 +420,61 @@ def test_a_fresh_outage_clock_reports_on_the_first_failure_of_the_next_wait(
     assert err.count(line) == 1
 
 
+@pytest.mark.parametrize("content", [b"not json", b"\xff"], ids=["not json", "not UTF-8"])
 def test_a_broken_outage_file_costs_the_wait_nothing(
     joined: Path,
     clock: Clock,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    content: bytes,
 ) -> None:
-    (joined / cli.OUTAGE_FILE).write_text("not json", encoding="utf-8")
+    path = joined / cli.OUTAGE_FILE
+    path.write_bytes(content)
+    path.chmod(0o600)  # private, so the read gets as far as the content
     _down_then(clock, monkeypatch, 3, {"items": [{"seq": 5, "kind": "message"}], "cursor": 5})
     assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert [e["seq"] for e in json.loads(captured.out)] == [5]
+    assert "connection lost" not in captured.err
+
+
+def _wall_jumps(clock: Clock, monkeypatch: pytest.MonkeyPatch, at: float, jump: float) -> None:
+    """The wall clock moves with the monotonic one, and jumps by `jump` seconds once the
+    monotonic clock reaches `at`."""
+    monkeypatch.setattr(
+        cli,
+        "_utc_now",
+        lambda: EPOCH + timedelta(seconds=clock.now + (jump if clock.now >= at else 0)),
+    )
+
+
+def test_a_forward_wall_clock_jump_makes_no_outage_of_a_short_drop(
+    joined: Path,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _wall_jumps(clock, monkeypatch, 2, 3600)  # 10:00 -> 11:00 before the second failed read
+    _down_then(clock, monkeypatch, 1000, {"items": [], "cursor": 0})
+    assert cli.main(["wait", "--timeout", "30"]) == cli.EXIT_TIMEOUT
+    # failed reads at 1, 4, 9 and 18 s of the monotonic clock: 17 s, no outage
     assert "connection lost" not in capsys.readouterr().err
+
+
+def test_a_backward_wall_clock_jump_does_not_start_the_clock_afresh(
+    joined: Path,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _wall_jumps(clock, monkeypatch, 30, -3600)  # back an hour before the read at 35 s
+    _down_then(clock, monkeypatch, 1000, {"items": [], "cursor": 0})
+    assert cli.main(["wait", "--timeout", "120"]) == cli.EXIT_TIMEOUT
+    err = capsys.readouterr().err
+    # failed reads at 1, 4, 9, 18 and 35 s, then a backoff to 65 s: reported there, 64 s after
+    # the first, its time named on the wall clock as it reads now
+    assert err.count("hub connection lost since") == 1
+    assert "hub connection lost since 2026-11-17T09:00:01Z, still at 2026-11-17T09:01:05Z" in err
 
 
 @pytest.mark.parametrize(("named", "warned"), [("99.0.0", True), ("0.0.1", False), (None, False)])
