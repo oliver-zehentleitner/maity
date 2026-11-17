@@ -570,7 +570,8 @@ class Supervisor:
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
             elif rec.state == "running" and p.get("mode") == "interactive":
-                self._idle(p, rec, mine, backend, now)
+                if rec.folder_prompt != "left":  # no line typed into a prompt left alone
+                    self._idle(p, rec, mine, backend, now)
             return 0
         if mine is not None and mine.dead:
             self._exited(rec, mine, now, backend, target)
@@ -1360,7 +1361,11 @@ def private_paths(
         return path.resolve() if here else path
 
     clone = norm(clone)
-    found = [*((norm(state_dir),) if state_dir else ()), *(home / n for n in HOME_SECRETS)]
+    # The home resolved too: with a link in its path, its secrets and the runner's own
+    # configuration (resolved) would no longer be seen as one inside the other
+    # (adapters.outermost).
+    found = [*((norm(state_dir),) if state_dir else ()),
+             *(norm(home) / n for n in HOME_SECRETS)]  # fmt: skip
     found += [*others, *(norm(path) for path in extra)]
     return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
 

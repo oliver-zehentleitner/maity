@@ -2035,6 +2035,41 @@ def test_the_folder_prompt_is_left_alone_with_a_person_there_or_another_harness_
     assert backend.submitted == 0
 
 
+def test_a_folder_prompt_showing_both_choices_is_left_alone(world: Any) -> None:
+    sup, backend, _, _, logs = world
+    backend.screen = RESTRICTED + TRUSTING
+    started(world)
+    sup.tick()
+    assert backend.submitted == 0
+    assert any("waiting on a first-run prompt" in line for line in logs)
+
+
+def test_a_new_start_looks_for_the_folder_prompt_again(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = RESTRICTED
+    started(world)
+    sup.tick()
+    assert backend.submitted == 1
+    backend.exit(SESSION, 0)
+    sup.tick()
+    clock.now += 600
+    settle(sup)
+    sup.tick()
+    assert SESSION in backend.live and backend.submitted == 2
+
+
+def test_a_folder_prompt_left_alone_gets_no_idle_nudge(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    for _ in range(45):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [] and backend.submitted == 0
+
+
 def test_the_folder_prompt_is_looked_for_only_soon_after_the_start(world: Any) -> None:
     sup, backend, _, clock, _ = world
     backend.screen = "> "

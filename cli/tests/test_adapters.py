@@ -698,6 +698,40 @@ def test_codex_hides_no_path_inside_one_it_hides_already(tmp_path: Path) -> None
     assert adapters.outermost((Path("/a/b"), Path("/a"), Path("/ab"))) == (Path("/a"), Path("/ab"))
 
 
+def test_codex_keeps_a_hidden_path_inside_its_own_clone_hidden(tmp_path: Path) -> None:
+    """The clone is opened inside the hidden workspaces root, so a hidden path inside the
+    clone is not hidden by the root and stays listed."""
+    inner = tmp_path / "ws" / "maity" / "agent-3" / "sub" / ".git" / "maity"  # in its clone
+    ctx = context(
+        tmp_path,
+        "codex",
+        workspaces=tmp_path / "ws",
+        private=(inner, tmp_path / "ws" / "maity" / "agent-4" / ".git" / "maity"),
+    )
+    assert inner.is_relative_to(ctx.clone)
+    hidden = [path for path, level in tomllib.loads(adapters.codex_config(ctx))["permissions"]
+              ["maity"]["filesystem"].items() if level == "none"]  # fmt: skip
+    assert hidden == [str(tmp_path / "ws"), str(inner)]
+    assert adapters.outermost((Path("/w"), Path("/w/c/x"), Path("/w/c/x/y"), Path("/w/d")),
+                              opened=(Path("/w/c"),)) == (Path("/w"), Path("/w/c/x"))  # fmt: skip
+
+
+def test_the_home_secrets_are_listed_under_the_home_resolved(tmp_path: Path) -> None:
+    """A home reached through a link: its secrets and the runner's configuration (resolved)
+    must be seen as one inside the other, or Codex's profile would list both."""
+    real = tmp_path / "real-home"
+    (real / ".config" / "maity-runner").mkdir(parents=True)
+    (real / ".config" / "maity-runner" / "runner.toml").write_text("")
+    (tmp_path / "home").symlink_to(real)
+    clone = tmp_path / "ws" / "p" / "agent-3"
+    found = supervisor.private_paths(
+        None, tmp_path / "home", clone,
+        extra=(tmp_path / "home" / ".config" / "maity-runner" / "runner.toml",),
+    )  # fmt: skip
+    assert real / ".config" / "maity-runner" in found
+    assert adapters.outermost(found).count(real / ".config" / "maity-runner" / "runner.toml") == 0
+
+
 def test_claude_code_denies_reading_the_runner_state_and_home_secrets(tmp_path: Path) -> None:
     secrets = (tmp_path / "st", tmp_path / "home" / ".ssh")
     ctx = context(tmp_path, private=secrets, workspaces=tmp_path / "ws", sandbox=True)

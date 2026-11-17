@@ -527,13 +527,22 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
 CODEX_PROVIDER_HOSTS = ("api.openai.com", "chatgpt.com")
 
 
-def outermost(paths: Sequence[Path]) -> tuple[Path, ...]:
-    """`paths` without those another of them already contains, in their order. Codex's
-    sandbox (bwrap) hides a path by mounting over it; a path inside one hidden before has
-    nowhere to be mounted ("Can't create file … Read-only file system"), and every command
-    fails. The outer path hides it already."""
+def outermost(paths: Sequence[Path], opened: Sequence[Path] = ()) -> tuple[Path, ...]:
+    """`paths` without those another of them already hides, in their order. Codex's sandbox
+    (bwrap) hides a path by mounting over it; a path inside one hidden before has nowhere to
+    be mounted ("Can't create file … Read-only file system"), and every command fails. A
+    path is dropped only when nothing in `opened` (a more specific rule that opens a
+    directory again, the clone's) lies between it and the hidden one that contains it: there
+    the outer path no longer hides it, and it stays listed. Compared as given: the runner
+    lists them resolved where it can (supervisor.private_paths)."""
     unique = tuple(dict.fromkeys(paths))
-    return tuple(p for p in unique if not any(q in p.parents for q in unique))
+
+    def hidden_by(p: Path, q: Path) -> bool:
+        return q in p.parents and not any(
+            q in r.parents and (r == p or r in p.parents) for r in opened
+        )
+
+    return tuple(p for p in unique if not any(hidden_by(p, q) for q in unique))
 
 
 def codex_config(ctx: Context) -> str:
@@ -545,7 +554,8 @@ def codex_config(ctx: Context) -> str:
     # Unreadable: other clones (the workspaces root), the runner's state and the secrets in
     # the agents' home. The clone's own rules are more specific and win; its credential
     # stays readable, since the agent's `maity` runs inside the sandbox.
-    roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private))
+    roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private),
+                      opened=(ctx.clone,))  # fmt: skip
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
     return (
         'approval_policy = "never"\n'

@@ -547,15 +547,19 @@ presses Enter once and logs it. A folder prompt without that choice
 (one offering "Trust and continue") is never answered: the log says the
 harness waits on a first-run prompt. The pane's text is only matched
 (`Tmux.pane_has`), never kept, logged or sent, as in the idle check.
+A session adopted after a runner restart is not looked at (no start the
+runner made), and a session whose prompt was left alone gets no idle
+line typed into it.
 
 **Reason:** "Open restricted" keeps the folder untrusted and saves
 nothing, so the clone's own `.codex` configuration stays out exactly as
-before; Codex offers no setting that skips the prompt. Answering only that
+before; no setting that skips the prompt for an untrusted folder was
+found in Codex 0.169's onboarding code. Answering only that
 choice means the runner can never be the one that trusts a folder.
 
 **Rejected alternatives:**
 - Mark the clone trusted: Codex would load a committed `.codex/config.toml`
-  over the runner's profile (c2acd907).
+  over the runner's profile (c2acd907-0f26-4850-8272-063390f1d6a7).
 - Refuse interactive Codex and offer only supervised: not needed while the
   restricted choice exists; it stays the fallback if a version drops it.
 - A placement `detail` for a harness waiting on a prompt: a contract change
