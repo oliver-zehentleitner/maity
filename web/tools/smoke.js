@@ -18027,6 +18027,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("mail-password").value = "failed-test-value";
   main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
   expect(byId("mail-password").value === "" && text(main).includes("instance encryption key is not configured") && !text(main).includes("failed-test-value"), "admin: failed save clears password and explains field refusal");
+  // Distinct counts pin which counter feeds which slot of the line for the kinds with a budget of their own.
+  win.Maity.api.get = (path) => path === "/admin/settings/mail" ? adminGet(path).then((v) => ({ ...v,
+    verification_sent_last_hour: 2, invitation_sent_last_hour: 3, second_factor_sent_last_hour: 5,
+    second_factor_dropped_last_hour: 7, verification_queued: 11, invitation_queued: 13, security_queued: 17 })) : adminGet(path);
+  await go("#/all"); await go("#/admin");
+  expect(text(main.querySelector("p.mail-last-hour-own")) === "Own budgets, last hour: 2 verification mails, 3 invitation mails, 5 second-factor mails, 7 second-factor mails dropped; 24 verification or invitation mails waiting.",
+    "admin: each own-budget counter feeds its own slot " + text(main.querySelector("p.mail-last-hour-own")));
   win.Maity.api.get = (path) => path === "/admin/settings/mail" ? Promise.reject(new win.Maity.api.ApiError("denied", 403, path, "forbidden")) : adminGet(path);
   await go("#/all"); await go("#/admin");
   expect(text(main).includes("Mail settings could not be read: denied") && text(main).includes("Instance information"), "admin:403 is visible and other sections still load");
