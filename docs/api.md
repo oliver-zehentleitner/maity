@@ -18227,6 +18227,40 @@ still needed (the owner's decision, req-fdfb49yzqnhv, tsk-34gb7frfbsk7):
   the target and stays. `maity runner check` warns when the file
   system holding the workspaces has less than 10 % or 5 GiB free.
 
+**A placement's scratch** (not built yet, tsk-dpe3d5g5eh4k). Besides
+its clone, each placement gets a directory for what is thrown away
+after the work: a review's or a test's evidence, a temporary clone, a
+virtual environment, temporary files. Without it these pile up in the
+agents' shared home, which no removal of a clone reaches:
+
+- **Where.** `<workspaces>/<project_id>/.scratch/<placement id>`, one
+  per placement, created by the runner at the start as the agents'
+  user. Never in the clone, where git would see it and where it would
+  count as unsaved work, and never in an `antigravity` workspace
+  folder, which holds nothing but `repo`. `.scratch` cannot be a clone's
+  name, since a clone's starts with a letter or digit.
+- **Told to the session.** The runner passes the path as
+  `MAITY_SCRATCH` and points `TMPDIR` into it, so a tool's temporary
+  files land there too, and lets the harness's sandbox write it. Under
+  a placement maity reads a file the agent names (`--body-file` and the
+  others, docs/agents.md) from it as from the clone, so an agent whose
+  clone its sandbox keeps read-only can still send one. An agent keeps
+  its leftovers there and
+  deletes what it no longer needs once it has reported.
+- **Thrown away, never kept.** Unlike the clone, nothing in it counts
+  as unsaved work. The runner removes it when the placement closes,
+  read as closed from the hub as for the clone (above), and after a
+  stop on the clone's own clock: with the clone, or for a clone that
+  stays as `kept`, at the deadline the retention set. A restart, a
+  `rejoin` and an adoption keep it, as `desired: running` does.
+  `maity runner gc` removes the scratch of placements the hub reads as
+  closed and directories no placement of the runner names.
+- **Not reported to the hub.** Its size and its removal are the
+  operator's: `maity runner status` shows the size of each placement's
+  clone and scratch, and the runner writes every removal (when, which
+  placement, path, size, why) to its log and to `removed.jsonl` in its
+  state directory. `workspace_outcome` stays about the clone alone.
+
 ### 15.6 Placement endpoints, proposals and consent
 
 | Endpoint | Scope | Notes |
