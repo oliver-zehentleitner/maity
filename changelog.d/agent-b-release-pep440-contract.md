@@ -6,3 +6,6 @@
   spellings PEP 440 would normalize are refused with
   `details.fields.release.version: not_a_version`. The probe looks for the tag `v{version}`
   as given; versions are compared as text, so `0.1.0-alpha.4` and `0.1.0a4` are two releases.
+- Contract: only a final release (no SemVer `-…` and no PEP 440 `a`, `b` or `rc` part) marks
+  the project released when the probe finds its tag (§6.1, §6.7); a pre-release tag never
+  sets `released_at`.
