@@ -735,7 +735,7 @@ def _stored(
         return None
     return {
         "used": attachments.used(conn, project.id),
-        "quota": limits.of(conn, settings_of(request), limits.PROJECT_STORAGE),
+        "quota": limits.project_storage(conn, settings_of(request), project.id),
     }
 
 

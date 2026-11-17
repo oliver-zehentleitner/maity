@@ -19,7 +19,9 @@ from alembic import op
 from maity_hub.types import JSON_VALUE, UtcDateTime
 
 revision: str = "20261117230000_limit_override"
-down_revision: str | None = "20261117100000_roles_version"  # LOCAL: back to plc_per_instance before the PR
+down_revision: str | None = (
+    "20261117100000_roles_version"  # LOCAL: back to plc_per_instance before the PR
+)
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -111,7 +111,7 @@ def test_the_organisation_cap_is_the_admins_value_and_counts_humans_at_it(
     refused = admin.post("/orgs", {"handle": "second-org", "display_name": "Second"})
     assert refused.status_code == 409, refused.text
     assert refused.json()["error"]["code"] == "org_limit"
-    assert refused.json()["error"]["details"] == {"limit": 1, "count": 1}
+    assert refused.json()["error"]["details"] == {"limit": 1, "count": 1, "source": "instance"}
     assert admin.get(PATH).json()["humans_at_org_limit"] == 1
     # lowering deletes nothing; unlimited lifts the cap and counts no one
     assert admin.patch(PATH, {"max_orgs_per_human": "unlimited"}).json()["humans_at_org_limit"] == 0
@@ -127,7 +127,7 @@ def test_the_agent_cap_gates_the_creation_of_profiles(admin: flow.Human) -> None
     refused = agent(admin, "third")
     assert refused.status_code == 409, refused.text
     assert refused.json()["error"]["code"] == "agent_limit"
-    assert refused.json()["error"]["details"] == {"limit": 2, "count": 2}
+    assert refused.json()["error"]["details"] == {"limit": 2, "count": 2, "source": "instance"}
     assert admin.get(PATH).json()["humans_at_limit"] == 1
     # a deleted profile does not count
     [first] = [a for a in admin.get("/agents").json()["items"] if a["handle"] == "first"]
