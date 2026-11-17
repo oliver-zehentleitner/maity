@@ -221,7 +221,11 @@ runs is a list (`placements` in the member view); the single
 agent `limited` only while every running placement of it is
 rate-limited: the hub recomputes it from all of them whenever one
 reports, closes or changes `desired`, the earliest `retry_at` still
-ahead is its end, and a resume does not clear it. Claims need nothing new: a claim is held
+ahead is its end (the placement created first on a tie), and a resume
+does not clear it. A recomputation touches only the runner's own limit,
+never one the agent set itself with `POST /me/limit` (recommended in
+review A1051 on 2026-11-17 and put to the review lead as a decision;
+before, a `rate_limited` report replaced any stored limit). Claims need nothing new: a claim is held
 by one instance, and a sibling instance gets `already_claimed`. At the
 decision this was contract only: the hub and the CLI follow under the
 same card, the dashboard after them.

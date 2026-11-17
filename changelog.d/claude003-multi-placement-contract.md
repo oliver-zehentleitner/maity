@@ -7,8 +7,15 @@
   placement view and the runner owner's line carry `instance`, and the member
   view gains `placements`, the list of where the agent runs. A runner's
   rate limit is recomputed from all of the agent's placements that should
-  run, and a resume no longer clears a limit the runner set, with one
-  placement too. Not built yet (tsk-rfa7fwa2sz5g).
-- contract: the replacement of §15.14 and everything that names it
-  (routes, `replace_open`, `handover_requested`, the placement's
-  `replace`) are marked not built.
+  run, at each report, close or change of `desired`; with one placement
+  too, so a change to `desired: stopped` ends the limit at once, not at
+  the later `stopped` report, and a resume no longer clears a limit the
+  runner set. A recomputation never replaces or clears a limit the agent
+  set itself (`POST /me/limit`); today a `rate_limited` report replaces
+  it. Not built yet (tsk-rfa7fwa2sz5g).
+- contract: the runner replacement of §15.14 is marked not built, and so
+  is every place that names it: its routes and their limits (§1.7),
+  `replace_open`, the handover conflict, `handover_requested`,
+  `placement_replaced`, the closing reasons `replaced` and
+  `replace_failed`, the runner's `handover_key`, and the placement's
+  `replace`, `replaces`, `replaced_by`, `handover` and `kept_until`.
