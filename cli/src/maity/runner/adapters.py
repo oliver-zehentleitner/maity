@@ -106,6 +106,11 @@ PULL_REQUEST_PROMPT = (
 # HTTP), clonecheck refuses it with content, and a deny on a missing file would leave one
 # more placeholder that was not seen in a sandboxed run.
 GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alternates")
+# The GIT_PROTECTED entries that are files git does not create in a plain clone, so they can be
+# absent at start. The runner writes an empty placeholder for each missing one so the deny rules
+# have a file to cover, the way the Claude Code adapter seeds CLAUDE_PLACEHOLDERS. `hooks` and
+# `info` are directories a clone always has, so they need no placeholder.
+AGY_GIT_PLACEHOLDERS = ("config.worktree", "objects/info/alternates")
 
 # An OS-made UUID v4 for an agent's Keep-the-Why entries (AGENTS.md, keepthewhy.com): the skill
 # makes every entry's `Id` with an OS command, never from memory. The harnesses with a
@@ -212,10 +217,6 @@ class Context:
     git: config.GitIdentity = config.GitIdentity()  # who the session commits as (`[git]`)
     # The workspace folder the harness starts in, holding the clone (§15.5); None: the clone.
     folder: Path | None = None
-    # The `bin` of the runner's shared dev venv for this placement, prepended to the session's
-    # PATH so the project's pinned pytest, ruff, black and mypy are found (venv.py); "" when the
-    # runner builds none (no pinned dev requirements configured, or the file is not in the clone).
-    venv_bin: str = ""
 
 
 @dataclass(frozen=True)
@@ -239,10 +240,6 @@ def launch(ctx: Context) -> Launch:
         # which the pin does not reach; git passes these settings on to it.
         **git_config(ctx),
         **git_identity(ctx),
-        # The dev venv's `bin` ahead of the session's PATH, so the project's pinned pytest,
-        # ruff, black and mypy are found before any on the agents' own PATH (venv.py). The
-        # session env overrides the tmux server's PATH for this placement only.
-        **({"PATH": f"{ctx.venv_bin}{os.pathsep}{ctx.agent_path}"} if ctx.venv_bin else {}),
         **ctx.extra_env,
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
@@ -741,11 +738,14 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     runs a command no rule names in the sandbox without asking; the sandbox is on and the
     workspace folder trusted, so an interactive start asks nothing.
 
-    Allowed to the file tools: reading and writing the whole clone, so the file tools never
-    prompt inside it (a headless `-p` run cannot answer a prompt, so it would otherwise deny
-    its own `read_file`/`write_file`), and so agy's terminal sandbox, whose writable region
-    follows these rules, mounts the clone — `.git` included — writable, which `git fetch` and
-    `git commit` need. Allowed as commands and URLs: `maity` and the hub, the forge and the
+    Allowed to the file tools: reading and writing the whole clone, as bare directories (agy
+    1.5.10 takes a bare directory, not a `/**` glob), so the file tools never prompt inside it
+    (a headless `-p` run cannot answer a prompt, so it would otherwise deny its own
+    `read_file`/`write_file`). The clone — `.git` included — is thereby the writable region
+    agy's terminal sandbox is meant to use, which `git fetch` and `git commit` need. In a
+    signed-in test with these settings, writes stayed inside the clone; pushing to a forge and
+    the interactive mode are not verified (see the agy both-modes entry in
+    cli/context/runner.md). Allowed as commands and URLs: `maity` and the hub, the forge and the
     grant's `network` hosts. A grant's `allow` command list is not given to agy (agy_grants):
     agy does not match a `command(...)` rule the way Claude Code does, so each such entry is
     left out and runs in agy's sandbox, named by `maity runner check`.
@@ -759,9 +759,10 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     git = ctx.clone / ".git"
     allow = ["command(maity)"]
     allow += [f"read_url({host})" for host in sorted({*ctx.hosts, *ctx.grant.network})]
-    # The whole clone, read and write, for the file tools and so the terminal sandbox mounts
-    # it writable; the denies below are more specific paths under it and win.
-    allow += [f"{tool}({ctx.clone}/**)" for tool in ("read_file", "write_file")]
+    # The whole clone, read and write, as a bare directory: agy 1.5.10 takes a bare directory
+    # (not a `/**` glob) and makes it the file tools' and the terminal sandbox's writable
+    # region; the denies below are more specific paths under it and win.
+    allow += [f"{tool}({ctx.clone})" for tool in ("read_file", "write_file")]
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
@@ -777,9 +778,24 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     }
 
 
+def agy_git_placeholders(ctx: Context) -> None:
+    """Seed an empty placeholder for each AGY_GIT_PLACEHOLDERS path that is missing, as the
+    agents' user, so agy's `write_file` deny on it has a file to cover. An empty
+    `config.worktree` and an empty `objects/info/alternates` change nothing for git (no worktree
+    config, no alternates)."""
+    git = ctx.clone / ".git"
+    for name in AGY_GIT_PLACEHOLDERS:
+        path = git / name
+        if not ctx.as_user.exists(path):
+            ctx.as_user.write(path, "")
+
+
 def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
     assert ctx.folder is not None  # noqa: S101 - the supervisor gives agy its folder
+    # agy's terminal sandbox is always on for a session (enableTerminalSandbox); seed the git
+    # placeholders the deny needs before the settings are written.
+    agy_git_placeholders(ctx)
     settings = _write(ctx, ctx.agent_dir / "agy-settings.json", antigravity_settings(ctx))
     # agy takes the work tree from $PWD: the folder's real path (workspace.check_folder).
     env = {**env, "PWD": str(ctx.folder)}

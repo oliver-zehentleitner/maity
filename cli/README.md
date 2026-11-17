@@ -1106,14 +1106,6 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Clean environment.** The tmux server starts under `env -i` with only
   `HOME`, `PATH` (= `agent_path`), `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
   `MAITY_STATE_DIR` and the runner's own variables never reach an agent.
-- **A dev venv (optional).** With `dev_requirements` set to a hash-locked
-  requirements file inside the clone (relative, e.g.
-  `cli/requirements/dev.txt`, no `..`), the runner builds a virtual
-  environment from it once per placement, outside the clone, and puts its
-  `bin` ahead of the session's PATH, so an agent runs the project's checks
-  with the versions the project pins (see
-  [runners](../docs/runners.md#a-venv-of-the-projects-pinned-dev-tools)).
-  Without it, no venv is built.
 - **Clones.** Each clone is `<workspaces>/<project id>/<clone>`, recorded in
   `<state_dir>/workspaces.json`. The project id (`prj-…`) is fixed, so a
   renamed or transferred project (`docs/api.md` §6.25) finds its clone and
@@ -1258,12 +1250,20 @@ project's own harness configuration is never loaded:
   its sandbox. Before every start the runner refuses a folder that holds
   anything besides `repo` (`workspace_not_bare`), lies inside a git work
   tree or is not at its real path (`workspace_in_repository`), and deletes
-  nothing there. Each session gets runner-written `--settings`: the
-  default agent mode (not `auto`), `proceed-in-sandbox`, the terminal
-  sandbox on, the folder trusted, the file tools denied `.git/maity`,
-  writes to `.git/config` and `.git/hooks`, the other clones'
-  credentials, the runner's state and the listed home secrets with agy's
-  sign-in; `maity` and the hub's, forge's and `network` hosts allowed. The
+  nothing there. Each session gets runner-written `--settings`:
+  `accept-edits` in interactive mode (the empty default when supervised),
+  never `auto`; `proceed-in-sandbox`, the terminal sandbox on, the folder
+  trusted; the file tools allowed to read and write the clone as a bare
+  directory, so the clone — `.git` included, which `git fetch` and `git
+  commit` need — is the sandbox's writable region (in a signed-in test
+  with these settings, writes stayed inside the clone; pushing to a forge
+  and the interactive mode are not verified); and, more specific so they
+  still win, the file tools denied `.git/maity`, writes to `.git/config`
+  and `.git/hooks`, the other clones' credentials, the runner's state and
+  the listed home secrets with agy's sign-in (the runner seeds an empty
+  placeholder for the `.git` files a plain clone lacks so each deny rule
+  has a file to cover); `maity` and the hub's, forge's and `network` hosts
+  allowed. The
   repository's `allow` command list is not applied to agy — each entry,
   exact or ` *` prefix, is left out and runs in agy's sandbox, named by
   `maity runner check`. An allowed command may

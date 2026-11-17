@@ -167,7 +167,7 @@ def test_the_settings_profile(tmp_path: Path) -> None:
             "allow": [
                 "command(maity)",
                 "read_url(github.com)", "read_url(maity.team)", "read_url(pypi.org)",
-                f"read_file({ctx.clone}/**)", f"write_file({ctx.clone}/**)",
+                f"read_file({ctx.clone})", f"write_file({ctx.clone})",
             ],
             "deny": [
                 *(f"{tool}({path})" for path in hidden for tool in ("read_file", "write_file")),
@@ -203,20 +203,21 @@ def test_the_whole_clone_is_read_and_write_allowed(tmp_path: Path) -> None:
     for mode in ("interactive", "supervised"):
         ctx = context(tmp_path / mode, placement={"id": "plc-0003", "mode": mode})
         allow = adapters.antigravity_settings(ctx)["permissions"]["allow"]
-        assert f"read_file({ctx.clone}/**)" in allow
-        assert f"write_file({ctx.clone}/**)" in allow
+        assert f"read_file({ctx.clone})" in allow
+        assert f"write_file({ctx.clone})" in allow
 
 
 def test_git_is_writable_except_the_credential_and_what_runs_a_program(tmp_path: Path) -> None:
-    """Decision 3: agy's terminal sandbox, whose writable region follows the file-tool rules,
-    mounts the clone — `.git` included — writable, so `git fetch` and `git commit` can write
-    refs, objects, the index and logs. The credential (`.git/maity`) and what makes git run a
-    program (GIT_PROTECTED: `.git/config`, `.git/hooks`, …) stay denied, and being more
-    specific paths under the clone-wide allow they win. Nothing denies all of `.git`."""
+    """agy's terminal sandbox, whose writable region follows the file-tool write_file rules,
+    is given the clone — `.git` included — as its writable region, so `git fetch` and `git
+    commit` can write refs, objects, the index and logs. The credential (`.git/maity`) and what
+    makes git run a program (GIT_PROTECTED: `.git/config`, `.git/hooks`, …) stay denied, and
+    being more specific paths under the clone-wide allow they win. Nothing denies all of
+    `.git`."""
     ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "supervised"})
     git = ctx.clone / ".git"
     perms = adapters.antigravity_settings(ctx)["permissions"]
-    assert f"write_file({ctx.clone}/**)" in perms["allow"]  # covers .git, so it is writable
+    assert f"write_file({ctx.clone})" in perms["allow"]  # covers .git, so it is writable
     assert f"read_file({git / 'maity'})" in perms["deny"]
     assert f"write_file({git / 'maity'})" in perms["deny"]
     for name in adapters.GIT_PROTECTED:
@@ -224,6 +225,24 @@ def test_git_is_writable_except_the_credential_and_what_runs_a_program(tmp_path:
     # No blanket deny on `.git` itself: fetch and commit write under it.
     assert f"write_file({git})" not in perms["deny"]
     assert f"write_file({git}/**)" not in perms["deny"]
+
+
+def test_agy_git_placeholders_seed_the_missing_protected_files(tmp_path: Path) -> None:
+    """A denied `.git` path agy's sandbox can only mask read-only when it exists: the runner
+    seeds an empty placeholder for each AGY_GIT_PLACEHOLDERS path git did not create, and
+    leaves one that already has content alone."""
+    ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "supervised"})
+    git = ctx.clone / ".git"
+    (git / "objects" / "info").mkdir(parents=True)
+    (git / "config").write_text("[core]\n")  # a real clone already has config
+    adapters.agy_git_placeholders(ctx)
+    for name in adapters.AGY_GIT_PLACEHOLDERS:
+        assert (git / name).is_file() and (git / name).read_text() == ""
+    assert (git / "config").read_text() == "[core]\n"  # existing content is not overwritten
+    # Every seeded placeholder is one the settings deny for writing.
+    deny = adapters.antigravity_settings(ctx)["permissions"]["deny"]
+    for name in adapters.AGY_GIT_PLACEHOLDERS:
+        assert f"write_file({git / name})" in deny
 
 
 def test_supervised_asks_the_loop_to_reap_the_turns_process_group(tmp_path: Path) -> None:
@@ -632,13 +651,22 @@ def test_the_spec_flag_picks_the_reaping_run(
 
 
 def _alive(pid: int) -> bool:
+    """Whether `pid` is a process still doing something. A zombie (already exited, not yet
+    reaped) counts as gone, as `loop._reap` treats it: `os.kill(pid, 0)` alone would call a
+    defunct process alive and, in a PID namespace, make the reap look stalled."""
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
         return True
-    return True
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as fh:
+            stat = fh.read()
+    except OSError:
+        return False
+    tail = stat[stat.rfind(")") + 1 :].split()
+    return not (tail and tail[0] == "Z")
 
 
 def test_the_reaping_run_ends_a_background_process_the_turn_left(tmp_path: Path) -> None:
@@ -661,6 +689,25 @@ def test_the_reaping_run_ends_a_background_process_the_turn_left(tmp_path: Path)
     finally:
         sentinel.terminate()
         sentinel.wait(timeout=5)
+
+
+def test_the_reaping_run_bounds_a_turn_that_never_terminates(tmp_path: Path) -> None:
+    """A harness that never exits — here a non-interactive shell that starts a background child
+    and then `wait`s on it forever — is stopped at the turn's bound and the whole group reaped,
+    so the turn ends (EXIT_TURN) instead of hanging the loop."""
+    pidfile = tmp_path / "bg.pid"
+    # The "turn": a shell that backgrounds a long sleep and waits on it indefinitely; it never
+    # returns on its own, unlike a shell that merely leaves a background process and exits.
+    script = f"sleep 300 & echo $! > {shlex.quote(str(pidfile))}; wait"
+    started = time.monotonic()
+    code = loop._run_reaped(["sh", "-c", script], {}, timeout=0.5)
+    assert time.monotonic() - started < 20  # bounded, not hung on the never-returning shell
+    assert code == loop.EXIT_TURN
+    leftover = int(pidfile.read_text())
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and _alive(leftover):
+        time.sleep(0.05)
+    assert not _alive(leftover)  # the whole turn group, the waiting shell included, was reaped
 
 
 def test_reap_never_signals_pid_0_or_1(monkeypatch: pytest.MonkeyPatch) -> None:
