@@ -204,7 +204,7 @@ ones — no clients outside the project depend on them yet.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's direction of 2026-11-17 in his chat (card tsk-rfa7fwa2sz5g); the lead's approval of the plan's six points, seq 151385; contract in `docs/api.md` §6.17, §15.5, §15.11
+**Source:** the maintainer's direction of 2026-11-17 in his chat (card tsk-rfa7fwa2sz5g); the lead's approval of the plan's six points, seq 151385; the lead's choice of variant (a) for the runner's limit after reviews A1089 and A1090, relayed in the fix order of 2026-11-17; contract in `docs/api.md` §6.17, §15.5, §15.11
 **Revisit when:** placements need a limit of their own apart from `max_instances`, or instances of one agent need a different spec per runner beyond harness, model and clone
 **See:** instances.md#each-team-has-a-rulebook-set-by-a-human-size-work-distribution-who-a-team-message-wakes-review-within-the-team — e42155de-c20d-43cc-a042-4151f860e25d — as of 2026-11-17
 
@@ -218,8 +218,16 @@ first credential and the new one, and again at the pickup;
 clones, `<handle>` and `<handle>-2`, the hub's default. Where an agent
 runs is a list (`placements` in the member view); the single
 `placement` stays as the oldest one. A runner's rate limit makes the
-agent `limited` only while every running placement of it is
-rate-limited: the hub recomputes it from all of them whenever one
+agent `limited` while at least one placement that should run is
+rate-limited and none of them runs (last report `starting` or
+`running`; a passed `retry_at` counts as running again); a placement
+that has not reported, waits with `pending`/`capacity`, has `failed` or
+waits for its approval is neutral (variant (a), the lead's decision of
+2026-11-17 on reviews A1089 and A1090; before, any report that was not
+`rate_limited` ended the limit). Creating or proposing a placement
+recomputes nothing: the new one is neutral, so a recomputation would
+give the same result (A1090's request, corrected in seq 154660). The
+hub recomputes it from all of them whenever one
 reports, closes or changes `desired`, when a limit the agent set
 itself ends (at its `until` or by a resume), and at every clearing with
 `POST /me/limit` and `until: null`, a runner's limit included (so
@@ -251,7 +259,22 @@ existing per-agent instance limit already says how many instances an
 agent may have; a placement is one more instance, so it falls under that
 limit rather than a second one.
 
+Why variant (a) for the rate limit: a sibling that only waits (for a
+runner slot, for its approval, for its first report) or has failed does
+no work, so it must not show the agent `available` while the one
+placement that ran is rate-limited (review A1089: P2 `pending`/`capacity`
+and P1 `rate_limited` left the agent available). And the old rule made
+the result depend on what triggered the recomputation: a P2 created
+after P1's limit left it standing, but P1's unchanged repeated report
+then cleared it (review A1090). With unreported and waiting placements
+neutral, every trigger gives the same answer.
+
 **Rejected alternatives:**
+- Any report of a sibling that is not `rate_limited` ends the runner's
+  limit (the rule of this pull request's first rounds): a sibling
+  waiting with `pending`/`capacity` or one that failed made the agent
+  `available` though nothing of it ran, and the answer depended on the
+  trigger order.
 - One active placement per membership (the rule until 2026-11-17): it
   kept one agent from running on two runners or twice on one.
 - A placement quota per agent beside `max_instances`: a second number
