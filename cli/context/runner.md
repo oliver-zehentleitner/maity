@@ -442,7 +442,7 @@ with free arguments.
 **Status:** superseded
 **Superseded by:** b2cbf1a7-e25c-4803-8bc4-845c488512fc
 **Evidence:** confirmed
-**Source:** runner design v2 §6.1 ("`Bash(git *)` is not a boundary"); the coordinator's review of runner slice R5a, 2026-10-22 (`git diff --no-index` printed the clone's credential)
+**Source:** runner design v2 §6.1 ("`Bash(git *)` is not a boundary"); the coordinator's review of runner slice R5a, 2026-10-22 (a git read printed the clone's credential)
 **Revisit when:** the `agent_user` layout (R7) or the Kubernetes backend makes the OS user or the pod the boundary
 
 The runner grants named `git` subcommands, not `git *`. It denies `-c`,
@@ -456,7 +456,7 @@ sandbox, and for Codex and opencode, any repository code an allowed
 build or test command runs can read the clone's credential.
 
 **Reason:** git runs programs through its options and configuration, and
-`diff --no-index` reads any file. A wildcard grant therefore meant "may
+git can read any file. A wildcard grant therefore meant "may
 run anything", and in the `single` layout that includes reading the
 agent's own credential and the runner's state. Naming subcommands and
 denying the known escape routes stops accidents and naive prompt
@@ -503,7 +503,8 @@ own Codex still works. A link keeps one file for both.
 
 **Id:** c2acd907-0f26-4850-8272-063390f1d6a7
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 79837674-493a-43dd-8670-e8b163309bca
 **Evidence:** confirmed
 **Source:** review of runner slice R5b by a member who runs Codex, 2026-10-22, and the coordinator's ruling on it
 **Revisit when:** Codex gains a per-command allowlist the runner can write (an exec policy it honours in `exec` and the TUI), or the contract settles another `confinement` value
@@ -526,6 +527,51 @@ runner's profile, and one reviewer saw that switch the sandbox off.
   cannot keep.
 - Build an exec-policy layer for Codex now: unverified against the
   shipped Codex, and the sandbox already sets the boundary that matters.
+
+## Codex starts without the grant parts it cannot enforce
+
+**Id:** 79837674-493a-43dd-8670-e8b163309bca
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer, 2026-11-17 (req-0t1qj70vh3st): one ChatGPT reviewer on each runner, refused on a runner whose repositories grant commands and pull requests to the Claude Code coders; the lead's approval of the plan on card tsk-fgnag2jvv4fx, 2026-11-17
+**Revisit when:** Codex gains a per-command allowlist the runner can write, or a way for one command to leave its sandbox, so that `maity gh` could run outside it
+
+With its sandbox on, a Codex placement starts on a repository whose
+grant has an `allow` list or `pull_requests`. It does not get those two
+parts (`adapters.codex_left_out`): the `allow` list is not applied, so
+every command runs in Codex's sandbox, listed or not, and the runner
+writes no pull-request grant for it (an empty record, no word of `maity
+gh` in its prompt), as without the grant; it does not enforce that a
+Codex agent opens no pull request. With its sandbox off (`require_sandbox` unset, so the start is not
+refused for the sandbox alone), such a grant refuses the start
+(`harness_refused`), as every such grant did before.
+`maity runner check` warns about each part for every such repository
+when `[harness.codex]` is configured, and the runner logs them at each
+Codex start. Codex is still advertised with `confinement: "sandbox"`,
+and its network list (`network`) still applies inside the sandbox.
+
+**Reason:** the grant is per repository, so its Claude Code parts kept
+every Codex placement off that repository. Starting it with its sandbox
+on widens nothing: with an empty `allow` list Codex already runs every
+command in its sandbox. Without the sandbox nothing would take the
+list's place, so the refusal stays for that case. What the refusal also
+guarded against was a list that looks honoured while it is ignored, and
+naming the left-out parts in `check` and in the log keeps that visible.
+`maity gh` is built to run outside a harness's sandbox, as every
+`maity` call does for Claude Code; Codex's `maity` runs inside it, so
+Codex gets no pull-request record.
+
+**Rejected alternatives:**
+- Keep refusing (c2acd907): one harness's grant blocked another harness
+  on the same repository.
+- A grant section per harness (`[repositories."…".harness.codex]`): a
+  larger shape than needed once nothing a harness cannot enforce blocks
+  its start.
+- `maity gh` for Codex inside its sandbox: what `maity gh` reads to
+  open a pull request would then be readable by the repository's code.
+- Start a Codex without its sandbox and only say so in the log: nothing
+  would stand in for the left-out `allow` list.
 
 ## Antigravity starts in a workspace folder that holds only the clone, in a mode the runner sets
 
@@ -797,7 +843,8 @@ and runs in agy's sandbox like every unlisted command. An entry with another
 a rule word is matched on its own. So agy now gets no `command(...)` allow
 from a grant's command list at all: only `command(maity)`, the `read_url`
 hosts and the file and command denies stand. The same `allow` command list
-reaches Claude Code and Codex unchanged.
+reaches Claude Code unchanged, OpenCode takes it into its own rules, and
+Codex does not get it (79837674-493a-43dd-8670-e8b163309bca).
 
 **Reason:** agy does not match a `command(...)` rule the way Claude Code
 matches `Bash(...)`. It reads the invoked command from the line first,
@@ -825,9 +872,9 @@ way at the settings level to keep either an exact or a prefix command grant
 for agy. Dropping both is the only sound choice: such a command then runs
 inside the sandbox, like an unlisted one. This narrows agy grants (a
 command that needs to run outside agy's sandbox through the `allow` list no
-longer can — arrange it another way, or run it under Claude Code or Codex;
+longer can — arrange it another way, or run it under Claude Code;
 docs/runners.md, CHANGELOG), while the `allow` list stays unchanged for the
-other harnesses.
+other harnesses that apply it.
 
 **Limit:** one command grant remains that agy cannot be given more tightly —
 `command(maity)`. The runner must let the session reach the hub, so `maity`
@@ -1013,6 +1060,83 @@ ask for.
 - Installing only the four named tools without their locked dependencies:
   they would not run; the whole lock is the pinned set.
 
+## A coder may run `git -C <clone>` under Claude Code: the subcommand allowlist and the option denylist both mirrored with a `-C` prefix
+
+**Id:** dcae12df-d296-4f2d-844a-0ec1e6893602
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved coder-checks plan (tsk-kshmb8vc92rr), relayed 2026-11-17, with the lead's approval and the coordinator naming this the security-sensitive part; the git option denylist GIT_DENIED and Claude Code's literal `Bash(...)` command matching (adapters.py)
+**Revisit when:** a GIT_DENIED rule is added or changed (its `-C` twin must follow), or Claude Code changes how a `Bash(...)` rule matches a command string
+
+Claude Code's git allow rules gain a `git -C <clone>` form so a coder can run git against the clone from a subdirectory: `git -C <clone> <sub>` and `git -C <clone> <sub> *` for each GIT_SUBCOMMANDS entry, exactly mirroring the plain `git <sub>` allows. Every GIT_DENIED rule gains a `-C <dir>` twin (any dir), e.g. `git -c *` → `git -C * -c *`, so a denied global option stays denied behind a `-C` prefix too (adapters.git_dash_c_rules).
+
+**Reason:** the allow is per subcommand, never a blanket `git -C <clone> *`. A blanket allow would admit `git -C <clone> -c <config> <sub>`, and the existing `git -c` deny matches only a command that *starts* `git -c`, not `git -C <clone> -c …`, so the global `-c` (which runs an arbitrary program through config) would slip the sandbox. With the allow limited to a subcommand right after `-C <clone>`, `-c` after `-C <clone>` is not allowed by any rule; the mirrored denies are belt-and-suspenders, since deny beats allow in Claude Code, and they also cover `--config-env`, `--exec-path`, `--no-index`, `--upload-pack`, `--receive-pack`, `--exec=` and a `.git/maity` path behind a `-C`.
+
+**Rejected alternatives:**
+- A blanket `git -C <clone> *` allow: lets a global option follow `-C <clone>` and escape the option denies — the hole this design avoids.
+- No `-C` allow at all: a coder's tool that runs `git -C <clone> …` from a subdirectory would be refused, which is the need this fills.
+- Only the allow, no mirrored deny: a denied option behind `-C` would not be matched by the plain denies, which are not `-C`-prefixed; the twin makes deny-wins hold under `-C`.
+
+## The runner prepares a coder's clone: in-clone per-subpackage venvs and a read-only pre-push hook path outside the clone
+
+**Id:** 65ef547a-2f43-4c6a-a9eb-d9ab4221a0d0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved coder-checks plan (tsk-kshmb8vc92rr), relayed 2026-11-17, with the follow-up to harden the pre-push hook path so it is not session-writable; the project's pre-push hook (#1508, `tools/hooks/pre-push` → `tools/pre_push.py`); CONTRIBUTING.md's documented `git config core.hooksPath tools/hooks`
+**See:** runner.md#a-placements-dev-venv-is-built-from-the-projects-pinned-lock-outside-the-clone-onto-the-session-path — 30c5fc5c-89d7-42ea-a74a-ccc0bd7afa27 — as of 2026-11-17
+**Revisit when:** a coder placement runs under a harness other than Claude Code and needs the same setup, or the hooks directory's location or the way the clone check pins it changes
+
+For a claude-code placement the runner does two more things at clone setup (supervisor._coder_setup), both opt-in by configuration and idempotent: it builds each configured subpackage's own `<dir>/.venv` inside the clone (`clone_venvs`), from `<dir>/requirements/dev.txt` with `venv.ensure` (the same builder as the placement venv, 30c5fc5c), and it points the clone's `core.hooksPath` (`clone_hooks_path`) at a hooks directory of the runner's own, under the placement's `agent_dir` outside the clone, holding only the project's pre-push hook. The clone check (clonecheck) accepts `core.hooksPath` only when it is exactly that recorded directory (clonecheck.HOOKS_RECORD, written in `.git/maity`, which the sandbox keeps the agent from writing), so a hooks path set to anywhere else fails the plain-clone check.
+
+**Reason:** the coder's tests invoke `<dir>/.venv/bin/python …` by that exact path, so the venv must be in the clone, not in `agent_dir` like the placement venv on PATH; a built `<dir>/.venv` is git-ignored, so it does not dirty the tree. The pre-push hook runs the project's checks before a push. The hooks directory is the runner's, outside the clone and not writable from the sandbox, so the agent cannot change which hooks run there; the sandbox is let read (and so run) that one directory (adapters: `allowRead` with a `denyWrite`), so the pre-push hook stays active for the agent's own pushes. Pinning `core.hooksPath` in the clone check to exactly the recorded directory keeps the hooks path from being pointed anywhere else. Both the venvs and the hooks path are conveniences, not gates: a failure is logged and the start goes on.
+
+**Rejected alternatives:**
+- Pointing `core.hooksPath` inside the clone (e.g. `tools/hooks`): that directory is writable from the session, so it is not used; the hooks directory is the runner's, outside the clone and read-only to the sandbox.
+- A blanket `core.hookspath` allow in the clone check: it would accept a hooks path pointing anywhere, so the check pins it to the exact recorded directory instead.
+- Writing the hook into `.git/hooks` directly: it diverges from the project's documented opt-in and duplicates the committed hook's body into `.git`; a directory of the runner's own, outside the clone, is used instead.
+- Building the subpackage venvs in `agent_dir` like the placement venv: the tests name `<dir>/.venv`, which is in the clone, so the path would not match.
+- Applying this to every harness: agy and the others are left unchanged (the plan scopes it to coders, who run under Claude Code); the gate is the harness id.
+
+## A shared run-slot directory outside the clone is made writable in the harness sandbox
+
+**Id:** 99587602-9f6a-48fb-91ae-c62cac5b14f6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved coder-checks plan (tsk-kshmb8vc92rr), relayed 2026-11-17, the owner sanctioning the shared coordination directory as "rather open and working"; the "Read-only file system" failure of the Postgres-backed tests (`tools/run_slot.sh` writing `~/.local/state/maity/run-slots`); Claude Code 2.1.326's sandbox filesystem keys read from its binary (`allowWrite` beside `allowRead`, `denyWrite`, `denyRead`)
+**Revisit when:** the shared directory moves, a per-placement slot directory is wanted instead of a shared one, or Claude Code renames its sandbox filesystem keys
+
+The runner can grant a harness sandbox write access to directories beyond the clone (`[backend.local] sandbox_writable_dirs`, absolute or `~/…` expanded to the agents' home): they go into Claude Code's sandbox `filesystem.allowWrite`, and into agy's `write_file` allows (so agy's terminal sandbox, whose writable region follows the file-tool rules, mounts them writable). They are kept out of every deny list.
+
+**Reason:** the Postgres-backed hub tests take a run slot by writing a lock under `~/.local/state/maity/run-slots`, a VM-wide coordination directory (slot locks, a log sink) shared across placements. Claude Code's sandbox mounts it read-only by default, so the tests died with "Read-only file system". The directory is owner-sanctioned as open and shared, so it is made writable rather than per-placement or read-only. `allowWrite` is the Claude Code sandbox key for a path it otherwise mounts read-only, the write counterpart of the `allowRead` the clone-reopen note already uses.
+
+**Rejected alternatives:**
+- A per-placement slot directory: the slots are a shared, VM-wide coordination point, so splitting them would defeat the coordination.
+- Leaving it read-only and changing the tests: the owner chose to keep the directory shared and writable over reshaping the tests.
+- Hard-coding the path in the adapter: a configuration option keeps it the operator's and reusable (another project's shared directory, an absolute path or one in the agents' home).
+
+## guards.sh's clean-tree check reads `.gitignore` only, so the sandbox placeholders are hidden in the committed `.gitignore`, not `.git/info/exclude`
+
+**Id:** 8ed00a71-5174-46d8-a6ef-5344490f6c0b
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved coder-checks plan (tsk-kshmb8vc92rr), relayed 2026-11-17, the coordinator asking for a runner-side fix; `tools/guards.sh`'s untracked listing (`git ls-files --others --exclude-per-directory=.gitignore`), verified to ignore `.git/info/exclude` while `--exclude-standard` honors it; adapters.CLAUDE_PLACEHOLDERS and hide_placeholders, which write `.git/info/exclude`
+**See:** runner.md#a-placements-dev-venv-is-built-from-the-projects-pinned-lock-outside-the-clone-onto-the-session-path — 30c5fc5c-89d7-42ea-a74a-ccc0bd7afa27 — as of 2026-11-17
+**Revisit when:** `tools/guards.sh` changes how it lists untracked files, or Claude Code's set of work-tree placeholders changes (CLAUDE_PLACEHOLDERS and the `.gitignore` block must stay in sync, a test enforces it)
+
+The sandbox placeholders Claude Code leaves in the work tree (`.bashrc`, `.mcp.json`, `.claude/…`, `.vscode`, … — CLAUDE_PLACEHOLDERS) are ignored in the repository's committed `.gitignore`, and `tools/guards.sh` defaults `HUB_PYTHON` to the work tree's own `hub/.venv/bin/python`.
+
+**Reason:** `guards.sh` lists untracked files with `git ls-files --others --exclude-per-directory=.gitignore`, which by git's design consults the per-directory `.gitignore` files alone and **not** `.git/info/exclude` (verified) — deliberately, so a personal exclude cannot hide a file a guard step wrote. The runner's `hide_placeholders` writes exactly `.git/info/exclude`, so it is invisible to the guard, which is why a sandboxed coder's `git status` under the guard still saw the placeholders as untracked and failed the clean-tree gate. The guard also refuses `skip-worktree`/`assume-unchanged` and shows every tracked modification, so the only way to hide the placeholders from it is a committed `.gitignore` entry — a repository change, the one mechanism the guard honors. The placeholders are agent, editor and shell config, never project files, so ignoring them is correct in its own right. `HUB_PYTHON` now defaults to the clone's hub venv so a plain `tools/guards.sh` (which a coder's grant allows as a bare command, rejecting an env-assignment prefix) needs no `HUB_PYTHON=…` in front.
+
+**Rejected alternatives:**
+- A pure runner-side fix through `hide_placeholders`/`.git/info/exclude`: the guard does not read that file by design, so no coverage of it can reach the guard; the committed `.gitignore` is the only mechanism it honors.
+- Changing `tools/guards.sh` to read `.git/info/exclude`: the coordinator chose not to weaken the guard, whose point is that a personal exclude cannot hide a step's output.
+- Ignoring all of `.claude/`: the repository tracks `.claude/settings.json`; the block lists the specific placeholder paths so the tracked file stays tracked.
+
 ## Antigravity is re-offered with its residual command(maity) risk accepted
 
 **Id:** 28ac82c8-0921-4ffb-9d3e-9ebb2f10b111
@@ -1023,7 +1147,8 @@ ask for.
 **Revisit when:** tsk-zjv2xyhyggnm lands the OS-level confinement of `maity` (the residual risk can then be re-assessed and the grant possibly tightened), or the owner withdraws the accepted risk
 **See:** runner.md#agy-command-grants-are-dropped-exact-and-prefix-agy-reads-the-command-past-a-leading-assignment-or-wrapper — f8a7b727-8c1f-4df9-98eb-8f9ef8879352 — as of 2026-11-16
 
-`antigravity` is dropped from `config.NOT_OFFERED_YET` (`("opencode",)` now),
+`antigravity` is dropped from `config.NOT_OFFERED_YET` (empty now, `()`,
+after opencode was offered too),
 so a `runner.toml` naming `[harness.antigravity]` is accepted by
 `maity runner check` and `serve` instead of refused. agy is offered again.
 
@@ -1044,6 +1169,46 @@ tsk-zjv2xyhyggnm confines `maity` at the OS level (the earlier position, in
 f8a7b727's limit). Rejected because the owner chose to accept the residual
 risk and offer the harness now, building the confinement step by step, rather
 than block every antigravity placement until that work lands.
+
+## OpenCode (Grok) is offered; its command rules are not a security boundary
+
+**Id:** a94f2e01-c227-4d4f-baeb-d88c5f0d3c86
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's acceptance on decision request req-kezp8rppfhn5 ("ship now, harden next"), 2026-11-17, after an independent review found opencode's command rules do not bound what an agent can run; the original offer decision req-g4d2cskx6zxv and the 2026-11-15 spike (opencode 5/5 green, the limit run passed, Grok reviews ran); maintainer order tsk-sn90s6wzp9s7
+**Revisit when:** the OS-level sandbox for opencode (tsk-nynpvag9zvhh) lands, so the harness runs confined, or the owner withdraws the accepted risk
+
+`opencode` is dropped from `config.NOT_OFFERED_YET`, which is now empty
+(`()`), so a `runner.toml` naming `[harness.opencode]` is accepted by
+`maity runner check` and `serve` instead of refused as "not offered yet".
+opencode is offered running Grok.
+
+opencode has no OS sandbox the runner switches on (`sandbox: off`), so the
+command and permission rules the runner writes for it are model-steering
+configuration, **not a security boundary**. An opencode agent must be treated
+as able to run any command as the agents' OS user — whatever that user can
+read, write or reach. The mitigation is operational, not in the settings: run
+opencode's agents as a **separate OS user**, isolated from the runner and from
+the other harnesses, so the blast radius is that user's own files. This is
+stated plainly in docs/runners.md and the CLI README, without any bypass
+detail.
+
+**Reason:** the owner decided (req-kezp8rppfhn5, "ship now, harden next") that
+opencode should run now carrying this known residual risk rather than stay
+held back. It was first offered under req-g4d2cskx6zxv on a 2026-11-15 spike's
+evidence (opencode green 5/5, the limit run passed, Grok reviews ran); an
+independent review then showed the command rules do not bound what an agent
+can run, and the owner accepted that and re-stated the risk generically. The
+planned hardening is an OS-level sandbox for opencode, for example bubblewrap
+(tsk-nynpvag9zvhh), which would make the harness runs confined.
+
+**Rejected alternative:** keep opencode in `NOT_OFFERED_YET` until
+tsk-nynpvag9zvhh gives it an OS sandbox, so its rules would be backed by a
+real boundary. Rejected because the owner chose to accept the residual risk
+and offer the harness now, with the separate-OS-user mitigation, rather than
+block every opencode placement until that work lands.
 
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
@@ -1108,28 +1273,31 @@ shared case safer than an operator would choose anyway.
 safer default on paper, but it puts sudo configuration in front of a
 first run.
 
-## For now the runner offers Claude Code, Codex and Antigravity
+## For now the runner offers Claude Code, Codex, Antigravity and OpenCode
 
 **Id:** 62bcf506-caed-470c-a094-9bea4217b440
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** maintainer decision on the runner design's question 4, relayed 2026-10-22
-**Revisit when:** the maintainer decides on opencode and the harnesses without a command allowlist when the runner goes into use
+**Source:** maintainer decision on the runner design's question 4, relayed 2026-10-22; the offer of opencode on req-g4d2cskx6zxv, 2026-11-17
+**Revisit when:** the maintainer decides on the harnesses without a command allowlist when the runner goes into use
+**See:** runner.md#opencode-grok-is-offered-its-command-rules-are-not-a-security-boundary — a94f2e01-c227-4d4f-baeb-d88c5f0d3c86 — as of 2026-11-17
 
-A configuration may name `claude-code`, `codex`, `antigravity` and
-`stub` (`antigravity` was held back here on 2026-10-22 and re-offered
-later, req-9spwe33neh1z). `opencode` is refused as "not offered yet"
-even though its adapter is built. `pi`, `hermes`, `kimi`, `cline` and
-`omp` stay refused because they have no command allowlist (design §6.3).
+A configuration may name `claude-code`, `codex`, `antigravity`,
+`opencode` and `stub` (`antigravity` was held back here on 2026-10-22 and
+re-offered later, req-9spwe33neh1z; `opencode` likewise, offered later,
+req-g4d2cskx6zxv). `pi`, `hermes`, `kimi`, `cline` and `omp` stay refused
+because they have no command allowlist (design §6.3).
 
 **Reason:** the maintainer wants to discuss the rest once the runner is
-in use, with real runs behind the discussion. The opencode adapter stays
-in the code so that the decision costs a line, not a slice.
+in use, with real runs behind the discussion. The opencode adapter stayed
+in the code while held back so that offering it cost a line, not a slice;
+a 2026-11-15 spike supplied the real runs behind the decision.
 
-**Rejected alternative:** offering every built adapter: opencode's
-project-configuration switch and `instructions` path are still
-unverified (design §6.1).
+**Rejected alternative:** offering every built adapter at once (back when
+opencode's project-configuration switch and `instructions` path were still
+unverified, design §6.1): each harness is offered on its own evidence
+instead, opencode once the spike verified it.
 
 ## Model access is the operator's to arrange
 
@@ -1281,14 +1449,14 @@ now held to a plain clone's entries as well.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** runner code on `main` after the R5 adapters (#123, #125) and the offered-harness decision 62bcf506, read 2026-10-22; the coordinator's re-check of 5ed066bf, 2026-10-22
+**Source:** runner code on `main` after the R5 adapters (#123, #125) and the offered-harness decision 62bcf506, read 2026-10-22; the coordinator's re-check of 5ed066bf, 2026-10-22; updated 2026-11-17 when opencode was offered (req-g4d2cskx6zxv), dropping the aside that the configuration refuses it
 **See:** runner.md — 62bcf506-caed-470c-a094-9bea4217b440 — as of 2026-10-22
 **Revisit when:** the configuration accepts a harness without an adapter in this version, or a contract code for "not in this version" is added to §15.7
 
-A placement whose harness is not in this runner's configuration, opencode
-included (the configuration refuses it), is reported as
-`failed`/`harness_refused`; a mode or model the configuration does not
-list is `harness_refused` with `mode_unsupported` or `model_unsupported`.
+A placement whose harness is not in this runner's configuration is
+reported as `failed`/`harness_refused`; a mode or model the configuration
+does not list is `harness_refused` with `mode_unsupported` or
+`model_unsupported`.
 Every harness the configuration accepts has an adapter, so the earlier
 "logged, not reported" case for a harness without one cannot arise; the
 supervisor keeps that check only as a guard. A start that fails in tmux
@@ -1332,8 +1500,8 @@ workspaces root, plus the credential of every other clone that exists
 when the agent starts. A clone made later stays readable to it until its
 next start. Both keep the clone's own credential readable, because the
 agent's `maity` needs it. The forge login stays readable, because pushing
-needs it. opencode's `grep` and `glob` are off: opencode checks them
-against the pattern typed, not the path searched. maity and the runner
+needs it. opencode's `grep` and `glob` are off, since they cannot be
+scoped to a path. maity and the runner
 run git only through `proc.GIT`, a clone into a missing directory, and
 `gc`'s pinned read; a test pins that.
 
@@ -2192,7 +2360,7 @@ message says are no boundary.
 - The handle verbatim as a directory name: valid handles such as `con`,
   `nul` or `com1` are device names Windows refuses as directory names.
 - Ignoring `--allow` for `codex`: the person would believe a restriction
-  applied that nothing enforces (§15.3 refuses such placements too).
+  applied that nothing enforces (a runner, §15.3, leaves a grant's list out for Codex and names it in `maity runner check`, 79837674).
 - "The hub needs no change", leaving supervised sessions out as before:
   a local mode stopped by Ctrl-C, a closed console or a crash would hold
   a session that never counts as not listening, and the lead would not
@@ -2928,7 +3096,7 @@ do, and hid that the cause was the shape of its own command.
 **Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
 **See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
-**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295 even with `require_sandbox = false`; opencode is offered, or its scanner is checked against a redirect or a substitution on a `maity` line
+**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295 even with `require_sandbox = false`; opencode gets an OS-level sandbox (tsk-nynpvag9zvhh)
 
 Under its sandbox, a placed Claude Code session runs a hook before every
 tool call (`runner/plaincall.py`), written by the runner into the
@@ -2963,10 +3131,11 @@ tools, the session runs unsandboxed (`sandbox_unavailable`), with no
 exclusion for the hook to guard. The hook's shell form ends in `|| exit 2`, so a hook that cannot
 start or fails refuses the call on any version; only a timeout needs
 `onFailure`.
-opencode, which runs without a sandbox and gets no hook, denies
-`maity *<c>*` for each of `;&|<>$`, a backtick and a newline, after its
-allows; whether its scanner hands a redirect to the rule with the
-command is not checked.
+opencode, which runs without a sandbox and gets no hook, has rules meant
+to allow `maity` only as one plain call after its allows; whether these
+rules hold for every line shape is not verified. Without a sandbox those
+rules are not a boundary either, so an opencode agent is treated as able
+to run any command as the agents' OS user (req-kezp8rppfhn5).
 
 **Reason:** only `maity` itself needs to run outside the sandbox. A line
 that holds more than maity's call is held to the rules every other
@@ -3096,10 +3265,11 @@ plus `comments` with `--comments`) and prints them as text itself. gh's text vie
 by gh's version, and an older gh (2.46, a distribution's package) asks for `projectCards`, which the
 forge now refuses, so every plain `gh pr view` failed on such a runner (the E2E of #1663). An `allow` entry naming gh is not applied:
 `maity runner check` warns about it and names `pull_requests`, and the
-runner still starts. Codex is refused for a repository whose grant has
-`allow` or `pull_requests`. Codex cannot honour a command allowlist, and
-its `maity` runs inside its sandbox, where `maity gh` reaches neither the
-login nor the forge's API.
+runner still starts. Codex gets neither `allow` nor `pull_requests`
+(79837674-493a-43dd-8670-e8b163309bca): it cannot honour a command
+allowlist, and its `maity` runs inside its sandbox, while `maity gh` is
+set up only for a `maity` outside it. Without its sandbox, such a grant
+refuses the start.
 
 **Reason:** before this, an agent could push but could not open its pull
 request, and the card's test needs it to. The forge login on the machine
@@ -3623,7 +3793,7 @@ Rejected:
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-29nmydbzrg5z, the lead's rules for the installers (2026-11-14: no script fetched and run unless its version is pinned, the vendor's package at an exact version, the vendor's checksum checked, refuse rather than fall back, what each tool verifies written down for the security team) and the lead's approval of the agent_user scope (2026-11-14); the vendors' install scripts and documentation read 2026-11-14 (Claude Code's signed `manifest.json`, release key fingerprint 31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE; Codex's GitHub releases with a SHA-256 `digest` per asset and a sigstore bundle); `cli/src/maity/runner/installers.py`, `tools.py`, `keeper.py`
+**Source:** card tsk-29nmydbzrg5z, the lead's rules for the installers (2026-11-14: no script fetched and run unless its version is pinned, the vendor's package at an exact version, the vendor's checksum checked, refuse rather than fall back, what each tool verifies written down for the security team) and the lead's approval of the agent_user scope (2026-11-14); the vendors' install scripts and documentation read 2026-11-14 (Claude Code's signed `manifest.json`, release key fingerprint 31DD DE24 DDFA B679 F42D 7BD2 BAA9 29FF 1A7E CACE; Codex's GitHub releases with a SHA-256 `digest` per asset and a sigstore bundle); `cli/src/maity/runner/installers.py`, `tools.py`, `keeper.py`; updated 2026-11-17 when opencode was offered (req-g4d2cskx6zxv): it still has no installer, and the "not offered to placements yet" wording was dropped
 **Revisit when:** a vendor stops publishing the checksum or signature used here, the runner gains a sigstore verifier, or an operator of the agent_user layout needs managed tools
 **See:** runner.md#the-runner-installs-and-updates-the-harness-tools-and-maity-only-where-its-owner-allows-it-per-tool — 4c984f97-09b8-479b-bd1a-f56bb41057fd — as of 2026-11-14
 
@@ -3646,7 +3816,7 @@ passes, before anything is unpacked or run:
   runner has no verifier for it; that trust is GitHub's and the vendor's
   account over HTTPS.
 - **opencode** has no installer: its install route offers no checksum,
-  and the runner does not offer it to placements yet.
+  so the runner installs and updates no opencode (the operator installs it).
 
 The versions live in `~/.local/share/maity-runner/tools`, not in the
 state directory: the state directory is hidden from every sandboxed

@@ -64,11 +64,10 @@ SUPERVISED_PROMPT = (
     "turn; do not run `maity wait`: you are started again on the next event."
 )
 
-# git subcommands an agent needs for project work. Not `git *`: options such as `-c`,
-# `--config-env` or `--exec-path` run arbitrary programs. `diff` still reads a file outside
-# the work tree without `--no-index` (`git diff /dev/null <path>`), so these lists stop
-# accidents and naive injection only; the boundary is the harness's OS sandbox and the OS
-# user, see cli/context/runner.md.
+# git subcommands an agent needs for project work. Not `git *`: some git options run programs,
+# and git can still read files outside the work tree, so these lists stop accidents and naive
+# injection only; the boundary is the harness's OS sandbox and the OS user, see
+# cli/context/runner.md.
 GIT_SUBCOMMANDS = (
     "status", "diff", "log", "show", "add", "commit", "push", "pull", "fetch", "checkout",
     "switch", "branch", "merge", "rebase", "restore", "rm", "mv", "stash", "tag", "rev-parse",
@@ -216,6 +215,15 @@ class Context:
     # PATH so the project's pinned pytest, ruff, black and mypy are found (venv.py); "" when the
     # runner builds none (no pinned dev requirements configured, or the file is not in the clone).
     venv_bin: str = ""
+    # Directories the harness's sandbox must let a session write, beyond the clone (a shared
+    # run-slot/lock directory the tests use); absolute, with `~` already expanded to the
+    # agents' home. Added to Claude Code's `filesystem.allowWrite` and agy's `write_file`.
+    sandbox_writable: tuple[Path, ...] = ()
+    # The runner's own hooks directory for this placement (supervisor._coder_hooks_dir), outside
+    # the clone and holding only the pre-push hook, when the clone's `core.hooksPath` points at
+    # it; None otherwise. The sandbox is let read (and so run) it but never write it, so the
+    # pre-push hook is active for the agent's own pushes while the agent cannot plant a hook.
+    hooks_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -337,6 +345,25 @@ def _supervised(
 # --- Claude Code ------------------------------------------------------------------------------
 
 
+def git_dash_c_rules(clone: Path) -> tuple[list[str], list[str]]:
+    """The `git -C <clone>` forms of the git allow and deny rules, for a harness that matches
+    a command by its literal string (Claude Code), so a coder's `git -C <clone> <sub>` works
+    from any directory, exactly as `git <sub>` does.
+
+    The allow is per subcommand — `git -C <clone> <sub>` and `git -C <clone> <sub> *`, never a
+    blanket `git -C <clone> *` — so a global option such as `-c`, `--config-env` or
+    `--exec-path` right after `-C <clone>` is not allowed (a blanket allow would let
+    `git -C <clone> -c <config> <sub>` slip past the `git -c` deny, which matches only a
+    leading `git -c`). The GIT_DENIED rules are mirrored with a `-C <dir>` (any dir, `*`)
+    inserted after `git`, so those options stay denied under a `-C` prefix too; deny wins over
+    allow, so a denied `-C` form is refused even where an allow would otherwise reach it."""
+    prefix = f"git -C {clone}"
+    allow = [f"{prefix} {sub}" for sub in GIT_SUBCOMMANDS]
+    allow += [f"{prefix} {sub} *" for sub in GIT_SUBCOMMANDS]
+    deny = [rule.replace("git ", "git -C * ", 1) for rule in GIT_DENIED]
+    return allow, deny
+
+
 def claude_settings(ctx: Context) -> dict[str, Any]:
     """The grant (§6.1): maity, git, the repository's own allow list, and file tools inside
     the clone only. Absolute paths take a double slash in Claude Code's rules. The clone's
@@ -344,6 +371,10 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
+    # `git -C <clone> <sub>` allowed exactly as `git <sub>`, for a coder running git against
+    # the clone from a subdirectory; the matching `-C` denies go into `deny` below.
+    c_allow, c_deny = git_dash_c_rules(ctx.clone)
+    allow += [f"Bash({rule})" for rule in c_allow]
     allow += [f"Bash({UUID_COMMAND})"]  # an OS-made UUID v4 for Keep-the-Why entries
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
@@ -355,7 +386,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny = [f"Edit(/{git}/{name}{'/**' if name in ('hooks', 'info') else ''})"
             for name in GIT_PROTECTED]  # fmt: skip
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
-    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED)]
+    # GIT_DENIED and its `-C <dir>` mirror, so `git -c`, `--config-env`, … stay denied with or
+    # without a leading `-C <dir>`; deny wins over the `-C <clone>` allows above.
+    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *c_deny, *GH_DENIED)]
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
         # stays in the model's context; the bare name takes it out of the model's context
@@ -381,9 +414,19 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # signs with it, runs outside.
             # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
             # re-open its credential as well, and that order is unverified here.
+            # `allowWrite`: directories the sandbox otherwise mounts read-only that a session
+            # must write — a shared run-slot/lock directory the tests use (sandbox_writable).
+            # `allowRead` on the runner's hooks directory (hooks_path), more specific than the
+            # `denyRead` on the agents' files it sits under, so the sandbox may read and run the
+            # pre-push hook; its `denyWrite` keeps the agent from changing it. The directory is
+            # outside the clone, so no file tool reaches it either.
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private)],
                            "denyWrite": [f"{git}/maity",
-                                         *(f"{git}/{name}" for name in GIT_PROTECTED)]},
+                                         *(f"{git}/{name}" for name in GIT_PROTECTED),
+                                         *((str(ctx.hooks_path),) if ctx.hooks_path else ())],
+                           **({"allowRead": [str(ctx.hooks_path)]} if ctx.hooks_path else {}),
+                           **({"allowWrite": [str(p) for p in ctx.sandbox_writable]}
+                              if ctx.sandbox_writable else {})},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
         # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
@@ -426,11 +469,31 @@ def trust_clone(ctx: Context) -> None:
         )
 
 
+def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
+    """The parts of a repository's grant a Codex placement starts without, each with why
+    (cli/context/runner.md): Codex has no command allowlist, and its `maity` runs inside its
+    sandbox, not outside it as `maity gh` needs. Only with its sandbox on: without it, a
+    grant with any of these parts refuses the start (supervisor `_refusal`)."""
+    left = []
+    if grant.allow:
+        listed = ", ".join(repr(rule) for rule in grant.allow)
+        left.append(
+            f"allow {listed} is not applied to codex: Codex has no command allowlist, so "
+            "every command runs in its sandbox, listed or not (refused without the sandbox)"
+        )
+    if grant.pull_requests:
+        left.append(
+            "pull_requests is not given to codex: its `maity` runs inside its sandbox, and "
+            "the runner sets up `maity gh` only for a `maity` outside it"
+        )
+    return left
+
+
 def pull_requests_record(ctx: Context) -> str:
     """The content of the runner's record `ghpr.PULL_REQUESTS`: the placement's repository
     and the gh on the runner's PATH when the grant has pull requests and gh is there, else
-    empty."""
-    if not ctx.grant.pull_requests:
+    empty. Always empty for Codex (codex_left_out)."""
+    if not ctx.grant.pull_requests or ctx.harness.id == "codex":
         return ""
     gh = proc.program("gh")
     workspace = ctx.placement.get("workspace") or {}
@@ -619,9 +682,9 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
-    # After the allows: the last match wins. A `maity` call only as one plain call, as the
-    # Claude Code hook has it (plaincall): opencode checks each command its scanner finds,
-    # and a redirect or a substitution on maity's line would pass `maity *`.
+    # After the allows: the last match wins. The rules are meant to allow `maity` only as one
+    # plain call, as the Claude Code hook has it (plaincall). Without a sandbox these rules are
+    # not a boundary, see cli/context/runner.md.
     bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
     bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
@@ -633,8 +696,7 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
         "$schema": "https://opencode.ai/config.json",
         "permission": {
             "*": "deny",
-            # grep and glob are asked about the pattern typed, not the path searched, so a path
-            # rule cannot keep them off .git/maity: they are off.
+            # grep and glob cannot be scoped to a path here, so they are off.
             "read": read, "glob": "deny", "grep": "deny", "list": "allow",
             "edit": edit,
             "bash": bash,
@@ -762,6 +824,9 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     # The whole clone, read and write, for the file tools and so the terminal sandbox mounts
     # it writable; the denies below are more specific paths under it and win.
     allow += [f"{tool}({ctx.clone}/**)" for tool in ("read_file", "write_file")]
+    # Directories outside the clone the sandbox must let a session write (a shared run-slot
+    # directory the tests use): writable to the file tools and so to agy's terminal sandbox.
+    allow += [f"write_file({path})" for path in ctx.sandbox_writable]
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]

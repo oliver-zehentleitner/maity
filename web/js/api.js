@@ -3360,8 +3360,8 @@ window.Maity = window.Maity || {};
       return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
     }],
     // A human with members:admin places an agent on a runner of their own attached here: one of
-    // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: not
-    // the placement quota or the spec's other validations (review of #1558); the repository's
+    // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: the
+    // placement quota (§6.1 max_placements), not the spec's other validations (review of #1558); the repository's
     // offer with `*` and `?` only (tsk-wn6qp27090qy). The placement waits for the runner
     // (reported null) and needs no consent.
     ["POST", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
@@ -3375,6 +3375,8 @@ window.Maity = window.Maity || {};
       if (prj.state === "archived") fail(409, "project_closed", "the project is closed", path);
       if (r.credential_state !== "active") fail(409, "runner_revoked", "the runner has no live credential", path);
       const live = placementsOf(m[1]).filter((x) => x.active);
+      const quota = (prj.policy || {}).max_placements === undefined ? 8 : prj.policy.max_placements;
+      if (live.length >= quota) fail(409, "placement_quota", "the project's placements are at its limit", path, { max: quota });
       const members = (fixtures()[m[1] + "/members.json"] || { items: [] }).items;
       let agent;
       if (body.agent && body.agent.id) {
@@ -3934,6 +3936,9 @@ window.Maity = window.Maity || {};
         }
         if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer", "blue-team"].includes(r))) {
           fail(400, "invalid", "a role an outsider may not hold", path, { fields: { outside_roles: "role_not_allowed" } });
+        }
+        if ("max_placements" in body.policy && !(Number.isInteger(body.policy.max_placements) && body.policy.max_placements >= 0 && body.policy.max_placements <= 1000)) {
+          fail(400, "invalid", "max_placements is 0 to 1000", path, { fields: { "policy.max_placements": "out_of_range" } });
         }
         if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
@@ -5407,14 +5412,16 @@ window.Maity = window.Maity || {};
     // A fixture join with expires_in_seconds expires that long after the
     // fixtures were first read, so an open one stays open.
     // §2.3 "Project roles": the project's own roles, read by every member.
-    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ builtin: BUILTIN_ROLES.map((r) => ({ ...r, scopes: r.scopes.slice() })), custom: (project(m[1], path).roles || []).slice() })],
+    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ builtin: BUILTIN_ROLES.map((r) => ({ ...r, scopes: r.scopes.slice() })), custom: (project(m[1], path).roles || []).slice(), version: project(m[1], path).roles_version || 0 })],
     // PUT …/roles (§2.3): the whole list, by a human with project:admin, checked as
     // project_roles.parse and routes/roles.py check it: the list, each entry's fields, a role in
     // policy.outside_roles on a base an outsider may hold. A removal is refused while a membership
     // or policy.outside_roles names the role; the hub's other uses (joins, invitations, cards,
     // requests, placements, the check-in, substitutes, role memory) are not kept here. `outside` is
     // reserved as §2.3 says.
-    // A new base moves its members.
+    // A new base moves its members. `base_version` is required and checked after the body and
+    // before a removal (§2.3 "Version."): a stale one is `conflict` without a `reason`; a list
+    // equal to the stored one keeps the version whatever it names.
     ["PUT", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => {
       if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
       if (!governing(mineIn(m[1]))) fail(403, "forbidden", "project:admin", path, { scope: "project:admin" });
@@ -5448,8 +5455,15 @@ window.Maity = window.Maity || {};
           fail(400, "invalid", "the role " + r.name + " is in policy.outside_roles", path, { fields: { ["custom[" + i + "].base"]: "outside_roles" } });
         }
       });
+      const given = body.base_version;
+      if (given === undefined || given === null) fail(400, "invalid", "name the roles' version you read", path, { fields: { base_version: "required" } });
+      if (!Number.isInteger(given) || given < 0) fail(400, "invalid", "base_version", path, { fields: { base_version: Number.isInteger(given) ? "greater_than_equal" : "int_type" } });
       const proj = project(m[1], path);
       const old = proj.roles || [];
+      const version = proj.roles_version || 0;
+      const same = raw.length === old.length && raw.every((r, i) => r.name === old[i].name && r.base === old[i].base && (r.description || "") === (old[i].description || ""));
+      if (same) return { custom: old.map((r) => ({ ...r })), version };
+      if (given !== version) fail(409, "conflict", "the roles changed since you read them; read them and decide again", path, { current_version: version, base_version: given });
       const members = file(m[1], "members.json", path).items;
       old.filter((r) => !raw.some((x) => x.name === r.name)).forEach((r) => {
         const uses = [members.some((x) => x.role === r.name) ? "membership" : null, outside.includes(r.name) ? "outside_roles" : null].filter(Boolean);
@@ -5461,7 +5475,8 @@ window.Maity = window.Maity || {};
       });
       next.forEach((r) => members.filter((x) => x.role === r.name).forEach((x) => { x.role_base = r.base; }));
       proj.roles = next;
-      return { custom: next.map((r) => ({ ...r })) };
+      proj.roles_version = version + 1;
+      return { custom: next.map((r) => ({ ...r })), version: version + 1 };
     }],
     ["GET", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
       const list = file(m[1], "joins.json", path);

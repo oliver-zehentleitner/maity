@@ -226,6 +226,18 @@ def test_git_is_writable_except_the_credential_and_what_runs_a_program(tmp_path:
     assert f"write_file({git}/**)" not in perms["deny"]
 
 
+def test_a_sandbox_writable_dir_is_write_allowed(tmp_path: Path) -> None:
+    """A configured writable directory outside the clone (a shared run-slot dir the tests use)
+    is write-allowed for agy's file tools, so agy's terminal sandbox lets a session write it;
+    it is not denied."""
+    runslots = tmp_path / "state" / "maity" / "run-slots"
+    perms = adapters.antigravity_settings(context(tmp_path, sandbox_writable=(runslots,)))[
+        "permissions"
+    ]
+    assert f"write_file({runslots})" in perms["allow"]
+    assert not any(str(runslots) in rule for rule in perms["deny"])
+
+
 def test_supervised_asks_the_loop_to_reap_the_turns_process_group(tmp_path: Path) -> None:
     """agy has no setting to stop a background task outliving a turn, so the spec asks the
     loop to end each turn's own process group (decision 4); interactive runs no loop."""

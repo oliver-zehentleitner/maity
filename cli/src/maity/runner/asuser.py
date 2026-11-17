@@ -134,6 +134,16 @@ class AsUser:
         if done.returncode != 0:
             raise OSError(f"cannot create {path} for the agents: {done.stderr.strip()[:200]}")
 
+    def make_executable(self, path: Path) -> None:
+        """Give the agents' user execute on a file it owns (0700), so git can run a hook the
+        runner wrote there. The file is the runner's, never the agent's to change."""
+        if self.direct:
+            os.chmod(path, 0o700)  # noqa: S103 - owner-only rwx, not group or world
+            return
+        done = self.run(["chmod", "700", str(path)])
+        if done.returncode != 0:
+            raise OSError(f"cannot chmod {path} for the agents: {done.stderr.strip()[:200]}")
+
     def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
         """At most `limit` bytes of the file from `offset` on: a regular file only, reached
         from `under` (the clone, the agents' files, their home) without following a link on

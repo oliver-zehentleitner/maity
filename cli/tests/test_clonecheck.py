@@ -314,6 +314,34 @@ def test_the_runner_and_maity_read_a_clone_the_same_way(placed: Path) -> None:
     assert "alias.st" in (clonecheck.not_inspectable(placed) or "")
 
 
+def test_core_hooks_path_pinned_to_the_recorded_directory(placed: Path) -> None:
+    """A placed coder's `core.hooksPath` is accepted only when it points at exactly the hooks
+    directory the runner recorded (clonecheck.HOOKS_RECORD), which is outside the clone and
+    not writable from the sandbox. A hooks path pointing anywhere else — a directory inside
+    the clone the session could write, or any other path — fails the plain-clone check, so a
+    restart and `gc` refuse it rather than trust a hook the session may have planted."""
+    hooks_dir = placed.parent / "agent-dir" / "hooks"  # the runner's, beside its `git` record
+    (placed / clonecheck.HOOKS_RECORD).write_text(f"{hooks_dir}\n")
+    assert clonecheck.not_inspectable(placed) is None  # no hooks path set yet: plain
+
+    git(placed, "config", "core.hooksPath", str(hooks_dir))  # the recorded directory
+    assert clonecheck.not_inspectable(placed) is None  # plain
+
+    git(placed, "config", "core.hooksPath", "tools/hooks")  # relative, inside the clone
+    assert "core.hookspath" in (clonecheck.not_inspectable(placed) or "")
+    git(placed, "config", "core.hooksPath", str(placed / "tools" / "hooks"))  # absolute, inside
+    assert "core.hookspath" in (clonecheck.not_inspectable(placed) or "")
+
+    git(placed, "config", "core.hooksPath", str(hooks_dir))  # back to the recorded one: plain
+    assert clonecheck.not_inspectable(placed) is None
+    (placed / clonecheck.HOOKS_RECORD).unlink()  # no record: nothing is pinned, so it fails
+    assert "core.hookspath" in (clonecheck.not_inspectable(placed) or "")
+
+    git(placed, "config", "--unset", "core.hooksPath")
+    git(placed, "config", "core.pager", "less")  # another core key is still refused
+    assert "core.pager" in (clonecheck.not_inspectable(placed) or "")
+
+
 def test_a_configuration_changed_after_the_check_is_not_what_git_reads(
     placed: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

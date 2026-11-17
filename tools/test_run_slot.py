@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 
 SCRIPT = Path(__file__).parent / "run_slot.sh"
@@ -99,6 +100,49 @@ class RunSlotTest(unittest.TestCase):
     def test_the_commands_exit_status_is_kept(self) -> None:
         result = subprocess.run([SCRIPT, "sh", "-c", "exit 5"], env=self.env)
         self.assertEqual(result.returncode, 5)
+
+    def _planted_run(self, make: Callable[[Path], None]) -> subprocess.CompletedProcess[str]:
+        """Run a command after `make` has planted something at `slots/slot0`[.who]."""
+        slots = self.tmp / "slots"
+        slots.mkdir(parents=True, exist_ok=True)
+        make(slots)
+        return subprocess.run(
+            [SCRIPT, "sh", "-c", f"touch {self.tmp / 'ran'}"],
+            env={**self.env, "MAITY_RUN_SLOTS": "1"},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    def test_a_slot_file_planted_as_a_symlink_is_refused(self) -> None:
+        """A `slot0` left as a symlink (the shared directory is writable by every run of the
+        account) is refused rather than opened, so the append never reaches the target."""
+        victim = self.tmp / "victim"
+        victim.write_text("keep\n")
+        result = self._planted_run(lambda slots: os.symlink(victim, slots / "slot0"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("refusing to write through it", result.stderr)
+        self.assertFalse((self.tmp / "ran").exists())
+        self.assertEqual(victim.read_text(), "keep\n")
+
+    def test_a_who_file_planted_as_a_symlink_is_refused(self) -> None:
+        """A `slot0.who` left as a symlink is refused before the truncating write, so the
+        target a run would otherwise overwrite is left intact."""
+        victim = self.tmp / "victim"
+        victim.write_text("keep\n")
+        result = self._planted_run(lambda slots: os.symlink(victim, slots / "slot0.who"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("refusing to write through it", result.stderr)
+        self.assertFalse((self.tmp / "ran").exists())
+        self.assertEqual(victim.read_text(), "keep\n")
+
+    def test_a_slot_file_planted_as_a_fifo_is_refused(self) -> None:
+        """A `slot0` left as a FIFO is refused rather than opened, so no run blocks forever on
+        it (the DoS the plain-file check also closes)."""
+        result = self._planted_run(lambda slots: os.mkfifo(slots / "slot0"))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("refusing to write through it", result.stderr)
+        self.assertFalse((self.tmp / "ran").exists())
 
     def test_a_slot_count_that_is_no_number_is_refused(self) -> None:
         for value in ("0", "x", "08", "010", ""):

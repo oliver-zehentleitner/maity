@@ -39,13 +39,28 @@ dir="${MAITY_RUN_SLOTS_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/maity/run-slot
 mkdir -p "$dir"
 who="${MAITY_RUN_NAME:-${USER:-someone}}"
 
+# The slots directory is shared by every run of this account, so another run could have left a
+# slot file planted as a symlink (or a FIFO, device or directory). Opening it for append or
+# truncating it with `>` would then write through to whatever it points at — any file the user
+# can touch, a credential or a shell rc for an un-sandboxed run. A slot file must be a plain
+# file of this account's or absent; anything else is refused rather than written through.
+# Checked just before each open; a FIFO is also refused, so no reader ever blocks on one.
+refuse_redirected() {
+  if [ -L "$1" ] || { [ -e "$1" ] && [ ! -f "$1" ]; }; then
+    echo "$0: $1 is not a plain file of this account's; refusing to write through it" >&2
+    exit 2
+  fi
+}
+
 waited=""
 start=$SECONDS
 while :; do
   for ((i = 0; i < slots; i++)); do
+    refuse_redirected "$dir/slot$i"
     # Opened for appending, so that a failed try does not empty the file another run holds.
     exec 7>>"$dir/slot$i"
     if flock -n 7; then
+      refuse_redirected "$dir/slot$i.who"
       printf '%s (pid %s): %s\n' "$who" "$$" "$*" >"$dir/slot$i.who"
       if [ -n "$waited" ]; then
         echo "$0: got slot $i after $((SECONDS - start)) s" >&2
@@ -59,7 +74,11 @@ while :; do
   if [ -z "$waited" ]; then
     holders=""
     for ((i = 0; i < slots; i++)); do
-      holders+="$(cat "$dir/slot$i.who" 2>/dev/null || true); "
+      # Only a plain file is read for the holder note, so a planted symlink or FIFO neither
+      # redirects the read nor blocks it.
+      if [ -f "$dir/slot$i.who" ] && [ ! -L "$dir/slot$i.who" ]; then
+        holders+="$(cat "$dir/slot$i.who" 2>/dev/null || true); "
+      fi
     done
     echo "$0: all $slots run slots are taken (${holders%; }); waiting for one" >&2
     waited=1
