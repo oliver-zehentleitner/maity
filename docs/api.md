@@ -2065,17 +2065,19 @@ pair limit alone. A request counts only once its pair limit let it
 through, and a network the address had no place for holds none
 afterwards. A place is marked as held only once it was had, and the
 mark ends with the place, so concurrent requests from one network take
-no mail past it and a network never holds two places. The windows
-slide, so a place passes from one network to the next within an hour or
-a day; the mails themselves are therefore counted too: an address is sent
+no mail past it, and a network keeps at most one place once its
+requests are done: two of its first requests at once may both take one
+for that moment (longer when one of them stalls), and one gives it
+back. The windows slide, so a place passes from one network to the
+next within an hour or a day; the mails themselves are therefore counted too: an address is sent
 at most 50 of these mails in any hour and 200 in any day, from all
 networks together, and over that `202` and nothing is sent. Four
 networks at their pair limits (10 a day each) send at most 40 in any
 hour or day, so the count never stops fewer than five. So one network
 can never spend the address's budget, nor can two to four: the human's
-own network still gets its mail. Only requests from at least five
-distinct networks within the hour (twenty within the day) leave a
-further network without a place, or reach the count of the mails, until
+own network still gets its mail, but for that moment of two requests
+at once. Only requests from at least five distinct networks within the
+hour (twenty within the day) leave a further network without a place, or reach the count of the mails, until
 the window has passed; the human's sessions, the password and the device
 code are unaffected. The price is the mailbox: those 50 in any hour and
 200 in any day, and never more than the path's instance cap, which is
@@ -24812,7 +24814,9 @@ device; the browser's own permission is per browser and is not stored.
   their own limits send at most 6 in any hour and 20 in any day, so that
   count never stops fewer than three. Beyond either the address is
   pending as usual but no mail goes out. One or two accounts asking
-  again and again so leave a third its mail; three distinct accounts in
+  again and again so leave a third its mail, but for the moment two
+  first requests of one account run at once (both hold a place until
+  one gives its own back, as in §2.6.4); three distinct accounts in
   an hour (ten in a day) hold the address's places, and another account
   asking for it then has it pending without a mail until the window has
   passed; nothing else of that account changes. Where one source can make active accounts —

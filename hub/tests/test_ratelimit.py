@@ -347,3 +347,23 @@ def test_the_suite_finds_the_limiters_one_attribute_down() -> None:
         for limiter in (limits.by_source, limits.pair_quarter, limits.pair_day):
             assert id(limiter) in found, limiter.name
     assert id(mail_settings.test_limiter) in found
+
+
+def test_a_moment_given_to_place_is_refused_but_for_a_limit_of_one() -> None:
+    # `place(at=)` holds only where a later attempt refuses an earlier moment anyway.
+    wide, one = Limiter(3, 60, name="test.at.wide"), Limiter(1, 60, name="test.at.one")
+    _, mark = wide.place("k")
+    with pytest.raises(ValueError, match="limit of 1"):
+        wide.place("j", at=mark)
+    with pytest.raises(ValueError, match="this process recorded"):
+        one.place("k", at=datetime.now(UTC))
+    assert one.place("k", at=mark) == (0, mark)
+    assert one.place("k", at=mark)[0] > 0
+
+
+def test_a_shared_moment_given_to_place_needs_an_exact_limit_and_a_time(shared: None) -> None:
+    one = Limiter(1, 60, name="test.at.shared")
+    with pytest.raises(ValueError, match="exact limit and a recorded moment"):
+        one.place("k", at=1.0)
+    _, mark = Limiter(1, 60, name="test.at.source").place("k")
+    assert one.place("k", at=mark) == (0, mark)

@@ -588,3 +588,37 @@ def test_of_two_requests_of_one_network_at_once_one_gives_its_place_back(
     others = [limits.take("human@example.org", f"203.0.113.{n}")[1] for n in range(1, 6)]
     assert others == [True] * 4 + [False]
     assert limits.take("human@example.org", "198.51.100.1") == (0, True)  # it holds its one
+
+
+def test_a_mark_stalled_after_its_place_lies_at_the_place_s_moment_in_the_database(
+    counts: None, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A1031 N1: on PostgreSQL the mark is written at its place's own moment, not at the moment
+    # it was set: a request held two seconds between the two leaves rows of equal moments.
+    from maity_hub import shared_counts
+
+    if migrated.dialect.name != "postgresql":
+        pytest.skip("the rows exist on PostgreSQL only")
+    real, late = shared_counts._now, [timedelta(0)]
+    monkeypatch.setattr(shared_counts, "_now", lambda: real() + late[0])
+    limits = links.RequestLimits()
+    for marks in (limits.recipient_hour_networks, limits.recipient_day_networks):
+        original = marks.place
+
+        def stalled(*args: Any, original: Any = original, **kwargs: Any) -> Any:
+            late[0] = timedelta(seconds=2)
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(marks, "place", stalled)
+    assert limits.take("human@example.org", "198.51.100.1") == (0, True)
+
+    def moments(limiter: Any) -> list[Any]:
+        with migrated.connect() as conn:
+            rows = conn.execute(
+                select(t.rate_count.c.window_start).where(t.rate_count.c.bucket == limiter.name)
+            )
+            return [row.window_start for row in rows]
+
+    assert moments(limits.recipient_hour_networks) == moments(limits.recipient_hour)
+    assert moments(limits.recipient_day_networks) == moments(limits.recipient_day)
+    assert len(moments(limits.recipient_hour)) == 1

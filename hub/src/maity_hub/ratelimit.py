@@ -139,11 +139,16 @@ class Limiter:
 
         `at`, another exact limiter's mark from `place`, records the attempts at that moment
         instead of now, so that they leave the window together with those (the mark that a
-        network holds a place, `email_links.recipient_over`). Only for an exact limiter, and
-        only where an attempt at a later moment refuses it anyway (a limit of 1): an earlier
-        moment behind a later one would break the order the window relies on."""
+        network holds a place, `email_links.recipient_over`). Only for a limit of 1, where an
+        attempt at a later moment refuses it anyway: an earlier moment behind a later one
+        would break the order the window relies on. Checked here: the limit of 1, and the
+        kind of moment (shared: an exact limit and a time; in the process: its own clock).
+        Not checked: that `at` came from an exact limiter's `place` and is past, which the
+        caller holds to."""
         if count > self.limit:
             raise ValueError(f"{self.name}: {count} attempts never fit a limit of {self.limit}")
+        if at is not None and self.limit != 1:
+            raise ValueError(f"{self.name}: `at` needs a limit of 1, not {self.limit}")
         if self._shared():
             if at is not None and not (self.exact and isinstance(at, datetime)):
                 raise ValueError(f"{self.name}: `at` needs an exact limit and a recorded moment")
