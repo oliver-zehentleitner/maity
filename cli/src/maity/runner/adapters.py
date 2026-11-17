@@ -403,11 +403,31 @@ def trust_clone(ctx: Context) -> None:
         )
 
 
+def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
+    """The parts of a repository's grant a Codex placement starts without, each with why
+    (cli/context/runner.md): Codex has no command allowlist, and its `maity` runs inside its
+    sandbox, not outside it as `maity gh` needs. Only with its sandbox on: without it, a
+    grant with any of these parts refuses the start (supervisor `_refusal`)."""
+    left = []
+    if grant.allow:
+        listed = ", ".join(repr(rule) for rule in grant.allow)
+        left.append(
+            f"allow {listed} is not applied to codex: Codex has no command allowlist, so "
+            "every command runs in its sandbox, listed or not (refused without the sandbox)"
+        )
+    if grant.pull_requests:
+        left.append(
+            "pull_requests is not given to codex: its `maity` runs inside its sandbox, and "
+            "the runner sets up `maity gh` only for a `maity` outside it"
+        )
+    return left
+
+
 def pull_requests_record(ctx: Context) -> str:
     """The content of the runner's record `ghpr.PULL_REQUESTS`: the placement's repository
     and the gh on the runner's PATH when the grant has pull requests and gh is there, else
-    empty."""
-    if not ctx.grant.pull_requests:
+    empty. Always empty for Codex (codex_left_out)."""
+    if not ctx.grant.pull_requests or ctx.harness.id == "codex":
         return ""
     gh = proc.program("gh")
     workspace = ctx.placement.get("workspace") or {}
