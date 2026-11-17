@@ -1688,8 +1688,14 @@ request = Table(
     _ref("to_profile", "agent_profile.id"),
     _ref("to_human", "human.id"),  # the profile's owner when the hub filed it, or `human`'s
     Column("personal", Boolean, nullable=False, server_default=false()),
-    # "hub" on a request the hub files on an agent's behalf (§7): the notice of an agent's
-    # outage (§15.7); its events reach the owner only, and no project route shows it.
+    # "hub" on a request the hub files itself, with no asker who reads it (§7). On an
+    # agent's behalf, `asked_by` the agent's member: the notice of its outage (§15.7), of its
+    # unconfirmed Keep the Why commitment (§6.23) and of its isolation (§6.2), all three
+    # `file_hub_notice`, and a jour fixe moderator's consent the upgrade's grants file
+    # (§20.2). With no asker and no project: the owner's digest (§5.3), the request about a
+    # new abuse report (§16.8) and the request to chat with an owner's agents (§9.6). Its
+    # events never reach the agent in `asked_by`; the project route's `answer` is
+    # `not_found` for it, and every project route is for a personal one.
     Column("filed_by", String(8)),
     # A closed personal request's card as it was when it closed (§7): a non-member owner
     # does not follow the card after the outcome.
