@@ -2085,6 +2085,38 @@ def test_the_idle_check_resumes_once_a_left_prompt_is_answered(world: Any) -> No
     assert backend.typed == [(SESSION, supervisor.NUDGE_LINE)]
 
 
+def test_no_idle_line_goes_into_a_prompt_one_look_missed(world: Any) -> None:
+    """A look without the prompt's title (a redraw caught midway) does not open the session
+    to the idle check for good: the prompt back, nothing is typed into it."""
+    sup, backend, _, clock, _ = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    backend.screen = "> "  # one look misses it
+    sup.tick()
+    backend.screen = TRUSTING
+    for _ in range(61):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [] and backend.submitted == 0
+
+
+def test_no_idle_line_goes_into_a_prompt_shown_late(world: Any) -> None:
+    """A folder prompt that shows only after `FOLDER_PROMPT_WITHIN` is not answered, and the
+    idle check types nothing into it."""
+    sup, backend, _, clock, _ = world
+    backend.screen = "> "
+    started(world)
+    clock.now += supervisor.FOLDER_PROMPT_WITHIN + 1
+    sup.tick()
+    backend.screen = TRUSTING
+    for _ in range(61):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [] and backend.submitted == 0
+
+
 def test_the_folder_prompt_is_looked_for_only_soon_after_the_start(world: Any) -> None:
     sup, backend, _, clock, _ = world
     backend.screen = "> "

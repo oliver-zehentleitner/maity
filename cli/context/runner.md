@@ -547,11 +547,13 @@ presses Enter once and logs it. A folder prompt without that choice
 (one offering "Trust and continue") is never answered: the log says the
 harness waits on a first-run prompt. The pane's text is only matched
 (`Tmux.pane_has`), never kept, logged or sent, as in the idle check.
-A session adopted after a runner restart is looked at only on the
-adopting tick, and only within `FOLDER_PROMPT_WITHIN` of the start the
-earlier process made. While a prompt is left alone the session's idle
-check is off, so no line is typed into it; once the prompt is gone (a
-person answered it), the idle check runs as before.
+A session adopted after a runner restart is looked at for a prompt to
+answer only on the adopting tick, and only within `FOLDER_PROMPT_WITHIN`
+of the start the earlier process made. Before every idle check of a
+Codex session the runner looks for the folder prompt: while it shows,
+or a look cannot tell, no idle line or key is sent, also for a prompt
+that shows only later; once it is gone (a person answered it), the idle
+check runs as before. One look decides that check only.
 
 **Reason:** "Open restricted" keeps the folder untrusted and saves
 nothing, so the clone's own `.codex` configuration stays out exactly as

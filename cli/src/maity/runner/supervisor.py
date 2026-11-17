@@ -571,7 +571,7 @@ class Supervisor:
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
             elif rec.state == "running" and p.get("mode") == "interactive":
-                if rec.folder_prompt != "left":  # no line typed into a prompt left alone
+                if not self._prompt_shown(p, mine, backend):  # no line into a prompt
                     self._idle(p, rec, mine, backend, now)
             return 0
         if mine is not None and mine.dead:
@@ -658,11 +658,6 @@ class Supervisor:
         without it (one that would trust the folder) is never answered: said in the log, as
         a harness waiting on a first-run prompt. Looked for only `FOLDER_PROMPT_WITHIN` after
         the start; the pane's text is only matched, never kept (Tmux.pane_has)."""
-        if rec.folder_prompt == "left":  # answered by someone, or gone: checked as before
-            shown = backend.pane_has(session.name, (FOLDER_PROMPT,))
-            if shown is not None and FOLDER_PROMPT not in shown:
-                rec.folder_prompt = "none"
-            return
         if rec.folder_prompt is not None or rec.started_at is None:
             return
         if now - rec.started_at > FOLDER_PROMPT_WITHIN:
@@ -688,6 +683,16 @@ class Supervisor:
         rec.folder_prompt = "answered"
         self.log(f"{session.name}: answered Codex's folder prompt with \"Open restricted\"; "
                  "the clone stays untrusted")  # fmt: skip
+
+    def _prompt_shown(self, p: dict[str, Any], session: Session, backend: Tmux) -> bool:
+        """Whether a Codex session's pane may show its folder prompt, looked at on every
+        check, before the idle check may type: a prompt shown, or a look that cannot tell,
+        keeps the idle line out of it, however long it stays and whenever it shows; one look
+        that misses it decides that check only."""
+        if self.cfg.harnesses[p["harness"]].id != "codex":
+            return False
+        shown = backend.pane_has(session.name, (FOLDER_PROMPT,))
+        return shown is None or FOLDER_PROMPT in shown
 
     def _idle(
         self, p: dict[str, Any], rec: Record, session: Session, backend: Tmux, now: float
