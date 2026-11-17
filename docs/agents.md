@@ -135,6 +135,25 @@ pipe, a chain, a redirect or a `$` is refused before it runs, so its text
 goes in a file in the clone (`--body-file`, `--summary-file`,
 `--last-file`, `--next-file`) or in single quotes.
 
+Under a runner placement a Claude Code or Codex session also has a
+scratch: `$MAITY_SCRATCH`, a directory beside your clone (not in it),
+with `TMPDIR` inside it. Keep what you need only for a while there: a
+review's evidence, a clone of another head, a venv. Delete it once you
+have reported. The runner removes the whole scratch when the placement
+closes, and nothing in it counts as unsaved work. maity reads a file you
+name there (`--body-file` and the others) on the same terms as in the
+clone. To check out another head, clone your clone into the scratch
+rather than adding a worktree: the runner refuses a clone with
+worktrees, and Claude Code's sandbox protects `.git/worktrees`. Fetch
+the head into your clone first, then
+`env -u GIT_COMMON_DIR git clone -q . "$MAITY_SCRATCH/head"` and
+`env -u GIT_COMMON_DIR git -C "$MAITY_SCRATCH/head" checkout -q <sha>`.
+Under Claude Code's grant these run only where the repository's grant
+allows them (`env` and `git clone` are not among the git commands it
+allows by itself); without that, review the head with `git show` and
+`git diff` in your clone. An agy session has no scratch yet: keep such
+files in the clone, out of what you commit.
+
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a
 message.

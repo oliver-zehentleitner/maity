@@ -193,3 +193,72 @@ def test_outside_a_placement_every_path_is_read_as_before(
     fake.routes[("POST", f"{P}/tasks")] = lambda s: (201, {"id": "tsk-0009", **s.json()})
     assert cli.main(["api", "POST", "/projects/oliver/maity/tasks", "--json", str(target)]) == 0
     assert leaked(fake)  # unchanged: no placement, no confinement
+
+
+# --- the placement's scratch (§15.5) ---------------------------------------------------------
+
+
+def scratch_recorded(tmp_path: Path, record: str | None = None) -> Path:
+    """A scratch beside the clone, named in the runner's record as the runner writes it."""
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+    room.mkdir(parents=True)
+    private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    text = f"{room}\n" if record is None else record
+    (private / clonecheck.SCRATCH_RECORD).write_text(text)
+    return room
+
+
+@posix
+@walks
+def test_a_file_in_the_recorded_scratch_is_read_and_sent(
+    placed: Path, fake: fakehub.FakeHub, tmp_path: Path
+) -> None:
+    fake.routes[("POST", f"{P}/tasks")] = lambda s: (201, {"id": "tsk-0009", **s.json()})
+    room = scratch_recorded(tmp_path)
+    (room / "evidence").mkdir()
+    (room / "evidence" / "body.json").write_bytes(b'{"title": "from the scratch"}')
+    given = str(room / "evidence" / "body.json")
+    assert cli.main(["api", "POST", "/projects/oliver/maity/tasks", "--json", given]) == 0
+    assert fake.seen[-1].json() == {"title": "from the scratch"}
+
+
+@posix
+@walks
+@pytest.mark.parametrize("way", ["beside", "link", "linked-scratch", "no-record", "empty-record",
+                                 "record-in-clone"])  # fmt: skip
+def test_only_the_recorded_scratch_is_read_and_never_through_a_link(
+    placed: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    way: str,
+) -> None:  # fmt: skip
+    record = {"no-record": None, "empty-record": "", "record-in-clone": f"{placed}/sub\n"}
+    if way in ("no-record", "empty-record", "record-in-clone"):
+        room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+        room.mkdir(parents=True)
+        if way != "no-record":
+            private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+            (private / clonecheck.SCRATCH_RECORD).write_text(str(record[way]))
+        given = room / "body.json"
+        given.write_bytes(CONTENT)
+    elif way == "linked-scratch":
+        real = tmp_path / "elsewhere"
+        real.mkdir()
+        (real / "body.json").write_bytes(CONTENT)
+        room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+        room.parent.mkdir(parents=True)
+        room.symlink_to(real)
+        private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+        (private / clonecheck.SCRATCH_RECORD).write_text(f"{room}\n")
+        given = room / "body.json"
+    else:
+        room = scratch_recorded(tmp_path)
+        target = secret(tmp_path)
+        if way == "link":
+            (room / "via-link").symlink_to(target)
+            given = room / "via-link"
+        else:  # a directory beside the scratch, not in it
+            given = target
+    assert cli.main(["api", "POST", "/projects/oliver/maity/tasks", "--json", str(given)]) == 2
+    err = capsys.readouterr().err
+    assert not leaked(fake), (way, err)
+    reason = {"link": "a link", "linked-scratch": "a link"}.get(way, "not a file in this clone")
+    assert reason in err, (way, err)

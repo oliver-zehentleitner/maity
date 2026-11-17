@@ -46,6 +46,14 @@ PROTOCOLS = ("https", "ssh")
 FOLDER_HARNESSES = ("antigravity",)
 REPO = "repo"
 FOLDER, CLONE = "folder", "clone"  # the layouts, as the record names them
+# A placement's scratch (§15.5): `<workspaces>/<project_id>/.scratch/<placement id>`. A clone's
+# name starts with a letter or digit (TOKEN), so `.scratch` is never one.
+SCRATCH = ".scratch"
+SCRATCH_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")  # a placement id, as the supervisor takes it
+# The harnesses whose session is told its scratch and whose sandbox the runner opens for it
+# (adapters). agy's sandbox is not shown to write there yet; opencode keeps its file tools
+# inside the clone.
+SCRATCH_HARNESSES = ("stub", "claude-code", "codex")
 _lock = threading.Lock()
 
 
@@ -105,6 +113,23 @@ class Workspace:
     def credential(self) -> Path:
         """Where the agent-side CLI keeps the clone's credential (its Git directory)."""
         return self.repo / ".git" / "maity" / state.CREDENTIAL_FILE
+
+
+def scratch_of(root: Path, project: str, placement_id: str, host: str = "") -> Path:
+    """The placement's scratch under `root` (§15.5), built from validated tokens and kept
+    inside `root` as a clone's path is (locate). Not resolved: what is there is the agents'
+    to write, and the runner looks at it only through `scratch_link`."""
+    if not (TOKEN.match(project) and SCRATCH_ID.match(placement_id)):
+        raise Refused("workspace_in_use", "workspace_unrecorded")
+    base = root if host else root.resolve()
+    return base / project / SCRATCH / placement_id
+
+
+def scratch_link(path: Path, as_user: AsUser = RUNNER) -> bool:
+    """Whether the scratch or the `.scratch` above it is a symbolic link: the agents can
+    write the project's directory, and the runner creates or removes nothing through a link
+    they made, which could point anywhere their user may write."""
+    return as_user.exists(path, "-L") or as_user.exists(path.parent, "-L")
 
 
 def uses_folder(harness_id: str) -> bool:

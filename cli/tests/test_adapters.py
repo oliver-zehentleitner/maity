@@ -934,3 +934,29 @@ def test_a_version_is_a_token_of_its_own(printed: str, version: str | None) -> N
 
     found = capabilities.VERSION.search(printed)
     assert (found.group(0) if found else None) == version
+
+
+def test_the_scratch_is_told_to_the_session_and_opened_in_both_sandboxes(tmp_path: Path) -> None:
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+    claude = context(tmp_path / "c", sandbox=True, scratch=room)
+    settings = adapters.claude_settings(claude)
+    assert settings["sandbox"]["filesystem"]["allowWrite"] == [str(room)]
+    assert {f"{tool}(/{room}/**)" for tool in ("Read", "Edit", "Write")} <= set(
+        settings["permissions"]["allow"]
+    )
+    codex = context(tmp_path / "x", "codex", sandbox=True, scratch=room,
+                    workspaces=tmp_path / "ws")  # fmt: skip
+    toml = adapters.codex_config(codex)
+    hidden, opened = f'"{tmp_path / "ws"}" = "none"', f'"{room}" = "write"'
+    assert hidden in toml and opened in toml  # the root stays hidden, its scratch opened again
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=room))
+    assert launched.env["MAITY_SCRATCH"] == str(room)
+    assert launched.env["TMPDIR"] == str(room / "tmp")
+
+
+def test_without_a_scratch_nothing_names_one(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    assert "allowWrite" not in adapters.claude_settings(ctx)["sandbox"]["filesystem"]
+    assert ".scratch" not in adapters.codex_config(context(tmp_path / "x", "codex", sandbox=True))
+    launched = adapters.launch(context(tmp_path / "s", "stub"))
+    assert "MAITY_SCRATCH" not in launched.env and "TMPDIR" not in launched.env

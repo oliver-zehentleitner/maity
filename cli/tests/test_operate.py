@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,7 +10,7 @@ import pytest
 from conftest import git
 
 from maity import cli, state
-from maity.runner import config, operate, serve, supervisor, tmux, workspace
+from maity.runner import config, operate, scratch, serve, supervisor, tmux, workspace
 
 CONFIG = """\
 [hub]
@@ -133,7 +134,7 @@ def test_gc_lists_and_only_removes_with_yes(
     (place.path / "draft.txt").write_text("unsaved")
     workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")  # no placement any more
     monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
-    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
+    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set(), set()))
     assert cli.main(["runner", "gc", "--revoked", "--config", str(path)]) == 0
     out = capsys.readouterr().out
     assert "agent agt-g  credential revoked" in out and "?? draft.txt" in out
@@ -154,7 +155,7 @@ def test_gc_runs_no_hook_of_the_clone(tmp_path: Path) -> None:
     assert not marker.exists()
 
 
-def test_gc_needs_revoked(tmp_path: Path) -> None:
+def test_gc_needs_revoked_or_scratch(tmp_path: Path) -> None:
     path = setup(tmp_path)
     assert cli.main(["runner", "gc", "--config", str(path)]) == cli.EXIT_USAGE
 
@@ -198,7 +199,7 @@ def revoked_clone(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str = "
     (place.path / "draft.txt").write_text("unsaved")
     workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")
     monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
-    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
+    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set(), set()))
     return path, place
 
 
@@ -349,7 +350,7 @@ def test_a_clone_an_active_placement_continues_is_kept(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path, place = revoked_clone(tmp_path, monkeypatch)
-    monkeypatch.setattr(operate, "_active", lambda cfg: ({("maity", "agent-g")}, set()))
+    monkeypatch.setattr(operate, "_active", lambda cfg: ({("maity", "agent-g")}, set(), set()))
     assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
     assert place.path.exists()
 
@@ -408,3 +409,57 @@ def test_only_an_exact_credential_revoked_code_counts(monkeypatch: pytest.Monkey
         "maity.runner.operate.subprocess.run", answer("maity: hub says the credential_revoked flag")
     )
     assert not operate.credential_revoked(place)
+
+
+def test_gc_scratch_lists_then_removes_what_no_active_placement_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    assert cfg.local is not None
+    holder = cfg.local.workspaces / "maity" / workspace.SCRATCH
+    for name in ("plc-0001", "plc-0002"):
+        (holder / name / "tmp").mkdir(parents=True)
+        (holder / name / "tmp" / "venv.bin").write_bytes(b"z" * 2000)
+    (holder / "not-a-placement").mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "keep").write_text("k")
+    (holder / "plc-0009").symlink_to(elsewhere)
+    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set(), {"plc-0002"}))
+    assert cli.main(["runner", "gc", "--scratch", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert f"{holder / 'plc-0001'}: removable" in out and "plc-0002" not in out
+    assert "not-a-placement: not a placement's; left as it is" in out
+    assert (holder / "plc-0001").is_dir()  # listed only
+    assert cli.main(["runner", "gc", "--scratch", "--yes", "--config", str(path)]) == 0
+    assert not (holder / "plc-0001").exists() and (holder / "plc-0002").is_dir()
+    assert (elsewhere / "keep").exists() and (holder / "not-a-placement").is_dir()
+    (entry,) = scratch.removals(cfg.state_dir, 10)
+    assert entry["placement"] == "plc-0001" and entry["why"] == "gc"
+    assert entry["size_bytes"] >= 2000
+
+
+def test_status_shows_the_sizes_and_the_removals(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = setup(tmp_path)
+    cfg = config.load(path)
+    cfg.state_dir.mkdir(parents=True, exist_ok=True)
+    state.save_state(cfg.state_dir, {"placements": [{"id": "plc-0003", "project": "o/m",
+                                                     "generation": 1, "desired": "running"}]},
+                     name=serve.STATUS_FILE)  # fmt: skip
+    state.save_state(cfg.state_dir, {"plc-0003": {"state": "running", "clone_bytes": 3 * 1024**2,
+                                                  "scratch_bytes": 512}},
+                     name=supervisor.ACTUAL_FILE)  # fmt: skip
+    scratch.log_removal(cfg.state_dir, "plc-0001", Path("/w/m/.scratch/plc-0001"), 2048, "closed")
+    assert cli.main(["runner", "status", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "disk     clone 3.0 MiB, scratch 512 B" in out and "removed" not in out
+    assert cli.main(["runner", "status", "--removed", "--config", str(path)]) == 0
+    out = capsys.readouterr().out
+    assert "plc-0001  2.0 KiB  closed  /w/m/.scratch/plc-0001" in out
+    assert cli.main(["runner", "status", "--removed", "--json", "--config", str(path)]) == 0
+    view = json.loads(capsys.readouterr().out)
+    assert view["placements"][0]["scratch_bytes"] == 512
+    assert view["removed"][0]["placement"] == "plc-0001"

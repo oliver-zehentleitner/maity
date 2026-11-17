@@ -3139,8 +3139,9 @@ the clone and code that can put a file there can remove it itself.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-bg81webs911m (the rest of the card: every path maity reads for the agent, the lead's list of those paths and of the ways out to test (an absolute path, `../`, `.git/maity/`, a symbolic link, a hard link), and the order to offer no `-o -` under a placement), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed
+**Source:** card tsk-bg81webs911m (the rest of the card: every path maity reads for the agent, the lead's list of those paths and of the ways out to test (an absolute path, `../`, `.git/maity/`, a symbolic link, a hard link), and the order to offer no `-o -` under a placement), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed; the scratch paragraph from card tsk-dpe3d5g5eh4k (the lead's go, 2026-11-17)
 **See:** runner.md#under-a-placement-maity-writes-a-file-only-inside-the-clone-and-reads-its-records-from-the-runners-directory — 818828af-24cb-4b2a-be54-1bff2211ccb0 — as of 2026-11-13
+**See:** runner.md — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-17
 **Revisit when:** a command gets a file option that does not read through `cli._placed_read`; an option needs more than 10 MiB; a placed agent needs to name a file with more than one hard link; a harness runs `maity` inside its sandbox
 
 Under a runner placement every file maity reads for a command goes
@@ -3162,6 +3163,14 @@ descriptor (Windows), only stdin is taken. `maity files get -o -` is
 refused under a placement before any call, so the walk into the clone is
 the only way maity writes an attachment there.
 
+A path outside the clone is read on the same terms from the placement's
+scratch, when the runner recorded one (`clonecheck.SCRATCH_RECORD`, in
+its directory for the agent, beside the `git` record): the walk then
+starts at that directory, opened without following a link. The record,
+not `MAITY_SCRATCH`, names it, and a record pointing into the clone or
+not an absolute path is ignored. Writing (`files get -o`) stays inside
+the clone.
+
 **Reason:** maity runs outside the harness's sandbox, and what it reads
 for a command can go to the hub (an upload, a message, a request body).
 A path the agent names must not let it read what the sandbox hides from
@@ -3181,6 +3190,9 @@ goes wherever the command line sent it, which maity cannot see.
   terminal check says nothing about where a redirect points.
 - Checking the path by name first (`realpath` and a prefix test) and
   then reading it: the name is looked up twice (as in 818828af).
+- Taking the scratch from `MAITY_SCRATCH`: the agent sets its own
+  environment, so the variable could name any directory its user may
+  read, another clone's included.
 
 **Known gap:** a file whose other name is removed between the open and
 the link count reads as one link; that takes write access to the

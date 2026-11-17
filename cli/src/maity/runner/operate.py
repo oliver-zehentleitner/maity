@@ -16,7 +16,7 @@ from typing import Any
 
 from .. import clonecheck, hub, onboarding, state
 from ..redact import without_userinfo
-from . import config, limitread, serve, supervisor, targets, workspace
+from . import config, limitread, scratch, serve, supervisor, targets, workspace
 from .asuser import RUNNER, AsUser
 from .tmux import Session, Tmux, TmuxError
 
@@ -268,8 +268,8 @@ def unsaved_work(path: Path, as_user: AsUser = RUNNER) -> list[str] | None:
     return lines
 
 
-def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str]]:
-    """(project, clone) pairs and agents of every active placement, asked of the hub: a
+def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str], set[str]]:
+    """(project, clone) pairs, agents and ids of every active placement, asked of the hub: a
     clone a new placement continues names an old placement in its record until it starts."""
     runner_state = state.load_state(cfg.state_dir, name=serve.RUNNER_FILE)
     try:
@@ -279,18 +279,23 @@ def _active(cfg: config.Config) -> tuple[set[tuple[str, str]], set[str]]:
         raise Refused(f"cannot ask the hub which placements are active ({exc})") from None
     pairs: set[tuple[str, str]] = set()
     agents: set[str] = set()
+    ids: set[str] = set()
     for p in (answer.get("items") if isinstance(answer, dict) else None) or []:
         if not supervisor.valid(p):
             continue
+        ids.add(p["id"])
         pairs.add((p["project_id"], p["workspace"]["clone"]))
         agent = p.get("agent") or {}
         agents.update(v for v in (agent.get("id"), agent.get("handle")) if isinstance(v, str))
-    return pairs, agents
+    return pairs, agents, ids
 
 
 def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
-    if not args.revoked:
-        raise Refused("gc removes only workspaces whose credential is revoked: pass --revoked")
+    if not (args.revoked or getattr(args, "scratch", False)):
+        raise Refused(
+            "gc removes workspaces whose credential is revoked (--revoked) and the scratch of "
+            "placements that are no longer active (--scratch): pass one or both"
+        )
     if cfg.local is None:
         raise Refused("gc is for the local backend in this version")
     # Removing holds the service's lock: nothing starts in a clone while it goes.
@@ -302,26 +307,62 @@ def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
             "without --yes to list them"
         ) from None
     try:
-        pairs, agents = _active(cfg)
-        found = workspace.records(cfg.state_dir)
-        gone: list[str] = []
-        try:
-            for path_text, record in sorted(found.items()):
-                if _collect(cfg, path_text, record, pairs, agents, args.yes):
-                    gone.append(path_text)
-        finally:
-            if gone:
-                for path_text in gone:
-                    found.pop(path_text, None)
-                state.save_state(cfg.state_dir, found, name=workspace.RECORDS)
+        pairs, agents, ids = _active(cfg)
+        if args.revoked:
+            found = workspace.records(cfg.state_dir)
+            gone: list[str] = []
+            try:
+                for path_text, record in sorted(found.items()):
+                    if _collect(cfg, path_text, record, pairs, agents, args.yes):
+                        gone.append(path_text)
+            finally:
+                if gone:
+                    for path_text in gone:
+                        found.pop(path_text, None)
+                    state.save_state(cfg.state_dir, found, name=workspace.RECORDS)
+        if getattr(args, "scratch", False):
+            _collect_scratch(cfg, ids, args.yes)
         if not args.yes:
-            print("nothing removed; pass --yes to remove the workspaces listed as removable")
+            print("nothing removed; pass --yes to remove what is listed as removable")
     except serve.Fatal as exc:
         raise Refused(str(exc)) from None
     finally:
         if lock is not None:
             lock.close()
     return 0
+
+
+def _collect_scratch(cfg: config.Config, active: set[str], remove: bool) -> None:
+    """Every scratch under the workspaces root whose placement the hub does not list as
+    active (§15.5): closed, or no placement of this runner at all. Listed, and with `remove`
+    removed and written to `removed.jsonl`. Nothing in a scratch is kept as unsaved work."""
+    assert cfg.local is not None  # noqa: S101 - cmd_gc checks it
+    as_user = _as_user(cfg)
+    root = cfg.local.workspaces
+    try:
+        projects = sorted(p.name for p in root.iterdir() if workspace.TOKEN.match(p.name))
+    except OSError as exc:
+        raise Refused(f"cannot list {root} ({exc})") from None
+    for project in projects:
+        holder = root / project / workspace.SCRATCH
+        if holder.is_symlink() or not holder.is_dir():
+            continue
+        for entry in sorted(holder.iterdir()):
+            if entry.name in active:
+                continue
+            if not workspace.SCRATCH_ID.match(entry.name) or entry.is_symlink():
+                print(f"scratch  {onboarding.inline(str(entry))}: not a placement's; left as it is")
+                continue
+            if not remove:
+                print(f"scratch  {entry}: removable (the placement is not active)")
+                continue
+            try:
+                removed = scratch.remove(entry, as_user)
+            except (OSError, subprocess.SubprocessError) as exc:
+                print(f"scratch  {entry}: not removed ({onboarding.inline(str(exc))})")
+                continue
+            scratch.log_removal(cfg.state_dir, entry.name, entry, removed, "gc")
+            print(f"scratch  {entry}: removed")
 
 
 def _collect(

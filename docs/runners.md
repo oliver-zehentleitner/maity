@@ -192,6 +192,17 @@ Each entry is a plain command; [`maity runner`](../cli/README.md#maity-runner) l
 
 The hub keeps a retention time per placement (`workspace_retention`: `immediate`, `3h`, `24h` by default, `7d`), and the agent's owner or a project admin can ask for a kept clone to be removed (`POST /projects/<owner>/<slug>/placements/<id>/workspace/remove`). Removing clones when their time is up is the runner's part, and it is not built yet: today the runner keeps every clone until you remove it (`maity runner gc --revoked`).
 
+## A placement's scratch
+
+Reviews and tests leave things behind: evidence folders, a clone of another head, a virtual environment, temporary files. So each Claude Code or Codex placement gets a scratch directory beside its clone, `<workspaces>/<project_id>/.scratch/<placement id>`. The session finds it as `MAITY_SCRATCH`, with `TMPDIR` pointing inside it, and its sandbox may write there. agy and opencode placements get none yet, because the runner has not shown their sandbox can write it.
+
+Nothing in a scratch counts as unsaved work. Once the hub reads the placement as closed and no session of it runs, the runner removes the scratch, writes a line to its log and adds the removal (when, which placement, path, size, why) to `removed.jsonl` in its state directory. A restart, a rejoin and an adoption keep it. Removing it after a stop, on the clone's retention clock, comes with the clone's removal (below), which is not built yet. The runner never removes through a link: a scratch, or a `.scratch` above it, that is a link stays and is logged once.
+
+- `maity runner status` shows the size of each placement's clone and scratch, measured at most every ten minutes. `maity runner status --removed` also shows the last removals.
+- `maity runner gc --scratch` lists every scratch whose placement is no longer active, including one left by a revoked or removed runner. `--yes` removes them.
+
+Neither the sizes nor the removals go to the hub.
+
 ## Keeping Claude Code and Codex current
 
 The runner can install Claude Code and Codex and keep them current, per tool and only when you say so in its configuration:

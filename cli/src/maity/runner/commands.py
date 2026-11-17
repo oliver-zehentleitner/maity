@@ -27,6 +27,7 @@ from . import (
     loop,
     operate,
     plaincall,
+    scratch,
     serve,
     stub,
     supervisor,
@@ -40,6 +41,7 @@ STATE_FILE = serve.RUNNER_FILE
 UNIT = "maity-runner.service"
 REVOKE = serve.REVOKE
 HEALTH_TIMEOUT = 10.0
+REMOVED_SHOWN = 20  # `status --removed`: the newest removals shown
 # The agents' user's Claude Code settings, read by `check`: larger is not looked at.
 SETTINGS_MAX = 1024 * 1024
 
@@ -821,8 +823,11 @@ def cmd_status(args: argparse.Namespace) -> int:
         rec = rec if isinstance(rec, dict) else {}
         live = rec.get("state") in ("starting", "running")
         hint = rec.get("session_hint") if live else None
+        sizes = {k: rec.get(k) if type(rec.get(k)) is int else None
+                 for k in ("clone_bytes", "scratch_bytes")}  # fmt: skip
         placements.append({**placement, "state": rec.get("state"),
-                           "attach": hint if isinstance(hint, str) else None})  # fmt: skip
+                           "attach": hint if isinstance(hint, str) else None,
+                           **sizes})  # fmt: skip
     view: dict[str, Any] = {
         "hub": paired.get("hub"),
         "runner_id": paired.get("runner_id"),
@@ -831,6 +836,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         **{k: current.get(k) for k in ("session_id", "error", "retry_at", "updated_at")},
         "placements": placements,
     }
+    if getattr(args, "removed", False):
+        # What the runner removed (§15.5), newest last; from the state directory only.
+        view["removed"] = scratch.removals(cfg.state_dir, REMOVED_SHOWN) if cfg.state_dir.is_dir() \
+            else []  # fmt: skip
     if args.json:
         print(json.dumps(view, indent=2))
         return 0
@@ -850,7 +859,28 @@ def cmd_status(args: argparse.Namespace) -> int:
         )
         if placement["attach"]:
             print(f"  attach   {show(placement['attach'])}")
+        if placement["clone_bytes"] is not None or placement["scratch_bytes"] is not None:
+            print(f"  disk     clone {_bytes(placement['clone_bytes'])}, "
+                  f"scratch {_bytes(placement['scratch_bytes'])}")  # fmt: skip
+    for entry in view.get("removed") or []:
+        print(f"removed  {show(entry.get('at'))}  {show(entry.get('placement'))}  "
+              f"{_bytes(entry.get('size_bytes'))}  {show(entry.get('why'))}  "
+              f"{show(entry.get('path'))}")  # fmt: skip
     return 0
+
+
+def _bytes(value: Any) -> str:
+    """A size for a person: `-` when unknown."""
+    if type(value) is not int:
+        return "-"
+    if value < 1024:
+        return f"{value} B"
+    amount = float(value)
+    for unit in ("KiB", "MiB", "GiB"):
+        amount /= 1024
+        if amount < 1024 or unit == "GiB":
+            break
+    return f"{amount:.1f} {unit}"
 
 
 def _seconds(value: str) -> int:
@@ -993,6 +1023,10 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     )
     r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
     r.add_argument("--json", action="store_true", help="print it as JSON")
+    r.add_argument(
+        "--removed", action="store_true",
+        help=f"also the last {REMOVED_SHOWN} scratch directories the runner removed",
+    )  # fmt: skip
     r.set_defaults(handler=cmd_status)
 
     r = rsub.add_parser(
@@ -1114,12 +1148,16 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
 
     r = runner_cmd(
         "gc",
-        "list, and with --yes remove, workspaces whose credential is revoked",
-        "For every recorded workspace without a placement whose credential the hub reports as "
-        "revoked: its uncommitted files and the commits on no remote (git run with hooks, "
-        "fsmonitor and pagers off). Removes only with --yes.",
+        "list, and with --yes remove, workspaces whose credential is revoked and old scratch",
+        "--revoked: every recorded workspace without a placement whose credential the hub "
+        "reports as revoked, with its uncommitted files and the commits on no remote (git run "
+        "with hooks, fsmonitor and pagers off). --scratch: every placement's scratch the hub "
+        "does not list as active. Removes only with --yes.",
     )
-    r.add_argument("--revoked", action="store_true", help="required: the only kind gc knows")
+    r.add_argument("--revoked", action="store_true",
+                   help="workspaces whose credential is revoked")  # fmt: skip
+    r.add_argument("--scratch", action="store_true",
+                   help="the scratch of placements that are not active (§15.5)")  # fmt: skip
     r.add_argument("--yes", action="store_true", help="remove the workspaces listed")
     r.set_defaults(handler=_operate("cmd_gc"))
 

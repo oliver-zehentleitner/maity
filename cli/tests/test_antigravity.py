@@ -1227,7 +1227,7 @@ def test_gc_lists_what_lies_beside_the_clone_and_removes_the_folder(
     (place.path / "notes.md").write_text("left beside")
     workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")
     monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
-    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
+    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set(), set()))
     assert cli.main(["runner", "gc", "--revoked", "--config", str(path)]) == 0
     out = capsys.readouterr().out
     assert "?? draft.txt" in out and "notes.md (beside the clone)" in out
@@ -1249,7 +1249,7 @@ def test_gc_leaves_a_folder_whose_repo_is_a_link(
     place.repo.symlink_to(elsewhere)
     workspace.record(cfg.state_dir, place, "agt-g", "plc-0007")
     monkeypatch.setattr(operate, "credential_revoked", lambda place, as_user: True)
-    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set()))
+    monkeypatch.setattr(operate, "_active", lambda cfg: (set(), set(), set()))
     path = tmp_path / "runner.toml"
     assert cli.main(["runner", "gc", "--revoked", "--yes", "--config", str(path)]) == 0
     assert "not removed" in capsys.readouterr().out

@@ -133,8 +133,14 @@ def body_file(root: Path, given: str, opened: clonecheck.Opened | None = None) -
     time. A regular file in the clone whose root and `.git` `clonecheck.opened_clone`
     checked (`opened`), outside that `.git`, with no other hard link, of at most BODY_MAX
     bytes (cli/context/runner.md 9f43804d)."""
-    try:
-        inclone.names(root, given, "--body-file")  # a path out of the clone says so everywhere
+    scratch = inclone.recorded_scratch(root, opened.git if opened else None)
+    try:  # a path out of the clone and its scratch says so everywhere
+        try:
+            inclone.names(root, given, "--body-file")
+        except inclone.Refused:
+            if scratch is None:
+                raise
+            inclone.names(scratch, given, "--body-file")
     except inclone.Refused as exc:
         raise Refused(str(exc)) from None
     if not WALKS:  # Windows
@@ -143,7 +149,7 @@ def body_file(root: Path, given: str, opened: clonecheck.Opened | None = None) -
             " give the text with --body"
         )
     try:
-        return inclone.read(root, given, "--body-file", BODY_MAX, opened)
+        return inclone.read(root, given, "--body-file", BODY_MAX, opened, scratch)
     except inclone.Refused as exc:
         raise Refused(str(exc)) from None
 

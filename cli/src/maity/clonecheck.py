@@ -46,6 +46,10 @@ GIT_INODE_ENV = "MAITY_GIT_INODE"
 # `.git/maity` is used. Unset under the runner, maity runs no git.
 GIT_PRIVATE_ENV = "MAITY_GIT_PRIVATE"
 IN_CLONE = "clone"
+# The placement's scratch (§15.5) as the runner made it: a record of the runner's
+# (runner_record), so maity reads a file there only in the directory the runner named, never
+# in one an environment variable of the agent's names. Empty: the session has none.
+SCRATCH_RECORD = "scratch"
 # What git under the runner gets from maity's own environment. PATH is not among them: git
 # gets one of its own (git_path_env), so no variable set for maity
 # (`GIT_SSH_COMMAND=… maity report`, `PATH=…`) picks a program git starts; HOME reaches git

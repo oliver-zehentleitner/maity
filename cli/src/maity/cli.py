@@ -2074,8 +2074,8 @@ def _placement_clone() -> Path | None:
 # command takes, an attachment.
 PLACED_READ_MAX = ATTACHMENT_MAX
 QUIET_REFUSAL = (
-    "under a runner placement maity reads only a plain file in this clone, outside its .git,"
-    " not through a link and with no other hard link"
+    "under a runner placement maity reads only a plain file in this clone (outside its .git)"
+    " or in the placement's scratch, not through a link and with no other hard link"
 )
 
 
@@ -2091,7 +2091,8 @@ def _placed_read(
         return None
     try:
         with clonecheck.opened_clone(root) as opened:  # the root and .git, checked once
-            return inclone.read(root, given, flag, limit, opened)
+            scratch = inclone.recorded_scratch(root, opened.git if opened else None)
+            return inclone.read(root, given, flag, limit, opened, scratch)
     except (clonecheck.Refused, inclone.Refused) as exc:
         if quiet:  # nothing of the path, not even one of its names
             raise UsageError(f"{flag}: {QUIET_REFUSAL}") from None

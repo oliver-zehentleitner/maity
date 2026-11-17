@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -13,7 +14,16 @@ from typing import Any, cast
 import pytest
 
 from maity import __version__, clonecheck, hub, proc, state
-from maity.runner import adapters, capabilities, config, restart, supervisor, tmux, workspace
+from maity.runner import (
+    adapters,
+    capabilities,
+    config,
+    restart,
+    scratch,
+    supervisor,
+    tmux,
+    workspace,
+)
 from maity.runner.asuser import RUNNER
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
@@ -183,6 +193,7 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     ((name, argv, env),) = backend.started
     assert sup.cfg.local is not None
     clone = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3").path
+    scratch = sup.cfg.local.workspaces.resolve() / "maity" / ".scratch" / "plc-0003"
     assert name == "maity_maity_agent-3"
     assert env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git"),
@@ -192,10 +203,14 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
         **adapters.SESSION_GIT_CONFIG,
         "GIT_AUTHOR_NAME": "Maity agent", "GIT_AUTHOR_EMAIL": "maity-agent@invalid",
         "GIT_COMMITTER_NAME": "Maity agent", "GIT_COMMITTER_EMAIL": "maity-agent@invalid",
+        "MAITY_SCRATCH": str(scratch), "TMPDIR": str(scratch / "tmp"),
     }  # fmt: skip
     private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
     assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
     assert clone not in private.parents
+    # Its scratch (§15.5): beside the clones, made with `tmp`, and named in a runner record.
+    assert (scratch / "tmp").is_dir() and clone not in scratch.parents
+    assert (private / clonecheck.SCRATCH_RECORD).read_text() == f"{scratch}\n"
     assert argv[1:4] == ["-I", "-m", "maity.runner.stub"]  # -I: nothing from the clone loads
     assert argv[-3:] == ["1", "--run-seconds", "5"]
     clock.now += supervisor.RUNNING_AFTER
@@ -2490,3 +2505,104 @@ def test_a_new_generation_does_not_resume_the_hung_session(
     settle(sup)
     assert len(backend.started) == 2 and seen == [False]
     assert sup.records["plc-0003"].hung_exits == []
+
+
+# --- the scratch (§15.5) ---------------------------------------------------------------------
+
+
+def scratch_of(sup: supervisor.Supervisor, pid: str = "plc-0003") -> Path:
+    assert sup.cfg.local is not None
+    return sup.cfg.local.workspaces.resolve() / "maity" / ".scratch" / pid
+
+
+CLOSED = {"id": "plc-0003", "project_id": "maity", "active": False,
+          "closed_reason": "deleted"}  # fmt: skip
+
+
+def test_a_closed_placements_scratch_goes_once_its_session_is_gone(world: Any) -> None:
+    sup, backend, _, _, logs = world
+    recorded(sup.cfg)
+    sup.update([placement()])
+    settle(sup)
+    room = scratch_of(sup)
+    (room / "venv").mkdir()
+    (room / "venv" / "big").write_bytes(b"x" * 5000)
+    sup.closed([CLOSED])
+    sup.tick()
+    assert room.is_dir()  # its session still runs: nothing is taken from under it
+    backend.kill("maity_maity_agent-3")
+    sup.update([])
+    sup.tick()
+    assert not room.exists()
+    (entry,) = scratch.removals(sup.cfg.state_dir, 10)
+    assert entry["placement"] == "plc-0003" and entry["why"] == "closed"
+    assert entry["path"] == str(room) and entry["size_bytes"] >= 5000
+    assert any("plc-0003: scratch removed on local" in line for line in logs)
+    sup.tick()  # removed once, logged once
+    assert len(scratch.removals(sup.cfg.state_dir, 10)) == 1
+
+
+def test_a_closed_placement_without_a_scratch_writes_no_removal(world: Any) -> None:
+    sup, *_ = world
+    sup.closed([CLOSED, {"id": "../x", "project_id": "maity", "active": False},
+                {**CLOSED, "id": "plc-0009", "active": True}])  # fmt: skip
+    sup.tick()
+    assert scratch.removals(sup.cfg.state_dir, 10) == []
+    assert sup.scratch_cleared == {"plc-0003"}  # the others are not read as closed ones
+
+
+@pytest.mark.parametrize("linked", ["scratch", "holder"])
+def test_a_scratch_that_is_a_link_is_neither_made_nor_removed(
+    world: Any, tmp_path: Path, linked: str
+) -> None:
+    sup, backend, _, _, logs = world
+    recorded(sup.cfg)
+    room = scratch_of(sup)
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "plc-0003").mkdir(parents=True)
+    (elsewhere / "plc-0003" / "keep").write_text("not the agents' to lose")
+    if linked == "holder":
+        room.parent.parent.mkdir(parents=True, exist_ok=True)
+        room.parent.symlink_to(elsewhere)
+    else:
+        room.parent.mkdir(parents=True)
+        room.symlink_to(elsewhere / "plc-0003")
+    sup.update([placement()])
+    settle(sup)
+    ((_, _, env),) = backend.started
+    assert "MAITY_SCRATCH" not in env and "TMPDIR" not in env  # started without one
+    assert any("no scratch" in line for line in logs)
+    backend.kill("maity_maity_agent-3")
+    sup.update([])
+    sup.closed([CLOSED])
+    sup.tick()
+    sup.tick()
+    assert (elsewhere / "plc-0003" / "keep").exists()
+    assert scratch.removals(sup.cfg.state_dir, 10) == []
+    assert sum("scratch left on local" in line for line in logs) == 1  # said once
+
+
+def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(world: Any) -> None:
+    sup, *_ = world
+    target = sup.targets["local"]
+    for harness_id in ("antigravity", "opencode"):
+        harness = config.Harness(harness_id, ("supervised",), "supervised")
+        assert sup._scratch(placement(), harness, target) is None
+    assert not scratch_of(sup).exists()
+    made = sup._scratch(placement(), config.Harness("codex", ("supervised",), "supervised"), target)
+    assert made == scratch_of(sup) and (made / "tmp").is_dir()
+
+
+def test_the_clone_and_scratch_sizes_are_measured_for_the_status(world: Any) -> None:
+    sup, _, _, clock, _ = world
+    recorded(sup.cfg)
+    sup.update([placement()])
+    settle(sup)
+    (scratch_of(sup) / "evidence.txt").write_bytes(b"y" * 3000)
+    rec = sup.records["plc-0003"]
+    assert rec.scratch_bytes is not None and rec.clone_bytes is not None
+    clock.now += supervisor.SIZE_EVERY
+    sup.tick()
+    assert rec.scratch_bytes is not None and rec.scratch_bytes >= 3000
+    saved = json.loads((sup.cfg.state_dir / supervisor.ACTUAL_FILE).read_text())
+    assert saved["plc-0003"]["scratch_bytes"] == rec.scratch_bytes

@@ -7,4 +7,4 @@
   runner removes it when the placement closes and after a stop on the clone's clock,
   only the path it built and never through a link; `maity runner gc --scratch` removes
   what no active placement names. Nothing in it is kept as unsaved work, and it is not
-  reported to the hub. The runner's side is not built yet.
+  reported to the hub. Removal after a stop comes with the clone's retention clock.
