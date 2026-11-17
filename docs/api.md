@@ -242,7 +242,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3; not built yet, tsk-pw0aagxnydr9), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18); `details.max` |
@@ -816,7 +816,7 @@ GET, PUT /projects/{owner}/{slug}/roles
 
 `GET` with `project:read` answers `{"builtin": [{name, description, guide, scopes}], "custom": […]}`: each built-in role with the text of the table above as its `description`, its `guide` as it applies in this project (the `guide_role` text of §6.28: the project's, else the project owner's account text, else the hub's default) and its scopes, so that the dashboard explains every role where one is chosen or shown (the maintainer's wish of 2026-10-31: each role with a short note on what it means and how it is meant). `PUT` by a human with `project:admin`,
 `{"custom": [{name, base, description}]}`, the whole list, at
-most 12. `name` matches `[a-z][a-z0-9-]{1,23}` and is none of the
+most 12, and beside it `base_version`, the `version` it was made on (below; not built yet, tsk-pw0aagxnydr9). `name` matches `[a-z][a-z0-9-]{1,23}` and is none of the
 built-in roles, trusts or tokens (`owner`, `admin`, `member`, `outside`, `guest`,
 `team`, `all`, `proxy`, `lead`, `null`, `none`): `invalid`,
 `details.fields["custom[<i>].name"]: "reserved"`. Every error of one
@@ -855,6 +855,26 @@ cannot be removed (`409 conflict`, `details.reason: role_in_use`,
 `details.uses`); there is no rename —
 add the new name, move the members, remove the old one. A `PUT` emits
 `policy_changed` with `fields: ["roles"]`.
+
+**Version.** Not built yet (tsk-pw0aagxnydr9): today `GET` answers
+no `version`, a `PUT` with `base_version` is `invalid`
+(`extra_forbidden`), and a `PUT` replaces the list whatever its caller
+read. `GET` also answers the list's `version` (`"version": 3`),
+and a `PUT` answers `{custom, version}`. It is 0 for a project that
+never had a role of its own, grows by one with every `PUT` that changes
+the list, and is never reset. `base_version` is required on `PUT`
+(`invalid`, `details.fields.base_version: "required"`; a value that is
+no whole number from 0 is `invalid` too). A `PUT` whose `base_version`
+is not the current `version` is `conflict` (§1.3) with
+`details.current_version` and `details.base_version` and no `reason`,
+and nothing changes: two admins saving at once, or a page read before
+someone else's save, never remove a role the other added unread — one
+`PUT` wins, the other reads the list again and decides again. A `PUT`
+whose list equals the stored one changes nothing, keeps the `version`,
+emits nothing and answers `200`, whatever `base_version` says. The
+hub checks the version after the body and before a removed role's
+`role_in_use`, and stores the new `version` in the same write as the
+list.
 
 The scopes:
 
