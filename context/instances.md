@@ -220,7 +220,7 @@ name of `<handle>`, `<handle>-2`, `<handle>-3`, … (§15.5): a name is
 taken by an active placement of the project on that runner, or by
 another member's closed one whose clone the runner has not reported
 removed. So a second instance gets the plain `<handle>` when the first
-runs in a named clone (review A1128). Where an agent
+runs in a named clone and that name is still free (review A1128). Where an agent
 runs is a list (`placements` in the member view); the single
 `placement` stays as the oldest one. A runner's rate limit makes the
 agent `limited` while at least one placement that should run is
