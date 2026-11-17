@@ -531,7 +531,7 @@ def test_check_warns_about_inherited_claude_settings(
 ) -> None:
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "claude", "2.1.326 (Claude Code)")  # the checked one: no warning for it
+    fake_tool(bin_dir, "claude", "2.1.325 (Claude Code)")  # the checked one: no warning for it
     fake_tool(bin_dir, "bwrap")
     fake_tool(bin_dir, "socat")
     (home / ".claude").mkdir()
@@ -548,7 +548,7 @@ def test_check_warns_about_inherited_claude_settings(
     assert len(warnings) == 2, warnings
 
 
-@pytest.mark.parametrize(("version", "warned"), [("2.1.326", False), ("2.1.330", True)])
+@pytest.mark.parametrize(("version", "warned"), [("2.1.325", False), ("2.1.330", True)])
 def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, warned: bool
 ) -> None:
@@ -560,7 +560,7 @@ def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0  # no block
-    found = [line for line in lines(capsys) if "sandbox was checked with 2.1.326" in line]
+    found = [line for line in lines(capsys) if "sandbox was checked with 2.1.325" in line]
     assert bool(found) is warned, found
     assert all(line.startswith("warn") for line in found)
 
