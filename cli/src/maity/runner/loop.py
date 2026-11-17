@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import random
+import signal
 import subprocess
 import sys
 import time
@@ -35,12 +36,24 @@ from . import config, restart, workspace
 
 WAIT_TIMEOUT = 600
 SETTLE = 15.0
+# After a reaped turn ends, how long the turn's own process group gets to exit on SIGTERM
+# before SIGKILL, and how often it is checked.
+REAP_GRACE = 5.0
+REAP_POLL = 0.1
+# The hard bound on one reaped turn: a harness that keeps running while it reports idle or
+# waits on a background task never reaches cleanup on its own, so the loop stops and reaps it
+# after this long. A turn that runs past it is ended and counts as no progress (EXIT_TURN).
+# The spec may lower it with `turn_timeout`.
+TURN_TIMEOUT = 3600.0
 EXIT_REVOKED = 20
 EXIT_HOT_LOOP = 21
 EXIT_RATE_LIMITED = 22
 EXIT_RATE_LIMITED_AFTER_CLEAN = 23
 # The workspace folder refused before a run (workspace.check_folder), by its detail.
 EXIT_FOLDER = {"workspace_not_bare": 24, "workspace_in_repository": 25}
+# A reaped turn that ran past its bound and was ended (TURN_TIMEOUT): a non-zero exit, so the
+# turn counts as no progress and the loop backs off and retries like any failed run.
+EXIT_TURN = 26
 
 
 def check_folder(folder: str) -> None:
@@ -176,6 +189,88 @@ def _run(argv: list[str], env: dict[str, str]) -> int:
     return subprocess.run(argv, env={**os.environ, **env}, check=False).returncode  # noqa: S603
 
 
+def _run_reaped(argv: list[str], env: dict[str, str], *, timeout: float = TURN_TIMEOUT) -> int:
+    """Run one turn in a process group of its own and end that group when the turn ends, so no
+    background process the turn started (a stray `maity wait`, say) outlives it (§6.2), and so a
+    harness that never terminates is still bounded.
+
+    `start_new_session` makes the child a session and process-group leader, so the group's id
+    is the child's pid and the whole group is the turn's own descendants and nothing else. The
+    loop waits at most `timeout` for the harness; a harness that keeps running while it reports
+    idle or waits on a background task would otherwise never reach cleanup, so when the wait
+    runs out the turn is ended and reaped and counts as no progress (EXIT_TURN). When the turn
+    ends `_reap` signals exactly that group id: it is created fresh for this one run, so it can
+    never name another session's or placement's processes (the hard safety requirement in
+    cli/context/runner.md). The loop itself runs in the tmux pane's own, separate group and is
+    never touched."""
+    proc = subprocess.Popen(argv, env={**os.environ, **env}, start_new_session=True)  # noqa: S603
+    bounded = False
+    try:
+        code = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        bounded = True  # the harness ran past the bound: end and reap it below
+        code = EXIT_TURN
+    finally:
+        _reap(proc.pid)  # pid == the new group's id (start_new_session)
+    if bounded:  # the harness was in the reaped group; collect it so it leaves no zombie
+        try:
+            proc.wait(timeout=REAP_GRACE + 1.0)
+        except subprocess.TimeoutExpired:  # pragma: no cover - SIGKILL already sent
+            proc.kill()
+            proc.wait()
+    return code
+
+
+def _group_alive(pgid: int) -> bool:
+    """Whether process group `pgid` still has a member that is doing something. A zombie (a
+    process that has already exited and is only waiting to be reaped) counts as gone: it holds
+    a slot but runs nothing, so waiting on it would only burn the grace — in a PID namespace,
+    where the leftover's reaper may be the loop itself, that is exactly what used to stall the
+    reap. Reads /proc; a process that exits mid-read is treated as gone."""
+    try:
+        entries = os.listdir("/proc")
+    except OSError:  # pragma: no cover - /proc is always present on the runner's Linux
+        return False
+    want = str(pgid)
+    for entry in entries:
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/stat", encoding="utf-8", errors="replace") as fh:
+                stat = fh.read()
+        except OSError:
+            continue  # gone between the listing and the read
+        # `comm` (in parentheses) may itself hold spaces and ')': parse the fields after the
+        # last ')', where they are state, ppid, pgrp, … so state is [0] and pgrp is [2].
+        tail = stat[stat.rfind(")") + 1 :].split()
+        if len(tail) >= 3 and tail[0] != "Z" and tail[2] == want:
+            return True
+    return False
+
+
+def _reap(pgid: int, *, grace: float = REAP_GRACE, poll: float = REAP_POLL) -> None:
+    """End process group `pgid`: SIGTERM, a short grace, then SIGKILL to whatever is left.
+    `pgid` must be a group the caller made for one run (its leader's pid); nothing else is
+    signalled. A group already empty, or left with only zombies (the common case: the turn left
+    nothing behind, or the leader has exited), ends the grace at once — `_group_alive` treats a
+    zombie as gone, so the reap does not wait out the full grace on an already-dead group."""
+    if pgid <= 1:  # never a real, reapable group id; refuse to broaden the signal
+        return
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return  # nothing left in the group, or not ours to signal
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        if not _group_alive(pgid):  # only zombies or nothing left: done, no need to wait
+            return
+        time.sleep(poll)
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def _wait(cwd: str | None = None) -> tuple[int, str, str]:
     """`maity wait` in the clone (`cwd`): the harness may start elsewhere, as agy does in the
     workspace folder that holds the clone (§15.5); None, the loop's own directory."""
@@ -206,7 +301,18 @@ def main(args: Sequence[str] | None = None) -> int:
     with open(options.spec, encoding="utf-8") as fh:
         spec = json.load(fh)
     clone = spec.get("clone")
-    return Loop(spec, _run, lambda: _wait(clone if isinstance(clone, str) else None)).main()
+    # agy leaves no setting to disable background tasks past a turn, so its spec asks the loop
+    # to end each turn's own process group instead and bound the turn (adapters._supervised,
+    # reap). A spec may lower the turn's bound with `turn_timeout`; without one the default
+    # TURN_TIMEOUT applies, so the plain `_run_reaped` is used.
+    run: Callable[[list[str], dict[str, str]], int]
+    if not spec.get("reap_process_group"):
+        run = _run
+    elif bound := spec.get("turn_timeout"):
+        run = lambda argv, env: _run_reaped(argv, env, timeout=float(bound))  # noqa: E731
+    else:
+        run = _run_reaped
+    return Loop(spec, run, lambda: _wait(clone if isinstance(clone, str) else None)).main()
 
 
 if __name__ == "__main__":

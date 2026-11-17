@@ -10,6 +10,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import time
 import tomllib
 import unicodedata
 from collections.abc import Sequence
@@ -151,17 +152,22 @@ def test_the_settings_profile(tmp_path: Path) -> None:
     token = home / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"
     hidden = [git_dir / "maity", tmp_path / "st", home / ".ssh", token, other]
     assert adapters.antigravity_settings(ctx) == {
-        # Not `auto`, agy 1.5.7's default, whose reviewer may let a command leave the sandbox.
-        "agentMode": "",
+        # `accept-edits` in interactive mode (PLACEMENT): the file tools edit the clone without
+        # a prompt. Never `auto`, agy 1.5.7's default, whose reviewer may let a command leave
+        # the sandbox.
+        "agentMode": "accept-edits",
         "toolPermission": "proceed-in-sandbox",
         "enableTerminalSandbox": True,
         "trustedWorkspaces": [str(ctx.folder)],
         "permissions": {
             # No command grant is applied to agy: `python3 -m pytest *` and `make test` both
-            # run in agy's sandbox, so only `command(maity)` and the hosts are allowed.
+            # run in agy's sandbox, so only `command(maity)` and the hosts are allowed. The
+            # whole clone is read- and write-allowed for the file tools, so a headless run
+            # never denies its own edits and agy's sandbox mounts the clone writable.
             "allow": [
                 "command(maity)",
                 "read_url(github.com)", "read_url(maity.team)", "read_url(pypi.org)",
+                f"read_file({ctx.clone})", f"write_file({ctx.clone})",
             ],
             "deny": [
                 *(f"{tool}({path})" for path in hidden for tool in ("read_file", "write_file")),
@@ -181,6 +187,70 @@ def test_agys_own_directory_stays_readable_but_its_login(tmp_path: Path) -> None
     ]["deny"]
     assert f"read_file({home / '.gemini'})" not in deny
     assert f"read_file({home / '.gemini' / adapters.AGY_LOGIN.relative_to('.gemini')})" in deny
+
+
+def test_accept_edits_in_interactive_mode_only(tmp_path: Path) -> None:
+    """Interactive gets `accept-edits`, so the file tools edit the clone without a prompt;
+    supervised runs headless and keeps the empty default mode."""
+    assert adapters.antigravity_settings(context(tmp_path / "i"))["agentMode"] == "accept-edits"
+    supervised = context(tmp_path / "s", placement={"id": "plc-0003", "mode": "supervised"})
+    assert adapters.antigravity_settings(supervised)["agentMode"] == ""
+
+
+def test_the_whole_clone_is_read_and_write_allowed(tmp_path: Path) -> None:
+    """The file tools may read and write anywhere in the clone, so a headless `-p` run never
+    denies its own `read_file`/`write_file` there (nobody could answer a prompt)."""
+    for mode in ("interactive", "supervised"):
+        ctx = context(tmp_path / mode, placement={"id": "plc-0003", "mode": mode})
+        allow = adapters.antigravity_settings(ctx)["permissions"]["allow"]
+        assert f"read_file({ctx.clone})" in allow
+        assert f"write_file({ctx.clone})" in allow
+
+
+def test_git_is_writable_except_the_credential_and_what_runs_a_program(tmp_path: Path) -> None:
+    """agy's terminal sandbox, whose writable region follows the file-tool write_file rules,
+    is given the clone — `.git` included — as its writable region, so `git fetch` and `git
+    commit` can write refs, objects, the index and logs. The credential (`.git/maity`) and what
+    makes git run a program (GIT_PROTECTED: `.git/config`, `.git/hooks`, …) stay denied, and
+    being more specific paths under the clone-wide allow they win. Nothing denies all of
+    `.git`."""
+    ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "supervised"})
+    git = ctx.clone / ".git"
+    perms = adapters.antigravity_settings(ctx)["permissions"]
+    assert f"write_file({ctx.clone})" in perms["allow"]  # covers .git, so it is writable
+    assert f"read_file({git / 'maity'})" in perms["deny"]
+    assert f"write_file({git / 'maity'})" in perms["deny"]
+    for name in adapters.GIT_PROTECTED:
+        assert f"write_file({git / name})" in perms["deny"]
+    # No blanket deny on `.git` itself: fetch and commit write under it.
+    assert f"write_file({git})" not in perms["deny"]
+    assert f"write_file({git}/**)" not in perms["deny"]
+
+
+def test_agy_git_placeholders_seed_the_missing_protected_files(tmp_path: Path) -> None:
+    """A denied `.git` path agy's sandbox can only mask read-only when it exists: the runner
+    seeds an empty placeholder for each AGY_GIT_PLACEHOLDERS path git did not create, and
+    leaves one that already has content alone."""
+    ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "supervised"})
+    git = ctx.clone / ".git"
+    (git / "objects" / "info").mkdir(parents=True)
+    (git / "config").write_text("[core]\n")  # a real clone already has config
+    adapters.agy_git_placeholders(ctx)
+    for name in adapters.AGY_GIT_PLACEHOLDERS:
+        assert (git / name).is_file() and (git / name).read_text() == ""
+    assert (git / "config").read_text() == "[core]\n"  # existing content is not overwritten
+    # Every seeded placeholder is one the settings deny for writing.
+    deny = adapters.antigravity_settings(ctx)["permissions"]["deny"]
+    for name in adapters.AGY_GIT_PLACEHOLDERS:
+        assert f"write_file({git / name})" in deny
+
+
+def test_supervised_asks_the_loop_to_reap_the_turns_process_group(tmp_path: Path) -> None:
+    """agy has no setting to stop a background task outliving a turn, so the spec asks the
+    loop to end each turn's own process group (decision 4); interactive runs no loop."""
+    ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "supervised"})
+    spec = json.loads(Path(adapters.launch(ctx).argv[-1]).read_text())
+    assert spec["reap_process_group"] is True
 
 
 # --- grants: exact like Claude Code (cli/context/runner.md, the agy grants entry) ------------
@@ -556,6 +626,104 @@ def test_the_loop_waits_in_the_clone_its_spec_names(
     monkeypatch.setattr(loop, "_wait", wait)
     waits[0]()
     assert called == ["/ws/p/c/repo"]
+
+
+# --- the supervised loop ends each turn's own process group (decision 4) ----------------------
+
+
+def test_the_spec_flag_picks_the_reaping_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`reap_process_group` in the spec makes the loop run each turn through `_run_reaped`;
+    without it the plain `_run` is used, so other harnesses are unchanged."""
+    picked: list[Any] = []
+
+    def record(self: loop.Loop) -> int:
+        picked.append(self.run)
+        return 0
+
+    monkeypatch.setattr(loop.Loop, "main", record)
+    for flag in (True, False):
+        spec = tmp_path / f"loop-{flag}.json"
+        spec.write_text(json.dumps({"first": [], "again": [], "reap_process_group": flag}))
+        assert loop.main(["--spec", str(spec)]) == 0
+    assert picked == [loop._run_reaped, loop._run]
+
+
+def _alive(pid: int) -> bool:
+    """Whether `pid` is a process still doing something. A zombie (already exited, not yet
+    reaped) counts as gone, as `loop._reap` treats it: `os.kill(pid, 0)` alone would call a
+    defunct process alive and, in a PID namespace, make the reap look stalled."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8", errors="replace") as fh:
+            stat = fh.read()
+    except OSError:
+        return False
+    tail = stat[stat.rfind(")") + 1 :].split()
+    return not (tail and tail[0] == "Z")
+
+
+def test_the_reaping_run_ends_a_background_process_the_turn_left(tmp_path: Path) -> None:
+    """A turn that leaves a background process behind: the reaping run ends the turn's own
+    process group, so the leftover is gone, while a process in another group is left alone."""
+    # A sentinel in a group of its own (start_new_session): it must survive the reap.
+    sentinel = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    try:
+        pidfile = tmp_path / "bg.pid"
+        # The "turn": a non-interactive shell (one process group) that starts a background
+        # process and exits; `maity wait` left running is this shape.
+        script = f"sleep 30 & echo $! > {shlex.quote(str(pidfile))}; exit 0"
+        assert loop._run_reaped(["sh", "-c", script], {}) == 0
+        leftover = int(pidfile.read_text())
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and _alive(leftover):
+            time.sleep(0.05)
+        assert not _alive(leftover)  # the leftover was in the turn's group: reaped
+        assert _alive(sentinel.pid)  # another group: never signalled
+    finally:
+        sentinel.terminate()
+        sentinel.wait(timeout=5)
+
+
+def test_the_reaping_run_bounds_a_turn_that_never_terminates(tmp_path: Path) -> None:
+    """A harness that never exits — here a non-interactive shell that starts a background child
+    and then `wait`s on it forever — is stopped at the turn's bound and the whole group reaped,
+    so the turn ends (EXIT_TURN) instead of hanging the loop."""
+    pidfile = tmp_path / "bg.pid"
+    # The "turn": a shell that backgrounds a long sleep and waits on it indefinitely; it never
+    # returns on its own, unlike a shell that merely leaves a background process and exits.
+    script = f"sleep 300 & echo $! > {shlex.quote(str(pidfile))}; wait"
+    started = time.monotonic()
+    code = loop._run_reaped(["sh", "-c", script], {}, timeout=0.5)
+    assert time.monotonic() - started < 20  # bounded, not hung on the never-returning shell
+    assert code == loop.EXIT_TURN
+    leftover = int(pidfile.read_text())
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and _alive(leftover):
+        time.sleep(0.05)
+    assert not _alive(leftover)  # the whole turn group, the waiting shell included, was reaped
+
+
+def test_reap_never_signals_pid_0_or_1(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_reap` refuses a group id of 0 or 1, which could name a wide group, and does nothing
+    for an already-empty group (ProcessLookupError)."""
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: killed.append((pgid, sig)))
+    loop._reap(0)
+    loop._reap(1)
+    assert killed == []
+
+    def gone(pgid: int, sig: int) -> None:
+        raise ProcessLookupError
+
+    monkeypatch.setattr(os, "killpg", gone)
+    loop._reap(999999)  # an empty group: ProcessLookupError is swallowed, no crash
 
 
 # --- what the runner advertises ---------------------------------------------------------------

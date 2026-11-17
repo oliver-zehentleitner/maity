@@ -921,6 +921,108 @@ docs/runners.md, with no example.
   agy (no `hooks` through `--settings`; agy canonicalises command names), and
   the drop needs neither.
 
+## agy runs in both modes: accept-edits interactive, the clone read/write (push and interactive not verified)
+
+**Id:** 7aa15a74-2d23-46a2-b50d-7480fb331107
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Verification:** uncorroborated
+**Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17, with the maintainer's and lead's go on the decisions; the my22 incident (supervised `-p` auto-denied `read_file`/`write_file` and could not write `.git`); agy 1.5.10's `--help`, `--mode` and `--settings` checked directly (`--mode` lists `accept-edits`, `auto`, `plan`; `agy --settings <file> agents` accepts `accept-edits`, accepts a bare-directory `read_file`/`write_file` grant, and rejects an unknown `agentMode`)
+**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-17
+**Revisit when:** a signed-in agy session shows the file-tool permission rules not governing the terminal sandbox's writable region as observed, or `git push`/`fetch` cannot reach the forge from inside agy's sandbox, or agy changes what `agentMode` or a `read_file`/`write_file` rule means
+
+An agy session's `permissions.allow` carries `read_file(<clone>)` and
+`write_file(<clone>)` as bare directories — agy 1.5.10 takes a bare directory,
+not a `/**` glob — beside `command(maity)` and the `read_url` hosts.
+Interactive starts also set `agentMode: accept-edits`; supervised keeps the
+empty default mode. The GIT_PROTECTED write denies and the `.git/maity`
+read/write denies are unchanged: they are more specific paths under the
+clone-wide allow and still win. The runner also seeds an empty placeholder for
+the GIT_PROTECTED files a plain clone lacks (`config.worktree`,
+`objects/info/alternates`; `agy_git_placeholders`), so the deny rules have a
+file to cover.
+
+**Reason:** two faults in my22. A headless `-p` run cannot answer a tool
+prompt, so without an explicit `write_file`/`read_file` allow it denied its
+own edits in the clone; the clone-wide allow removes the prompt (confirmed: a
+headless run no longer denies its own edit). The second fault was agy's
+terminal sandbox treating `.git` as read-only, so `git fetch` and `git commit`
+failed. The fix gives the sandbox its writable region through the file-tool
+rules (the basis is an earlier observation that a `.git/maity` read deny masked
+that directory inside the sandbox, af2e96d9): a `write_file(<clone>)` allow sets
+the sandbox's writable region to the clone — `.git` included — while the
+GIT_PROTECTED and `.git/maity` denies keep the credential and what makes git run
+a program read-only. **In a signed-in test with these settings, writes stayed
+inside the clone and `.git` was writable; pushing to a forge and the interactive
+mode are not verified**, and both modes share the same filesystem settings, so a
+working supervised run is not evidence that `git push` works (the `Revisit when`
+tracks it). `accept-edits` is the agy mode that auto-accepts the file tools' edits; it
+is set only interactively, since a supervised run is headless and nobody would
+answer a prompt there anyway. `auto` is still refused: its reviewer model may
+let a command leave the sandbox (b0646ec1).
+
+**Rejected alternatives:**
+- A separate sandbox-filesystem write grant for `.git`: agy's `--settings`
+  has no such key (every candidate probed against agy 1.5.10 was refused as
+  an unknown setting), so the fix leans on the file-tool allow instead.
+- A `/**` glob (`write_file(<clone>/**)`) instead of the bare directory: agy
+  1.5.10 takes only a bare directory for a file-tool grant, so the glob form
+  is not used.
+- Leaving `.git` read-only and telling the agent to work around it: fetch and
+  commit are the core of project work; a workaround every turn is no fix.
+
+## Supervised agy ends each turn's own process group; agy has no setting to stop a background task outliving a turn
+
+**Id:** c69eb132-ec8c-41e2-bab5-f83763d9b307
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17; the my22 incident ("root agent idle; waiting for 1 background task(s)": a supervised `-p` turn spawned a background `maity wait` and never ended); agy 1.5.10's `--settings` keys and `AGY_`/`ANTIGRAVITY_` environment probed directly for a background-disable switch, none found; the Claude Code adapter's `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, which has no agy equivalent
+**Revisit when:** agy gains a setting or environment variable to keep a background task from outliving a turn (then set it instead), or a background task that double-forks past its process group is seen to escape the reap
+
+agy has no `--settings` key and no environment variable to stop a background
+task outliving a turn — every candidate was probed against agy 1.5.10 and
+refused as unknown, and there is no `AGY_*`/`ANTIGRAVITY_*` variable for it —
+unlike Claude Code's `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. So the
+supervised loop enforces it instead: an agy spec carries `reap_process_group`,
+and for such a spec the loop runs each turn with `start_new_session=True`, so
+the turn's harness process leads a session and process group of its own whose
+id is that process's pid. The loop waits at most a bound (`TURN_TIMEOUT`, which
+the spec may lower) for the harness, then ends the turn either way: when the
+turn ends the loop sends SIGTERM, then after a short grace SIGKILL, to exactly
+that group id, ending any background process the turn left (a stray `maity
+wait`, say).
+
+**Reason:** in my22 a supervised turn spawned a background `maity wait`; the
+turn's process ended but the child kept the turn's group alive, and the run
+sat "idle; waiting for 1 background task(s)" instead of ending, so the agent
+stopped answering. The prompt already tells the agent not to run `maity wait`,
+but the enforcement must not depend on the prompt. Two cases have to be bounded:
+a harness that ends while a background task keeps its group alive, and a harness
+that never ends at all (it keeps running while it reports idle or waits on the
+task), which would otherwise hold the loop forever; the wait bound covers the
+second so a turn always ends. Scoping to a process group the loop creates fresh
+for each run is the hard safety requirement: the group id is that one run's own
+leader pid, so the signal reaches only that run's descendants and never another
+session's or placement's processes; the loop itself runs in the tmux pane's
+separate group and is untouched. `_reap` refuses a group id of 0 or 1, which
+could name a wide group, treats an empty group (ProcessLookupError) as the
+normal case — most turns leave nothing behind — and treats a group left with
+only zombies (already-exited, unreaped processes) as gone, so it does not wait
+out the full grace on an already-dead group (in a PID namespace the leftover's
+reaper can be the loop itself, where a plain "is the group still there" probe
+would call a zombie alive and stall).
+
+**Rejected alternatives:**
+- Relying on the prompt alone: a background task is a correctness-and-cost
+  bug when it holds the turn open; the loop must enforce it, not ask.
+- Killing the loop's own (the tmux pane's) process group minus the loop:
+  it would need to exclude the loop and anything the pane shares, and a
+  slip would kill the pane; a fresh per-run group has no such ambiguity.
+- A global sweep of the agents' user's stray processes: it could kill
+  another placement's work, the one thing that must never happen.
+
 ## Antigravity is re-offered with its residual command(maity) risk accepted
 
 **Id:** 28ac82c8-0921-4ffb-9d3e-9ebb2f10b111

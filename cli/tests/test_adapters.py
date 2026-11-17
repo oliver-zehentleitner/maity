@@ -61,6 +61,12 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     }  # fmt: skip
 
 
+def test_the_session_path_is_left_to_the_tmux_server(tmp_path: Path) -> None:
+    """The launch adds no PATH, so the tmux server's PATH (= agent_path) stands for the
+    session; the runner no longer prepends anything to it."""
+    assert "PATH" not in adapters.launch(context(tmp_path)).env
+
+
 def test_claude_code_interactive_resumes_its_conversation_after_hung(tmp_path: Path) -> None:
     launch = adapters.launch(context(tmp_path, resume=True))
     assert launch.argv[-2:] == ["--continue", adapters.RESUME_PROMPT]
