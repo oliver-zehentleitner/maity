@@ -2392,6 +2392,8 @@ window.Maity = window.Maity || {};
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
+    // A newer dashboard deployed under this page (js/new-version.js): its band follows the language.
+    if (M.newVersion) M.newVersion.draw();
     // The window and the session are read together (tsk-y8gkq1kvt63c): they were two round trips
     // one after the other. Their answers are handled in the old order, the window first. /me still
     // waits for the session: asked before it, /me fails by design for a session that owes the
