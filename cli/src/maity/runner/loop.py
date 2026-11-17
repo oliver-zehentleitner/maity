@@ -23,6 +23,7 @@ import argparse
 import json
 import os
 import random
+import signal
 import subprocess
 import sys
 import time
@@ -35,6 +36,10 @@ from . import config, restart, workspace
 
 WAIT_TIMEOUT = 600
 SETTLE = 15.0
+# After a reaped turn ends, how long the turn's own process group gets to exit on SIGTERM
+# before SIGKILL, and how often it is checked.
+REAP_GRACE = 5.0
+REAP_POLL = 0.1
 EXIT_REVOKED = 20
 EXIT_HOT_LOOP = 21
 EXIT_RATE_LIMITED = 22
@@ -176,6 +181,47 @@ def _run(argv: list[str], env: dict[str, str]) -> int:
     return subprocess.run(argv, env={**os.environ, **env}, check=False).returncode  # noqa: S603
 
 
+def _run_reaped(argv: list[str], env: dict[str, str]) -> int:
+    """Run one turn in a process group of its own and end that group when the turn ends, so no
+    background process the turn started (a stray `maity wait`, say) outlives it (§6.2).
+
+    `start_new_session` makes the child a session and process-group leader, so the group's id
+    is the child's pid and the whole group is the turn's own descendants and nothing else.
+    When the turn ends `_reap` signals exactly that group id: it is created fresh for this one
+    run, so it can never name another session's or placement's processes (the hard safety
+    requirement in cli/context/runner.md). The loop itself runs in the tmux pane's own,
+    separate group and is never touched."""
+    proc = subprocess.Popen(argv, env={**os.environ, **env}, start_new_session=True)  # noqa: S603
+    try:
+        return proc.wait()
+    finally:
+        _reap(proc.pid)  # pid == the new group's id (start_new_session)
+
+
+def _reap(pgid: int, *, grace: float = REAP_GRACE, poll: float = REAP_POLL) -> None:
+    """End process group `pgid`: SIGTERM, a short grace, then SIGKILL to whatever is left.
+    `pgid` must be a group the caller made for one run (its leader's pid); nothing else is
+    signalled. A group already empty (the common case: the turn left nothing behind) makes
+    `killpg` raise ProcessLookupError, which is ignored."""
+    if pgid <= 1:  # never a real, reapable group id; refuse to broaden the signal
+        return
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError):
+        return  # nothing left in the group, or not ours to signal
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(pgid, 0)  # still members? 0 only probes, kills nothing
+        except ProcessLookupError:
+            return
+        time.sleep(poll)
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def _wait(cwd: str | None = None) -> tuple[int, str, str]:
     """`maity wait` in the clone (`cwd`): the harness may start elsewhere, as agy does in the
     workspace folder that holds the clone (§15.5); None, the loop's own directory."""
@@ -206,7 +252,10 @@ def main(args: Sequence[str] | None = None) -> int:
     with open(options.spec, encoding="utf-8") as fh:
         spec = json.load(fh)
     clone = spec.get("clone")
-    return Loop(spec, _run, lambda: _wait(clone if isinstance(clone, str) else None)).main()
+    # agy leaves no setting to disable background tasks past a turn, so its spec asks the loop
+    # to end each turn's own process group instead (adapters._supervised, reap).
+    run = _run_reaped if spec.get("reap_process_group") else _run
+    return Loop(spec, run, lambda: _wait(clone if isinstance(clone, str) else None)).main()
 
 
 if __name__ == "__main__":

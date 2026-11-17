@@ -874,6 +874,145 @@ docs/runners.md, with no example.
   agy (no `hooks` through `--settings`; agy canonicalises command names), and
   the drop needs neither.
 
+## agy runs in both modes: accept-edits interactive, the whole clone read/write so the sandbox can write `.git`
+
+**Id:** 7aa15a74-2d23-46a2-b50d-7480fb331107
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17, with the maintainer's and lead's go on the decisions; the my22 incident (supervised `-p` auto-denied `read_file`/`write_file` and could not write `.git`); agy 1.5.10's `--help`, `--mode` and `--settings` checked directly (`--mode` lists `accept-edits`, `auto`, `plan`; `agy --settings <file> agents` accepts `accept-edits` and rejects an unknown `agentMode`)
+**See:** runner.md#agys-session-settings-grants-as-command-rules-the-sign-in-denied-hosts-allowed — af2e96d9-ddfc-4415-9118-48bce30f8bf8 — as of 2026-11-17
+**Revisit when:** a signed-in agy session shows the file-tool permission rules not governing the terminal sandbox's writable region as assumed, or `git push`/`fetch` cannot reach the forge from inside agy's sandbox, or agy changes what `agentMode` or a `read_file`/`write_file` rule means
+
+An agy session's `permissions.allow` now carries `read_file(<clone>/**)` and
+`write_file(<clone>/**)`, the whole clone, beside `command(maity)` and the
+`read_url` hosts. Interactive starts also set `agentMode: accept-edits`;
+supervised keeps the empty default mode. The GIT_PROTECTED write denies and
+the `.git/maity` read/write denies are unchanged: they are more specific paths
+under the clone-wide allow and still win.
+
+**Reason:** two faults in my22. A headless `-p` run cannot answer a tool
+prompt, so without an explicit `write_file`/`read_file` allow it denied its
+own edits in the clone; the clone-wide allow removes the prompt. And agy's
+terminal sandbox mounted `.git` read-only, so `git fetch` and `git commit`
+failed. agy derives the sandbox's writable region from the same file-tool
+rules (observed earlier: a `.git/maity` read deny masked that directory inside
+the sandbox, af2e96d9), so a `write_file(<clone>/**)` allow makes the sandbox
+mount the whole clone — `.git` included — writable, while the GIT_PROTECTED
+denies keep `.git/config`, `.git/hooks` and the rest read-only and the
+`.git/maity` deny keeps the credential unreachable. One clone-wide allow thus
+fixes both the headless prompt and the read-only `.git` without a separate
+sandbox-filesystem setting (agy's `--settings` exposes none). `accept-edits`
+is the agy mode that auto-accepts the file tools' edits; it is set only
+interactively, since a supervised run is headless and nobody would answer a
+prompt there anyway. `auto` is still refused: its reviewer model may let a
+command leave the sandbox (b0646ec1).
+
+**Rejected alternatives:**
+- A separate sandbox-filesystem write grant for `.git`: agy's `--settings`
+  has no such key (every candidate probed against agy 1.5.10 was refused as
+  an unknown setting), and the file-tool allow already reaches the sandbox.
+- A bare-directory allow (`write_file(<clone>)`) instead of the `/**` glob:
+  the glob states "everything under the clone" so the specific denies read as
+  the more specific, winning rules; not tried in a signed-in session either
+  way, so kept as the plainer of the two.
+- Leaving `.git` read-only and telling the agent to work around it: fetch and
+  commit are the core of project work; a workaround every turn is no fix.
+
+## Supervised agy ends each turn's own process group; agy has no setting to stop a background task outliving a turn
+
+**Id:** c69eb132-ec8c-41e2-bab5-f83763d9b307
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved plan for both-mode agy (tsk-x5s8p0g93ay0), relayed 2026-11-17; the my22 incident ("root agent idle; waiting for 1 background task(s)": a supervised `-p` turn spawned a background `maity wait` and never ended); agy 1.5.10's `--settings` keys and `AGY_`/`ANTIGRAVITY_` environment probed directly for a background-disable switch, none found; the Claude Code adapter's `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, which has no agy equivalent
+**Revisit when:** agy gains a setting or environment variable to keep a background task from outliving a turn (then set it instead), or a background task that double-forks past its process group is seen to escape the reap
+
+agy has no `--settings` key and no environment variable to stop a background
+task outliving a turn — every candidate was probed against agy 1.5.10 and
+refused as unknown, and there is no `AGY_*`/`ANTIGRAVITY_*` variable for it —
+unlike Claude Code's `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. So the
+supervised loop enforces it instead: an agy spec carries `reap_process_group`,
+and for such a spec the loop runs each turn with `start_new_session=True`, so
+the turn's harness process leads a session and process group of its own whose
+id is that process's pid. When the turn ends the loop sends SIGTERM, then after
+a short grace SIGKILL, to exactly that group id, ending any background process
+the turn left (a stray `maity wait`, say).
+
+**Reason:** in my22 a supervised turn spawned a background `maity wait`; the
+turn's process ended but the child kept the turn's group alive, and the run
+sat "idle; waiting for 1 background task(s)" instead of ending, so the agent
+stopped answering. The prompt already tells the agent not to run `maity wait`,
+but the enforcement must not depend on the prompt. Scoping to a process group
+the loop creates fresh for each run is the hard safety requirement: the group
+id is that one run's own leader pid, so the signal reaches only that run's
+descendants and never another session's or placement's processes; the loop
+itself runs in the tmux pane's separate group and is untouched. `_reap`
+refuses a group id of 0 or 1, which could name a wide group, and treats an
+empty group (ProcessLookupError) as the normal case — most turns leave
+nothing behind.
+
+**Rejected alternatives:**
+- Relying on the prompt alone: a background task is a correctness-and-cost
+  bug when it holds the turn open; the loop must enforce it, not ask.
+- Killing the loop's own (the tmux pane's) process group minus the loop:
+  it would need to exclude the loop and anything the pane shares, and a
+  slip would kill the pane; a fresh per-run group has no such ambiguity.
+- A global sweep of the agents' user's stray processes: it could kill
+  another placement's work, the one thing that must never happen.
+
+## A placement's dev venv is built from the project's pinned lock, outside the clone, onto the session PATH
+
+**Id:** 30c5fc5c-89d7-42ea-a74a-ccc0bd7afa27
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved plan for both-mode agy and the shared runner venv (tsk-x5s8p0g93ay0), relayed 2026-11-17, meant to be reused for coder placements (tsk-kshmb8vc92rr); the project's own `make dev`, which builds the same venv from `requirements/dev.txt` with `--require-hashes`; the harness installers' rule of checking a download before running it (installers.py)
+**Revisit when:** coder placements need the venv shaped differently (a per-project tool set, a shared cache across placements), an ssh target needs it (the base interpreter is then the host's, not the runner's `sys.executable`), or the lock format changes
+
+With `[backend.local] dev_requirements` set to a hash-locked requirements
+file inside the clone (relative, no `..`), the runner builds one venv per
+placement from it at start, in the placement's own directory under
+`agent_dir` (never in the clone), as the agents' user, and puts its `bin`
+ahead of the session's PATH through the launch env. It is `python -m venv`
+then `pip install --require-hashes -r <lock>`; a marker records the key
+(schema, interpreter, lock bytes) the build was made for, written last, so an
+identical later start reuses it and a changed lock or interpreter rebuilds it.
+A build that fails is logged and the session starts without the venv. Without
+the setting, or when the clone ships no such file, no venv is built and
+nothing changes (so every existing placement and test is unaffected). The
+mechanism (`venv.py`) takes a target directory and a lock file and knows
+nothing of the harness, so the same code serves coder placements.
+
+**Reason:** an agent runs a repository's checks (pytest, ruff, black, mypy)
+only if the tools are there, and the sandbox cannot install them; the runner
+provides them. They are built from the project's own pinned, hash-locked
+lock so the versions match what the project uses and the download is checked
+the way the harness installers check theirs — pip refuses anything not pinned
+with a matching hash. The venv lives outside the clone so the agent cannot
+change the tools it is checked with; it goes ahead of the session PATH so the
+pinned tools win over any of the same name on the agents' own PATH. It is a
+convenience, not a grant: the agent still needs the repository's `allow`
+entries to run the tools, so a failed build does not gate the start. It is
+opt-in by configuration rather than auto-discovered from a conventional path,
+so a project file cannot make the runner build a venv the operator did not
+ask for.
+
+**Rejected alternatives:**
+- One venv shared across all placements: simpler to cache, but a placement
+  could then see or change another's tools; a per-placement venv under
+  `agent_dir`, which the agent cannot reach, keeps them apart. A shared
+  cache can be added later behind the same function.
+- Reading the tool versions from the clone's `pyproject.toml` dev extra and
+  installing them unpinned: the extra pins only setuptools, so the versions
+  would float and the download be unchecked; the hash-locked file is both
+  pinned and verifiable.
+- Auto-discovering the lock at a conventional path in the clone: an
+  attacker-planted requirements file would then drive an install the operator
+  never configured; an explicit `dev_requirements` is the opt-in.
+- Installing only the four named tools without their locked dependencies:
+  they would not run; the whole lock is the pinned set.
+
 ## Antigravity is re-offered with its residual command(maity) risk accepted
 
 **Id:** 28ac82c8-0921-4ffb-9d3e-9ebb2f10b111

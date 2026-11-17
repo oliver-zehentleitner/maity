@@ -94,6 +94,10 @@ class Local:
     agent_path: str | None = None  # None: the service's own PATH at start
     memory_max: str | None = None
     cpu_quota: str | None = None
+    # A hash-locked dev requirements file inside each clone (relative, e.g.
+    # "cli/requirements/dev.txt"); the runner builds a venv from it per placement and puts it
+    # on the session's PATH (venv.py). None: no venv is built.
+    dev_requirements: str | None = None
 
 
 @dataclass(frozen=True)
@@ -453,6 +457,9 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             agent_path=local_in.get("agent_path", str, None),
             memory_max=local_in.get("memory_max", str, None),
             cpu_quota=local_in.get("cpu_quota", str, None),
+            dev_requirements=local_in.get(
+                "dev_requirements", str, None, check=_relative_clone_path
+            ),
         )
         local_in.done()
     # A table for another kind is not read, so its keys are not judged either.
@@ -604,6 +611,16 @@ def _repositories(values: Any) -> str | None:
 
 def _absolute(value: Any) -> str | None:
     return None if Path(value).expanduser().is_absolute() else "expected an absolute path"
+
+
+def _relative_clone_path(value: Any) -> str | None:
+    """A path inside a clone: relative, no `..` and no leading `/`, so it cannot name a file
+    outside the clone the runner reads it from."""
+    text = str(value)
+    parts = Path(text).parts
+    if Path(text).is_absolute() or not parts or ".." in parts:
+        return "expected a relative path inside the clone, without '..'"
+    return None
 
 
 def home_of(user: str) -> Path:

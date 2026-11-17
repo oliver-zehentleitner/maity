@@ -114,10 +114,11 @@ The runner deletes nothing in the folder. The service's log names what it found,
 
 **Session settings.** Before each start the runner writes the settings agy gets for that session with `--settings`, in the runner's own directory for the agent, outside the folder:
 
-- `agentMode` set to the default mode, not `auto` (agy's default since 1.5.7), whose reviewer model may let a command leave the sandbox;
+- `agentMode` set to `accept-edits` for an interactive start, so the agent edits the clone without a prompt; the plain default mode for a supervised start, which runs headless; never `auto` (agy's default since 1.5.7), whose reviewer model may let a command leave the sandbox;
 - `toolPermission: proceed-in-sandbox` and the terminal sandbox on: a command that no rule names runs inside the sandbox without asking;
 - the workspace folder trusted, so an interactive start asks nothing;
-- denied to the file tools: the clone's `.git/maity` (the agent's credential), writing `.git/config`, `.git/hooks` and the rest that makes git run something, the other clones' credentials, the runner's state and configuration, the secrets in the agents' home and agy's own sign-in;
+- allowed to the file tools: reading and writing anywhere in the clone, so a headless run never blocks on its own edit and the sandbox can write the clone, `.git` included (so `git fetch` and `git commit` work);
+- denied to the file tools, and more specific so they still win: the clone's `.git/maity` (the agent's credential), writing `.git/config`, `.git/hooks` and the rest that makes git run something, the other clones' credentials, the runner's state and configuration, the secrets in the agents' home and agy's own sign-in;
 - allowed: `maity` and reading the hub's, the forge's and the grant's `network` hosts; the repository's `allow` command list is not applied to agy (see below).
 
 An allowed command may leave agy's sandbox. `maity` has to, for its credential and the network, and outside the sandbox any allowed command can read the credential, as with Claude Code. A grant's `allow` command list is not applied to agy, though (see below), so for agy only `maity` runs outside the sandbox. Run every `maity` command alone; a line that chains it with another command is refused outside the sandbox.
@@ -135,11 +136,11 @@ So agy is given only `command(maity)` and the `read_url` hosts; a repository's `
 
 **The agents' user's own agy settings apply too.** agy merges the session settings with that user's `~/.gemini`: its allow rules widen every agent's grant, and its global rules, skills, hooks, MCP servers and plugins load for every agent, the hooks and MCP servers outside the sandbox. The runner neither reads nor changes them, apart from the warnings in `maity runner check` about allow rules in `~/.gemini/antigravity-cli/settings.json` and servers in `~/.gemini/config/mcp_config.json`. Keep that home free of anything agents should not run, ideally with a user of its own for the agents.
 
-**Modes.** `supervised` runs `agy -p` on each event and continues with `-c`, which agy scopes to the working directory, so to the placement's own folder. `interactive` runs `agy -i` with the start prompt in the tmux pane, and after a restart for silence resumes the folder's last conversation with `-c`. agy's exit code for a provider limit is not known yet, so a limit ends a run like any other failure.
+**Modes.** `supervised` runs `agy -p` on each event and continues with `-c`, which agy scopes to the working directory, so to the placement's own folder. Each supervised turn ends with the turn: agy has no setting to keep a background task from outliving a turn, so the runner ends any such task the turn leaves, so the next event's turn starts clean and the run does not sit idle waiting on a background task. `interactive` runs `agy -i` with the start prompt in the tmux pane, and after a restart for silence resumes the folder's last conversation with `-c`. agy's exit code for a provider limit is not known yet, so a limit ends a run like any other failure.
 
 **The sandbox.** On Linux agy's terminal sandbox runs commands in kernel namespaces, and where they cannot start agy runs commands without it, without saying so. The runner may advertise `sandbox: on` only where it has seen agy's sandbox start, and agy has no command that starts only its sandbox without a model call, so for now the runner advertises `sandbox: off` for agy on every host: a placement reports `running` with `sandbox_unavailable`, and `require_sandbox = true` under `[harness.antigravity]` refuses it. The session settings still switch agy's sandbox on; only the report is off. `maity runner check` tries, as the agents' user, whether the namespaces agy's sandbox needs start (user, mount, PID and network, with `unshare`) and says so as a diagnostic ("agy's sandbox start not verified"); where they do not (a kernel or AppArmor setting that blocks unprivileged user namespaces), agy runs commands unsandboxed.
 
-Two things have not been tried in a real session yet: whether `git fetch` and `git push` reach the forge from inside agy's sandbox, and whether the deny on `.git/config` reaches the sandbox too. The runner gives each agy session the same three git settings as a sandboxed Claude Code session (below), so git works either way.
+The clone is writable to agy's sandbox, `.git` included, so `git fetch` and `git commit` can write it; the credential and what makes git run a program stay read-only (above). Whether `git push` reaches the forge from inside agy's sandbox has not been tried in a real session yet. The runner gives each agy session the same three git settings as a sandboxed Claude Code session (below), so git works whether or not the deny on `.git/config` reaches the sandbox.
 
 ## When an agent goes quiet
 
@@ -183,12 +184,25 @@ allow = [
 - **End each entry with ` *`.** Claude Code applies an entry exactly as written: `pytest` alone allows only a bare `pytest`, and `pytest *` allows it with any arguments.
 - **Name the check, not the interpreter.** `python3 -m pytest *` allows pytest; `python3 *` would allow any Python code.
 - **The checks run the repository's code**, inside the harness's sandbox where it has one: tests, `conftest.py`, plugins. The allowlist is no boundary against that code (see [`maity runner`](../cli/README.md#maity-runner)).
-- **Install the tools for the agents' user.** The sandbox reaches only the hub, the forge and the grant's `network` hosts, so an agent cannot install a missing tool itself.
+- **Install the tools for the agents' user**, or have the runner build a venv of the project's pinned dev tools (below). The sandbox reaches only the hub, the forge and the grant's `network` hosts, so an agent cannot install a missing tool itself.
 - **Codex takes no `allow` list.** A grant with `allow` refuses Codex placements, because Codex has no per-command allowlist, only its sandbox.
 
 Each entry is a plain command; [`maity runner`](../cli/README.md#maity-runner) lists what is refused.
 
 **A UUID source for Keep the Why.** Beyond `maity`, `git` and the grant, the runner also allows one fixed command, `cat /proc/sys/kernel/random/uuid`, on the harnesses that gate commands with an allowlist (Claude Code and opencode). Keep the Why gives every entry an `Id` made by an OS command, never from memory, and under the allowlist the usual sources — `uuidgen`, `node`, `od /dev/urandom` — are all refused, so an agent could record no reasoning. The kernel's generator needs no package installed and prints a lowercase v4 directly. Only the allowlist harnesses need the explicit allow: Codex has no per-command allowlist, so the command already runs inside its sandbox and needs no entry, and antigravity gates commands with its sandbox rather than an allowlist, so the command runs inside agy's sandbox, where that starts, like any unlisted command and needs no entry. The skill names `uuidgen` first and this path second; it was chosen because it needs no `util-linux` and no lowercasing step.
+
+## A venv of the project's pinned dev tools
+
+Instead of installing pytest, ruff, black and mypy for the agents' user by hand, the runner can build a virtual environment from the project's own pinned, hash-locked dev requirements and put it on each session's PATH, so an agent runs the checks with the versions the project pins. Point the runner at the lock file inside the clone:
+
+```toml
+[backend.local]
+dev_requirements = "cli/requirements/dev.txt"
+```
+
+The path is relative to the clone (no `..`). At placement setup the runner builds the venv once, in its own directory for the placement, never in the clone, and reuses it on later starts of the same placement; a changed lock rebuilds it. It installs only what the lock pins, with the hashes required, so the set is reproducible and the download is checked. Without `dev_requirements`, or when the clone does not ship that file, the runner builds no venv and nothing changes. A build that fails is logged and the session still starts, without the venv. The same mechanism is meant to serve coder placements as well.
+
+The venv's `bin` goes ahead of the session's PATH, so its tools win over any of the same name on the agents' own PATH. The agent still needs the matching `allow` entries (above) to run them; the venv only provides the tools, it is not a grant.
 
 ## Clones after a stop
 

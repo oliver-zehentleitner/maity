@@ -452,6 +452,40 @@ def test_the_launch_uses_the_binary_and_sandbox_the_gate_decided_on(
     assert (later.binary, later.sandbox) == ("/old/claude", False)
 
 
+def test_the_context_carries_the_dev_venv_bin_when_configured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With `dev_requirements` set and the lock present in the clone, `_context` builds the
+    venv (stubbed here) and carries its `bin`; without the setting it carries none."""
+    import dataclasses
+
+    from maity.runner import venv
+
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    target = sup.targets["local"]
+    place = workspace.Workspace(tmp_path / "ws" / "c", "maity", "c")
+    (place.repo / "requirements").mkdir(parents=True)
+    (place.repo / "requirements" / "dev.txt").write_text("x\n")
+    harness = sup.cfg.harnesses["claude-code"]
+    p = placement(harness="claude-code")
+    assert sup._context(p, harness, place, target).venv_bin == ""  # not configured: no venv
+
+    assert sup.cfg.local is not None
+    sup.cfg = dataclasses.replace(
+        sup.cfg,
+        local=dataclasses.replace(sup.cfg.local, dev_requirements="requirements/dev.txt"),
+    )
+    seen: list[Path] = []
+
+    def ensure(as_user: Any, into: Path, req: Path, clone: Path, **k: Any) -> Path:
+        seen.append(into)
+        return into / "bin"
+
+    monkeypatch.setattr(venv, "ensure", ensure)
+    ctx = sup._context(p, harness, place, target)
+    assert ctx.venv_bin == str(seen[0] / "bin") and seen[0].name == "venv"
+
+
 @pytest.mark.parametrize("extra", ["", "require_sandbox = false\n"])
 def test_a_sandboxed_start_is_refused_while_settings_switch_hooks_off(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extra: str

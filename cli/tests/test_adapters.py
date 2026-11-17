@@ -61,6 +61,18 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     }  # fmt: skip
 
 
+def test_the_dev_venv_bin_is_prepended_to_the_session_path(tmp_path: Path) -> None:
+    """A placement with a dev venv gets its `bin` ahead of the session's PATH, so the
+    project's pinned pytest, ruff, black and mypy win over any on the agents' own PATH."""
+    ctx = context(tmp_path, venv_bin="/srv/agents/plc/venv/bin", agent_path="/usr/bin:/bin")
+    assert adapters.launch(ctx).env["PATH"] == f"/srv/agents/plc/venv/bin{os.pathsep}/usr/bin:/bin"
+
+
+def test_no_dev_venv_leaves_the_session_path_alone(tmp_path: Path) -> None:
+    """No venv (the default): the launch adds no PATH, so the tmux server's PATH stands."""
+    assert "PATH" not in adapters.launch(context(tmp_path)).env
+
+
 def test_claude_code_interactive_resumes_its_conversation_after_hung(tmp_path: Path) -> None:
     launch = adapters.launch(context(tmp_path, resume=True))
     assert launch.argv[-2:] == ["--continue", adapters.RESUME_PROMPT]

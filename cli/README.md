@@ -1106,6 +1106,14 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
 - **Clean environment.** The tmux server starts under `env -i` with only
   `HOME`, `PATH` (= `agent_path`), `LANG` and `TERM`, so `SSH_AUTH_SOCK`,
   `MAITY_STATE_DIR` and the runner's own variables never reach an agent.
+- **A dev venv (optional).** With `dev_requirements` set to a hash-locked
+  requirements file inside the clone (relative, e.g.
+  `cli/requirements/dev.txt`, no `..`), the runner builds a virtual
+  environment from it once per placement, outside the clone, and puts its
+  `bin` ahead of the session's PATH, so an agent runs the project's checks
+  with the versions the project pins (see
+  [runners](../docs/runners.md#a-venv-of-the-projects-pinned-dev-tools)).
+  Without it, no venv is built.
 - **Clones.** Each clone is `<workspaces>/<project id>/<clone>`, recorded in
   `<state_dir>/workspaces.json`. The project id (`prj-…`) is fixed, so a
   renamed or transferred project (`docs/api.md` §6.25) finds its clone and

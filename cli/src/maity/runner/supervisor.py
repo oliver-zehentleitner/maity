@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, hub, onboarding, state
-from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
+from . import adapters, capabilities, config, limitread, loop, restart, targets, venv, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
@@ -1081,6 +1081,7 @@ class Supervisor:
         found = view.found
         private = self._private(target, place)
         return adapters.Context(
+            venv_bin=self._venv_bin(target, place, agent_dir),
             placement=p,
             harness=harness,
             binary=found.path if found else None,
@@ -1105,6 +1106,25 @@ class Supervisor:
             resume=resume,
             git=self.cfg.git,
         )
+
+    def _venv_bin(self, target: Target, place: workspace.Workspace, agent_dir: Path) -> str:
+        """The `bin` of the placement's dev venv, built from the clone's pinned lock
+        (`dev_requirements`) outside the clone and put on the session's PATH (venv.py); "" when
+        no lock is configured, the clone does not ship it, or the build fails. A failed build
+        is logged and the session starts without the venv: it is a convenience, not a gate."""
+        local = self.cfg.local
+        relative = local.dev_requirements if local else None
+        if not relative:
+            return ""
+        requirements = place.repo / relative
+        if not target.as_user.exists(requirements, "-f"):
+            return ""  # the project ships no such lock: no venv, and not an error
+        try:
+            found = venv.ensure(target.as_user, agent_dir / "venv", requirements, place.repo)
+        except venv.VenvError as exc:
+            self.log(f"{place.path.name}: no dev venv: {exc}")
+            return ""
+        return str(found)
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
         """What the agent's sandbox may not read, as the agents' side of `target` sees it: its

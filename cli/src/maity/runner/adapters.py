@@ -212,6 +212,10 @@ class Context:
     git: config.GitIdentity = config.GitIdentity()  # who the session commits as (`[git]`)
     # The workspace folder the harness starts in, holding the clone (§15.5); None: the clone.
     folder: Path | None = None
+    # The `bin` of the runner's shared dev venv for this placement, prepended to the session's
+    # PATH so the project's pinned pytest, ruff, black and mypy are found (venv.py); "" when the
+    # runner builds none (no pinned dev requirements configured, or the file is not in the clone).
+    venv_bin: str = ""
 
 
 @dataclass(frozen=True)
@@ -235,6 +239,10 @@ def launch(ctx: Context) -> Launch:
         # which the pin does not reach; git passes these settings on to it.
         **git_config(ctx),
         **git_identity(ctx),
+        # The dev venv's `bin` ahead of the session's PATH, so the project's pinned pytest,
+        # ruff, black and mypy are found before any on the agents' own PATH (venv.py). The
+        # session env overrides the tmux server's PATH for this placement only.
+        **({"PATH": f"{ctx.venv_bin}{os.pathsep}{ctx.agent_path}"} if ctx.venv_bin else {}),
         **ctx.extra_env,
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
@@ -287,8 +295,18 @@ def _write(ctx: Context, path: Path, data: Any) -> Path:
     return ctx.as_user.write(path, json.dumps(data, indent=2) + "\n")
 
 
-def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str, str]) -> Launch:
-    """The loop of §6.2 in the pane; what it runs comes from a spec file it cannot widen."""
+def _supervised(
+    ctx: Context,
+    first: list[str],
+    again: list[str],
+    env: dict[str, str],
+    *,
+    reap: bool = False,
+) -> Launch:
+    """The loop of §6.2 in the pane; what it runs comes from a spec file it cannot widen. With
+    `reap`, the loop runs each turn in a process group of its own and ends that group when the
+    turn ends, so no background process the turn started outlives it (§6.2); it is scoped to
+    that one run's group and reaches no other session's processes (loop.py)."""
     policy = ctx.restart
     spec = _write(ctx, ctx.agent_dir / "loop.json",
         {
@@ -296,6 +314,10 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
             "again": again,
             "env": env,
             "clone": str(ctx.clone),  # where `maity wait` runs: agy starts above it
+            # Every turn in its own process group, ended when the turn ends: no background
+            # task may hold a supervised run open past its turn, and the prompt that forbids
+            # `maity wait` is not relied on (cli/context/runner.md).
+            **({"reap_process_group": True} if reap else {}),
             # agy's workspace folder, checked before every run as before the start (§15.5).
             **({"folder": str(ctx.folder)} if ctx.folder is not None else {}),
             "restart": {
@@ -712,26 +734,42 @@ def _agy_private(path: Path) -> Path:
 
 
 def antigravity_settings(ctx: Context) -> dict[str, Any]:
-    """The session's settings (`--settings`, never saved; §15.3): the default agent mode, not
-    `auto`, whose reviewer may let a command leave the sandbox; commands no rule names run in
-    the sandbox without asking; the sandbox on; the workspace folder trusted, so an
-    interactive start asks nothing. Allowed: `maity` and URLs of the hub, the forge and the
+    """The session's settings (`--settings`, never saved; §15.3). `agentMode` is `accept-edits`
+    for an interactive start, so the agent edits in the clone without a prompt nobody could
+    answer were it supervised, and the empty default mode for a supervised one; never `auto`,
+    whose reviewer may let a command leave the sandbox. `toolPermission: proceed-in-sandbox`
+    runs a command no rule names in the sandbox without asking; the sandbox is on and the
+    workspace folder trusted, so an interactive start asks nothing.
+
+    Allowed to the file tools: reading and writing the whole clone, so the file tools never
+    prompt inside it (a headless `-p` run cannot answer a prompt, so it would otherwise deny
+    its own `read_file`/`write_file`), and so agy's terminal sandbox, whose writable region
+    follows these rules, mounts the clone — `.git` included — writable, which `git fetch` and
+    `git commit` need. Allowed as commands and URLs: `maity` and the hub, the forge and the
     grant's `network` hosts. A grant's `allow` command list is not given to agy (agy_grants):
     agy does not match a `command(...)` rule the way Claude Code does, so each such entry is
-    left out and runs in agy's sandbox, named by `maity runner check`. Denied to the file
-    tools: the clone's credential, what makes git run something (GIT_PROTECTED), the other
-    clones' credentials and the runner's private paths. agy merges these with the agents'
-    user's own settings (cli/context/runner.md)."""
+    left out and runs in agy's sandbox, named by `maity runner check`.
+
+    Denied, and more specific than the clone-wide allow so they still win: the clone's
+    credential (`.git/maity`), what makes git run something (GIT_PROTECTED, so `.git/config`
+    and `.git/hooks` stay read-only while the rest of `.git` is writable), the other clones'
+    credentials and the runner's private paths. agy merges these with the agents' user's own
+    settings (cli/context/runner.md)."""
     assert ctx.folder is not None  # noqa: S101 - the supervisor gives agy its folder
     git = ctx.clone / ".git"
     allow = ["command(maity)"]
     allow += [f"read_url({host})" for host in sorted({*ctx.hosts, *ctx.grant.network})]
+    # The whole clone, read and write, for the file tools and so the terminal sandbox mounts
+    # it writable; the denies below are more specific paths under it and win.
+    allow += [f"{tool}({ctx.clone}/**)" for tool in ("read_file", "write_file")]
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
     deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
     return {
-        "agentMode": "",
+        # `accept-edits` auto-accepts the file tools' edits in interactive mode; supervised
+        # runs headless and needs no auto-accept, so it keeps the empty default mode.
+        "agentMode": "accept-edits" if not headless(ctx) else "",
         "toolPermission": "proceed-in-sandbox",
         "enableTerminalSandbox": True,
         "trustedWorkspaces": [str(ctx.folder)],
@@ -758,4 +796,7 @@ def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
     # `-c` continues the latest conversation of the working directory: the placement's own
     # folder, so never another placement's (cli/context/runner.md).
     prompt = folder + SUPERVISED_PROMPT + extra
-    return _supervised(ctx, [*base, "-p", prompt], [*base, "-c", "-p", prompt], env)
+    # agy has no setting or environment variable to keep a background task from outliving the
+    # turn (unlike Claude Code's CLAUDE_CODE_DISABLE_BACKGROUND_TASKS); the loop ends the
+    # turn's own process group instead (reap, §6.2).
+    return _supervised(ctx, [*base, "-p", prompt], [*base, "-c", "-p", prompt], env, reap=True)
