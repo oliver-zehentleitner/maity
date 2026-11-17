@@ -4154,6 +4154,81 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = maPatch;
   await go("#/maintainer/maity/inbox");
 
+  // The project's roles (§2.3, tsk-c2c24vxs5qj0): the built-in ones explained, the project's own
+  // added with PUT …/roles, a base change of a role in use asked first, a removal the hub refuses said.
+  await projectSettings("members");
+  const roSection = () => byId("project-roles");
+  for (let k = 0; k < 6; k++) await tick();
+  const roPuts = [];
+  const roPut = win.Maity.api.put;
+  win.Maity.api.put = (p, b) => { if (/\/roles$/.test(p)) roPuts.push(JSON.parse(JSON.stringify(b))); return roPut(p, b); };
+  const roSubmit = async () => { roSection().querySelector("form.project-roles-form").dispatch("submit"); for (let k = 0; k < 10; k++) await tick(); };
+  const roConfirm = () => roSection().querySelector(".project-roles-confirm");
+  expect(roSection() && text(roSection()).includes("Built-in roles") && text(roSection()).includes("Coder")
+    && text(roSection()).includes("No roles of its own yet.") && text(roSection()).includes("which the dashboard does not edit yet"),
+    "roles: the built-in roles explained, none of the project's own, the briefings named as not edited here");
+  roSection().querySelector("button.project-roles-add").click(); await tick();
+  byId("project-role-name-0").value = "Translator"; byId("project-role-name-0").dispatch("input");
+  await roSubmit();
+  expect(!roPuts.length && text(roSection()).includes("Translator: the name must be 2 to 24 lower-case letters"),
+    "roles: a name the hub would refuse is said at its row, nothing sent");
+  byId("project-role-name-0").value = "translator"; byId("project-role-name-0").dispatch("input");
+  byId("project-role-base-0").value = "writer"; byId("project-role-base-0").dispatch("change");
+  byId("project-role-description-0").value = "translates the dashboard"; byId("project-role-description-0").dispatch("input");
+  await roSubmit();
+  for (let k = 0; k < 6; k++) await tick();
+  expect(roPuts.length === 1 && JSON.stringify(roPuts[0]) === JSON.stringify({ custom: [{ name: "translator", base: "writer", description: "translates the dashboard" }] })
+    && text(main).includes("Roles saved.") && byId("project-role-name-0") && byId("project-role-name-0").value === "translator"
+    && byId("project-role-name-0").attrs.readonly !== undefined,
+    "roles: a new role is sent as the whole list and stands with its name fixed " + JSON.stringify(roPuts));
+  await win.Maity.api.patch("/projects/maintainer/maity/members/agt-c", { role: "translator" });
+  await go("#/maintainer/maity/inbox"); await projectSettings("members"); for (let k = 0; k < 6; k++) await tick();
+  byId("project-role-base-0").value = "coder"; byId("project-role-base-0").dispatch("change");
+  await roSubmit();
+  expect(roPuts.length === 1 && !roConfirm().hidden && text(roConfirm()).includes("1 member(s) of translator move from the permissions of Writer to those of Coder.")
+    && text(roConfirm()).includes("approvals that the new permissions do not give expire"),
+    "roles: a base change of a role in use asks first, with how many move, nothing sent");
+  expect(byId("project-role-description-0").disabled && byId("project-role-base-0").disabled
+    && roSection().querySelector("button.project-roles-add").disabled && roSection().querySelector("button.project-roles-remove").disabled,
+    "roles: the draft is frozen while the confirmation is open (A963)");
+  roConfirm().querySelector("button.project-roles-move-back").click(); await tick();
+  expect(roPuts.length === 1 && roConfirm().hidden && !byId("project-role-description-0").disabled && !byId("project-role-base-0").disabled,
+    "roles: Back sends nothing and thaws the draft");
+  await roSubmit();
+  roConfirm().querySelector("button.project-roles-move-go").click(); for (let k = 0; k < 10; k++) await tick();
+  expect(roPuts.length === 2 && roPuts[1].custom[0].base === "coder" && text(main).includes("Roles saved."),
+    "roles: sent once confirmed " + JSON.stringify(roPuts));
+  roSection().querySelector("button.project-roles-remove").click(); await tick();
+  await roSubmit();
+  expect(roPuts.length === 3 && JSON.stringify(roPuts[2]) === JSON.stringify({ custom: [] })
+    && text(roSection()).includes("The role translator is still in use (members) and was not removed."),
+    "roles: the hub's role_in_use is said with what still names the role");
+  expect(byId("project-role-name-0") && byId("project-role-name-0").value === "translator" && byId("project-role-name-0").attrs.readonly !== undefined
+    && byId("project-role-base-0").value === "coder",
+    "roles: a removal the hub refused puts the role back into the draft (A964)");
+  await win.Maity.api.patch("/projects/maintainer/maity/members/agt-c", { role: "coder" });
+  await roPut("/projects/maintainer/maity/roles", { custom: [] });
+  // A page that read the roles before someone else saved sends nothing and keeps its draft (A963).
+  await go("#/maintainer/maity/inbox"); await projectSettings("members"); for (let k = 0; k < 6; k++) await tick();
+  roSection().querySelector("button.project-roles-add").click(); await tick();
+  byId("project-role-name-0").value = "legal"; byId("project-role-name-0").dispatch("input");
+  await roPut("/projects/maintainer/maity/roles", { custom: [{ name: "triage", base: "coder", description: "" }] });
+  await roSubmit();
+  expect(roPuts.length === 3 && text(roSection()).includes("Roles were changed by someone else since this page read them, so nothing was sent.")
+    && byId("project-role-name-0").value === "legal" && !byId("project-role-name-0").disabled,
+    "roles: a list changed elsewhere since the page read it is not overwritten, the draft stays");
+  roSection().querySelector("button.project-roles-reload").click(); for (let k = 0; k < 8; k++) await tick();
+  expect(byId("project-role-name-0") && byId("project-role-name-0").value === "triage" && !byId("project-role-name-1"),
+    "roles: Reload shows the list as it is now");
+  // The fixture refuses what the hub refuses (A963 P3).
+  const roRefusal = async (custom) => roPut("/projects/maintainer/maity/roles", { custom }).then(() => null, (e) => (e.details && e.details.fields) || e.code);
+  const roRefused = [await roRefusal([null]), await roRefusal([{ name: "x-ray", base: "coder", extra: 1 }]), await roRefusal([{ name: "x-ray", base: "coder", description: null }])];
+  expect(JSON.stringify(roRefused) === JSON.stringify([{ "custom[0]": "not_an_object" }, { "custom[0].extra": "unknown_field" }, { "custom[0].description": "format" }]),
+    "roles: the fixture refuses a non-object, an unknown field and a description that is no text, as the hub does " + JSON.stringify(roRefused));
+  await roPut("/projects/maintainer/maity/roles", { custom: [] });
+  win.Maity.api.put = roPut;
+  await go("#/maintainer/maity/inbox");
+
   // A card's restricted text (§6.1, §6.4, tsk-g8ts5vxhj1md): the setting with its widening preview,
   // the box on a card for a member in the set alone, its refusals in words, the set's notice.
   await projectSettings("members");
@@ -4396,8 +4471,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = aoPatch;
   // The project's own roles arrive later and join the others; what was ticked and typed meanwhile stays.
   const aoRolesGet = win.Maity.api.get;
-  let aoRolesAnswer;
-  win.Maity.api.get = (p) => (p.endsWith("/roles") ? new Promise((resolve) => { aoRolesAnswer = resolve; }) : aoRolesGet(p));
+  // Every read of the roles on the tab waits (the Roles section reads them too) and gets the one answer.
+  const aoRolesWaiting = [];
+  const aoRolesAnswer = (answer) => aoRolesWaiting.splice(0).forEach((resolve) => resolve(answer));
+  win.Maity.api.get = (p) => (p.endsWith("/roles") ? new Promise((resolve) => { aoRolesWaiting.push(resolve); }) : aoRolesGet(p));
   await projectSettings("members");
   byId("outside-role-writer").checked = true; byId("agent-owners-reason").value = "kept";
   aoRolesAnswer({ custom: [{ name: "triage", base: "coder" }, { name: "outsider", base: "viewer" }] });
