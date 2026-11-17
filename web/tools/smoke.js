@@ -4194,6 +4194,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(roPuts.length === 3 && JSON.stringify(roPuts[2]) === JSON.stringify({ custom: [] })
     && text(roSection()).includes("The role translator is still in use (members) and was not removed."),
     "roles: the hub's role_in_use is said with what still names the role");
+  expect(byId("project-role-name-0") && byId("project-role-name-0").value === "translator" && byId("project-role-name-0").attrs.readonly !== undefined
+    && byId("project-role-base-0").value === "coder",
+    "roles: a removal the hub refused puts the role back into the draft (A964)");
   await win.Maity.api.patch("/projects/maintainer/maity/members/agt-c", { role: "coder" });
   await roPut("/projects/maintainer/maity/roles", { custom: [] });
   // A page that read the roles before someone else saved sends nothing and keeps its draft (A963).

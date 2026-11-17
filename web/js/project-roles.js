@@ -186,6 +186,16 @@ window.Maity = window.Maity || {};
         freeze(false);
         if (err.code === "conflict" && err.details && err.details.reason === "role_in_use") {
           status.done();
+          // The hub kept the role: it comes back into the draft as it was loaded, so the next
+          // save does not try to remove it again (A964).
+          const keptRole = stored.find((s) => s.name === err.details.role);
+          if (keptRole && !rows.some((r) => r.name === keptRole.name)) {
+            const at = stored.indexOf(keptRole);
+            const before = rows.findIndex((r) => !r.kept || stored.findIndex((s) => s.name === r.name) > at);
+            rows.splice(before < 0 ? rows.length : before, 0, { ...keptRole, kept: true });
+            drawRows();
+            freeze(false);
+          }
           append(errors, h("li", null, M.t("roles.in_use", { role: err.details.role || "",
             uses: (err.details.uses || []).map(useWords).join(", ") })));
           return;
