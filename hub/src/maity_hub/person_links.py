@@ -79,6 +79,11 @@ def website_problem(value: str, max_length: int = WEBSITE_MAX) -> str | None:
         parts.port  # noqa: B018  (a port that is no number raises)
     except ValueError:
         return "format"
+    # Before case-folding: `hostname` is lower-cased, and `str.lower` maps U+212A (KELVIN SIGN)
+    # to ASCII "k", which would accept a different host. A Unicode host is refused; an IDN is
+    # accepted only already written in its `xn--` form.
+    if not parts.netloc.isascii():
+        return "format"
     # `netloc` is the host alone: no user part, no port, no IPv6 brackets.
     if parts.scheme != "https" or not host or parts.netloc.lower() != host or not _dns(host):
         return "format"

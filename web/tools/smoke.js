@@ -1949,6 +1949,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(JSON.stringify(adminIds) === JSON.stringify(["admin-statistics", "admin-users", "admin-limits", "admin-reports", "admin-mail-settings",
     "admin-registration", "admin-sign-in", "admin-pages", "admin-maintenance", "admin-instance-information"]),
     "admin: every section keyed by its fixed word " + JSON.stringify(adminIds));
+  // §16.14: the settings by group, the value and its source, a secret only as set or not set (tsk-f87sx61wbfdj).
+  const info = byId("admin-instance-information");
+  const settingRows = info.querySelectorAll("table.instance-settings tbody tr");
+  const settingRow = (name) => settingRows.find((tr) => text(tr.querySelector("th")) === name);
+  expect(settingRows.length === 9 && info.querySelectorAll("h4").map((x) => x.textContent).join("|") === "Address and serving|Database|Security|Registration|Mail|Agents",
+    "instance: every setting in its group's table " + settingRows.length);
+  expect(text(settingRow("MAITY_AGENT_FIREWALL")).includes("on") && text(settingRow("MAITY_AGENT_FIREWALL")).includes("Environment")
+    && text(settingRow("MAITY_REGISTRATION")).includes("Default") && text(settingRow("MAITY_REGISTRATION")).includes("Registration"),
+    "instance: a value with its source and the admin section that sets it too");
+  expect(text(settingRow("MAITY_SECRET_KEY")).includes("Set (hidden)") && text(settingRow("MAITY_SMTP_PASSWORD")).includes("Not set")
+    && text(settingRow("MAITY_JOIN_URL")).includes("Not set"), "instance: a secret only as set or not set, an unset value as not set");
+  const docsLink = info.querySelectorAll("a").find((a) => a.textContent === "What each setting does");
+  expect(docsLink && docsLink.getAttribute("href") === "https://github.com/oliver-zehentleitner/maity/blob/main/hub/README.md#configuration",
+    "instance: the link to the description of every setting");
   const meRow = userRows().find((tr) => text(tr).includes("Maintainer"));
   expect(text(meRow).includes("(you)") && text(meRow).includes("instance admin") && /Projects2|>2</.test(meRow.querySelectorAll("td").map((td) => td.attrs["data-label"] + td.textContent).join("")),
     "users: the admin's own row, its counts");

@@ -3283,6 +3283,20 @@ window.Maity = window.Maity || {};
       return Object.assign({}, broadcastsChoice, { agents: broadcastsChoice.agents.slice() });
     }],
     ["GET", /^\/health$/, () => ({ status: "ok", version: "fixture", api: "v1", database: { reachable: true, revision: "fixture-head", head: "fixture-head" } })],
+    // §16.14: a few settings of each kind, one secret set and one not.
+    ["GET", /^\/admin\/instance$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const row = (name, group, source, value, admin) => ({ name, group, source, value, secret: false, admin: admin || null });
+      const secret = (name, group, set, admin) => ({ name, group, source: set ? "environment" : "default", value: null, secret: true, set, admin: admin || null });
+      return { version: "fixture", schema: { revision: "fixture-head", head: "fixture-head" }, docs: "hub/README.md#configuration", settings: [
+        row("MAITY_PUBLIC_URL", "address", "environment", "https://hub.example"), row("MAITY_JOIN_URL", "address", "default", null),
+        secret("MAITY_DATABASE_URL", "database", true), row("MAITY_DB_POOL_SIZE", "database", "default", "16"),
+        secret("MAITY_SECRET_KEY", "security", true), row("MAITY_SEAL_VERIFIERS", "security", "environment", "1"),
+        row("MAITY_REGISTRATION", "registration", "default", "closed", "16.4"),
+        secret("MAITY_SMTP_PASSWORD", "mail", false, "16.2"),
+        row("MAITY_AGENT_FIREWALL", "agents", "environment", "on"),
+      ] };
+    }],
     ["GET", /^\/admin\/settings\/mail$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       return fixtures()["admin-mail.json"];
