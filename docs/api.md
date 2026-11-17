@@ -3939,7 +3939,8 @@ same way, with these differences:
 - the count is the outsider's own quota where the project's admins set
   one, otherwise `policy.member_agents_max`, as for a member (below,
   "The outsiders of a project"); beyond it `forbidden` with
-  `details.reason: member_agents_max` and `details.max`. `GET` and
+  `details.reason: member_agents_max` and `details.max` (and the quota
+  details of §6.31, not built yet, tsk-spmhjqm7szag). `GET` and
   `DELETE` on `…/joins` show and revoke only the joins the caller
   created;
 - an outsider the project's admins blocked creates no join: `forbidden`,
@@ -18489,7 +18490,8 @@ clone Z. It is the only thing the hub asks of a runner.
   no live credential yet (before their first pickup, or waiting to
   rejoin), plus one for the new placement unless it carries a
   credential over (below), stay within `max_instances`. Otherwise
-  `instance_quota` (409, `details.max`), and nothing is created. The
+  `instance_quota` (409, `details.max` and the quota details of §6.31,
+  not built yet, tsk-spmhjqm7szag), and nothing is created. The
   pickup checks again (§15.9). Neither a replacement's new placement
   nor its instance counts while the replacement is open or the old
   instance is kept (`keep_old`, §15.14; the replacement is not built
