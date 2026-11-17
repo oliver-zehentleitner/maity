@@ -175,6 +175,22 @@
     "en": "9d1a4d7e2b6e1f5d",
     "text": "8c56625c5da6ac5a"
   },
+  "mail.address_changed_body": {
+    "en": "219a6f021ae9f584",
+    "text": "e88cf389b948fdcf"
+  },
+  "mail.address_from": {
+    "en": "047165494d34f84b",
+    "text": "3b884659200d74b1"
+  },
+  "mail.address_removed_body": {
+    "en": "032acd3da7bab9bb",
+    "text": "f824b14d5cc55d08"
+  },
+  "mail.address_subject": {
+    "en": "db411d71ce3e92da",
+    "text": "07672954ea1926b5"
+  },
   "mail.more": {
     "en": "a1cd32796e7e9005",
     "text": "0b619a7be2541624"
@@ -211,9 +227,21 @@
     "en": "dfaef747e184ddf6",
     "text": "b6e995cf63c98800"
   },
+  "mail.unknown_ip": {
+    "en": "e56c65d7188c79cc",
+    "text": "4c74cd39ffdf7f25"
+  },
   "mail.updates": {
     "en": "ee72d97604a9a40d",
     "text": "9d3efac2e6ac6496"
+  },
+  "mail.verify_body": {
+    "en": "dbf48469793468cf",
+    "text": "594a8dc732babdd6"
+  },
+  "mail.verify_subject": {
+    "en": "749bdc78cabbe4a2",
+    "text": "e6d6c87645eaad19"
   },
   "mail.wrote": {
     "en": "3cff4d92714ec5c4",
@@ -458,6 +486,10 @@
   "product.bug": {
     "en": "191903c61492ea38",
     "text": "7e7a7b963fd7c444"
+  },
+  "product.discord": {
+    "en": "eda6e32290d46f17",
+    "text": "10db5c357eb867ff"
   },
   "product.love": {
     "en": "96fa5228627bef6a",

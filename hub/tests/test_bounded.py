@@ -46,7 +46,7 @@ def test_the_ktw_cache_keeps_the_newest_projects_and_drops_their_reads(
 ) -> None:
     monkeypatch.setattr(ktw, "PROJECTS_KEPT", 2)
     monkeypatch.setattr(
-        ktw.Cache, "_read", lambda _self, _r, _p, url, _last: ktw._Entry(None, ktw._now(), url)
+        ktw.Cache, "_read", lambda _self, _r, _p, url, _last: ktw._Entry(None, ktw.now(), url)
     )
     cache = ktw.Cache()
     cache.last_good[("p0", "a/b", "context/x.md")] = (SimpleNamespace(), None)  # type: ignore[assignment]
@@ -63,7 +63,7 @@ def test_a_ktw_project_in_use_is_never_dropped(monkeypatch: pytest.MonkeyPatch) 
     neither drop p0's answer nor its last good reads nor its lock."""
     monkeypatch.setattr(ktw, "PROJECTS_KEPT", 2)
     monkeypatch.setattr(
-        ktw.Cache, "_read", lambda _self, _r, _p, url, _last: ktw._Entry(None, ktw._now(), url)
+        ktw.Cache, "_read", lambda _self, _r, _p, url, _last: ktw._Entry(None, ktw.now(), url)
     )
     cache = ktw.Cache()
     cache.get(forge.Forge(None), "p0", None, max_age=0)
@@ -89,7 +89,7 @@ def test_ktw_forget_drops_the_reads_even_of_a_project_in_use() -> None:
     """A changed repository: the old one's last good reads must not stand in for the new
     one's members of the same path, even while a request is in `get`; the lock stays."""
     cache = ktw.Cache()
-    cache.entries["p"] = ktw._Entry(None, ktw._now(), "https://github.com/a/old")
+    cache.entries["p"] = ktw._Entry(None, ktw.now(), "https://github.com/a/old")
     cache.last_good[("p", "a/old", "context/")] = (SimpleNamespace(), None)  # type: ignore[assignment]
     lock = cache._enter("p")
     cache.forget("p")

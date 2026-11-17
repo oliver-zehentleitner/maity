@@ -531,7 +531,7 @@ def test_check_warns_about_inherited_claude_settings(
 ) -> None:
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "claude", "2.1.318 (Claude Code)")  # the checked one: no warning for it
+    fake_tool(bin_dir, "claude", "2.1.325 (Claude Code)")  # the checked one: no warning for it
     fake_tool(bin_dir, "bwrap")
     fake_tool(bin_dir, "socat")
     (home / ".claude").mkdir()
@@ -548,7 +548,7 @@ def test_check_warns_about_inherited_claude_settings(
     assert len(warnings) == 2, warnings
 
 
-@pytest.mark.parametrize(("version", "warned"), [("2.1.318", False), ("2.1.330", True)])
+@pytest.mark.parametrize(("version", "warned"), [("2.1.325", False), ("2.1.330", True)])
 def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, warned: bool
 ) -> None:
@@ -560,7 +560,7 @@ def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0  # no block
-    found = [line for line in lines(capsys) if "sandbox was checked with 2.1.318" in line]
+    found = [line for line in lines(capsys) if "sandbox was checked with 2.1.325" in line]
     assert bool(found) is warned, found
     assert all(line.startswith("warn") for line in found)
 
@@ -625,7 +625,7 @@ def test_check_names_claude_codes_sandbox_for_the_platform(
     agents run unsandboxed, and `require_sandbox` makes that an error."""
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "claude", "2.1.318")
+    fake_tool(bin_dir, "claude", "2.1.325")
     for tool in tools:
         fake_tool(bin_dir, tool)
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\nrequire_sandbox = true\n")
@@ -686,6 +686,14 @@ def test_default_config_path(home: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 def test_opencode_is_not_offered_yet() -> None:
     found = problems(minimal(o="\n[harness.opencode]\n"))
     assert any(p.startswith("harness.opencode: not offered yet") for p in found), found
+
+
+def test_antigravity_is_offered() -> None:
+    # Re-offered (req-9spwe33neh1z): a configuration naming antigravity is accepted, no longer
+    # refused as "not offered yet" (cli/context/runner.md, 28ac82c8). The residual command(maity)
+    # risk is accepted by the owner; re-offering did not widen agy's grants.
+    cfg = parse(minimal(a="\n[harness.antigravity]\n"))
+    assert "antigravity" in cfg.harnesses
 
 
 @pytest.mark.parametrize(

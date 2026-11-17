@@ -15,7 +15,6 @@ from __future__ import annotations
 import logging
 import threading
 from datetime import timedelta
-from html import escape
 from typing import Any
 
 from sqlalchemy import Connection, Engine, select
@@ -63,7 +62,8 @@ def _entry(conn: Connection, project: Any, payload: dict[str, Any]) -> bool:
 
 def ticker(conn: Connection, project: Any) -> list[dict[str, Any]]:
     """The newest entries a visitor may read, newest first: `type`, `text`, `url` (a merge's
-    pull request only) and `at`; never the audience, paths or request."""
+    pull request only), `at` and `merge` (a merge's facts, else `None`); never the audience,
+    paths or request."""
     e = t.event.c
     rows = conn.execute(
         select(e.at, e.payload)
@@ -94,11 +94,27 @@ def ticker(conn: Connection, project: Any) -> list[dict[str, Any]]:
                     else None
                 ),
                 "at": clock.rfc3339(row.at),
+                "merge": _merge(payload) if payload["type"] == "merge" else None,
             }
         )
         if len(found) == TICKER_LIMIT:
             break
     return found
+
+
+def _merge(payload: dict[str, Any]) -> dict[str, Any]:
+    """A merge entry's facts as fields (§16.9): the pull request's number and title, its
+    author's forge login and the areas it touches, each `null` (`[]` for the areas) where the
+    entry does not carry it, so no client parses `text`. Never its paths, sha or cards."""
+    merge = payload.get("merge") or {}
+    number = merge.get("pr")
+    areas = payload.get("areas")
+    return {
+        "pr": number if isinstance(number, int) and not isinstance(number, bool) else None,
+        "title": merge["title"] if isinstance(merge.get("title"), str) else None,
+        "author": merge["author"] if isinstance(merge.get("author"), str) else None,
+        "areas": [a for a in areas if isinstance(a, str)] if isinstance(areas, list) else [],
+    }
 
 
 def online(conn: Connection, project_id: str) -> dict[str, Any]:
@@ -119,33 +135,36 @@ def online(conn: Connection, project_id: str) -> dict[str, Any]:
         people,
         key=lambda p: (not p.human, p.handle or "", p.id),
     )
+    pictures = _pictures(conn, {row.id: row for row in rows}, named)
     return {
         "humans": sum(1 for p in people if p.human),
         "agents": sum(1 for p in people if not p.human),
-        "named": [_shown(p) for p in named],
+        "named": [{**(_shown(p) or {}), "picture": pictures.get(p.id)} for p in named],
     }
 
 
-def html(entries: list[dict[str, Any]], up: dict[str, Any]) -> str:
-    """The two parts of the project's page; every text is escaped, a link only `https`."""
+def _pictures(conn: Connection, rows: dict[int, Any], named: list[Any]) -> dict[int, str | None]:
+    """The picture of each one named, by membership id, as their own page shows it (§16.9):
+    a person's only while their `public_profile` is on, an agent's always."""
+    from maity_hub import avatars
 
-    def item(entry: dict[str, Any]) -> str:
-        text = escape(entry["text"])
-        if entry["url"]:
-            text = f'<a href="{escape(entry["url"], quote=True)}" rel="nofollow ugc">{text}</a>'
-        when = escape(entry["at"], quote=True)
-        return f'<li><time datetime="{when}">{escape(entry["at"][:10])}</time> {text}</li>'
-
-    recent = (
-        f'<h2>Recently</h2><ul class="ticker">{"".join(item(e) for e in entries)}</ul>'
-        if entries
-        else ""
+    principal = {p.id: rows[p.id].human_id or rows[p.id].agent_id for p in named}
+    humans = [rows[p.id].human_id for p in named if rows[p.id].human_id]
+    chosen = (
+        set(
+            conn.execute(
+                select(t.human.c.id).where(
+                    t.human.c.id.in_(humans), t.human.c.public_profile.is_(True)
+                )
+            ).scalars()
+        )
+        if humans
+        else set()
     )
-    names = "".join(
-        f"<li>{escape(p['name'])} ({escape(p['handle'])})</li>" for p in up["named"] if p
-    )
-    count = f"<p>{up['humans']} human(s) and {up['agents']} agent(s) online</p>"
-    return f"{recent}<h2>Online</h2>{count}" + (f"<ul>{names}</ul>" if names else "")
+    shown = [rows[p.id].agent_id or rows[p.id].human_id for p in named]
+    shown = [i for i in shown if i not in humans or i in chosen]
+    urls = avatars.public_urls(conn, shown)
+    return {mid: urls.get(i) for mid, i in principal.items()}
 
 
 def _members_of(conn: Connection, project_ids: list[str]) -> list[tuple[str, str]]:

@@ -8,7 +8,9 @@ Exit codes the runner maps (§15.7): 20 the agent's credential is revoked
 (`agent_credential_revoked`), 21 runs keep ending without progress (`crash_loop`,
 `hot_loop`), 22 the harness stopped for its provider's limit (`rate_limited`, with the
 harness's own exit code in the spec's `limit.file`), 23 the same after at least one run of
-this loop had ended cleanly, which starts the runner's backoff row over. Which exits mean a
+this loop had ended cleanly, which starts the runner's backoff row over, 24 and 25 the
+workspace folder in the spec (agy's, §15.5) refused before a run (`workspace_in_use` with
+`workspace_not_bare`, `workspace_in_repository`). Which exits mean a
 limit is the adapter's `limit` in the spec, and only a signal verified on a real run of that
 harness goes there; without one, a limit is an ordinary non-zero exit. A run that ends
 within `quick_exit` without the event having been acknowledged counts toward `crash_cap`
@@ -26,9 +28,10 @@ import sys
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-from . import config, restart
+from . import config, restart, workspace
 
 WAIT_TIMEOUT = 600
 SETTLE = 15.0
@@ -36,6 +39,15 @@ EXIT_REVOKED = 20
 EXIT_HOT_LOOP = 21
 EXIT_RATE_LIMITED = 22
 EXIT_RATE_LIMITED_AFTER_CLEAN = 23
+# The workspace folder refused before a run (workspace.check_folder), by its detail.
+EXIT_FOLDER = {"workspace_not_bare": 24, "workspace_in_repository": 25}
+
+
+def check_folder(folder: str) -> None:
+    """The supervisor's check before a start (workspace.check_folder), here as the agents'
+    user the loop runs as, through the same listing: agy loads what lies in the folder and
+    above it, and a run of the agent may have put something there since the last check."""
+    workspace.check_folder(workspace.Workspace(Path(folder), "", "", folder=True))
 
 
 @dataclass
@@ -49,6 +61,7 @@ class Loop:
     crashes: list[float] = field(default_factory=list)
     clean: bool = False  # a run of this loop ended cleanly: a later limit is not "in a row"
     log: Callable[[str], None] = lambda line: print(f"maity loop: {line}", flush=True)
+    check: Callable[[str], None] = check_folder
 
     def policy(self) -> config.Restart:
         return config.Restart(**self.spec["restart"])
@@ -80,12 +93,30 @@ class Loop:
             self.log(f"cannot record the limit's exit code: {exc}")
         return True
 
+    def refused(self) -> int | None:
+        """Before every run: the spec's workspace folder as the supervisor checks it before a
+        start; its EXIT_FOLDER code when it is refused, with the entries named in the log
+        (names only, never what they hold), nothing deleted."""
+        folder = self.spec.get("folder")
+        if not isinstance(folder, str) or not folder:
+            return None
+        try:
+            self.check(folder)
+        except workspace.Refused as refused:
+            self.log(f"{refused.reason}/{refused.detail}: {refused.why or ''}; stopping")
+            return EXIT_FOLDER.get(refused.detail or "", EXIT_FOLDER["workspace_not_bare"])
+        return None
+
     def turn(self, argv: list[str]) -> int | None:
-        """Headless runs until one ends cleanly. A non-zero exit counts against the cap and is
+        """Headless runs until one ends cleanly, each after the folder check (`refused`). A
+        non-zero exit counts against the cap and is
         run again after the backoff, without waiting for a new event: the work it was doing
         is still there. A clean run does not count, however short: a quick answer to an
         event is progress."""
         while True:
+            refused = self.refused()
+            if refused is not None:
+                return refused
             started = self.now()
             code = self.run(argv, self.spec.get("env") or {})
             if code == 0:
@@ -145,7 +176,9 @@ def _run(argv: list[str], env: dict[str, str]) -> int:
     return subprocess.run(argv, env={**os.environ, **env}, check=False).returncode  # noqa: S603
 
 
-def _wait() -> tuple[int, str, str]:
+def _wait(cwd: str | None = None) -> tuple[int, str, str]:
+    """`maity wait` in the clone (`cwd`): the harness may start elsewhere, as agy does in the
+    workspace folder that holds the clone (§15.5); None, the loop's own directory."""
     done = subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
         [
             sys.executable,
@@ -161,6 +194,7 @@ def _wait() -> tuple[int, str, str]:
         capture_output=True,
         text=True,
         check=False,
+        cwd=cwd,
     )
     return done.returncode, done.stdout, done.stderr
 
@@ -171,7 +205,8 @@ def main(args: Sequence[str] | None = None) -> int:
     options = parser.parse_args(args)
     with open(options.spec, encoding="utf-8") as fh:
         spec = json.load(fh)
-    return Loop(spec, _run, _wait).main()
+    clone = spec.get("clone")
+    return Loop(spec, _run, lambda: _wait(clone if isinstance(clone, str) else None)).main()
 
 
 if __name__ == "__main__":

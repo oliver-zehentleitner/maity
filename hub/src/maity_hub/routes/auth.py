@@ -11,9 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, select, update
 from starlette.concurrency import run_in_threadpool
 
-from maity_hub import account_deletion, avatars, clock, paths
+from maity_hub import account_deletion, avatars, clock, paths, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import (
+    anonymous,
     email_links,
     mail_factor,
     password_limits,
@@ -27,7 +28,6 @@ from maity_hub.auth.caller import (
     SESSION_ABSOLUTE,
     SESSION_COOKIE,
     Caller,
-    require_secure_transport,
     session_expires_at,
     session_id_hash,
 )
@@ -102,12 +102,8 @@ def member_of(conn: Connection, human_id: str) -> dict[str, Any]:
 
 @router.post("/login")
 async def login(body: Login, request: Request) -> JSONResponse:
-    if request.headers.get("authorization"):
-        raise forbidden(message="this endpoint is for humans")
+    anonymous.entry(request)
     origin = origin_of(request)
-    require_secure_transport(origin, settings_of(request).allow_plain_http)
-    if request.headers.get("sec-fetch-site") == "cross-site":
-        raise ApiError(403, "csrf_mismatch", "cross-site login")
     wait = LOGIN_BY_ADDRESS.hit(origin.limit_key)
     if wait:
         raise rate_limited(wait)
@@ -139,8 +135,15 @@ async def login(body: Login, request: Request) -> JSONResponse:
                 raise unauthenticated("address or password is wrong")
             if row.suspended_at is not None:  # nor a suspended one, told nothing more (§16.8)
                 raise unauthenticated("address or password is wrong")
-            sessions.forget_expired_addresses(conn)
+            # The account's lock, shared, before any row of it: a sign-in has no session yet
+            # to take it (`write_guard`), and a deletion of the account takes it exclusively
+            # before anything else, so the two run one after the other; after the deletion
+            # `sessions.create` finds the account gone.
+            write_guard.share(conn, row.id)
+            # The presented session first: it takes its human's account lock before any
+            # row of theirs, and the addresses' pass may lock an expired session of theirs.
             end_presented(conn, presented)
+            sessions.forget_expired_addresses(conn)
             session_id, csrf, _, state = second_factor.begin(
                 conn,
                 hub,
@@ -201,9 +204,23 @@ def pending_answer(state: str, via: str = "totp") -> dict[str, Any]:
 
 def end_presented(conn: Connection, presented: str | None) -> None:
     """A browser that holds a session, of any human, has it ended before a new one is
-    made; the new one never takes over a presented id (§2.6.5, session fixation)."""
-    if presented:
-        sessions.end_where(conn, t.human_session.c.id_hash == session_id_hash(presented), "logout")
+    made; the new one never takes over a presented id (§2.6.5, session fixation).
+
+    Ending it writes the record of the session's human (`records.session_ended`), who need
+    not be the one signing in: that human's account lock is taken shared first, as every
+    change of an account without its session takes it (`write_guard.share`). A deletion of
+    that account then runs before or after this, never across it; after it, the session is
+    ended already and nothing is written."""
+    if not presented:
+        return
+    which = t.human_session.c.id_hash == session_id_hash(presented)
+    owner = conn.execute(
+        select(t.human_session.c.human_id).where(which, t.human_session.c.ended_at.is_(None))
+    ).scalar()
+    if owner is None:
+        return
+    write_guard.share(conn, owner)
+    sessions.end_where(conn, which, "logout")
 
 
 def set_session_cookies(
@@ -246,6 +263,7 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
     _require_cookie(caller)
     if len(body.new) < passwords.MIN_LENGTH:
         raise invalid({"new": "too_short"}, "a password has at least 12 characters")
+    browser, system = sessions.describe(request.headers.get("user-agent"))
     with engine_of(request).begin() as conn:
         second_factor.require_step_up(conn, settings_of(request), caller)  # §2.8.4
         row = conn.execute(select(t.human).where(t.human.c.id == caller.principal_id)).one()
@@ -271,6 +289,13 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
         # address (§2.10).
         password_resets.password_changed(conn, row.id)
         preferences.void_pending_address(conn, row.id)
+        # A security notice with its mail at once, as a reset's (§2.1, §18.1).
+        records.write(
+            conn,
+            row.id,
+            "password_changed",
+            {"ip": origin_of(request).address, "browser": browser, "os": system},
+        )
         url = avatars.urls(conn, [row.id])[row.id]
         return JSONResponse({"member": human_member(row, avatar_url=url)})
 

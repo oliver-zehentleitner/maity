@@ -18,6 +18,7 @@ from tests.test_tasks import _report, task
 REQUEST_KEYS = {
     "cover",  # §6.12: null unless a substitute covers it
     "action",  # §2.3: a proxy's call, null otherwise
+    "held",  # §7, §9.6: the agents of other owners it is held for, [] when none
     "id",
     "class",
     "title",
@@ -349,6 +350,24 @@ def test_the_inbox_defaults_to_open_requests_addressed_to_me(
     assert [r["id"] for r in items] == [mine["id"]]
     everything = owner.get("/projects/maintainer/maity/requests?to=all&status=all").json()["items"]
     assert len(everything) == 3  # the owner answers every class
+
+
+def test_the_project_list_filters_by_a_list_of_statuses_and_refuses_an_unknown_one(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    still = asked(agent)
+    done = asked(agent)
+    answer(owner, done, text="x")
+    path = "/projects/maintainer/maity/requests"
+    listed = owner.get(path, params={"status": "answered,withdrawn,"}).json()["items"]
+    assert [r["id"] for r in listed] == [done["id"]]
+    both = owner.get(path, params={"status": "open,answered"}).json()["items"]
+    assert {r["id"] for r in both} == {still["id"], done["id"]}
+    for status in ("bogus", "open,bogus"):
+        refused = owner.get(path, params={"status": status})
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["error"]["details"]["fields"] == {"status": "unknown"}
 
 
 def test_without_requests_answer_to_all_is_mine_and_addressed(
@@ -738,19 +757,10 @@ def test_needs_in_session_names_a_session_of_that_member(
 
 
 def _statements(engine: Engine, call: Any) -> int:
-    from sqlalchemy import event
+    """The route's own statements on `engine`, as `test_notifications._statements` counts."""
+    from tests.statements import count_statements
 
-    seen = [0]
-
-    def counted(*_: Any) -> None:
-        seen[0] += 1
-
-    event.listen(engine, "before_cursor_execute", counted)
-    try:
-        call()
-    finally:
-        event.remove(engine, "before_cursor_execute", counted)
-    return seen[0]
+    return count_statements(engine, call, async_engines=False)
 
 
 def test_a_listing_costs_its_page_not_every_request(

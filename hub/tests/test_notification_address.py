@@ -677,3 +677,160 @@ def test_one_address_gets_three_verification_mails_an_hour_from_all_accounts(
         assert answer.status_code == 200, answer.text  # the same answer, sent or not
     rows = _verifications(migrated)
     assert len(rows) == 3
+
+
+def test_the_address_mails_read_exactly_as_composed(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    # The verification mail, and the notice to the old address after a change and after a
+    # removal, from the catalog's `mail` section (§18.4, context/notifications.md 5fa1d7c2).
+    factory.earlier_admin(migrated)  # the admin's address is never removed (§18.4)
+    owner = with_mail(make_client, migrated)
+    owner.patch(S, {"email": {"address": "old@example.org"}})
+    sent = outbox_rows(migrated)[-1]
+    token = link(sent, "verify")
+    assert sent.subject == "[Maity] Confirm your address"
+    assert sent.body == (
+        "Someone asked to send Maity mail from https://hub.example to old@example.org.\n\n"
+        f"Confirm the address: https://hub.example/mail/verify/{token}\n\n"
+        "The link is valid for 24 hours. If you did not ask for this, ignore this mail.\n"
+    )
+    owner.client.post(f"/mail/verify/{token}")
+    owner.patch(S, {"email": {"address": "new@example.org"}, "current_password": factory.PASSWORD})
+    with migrated.connect() as conn:
+        session = conn.execute(
+            select(t.human_session).where(t.human_session.c.human_id == owner.id)
+        ).one()
+    where = (
+        f"From: {session.browser or 'a browser'} on {session.os or 'an unknown system'}, "
+        f"{session.ip or 'an unknown address'}"
+    )
+    moment = clock.now()
+    clock.set_source(lambda: moment)
+    owner.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}")
+    notice = outbox_rows(migrated)[-1]
+    assert (notice.recipient, notice.subject) == (
+        "old@example.org",
+        "[Maity] Your sign-in address was changed",
+    )
+    check = "If this was not you, sign in and check your sessions: https://hub.example/account/sessions\n"
+    # A verified change names where it was asked from, as the removal does (§2.6.3, §18.4).
+    assert notice.body == (
+        "The Maity address of your account at https://hub.example was changed to n…@example.org "
+        f"on {clock.rfc3339(moment)}.\n{where}\n\n" + check
+    )
+    owner.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
+    removed = outbox_rows(migrated)[-1]
+    assert (removed.recipient, removed.subject) == (
+        "new@example.org",
+        "[Maity] Your sign-in address was changed",
+    )
+    assert removed.body == (
+        "The Maity address of your account at https://hub.example was removed "
+        f"on {clock.rfc3339(moment)}.\n{where}\n\n" + check
+    )
+
+
+def test_the_address_mails_follow_the_human_s_language(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = with_mail(make_client, migrated)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human).where(t.human.c.id == owner.id).values(interface_language="de")
+        )
+    owner.patch(S, {"email": {"address": "old@example.org"}})
+    sent = outbox_rows(migrated)[-1]
+    assert sent.subject == "[Maity] Adresse bestätigen"
+    assert sent.body.startswith(
+        "Jemand möchte Maity-Mails von https://hub.example an old@example.org senden lassen."
+    )
+    owner.client.post(f"/mail/verify/{link(sent, 'verify')}")
+    owner.patch(S, {"email": {"address": "new@example.org"}, "current_password": factory.PASSWORD})
+    owner.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}")
+    notice = outbox_rows(migrated)[-1]
+    assert notice.recipient == "old@example.org"
+    assert notice.subject == "[Maity] Deine Anmeldeadresse wurde geändert"
+    assert "wurde am " in notice.body and " auf n…@example.org geändert." in notice.body
+    assert notice.body.endswith(
+        "Warst du das nicht, melde dich an und prüfe deine Sitzungen: "
+        "https://hub.example/account/sessions\n"
+    )
+
+
+# --- where the change was asked from (§2.6.3, §18.4) -------------------------------------
+
+
+def _origin(engine: Engine, human_id: str) -> tuple[Any, Any, Any]:
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(
+                t.notification_settings.c.pending_browser,
+                t.notification_settings.c.pending_os,
+                t.notification_settings.c.pending_ip,
+            ).where(t.notification_settings.c.human_id == human_id)
+        ).one()
+    return (row.pending_browser, row.pending_os, row.pending_ip)
+
+
+def _set_session(engine: Engine, human_id: str, browser: str, os: str, ip: str) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.human_session)
+            .where(t.human_session.c.human_id == human_id)
+            .values(browser=browser, os=os, ip=ip)
+        )
+
+
+def test_a_verified_change_tells_the_old_address_where_it_was_asked_from(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = verified(make_client, migrated, "old@example.org")
+    assert _origin(migrated, owner.id) == (None, None, None)  # nothing kept once verified
+    _set_session(migrated, owner.id, "Firefox", "Linux", "198.51.100.7")
+    owner.patch(S, {"email": {"address": "new@example.org"}, "current_password": factory.PASSWORD})
+    assert _origin(migrated, owner.id) == ("Firefox", "Linux", "198.51.100.7")
+    # The session changes after the request; the notice names where the change was asked.
+    _set_session(migrated, owner.id, "Safari", "macOS", "203.0.113.50")
+    owner.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}")
+    notice = outbox_rows(migrated)[-1]
+    assert notice.recipient == "old@example.org"
+    assert "\nFrom: Firefox on Linux, 198.51.100.7\n" in notice.body
+    assert "Safari" not in notice.body
+    assert _origin(migrated, owner.id) == (None, None, None)  # deleted at the verification
+
+
+def test_the_origin_is_replaced_removed_and_voided_with_the_pending_address(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    factory.earlier_admin(migrated)  # the admin's address is never removed (§18.4)
+    owner = verified(make_client, migrated, "old@example.org")
+    body = {"email": {"address": "new@example.org"}, "current_password": factory.PASSWORD}
+    _set_session(migrated, owner.id, "Firefox", "Linux", "198.51.100.7")
+    owner.patch(S, body)
+    _set_session(migrated, owner.id, "Chrome", "Windows", "198.51.100.8")
+    owner.patch(S, {**body, "email": {"address": "newer@example.org"}})  # a new request
+    assert _origin(migrated, owner.id) == ("Chrome", "Windows", "198.51.100.8")
+    with migrated.begin() as conn:
+        preferences.void_pending_address(conn, owner.id)  # a new password (§2.10)
+    assert _origin(migrated, owner.id) == (None, None, None)
+    owner.patch(S, body)
+    assert _origin(migrated, owner.id) == ("Chrome", "Windows", "198.51.100.8")
+    owner.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
+    assert _origin(migrated, owner.id) == (None, None, None)
+
+
+def test_a_change_asked_before_the_hub_kept_where_names_nothing(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    owner = verified(make_client, migrated, "old@example.org")
+    owner.patch(S, {"email": {"address": "new@example.org"}, "current_password": factory.PASSWORD})
+    with migrated.begin() as conn:  # as a row pending at the migration
+        conn.execute(
+            update(t.notification_settings)
+            .where(t.notification_settings.c.human_id == owner.id)
+            .values(**preferences.NO_PENDING_ORIGIN)
+        )
+    owner.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}")
+    notice = outbox_rows(migrated)[-1]
+    assert notice.recipient == "old@example.org" and "From:" not in notice.body

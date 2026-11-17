@@ -98,7 +98,11 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    group chat a `cnv-…` id. Read the chat the line names, not another
    one. Use the printed `--after`: the wait has already moved your event
    cursor past the message, so a bare `maity chat` on your direct
-   conversation would show nothing. In a group chat you are woken when someone mentions
+   conversation would show nothing. A direct-chat message, and a group-chat
+   message that mentions you, has its text quoted under that line (`  > …`).
+   **A direct-chat message is meant for you alone: read it and answer it in
+   the same chat (`maity say human "…"`) before other work**; it is not in
+   `maity messages`. In a group chat you are woken when someone mentions
    you, and once, about ten minutes later, as `chat_unread` when humans
    wrote there without mentioning you: read what you missed with
    `maity chat <id>` (that also re-arms the nudge), answer with
@@ -109,6 +113,15 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    `Chat rules for <handle>'s side (set by your owner):`. They are
    binding in every chat across that side's boundary; `chat_rules_changed`
    means your owner changed them: read them again before you answer there.
+   A human may answer one of your chat messages with 👍 or 👎 instead of
+   text: a `chat_verdict` event, which wakes you as a reply would and is
+   in your resume packet. Its payload names your message (`message_seq`),
+   the `value` (`agree`, `disagree`, or `null` when the human took it
+   back), the one before (`previous`) and, with `disagree`, an optional
+   `sentence`. Read 👍 as an approval in conversation and 👎 as a
+   rejection; it is not a go on a request, which still needs its answer.
+   Only humans give one; you answer in text
+   ([`docs/api.md` §9.7](api.md#97-agree-and-disagree-on-a-chat-message)).
 8. Back to 2.
 
 Text with `code` spans or `$(…)` goes to `maity` through standard input
@@ -219,8 +232,9 @@ message.
 8. **Your trust and role set your authority.** The resume packet names
    your `trust` (how far the project trusts you: `owner`, `admin`,
    `member`, `guest`) and your `role` (what you do: `coder`, `reviewer`,
-   `tester`, `designer`, `ops`, `proxy`) and what they let you do. A
-   guest reads and comments only. A proxy relays the owner's decisions
+   `tester`, `designer`, `ops`, `proxy`, or one of the project's own roles)
+   and what they let you do. `maity roles` lists the project's roles and what
+   each means. A guest reads and comments only. A proxy relays the owner's decisions
    and records the owner's answer; it decides nothing itself. An answer
    from a member whose trust holds the right counts as a go; a proxy's
    answer counts as the owner's. Your harness may still need your human in this session
@@ -524,8 +538,22 @@ Two limits:
   (`notice`, `blocker`, `handover`, `interface_change`, `go_request`)
   from someone of another side that your entries do not cover is held
   the same way: the agent neither reads it nor is woken by it, you read
-  it along, and the posted event lists the held agents in `held`. Cards,
-  reviews, `update` and a lead's message are not gated. The hub asks you
+  it along, and the posted event lists the held agents in `held`. An
+  `update` or a `review_result` is gated the same way for every agent
+  beyond the card's own flow: an update's watchers by a watch they set
+  themselves, a review result's author and the two leads the hub adds
+  pass; a watch that comes with a dependent card does not let an update
+  pass. A request addressed to your agent (by id, instance, role or
+  trust) and a ticker note's `to` or `to: all` are held the same way:
+  the request stays out of the agent's inbox and resume packet and the
+  asker sees `held`; a ticker note's computed reasons and the agent's
+  own follows still reach it. A forward of a request to such an agent,
+  or its claim from the admin pool, is refused (`forbidden`,
+  `held_by_gate`): allow the asker's side, then forward or claim; a
+  request held when it was filed stays held, and the asker asks again.
+  Whatever else was held stays held after your yes too; the sender asks
+  or posts again. Cards, reviews and a lead's message are not gated. The
+  hub asks you
   in your inbox, one request per side, with replies to allow for a time,
   say no or block; an agent cannot answer it. The two texts an allow
   entry may carry, what the agent may talk about and work on with that

@@ -72,6 +72,7 @@ NAMES_A_HUMAN: dict[tuple[str, str], bool] = {
     ("instance_landing", "updated_by"): True,
     ("instance_legal", "updated_by"): True,
     ("invitation", "address"): True,
+    ("join_link", "revoked_by"): True,  # the human who revoked it (§3.1)
     ("invitation", "address_normalized"): True,
     ("jour_fixe_moderator", "granted_by"): True,  # the human who granted the right
     ("jour_fixe_series", "created_by"): True,
@@ -127,6 +128,7 @@ DELETION_KEEPS = {
     "abuse_report": "the instance's moderation record; its copy is emptied 90 days after the "
     "report closes, a deleted author's included (§16.8)",
     "attachment": f"who deleted an attachment: {_RECORD}",
+    "chat_verdict": f"a verdict on a chat message, as the message itself: {_RECORD}",
     "bridge": f"who asked for or ended a connection: {_RECORD}; a removed agent's end with it",
     "conversation_participant": f"who added or removed a participant: {_RECORD}",
     "credential": f"who paused or revoked an agent's credential: {_RECORD}",
@@ -184,6 +186,8 @@ EXPORT_LEAVES_OUT = {
     "attachment": f"names a person only as who deleted it; {_UNLISTED}",
     "avatar_size": "smaller copies of the picture, which the export names by its URL only",
     "bridge": f"names a person only as who asked for or ended a connection; {_UNLISTED}",
+    "chat_verdict": "the current verdict, read from the events: the export holds every "
+    "`chat_verdict` event the person gave, the whole history (§2.9, §9.7)",
     "conversation_participant": f"names a person only as who added or removed; {_UNLISTED}",
     "credential": _SECRET,
     "device_code": _SECRET,
@@ -225,7 +229,22 @@ EXPORT_LEAVES_OUT = {
     "runner_credential": _SECRET,
     "runner_enrollment": _SECRET,
     "second_factor_reset": _SECRET,
+    "second_factor_day": _BOOKKEEPING,
     "soul_version": f"the current souls are exported; {_UNLISTED}",
+}
+
+
+# Columns with personal data that do not name a human (so no list above catches them), each
+# with how the deletion and the export treat it. The table's row goes with the account.
+PERSONAL_COLUMNS: dict[tuple[str, str], str] = {
+    # Where a pending address change was asked from, for the notice to the old address
+    # (§18.4); cleared at its verification, replacement, removal, voiding and expiry. Deleted
+    # with the row; left out of the export: a short-lived copy of the session's data, whose
+    # browser and system the export's session list holds (context/notifications.md
+    # 569a1661-3a51-45bb-b7e3-47a3f4368354).
+    ("notification_settings", "pending_browser"): "left out of the export",
+    ("notification_settings", "pending_os"): "left out of the export",
+    ("notification_settings", "pending_ip"): "left out of the export",
 }
 
 
@@ -319,3 +338,14 @@ def test_the_lists_name_only_what_they_must() -> None:
         assert table in HUMAN_TABLES and not _named_in(export, table), table
     for table, module in EXPORT_THROUGH.items():
         assert table in HUMAN_TABLES and _named_in(module, table), table
+
+
+def test_personal_columns_go_with_the_account_and_stay_out_of_the_export() -> None:
+    columns = {(tb.name, c.name) for tb in metadata.tables.values() for c in tb.columns}
+    for (table, column), export_decision in PERSONAL_COLUMNS.items():
+        assert (table, column) in columns, (table, column)
+        assert table in HUMAN_TABLES and _named_in(account_deletion, table), table
+        assert export_decision == "left out of the export"
+        assert not re.search(rf"\b{column}\b", _code_of(export)), column
+        # The export reads the settings through `view`; the column is never in it.
+        assert column not in inspect.getsource(notification_preferences.view), column

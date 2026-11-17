@@ -748,18 +748,89 @@ def _chat_suffix(event: dict[str, Any]) -> str:
     the message, and a direct conversation's unread read starts there, so it would show
     nothing (cli/context/commands.md). An id or seq the CLI would not put in a command is
     named without one; empty for any other event."""
-    if event.get("kind") != "message" or onboarding.get(event, "payload", "type") != "chat":
+    chat = _chat_id(event)
+    if chat is None:
         return ""
+    command = _chat_command(event)
+    return f" in {chat}: {command}" if command else f" in {onboarding.inline(chat)[:120]}"
+
+
+def _chat_id(event: dict[str, Any]) -> str | None:
+    """The conversation a chat message is in, as the payload names it; None for any other
+    event and for a chat message that names none."""
+    if event.get("kind") != "message" or onboarding.get(event, "payload", "type") != "chat":
+        return None
     chat = onboarding.get(event, "payload", "conversation_id")
     if not isinstance(chat, str) or not chat:
         group = onboarding.get(event, "payload", "conversation")
         chat = group.get("id") if isinstance(group, dict) else None
-    if not isinstance(chat, str) or not chat:
-        return ""
-    seq = event.get("seq")
-    if not FETCHABLE_ID.fullmatch(chat) or not _positive_int(seq):
-        return f" in {onboarding.inline(chat)[:120]}"
-    return f" in {chat}: maity chat {chat} --after {seq - 1}"
+    return chat if isinstance(chat, str) and chat else None
+
+
+def _chat_command(event: dict[str, Any]) -> str | None:
+    """`maity chat <id> --after <seq - 1>`, the read that shows this chat message; None when
+    the id or seq is not one the CLI puts in a command."""
+    chat, seq = _chat_id(event), event.get("seq")
+    if chat is None or not FETCHABLE_ID.fullmatch(chat) or not _positive_int(seq):
+        return None
+    return f"maity chat {chat} --after {seq - 1}"
+
+
+def _meant_for(
+    event: dict[str, Any], member: str | None, instance: str | None, carried: bool = False
+) -> bool:
+    """Whether a chat message is meant for this reader: one in its direct conversation (§9.1;
+    a group chat's payload carries `conversation`, a direct one's does not), or in a group chat
+    one whose `mentions` (§8.6) name it as the hub counts a mention for its wake
+    (`hub/src/maity_hub/events.py`, the group chat rule): the agent; this instance; any
+    instance when the reader has no instance and is no bridge; or another instance whose
+    mention the write resolved to this one, a replaced instance's successor, whose token is
+    then in the event's `audience` (§8.2). A bridge (`carried`, `--for`) reads as the agent's
+    `member:` token, so an instance mention is not meant for it. Never the reader's own."""
+    if not member or _chat_id(event) is None:
+        return False
+    if onboarding.get(event, "actor", "member_id") == member:
+        return False  # its own echo, from this instance or another
+    group = onboarding.get(event, "payload", "conversation")
+    if not isinstance(group, dict) or group.get("kind") == "direct":
+        return True
+    audience = event.get("audience")
+    resolved = (
+        instance is not None
+        and isinstance(audience, list)
+        and f"instance:{member}#{instance}" in audience
+    )
+    mentions = onboarding.get(event, "payload", "mentions")
+    return any(
+        isinstance(m, dict)
+        and m.get("member_id") == member
+        and (
+            m.get("instance") is None
+            or (instance is None and not carried)
+            or m.get("instance") == instance
+            or resolved
+        )
+        for m in (mentions if isinstance(mentions, list) else [])
+    )
+
+
+def _chat_body_lines(
+    event: dict[str, Any], member: str | None, instance: str | None, carried: bool = False
+) -> list[str]:
+    """Under the event line, the text of a chat message meant for this reader (`_meant_for`),
+    every line quoted as `maity chat` quotes a body and cut as the resume cuts one, with the
+    read that shows it all (tsk-kk0ay1an04cf): it is not in `maity messages`, and an agent
+    that saw only the line missed its owner's direct messages for hours. Data, as
+    `DATA_NOTE` says below it; attachments stay metadata, named on the line. Empty for any
+    other event, a group chat's message that does not mention the reader included, and for a
+    redacted one: its tombstone carries no text (§8.5)."""
+    if not _meant_for(event, member, instance, carried):
+        return []
+    body = onboarding.get(event, "payload", "body")
+    if event.get("redacted") or not isinstance(body, str):
+        return []
+    pointer = _chat_command(event) or "maity chats"
+    return ["  " + line for line in onboarding.capped(body, pointer)]
 
 
 ATTACHMENT_NAME_MAX = 60  # characters of one name in the event line
@@ -835,12 +906,17 @@ POLL_SLACK = 10.0  # seconds a long-poll leaves the hub to answer before the rea
 def _unread_note(session: Session, budget: float) -> None:
     """On a timeout, one line on stderr when chats hold unread messages: a group chat's
     messages wake nobody unless they mention you (§9.2), so a quiet wait can hide them. A
-    hint only, within what is left of --timeout: a hub that does not answer leaves it out."""
+    hint only, within what is left of --timeout: a hub that does not answer leaves it out.
+    `renew=false`: the read is part of waiting, so it renews no lease (§2.4, §9.3); a hub
+    that predates the parameter ignores it and renews as before."""
     if budget < 0.5:
         return
     try:
         page = session.client.call(
-            "GET", session.project_path("conversations"), query=[("limit", "50")], timeout=budget
+            "GET",
+            session.project_path("conversations"),
+            query=[("limit", "50"), ("renew", "false")],
+            timeout=budget,
         )
     except hub.HubError:
         return
@@ -1043,6 +1119,10 @@ def cmd_wait(args: argparse.Namespace) -> int:
             ruled: dict[str, list[str]] = {}  # one read of a chat's view per wake
             for event in taken:  # one line a person reads; stdout stays the JSON scripts parse
                 _err(_event_line(event))
+                # Its text, when the message is meant for this agent: a direct chat, a mention.
+                carried = session.for_member is not None
+                for line in _chat_body_lines(event, session.me, session.my_instance, carried):
+                    print(line, file=sys.stderr)  # quoted, no `maity:` prefix: the author's text
                 for line in _attachment_lines(event):  # part of the message: open them first
                     print(line, file=sys.stderr)  # no `maity:` prefix: the line is the command
                 chat = _group_chat_of(event)
@@ -2348,7 +2428,12 @@ def cmd_say(args: argparse.Namespace) -> int:
     # The review is checked in the clone before any request, the recipient's lookup included:
     # a refused review asks nothing of the hub.
     if review is not None:
-        cites = citecheck.check(Path.cwd(), review)
+        cites = citecheck.check(_review_clone(), review)
+        if cites.refused:
+            # Under a placement the clone is the runner's: one its checks refuse is not "no
+            # clone here", and a review checked nowhere is not sent (cli/context/commands.md).
+            _err(f"not sent: the review's cites cannot be checked: {cites.unchecked}")
+            return EXIT_ERROR
         names = (
             textcheck.check(cites.top, review["head"], text).bad if cites.top is not None else []
         )
@@ -2417,6 +2502,16 @@ def _say_event(
 
     event = _post_with(session, attach, post)
     return _done(args, event, f"{said} (seq {_field(event, 'seq')})")
+
+
+def _review_clone() -> Path:
+    """Where a review's cites are checked: under a runner placement the runner's clone,
+    whatever directory the agent works in (for agy the workspace folder that holds it as
+    `repo`, §15.5); else the current directory. A placement whose clone cannot be named is
+    refused before anything is sent (CommandError): maity never falls back to the current
+    directory there (cli/context/runner.md b4a8030d)."""
+    root = _placement_clone()
+    return root if root is not None else Path.cwd()
 
 
 def _say_body(value: str | None, attach: list[str]) -> str:
@@ -3518,6 +3613,41 @@ def cmd_runners(args: argparse.Namespace) -> int:
             f"{show(runner.get('id'))}  {show(runner.get('name'))}  {show(runner.get('presence'))}"
             f"  {show(caps.get('running'))}/{show(caps.get('max_agents'))} running"
             f"  tools: {tools or '-'}"
+        )
+    return EXIT_OK
+
+
+def cmd_roles(args: argparse.Namespace) -> int:
+    """`GET …/roles` (§2.3): the built-in roles and the project's own, each with what it means;
+    a project role with the built-in role whose permissions it has. Read only: a project's roles
+    are set by a human with `project:admin`, in the dashboard."""
+    session = Session()
+    answer = session.client.call("GET", session.project_path("roles"))
+    if args.json:
+        _print_json(answer)
+        return EXIT_OK
+    answer = _obj(answer)
+
+    def entries(key: str) -> list[dict[str, Any]]:
+        return [r for r in answer.get(key) or [] if isinstance(r, dict)]
+
+    def show(role: dict[str, Any], line: str) -> None:
+        description = role.get("description")
+        print(f"  {line}: {onboarding.inline(description)}" if description else f"  {line}")
+        if args.guide and role.get("guide"):
+            for quoted in onboarding.quote(role["guide"]):
+                print(f"    {quoted}")
+
+    print("built-in roles")
+    for role in entries("builtin"):
+        show(role, onboarding.inline(role.get("name")))
+    own = entries("custom")
+    print("project roles" if own else "project roles: none")
+    for role in own:
+        show(
+            role,
+            f"{onboarding.inline(role.get('name'))} (permissions of "
+            f"{onboarding.inline(role.get('base'))})",
         )
     return EXIT_OK
 
@@ -4790,11 +4920,11 @@ def build_parser() -> argparse.ArgumentParser:
         "claim",
         "take a card: it stays yours until it is closed or you give it back",
         "Claim an open card (POST …/tasks/{card}/claim). The lease is renewed by every call this "
-        "agent makes except the events long-poll, the wait for events inside `maity wait`. The "
-        "unread-chats check `maity wait` makes on a timeout is an ordinary call and does renew "
-        "it. Nothing is released automatically, an expired lease included: the card stays yours "
-        "until you give it back or someone takes it over. In a project in plan or review, "
-        "--reason is required.",
+        "agent makes except the waits inside `maity wait`: the events long-poll and the "
+        "unread-chats check it makes on a timeout (a hub that predates that check's "
+        "`renew=false` ignores it and renews as before). Nothing is released automatically, an "
+        "expired lease included: the card stays yours until you give it back or someone takes "
+        "it over. In a project in plan or review, --reason is required.",
     )
     p.add_argument("card", type=_id, help="the card id, e.g. tsk-0004")
     p.add_argument("--reason", help="why, when the project is in plan or review")
@@ -5425,7 +5555,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument(
         "--needs",
         metavar="ROLE",
-        help="which role the card is for (coder, reviewer, a project role, ...); routes nothing",
+        help="which role the card is for (coder, reviewer, a project role, ...; `maity roles` "
+        "lists them); routes nothing",
     )
     r.add_argument("--parent", type=_id, help="make it a subtask of this card")
     r.add_argument(
@@ -5606,6 +5737,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_runners)
+
+    p = add(
+        "roles",
+        "the project's roles: the built-in ones and its own, with what each means",
+        "List the project's roles (GET …/roles, §2.3): each built-in role and each of the "
+        "project's own roles with its description, a project role with the built-in role whose "
+        "permissions it has. Read only: a human with project:admin sets them in the dashboard.",
+    )
+    p.add_argument("--guide", action="store_true", help="also print each role's guide")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_roles)
 
     p = sub.add_parser(
         "help",

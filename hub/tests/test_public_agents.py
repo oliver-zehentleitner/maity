@@ -34,9 +34,20 @@ def person_page(world: World, handle: str = "maintainer") -> str:
 
 
 def stat(text: str, label: str) -> str:
-    found = re.search(rf"<li>{re.escape(label)}: ([^<]*)</li>", text)
+    """A figure of the band (public_design.profile_band), by its label."""
+    found = re.search(
+        rf'<div class="stat"><b>([^<]*)</b><span class="label">{re.escape(label)}</span>', text
+    )
     assert found is not None, label
     return found.group(1)
+
+
+def statistics(world: World) -> dict[str, Any]:
+    """The agent's statistics as the visitors' route answers them: the medians are in `data`
+    only, the stored page in the dashboard's design draws the four counts (§16.9)."""
+    got = world.anyone.get(f"/api/v1/public/pages/maintainer/agents/{handle_of(world)}")
+    assert got.status_code == 200, got.text
+    return dict(got.json()["data"]["statistics"])
 
 
 def test_an_agent_has_a_page_whatever_its_owner_s_profile(world: World) -> None:
@@ -44,11 +55,14 @@ def test_an_agent_has_a_page_whatever_its_owner_s_profile(world: World) -> None:
     assert text is not None
     me = world.bot.get("/me").json()["member"]
     assert f"<h1>{me['display_name']}</h1>" in text
-    assert '<a href="/maintainer">Human maintainer</a>' in text
-    assert '<a href="/maintainer/maity">Maity</a>' in text
+    assert '<p class="owner">Agent of <a href="/maintainer">' in text
+    assert "<b>Human maintainer</b></a></p>" in text
+    assert '<a class="pcard" href="/maintainer/maity">' in text and "<b>Maity</b>" in text
     assert '<link rel="canonical" href="https://hub.example/maintainer/agents/' in text
-    for word in ("online", "briefing", "instance", "harness", "model"):
-        assert word not in text.split("<main")[1]
+    # The report control's label names the instance's admins, not an instance of the agent.
+    shown = re.sub(r'<p class="report-row">.*?</p>', "", text.split("<main")[1])
+    for word in ("online", "Online", "briefing", "instance", "harness", "Harness", "model"):
+        assert word not in shown
     world.owner.patch("/me", {"public_profile": False})  # the owner's page stays, so does this
     assert agent_page(world) is not None
 
@@ -73,7 +87,7 @@ def test_a_new_name_is_on_the_page_at_once(world: World) -> None:
     assert "<h1>Renamed Agent</h1>" in text and f"<h1>{agent['display_name']}</h1>" not in text
     moved = world.owner.patch("/projects/maintainer/maity", {"name": "Maity Two"})
     assert moved.status_code == 200, moved.text
-    assert ">Maity Two</a>" in (agent_page(world) or "")
+    assert "<b>Maity Two</b>" in (agent_page(world) or "")
 
 
 def test_an_isolated_agent_and_an_agent_under_a_hold_have_no_page(world: World) -> None:
@@ -152,16 +166,17 @@ def test_the_statistics_are_the_agent_s_alone_over_its_public_projects(
         public_pages.touch(conn, "project", second_id)
     text = agent_page(world) or ""
     assert stat(text, "Cards done") == "3"
-    assert '<a href="/maintainer/second">Second</a>' in text
-    assert stat(text, "Handovers") == "0" and stat(text, "Median, claim to done") == "-"
+    assert '<a class="pcard" href="/maintainer/second">' in text and "<b>Second</b>" in text
+    assert stat(text, "Handovers") == "0"
+    assert statistics(world)["claim_to_done_median_seconds"] is None
 
 
 def test_the_person_page_lists_their_projects_and_the_agents_with_a_page(world: World) -> None:
     world.owner.patch("/me", {"public_profile": True})
     handle = handle_of(world)
     text = person_page(world)
-    assert "<h2>Projects</h2>" in text and '<a href="/maintainer/maity">Maity</a>' in text
-    assert f'<a href="/maintainer/agents/{handle}">' in text
+    assert "<h2>Projects</h2>" in text and '<a class="pcard" href="/maintainer/maity">' in text
+    assert f'<a class="mcard" href="/maintainer/agents/{handle}"' in text
     # a project whose page goes off leaves the person's page, and so does the agent
     world.owner.patch("/projects/maintainer/maity", {"public_page": "off"})
     text = person_page(world)
@@ -170,9 +185,9 @@ def test_the_person_page_lists_their_projects_and_the_agents_with_a_page(world: 
 
 def test_a_member_s_person_page_lists_the_project(world: World) -> None:
     world.anna.patch("/me", {"public_profile": True})
-    assert '<a href="/maintainer/maity">Maity</a>' in person_page(world, "anna")
+    assert '<a class="pcard" href="/maintainer/maity">' in person_page(world, "anna")
     world.owner.patch("/projects/maintainer/maity", {"name": "Renamed Project"})
-    assert ">Renamed Project</a>" in person_page(world, "anna")
+    assert "<b>Renamed Project</b>" in person_page(world, "anna")
     assert shown(world.anyone)  # the project's own page is unaffected
 
 
@@ -192,7 +207,7 @@ def test_a_person_page_follows_an_agent_in_a_project_its_owner_is_no_member_of(
     # the join: the owner's page lists the agent, the agent has its page
     with migrated.begin() as conn:
         public_pages.touch(conn, "project", world.project_id)
-    assert f'<a href="/carol/agents/{handle}">' in person_page(world, "carol")
+    assert f'<a class="mcard" href="/carol/agents/{handle}"' in person_page(world, "carol")
     assert agent_page(world, handle, "carol") is not None
     # a new name is on both at once
     with migrated.begin() as conn:
@@ -204,7 +219,7 @@ def test_a_person_page_follows_an_agent_in_a_project_its_owner_is_no_member_of(
         from maity_hub import public_projects
 
         public_projects.touch_of_agent(conn, bot.agent_id)
-    assert ">Carol Bot</a>" in person_page(world, "carol")
+    assert "<b>Carol Bot</b>" in person_page(world, "carol")
     # the isolation takes the link away at once, though carol is no member
     isolate = f"/projects/maintainer/maity/members/{bot.agent_id}/isolate"
     assert world.owner.post(isolate, {"reason": "it rewrote the release notes"}).status_code == 200
@@ -256,5 +271,5 @@ def test_the_medians_are_pooled_over_the_projects_and_the_counters_summed(
     text = agent_page(world) or ""
     # the six samples pooled have the median 650 s (10 min); the medians of the two projects, 200 s
     # and 2000 s, would average 1100 s (18 min)
-    assert stat(text, "Median, claim to done") == "10 min"
+    assert statistics(world)["claim_to_done_median_seconds"] == 650
     assert stat(text, "Reviews given") == "5" and stat(text, "Pull requests merged") == "3"

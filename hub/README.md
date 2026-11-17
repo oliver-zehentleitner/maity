@@ -245,12 +245,16 @@ All settings come from the environment.
 | `MAITY_DIRECT_DATABASE_URL` | unset | PostgreSQL only: the URL for the one connection per hub process that listens (`LISTEN`) for the wake-ups other replicas send, so a long-poll wakes when another replica writes. Set it when `MAITY_DATABASE_URL` goes through a pooler in transaction mode, which cannot hold a `LISTEN`; unset, the listener uses `MAITY_DATABASE_URL`. |
 | (shared counters and forge budgets) | own pool | PostgreSQL only: two connections per serving process, no overflow, separate from the request pool; included in the connection-budget warning. SQLite and MariaDB keep process-local counters. |
 | (the health check) | own connection | Not a setting. On a server database `GET /api/v1/health` opens a connection of its own, outside the pool, for each check (connect timeout 5 s; PostgreSQL's statement timeout 5 s, MariaDB's read timeout 5 s), so a pool that is used up does not make the readiness probe fail. SQLite has one engine. |
-| `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`). A key that changes makes every stored secret unusable until it is set again.
+| `MAITY_SECRET_KEY` | unset | The instance key for secrets stored at rest (`docs/api.md` §16.2, §17.4): 32 random bytes, base64 (`head -c 32 /dev/urandom \| base64`). AES-256-GCM, a random nonce per value and the field's name as associated data. Never in the database, never logged or returned; a value that is not 32 base64 bytes stops the hub. Without it a forge webhook secret cannot be created (`secret_key_missing`) and agent and runner credential verifiers are stored plain (`docs/api.md` §2.2). A key that changes makes every stored secret unusable until it is set again, and every agent and runner joins again.
+| `MAITY_SEAL_VERIFIERS` | `0` | `1` seals the verifiers of agent and runner credentials at rest with `MAITY_SECRET_KEY` (`docs/api.md` §2.2); needs the key, or the hub does not start. Opt-in, default off: off, new verifiers are stored plain as before. Sealed verifiers are read either way while the key is set. After switching it on, `maity-hub seal-verifiers` seals the verifiers stored before (idempotent, prints a count; it refuses while the setting is off). No migration seals (`20261114020000_sealed_verifiers` only widens the column). The startup log counts plain verifiers and says whether sealing is on. |
 | `MAITY_TRUSTED_PROXIES` | empty | Comma-separated addresses or CIDRs of reverse proxies whose `X-Forwarded-Proto` and `X-Forwarded-For` the hub believes. Empty: forwarded headers change nothing. |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | `1` lets bearer credentials, logins and cookies travel over plain HTTP from any address. Only for a hub reachable on one machine or a private network; logged as a warning. Without it, plain HTTP is accepted from loopback only. The cookies' `Secure` flag follows the scheme a request arrived with, whatever this says. |
 | `MAITY_HSTS_MAX_AGE` | `31536000` | `Strict-Transport-Security: max-age=<seconds>` on every answer that went out over TLS (as decided by `MAITY_TRUSTED_PROXIES`), 0 to 63072000; `0` sends none. A plain-HTTP answer never carries it, so a hub at home over `http://` is unaffected. No `includeSubDomains`. (`docs/api.md` §1.1, §2.5) |
 | `MAITY_FORGE_GITHUB_TOKEN` | unset | The read-only GitHub token of the forge probe: fine-grained, with read access to Contents, Pull requests, Checks and Commit statuses of the repositories the hub probes (without Checks or Commit statuses, `checks` reads `unknown`; a repository the token cannot see is `probe_unavailable`, never a missing pull request). It is sent only to `api.github.com`, never logged or returned. Without it no release is ever ready. It reads only for projects in `MAITY_FORGE_INSTANCE_NAMESPACES`. |
 | `MAITY_FORGE_INSTANCE_NAMESPACES` | empty | The operator's own namespaces, comma separated (a human's handle or an organisation's, compared in lower case): the only projects the token above reads for, and there only public repositories (`docs/api.md` §11.4). Empty: it serves no project; every other project is read through its namespace owner's GitHub App installation or token. A listed name nobody has is held for the operator (registration, `POST /orgs` and renames answer `reserved`; `maity-hub owner create` may take it), and the hub warns at start about such a name and about a listed former name. |
+| `MAITY_FORGE_GITHUB_APP_ID`, `MAITY_FORGE_GITHUB_APP_SLUG` | unset | The GitHub App of the instance (`docs/api.md` §11.4): its id and its URL name, for the installation link. All five `MAITY_FORGE_GITHUB_APP_*` or none; a partial set stops the hub. |
+| `MAITY_FORGE_GITHUB_APP_PRIVATE_KEY` | unset | The App's private key (PEM), from a Secret; never logged, never in an answer. |
+| `MAITY_FORGE_GITHUB_APP_CLIENT_ID`, `MAITY_FORGE_GITHUB_APP_CLIENT_SECRET` | unset | The App's OAuth client, used once per link to confirm who installed it; the secret from a Secret. |
 | `MAITY_SMTP_HOST`, `MAITY_SMTP_PORT` | unset; port 587, 465 or 25 by `MAITY_SMTP_TLS` | The one SMTP server the hub sends through (`docs/api.md` §16.2). Every mail setting may instead be set by the instance admin in the dashboard; a value set here wins and cannot be changed there. |
 | `MAITY_SMTP_TLS` | `starttls` | `starttls`, `implicit` or `none`. Under `starttls` a server without STARTTLS fails the send; nothing goes out in clear. `none` only for `localhost` or a loopback address; any other host stops the hub at startup. |
 | `MAITY_SMTP_CA_FILE` | unset | A PEM file the server's certificate is verified against instead of the system store. Certificates are always verified. |
@@ -261,6 +265,7 @@ All settings come from the environment.
 | `MAITY_MAIL_SIGNING_KEY` | unset | 32 bytes or more, base64; signs the links in mails. Without it the hub sends no mail. |
 | `MAITY_SMTP_ALLOW_PLAINTEXT` | `0` | **Insecure**, for a test bench only: `1` sends in clear to a server that offers no STARTTLS (still never `AUTH`). Logged as a warning at startup and at every such send. |
 | `MAITY_SIGN_IN_DEVICE_CODE`, `MAITY_SIGN_IN_EMAIL_LINK`, `MAITY_SIGN_IN_PASSWORD_RESET` | unset | `1` or `0`: switch a sign-in method, or the reset of a forgotten password by mail, on or off for good (`docs/api.md` §2.6.6, §2.10); unset leaves it to the instance admin (default on). The password cannot be switched off. |
+| `MAITY_ON_RUNNER_REVOKE` | `keep` | What revoking or removing a runner does to its agents in projects whose policy says `inherit`: `keep`, `stop` or `stop_floor` (`docs/api.md` §15.3, §16). |
 | `MAITY_WEB_DIR` | `web/` beside `hub/` in a checkout; the dashboard the package carries (`maity_hub/web`) when installed | The static dashboard. When set explicitly it must exist; otherwise a missing directory means the API is served alone. Dotfiles, paths under `/api`, and web/'s `fixtures/` and `tools/` are never served from it. |
 
 Moving a volume's files into the bucket: `maity-hub attachments copy-to-s3` copies every file under `MAITY_ATTACHMENT_DIR` into the bucket of the `s3` settings, under the same key, and skips an object the bucket already holds with the same SHA-256; an object the hub wrote with other bytes is reported, not overwritten (exit 1), and a file whose attachment is deleted or has no row is not copied. With `--apply` it then removes from the bucket what was deleted since an earlier run (a deleted attachment's object at once, an object no row names once it is 30 minutes old), and leaves alone the objects of a project the database does not know. Without `--apply` it only counts, the removals too, and it never changes the files. There is no copy back: after the switch, new uploads are only in the bucket. Run it with `MAITY_ATTACHMENT_STORE=s3` before switching the store, and once more after (`deploy/helm/maity-hub/README.md`, *Moving attachments to S3*). With the bucket's versioning on, a deletion is final only once a lifecycle rule expires the noncurrent versions.
@@ -271,7 +276,7 @@ What an instance needs before strangers can register, in the order of
 [Opening registration](../docs/install/README.md#opening-registration).
 All but `MAITY_PUBLIC_URL`, `MAITY_REGISTRATION_BREAKER`, `MAITY_SECRET_KEY`,
 `MAITY_MAIL_SIGNING_KEY`, `MAITY_TRUSTED_PROXIES`,
-`MAITY_ALLOW_PLAIN_HTTP` and the `MAITY_PUBLIC_PAGES*` settings can also
+`MAITY_ALLOW_PLAIN_HTTP`, `MAITY_AGENT_FIREWALL` and the `MAITY_PUBLIC_PAGES*` settings can also
 be set by the instance admin in the dashboard; the environment wins.
 
 | Variable | Default | Without it | Contract |
@@ -279,7 +284,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_PUBLIC_URL` | derived from the bind address | Links in mails and join lines point at the wrong address. | §1.1 |
 | `MAITY_TRUSTED_PROXIES` | empty | Behind a proxy, every client shares the proxy's address and one rate-limit bucket, and the request does not count as HTTPS. | §2.5 |
 | `MAITY_ALLOW_PLAIN_HTTP` | `0` | Leave it off on a public instance: `1` lets credentials and cookies travel unencrypted. | §2.5 |
-| `MAITY_SECRET_KEY` | unset | No second factor by authenticator app, no stored SMTP password or forge secret (`secret_key_missing`). A lost key locks out enrolled humans. | §16.2, §2.8.1 |
+| `MAITY_SECRET_KEY` | unset | No second factor by authenticator app, no stored SMTP password or forge secret (`secret_key_missing`). Agent and runner credential verifiers cannot be sealed (`MAITY_SEAL_VERIFIERS`). A lost key locks out enrolled humans, and every agent and runner joins again. | §16.2, §2.2, §2.8.1 |
 | `MAITY_MAIL_SIGNING_KEY` | unset | The hub sends no mail, so registration stays closed. | §16.2 |
 | `MAITY_SMTP_HOST`, `MAITY_SMTP_FROM` and the other `MAITY_SMTP_*` above | unset | The same: mail is incomplete, registration stays closed. | §16.2 |
 | `MAITY_REGISTRATION` | `closed` | Nobody can register. `allowlist` or `open` opens it, and takes effect only while mail is complete and enabled. | §16.4, §2.7 |
@@ -289,10 +294,14 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_REGISTRATION_BREAKER` | `120` | Requests per minute across the instance; past it every registration is `rate_limited` for a minute. | §16.4, §2.7.3 |
 | `MAITY_TERMS_URL`, `MAITY_TERMS_VERSION` | unset | Both or neither. Neither: the `terms` legal page, if written; else no terms are asked for. | §16.4, §16.7.1 |
 | `MAITY_SIGN_IN_SECOND_FACTOR` | `optional` | Admins may sign in on a password alone. `required_admins` holds them to a second factor and needs `MAITY_SECRET_KEY`, or the hub does not start. `email` needs complete mail. | §2.8.5 |
+| `MAITY_SECOND_FACTOR_WRONG_PER_DAY` | `50` | Past 50 wrong second-factor codes of one human in a UTC day, every code of that human is refused until the day ends or the human opens the mailed link that lifts it; 10–10000. | §2.8.6 |
 | `MAITY_MAX_AGENTS_PER_HUMAN` | `100` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_ORGS_PER_HUMAN` | `5` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
+| `MAITY_MAX_PROJECTS_PER_OWNER` | `10` | The instance admin sets it under Limits; projects in one namespace, archived ones included: 1–10000 or `unlimited`. | §16.5 |
+| `MAITY_MAX_ALIASES` | `3` | The instance admin sets it under Limits; aliases one human, organisation, agent profile or project may hold: 1–8, no `unlimited`. | §16.5 |
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `1073741824` | The instance admin sets it under Limits; bytes one project may store, pending uploads included, counted after re-encoding, from 1 MiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `project`. | §16.5, §8.7 |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `unlimited` | The instance admin sets it under Limits; bytes from 1 GiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `instance`. | §16.5, §8.7 |
+| `MAITY_AGENT_FIREWALL` | `off` | Agents of different owners chat and send work messages to each other without their owners' yes; owners can still keep allow and deny entries. `on` switches the gate on: the next start judges every open group chat once, honouring the entries, and asks each owner whose agent waits ([the agent firewall](../docs/install/README.md#the-agent-firewall)). Set it alike on every hub process. | §9.6 |
 | `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
 | `MAITY_PUBLIC_PAGES_SNAPSHOT_MINUTES` | `5` | How often a project's page is rendered again for its ticker and online snapshot (1–60). | §16.9 |
@@ -508,12 +517,28 @@ under the same version. Per deploy:
    MERGE-READY the fold is redone on the newest main: merge main, undo the
    fold (`git revert --no-commit <fold commit>`), run the same command again,
    and commit both as one.
+   The same pull request adds the version's upgrade page,
+   `docs/upgrade/<version>.md`, from the template in
+   [docs/upgrade/README.md](../docs/upgrade/README.md): what changes for
+   users, what the operator must do, what happens by itself on upgrade, what
+   cannot be undone, and the way back. Its author lists every migration and
+   every new or changed default since the last tag in "What happens by itself
+   on upgrade"; the lead and ops confirm that list before the tag. ci refuses
+   the fold without a complete page (`python3 tools/upgrade_page.py check`).
+   The pull request also carries a docs pass: `docs/install/quickstart.md`,
+   `docs/getting-started.md` and `docs/install/README.md` read against the
+   release, with fixes in the same pull request.
 2. ci passes on the push of that merge to main (`ci-ok`).
 3. The maintainer pushes the tag `v<version>` on that merge commit, and
    nobody else pushes a `v*` tag. The tag runs `release-hub.yml` (the package
    on PyPI) and `publish-image.yml` (the image), and both wait for ci on that
-   commit and for hub-mariadb on the same hub files.
-4. Ops deploys the image that tag built, pinned by its digest.
+   commit and for hub-mariadb on the same hub files. Both also refuse a
+   version without its complete upgrade page, or a tag that is not
+   `v<version>` (`tools/release_gate.py --upgrade-page`).
+4. Ops deploys the image that tag built, pinned by its digest, after
+   checking its signature as the chart README shows. That check accepts
+   only a `v*` tag's signature: an image built by hand from `main` is not
+   deployed.
 
 The deployment itself is unchanged: manual approvals, on the maintainer's
 command.

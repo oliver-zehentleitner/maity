@@ -15,6 +15,7 @@ from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
+from tests import factory
 from tests.smtpfake import FakeSmtp, Script
 
 SIGNING = base64.b64encode(b"s" * 32).decode()
@@ -585,47 +586,72 @@ def test_a_mail_that_is_out_keeps_no_header_either(migrated: Engine) -> None:
         assert conn.execute(select(t.mail_outbox.c.headers)).scalar() == {}
 
 
-def test_the_sweep_empties_the_rows_that_left_before_the_text_went_at_once(
-    migrated: Engine,
-) -> None:
+def test_the_sweep_deletes_old_rows_and_rewrites_no_row_it_keeps(migrated: Engine) -> None:
+    """The one-off UPDATE for rows that left the queue before their text went at once is gone
+    (tsk-3ar6h2s0kff5): every way out of the queue empties the row itself (`_finish`)."""
     with migrated.begin() as conn:
-        for status in ("sent", "failed", "dropped", "waiting", "sending"):
-            conn.execute(
-                insert(t.mail_outbox).values(
-                    kind="security",
-                    recipient="me@example.org",
-                    subject="s",
-                    body="a link\n",
-                    headers=_link_header(),
-                    created_at=clock.now(),
-                    not_before=clock.now(),
-                    attempts=0,
-                    status=status,
-                )
-            )
-        # What an earlier version of the change left: no text, the links still in the headers.
-        conn.execute(
+        kept = conn.execute(
             insert(t.mail_outbox).values(
                 kind="security",
                 recipient="me@example.org",
                 subject="s",
-                body="",
+                body="text\n",
                 headers=_link_header(),
                 created_at=clock.now(),
                 not_before=clock.now(),
                 attempts=0,
                 status="sent",
             )
-        )
+        ).inserted_primary_key
+        assert kept is not None
     with migrated.begin() as conn:
         outbox.forget_old(conn)
     with migrated.begin() as conn:
-        rows = conn.execute(select(t.mail_outbox).order_by(t.mail_outbox.c.id)).all()
-    assert [(r.status, r.body, r.headers) for r in rows] == [
-        ("sent", "", {}),
-        ("failed", "", {}),
-        ("dropped", "", {}),
-        ("waiting", "a link\n", _link_header()),
-        ("sending", "a link\n", _link_header()),
-        ("sent", "", {}),
-    ]
+        row = conn.execute(select(t.mail_outbox).where(t.mail_outbox.c.id == kept[0])).one()
+    assert (row.body, row.headers) == ("text\n", _link_header())
+
+
+def _human_with_disabled_address(engine: Engine) -> str:
+    human_id = factory.human(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.notification_settings).values(
+                human_id=human_id,
+                preferences={},
+                address="me@example.org",
+                address_status="disabled",
+                epoch=0,
+                hard_failures=3,
+                updated_at=clock.now(),
+            )
+        )
+    return human_id
+
+
+@pytest.mark.parametrize("why", ["disabled_address", "membership_ended"])
+def test_a_mail_dropped_before_it_is_sent_keeps_no_text_or_header(
+    migrated: Engine, why: str
+) -> None:
+    """The ways out of the queue that never reach the server empty the row too, so the sweep
+    needs no UPDATE of its own."""
+    server = FakeSmtp(Script())
+    try:
+        human_id = _human_with_disabled_address(migrated) if why == "disabled_address" else None
+        with migrated.begin() as conn:
+            marks = {} if human_id else {outbox.MEMBERSHIPS_MARK: "999999"}  # a row that is gone
+            outbox.enqueue(
+                conn,
+                kind="notification",
+                to="me@example.org",
+                subject="s",
+                body="a link\n",
+                human_id=human_id,
+                extra_headers={**_link_header(), **marks},
+            )
+        assert outbox.send_due(migrated, mail_env(server.port).mail, None) == 0
+    finally:
+        server.close()
+    with migrated.begin() as conn:
+        row = conn.execute(select(t.mail_outbox)).one()
+    assert (row.status, row.body, row.headers) == ("dropped", "", {})
+    assert server.record.commands == []
