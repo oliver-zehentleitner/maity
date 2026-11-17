@@ -1175,6 +1175,64 @@ def test_a_link_into_a_long_missing_path_is_no_credential(
     assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
 
 
+def chain(start: Path, links: int, end: Path, where: Path) -> None:
+    """`start` -> `where/l1` -> ... -> `where/l<links-1>` -> `end`: `links` links in all."""
+    hops = [start, *(where / f"l{i}" for i in range(1, links))]
+    for here, there in zip(hops, [*hops[1:], end], strict=True):
+        here.symlink_to(there)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize(("linked", "links"), [("clone", 36), ("repo", 37), ("git", 38),
+                                                ("maity", 39), ("maity", 40)])  # fmt: skip
+def test_a_dead_chain_of_up_to_forty_links_is_no_credential(
+    tmp_path: Path, side: str, linked: str, links: int
+) -> None:
+    """Every slot, the longest dead chains found to be refused before: none of them is a
+    credential, as on the runner's own side."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "hops").mkdir()
+    chain(slot, links, tmp_path / "gone", tmp_path / "hops")
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", ["clone", "repo"])
+def test_one_dead_link_into_a_deep_missing_path_is_no_credential(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(tmp_path.joinpath("gone", *(f"d{i}" for i in range(35))))
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("links", [41, 60, 79])
+def test_a_chain_the_system_does_not_resolve_is_no_credential_on_every_side(
+    tmp_path: Path, side: str, links: int
+) -> None:
+    """A finite chain to a real credential, longer than the system follows a path's links:
+    the runner's own side sees no credential there, and neither does any other."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git").mkdir(parents=True)
+    (tmp_path / "real" / "maity").mkdir(parents=True)
+    (tmp_path / "hops").mkdir()
+    chain(ws / "maity" / "agent-4" / ".git" / "maity", links, tmp_path / "real" / "maity",
+          tmp_path / "hops")  # fmt: skip
+    assert supervisor.other_credentials(ws, own, AsUser()) == []
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
 @pytest.mark.parametrize("side", sorted(SIDES))
 @pytest.mark.parametrize("linked", sorted(SLOTS))
 def test_a_link_that_leads_nowhere_is_no_credential(tmp_path: Path, side: str, linked: str) -> None:

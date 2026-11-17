@@ -11,8 +11,5 @@
   root). A path another hidden path already covers is no longer listed
   again; every hidden path stays hidden and every deny on other clones'
   credentials is kept, the runner's home secrets now compared under the
-  home resolved. A start whose other clones cannot be checked is refused.
-  A link to another clone's credential that leads nowhere is no
-  credential. On an agents' user's or ssh target, a chain of more than 40
-  links, a loop among them, refuses the start; the runner's own side
-  counts it as no credential.
+  home resolved. A start whose other clones cannot be checked completely
+  is refused.
