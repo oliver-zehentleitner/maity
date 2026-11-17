@@ -1708,8 +1708,12 @@ time and the time now, to the second (`hub connection lost since …Z,
 still at …Z; retrying until the timeout`), once per wait: at a failed
 read, before the next poll or before the timeout, so a minute that passes
 during a backoff or the rest of the window is named too. The first good
-answer after a reported outage prints `hub answering again at …Z`.
-Within a wait the elapsed time is the monotonic clock's, so a jump of the
+answer after a reported outage prints `hub answering again at …Z`. When
+the minute passes inside the good read itself (a poll held after a
+retried drop), that answer checks the threshold before it clears the
+clock and prints one combined line, `hub connection lost since …Z; hub
+answering again at …Z`: a separate "still at …; retrying" line would
+claim a retry that no longer happens. Within a wait the elapsed time is the monotonic clock's, so a jump of the
 system clock neither starts the count afresh nor turns a short drop into
 an outage; the wall clock only names the times (the first failed read as
 now less the elapsed time) and carries the count to the next wait. The
