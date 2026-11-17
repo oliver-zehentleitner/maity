@@ -2081,13 +2081,13 @@ requests from at least five distinct networks within the hour (twenty
 within the day) leave a further network without a place, or reach the
 count of the mails, until the window has passed; the human's sessions,
 the password and the device code are unaffected. The path's instance
-cap below is a separate bound across all addresses, which fewer
-networks can reach: at the defaults, three networks at their 10
-requests an hour per source address spend the 30 reset or registration
-mails of an hour, and six the 60 sign-in mails; the owner's mail of
-that kind is then not sent either, until the hour has passed. The
-price is the mailbox: those 50 in any hour and
-200 in any day, and never more than the path's instance cap, which is
+cap below is a separate bound across all addresses, which for resets
+and registration fewer networks can reach: at the defaults, three
+networks at their 10 requests an hour per source address spend the 30
+reset or registration mails of an hour, while the 60 sign-in mails
+take six; the owner's mail of that kind is then not sent either, until
+the hour has passed. The price is the mailbox: those 50 in any hour
+and 200 in any day, and never more than the path's instance cap, which is
 the outer bound across all addresses: `sign_in_max_per_hour` (default
 60) for sign-in links, `password_reset_max_per_hour` (default 30) for
 reset links, `registration_max_per_hour` (default 30) for registration
@@ -24825,9 +24825,9 @@ device; the browser's own permission is per browser and is not stored.
   their own limits send at most 6 in any hour and 20 in any day, so that
   count never stops fewer than three. Beyond either the address is
   pending as usual but no mail goes out. One or two accounts asking
-  again and again so leave a third its mail, but for the moment two
-  first requests of one account run at once (both hold a place until
-  one gives its own back, as in §2.6.4); three distinct accounts in
+  again and again so leave a third its mail: one account's requests
+  run one at a time (under its settings row), so an account never holds
+  two places, unlike a network in §2.6.4; three distinct accounts in
   an hour (ten in a day) hold the address's places, and another account
   asking for it then has it pending without a mail until the window has
   passed; nothing else of that account changes. Where one source can make active accounts —
