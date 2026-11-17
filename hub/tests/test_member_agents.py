@@ -342,7 +342,13 @@ def test_two_joins_for_the_last_slot_create_exactly_one(migrated: Engine) -> Non
         r.first.commit()
         with pytest.raises(ApiError) as refused:
             finished(step)
-    assert refused.value.details == {"reason": "member_agents_max", "max": 1}
+    details = refused.value.details
+    assert (details["reason"], details["name"], details["max"], details["count"]) == (
+        "member_agents_max",
+        "member_agents_max",
+        1,
+        1,
+    )
 
 
 @pytest.mark.parametrize("lowered", [0, 1])
