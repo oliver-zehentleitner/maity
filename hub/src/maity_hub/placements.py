@@ -786,6 +786,7 @@ def set_desired(
     if desired == "stopped" and tell_agent:
         _stop_requested(conn, changed, actor, by)
     announce(conn, placement.id, "placement_updated", actor)
+    availability.recompute_runner_limit(conn, placement.membership_id, actor)  # §6.12
     return changed
 
 
@@ -828,6 +829,8 @@ def restart(
         **OUTCOME_CLEARED,
     )
     announce(conn, placement.id, "placement_updated", actor)
+    if placement.desired != "running":
+        availability.recompute_runner_limit(conn, placement.membership_id, actor)  # §6.12
     return changed
 
 
@@ -885,6 +888,8 @@ def close_uniform(
     if stopping:
         _stop_requested(conn, changed, actor, by)
     announce(conn, placement.id, "placement_updated", actor)
+    if stopping:
+        availability.recompute_runner_limit(conn, placement.membership_id, actor)  # §6.12
     return changed
 
 

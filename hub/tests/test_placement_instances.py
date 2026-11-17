@@ -185,6 +185,68 @@ def test_one_running_placement_keeps_the_agent_available(
     assert availability()["state"] != "limited"
 
 
+def _limit(s: Setup) -> tuple[Any, Any]:
+    """The member's stored limit: `until` as the member view shows it, and the placement
+    the record names."""
+    shown = s.owner.get(f"{MEMBERS}/{s.agent.id}").json()["availability"]
+    with s.engine.connect() as conn:
+        named = conn.execute(
+            select(t.membership.c.limit_placement_id).where(t.membership.c.agent_id == s.agent.id)
+        ).scalar_one()
+    return (shown.get("until") if shown["state"] == "limited" else None), named
+
+
+def test_stopping_the_running_placement_leaves_the_limited_one_to_decide(
+    setup: Setup,
+) -> None:
+    """P1 runs and P2 is rate-limited: the agent is available. Stopping P1 recomputes from
+    P2 alone, and the record names P2 (§6.12)."""
+    allow_instances(setup.engine, setup.agent.id, 3)
+    p1, p2 = placed(setup), placed(setup)
+    later = clock.rfc3339(clock.now().replace(microsecond=0) + timedelta(hours=2))
+    assert report(setup, p1, 1).status_code == 200
+    limited = {"state": "rate_limited", "reason": "quota", "exit_code": 2}
+    assert report(setup, p2, 1, **limited, retry_at=later).status_code == 200
+    assert _limit(setup) == (None, None)
+    path = f"/projects/maintainer/maity/placements/{p1['id']}"
+    assert setup.owner.patch(path, {"desired": "stopped"}).status_code == 200
+    assert _limit(setup) == (later, p2["id"])
+    # And back: P1 to run again, so it counts again and has not reported a limit.
+    assert setup.owner.patch(path, {"desired": "running"}).status_code == 200
+    assert _limit(setup) == (None, None)
+
+
+def test_a_closed_placement_hands_the_limit_to_the_rest(setup: Setup) -> None:
+    """Both rate-limited, P1 the earlier: the record names P1. Closing P1 recomputes from
+    P2, and closing P2 too leaves no runner limit (§6.12, §15.7 Stopping)."""
+    allow_instances(setup.engine, setup.agent.id, 3)
+    p1, p2 = placed(setup), placed(setup)
+    base = clock.now().replace(microsecond=0)
+    soon, later = clock.rfc3339(base + timedelta(hours=1)), clock.rfc3339(base + timedelta(hours=3))
+    limited = {"state": "rate_limited", "reason": "quota", "exit_code": 2}
+    assert report(setup, p2, 1, **limited, retry_at=later).status_code == 200
+    assert report(setup, p1, 1, **limited, retry_at=soon).status_code == 200
+    assert _limit(setup) == (soon, p1["id"])
+    base_path = "/projects/maintainer/maity/placements"
+    assert setup.owner.delete(f"{base_path}/{p1['id']}").status_code == 200
+    assert _limit(setup) == (later, p2["id"])
+    assert setup.owner.delete(f"{base_path}/{p2['id']}").status_code == 200
+    assert _limit(setup) == (None, None)
+
+
+def test_a_retry_at_that_has_passed_counts_as_running(setup: Setup) -> None:
+    allow_instances(setup.engine, setup.agent.id, 3)
+    p1, p2 = placed(setup), placed(setup)
+    base = clock.now().replace(microsecond=0)
+    soon, later = base + timedelta(minutes=10), base + timedelta(hours=3)
+    limited = {"state": "rate_limited", "reason": "quota", "exit_code": 2}
+    assert report(setup, p1, 1, **limited, retry_at=clock.rfc3339(soon)).status_code == 200
+    clock.set_source(lambda: soon + timedelta(seconds=1))
+    # P1's retry_at is behind: P2's limit alone does not limit the agent.
+    assert report(setup, p2, 1, **limited, retry_at=clock.rfc3339(later)).status_code == 200
+    assert _limit(setup) == (None, None)
+
+
 def test_the_runners_limit_is_recomputed_and_a_resume_keeps_it(
     setup: Setup, make_client: ClientFactory
 ) -> None:
