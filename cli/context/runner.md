@@ -2991,7 +2991,9 @@ the repository. A glob rule cannot.
 
 maity reads a body file through descriptors only. It works out on the
 text alone which names lead from the clone's root to the file, refusing a
-path that leaves the clone. It opens the clone's root, then each
+path that leaves both the clone and the placement's scratch
+(783e476c-3975-43de-9c4e-7c3a5da57be7). It opens the clone's root (for
+a file in the scratch, `/`), then each
 directory on the way from the one before with `O_NOFOLLOW` and
 `O_DIRECTORY`, refusing a link and the clone's `.git` (by device and
 inode, so a case-insensitive volume's `.GIT` is caught too). It opens the
@@ -3166,7 +3168,8 @@ the only way maity writes an attachment there.
 A path outside the clone is read on the same terms from the placement's
 scratch, when the runner recorded one (`clonecheck.SCRATCH_RECORD`, in
 its directory for the agent, beside the `git` record): the walk then
-starts at that directory, opened without following a link. The record,
+starts at `/`, each directory on the way to the scratch and below it
+opened without following a link. The record,
 not `MAITY_SCRATCH`, names it, and a record pointing into the clone or
 not an absolute path is ignored. Writing (`files get -o`) stays inside
 the clone.

@@ -59,8 +59,8 @@ ENV_SET = {"GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": 
 WALKS = inclone.WALKS
 
 ALLOWED = (
-    "maity gh pr create --title <title> (--body <text> | --body-file <file in this clone>)"
-    " [--base <branch>] [--head <branch>] [--draft]; "
+    "maity gh pr create --title <title> (--body <text> | --body-file <file in this clone or"
+    " the scratch>) [--base <branch>] [--head <branch>] [--draft]; "
     "maity gh pr view [<number> | <branch>] [--json <fields>] [--comments]"
 )
 
@@ -87,7 +87,9 @@ def parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:  # type:
     create.add_argument("--title", required=True, help="the pull request's title")
     body = create.add_mutually_exclusive_group(required=True)
     body.add_argument("--body", help="the body as text")
-    body.add_argument("--body-file", help="a file in this clone, read by maity, not by gh")
+    body.add_argument(
+        "--body-file", help="a file in this clone or the scratch, read by maity, not by gh"
+    )
     create.add_argument("--base", help="the branch to merge into (the default branch if left out)")
     create.add_argument("--head", help="the branch with the changes (the current one if left out)")
     create.add_argument("--draft", action="store_true", help="open it as a draft")
@@ -131,8 +133,8 @@ def body_file(root: Path, given: str, opened: clonecheck.Opened | None = None) -
     """The file's content, read through descriptors only (`inclone.read`): maity runs
     outside the sandbox, and any name it looked up twice could point elsewhere the second
     time. A regular file in the clone whose root and `.git` `clonecheck.opened_clone`
-    checked (`opened`), outside that `.git`, with no other hard link, of at most BODY_MAX
-    bytes (cli/context/runner.md 9f43804d)."""
+    checked (`opened`), outside that `.git`, or in the placement's scratch (783e476c), with
+    no other hard link, of at most BODY_MAX bytes (cli/context/runner.md 9f43804d)."""
     scratch = inclone.recorded_scratch(root, opened.git if opened else None)
     try:  # a path out of the clone and its scratch says so everywhere
         try:

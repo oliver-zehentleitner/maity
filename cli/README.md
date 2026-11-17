@@ -1052,7 +1052,8 @@ variables, so gh's login must be the agents' user's own, stored where gh
 finds it under `HOME` (`GH_TOKEN`, `GITHUB_TOKEN`, `GH_CONFIG_DIR` and
 `XDG_CONFIG_HOME` do not reach it); maity names the branch. An option not
 listed, a URL, or a body file reached through a link, a FIFO, a file with
-other hard links, outside the clone or under its `.git` is refused, and
+other hard links, outside both the clone and the placement's scratch, or
+under the clone's `.git` is refused, and
 the refusal lists what is allowed. A `.git` renamed or replaced since the
 session started is refused too: maity reads the record only from the
 `.git` the runner recorded at the start, so a placement started by an
@@ -1164,7 +1165,8 @@ project's own harness configuration is never loaded:
 
 - **Claude Code** gets `--setting-sources user`, a settings file written
   by the runner outside the clone (`maity`, `git`, the repository's
-  `allow` list, file tools inside the clone only, nothing on
+  `allow` list, file tools inside the clone and the placement's scratch
+  only, nothing on
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
   configuration. A `supervised` placement also gets `AskUserQuestion` as a
   bare deny rule: nobody answers a headless run, so the tool is not

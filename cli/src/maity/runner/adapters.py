@@ -327,8 +327,9 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
 
 def claude_settings(ctx: Context) -> dict[str, Any]:
     """The grant (§6.1): maity, git, the repository's own allow list, and file tools inside
-    the clone only. Absolute paths take a double slash in Claude Code's rules. The clone's
-    credential is neither readable nor writable through the file tools."""
+    the clone and the placement's scratch only. Absolute paths take a double slash in Claude
+    Code's rules. The clone's credential is neither readable nor writable through the file
+    tools."""
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]

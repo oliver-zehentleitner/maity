@@ -1581,7 +1581,7 @@ ACTION_BODY_MAX = 48 * 1024  # §7
 
 def _read_bytes(source: str, flag: str) -> bytes:
     """A file's bytes as they are, or standard input's with `-`. Under a placement only a
-    file in the clone (_placed_read)."""
+    file in the clone or the placement's scratch (_placed_read)."""
     if source == "-":
         return sys.stdin.buffer.read()
     placed = _placed_read(source, flag)
@@ -1835,7 +1835,7 @@ def file_name(name: Any) -> str:
 
 def _read_upload(path: str, what: str = "files put") -> bytes | None:
     """The file's bytes, or None after saying why it is refused (larger than 10 MiB). Under
-    a placement only a file in the clone (_placed_read)."""
+    a placement only a file in the clone or the placement's scratch (_placed_read)."""
     placed = _placed_read(path, what, ATTACHMENT_MAX)
     if placed is not None:
         return placed
@@ -5877,7 +5877,7 @@ _BOM = "\ufeff"
 
 def _read_text_file(path: str, flag: str) -> str:
     """The file's text, less a leading byte order mark. Under a placement only a file in the
-    clone (_placed_read)."""
+    clone or the placement's scratch (_placed_read)."""
     try:
         placed = _placed_text(path, flag)
         if placed is not None:

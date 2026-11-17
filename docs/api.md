@@ -17446,10 +17446,11 @@ put`, `--attach`, `--body-file`, `--summary-file`, `--last-file`,
 statement`/`report`/`answer --file`, `profile avatar`, `memory add
 --soul`, `task restricted set --file`, `join --join-file` and `maity gh
 pr create --body-file` — must be a regular file inside the runner's
-clone, outside its `.git`, with no other hard link, of at most 10 MiB
+clone, outside its `.git`, or in the placement's scratch when the runner
+recorded one (§15.5, reached from `/` without a link), with no other hard link, of at most 10 MiB
 (1 MiB for `profile avatar`); every name on the way is opened through the
 directory before it without following a link. Anything else (a path
-outside the clone, a symlink, a hard link, a directory or a FIFO) is a
+outside both, a symlink, a hard link, a directory or a FIFO) is a
 usage error (exit 2) before any call; `task restricted set` names no part
 of the path in it. `-` (stdin) stays where a flag takes it. Where the
 system cannot open a name that way (Windows), only stdin is taken.
