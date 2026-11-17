@@ -1397,7 +1397,7 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     who owns them and may be the only one able to list them. A listing that is not complete
     fails closed (`workspace.Refused`): an unreadable directory could hide a credential, and
     the sandbox would start without its deny. A link that leads nowhere is no credential;
-    on a side not the runner's own, a chain of links that does not end within 40 steps fails
+    on a side not the runner's own, a chain of more than 40 links (a loop among them) fails
     closed too (here it is none). Each is named where it lies, as the agents' side resolves
     it; one inside the workspaces root is named below `workspaces` as given (resolved here),
     the form the clone's own path and the root's deny have."""
@@ -1428,21 +1428,23 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
 # Path.is_dir does on the direct side, one NUL after each found. A place that cannot be
 # looked at (a directory on its way, where it lies, that cannot be searched) ends the
 # listing with 3, as a PermissionError does there: it could hide one. A link that leads
-# nowhere is no credential, as there. Only `test` and `readlink` (no `realpath -m`,
-# which not every system has); a chain of links too long to follow ends it with 3 too.
+# nowhere is no credential, as there. Only `test` and `readlink -n` (no `realpath -m`,
+# which not every system has; `-n` keeps a name's own last line break on every system);
+# a chain of more than 40 links, a loop among them, ends it with 3 too. Only links count
+# towards that bound, never the directories on the way.
 _SLOTS = r"""blocked() (
   q=$1 n=${3:-0}
-  [ "$n" -lt 40 ] || exit 0
   if [ -e "$q" ]; then
     if [ "$2" = self ] && [ -d "$q" ] && ! [ -x "$q" ]; then exit 0; fi
     exit 1
   fi
   p=${q%/*}
   [ -n "$p" ] || p=/
-  if [ "$p" != "$q" ] && blocked "$p" self $((n + 1)); then exit 0; fi
+  if [ "$p" != "$q" ] && blocked "$p" self "$n"; then exit 0; fi
   [ -L "$q" ] || exit 1
-  t=$(readlink -- "$q" && printf x) || exit 0
-  t=${t%?x}
+  [ "$n" -lt 40 ] || exit 0
+  t=$(readlink -n -- "$q" && printf x) || exit 0
+  t=${t%x}
   case $t in /*) ;; *) t=$p/$t ;; esac
   blocked "$t" "$2" $((n + 1))
 )

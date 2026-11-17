@@ -1115,6 +1115,66 @@ def test_every_side_answers_as_the_runners_own_side_whatever_the_modes(
     assert other == single
 
 
+def bsd_readlink(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`readlink` as BSD and macOS print it without `-n`: a line break added only when the
+    name does not end in one already (with `-n`, as everywhere, none)."""
+    shim = tmp_path / "bsd-bin"
+    shim.mkdir()
+    (shim / "readlink").write_text(
+        "#!/usr/bin/env python3\nimport os, sys\n"
+        "args = [a for a in sys.argv[1:] if a != '--']\n"
+        "plain = args[0] == '-n'\nname = os.readlink(args[-1])\n"
+        "sys.stdout.write(name if plain or name.endswith('\\n') else name + '\\n')\n"
+    )
+    (shim / "readlink").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim}:{os.environ['PATH']}")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("side", ["agent_user", "ssh"])
+@pytest.mark.parametrize("bsd", [False, True])
+def test_a_link_whose_target_ends_in_a_line_break_is_followed_to_where_it_leads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, side: str, bsd: bool
+) -> None:
+    """A credential's place linked to a name ending in a line break, itself a link into a
+    directory that cannot be searched: refused as on the runner's own side, whatever
+    `readlink` prints."""
+    if bsd:
+        bsd_readlink(tmp_path, monkeypatch)
+    ws, locked = tmp_path / "ws", tmp_path / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git").mkdir(parents=True)
+    (locked / "maity").mkdir(parents=True)
+    hop = tmp_path / "hop\n"
+    hop.symlink_to(locked / "maity")
+    (ws / "maity" / "agent-4" / ".git" / "maity").symlink_to(hop)
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, AsUser())
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, SIDES[side]())
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("depth", [38, 45])
+def test_a_link_into_a_long_missing_path_is_no_credential(
+    tmp_path: Path, side: str, depth: int
+) -> None:
+    """Only links count towards the bound on following them: a link into a path of many
+    directories that do not exist leads nowhere, as on the runner's own side."""
+    ws = tmp_path / "ws"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4" / ".git").mkdir(parents=True)
+    gone = tmp_path.joinpath(*(f"d{i}" for i in range(depth)))
+    (ws / "maity" / "agent-4" / ".git" / "maity").symlink_to(gone)
+    assert supervisor.other_credentials(ws, own, SIDES[side]()) == []
+
+
 @pytest.mark.parametrize("side", sorted(SIDES))
 @pytest.mark.parametrize("linked", sorted(SLOTS))
 def test_a_link_that_leads_nowhere_is_no_credential(tmp_path: Path, side: str, linked: str) -> None:
