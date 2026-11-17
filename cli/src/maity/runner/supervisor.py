@@ -1426,16 +1426,11 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
 # For each clone entry given: its two places for a credential, looked at through a link as
 # Path.is_dir does on the direct side, one NUL after each found. A place that cannot be
 # looked at (a directory on its way, where it lies, that cannot be searched) ends the
-# listing with 3, as a PermissionError does there: it could hide one. A link that leads
-# nowhere is no credential, as there. Only `test` and `readlink -n` (no `realpath -m`,
-# which not every system has; `-n` keeps a name's own last line break on every system).
-# The look at a place stops as soon as the system resolves it (`[ -e ]`). While it does
-# not, the place's parent is looked at first, then, if the place is a link, its target is
-# read (`readlink -n`) and looked at in turn. At most 40 links are read for one place
-# (only links count, never the directories on the way); a 41st ends the listing with 3.
-# So a loop, and a chain into nothing of more than 40 links, refuse. A chain to a real
-# target that is longer than the system follows is read until its rest resolves; it then
-# counts as no credential, as there, unless that took more than 40 links read here.
+# listing with 3, as a PermissionError does there: it could hide one. Only `test` and
+# `readlink -n` (no `realpath -m`, which not every system has; `-n` keeps a name's own
+# last line break on every system). Links the system does not resolve are followed here
+# one by one; what cannot be checked completely (a loop, a chain too long to follow, a
+# place that cannot be searched) ends the listing with 3: the start is refused.
 _SLOTS = r"""blocked() (
   q=$1 n=${3:-0}
   if [ -e "$q" ]; then

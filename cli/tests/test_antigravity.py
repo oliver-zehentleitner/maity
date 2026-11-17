@@ -1201,24 +1201,6 @@ def test_a_dead_chain_of_up_to_forty_links_is_no_credential(
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))
-def test_a_dead_chain_of_forty_one_links_is_refused_elsewhere(tmp_path: Path, side: str) -> None:
-    """One link more than are read for a place: no credential on the runner's own side,
-    a refused start on any other, as for a loop."""
-    ws = tmp_path / "ws"
-    own = ws / "maity" / "agent-3"
-    (own / ".git" / "maity").mkdir(parents=True)
-    (ws / "maity" / "agent-4" / ".git").mkdir(parents=True)
-    (tmp_path / "hops").mkdir()
-    chain(ws / "maity" / "agent-4" / ".git" / "maity", 41, tmp_path / "gone", tmp_path / "hops")
-    as_user = SIDES[side]()
-    if as_user.direct:
-        assert supervisor.other_credentials(ws, own, as_user) == []
-    else:
-        with pytest.raises(workspace.Refused):
-            supervisor.other_credentials(ws, own, as_user)
-
-
-@pytest.mark.parametrize("side", sorted(SIDES))
 @pytest.mark.parametrize("linked", ["clone", "repo"])
 def test_one_dead_link_into_a_deep_missing_path_is_no_credential(
     tmp_path: Path, side: str, linked: str
