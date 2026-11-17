@@ -251,11 +251,10 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A project's Agents lists one's agents as rows (tsk-05meme59sq1x): open every row's card, as the tests read them.
   // The tab row of the Agents page (and of /agents): each tab's words, address and aria-current.
   const agentsTabRow = () => main.querySelectorAll("nav.agents-tabs a").map((a) => [a.textContent, a.getAttribute("href"), a.getAttribute("aria-current")]);
-  // Join an agent at the head of a project's Agents and Team pages is a menu (tsk-vkyp71qp95n9): its
-  // first way, Add any agent, opens the join panel.
+  // Join an agent at the head of a project's Agents and Team pages is one button (tsk-hdczmsq2r431;
+  // once a menu, tsk-vkyp71qp95n9): it opens the join panel.
   const joinAny = async () => {
     main.querySelector(".page-head button.join-open").click(); await tick();
-    main.querySelector('.page-head .menu [data-key="any"]').click();
   };
   async function openAgentCards() {
     for (let guard = 0; guard < 20; guard++) {
@@ -2072,8 +2071,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(urForm(), "Close").click(); await tick();
   expect(!urForm(), "user reset: Close takes the form away");
   await go("#/maintainer/maity/inbox");
-  // Start an agent on a runner (tsk-dsp6htj4c686, §15.6), before the runners below are detached and revoked:
-  // one's own runners attached here with a live credential, one's own agents without a placement or a new
+  // Start an agent on a runner (tsk-dsp6htj4c686, §15.6), since tsk-hdczmsq2r431 the last part of the
+  // one Join an agent form, before the runners below are detached and revoked: one's own runners
+  // attached here with a live credential, an agent of one's own here without a placement or a new
   // profile, and what the runner advertises. The two placements made here are listed further down.
   const srMade = [];
   const srPost = win.Maity.api.post;
@@ -2086,105 +2086,112 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     srHold = false;
     return new Promise((r) => { srRelease = r; }).then(() => srPost(p, b));
   };
-  // Since tsk-vkyp71qp95n9 the start is the second way of the page head's Join an agent menu, and
-  // Managed agents (the list, section.placements) only shows what runs.
+  // Managed agents (the list, section.placements) only shows what runs; Join an agent at the head
+  // opens the join panel, whose part on a runner is turned on by its box.
   const srBox = () => main;
-  const srMenu = () => main.querySelector(".page-head button.join-open");
-  const srItem = () => main.querySelector('.page-head .menu [data-key="runner"]');
-  const srOffered = async () => { srMenu().click(); await tick(); const it = srItem(); const label = it ? text(it) : null; srMenu().click(); await tick(); return label; };
-  const srOpen = async () => { srMenu().click(); await tick(); srItem().click(); for (let k = 0; k < 8; k++) await tick(); };
-  const srForm = () => srBox().querySelector("form.placement-new");
+  const srButton = () => main.querySelector(".page-head button.join-open");
+  const srPanel = () => main.querySelector(".join-slot .join-panel");
+  const srJoin = () => srPanel() && srPanel().querySelector("form.join-form");
+  const srOn = () => byId("placement-new-on");
+  const srTurn = async (on, ticks) => { srOn().checked = on; srOn().dispatch("change"); for (let k = 0; k < (ticks || 8); k++) await tick(); };
+  const srOpen = async () => { srButton().click(); for (let k = 0; k < 8; k++) await tick(); if (!srOn().checked) await srTurn(true); };
+  const srForm = () => (srPanel() && !srPanel().hidden && srPanel().querySelector(".join-runner-fields") ? srJoin() : null);
   const srOpts = (id) => byId(id).querySelectorAll("option").map((o) => text(o));
+  const srCreate = () => srJoin().querySelectorAll("button").find((b) => b.getAttribute("type") === "submit");
+  const srCancel = () => srJoin().querySelectorAll("button").find((b) => text(b) === "Cancel");
+  const srSubmit = async () => { srJoin().dispatch("submit"); for (let k = 0; k < 8; k++) await tick(); };
+  const srSaid = () => text(srJoin().querySelector(".send-status"));
   await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
-  const srLabel = await srOffered();
-  expect(srLabel === "Start an agent on a runner" && !srBox().querySelector(".placement-new-none") && !srBox().querySelector("section.placements .placement-new-open"),
-    "placements: a project admin with a runner of their own here is offered Start an agent on a runner in Join an agent, not in the list " + srLabel);
-  // A start whose runners come back after Add any agent was chosen draws nothing (review of #1706):
-  // the panel the reader chose stays alone, the focus where it went.
+  srButton().click(); for (let k = 0; k < 8; k++) await tick();
+  expect(srButton() && !srButton().getAttribute("aria-haspopup") && srPanel() && !srPanel().hidden && srOn() && !srOn().checked
+    && srPanel().querySelector(".join-runner-box").hidden && text(srPanel().querySelector(".join-runner legend")) === "On a runner"
+    && text(srCreate()) === "Create join line" && !srBox().querySelector("section.placements .placement-new-open"),
+    "placements: Join an agent is one button; its one form ends with the part to start on a runner, off, and makes a join line");
+  // Runners that answer after the part was turned off again draw nothing (once review of #1706):
+  // the join line stays the way, its fields as they were.
   {
     const raceAll = win.Maity.api.getAll;
     let raceRelease = null;
     win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/runners" && !raceRelease
       ? new Promise((r) => { raceRelease = r; }).then(() => raceAll(p)) : raceAll(p));
-    const raceProto = Object.getPrototypeOf(srMenu()), raceFocus = raceProto.focus;
-    raceProto.focus = function () { document.activeElement = this; };
-    srMenu().click(); await tick(); srItem().click(); await tick();
-    const reading = !!main.querySelector('.join-menu-slot .placement-new-slot p[role="status"]');
-    srMenu().click(); await tick(); main.querySelector('.page-head .menu [data-key="any"]').click();
-    for (let k = 0; k < 6; k++) await tick();
-    const focused = document.activeElement;
+    await srTurn(true, 1);
+    const reading = !!srPanel().querySelector('.join-runner-box p[role="status"]') && text(srCreate()) === "Start on the runner";
+    await srTurn(false, 2);
     raceRelease(); for (let k = 0; k < 8; k++) await tick();
     win.Maity.api.getAll = raceAll;
-    const raceKept = document.activeElement === focused && focused === byId("join-agent");
-    raceProto.focus = raceFocus; document.activeElement = undefined;
-    expect(reading && !srForm() && !main.querySelector(".join-menu-slot .placement-new-slot").childNodes.length && !main.querySelector(".join-panel").hidden && raceKept,
-      "placements: a start whose runners answer after Add any agent was chosen draws no form beside the join panel, the focus stays on its first field");
+    expect(reading && !srPanel().querySelector(".join-runner-fields") && !srPanel().querySelector(".join-runner-box").childNodes.length
+      && srPanel().querySelector(".join-runner-box").hidden && text(srCreate()) === "Create join line" && !byId("join-ttl").parentNode.hidden,
+      "placements: runners that answer after the part was turned off draw nothing; the join line and its validity are back");
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
-    // On a tab without the page's own panel, Add any agent closes New agent profile's form, as a start does (review of #1706).
+    // On a tab without the page's own panel, Join an agent closes New agent profile's form (review of #1706).
     main.querySelector(".page-head button.agent-add-open").click(); await tick();
     const profileOpen = !!main.querySelector("form.agent-new");
-    srMenu().click(); await tick(); main.querySelector('.page-head .menu [data-key="any"]').click(); for (let k = 0; k < 6; k++) await tick();
-    expect(profileOpen && !main.querySelector("form.agent-new") && main.querySelector(".join-panel") && !main.querySelector(".join-panel").hidden,
-      "placements: Add any agent on Managed agents closes the open New agent profile form");
+    srButton().click(); for (let k = 0; k < 6; k++) await tick();
+    expect(profileOpen && !main.querySelector("form.agent-new") && srPanel() && !srPanel().hidden,
+      "placements: Join an agent on Managed agents closes the open New agent profile form");
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
   }
-  const srProto = Object.getPrototypeOf(srMenu()), srFocus = srProto.focus;
+  const srProto = Object.getPrototypeOf(srButton()), srFocus = srProto.focus;
   srProto.focus = function () { document.activeElement = this; };
   await srOpen();
   srProto.focus = srFocus;
-  expect(srForm() && byId("placement-new-agent") === document.activeElement
-    && byId("placement-new-title") && byId("placement-new-title").tagName === "H3"
-    && JSON.stringify(srOpts("placement-new-agent")) === JSON.stringify(["A new agent", "Agent A (@agent-a)"])
+  const srHidden = (sel) => !srPanel().querySelector(sel) || srPanel().querySelector(sel).hidden;
+  expect(srForm() && byId("join-agent") === document.activeElement
     && JSON.stringify(srOpts("placement-new-runner")) === JSON.stringify(["home-laptop · online · 2 of 4 agents running"])
     && JSON.stringify(srOpts("placement-new-target")) === JSON.stringify(["Wherever the runner chooses", "local"])
     && JSON.stringify(srOpts("placement-new-tool")) === JSON.stringify(["Claude Code 2.1.308", "Codex 0.156.1"]) && byId("placement-new-mode").value === "interactive"
     && JSON.stringify(srOpts("placement-new-model")) === JSON.stringify(["The runner's default", "opus", "sonnet"])
-    && !srBox().querySelector(".placement-new-profile").hidden,
-    "placements: the form offers one's own unplaced agents or a new one, one's live runner here (not the revoked one), its targets, its installed tools, modes and models "
-    + JSON.stringify([srOpts("placement-new-agent"), srOpts("placement-new-runner"), srOpts("placement-new-tool")]));
-  const srHandleBy = (byId("placement-new-handle").getAttribute("aria-describedby") || "").split(" ");
-  expect(srHandleBy.some((x) => /^handle-rule-\d+$/.test(x) && byId(x) && text(byId(x)).startsWith("Lowercase letters, digits and -"))
-    && srHandleBy.some((x) => /^handle-rule-\d+-check$/.test(x)) && srHandleBy.some((x) => /^handle-explain-/.test(x) && byId(x)
-    && text(byId(x)) === "The agent's handle names it among your agents and in @mentions in a project."),
-    "placements: the new handle says what a handle is and its rule, as every agent handle does (#1488) " + JSON.stringify(srHandleBy));
-  byId("placement-new-agent").value = "agt-a"; byId("placement-new-agent").dispatch("change");
+    && text(srCreate()) === "Start on the runner" && byId("join-ttl").parentNode.hidden && srHidden(".join-subagents") && srHidden(".join-instance")
+    && !byId("join-handle").parentNode.hidden && !byId("join-trust").parentNode.hidden && !byId("join-briefing").parentNode.hidden,
+    "placements: turned on, the form keeps the agent first and its place in the team, offers one's live runner here (not the revoked one), its targets, "
+    + "installed tools, modes and models, and drops what a placement does not know (validity, subagents) "
+    + JSON.stringify([srOpts("placement-new-runner"), srOpts("placement-new-tool")]));
+  byId("join-agent").value = "agt-a"; byId("join-agent").dispatch("change");
   byId("placement-new-target").value = "local"; byId("placement-new-target").dispatch("change");
   byId("placement-new-mode").value = "supervised"; byId("placement-new-model").value = "sonnet";
-  expect(srBox().querySelector(".placement-new-profile").hidden && byId("placement-new-clone").getAttribute("placeholder") === "agent-a",
-    "placements: an agent already here needs no profile fields; its clone defaults to its handle");
-  // Disabled as well as hidden (review of #1558): a hidden control the browser still validates
-  // would block the submit with nothing to correct. A new profile enables it again.
-  const srFresh = () => srBox().querySelector(".placement-new-profile");
-  const srDisabled = [srFresh().disabled];
-  byId("placement-new-agent").value = ""; byId("placement-new-agent").dispatch("change"); srDisabled.push(srFresh().disabled);
-  byId("placement-new-agent").value = "agt-a"; byId("placement-new-agent").dispatch("change"); srDisabled.push(srFresh().disabled);
-  expect(JSON.stringify(srDisabled) === "[true,false,true]", "placements: the new profile's fields are disabled while an agent already here is chosen " + JSON.stringify(srDisabled));
-  srForm().requestSubmit(); for (let k = 0; k < 8; k++) await tick();
+  expect(byId("join-trust").parentNode.hidden && srHidden(".join-instance") && srHidden(".join-member-reports") && srPanel().querySelector(".join-runner-why").hidden
+    && byId("placement-new-clone").getAttribute("placeholder") === "agent-a",
+    "placements: an agent already here needs no profile fields and no instance choice; its clone defaults to its handle");
+  await srSubmit();
   expect(srMade.length === 1 && JSON.stringify(srMade[0]) === JSON.stringify({ agent: { id: "agt-a" }, runner: "rnr-0002", target: "local", harness: "claude-code", mode: "supervised", model: "sonnet" })
-    && srBox().querySelectorAll("li.placement").length === 5 && !srForm()
-    && text(srBox().querySelector(".join-menu-slot")).includes("Agent A is placed on home-laptop. The runner starts it when it next reads its placements."),
-    "placements: Start sends one POST with the agent's id and the runner's offer; the new placement is listed " + JSON.stringify(srMade[0]));
+    && srBox().querySelectorAll("li.placement").length === 5 && srPanel().hidden
+    && text(srBox().querySelector(".join-slot")).includes("Agent A is placed on home-laptop. The runner starts it when it next reads its placements."),
+    "placements: Start sends one POST with the agent's id and the runner's offer; the panel closes, the line says so, the new placement is listed " + JSON.stringify(srMade[0]));
   await srOpen();
-  expect(JSON.stringify(srOpts("placement-new-agent")) === JSON.stringify(["A new agent"]), "placements: an agent placed now is offered no more");
-  byId("placement-new-handle").value = "agent-b"; byId("placement-new-name").value = "Agent Bee";
-  srForm().requestSubmit(); for (let k = 0; k < 8; k++) await tick();
-  expect(srForm() && text(srForm().querySelector(".send-status")) === "Not placed on the runner: you already have an agent with this handle (invalid) — handle: taken",
-    "placements: a refusal is the hub's message, code and field, and the form stays " + (srForm() && text(srForm().querySelector(".send-status"))));
-  byId("placement-new-handle").value = "agent-f"; byId("placement-new-name").value = "Agent F"; byId("placement-new-areas").value = "web/, docs/";
-  byId("placement-new-briefing").value = "You own the runner form."; byId("placement-new-clone").value = "agent-f-web"; byId("placement-new-branch").value = "main";
-  // A slow POST, the form cancelled and opened anew, a draft begun (review of #1558): the first
-  // request's answer lists the placement and says so, and leaves the new form, its draft and the focus.
-  const srCancel = () => srForm().querySelectorAll("button").find((b) => text(b) === "Cancel");
+  byId("join-agent").value = "agt-a"; byId("join-agent").dispatch("change");
+  const srPlacedWhy = text(srPanel().querySelector(".join-runner-why"));
+  await srSubmit();
+  expect(srMade.length === 1 && srPlacedWhy === "This agent already runs on a runner here: one placement per agent. Its row is under Managed agents."
+    && srSaid() === "Not placed on the runner: " + srPlacedWhy,
+    "placements: an agent placed now is said so and not sent " + srPlacedWhy);
+  // §15.6: by id only an active member of the project; a profile of one's own not in it yet joins by a line first.
+  byId("join-agent").value = "agt-s1"; byId("join-agent").dispatch("change");
+  const srOutsideWhy = text(srPanel().querySelector(".join-runner-why"));
+  await srSubmit();
+  expect(srMade.length === 1 && !srPanel().querySelector(".join-runner-why").hidden
+    && srOutsideWhy === "Only an agent already in this project, or a new one, starts on a runner. Choose a new agent, or join this one with a line first."
+    && srSaid() === "Not placed on the runner: " + srOutsideWhy,
+    "placements: a profile not in the project is said so and not sent " + srOutsideWhy);
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  byId("join-handle").value = "agent-b"; byId("join-handle").dispatch("input"); byId("join-display").value = "Agent Bee";
+  await srSubmit();
+  expect(srForm() && srSaid() === "Not placed on the runner: you already have an agent with this handle (invalid) — handle: taken",
+    "placements: a refusal is the hub's message, code and field, and the form stays " + srSaid());
+  byId("join-handle").value = "agent-f"; byId("join-handle").dispatch("input"); byId("join-display").value = "Agent F"; byId("join-areas").value = "web/, docs/";
+  byId("join-reports").value = "hum-maintainer";
+  byId("join-briefing").value = "You own the runner form."; byId("placement-new-clone").value = "agent-f-web"; byId("placement-new-branch").value = "main";
+  // A slow POST, the panel cancelled and opened anew, a draft begun (review of #1558): the first
+  // request's answer lists the placement and says so, and leaves the panel opened since, its draft and the focus.
   srHold = true;
-  srForm().requestSubmit(); for (let k = 0; k < 4; k++) await tick();
+  srJoin().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
   srProto.focus = function () { document.activeElement = this; };
   srCancel().click(); await tick();
   await srOpen();
-  byId("placement-new-handle").value = "draft-x";
+  byId("join-handle").value = "draft-x";
   srRelease(); for (let k = 0; k < 8; k++) await tick();
-  expect(srForm() && byId("placement-new-handle").value === "draft-x" && byId("placement-new-agent") === document.activeElement
-    && text(srBox()).includes("Agent F is placed on home-laptop."),
-    "placements: a POST answered after its form was cancelled leaves the form opened since, with its draft and the focus");
+  expect(srForm() && byId("join-handle").value === "draft-x" && byId("join-agent") === document.activeElement
+    && text(srBox().querySelector(".join-slot")).includes("Agent F is placed on home-laptop."),
+    "placements: a POST answered after its panel was cancelled leaves the panel opened since, with its draft and the focus");
   srCancel().click(); await tick();
   srProto.focus = srFocus;
   expect(srMade.length === 3 && JSON.stringify(srMade[2]) === JSON.stringify({ agent: { handle: "agent-f", display_name: "Agent F" }, trust: "member", role: "coder",
@@ -2218,7 +2225,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = srRepos([["github.com/[z-a]/*"], ["github.com/[z-a]/*", "github.com/o/*"], ["github.com/[!z-a]/*"]]);
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? srGet(p).then((x) => ({ ...x, repository: { ...x.repository, url: "https://github.com/o/repo" } })) : srGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
-  if (srMenu()) await srOpen();
+  await srOpen();
   expect(srBox() && srForm() && JSON.stringify(srOpts("placement-new-runner").map((o) => o.split(" · ")[0])) === JSON.stringify(["box-1", "box-2"]),
     "placements: a pattern with a reversed range is no match and hides neither the runner's next pattern nor another runner "
     + JSON.stringify(srBox() && srForm() ? srOpts("placement-new-runner") : null));
@@ -2248,7 +2255,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = srRepos([["github.com/o/??"], ["github.com/o/?"], ["github.com/o/[!a]"], ["github.com/o/[!z-a]"]]);
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? srGet(p).then((x) => ({ ...x, repository: { ...x.repository, url: "https://" + srEmoji } })) : srGet(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
-  if (srMenu()) await srOpen();
+  await srOpen();
   expect(srBox() && srForm() && JSON.stringify(srOpts("placement-new-runner").map((o) => o.split(" · ")[0])) === JSON.stringify(["box-1", "box-2", "box-3"]),
     "placements: a repository named beyond U+FFFF is offered by the runners whose pattern the hub accepts, not by ?? "
     + JSON.stringify(srBox() && srForm() ? srOpts("placement-new-runner") : null));
@@ -4068,6 +4075,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const byoFullPost = win.Maity.api.post;
   win.Maity.api.post = (p, b) => { if (p.endsWith("/joins")) { byoFullPosts.push(b); return Promise.reject(new win.Maity.api.ApiError("x", 400, p, "invalid", {})); } return byoFullPost(p, b); };
   await joinAny(); await tick();
+  // Without members:admin the form has no part on a runner (§15.6): a member's way is the join line.
+  expect(!byId("placement-new-on") && !main.querySelector(".join-panel .join-runner"), "own agents: a member's join form has no part to start on a runner");
   byId("join-agent").value = ""; byId("join-agent").dispatch("change");
   byId("join-handle").value = "one-more"; byId("join-display").value = "One more";
   main.querySelector("form.join-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
@@ -5052,13 +5061,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.post = plPost; win.Maity.api.patch = plPatch; win.Maity.api.get = plGet; win.Maity.api.getAll = plGetAll;
   // Its runners revoked or removed above: no form, and where to allow one.
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
-  main.querySelector(".page-head button.join-open").click(); await tick();
-  main.querySelector('.page-head .menu [data-key="runner"]').click(); for (let k = 0; k < 8; k++) await tick();
-  const plNone = main.querySelector(".join-menu-slot .placement-new-none");
-  expect(!main.querySelector(".join-menu-slot form.placement-new") && plNone
+  main.querySelector(".page-head button.join-open").click(); for (let k = 0; k < 6; k++) await tick();
+  byId("placement-new-on").checked = true; byId("placement-new-on").dispatch("change"); for (let k = 0; k < 8; k++) await tick();
+  const plNone = main.querySelector(".join-slot .join-panel .placement-new-none");
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change"); byId("join-handle").value = "agent-z";
+  main.querySelector(".join-slot form.join-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  const plSaid = text(main.querySelector(".join-slot form.join-form .send-status"));
+  expect(!main.querySelector(".join-slot .join-runner-fields") && plNone
     && text(plNone) === "None of your paired runners is allowed in this project yet. Allow one under this project's Runners."
-    && plNone.querySelector("a").getAttribute("href") === "#/maintainer/maity/runners",
-    "placements: no paired runner of one's own allowed here: no form, and where to allow one " + (plNone && text(plNone)));
+    && plNone.querySelector("a").getAttribute("href") === "#/maintainer/maity/runners"
+    && plSaid === "Not placed on the runner: There is no runner and tool to start it with yet: the part on a runner says why.",
+    "placements: no paired runner of one's own allowed here: no runner fields, where to allow one, and a start says why " + (plNone && text(plNone)) + " | " + plSaid);
+  byId("placement-new-on").checked = false; byId("placement-new-on").dispatch("change"); for (let k = 0; k < 2; k++) await tick();
+  expect(text(main.querySelector(".join-slot form.join-form").querySelectorAll("button").find((b) => b.getAttribute("type") === "submit")) === "Create join line",
+    "placements: turned off again, the form makes a join line");
   await go("#/maintainer/maity/inbox");
 
   // Clicking through cards (tsk-d61rvjm6gteh): each opens in place and reads that card's notes and history,
@@ -7890,15 +7906,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const jpButton = () => main.querySelector("button.join-open");
   expect(jpPanel() && jpPanel().hidden && jpButton() && !jpButton().hidden && text(jpButton()) === "Join an agent"
     && main.querySelector(".page-head") && main.querySelector(".page-head").querySelector("button.join-open") === jpButton()
-    && jpButton().getAttribute("aria-haspopup") === "menu",
-    "join: Agents has Join an agent at its head, a menu, the panel closed");
+    && !jpButton().getAttribute("aria-haspopup"),
+    "join: Agents has Join an agent at its head, one button, the panel closed");
   // tsk-mzaf9w83emn6: New agent profile (tsk-vkyp71qp95n9; was + Add an agent) is the new profile's form; one form at a time, a Cancel gives the focus back.
   const jpAdd = () => main.querySelector("button.agent-add-open");
   expect(jpAdd() && !main.querySelector("form.agent-new") && text(jpAdd()) === "New agent profile", "join: New agent profile at the head, its form closed");
   jpAdd().click(); await tick();
   expect(main.querySelector("form.agent-new") && jpAdd().hidden && jpPanel().hidden, "join: Add opens the new profile's form");
   await joinAny(); await tick();
-  expect(!main.querySelector("form.agent-new") && !jpAdd().hidden && !jpPanel().hidden && !jpButton().hidden, "join: Add any agent in Join an agent closes it and opens the panel, the menu stays");
+  expect(!main.querySelector("form.agent-new") && !jpAdd().hidden && !jpPanel().hidden && !jpButton().hidden, "join: Join an agent closes it and opens the panel, the button stays");
   jpAdd().click(); await tick();
   expect(main.querySelector("form.agent-new") && jpPanel().hidden && !jpButton().hidden, "join: Add closes the panel again");
   btn(main.querySelector("form.agent-new"), "Cancel").click(); await tick();
@@ -7907,7 +7923,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const jpFocus = jpProto.focus;
   jpProto.focus = function () { document.activeElement = this; };
   await joinAny(); await tick();
-  expect(!jpPanel().hidden && !jpButton().hidden && document.activeElement === byId("join-agent"), "join: Add any agent opens the panel, the focus on its first field");
+  expect(!jpPanel().hidden && !jpButton().hidden && document.activeElement === byId("join-agent"), "join: Join an agent opens the panel, the focus on its first field");
   btn(jpPanel(), "Cancel").click(); await tick();
   expect(jpPanel().hidden && !jpButton().hidden && document.activeElement === jpButton(), "join: Cancel closes it, the focus back on the button");
   await joinAny(); await tick();
@@ -13244,9 +13260,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
   const ivInvite = main.querySelector(".page-head a.members-invite-user"), ivJoin = main.querySelector(".page-head button.join-open");
   expect(ivInvite && ivInvite.getAttribute("href") === "#/invite?project=maintainer%2Fmaity" && text(ivInvite) === "Invite user"
-    && ivJoin && text(ivJoin) === "Join an agent" && ivJoin.getAttribute("aria-haspopup") === "menu" && !main.querySelector("a.members-join-agent")
+    && ivJoin && text(ivJoin) === "Join an agent" && !ivJoin.getAttribute("aria-haspopup") && !main.querySelector("a.members-join-agent")
     && !main.querySelector("section.invitations"),
-    "invite: Team has Invite user and the Join an agent menu at its head, and no invitation form of its own");
+    "invite: Team has Invite user and the Join an agent button at its head, and no invitation form of its own");
   await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
   const ivBox = () => main.querySelector("section.invitations");
   const ivOthers = main.querySelectorAll(".invitations-others section.invitations");

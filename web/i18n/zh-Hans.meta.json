@@ -727,10 +727,6 @@
     "en": "eb3c55d425e3efcc",
     "text": "ded9ec8e97918493"
   },
-  "agents.join.any": {
-    "en": "0a199db71af3f5a8",
-    "text": "d756d3dd93b2a384"
-  },
   "agents.join.failed": {
     "en": "d9eda7d9dc411b60",
     "text": "f30638584f9bcdf1"
@@ -12979,17 +12975,9 @@
     "en": "7ea323c032a73009",
     "text": "d19886161f0027d1"
   },
-  "placements.new.agent_new": {
-    "en": "850f486460afc138",
-    "text": "47d51e4c2e0b3fe4"
-  },
   "placements.new.branch": {
     "en": "96c59fd717d8cd7b",
     "text": "bbea774a6ccbd078"
-  },
-  "placements.new.briefing": {
-    "en": "6da8dc3401eadaa4",
-    "text": "37126d71b3564358"
   },
   "placements.new.busy": {
     "en": "a3a89076ed74c17c",
@@ -13023,6 +13011,10 @@
     "en": "0f5300ecabf4f2b2",
     "text": "c26f906355ad7d08"
   },
+  "placements.new.legend": {
+    "en": "87df56605ba0a822",
+    "text": "c5cb530da02f9655"
+  },
   "placements.new.mode": {
     "en": "b47ccf6a86662344",
     "text": "97aeea4df974c2ef"
@@ -13055,13 +13047,21 @@
     "en": "2585c200021d665e",
     "text": "fa1619bfe5fe23bd"
   },
-  "placements.new.open": {
-    "en": "0fe4c7d73ff8f4e0",
-    "text": "f938fdc012b9a38f"
+  "placements.new.not_member": {
+    "en": "55e42ae71f048f84",
+    "text": "f7bd92687cc92e51"
   },
-  "placements.new.profile": {
-    "en": "ddd0aac4da02e11d",
-    "text": "16d42811ff2b4a21"
+  "placements.new.not_ready": {
+    "en": "43cf84b554dc3e1f",
+    "text": "ff6cd606ded2f79a"
+  },
+  "placements.new.offer": {
+    "en": "78860a7edd225009",
+    "text": "52707b263af4868a"
+  },
+  "placements.new.placed": {
+    "en": "46eba681e2d58129",
+    "text": "a59f3e79e22b6ab3"
   },
   "placements.new.reading": {
     "en": "2070173fea584607",
@@ -13098,10 +13098,6 @@
   "placements.new.target_any": {
     "en": "50d82c38be3b5eee",
     "text": "a48e5fa8c5795c61"
-  },
-  "placements.new.title": {
-    "en": "0fe4c7d73ff8f4e0",
-    "text": "f938fdc012b9a38f"
   },
   "placements.new.tool": {
     "en": "077dcaba577a59ac",

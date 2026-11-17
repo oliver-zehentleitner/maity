@@ -10,6 +10,9 @@
 // another one, or one in place of an instance (docs/api.md §3.1, §6.17).
 // A first join may name the agent member whose work the new one continues
 // and where the hand-over is written; neither moves anything (§3.1).
+// For a human with members:admin the form's last part starts the agent on
+// one of their runners instead of a line (§15.6, js/placements.js
+// `runnerPart`, tsk-hdczmsq2r431): one form for both ways, the profile first.
 "use strict";
 
 window.Maity = window.Maity || {};
@@ -143,6 +146,13 @@ window.Maity = window.Maity || {};
       handleState,
       h("label", { for: "join-display" }, M.t("join.display.label")), display);
     if (!profiles.offered.length) newFields.hidden = false;
+    // Or on a runner instead of a join line (§15.6, js/placements.js `runnerPart`,
+    // tsk-hdczmsq2r431): the part at the form's end, for a human with members:admin only.
+    const viaRunner = !hooks.member && M.placements ? M.placements.runnerPart(ctx, { changed: () => showAgent() }) : null;
+    const followRunner = () => {
+      if (viaRunner) viaRunner.follow(agentSelect.value, agentSelect.value ? memberOf(agentSelect.value) : null, handle.value.trim());
+    };
+    handle.addEventListener("input", followRunner);
 
     // An agent that is already a member: the new line starts another
     // instance of it or replaces one of its instances (docs/api.md §6.17).
@@ -181,7 +191,19 @@ window.Maity = window.Maity || {};
     // The choice starts from its default for each agent shown as a member.
     let shownFor = "";
     let drawAhead = null; // set with the restricted-access line below
+    // The fields as the agent chosen asks, then what the runner part takes away: a placement
+    // knows no instance choice, take-over, hand-over, subagents or validity (§15.6), and never
+    // changes a membership, so nothing typed there is dropped unseen.
     function showAgent() {
+      showJoinFields();
+      if (!viaRunner) return;
+      followRunner();
+      const on = viaRunner.on();
+      [instanceBox, memberReportsField, subagentsField, takeOverField, handoverField, ttlField].forEach((f) => { if (on) f.hidden = true; });
+      if (!on) ttlField.hidden = false;
+      create.textContent = on ? M.t("placements.new.submit") : M.t("join.create");
+    }
+    function showJoinFields() {
       const m = agentSelect.value ? memberOf(agentSelect.value) : null;
       const fresh = (m ? m.id : "") !== shownFor;
       shownFor = m ? m.id : "";
@@ -349,6 +371,8 @@ window.Maity = window.Maity || {};
       [900, 1800, 3600].map((v) => h("option", { value: String(v) },
         v < 3600 ? M.t("join.ttl.minutes", { count: v / 60 }) : M.t("join.ttl.hours", { count: v / 3600 }))));
 
+    const ttlField = h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl);
+
     const status = M.statusLine();
     // The panel's body: the form, or once a join is made the line in its place.
     const body = h("div", { class: "join-body", "aria-live": "polite" });
@@ -432,6 +456,62 @@ window.Maity = window.Maity || {};
       copy.focus();
     }
 
+    // On a runner instead of a join line (§15.6): the agent and its place in the team from the
+    // form (an agent here by its id alone, a new profile with its join fields), the rest from the
+    // runner part; one POST, no line. Made, the panel closes and the line under it says so, with
+    // the way to where it runs; refused, the hub's message and the fields it names stay here.
+    async function place(agent, member, text) {
+      const no = viaRunner.blocked() || (!viaRunner.ready() ? M.t("placements.new.not_ready") : null);
+      if (no) { status.fail(M.t("placements.new.failed"), { message: no }); viaRunner.first().focus(); return; }
+      const req = agent.id ? { agent: { id: agent.id } } : {
+        agent,
+        trust: trust.value,
+        role: role.value,
+        reports_to: reportsTo.value || null,
+        areas: areas.value.split(",").map((a) => a.trim()).filter(Boolean),
+        capabilities: [],
+      };
+      if (!agent.id && text) req.briefing = text;
+      Object.assign(req, viaRunner.body());
+      const mine = ++submission;
+      status.busy(M.t("placements.new.busy"));
+      create.disabled = true;
+      let made;
+      try {
+        made = await M.api.post(ctx.base + "/placements", req);
+      } catch (err) {
+        // Closed meanwhile: nothing said in a panel no one sees.
+        if (mine !== submission) { status.done(); return; }
+        status.fail(M.t("placements.new.failed"), viaRunner.said(err));
+        const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
+        if (fields.handle === "taken" && agent.handle) { refused.add(agent.handle); checkHandle(); handle.focus(); }
+        return;
+      } finally {
+        create.disabled = false;
+      }
+      status.done();
+      // Made even when the panel was closed meanwhile: the line says so all the same, and a form
+      // opened since keeps its draft and the focus.
+      if (mine === submission) close(true);
+      // The agent placed now is placed: the part reads again before it is offered next.
+      viaRunner.reread();
+      append(clear(listStatus.el), h("span", { class: "ok" }, M.t("placements.new.done",
+        { name: made.agent.display_name || made.agent.handle, runner: made.runner.name })), " ",
+      h("a", { href: ctx.link("placements") }, M.t("placements.title")));
+      listStatus.el.className = "send-status";
+      if (hooks.started) await hooks.started(made);
+      // A new profile is one's own now: offered by name, its handle taken.
+      // The choice shown stays (a form opened meanwhile keeps its draft).
+      try {
+        profiles = await readProfiles(ctx);
+        const kept = agentSelect.value;
+        profileOptions();
+        agentSelect.value = kept;
+        showAgent();
+        checkHandle();
+      } catch (ignored) { /* the placement is made; the list catches up when read again */ }
+    }
+
     // Held while a join is being created: one join per submission, by click or Ctrl+Enter.
     const create = h("button", { type: "submit", class: "primary" }, M.t("join.create"));
     // Where the second factor is asked for when the hub wants it for the join.
@@ -471,6 +551,7 @@ window.Maity = window.Maity || {};
           briefing.focus();
           return;
         }
+        if (viaRunner && viaRunner.on()) { await place(agent, member, text); return; }
         const req = member
           ? Object.assign({ agent, ttl_seconds: Number(ttl.value) },
             replaceOne.checked && replaced.value ? { replaces: replaced.value } : { new_instance: true })
@@ -621,10 +702,11 @@ window.Maity = window.Maity || {};
         membershipField(subagentsField),
         membershipField(takeOverField),
         handoverField,
-        h("div", { class: "field" }, h("label", { for: "join-ttl" }, M.t("join.field.ttl")), ttl)),
+        ttlField),
       membershipField(h("div", { class: "join-briefing" },
         h("label", { for: "join-briefing" }, M.t("join.briefing.label", { keys: M.dom.SEND_KEYS })), briefing,
         h("p", { class: "hint" }, M.t("join.briefing.hint"))))),
+    viaRunner ? viaRunner.el : null,
     ahead ? ahead.el : null,
     stepSlot,
     h("div", { class: "actions" }, h("button", { type: "button", onclick: () => close(true) }, M.t("join.cancel")), create),
@@ -649,6 +731,8 @@ window.Maity = window.Maity || {};
         showAgent();
       }
       focusSoon(agentSelect);
+      // The runners and placements as they are now, when the part is on.
+      if (viaRunner) viaRunner.reread();
       rereadMembers().then(() => { if (!panel.hidden) showAgent(); });
     }
     function close(refocus) {
@@ -784,6 +868,7 @@ window.Maity = window.Maity || {};
     ];
   }
 
+  // hooks.started(placement): after a start on a runner, for a page that lists placements.
   // hooks.changed(): the seats and the earlier joins changed (a join made,
   // revoked, expired, or read at last); the Agents view draws them again.
   // A failed read of the profiles or the joins stays in the panel and the

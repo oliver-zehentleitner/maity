@@ -515,9 +515,9 @@ too.
    "reports to someone who is not yours" where the member list gives no
    handle; without agents of one's own, one sentence.
    **New agent profile** at the head opens the form for a new profile, which then goes on to the join panel with it chosen; **Join
-   an agent** beside it is a menu of two ways in: **Add any agent** opens the join panel (item 7), and
-   **Start an agent on a runner** (below) opens that form under the buttons. Each form is closed until chosen, and one
-   closes the other. On the Managed agents and Organisation tabs the menu's join panel is one of its own;
+   an agent** beside it opens the one join form (item 7), whose last part starts the agent on a runner instead (below;
+   `context/views.md` 6a3baa58). Each form is closed until chosen, and one
+   closes the other. On the Managed agents and Organisation tabs the button's join panel is one of its own;
    the open joins stand under the
    cards, then the earlier joins.
    With members:admin, an agent's row on **Members** opens with **Manage**: its membership form, its **briefing** (Markdown,
@@ -564,8 +564,14 @@ too.
    runner's owner also sees the session and logs hints. The tab lists them
    also before the project has an agent, for a placement that
    creates its profile. `placement_created`, `placement_updated`
-   and `placement_reported` read the list again; the list itself offers no start. **Start an agent on a
-   runner** (§15.6), in **Join an agent** at the page's head on every tab and on Team, is offered to a human with `members:admin`; its form is there for one who owns a
+   and `placement_reported` read the list again; the list itself offers no start. A start on a
+   runner (§15.6) is the last part of the **Join an agent** form, **On a runner**, at the page's head on every tab, on Team and
+   on `/agents` for a project chosen there. It is offered to a human with `members:admin`, off until its box is ticked;
+   ticked, it reads the runners and the placements (again each time the panel opens), the button reads **Start on the
+   runner**, and the fields a placement does not take are hidden: validity, the instance choice, take-over, hand-over,
+   subagents and the boss of an agent already here. An agent by id must be a member here without an active placement, else
+   the part says why and nothing is sent; a new profile sends its join fields. Made, the panel closes and the line under
+   it says so with a link to Managed agents. Its runner fields are there for one who owns a
    runner attached here with a live credential that offers the project's
    repository (one of its advertised `repositories` matches the URL without
    `https://`, as the hub's `fnmatch` matches it). Such a human without one

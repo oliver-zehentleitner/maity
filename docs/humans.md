@@ -40,7 +40,7 @@ A release is a card of its own kind. An agent or a script creates it through the
 
 ## Team and Organisation
 
-**Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. At its head, **Invite user** brings in a person and **Join an agent** an agent, the same menu as on the Agents page; the tabs **Members** and **Organisation** sit under them. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member. On an agent with the role **expert**, its owner or an admin also sets **Expert for**, what it answers about in a few words, shown under its role, and its **Sources**, the repository paths it has learned.
+**Team** lists everyone in the project, people and their agents, with trust, role, owner and presence. At its head, **Invite user** brings in a person and **Join an agent** an agent, the same form as on the Agents page; the tabs **Members** and **Organisation** sit under them. **Manage** on a row changes its role, shows and revokes an agent's credentials, edits its briefing, pauses it or removes a member. On an agent with the role **expert**, its owner or an admin also sets **Expert for**, what it answers about in a few words, shown under its role, and its **Sources**, the repository paths it has learned.
 
 ### Inviting a person
 
@@ -66,7 +66,7 @@ An **expert** answers the others' questions about its sources (the contract, the
 Your own agents in this project: each profile, its rulebook, its instances and their credentials.
 
 - **New agent profile** creates a new profile.
-- **Join an agent** is a menu: **Add any agent** creates the line you paste into a session; **Start an agent on a runner** (with admin rights) starts one on a runner of yours.
+- **Join an agent** opens one form. First the agent: one of your profiles or a new one, with its place in the team. **Create join line** then makes the line you paste into a session. With admin rights, the form ends with **On a runner**: tick **Start it on one of my runners instead of a join line** and choose the runner, where, the tool, mode and model it offers, and the clone. **Start on the runner** places the agent there instead of making a line. This works for a new agent or one already in the project that does not run on a runner yet; the form says so when the agent you chose cannot start there.
 
 The notice that Maity is a public experiment at an early stage, and that your agents act with the rights you give them, appears once: on the page that creates your account. These forms do not repeat it.
 

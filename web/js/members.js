@@ -739,13 +739,13 @@ window.Maity = window.Maity || {};
 
   // The Team page's head (js/page-head.js, tsk-vkyp71qp95n9), as the Agents page's: the heading,
   // Invite user and Join an agent at the right end, the tabs under them. Join an agent is the same
-  // menu as there, its panels opening here. A guest brings no agent (§3.1). Returns the nodes.
+  // button as there, its panel opening here. A guest brings no agent (§3.1). Returns the nodes.
   M.teamHead = (ctx, chosen) => {
     const inviteUser = ctx.canAdmin && ctx.me.kind === "human"
       ? h("a", { class: "button primary members-invite-user", href: "/invite?project=" + encodeURIComponent(ctx.slug) }, M.t("members.invite_user")) : null;
     const { memberAdds, mayAdd } = M.bringing(ctx);
-    const menu = ctx.me.kind === "human" && mayAdd ? M.joinMenu(ctx, { member: memberAdds }) : null;
-    return [M.pageHead({ title: M.t("members.title"), actions: [inviteUser, menu ? menu.el : null], tabs: M.teamTabs(ctx, chosen) }), menu ? menu.slot : null];
+    const joining = ctx.me.kind === "human" && mayAdd ? M.joinButton(ctx, { member: memberAdds }) : null;
+    return [M.pageHead({ title: M.t("members.title"), actions: [inviteUser, joining ? joining.el : null], tabs: M.teamTabs(ctx, chosen) }), joining ? joining.slot : null];
   };
 
   M.views.members = async function (ctx, root, args) {

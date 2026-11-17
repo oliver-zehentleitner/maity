@@ -1628,11 +1628,9 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .page-head-bar { margin-bottom: 8px; }
 .page-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-inline-start: auto; }
 .page-head-actions :is(button, a.button) { min-height: 40px; display: inline-flex; align-items: center; }
-.page-head-actions .menu-button.join-open { padding: 6px 14px; border-radius: var(--radius); }
-.page-head-actions .menu-button.join-open::after { content: "▾"; font-size: 0.8em; }
+.page-head-actions button.join-open { padding: 6px 14px; border-radius: var(--radius); }
 .page-head .view-tabs { width: 100%; margin-top: 0; }
-.join-menu-slot > .send-status:empty { min-height: 0; margin: 0; }
-.join-menu-slot .placement-new-box { margin: 8px 0 16px; padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius); }
+.join-slot > .send-status:empty { min-height: 0; margin: 0; }
 /* The project's name in the hint may be one long word (63 characters): it wraps rather than widening
    the page (nte-fk0fzcsma0e7). */
 .agents-project-hint { overflow-wrap: anywhere; }
@@ -1679,8 +1677,18 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .seat-actions { display: flex; justify-content: flex-end; }
 .earlier-joins { margin-top: 16px; }
 .earlier-joins summary { cursor: pointer; }
+/* The join form's last part, a start on a runner instead of a line (tsk-hdczmsq2r431): its fields
+   in the grid the join's own fields have, so a label stands over its control. */
+.join-runner { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 12px 0 0; min-width: 0; min-inline-size: 0; }
+.join-runner legend { font-size: 0.85rem; font-weight: 600; padding: 0 4px; }
+.join-runner .hint { margin: 4px 0; }
+.join-runner-fields { border: 0; padding: 0; margin: 8px 0 0; min-inline-size: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.join-runner-fields .field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 0; align-content: start; }
+.join-runner-fields .field > :is(select, input, textarea) { width: 100%; min-width: 0; box-sizing: border-box; }
+.join-runner-fields .wide { grid-column: 1 / -1; }
+.join-runner-box[hidden], .join-runner-why[hidden], .join-runner-fields [hidden] { display: none; }
 @media (max-width: 700px) {
-  .join-fields, .join-fields .new-agent:not([hidden]) { grid-template-columns: minmax(0, 1fr); }
+  .join-fields, .join-fields .new-agent:not([hidden]), .join-runner-fields { grid-template-columns: minmax(0, 1fr); }
 }
 
 
@@ -1835,10 +1843,6 @@ pre.preferences-text { white-space: pre-wrap; overflow-wrap: anywhere; backgroun
 .placement-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-weight: 600; }
 .placement .facts { margin: 0; }
 .placement-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-/* Start on a runner: a select is as wide as its longest option (a mode's words, a runner's
-   presence and load), so on a phone it is held to the form's width, and the fieldset may shrink. */
-.placement-new select, .placement-new input { max-width: 100%; }
-.placement-new-profile { min-inline-size: 0; }
 .placement-consent, .placement-waiting { color: var(--muted); }
 /* The reported state as a pill with a dot (the designer's pass part 3). */
 .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 1px 10px; border: 1px solid var(--border); font-size: 0.88rem; }
