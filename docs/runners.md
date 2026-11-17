@@ -86,6 +86,8 @@ To move an agent of yours off someone else's runner: let it push its work and re
 
 New agent profiles are created by a human in the dashboard, never from the CLI.
 
+A project allows a limited number of active placements (agents on runners) at once, all runners together: 8 unless a human admin changes it under **Settings** → **Members and agents** → **Agents on runners**, which also shows how many placements are active now (a placement counts from when it is created, a proposal waiting for consent and one created stopped included, until it is closed, whether or not its runner has reported it yet). In the dashboard, a start beyond it is refused with the limit and a link there (`maity placement start` says `placement_quota`); lowering it closes no active placement.
+
 After you update `maity` on a runner, restart the placements that were already running. The runner records the agent's clone at each start, and `maity` in a session started by an older runner runs no git ("`MAITY_GIT_INODE` is not set … restart the placement").
 
 A runner whose configuration lists `[harness.codex]` needs a hub of 0.1.0a8 or newer. Codex has no command allowlist of its own: its OS sandbox is the boundary, and the runner advertises it as `confinement: "sandbox"`. An older hub does not know that value, refuses the runner's hello (`invalid`, on `capabilities.harnesses.<n>.confinement`), and the runner stops. Until the hub is updated, leave codex out of the runner's configuration.
