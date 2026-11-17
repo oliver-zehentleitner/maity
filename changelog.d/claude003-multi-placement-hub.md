@@ -20,4 +20,7 @@
   of `desired` recomputes it from all of them, until the earliest
   `retry_at` still ahead. A change to `desired: stopped` ends it at once,
   a resume no longer clears a limit the runner set, and a runner's limit
-  no longer replaces a limit the agent set itself.
+  no longer replaces a limit the agent set itself. When that own limit
+  ends (at its `until` or by a resume), and at every `POST /me/limit` with
+  `until: null`, the runner's limit is recomputed, so a rate limit still
+  ahead stays or takes over then, without a second `holder_stalled`.

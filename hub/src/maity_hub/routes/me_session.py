@@ -360,12 +360,17 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
             _announce_model_change(conn, mine, caller, previous, harness, model, session_id)
         # The member's next resume clears its limit (§6.12), but not a runner's: the
         # instance resuming may not be the limited one, and the runner's next report
-        # decides. A returning agent is announced before its packet is built.
+        # decides. A returning agent is announced before its packet is built. The end of
+        # its own limit recomputes the runner's, which may take over now; after a live
+        # own limit without a gap, so it is no new start (no second holder_stalled).
         if mine.row.limit_until is not None and mine.row.limit_source != "runner":
             conn.execute(
                 update(t.membership)
                 .where(t.membership.c.id == mine.id)
                 .values(**availability.NO_LIMIT)
+            )
+            availability.recompute_runner_limit(
+                conn, mine.id, actor, continues=mine.row.limit_until > clock.now()
             )
         availability.reconcile_ids(conn, [mine.id], actor)
         mine = _own_membership(conn, caller)  # with the pause cleared

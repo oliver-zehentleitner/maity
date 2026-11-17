@@ -666,15 +666,17 @@ def set_agent_limit(
     reason: str | None,
     placement_id: str | None,
     actor: Actor | None,
+    continues: bool = False,
 ) -> None:
     """Store, replace or (`until` None) clear an agent membership's limit, announce what it
-    changes and, when stored, hold its leases."""
+    changes and, when stored, hold its leases. `continues`: the limit takes over without a
+    gap from one that just ended (§6.12), so it is no start and stalls no holder again."""
     now = clock.now()
     lock_project(conn, row.project_id)  # the lock the expiry reads under
     running = conn.execute(
         select(t.membership.c.limit_until).where(t.membership.c.id == row.id)
     ).scalar()
-    starts = until is not None and until > now and not _live(running, now)
+    starts = until is not None and until > now and not _live(running, now) and not continues
     values: dict[str, Any] = (
         {
             "limit_until": until,
@@ -770,16 +772,20 @@ def recompute_runner_limit(
     membership_id: int | None,
     actor: Actor | None,
     reporting: tuple[str, datetime | None] | None = None,
+    continues: bool = False,
 ) -> None:
     """The runner's limit of an agent from every active placement of it with `desired:
-    running` (§6.12), after a report, a close or a change of `desired`. The agent is
+    running` (§6.12), after a report, a close, a change of `desired` or the end of a limit
+    the agent set itself (at its `until`, by a resume, or by `POST /me/limit` with
+    `until: null`). The agent is
     limited while each of them last reported `rate_limited` with a `retry_at` still ahead,
     until the earliest of those; the record names the placement that reported it, the one
     created first on a tie. Otherwise, with none that should run included, the runner's
     limit ends. One that runs keeps the agent available, as an awake instance beside a
     dormant one does. A recomputation creates, changes or clears only a limit with
     `source: runner`: while one the agent declared itself (`POST /me/limit`) is stored,
-    it stores nothing, and that limit ends as a self-set limit does."""
+    it stores nothing, and that limit ends as a self-set limit does. `continues`: a
+    limit was live until this moment, so a runner's limit stored now is no new start."""
     if membership_id is None:
         return
     row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).first()
@@ -800,6 +806,7 @@ def recompute_runner_limit(
                 reason="quota",
                 placement_id=by.id,
                 actor=actor,
+                continues=continues,
             )
         return
     if row.limit_placement_id is not None:
@@ -917,7 +924,30 @@ def end_limit(conn: Connection, project: Any, row: Any) -> bool:
             },
             subject=("member", row.agent_id),
         )
+    if row.limit_source != "runner":
+        # The end of the agent's own limit recomputes the runner's (§6.12): a rate limit
+        # every placement still reports takes over now, not at the next report, and
+        # without a gap, so it is no new start.
+        recompute_runner_limit(conn, row.id, None, continues=True)
     return True
+
+
+def clear_agent_limit(conn: Connection, row: Any, actor: Actor | None) -> None:
+    """`POST /me/limit` with `until: null` from an agent: the stored limit, its own or a
+    runner's, is cleared, and the runner's is recomputed (§6.12), so a rate limit every
+    placement still reports stays or takes over without a gap. Announced once, as it
+    ends up."""
+    now = clock.now()
+    lock_project(conn, row.project_id)
+    was_live = _live(
+        conn.execute(
+            select(t.membership.c.limit_until).where(t.membership.c.id == row.id)
+        ).scalar(),
+        now,
+    )
+    conn.execute(update(t.membership).where(t.membership.c.id == row.id).values(**NO_LIMIT))
+    recompute_runner_limit(conn, row.id, actor, continues=was_live)
+    reconcile_ids(conn, [row.id], actor)
 
 
 def expire_limits(conn: Connection, project_id: str) -> None:

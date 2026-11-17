@@ -12,12 +12,14 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.availability import sweep
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_join_pickup import exchange, pick_up
 from tests.test_placements import REPOSITORY, Setup, allow_instances, place, placed, report
 from tests.test_runner_stream import attach, hello
 from tests.test_runners import Runner, error, paired
+from tests.test_tasks import task
 
 MEMBERS = "/projects/maintainer/maity/members"
 
@@ -259,6 +261,88 @@ def test_a_recompute_never_touches_a_limit_the_agent_set_itself(setup: Setup) ->
     assert (shown["state"], shown["source"], shown["until"]) == ("limited", "self", own)
     assert report(setup, p1, 2, state="starting").status_code == 200  # not cleared either
     assert _limit(setup) == (own, None)
+
+
+def _own_until_17_rate_limited_until_18(setup: Setup) -> tuple[Any, str, str]:
+    """Two placements rate-limited until 18:00 while the agent's own limit runs until 17:00
+    (review A1058): the own limit stands, the record names no placement."""
+    allow_instances(setup.engine, setup.agent.id, 3)
+    p1, p2 = placed(setup), placed(setup)
+    base = clock.now().replace(microsecond=0)
+    seventeen = base + timedelta(hours=1)
+    eighteen = clock.rfc3339(base + timedelta(hours=2))
+    declared = setup.agent.post("/me/limit", {"until": clock.rfc3339(seventeen)})
+    assert declared.status_code == 200, declared.text
+    limited = {"state": "rate_limited", "reason": "quota", "exit_code": 2}
+    assert report(setup, p1, 1, **limited, retry_at=eighteen).status_code == 200
+    assert report(setup, p2, 1, **limited, retry_at=eighteen).status_code == 200
+    assert _limit(setup) == (clock.rfc3339(seventeen), None)
+    return seventeen, eighteen, p1["id"]
+
+
+def _shown(s: Setup) -> tuple[Any, Any, Any]:
+    found = s.owner.get(f"{MEMBERS}/{s.agent.id}").json()["availability"]
+    return found["state"], found.get("source"), found.get("until")
+
+
+def test_the_end_of_an_own_limit_at_until_hands_over_to_the_runners(setup: Setup) -> None:
+    """§6.12: the end of a self-set limit is a recomputation. Own limit until 17:00, every
+    placement rate-limited until 18:00: after 17:00 the agent is limited until 18:00."""
+    seventeen, eighteen, first = _own_until_17_rate_limited_until_18(setup)
+    clock.set_source(lambda: seventeen + timedelta(seconds=1))
+    sweep(setup.engine)
+    assert _shown(setup) == ("limited", "runner", eighteen)
+    assert _limit(setup) == (eighteen, first)
+
+
+def test_the_end_of_an_own_limit_by_a_resume_hands_over_to_the_runners(setup: Setup) -> None:
+    _, eighteen, first = _own_until_17_rate_limited_until_18(setup)
+    assert setup.agent.resume().status_code == 200
+    assert _shown(setup) == ("limited", "runner", eighteen)
+    assert _limit(setup) == (eighteen, first)
+
+
+def test_clearing_an_own_limit_hands_over_to_the_runners(setup: Setup) -> None:
+    _, eighteen, first = _own_until_17_rate_limited_until_18(setup)
+    cleared = setup.agent.post("/me/limit", {"until": None})
+    assert cleared.status_code == 200, cleared.text
+    assert _shown(setup) == ("limited", "runner", eighteen)
+    assert _limit(setup) == (eighteen, first)
+
+
+def test_clearing_a_runners_limit_recomputes_it(setup: Setup) -> None:
+    """§6.12: any `until: null` recomputes. Every placement still rate-limited: the
+    runner's limit stays, the agent does not show `available`."""
+    allow_instances(setup.engine, setup.agent.id, 3)
+    p1, p2 = placed(setup), placed(setup)
+    eighteen = clock.rfc3339(clock.now().replace(microsecond=0) + timedelta(hours=2))
+    limited = {"state": "rate_limited", "reason": "quota", "exit_code": 2}
+    assert report(setup, p1, 1, **limited, retry_at=eighteen).status_code == 200
+    assert report(setup, p2, 1, **limited, retry_at=eighteen).status_code == 200
+    assert _limit(setup) == (eighteen, p1["id"])
+    cleared = setup.agent.post("/me/limit", {"until": None})
+    assert cleared.status_code == 200, cleared.text
+    assert _shown(setup) == ("limited", "runner", eighteen)
+    assert _limit(setup) == (eighteen, p1["id"])
+
+
+def _stalled(s: Setup) -> int:
+    with s.engine.connect() as conn:
+        return len(conn.execute(select(t.event).where(t.event.c.kind == "holder_stalled")).all())
+
+
+def test_a_gapless_handover_from_an_own_limit_stalls_the_holder_once(setup: Setup) -> None:
+    """The runner's limit taking over from the agent's own at 17:00 is no new start (§6.5,
+    §6.12): one `holder_stalled`, from the own limit's start."""
+    card = task(setup.owner)
+    claimed = setup.agent.post(f"/projects/maintainer/maity/tasks/{card['id']}/claim", {})
+    assert claimed.status_code == 200, claimed.text
+    seventeen, eighteen, _ = _own_until_17_rate_limited_until_18(setup)
+    assert _stalled(setup) == 1
+    clock.set_source(lambda: seventeen + timedelta(seconds=1))
+    sweep(setup.engine)
+    assert _shown(setup) == ("limited", "runner", eighteen)
+    assert _stalled(setup) == 1
 
 
 def test_a_retry_at_that_has_passed_counts_as_running(setup: Setup) -> None:
