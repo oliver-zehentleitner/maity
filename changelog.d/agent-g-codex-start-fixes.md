@@ -9,5 +9,6 @@
   runner hides lay inside another hidden path (the runner's configuration
   in the layout `single`, another clone's credential under the workspaces
   root). A path another hidden path already covers is no longer listed
-  again; every hidden path stays hidden, the runner's home secrets now
-  compared under the home resolved.
+  again; every hidden path stays hidden and every deny on other clones'
+  credentials is kept, the runner's home secrets now compared under the
+  home resolved. A start whose other clones cannot be checked is refused.

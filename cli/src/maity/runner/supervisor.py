@@ -1407,8 +1407,27 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
         if done.returncode != 0:  # some directory could not be read: the list may be short
             raise refused
         found = [Path(p) for p in done.stdout.split("\0") if p]
+    found = _canonical(found, as_user, refused)
     own = (clone.resolve() if as_user.here else clone) / ".git" / "maity"
     return sorted(p for p in found if p != own)
+
+
+def _canonical(paths: list[Path], as_user: AsUser, refused: workspace.Refused) -> list[Path]:
+    """`paths` as the agents' side resolves them, so that a path's place in the listing is
+    its place on disk (adapters.outermost compares them as written). Resolved where the
+    agents run, as their user; any path that cannot be resolved fails closed."""
+    if not paths:
+        return []
+    if as_user.direct:
+        try:
+            return [path.resolve(strict=True) for path in paths]
+        except OSError as exc:
+            raise refused from exc
+    done = as_user.run(["realpath", "--", *(str(path) for path in paths)])
+    resolved = [Path(line) for line in done.stdout.split("\n") if line]
+    if done.returncode != 0 or len(resolved) != len(paths):
+        raise refused
+    return resolved
 
 
 def agents_user(cfg: config.Config) -> AsUser:

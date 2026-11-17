@@ -890,6 +890,23 @@ def test_other_folders_credentials_are_private(tmp_path: Path, direct: bool) -> 
                      ws / "maity" / "agent-5" / ".git" / "maity"]  # fmt: skip
 
 
+@pytest.mark.parametrize("direct", [True, False])
+def test_other_credentials_are_listed_where_they_lie(tmp_path: Path, direct: bool) -> None:
+    """Listed as the agents' side resolves them: what hides them is decided on those paths
+    (adapters.outermost), so each must name the place it is."""
+    ws, elsewhere = tmp_path / "ws", tmp_path / "elsewhere" / "agent-4"
+    own = ws / "maity" / "agent-3"
+    for clone in (own, elsewhere, ws / "maity" / "agent-5"):
+        (clone / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-4").symlink_to(elsewhere)
+    found = supervisor.other_credentials(ws, own, AsUser() if direct else Agents("a"))
+    inside = ws / "maity" / "agent-5" / ".git" / "maity"
+    # The agents' user's `find` does not enter the link; listed, it is listed where it lies.
+    assert found == ([elsewhere / ".git" / "maity", inside] if direct else [inside])
+    kept = adapters.outermost((ws, *found), opened=(own,))
+    assert kept == ((ws, elsewhere / ".git" / "maity") if direct else (ws,))
+
+
 def test_the_agents_home_hides_agys_directory_from_other_sandboxes(tmp_path: Path) -> None:
     clone = tmp_path / "ws" / "maity" / "agent-3"
     assert tmp_path / "home" / ".gemini" in supervisor.private_paths(None, tmp_path / "home", clone)
