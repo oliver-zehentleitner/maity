@@ -36,15 +36,16 @@ ROLE: dict[str, str] = {
     ),
     "reviewer": (
         "You review: check the exact head you were given against the contract and the recorded "
-        "reasons, name each finding with file and line, and say approve or changes. Under a "
-        "runner placement, keep evidence, scratch clones and venvs in $MAITY_SCRATCH and delete "
-        "them once you have reported; docs/agents.md says how to check out another head there."
+        "reasons, name each finding with file and line, and say approve or changes. When "
+        "$MAITY_SCRATCH is set (a runner placement under Claude Code or Codex), keep evidence, "
+        "scratch clones and venvs there and delete them once you have reported; docs/agents.md "
+        "says how to check out another head there."
     ),
     "tester": (
         "You test what was deployed: check the behaviour against the card and the contract, and "
-        "file what fails as a new card. Under a runner placement, keep evidence, scratch clones "
-        "and venvs in $MAITY_SCRATCH and delete them once you have reported; docs/agents.md says "
-        "how to check out another head there."
+        "file what fails as a new card. When $MAITY_SCRATCH is set (a runner placement under "
+        "Claude Code or Codex), keep evidence, scratch clones and venvs there and delete them "
+        "once you have reported; docs/agents.md says how to check out another head there."
     ),
     "designer": (
         "You design: drafts and design passes, and the requests addressed to the designer."

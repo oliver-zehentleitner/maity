@@ -106,13 +106,16 @@ def _walk(
     given: str,
     what: str,
     make: str | None,
+    from_top: bool = False,
 ) -> Iterator[int]:
     """The descriptor of the directory `path` names below the clone's root, each step opened
     from the one before without following a link and refused when it is the clone's `.git`.
     The walk starts at `opened.top`, the root `clonecheck.opened_clone` checked with `.git`;
     without it (a caller that holds no check) the root is opened here, without following a
-    link, and `.git` is read from it. A missing last directory named `make` is created 0700
-    first."""
+    link, and `.git` is read from it. With `from_top` (the placement's scratch, which no
+    checked clone holds) the root itself is reached from `/`, every directory on the way
+    opened from the one before without following a link. A missing last directory named
+    `make` is created 0700 first."""
     if not WALKS:  # Windows
         raise Refused(
             f"{what} {given}: this system cannot open a file without following links,"
@@ -125,6 +128,20 @@ def _walk(
         if _same(os.fstat(fd), git):  # never true for a checked clone; kept as a second guard
             os.close(fd)
             raise Refused(f"{what} {given}: the clone's root is its .git; maity writes no file")
+    elif from_top:
+        fd = os.open(os.sep, FOLDER)
+        try:
+            for name in root.parts[1:]:
+                inner = _open_at(fd, name, FOLDER, given, what)
+                os.close(fd)
+                fd = inner
+        except Refused:
+            os.close(fd)
+            raise Refused(
+                f"{what} {given}: the way to the placement's scratch ({root}) is not plain"
+                " directories; maity takes no path through it"
+            ) from None
+        git = None
     else:
         try:
             fd = os.open(root, FOLDER | os.O_NOFOLLOW)
@@ -168,7 +185,8 @@ def read(
     with no other hard link, opened without following a link or blocking (a FIFO), at most
     `limit` bytes. `opened` is the clone as `clonecheck.opened_clone` checked it. With
     `scratch` (recorded_scratch) a file under the placement's scratch is read the same way,
-    the walk starting at the scratch, opened without following a link."""
+    the walk starting at `/`: no directory on the way to the scratch or below it is a
+    link."""
     try:
         path = names(root, given, what)
     except Refused:
@@ -181,8 +199,10 @@ def read(
                 f"{what} {given}: not a file in this clone ({root}) or in the placement's"
                 f" scratch ({scratch})"
             ) from None
-        root, opened = scratch, None
-    with _walk(root, path[:-1], opened, given, what, None) as directory:
+        root, opened, from_top = scratch, None, True
+    else:
+        from_top = False
+    with _walk(root, path[:-1], opened, given, what, None, from_top) as directory:
         fd = _open_at(directory, path[-1], os.O_RDONLY | os.O_NONBLOCK, given, what)
     try:
         found = os.fstat(fd)

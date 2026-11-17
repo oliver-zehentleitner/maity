@@ -31,7 +31,18 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, hub, onboarding, state
-from . import adapters, capabilities, config, limitread, loop, restart, scratch, targets, workspace
+from . import (
+    adapters,
+    capabilities,
+    config,
+    limitread,
+    loop,
+    restart,
+    scratch,
+    scratchop,
+    targets,
+    workspace,
+)
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
@@ -448,36 +459,38 @@ class Supervisor:
             }
         self._report(desired)
         self._advertise(running, now)
-        self._clear_scratch(set(labelled))
+        self._clear_scratch(set(labelled), set(snapshots))
         self._measure(desired, now)
         self.save()
 
     # --- the scratch (§15.5) ---------------------------------------------------------------
 
-    def _clear_scratch(self, live: set[str]) -> None:
-        """Remove the scratch of each placement the hub reads as closed, on every reachable
-        target, unless a session of it still runs there; each removal is logged and written
-        to `removed.jsonl`. A placement whose scratch could not be removed is tried again."""
+    def _clear_scratch(self, live: set[str], seen: set[str]) -> None:
+        """Remove the scratch of each placement the hub reads as closed, on every target whose
+        sessions this tick read (`seen`), unless a session of it still runs; a target whose
+        sessions could not be read keeps every scratch until they can. Each removal is logged
+        and written to `removed.jsonl`. A placement whose scratch could not be removed
+        everywhere is tried again."""
         with self.lock:
             closed = [p for p in self.closed_placements
                       if p["id"] not in self.scratch_cleared and p["id"] not in live]  # fmt: skip
         for p in closed:
             done = True
             for target in self.targets.values():
-                if not target.reachable or (target.remote and target.agent_files is None):
-                    done = False
+                if target.name not in seen or (target.remote and target.agent_files is None):
+                    done = False  # its sessions are unknown: unknown means kept
                     continue
                 try:
                     path = workspace.scratch_of(
                         target.workspaces, p["project_id"], p["id"], target.host
                     )
-                    if workspace.scratch_link(path, target.as_user):  # never followed; once
-                        self.log(f"{p['id']}: scratch left on {target.name}: {path} or the "
-                                 "directory above it is a link")  # fmt: skip
-                        continue
                     removed = scratch.remove(path, target.as_user)
                 except workspace.Refused:
                     break
+                except scratchop.OnTheWay:  # never followed; logged once
+                    self.log(f"{p['id']}: scratch left on {target.name}: a directory on the "
+                             "way to it is a link")  # fmt: skip
+                    continue
                 except (OSError, subprocess.SubprocessError) as exc:
                     self.log(f"{p['id']}: scratch not removed on {target.name}: {exc}")
                     done = False
@@ -512,8 +525,7 @@ class Supervisor:
             except workspace.Refused:
                 continue
             clone = scratch.size(place.path, target.as_user)
-            room = None if workspace.scratch_link(path, target.as_user) else \
-                scratch.size(path, target.as_user)  # fmt: skip
+            room = scratch.measure(path, target.as_user)
             with self.lock:
                 rec.clone_bytes, rec.scratch_bytes, rec.sized_at = clone, room, now
 
@@ -1202,15 +1214,20 @@ class Supervisor:
     def _scratch(self, p: dict[str, Any], harness: config.Harness, target: Target) -> Path | None:
         """The placement's scratch, made as the agents' user with `tmp` in it (§15.5); None
         for a harness that gets none (workspace.SCRATCH_HARNESSES). A restart or an adoption
-        finds it as it was. Through a link the agents made the runner makes nothing: the
-        session then starts without one, and the log says why."""
+        finds it as it was. Through a link the agents made the runner makes nothing, and a
+        scratch it cannot make (a host whose `maity` has no `scratchop` yet) is none either:
+        the session then starts without one, and the log says why."""
         if harness.id not in workspace.SCRATCH_HARNESSES:
             return None
         path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host)
-        if workspace.scratch_link(path, target.as_user):
-            self.log(f"{p['id']}: no scratch: {path} or the directory above it is a link")
+        try:
+            scratch.make(path, target.as_user)
+        except scratchop.OnTheWay:
+            self.log(f"{p['id']}: no scratch: a directory on the way to {path} is a link")
             return None
-        target.as_user.mkdir(path / "tmp")
+        except (OSError, subprocess.SubprocessError) as exc:  # a host's maity without it, too
+            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
+            return None
         return path
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:

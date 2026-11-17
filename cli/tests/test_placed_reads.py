@@ -224,7 +224,8 @@ def test_a_file_in_the_recorded_scratch_is_read_and_sent(
 
 @posix
 @walks
-@pytest.mark.parametrize("way", ["beside", "link", "linked-scratch", "no-record", "empty-record",
+@pytest.mark.parametrize("way", ["beside", "link", "linked-scratch", "linked-holder",
+                                 "linked-project", "no-record", "empty-record",
                                  "record-in-clone"])  # fmt: skip
 def test_only_the_recorded_scratch_is_read_and_never_through_a_link(
     placed: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str],
@@ -239,13 +240,18 @@ def test_only_the_recorded_scratch_is_read_and_never_through_a_link(
             (private / clonecheck.SCRATCH_RECORD).write_text(str(record[way]))
         given = room / "body.json"
         given.write_bytes(CONTENT)
-    elif way == "linked-scratch":
+    elif way in ("linked-scratch", "linked-holder", "linked-project"):
+        # The record names the right path; one directory on the way to it is a link the
+        # agents could have made after the runner wrote the record.
         real = tmp_path / "elsewhere"
-        real.mkdir()
-        (real / "body.json").write_bytes(CONTENT)
         room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
-        room.parent.mkdir(parents=True)
-        room.symlink_to(real)
+        linked = {"linked-scratch": room, "linked-holder": room.parent,
+                  "linked-project": room.parent.parent}[way]  # fmt: skip
+        below = room.relative_to(linked)
+        (real / below).mkdir(parents=True)
+        (real / below / "body.json").write_bytes(CONTENT)
+        linked.parent.mkdir(parents=True, exist_ok=True)
+        linked.symlink_to(real)
         private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
         (private / clonecheck.SCRATCH_RECORD).write_text(f"{room}\n")
         given = room / "body.json"
@@ -260,5 +266,7 @@ def test_only_the_recorded_scratch_is_read_and_never_through_a_link(
     assert cli.main(["api", "POST", "/projects/oliver/maity/tasks", "--json", str(given)]) == 2
     err = capsys.readouterr().err
     assert not leaked(fake), (way, err)
-    reason = {"link": "a link", "linked-scratch": "a link"}.get(way, "not a file in this clone")
+    plain = "not plain directories"
+    reason = {"link": "a link", "linked-scratch": plain, "linked-holder": plain,
+              "linked-project": plain}.get(way, "not a file in this clone")  # fmt: skip
     assert reason in err, (way, err)

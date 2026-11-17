@@ -339,14 +339,33 @@ def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def _running(cfg: config.Config) -> set[str] | None:
+    """The placements with a session on the local target (§15.5), dead panes included: a
+    session gc cannot see ended keeps its scratch. None when the sessions cannot be read."""
+    try:
+        target = _targets(cfg)[0]
+        target.connect({})
+        assert target.backend is not None  # noqa: S101 - set by connect
+        sessions = target.backend.sessions()
+    except (OSError, TmuxError) as exc:
+        print(f"scratch  none listed: the agents' sessions could not be read "
+              f"({onboarding.inline(str(exc))[:200]}), so every scratch is kept")  # fmt: skip
+        return None
+    return {s.placement for s in sessions.values() if s.placement}
+
+
 def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) -> None:
     """Every scratch under the workspaces root whose placement the hub does not list as
-    active (§15.5): closed, or no placement of this runner at all. Listed, and with `remove`
-    removed and written to `removed.jsonl`. Nothing in a scratch is kept as unsaved work."""
+    active (§15.5): closed, or no placement of this runner at all, and that has no session
+    on this machine. Listed, and with `remove` removed and written to `removed.jsonl`.
+    Nothing in a scratch is kept as unsaved work."""
     assert cfg.local is not None  # noqa: S101 - cmd_gc checks it
     if active is None:
         print("scratch  none listed: an active placement in the hub's answer could not be "
               "read, so every scratch is kept")  # fmt: skip
+        return
+    running = _running(cfg)
+    if running is None:
         return
     as_user = _as_user(cfg)
     root = cfg.local.workspaces
@@ -361,6 +380,9 @@ def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) 
         for entry in sorted(holder.iterdir()):
             if entry.name in active:
                 continue
+            if entry.name in running:
+                print(f"scratch  {entry}: kept (a session of the placement is still there)")
+                continue
             if not workspace.SCRATCH_ID.match(entry.name) or entry.is_symlink():
                 print(f"scratch  {onboarding.inline(str(entry))}: not a placement's; left as it is")
                 continue
@@ -372,6 +394,8 @@ def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) 
             except (OSError, subprocess.SubprocessError) as exc:
                 print(f"scratch  {entry}: not removed ({onboarding.inline(str(exc))})")
                 continue
+            if removed is None:
+                continue  # gone meanwhile
             scratch.log_removal(cfg.state_dir, entry.name, entry, removed, "gc")
             print(f"scratch  {entry}: removed")
 

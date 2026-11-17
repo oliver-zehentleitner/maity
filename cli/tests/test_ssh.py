@@ -65,15 +65,18 @@ def fake_ssh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home.mkdir(parents=True)
     (tmp_path / "remote" / "bin").mkdir()
     # The host's own maity (targets.pin_maity finds it on agent_path): this checkout's. The
-    # runner reads the agents' files through it (`maity runner limitread`): that read is
-    # started straight away, since loading the whole CLI on a busy machine outlasts what
-    # `settle` waits; a test of the host's own install replaces it.
+    # runner reads the agents' files through it (`maity runner limitread`) and makes their
+    # scratch (`maity runner scratchop`): both are started straight away, since loading the
+    # whole CLI on a busy machine outlasts what `settle` waits; a test of the host's own
+    # install replaces it.
     maity = tmp_path / "remote" / "bin" / "maity"
     src = Path(__file__).resolve().parent.parent / "src"
     maity.write_text(
         "#!/bin/sh\n"
         'if [ "$1" = runner ] && [ "$2" = limitread ]; then shift 2; '
         f'PYTHONPATH={src} exec {sys.executable} -m maity.runner.limitread "$@"; fi\n'
+        'if [ "$1" = runner ] && [ "$2" = scratchop ]; then shift 2; '
+        f'PYTHONPATH={src} exec {sys.executable} -m maity.runner.scratchop "$@"; fi\n'
         f'PYTHONPATH={src} exec {sys.executable} -m maity "$@"\n'
     )
     maity.chmod(0o755)

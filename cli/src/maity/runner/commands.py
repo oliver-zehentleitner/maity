@@ -28,6 +28,7 @@ from . import (
     operate,
     plaincall,
     scratch,
+    scratchop,
     serve,
     stub,
     supervisor,
@@ -948,6 +949,13 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
          *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
     ))  # fmt: skip
+    # Internal too: a placement's scratch made, measured or removed on the agents' side,
+    # every directory from the workspaces root opened without following a link (scratchop).
+    r = rsub.add_parser("scratchop")
+    r.add_argument("op", choices=scratchop.OPS)
+    r.add_argument("--under", required=True)
+    r.add_argument("path")
+    r.set_defaults(handler=lambda a: scratchop.main([a.op, "--under", a.under, a.path]))
     # Internal too: what a pane's output goes through on an ssh host, holding its log to
     # limits.log_keep_bytes (logcap).
     r = rsub.add_parser("logcap")

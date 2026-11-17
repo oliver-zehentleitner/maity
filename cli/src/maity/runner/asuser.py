@@ -13,6 +13,7 @@ there, and a harness setting an agent changes only widens what that same user co
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shlex
@@ -24,9 +25,10 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .. import state
-from . import limitread
+from . import limitread, scratchop
 
 TIMEOUT = 60.0
 # A read on the agents' side: a few kilobytes, or a log's next chunk.
@@ -235,6 +237,25 @@ class AsUser:
             return
         if self.run(["rm", "-rf", "--", str(path)]).returncode != 0:
             raise OSError(f"cannot remove {path} on the agents' side")
+
+    def scratch(self, op: str, under: Path, path: Path) -> dict[str, Any]:
+        """A placement's scratch made, measured or removed on the agents' side (scratchop),
+        every directory from `under` (the workspaces root) opened without following a link.
+        scratchop.OnTheWay when one on the way is a link; OSError when it fails otherwise."""
+        if self.direct:
+            return scratchop.run(op, str(under), str(path))
+        done = self.run([*self.runner_module("scratchop"), op, "--under", str(under), str(path)])
+        if done.returncode == scratchop.LINK:
+            raise scratchop.OnTheWay(f"{path}: a link or no directory on the way; nothing done")
+        if done.returncode != 0:
+            raise OSError(f"scratch {op} {path} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"scratch {op} {path}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"scratch {op} {path}: no answer")
+        return answer
 
     def terminate(self, pid: int) -> None:
         """SIGTERM to a process group of the agents' side."""

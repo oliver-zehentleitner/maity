@@ -2542,6 +2542,18 @@ def test_a_closed_placements_scratch_goes_once_its_session_is_gone(world: Any) -
     assert len(scratch.removals(sup.cfg.state_dir, 10)) == 1
 
 
+def test_a_target_whose_sessions_were_not_read_keeps_every_scratch(world: Any) -> None:
+    sup, *_ = world
+    room = scratch_of(sup)
+    (room / "tmp").mkdir(parents=True)
+    sup.closed([CLOSED])
+    sup._clear_scratch(set(), set())  # no target's sessions read in this tick: unknown
+    assert room.is_dir() and "plc-0003" not in sup.scratch_cleared
+    assert scratch.removals(sup.cfg.state_dir, 10) == []
+    sup._clear_scratch(set(), set(sup.targets))  # read, and no session of it: removed
+    assert not room.exists() and "plc-0003" in sup.scratch_cleared
+
+
 def test_a_closed_placement_without_a_scratch_writes_no_removal(world: Any) -> None:
     sup, *_ = world
     sup.closed([CLOSED, {"id": "../x", "project_id": "maity", "active": False},
@@ -2593,6 +2605,30 @@ def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(world: Any) ->
     assert made == scratch_of(sup) and (made / "tmp").is_dir()
 
 
+def test_a_scratch_that_cannot_be_made_or_only_through_a_link_is_none(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, _, _, _, logs = world
+    target = sup.targets["local"]
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    project = sup.cfg.local.workspaces.resolve() / "maity"
+    elsewhere = project.parent.parent / "elsewhere"
+    (elsewhere / ".scratch").mkdir(parents=True)
+    project.parent.mkdir(parents=True, exist_ok=True)
+    project.symlink_to(elsewhere)  # the project's directory itself is a link
+    assert sup._scratch(placement(), codex, target) is None
+    assert not (elsewhere / ".scratch" / "plc-0003").exists()
+    assert any("no scratch: a directory on the way" in line for line in logs)
+    project.unlink()
+
+    def fails(path: Path, as_user: Any = None) -> None:
+        raise OSError("usage: maity runner: invalid choice: 'scratchop'")
+
+    monkeypatch.setattr(scratch, "make", fails)  # a host whose maity has no scratchop yet
+    assert sup._scratch(placement(), codex, target) is None
+    assert any("no scratch on local: usage" in line for line in logs)
+
+
 def test_the_clone_and_scratch_sizes_are_measured_for_the_status(world: Any) -> None:
     sup, _, _, clock, _ = world
     recorded(sup.cfg)
@@ -2600,7 +2636,7 @@ def test_the_clone_and_scratch_sizes_are_measured_for_the_status(world: Any) -> 
     settle(sup)
     (scratch_of(sup) / "evidence.txt").write_bytes(b"y" * 3000)
     rec = sup.records["plc-0003"]
-    assert rec.scratch_bytes is not None and rec.clone_bytes is not None
+    assert rec.clone_bytes is not None  # the scratch may be made after this first measure
     clock.now += supervisor.SIZE_EVERY
     sup.tick()
     assert rec.scratch_bytes is not None and rec.scratch_bytes >= 3000

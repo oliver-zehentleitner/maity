@@ -6,9 +6,10 @@ it when the hub reads the placement as closed, and `maity runner gc` removes wha
 of the runner names. Neither its size nor its removal goes to the hub; the operator reads them
 with `maity runner status` and in `removed.jsonl` in the runner's state directory.
 
-Everything here runs as the agents' user (AsUser): the scratch is theirs, and a link they made
-in it reaches only what their user may write anyway. The scratch itself, or the `.scratch`
-above it, as a link is never followed (workspace.scratch_link).
+Everything here runs as the agents' user (AsUser): the scratch is theirs. Making, measuring
+and removing it opens every directory from the workspaces root down without following a link
+and holds the last one open while it works (scratchop), so no directory on the way, swapped
+for a link before or during the operation, leads it anywhere else.
 """
 
 from __future__ import annotations
@@ -20,7 +21,6 @@ from pathlib import Path
 from typing import Any
 
 from .. import state
-from . import workspace
 from .asuser import RUNNER, AsUser
 
 REMOVED_FILE = "removed.jsonl"
@@ -41,16 +41,39 @@ def size(path: Path, as_user: AsUser = RUNNER) -> int | None:
     return int(first) if first.isdigit() else None
 
 
+def _under(path: Path) -> Path:
+    """The workspaces root of a scratch path (`<workspaces>/<project>/.scratch/<id>`), as
+    workspace.scratch_of built it: the place every operation is anchored."""
+    return path.parents[2]
+
+
+def make(path: Path, as_user: AsUser = RUNNER) -> None:
+    """The scratch at `path` with `tmp` in it. scratchop.OnTheWay when a directory on the way
+    from the workspaces root is a link: nothing is made through it."""
+    as_user.scratch("make", _under(path), path)
+
+
+def measure(path: Path, as_user: AsUser = RUNNER) -> int | None:
+    """The bytes under the scratch at `path`; None when it is missing, reached through a link
+    or cannot be measured in time."""
+    try:
+        answer = as_user.scratch("size", _under(path), path)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = answer.get("bytes")
+    return found if isinstance(found, int) and not isinstance(found, bool) else None
+
+
 def remove(path: Path, as_user: AsUser = RUNNER) -> int | None:
     """Remove the scratch at `path` and return its size before; None when there was none.
-    OSError when it is a link (or under one) or cannot be removed."""
-    if workspace.scratch_link(path, as_user):
-        raise OSError(f"{path} or the directory above it is a link; removed nothing")
-    if not as_user.exists(path, "-d"):
+    Every directory from the workspaces root down is opened without following a link and
+    held while it goes (scratchop): scratchop.OnTheWay when one is a link, OSError when it
+    cannot be removed."""
+    answer = as_user.scratch("remove", _under(path), path)
+    if answer.get("result") == "missing":
         return None
-    before = size(path, as_user)
-    as_user.remove_tree(path)
-    return before if before is not None else 0
+    found = answer.get("bytes")
+    return found if isinstance(found, int) and not isinstance(found, bool) else 0
 
 
 def log_removal(
