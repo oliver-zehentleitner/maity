@@ -154,7 +154,6 @@ NOT_RUNNER = [
     "ls runner/",
     "git log --oneline runner",
     "cp $SRC $DST",
-    "echo 'never closed",
     "echo $'it\\'s the runner'",  # ANSI-C quoting closes where the shell closes it
     "maity files get fil-1 -o ~/out.txt",
 ]
@@ -174,8 +173,46 @@ def test_a_runner_call_nested_in_any_depth_of_quoted_text_is_refused(levels: int
     )
 
 
-def test_nested_text_without_runner_passes_at_any_depth() -> None:
-    assert plaincall.refusal(bash(nested("maity task show tsk-x", 12))) is None
+SPELLINGS = [
+    "maity r\\unner status",
+    "maity 'r'unner status",
+    "maity r''unner status",
+    "maity $'\\x72unner' status",
+    "m\\aity r\\unner status",
+]
+
+
+@pytest.mark.parametrize("levels", [5, 6])
+@pytest.mark.parametrize("line", SPELLINGS)
+def test_quoted_text_nested_past_the_limit_is_refused_whatever_it_holds(
+    line: str, levels: int
+) -> None:
+    assert plaincall.refusal(bash(nested(line, levels))) == plaincall.RUNNER_REFUSED
+
+
+def test_nested_text_without_runner_passes_only_up_to_the_limit() -> None:
+    assert plaincall.refusal(bash(nested("maity task show tsk-x", 4))) is None
+    assert plaincall.refusal(bash(nested("maity task show tsk-x", 5))) == (plaincall.RUNNER_REFUSED)
+
+
+# A comment is text with quotes to the hook: the nesting it seems to have counts.
+COMMENTED = json.loads(
+    r'''"NODE_ENV=1 maity status #\"#\\\"#\\\\\\\"#\\\\\\\\\\\\\\\"#\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\nmaity r''unner status #\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"\\\\\\\\\\\\\\\"\\\\\\\"\\\"\""'''  # noqa: E501
+)
+
+UNREADABLE = [
+    "FOO=1 m\\aity r\\unner status # it's",
+    "FOO=1 m''aity r''unner status # it's",
+    "FOO=1 $'\\x6daity' $'\\x72unner' status # it's",
+    "FOO=1 m\\aity r\\unner status\necho 'x",
+    "git status # it's",
+    "echo 'never closed",
+]
+
+
+@pytest.mark.parametrize("command", [COMMENTED, *UNREADABLE])
+def test_a_line_not_read_to_the_end_is_refused_whatever_it_holds(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
 
 
 @pytest.mark.parametrize("command", RUNNER_ANYWHERE)

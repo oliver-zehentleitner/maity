@@ -137,7 +137,8 @@ goes in a file in the clone (`--body-file`, `--summary-file`,
 `maity runner` is the runner's own command: in a placed Claude Code
 session, a line in which a word `runner` follows a word `maity` is refused,
 also when `runner` is only text, so such text goes in a file
-(`--body-file`).
+(`--body-file`). A line with a quote that never closes, or with quoted text
+nested more than four levels deep, is refused as well.
 
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a

@@ -7,9 +7,10 @@ redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is ref
 the command runs (cli/context/runner.md). On any line, a word `maity` followed anywhere
 later by a word `runner` is refused as well (`calls_runner`, which says how it reads words):
 those commands are the runner's own, and the runner never starts them through an agent's tool
-call. A command the shell builds only from expansions or from input is not read; such a line
-is not one plain `maity` call, so its `maity` runs inside the sandbox. Any other tool call is
-left to the permission rules: the hook prints nothing and exits 0.
+call. A line the hook cannot read to the end is refused too. A command the shell builds only
+from expansions or from input is not read; it does not start with a literal `maity` word, so
+the sandbox exclusion does not match it and its `maity` runs inside the sandbox. Any other
+tool call is left to the permission rules: the hook prints nothing and exits 0.
 
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
 stderr. Input it cannot read is refused too.
@@ -41,9 +42,10 @@ _NESTING = 4
 
 RUNNER_REFUSED = (
     "`maity runner` is the runner's own command and does not run from a placed session's tool "
-    "call: a line where a word `runner` follows a word `maity` is refused. Use the other "
-    "`maity` commands; text that holds both words goes in a file in this clone, passed with "
-    "`--body-file`."
+    "call: a line where a word `runner` follows a word `maity` is refused, and so is a line "
+    "the hook cannot read to the end (a quote that never closes, quoted text nested too "
+    "deep). Use the other `maity` commands; text that holds both words goes in a file in "
+    "this clone, passed with `--body-file`."
 )
 REFUSED = (
     "A `maity` command runs only as one plain call: nothing piped, chained, redirected, sent to "
@@ -184,14 +186,12 @@ def calls_runner(command: str, depth: int = 0) -> bool:
     expand (`_words` says which) counts as `runner` after a `maity` word and as `maity`
     before a `runner` word.
     Quoted text that holds spaces or operators is read again the same way, as another shell
-    would read it, up to `_NESTING` levels deep; text below that counts when it holds
-    `runner` at all. A line whose quotes never close counts when it holds `maity` or
-    `runner` at all."""
+    would read it, up to `_NESTING` levels deep; such text below that counts whatever it
+    holds. A line whose quotes never close counts whatever it holds."""
     try:
         words = _words(command)
     except _Unreadable:
-        low = command.lower()
-        return "runner" in low or "maity" in low
+        return True  # not read to the end: refused, whatever it holds
     seen_maity = seen_open = False
     for text, expands in words:
         if text.lower() == "runner" and (seen_maity or seen_open):
@@ -199,9 +199,9 @@ def calls_runner(command: str, depth: int = 0) -> bool:
         if expands and seen_maity:
             return True
         if any(c in " \t" or c in _SEPARATORS for c in text) and (
-            calls_runner(text, depth + 1) if depth < _NESTING else "runner" in text.lower()
+            depth >= _NESTING or calls_runner(text, depth + 1)
         ):
-            return True
+            return True  # past the depth limit, text that could be a command is refused
         seen_maity = seen_maity or _is_maity(text)
         seen_open = seen_open or expands
     return False
