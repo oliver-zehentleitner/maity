@@ -484,6 +484,7 @@ EXPECTED = {
     "note",
     "participation",
     "placement",
+    "placement_owner_line",
     "preferences",
     "project",
     "project_banner",

@@ -189,6 +189,7 @@ PENDING = {
     "/runners",
     "/runners/enrollments",
     "/runners/{}",
+    "/runners/{}/placements",  # the owner line's keys are checked in test_placements
     "/site/chrome",
 }
 
