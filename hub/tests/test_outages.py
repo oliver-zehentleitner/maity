@@ -9,7 +9,7 @@ from sqlalchemy import Engine
 
 from tests import flow
 from tests.conftest import ClientFactory
-from tests.test_placements import REPOSITORY, Setup, events_of, placed, report
+from tests.test_placements import REPOSITORY, Setup, allow_instances, events_of, placed, report
 from tests.test_runner_stream import attach, hello
 from tests.test_runners import paired
 
@@ -24,6 +24,7 @@ def setup(make_client: ClientFactory, migrated: Engine) -> Setup:
     client = make_client()
     assert hello(client, runner).status_code == 200
     agent = flow.agent(make_client, owner, role="member")
+    allow_instances(migrated, agent.id, 2)  # the joined clone and a placement's (§15.5)
     return Setup(owner, runner, client, agent, migrated)
 
 

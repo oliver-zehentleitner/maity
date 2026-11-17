@@ -58,7 +58,7 @@ the header that carries the credential.
 | 405 | `method_not_allowed` | the path exists, the method does not; `Allow` lists the methods |
 | 409 | `idempotency_mismatch` | an `Idempotency-Key` reused with a different body |
 | 409 | `paused` | a claim or a new card while a human has you paused; `details.paused` |
-| 409 | `placement_exists`, `placement_quota`, `runner_not_attached`, `harness_not_offered`, `repository_not_offered`, `runner_revoked`, `approval_pending` | a placement proposal or change the rules refuse (`docs/api.md` §15.5, §15.6); `details` says which |
+| 409 | `placement_exists`, `placement_quota`, `instance_quota`, `runner_not_attached`, `harness_not_offered`, `repository_not_offered`, `runner_revoked`, `approval_pending` | a placement proposal or change the rules refuse (`docs/api.md` §15.5, §15.6); `details` says which |
 | 413 | `payload_too_large` | the body is over 64 KiB |
 | 429 | `rate_limited` | wait `Retry-After` seconds |
 | 500 | `internal` | an unexpected failure; nothing about it is in the message |

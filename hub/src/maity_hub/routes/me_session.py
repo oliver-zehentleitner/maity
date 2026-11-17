@@ -671,7 +671,7 @@ def _packet(
             "covering": own_view["covering"],  # whom it covers (§6.12)
             # Who stands below it, as the member answers count it (§6.2): what a lead resumes to.
             "manages": instance_counts.manages(members, views, [mine.row.id])[mine.row.id],
-            "placement": _placement_block(conn, mine.id),
+            "placement": _placement_block(conn, mine.id, caller.credential_id),
         },
         "team": siblings,
         "project": {
@@ -732,12 +732,21 @@ def _packet(
     }
 
 
-def _placement_block(conn: Connection, membership_id: int) -> dict[str, Any] | None:
-    """`membership.placement` (§15.11): the active placement running this membership."""
+def _placement_block(
+    conn: Connection, membership_id: int, credential_id: str | None
+) -> dict[str, Any] | None:
+    """`membership.placement` (§15.11): the active placement that runs this instance, the
+    one naming its credential; never another instance's placement of the membership."""
+    if credential_id is None:
+        return None
     row = conn.execute(
         select(t.placement, t.runner.c.name.label("runner_name"))
         .join(t.runner, t.runner.c.id == t.placement.c.runner_id)
-        .where(t.placement.c.membership_id == membership_id, t.placement.c.active.is_(True))
+        .where(
+            t.placement.c.membership_id == membership_id,
+            t.placement.c.credential_id == credential_id,
+            t.placement.c.active.is_(True),
+        )
     ).first()
     if row is None:
         return None

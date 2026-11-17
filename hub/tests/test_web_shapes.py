@@ -26,7 +26,7 @@ from maity_hub.events import transaction
 from maity_hub.routes.requests import file_personal
 from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.test_placements import REPOSITORY, Setup, placed, report
+from tests.test_placements import REPOSITORY, Setup, allow_instances, placed, report
 from tests.test_runner_stream import attach, hello
 from tests.test_runners import paired
 
@@ -200,6 +200,7 @@ def _seed(make_client: ClientFactory, migrated: Any) -> tuple[flow.Human, dict[s
     runner_client = make_client()
     assert hello(runner_client, runner).status_code == 200
     on_runner = Setup(owner, runner, runner_client, other, migrated)
+    allow_instances(migrated, other.id, 2)  # the joined clone and the placement's (§15.5)
     assert report(on_runner, placed(on_runner), 1).status_code == 200
     # `maintenance` in `GET /me` is an object only while a window is announced (§16.12).
     starts = datetime.now(UTC).replace(microsecond=0) + timedelta(days=1)

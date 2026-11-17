@@ -339,7 +339,10 @@ def create_placement(
                 {"max": project.max_placements},
             )
         agent_values, handle = _agent_values(conn, mine, body, right)
-        clone = body.workspace.clone or handle
+        member_id = agent_values.get("membership_id")
+        clone = body.workspace.clone or pl.free_clone(
+            conn, project.id, runner.id, member_id, handle
+        )
         _exists(
             conn,
             t.placement.c.project_id == project.id,
@@ -354,11 +357,12 @@ def create_placement(
         }
         _check_spec(runner, spec, project.repository_url)
         proposed = not right and project.spawn_requests == "consent"
-        credential_id = (
-            pl.carried_credential(conn, agent_values["membership_id"], runner.id, clone)
-            if agent_values.get("membership_id") is not None
-            else None
-        )
+        credential_id = None
+        if member_id is not None:
+            credential_id = pl.carried_credential(conn, member_id, runner.id, clone)
+            member = conn.execute(select(t.membership).where(t.membership.c.id == member_id)).one()
+            # A carried-over credential is an instance already; anything else starts one.
+            pl.refuse_over_instances(conn, member, adding=0 if credential_id else 1)
         values = {
             **agent_values,
             **spec,
@@ -425,7 +429,8 @@ def _agent_values(
             # as a join names only the caller's own agent (§15.6, §3.1).
             raise invalid({"agent.id": "not_yours"}, "a placement names one of your own agents")
         allowed_projects.refuse(conn, member.agent_id, mine.project)  # §6.3
-        _exists(conn, t.placement.c.membership_id == member.id)
+        # A member that already runs is placed again as a further instance, within its
+        # `max_instances`, which the caller checks once the clone is known (§15.5).
         handle: str = conn.execute(
             select(t.agent_profile.c.handle).where(t.agent_profile.c.id == member.agent_id)
         ).scalar_one()

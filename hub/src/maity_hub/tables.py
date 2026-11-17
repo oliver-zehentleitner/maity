@@ -1425,7 +1425,8 @@ placement = Table(
     _id(primary_key=True),
     _ref("project_id", "project.id", nullable=False),
     # The membership it runs; null while it creates a profile, until the first pickup.
-    _membership_ref("membership_id"),
+    # Several active placements per membership, one per instance (§15.5).
+    _membership_ref("membership_id", index=True),
     # A profile it creates: the handle (unique while active) and the join fields (§3.1).
     Column("new_handle", String(HANDLE)),
     Column("new_profile", JSON_VALUE),
@@ -1477,7 +1478,7 @@ placement = Table(
     Column("updated_at", UtcDateTime, nullable=False),
     # True while active, NULL once closed: the rules of §15.5 as unique constraints.
     Column("active", Boolean, default=True),
-    UniqueConstraint("membership_id", "active"),
+    UniqueConstraint("credential_id", "active"),  # one placement per instance
     UniqueConstraint("project_id", "new_handle", "active"),
     UniqueConstraint("project_id", "runner_id", "clone", "active"),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),

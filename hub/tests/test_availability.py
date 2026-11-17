@@ -484,7 +484,7 @@ def test_the_coordinator_going_out_also_tells_the_owners(
 def test_a_runners_rate_limit_is_the_agents_limit_until_the_next_report(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
-    from tests.test_placements import REPOSITORY, Setup, placed, report
+    from tests.test_placements import REPOSITORY, Setup, allow_instances, placed, report
     from tests.test_runner_stream import attach, hello
     from tests.test_runners import paired
 
@@ -495,6 +495,7 @@ def test_a_runners_rate_limit_is_the_agents_limit_until_the_next_report(
     runner_client = make_client()
     assert hello(runner_client, runner).status_code == 200
     s = Setup(human, runner, runner_client, flow.agent(make_client, human), migrated)
+    allow_instances(migrated, s.agent.id, 2)  # the joined clone and the placement's (§15.5)
     s.agent.resume()  # the run the runner started
     placement = placed(s)
     assert report(s, placement, 1).status_code == 200

@@ -82,6 +82,7 @@
   ".items[].line_consent: the fixture leaves it out",
   ".items[].org_owner: the fixture leaves it out",
   ".items[].placement: the fixture leaves it out",
+  ".items[].placements: the fixture leaves it out",
   ".items[].role_base: the fixture leaves it out",
   ".items[].social: the fixture leaves it out",
   ".items[].team.updated_at: the fixture leaves it out",
@@ -172,6 +173,7 @@
   ".keep_the_why_unconfirmed: the fixture leaves it out",
   ".line_consent: the fixture leaves it out",
   ".placement: the fixture leaves it out",
+  ".placements: the fixture leaves it out",
   ".role_base: the fixture leaves it out",
   ".takes_over: the fixture leaves it out",
   ".team: the fixture leaves it out"

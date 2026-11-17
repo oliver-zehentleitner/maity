@@ -3397,16 +3397,27 @@ def _placement(session: Session, which: str) -> dict[str, Any]:
     """The active placement with id `which`, or the one of the member `which` names. The name
     is resolved against the whole member list first, aliases and the ambiguity rule included
     (§6.24, §8.6): the placements alone would pick one of two members sharing a name, or a
-    current handle over another member's alias, for a call that stops an agent."""
+    current handle over another member's alias, for a call that stops an agent. An agent may
+    run several placements, one per instance (§15.5): `<agent>#<instance>` names one, and an
+    agent with several is refused with their ids rather than guessed."""
     placements = [p for p in _placements(session) if isinstance(p.get("id"), str)]
     exact = [p for p in placements if p["id"] == which]
     if len(exact) == 1:
         return exact[0]
-    member = resolve_member(_members(session), which, strict=False)
-    if member != which or any(_obj(p.get("agent")).get("id") == which for p in placements):
+    name, _, instance = which.partition("#")
+    member = resolve_member(_members(session), name, strict=False)
+    if member != name or any(_obj(p.get("agent")).get("id") == name for p in placements):
         found = [p for p in placements if _obj(p.get("agent")).get("id") == member]
+        if instance:
+            found = [p for p in found if p.get("instance") == instance]
+        if len(found) > 1:
+            ids = ", ".join(onboarding.inline(p["id"]) for p in found)
+            raise CommandError(
+                f"{onboarding.inline(which)} runs on more than one placement ({ids}); "
+                "name the placement id or <agent>#<instance>"
+            )
         if len(found) != 1:
-            named = onboarding.inline(which) + (f" ({member})" if member != which else "")
+            named = onboarding.inline(which) + (f" ({member})" if member != name else "")
             raise CommandError(f"no single active placement for {named} in this project")
         return found[0]
     # No member has that name: the placements' own handles, still refusing two matches.
@@ -3525,8 +3536,10 @@ def _placement_line(p: dict[str, Any]) -> str:
     if reported.get("reason"):
         state_ += f"/{reported['reason']}"
     pending = "" if p.get("reported_current", True) else " (pending)"
+    # `<handle>#<instance>` once the pickup made the instance (§15.5).
+    instance = f"#{show(p['instance'])}" if isinstance(p.get("instance"), str) else ""
     return (
-        f"{show(p.get('id'))}  {onboarding.label(agent)} on "
+        f"{show(p.get('id'))}  {onboarding.label(agent)}{instance} on "
         f"{show(runner.get('name') or runner.get('id'))}  {show(p.get('harness'))} "
         f"{show(p.get('mode'))}  desired {show(p.get('desired'))}, {show(state_)}{pending}"
     )

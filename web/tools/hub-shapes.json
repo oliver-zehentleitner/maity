@@ -815,6 +815,17 @@
         "state": "string"
        }
       },
+      "placements": {
+       "array": {
+        "object": {
+         "desired": "string",
+         "id": "string",
+         "instance": "null",
+         "runner_name": "string",
+         "state": "string"
+        }
+       }
+      },
       "presence": "string",
       "reports_to": "null",
       "role": "string",
@@ -1833,6 +1844,9 @@
    "owner_preferences": "boolean",
    "paused": "null",
    "placement": "null",
+   "placements": {
+    "array": null
+   },
    "presence": "string",
    "reports_to": "null",
    "role": "string",
