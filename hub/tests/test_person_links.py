@@ -47,6 +47,9 @@ def test_a_person_has_no_links_and_keeps_them_to_themselves(person: flow.Human) 
         ("mastodon", "@oz@Mastodon.Example", "@oz@mastodon.example"),
         ("bluesky", "Oz.Bsky.Social", "oz.bsky.social"),
         ("bluesky", "did:plc:" + "a2" * 12, "did:plc:" + "a2" * 12),
+        # An IDN in its `xn--` form, upper-case ASCII lower-cased.
+        ("mastodon", "@oz@XN--bcher-kva.Example", "@oz@xn--bcher-kva.example"),
+        ("bluesky", "Oz.XN--bcher-kva.Example", "oz.xn--bcher-kva.example"),
         ("linkedin", "oz-agent-1", "oz-agent-1"),
         ("discord", "oz.agent_1", "oz.agent_1"),
     ],
@@ -84,6 +87,12 @@ def test_a_name_of_its_form_is_stored_and_two_hosts_are_lower_cased(
         ("bluesky", "1.2.3.4"),
         ("bluesky", "did:plc:short"),
         ("bluesky", "did:web:example.org"),
+        # Non-ASCII is refused before lower-casing: U+212A (KELVIN SIGN) lower-cases to "k".
+        ("mastodon", "@oz@K.example"),
+        ("mastodon", "@oz@İ.example"),
+        ("bluesky", "K.example"),
+        ("bluesky", "oz.K.example"),
+        ("bluesky", "did:plc:" + "K" * 24),
         ("linkedin", "ab"),
         ("linkedin", "has_underscore"),
         ("discord", "A"),
