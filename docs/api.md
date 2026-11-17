@@ -18284,7 +18284,8 @@ agents' shared home, which no removal of a clone reaches:
   for the placement, never through a link: every directory from the
   workspaces root down is opened without following a link and held
   while it works, so a link anywhere on the way leaves the scratch as
-  it is and is logged once. `maity runner gc --scratch` keeps to the
+  it is: no scratch is made through it (the start says why), and a
+  removal it stops is logged once. `maity runner gc --scratch` keeps to the
   same rule: it removes a scratch only when the hub's list says its
   placement is not active and the agents' sessions, read first, hold
   none of it; when they cannot be read, every scratch stays. A placement closed with the runner's

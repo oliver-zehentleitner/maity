@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import stat
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest import posix
@@ -102,3 +103,30 @@ def test_a_holder_swapped_for_a_link_after_it_was_opened_leads_nowhere_else(
     assert scratchop.remove(str(root), str(room))["result"] == "removed"
     assert (victim / "keep").read_text() == "k"  # the link's target is untouched
     assert not (root / "maity" / "moved" / "plc-0003").exists()  # what was opened went
+
+
+def test_through_sudo_or_ssh_a_link_on_the_way_is_its_own_answer(tmp_path: Path) -> None:
+    import subprocess
+
+    from maity.runner.asuser import AsUser
+
+    class Remote(AsUser):
+        """The agents' side as another user: `scratchop` answers by its exit code."""
+
+        def __init__(self, code: int, out: str = "") -> None:
+            object.__setattr__(self, "user", "agents")
+            object.__setattr__(self, "answer", (code, out))
+
+        def run(self, argv: Any, env: Any = None, input: Any = None, cwd: Any = None,
+                timeout: float = 0) -> subprocess.CompletedProcess[str]:  # fmt: skip
+            code, out = self.answer  # type: ignore[attr-defined]
+            return subprocess.CompletedProcess(argv, code, out, "")
+
+    room = _room(tmp_path / "ws")
+    with pytest.raises(scratchop.OnTheWay):  # logged once by the supervisor, not retried
+        Remote(scratchop.LINK).scratch("remove", tmp_path / "ws", room)
+    with pytest.raises(OSError) as failed:
+        Remote(2).scratch("remove", tmp_path / "ws", room)  # a host maity without it
+    assert not isinstance(failed.value, scratchop.OnTheWay)
+    answer = Remote(0, '{"result": "removed", "bytes": 7}').scratch("remove", tmp_path / "ws", room)
+    assert answer == {"result": "removed", "bytes": 7}
