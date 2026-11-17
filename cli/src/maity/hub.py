@@ -419,6 +419,15 @@ def get_text(url: str, timeout: float = 30.0) -> str:
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
         raise HubError(f"cannot reach {safe_url(url)}: {reason}") from exc
+    except http.client.HTTPException as exc:
+        raise broke_off(safe_url(url), exc) from exc
+
+
+def broke_off(where: str, exc: http.client.HTTPException) -> HubError:
+    """An answer that broke off (a status line, headers or a body cut short: BadStatusLine,
+    IncompleteRead, RemoteDisconnected): a lost connection like any other, with no status
+    and no code, so `wait` retries it and every other command fails once with this line."""
+    return HubError(f"{where} broke off its answer ({onboarding.inline(type(exc).__name__)})")
 
 
 @dataclass(frozen=True)
@@ -449,6 +458,8 @@ def _exchange(
         raise _error_from(exc, what) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise HubError(f"cannot reach {safe_url(url)}: {getattr(exc, 'reason', exc)}") from exc
+    except http.client.HTTPException as exc:
+        raise broke_off(safe_url(url), exc) from exc
     value = raw.decode("utf-8", errors="replace").strip()
     if not sign.is_credential(value):
         raise HubError(f"the {what} exchange answered with something that is not a credential")
@@ -681,11 +692,7 @@ class Client:
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise HubError(f"cannot reach {self.base}: {getattr(exc, 'reason', exc)}") from exc
             except http.client.HTTPException as exc:
-                # The answer broke off: a status line or a body cut short (BadStatusLine,
-                # IncompleteRead). A lost connection like any other, with no status and no
-                # code: `wait` retries it, every other command fails once with this line.
-                shown = onboarding.inline(type(exc).__name__)
-                raise HubError(f"{self.base} broke off its answer ({shown})") from exc
+                raise broke_off(self.base, exc) from exc
         raise AssertionError("unreachable")
 
 

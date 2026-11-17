@@ -206,8 +206,8 @@ an HTTP 5xx or 429 is retried with the same cursor until the timeout. While the 
 a minute (counted across waits, kept in `outage.json` beside the state;
 within a wait on the monotonic clock, so a jump of the system clock
 changes nothing) `wait` says nothing; once the minute has passed, at the
-next failed read, before the next poll or before the timeout, whichever
-comes first, one line names the UTC time of the first failed read, such as
+next failed read, before the next poll or before the timeout (after the
+unread-chats note), whichever comes first, one line names the UTC time of the first failed read, such as
 `maity: hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:06Z; retrying until the timeout`,
 and `hub answering again at …` follows once it answers. When the minute
 passes during the read that answers (a long poll held after a retried

@@ -398,6 +398,7 @@ def test_an_outage_is_counted_across_waits_and_its_end_is_reported(
         assert "connection lost" not in capsys.readouterr().err
     saved = state.load_state(joined, cli.OUTAGE_FILE)
     assert saved["since"] == "2026-11-17T10:00:01Z" and saved["reported"] is False
+    assert saved["reason"] == "hub connection lost"
     # the third fails at 51, 54 and 59 s; the minute passes in the backoff after that
     assert cli.main(["wait", "--timeout", "30"]) == cli.EXIT_TIMEOUT
     err = capsys.readouterr().err
@@ -961,3 +962,90 @@ def test_another_command_fails_once_on_an_answer_that_breaks_off(
     assert cli.main(["messages"]) == cli.EXIT_ERROR
     assert "broke off its answer (IncompleteRead)" in capsys.readouterr().err
     assert len(served.requests) == 1
+
+
+@pytest.fixture
+def cut() -> Iterator[RawHub]:
+    """A RawHub, on no clone, whose every answer breaks off mid-body."""
+    made = RawHub([], BROKEN["body cut, Content-Length"])
+    yield made
+    made.close()
+
+
+def test_get_text_names_an_answer_that_breaks_off(cut: RawHub) -> None:
+    with pytest.raises(hub.HubError, match=r"broke off its answer \(IncompleteRead\)") as raised:
+        hub.get_text(f"{cut.url}/api/v1/agents.md", timeout=5)
+    assert raised.value.status is None and raised.value.code is None
+
+
+def test_an_exchange_names_an_answer_that_breaks_off(cut: RawHub) -> None:
+    with pytest.raises(hub.HubError, match=r"broke off its answer \(IncompleteRead\)") as raised:
+        hub._exchange(f"{cut.url}/api/v1/join/exchange", "code", "join", 5)
+    assert raised.value.status is None and raised.value.code is None
+
+
+def test_runner_check_records_a_hub_that_breaks_off_and_goes_on(
+    cut: RawHub, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from maity.runner import commands
+
+    report = commands.Report()
+    cfg = SimpleNamespace(hub_url=cut.url, state_dir=tmp_path / "state")
+    commands._check_hub(report, cfg)  # type: ignore[arg-type]
+    assert [(kind, "broke off its answer" in text) for kind, text in report.lines] == [
+        ("error", True)
+    ]
+
+
+def test_a_reported_outage_ends_after_a_quiet_first_poll(
+    joined: Path,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A wait that starts 10 s after a reported outage's last failure, and whose first poll is
+    held 55 s and answers empty, still says the hub is back: the saved clock is judged when
+    the wait starts, not when the poll returns 65 s after that failure (6mn6 A1152)."""
+    saved = {"since": "2026-11-17T09:59:00Z", "last": "2026-11-17T09:59:50Z", "reported": True}
+    state.save_state(joined, saved, cli.OUTAGE_FILE)
+    state.save_state(joined, {**state.load_state(joined), "cursor": 17})
+    event = {"seq": 18, "kind": "message", "payload": {"type": "notice", "body": "hi"}}
+    reads = [0]
+
+    def answer(wait: int) -> dict[str, Any]:
+        reads[0] += 1
+        clock.now += 55 if reads[0] == 1 else 1
+        return {"items": [], "cursor": 17} if reads[0] == 1 else {"items": [event], "cursor": 18}
+
+    _events_calls(monkeypatch, answer)
+    assert cli.main(["wait", "--timeout", "120"]) == cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert err.count("hub answering again") == 1
+    back = "hub answering again at 2026-11-17T10:00:55Z, unreachable since 2026-11-17T09:59:00Z"
+    assert back in err
+    assert not (joined / cli.OUTAGE_FILE).exists()
+
+
+def test_an_outage_whose_minute_passes_in_the_unread_note_is_named_before_exit_3(
+    joined: Path,
+    clock: Clock,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--timeout 60: the deadline is 55 s, the last backoff ends there, and the unread-chats
+    note blocks on the dead hub for its 5 s: the minute passes in the note, and the line
+    comes before exit 3 (6mn6 A1152)."""
+
+    def call(self: hub.Client, method: str, path: str, *args: Any, **kwargs: Any) -> Any:
+        if path.endswith("/conversations"):
+            clock.now += 5
+        raise hub.HubError("reset", status=None)
+
+    monkeypatch.setattr(hub.Client, "call", call)
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_TIMEOUT
+    err = capsys.readouterr().err
+    assert clock.now == 60
+    assert err.count("hub connection lost since") == 1
+    assert "hub connection lost since 2026-11-17T10:00:00Z, still at 2026-11-17T10:01:00Z" in err

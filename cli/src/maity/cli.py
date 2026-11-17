@@ -1008,12 +1008,14 @@ class _Outage:
     Within a wait the elapsed time is the monotonic clock's: a wall-clock jump neither starts
     the clock afresh nor makes an outage of a short drop. The wall clock only names the times
     (the first failed read printed as now less the elapsed time) and carries the clock to the
-    next wait: it outlives the process in OUTAGE_FILE, so an outage that spans several short
-    waits is still reported, and a saved clock whose last failure is more than OUTAGE_AFTER
-    old (a wait killed during an outage, then a pause), or in the future, is stale and starts
-    afresh. A file of its own, because `Session.save` writes the whole state.json it read at
-    the start and would put an older cursor back. Neither reading nor writing it can cost the
-    wait: an unreadable, undecodable or malformed file only loses the clock."""
+    next wait: it outlives the process in OUTAGE_FILE, read when the wait starts, so an
+    outage that spans several short waits is still reported, and a saved clock whose last
+    failure was more than OUTAGE_AFTER old when the wait started (a wait killed during an
+    outage, then a pause), or in the future, is stale and starts afresh. A carried clock is
+    named by this wait only after one of its own reads failed, or at the good answer that
+    ends it. A file of its own, because `Session.save` writes the whole state.json it read
+    at the start and would put an older cursor back. Neither reading nor writing it can cost
+    the wait: an unreadable, undecodable or malformed file only loses the clock."""
 
     def __init__(self, state_dir: Path) -> None:
         self.dir = state_dir
@@ -1022,6 +1024,10 @@ class _Outage:
         self.reason = ""
         self.reported = False  # by this wait or an earlier one
         self.shown = False  # by this wait
+        self.tried = False  # a read of this wait failed: only then is the outage this wait's
+        # Read at the start of the wait, so a saved clock is judged against the time the wait
+        # opened: a quiet first poll held for most of a minute must not make it stale.
+        self._load(_utc_now(), time.monotonic())
 
     def _load(self, wall: datetime, mono: float) -> None:
         if self.loaded:
@@ -1038,6 +1044,12 @@ class _Outage:
             return  # stale: nobody knows what the hub did in between
         self.start = mono - (wall - since).total_seconds()
         self.reported = data.get("reported") is True
+        reason = data.get("reason")
+        # Only a reason this code writes is shown again: the file is local, but it is data.
+        known = isinstance(reason, str) and re.fullmatch(
+            r"hub (connection lost|answered \d{3})", reason
+        )
+        self.reason = str(reason) if known else "hub connection lost"
 
     def _since(self, wall: datetime, mono: float) -> datetime:
         """The first failed read's time on the wall clock as it reads now."""
@@ -1050,6 +1062,7 @@ class _Outage:
             "since": _utc(self._since(wall, mono)),
             "last": _utc(wall),
             "reported": self.reported,
+            "reason": self.reason,
         }
         with contextlib.suppress(state.StateError, OSError):
             state.save_state(self.dir, data, OUTAGE_FILE)
@@ -1060,13 +1073,14 @@ class _Outage:
         self._load(wall, mono)
         if self.start is None:
             self.start, self.reported = mono, False
-        self.reason = reason
+        self.reason, self.tried = reason, True
         self._report(wall, mono)
         self._save(wall, mono)
 
     def check(self) -> None:
-        """Between reads: report an outage whose threshold passed since the last failure."""
-        if self.start is None or self.shown:
+        """Between reads: report an outage whose threshold passed since the last failure; not
+        before this wait has tried the hub (a carried clock is named at its first failure)."""
+        if self.start is None or self.shown or not self.tried:
             return
         wall, mono = _utc_now(), time.monotonic()
         if self._report(wall, mono):
@@ -1229,6 +1243,7 @@ def cmd_wait(args: argparse.Namespace) -> int:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             _unread_note(session, end - time.monotonic())
+            outage.check()  # the note's read can carry the minute past the threshold too
             return EXIT_TIMEOUT
         if asked and remaining - slack < 1:
             # Too little left for a poll and its answer: rest out the window instead of a
