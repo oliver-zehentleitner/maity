@@ -683,7 +683,9 @@ key set; it seals the plain ones, leaves sealed ones as they are (a
 second run seals nothing) and prints `sealed N, already sealed M, plain
 left K` per table and in all (`--dry-run` only counts, with or without
 the setting). With the setting on, a plain verifier that verifies a call
-is also sealed in that call's own update of the credential's last use.
+is also sealed in that call's own update of the credential's last use;
+an idle credential, and an isolated agent's (its calls write nothing,
+§6.2), are sealed only by `maity-hub seal-verifiers`.
 With `MAITY_SEALED_VERIFIERS_ONLY=1` (default off; it needs
 `MAITY_SEAL_VERIFIERS=1`) a plain verifier verifies nothing: the
 credential answers exactly as one whose sealed verifier the key does not

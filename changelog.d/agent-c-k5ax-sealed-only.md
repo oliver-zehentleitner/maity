@@ -16,8 +16,9 @@
 ### Security
 
 - hub: with `MAITY_SEAL_VERIFIERS=1`, a plain verifier that verifies a call is sealed in
-  that call's own update of the credential's last use (reseal on use). Operator note:
-  both settings stay off on upgrade. To refuse plain verifiers, switch
+  that call's own update of the credential's last use (reseal on use). An idle
+  credential, and an isolated agent's (its calls write nothing), are sealed only by
+  `maity-hub seal-verifiers`. Operator note: both settings stay off on upgrade. To refuse plain verifiers, switch
   `MAITY_SEAL_VERIFIERS=1` on and roll it out, run `maity-hub seal-verifiers` (again after
   adding the key and after every rolling deploy) until it prints `plain left 0`, then set
   `MAITY_SEALED_VERIFIERS_ONLY=1` in a rollout of its own (docs/install/README.md,

@@ -22,6 +22,7 @@ from maity_hub.config import Settings
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_auth_agent import signed
+from tests.test_isolation import isolate, lift
 from tests.test_runners import call, error, paired
 
 KEY = base64.b64decode("q0bS0b3k1uN4b9dW8m2Yx5zR7cJ6vT1eH3gK8pL0aQs=")
@@ -321,6 +322,23 @@ def test_a_plain_row_is_resealed_by_its_first_call_while_sealing_is_on(
     assert call(make_client(), runner, "GET", RUNNER_ROUTE).status_code == 200
     assert _stored(migrated, runner_holder) == resealed  # a sealed row is not written again
     assert verifiers.check_at_startup(migrated, KEY, seal=True) == (0, 0)
+
+
+def test_an_isolated_agent_s_plain_row_stays_plain_through_its_permitted_calls(
+    make_client: ClientFactory, owner: flow.Human, migrated: Engine
+) -> None:
+    """Its calls write nothing (§6.2), so no last use and no reseal: only the command seals
+    it. Lifted, its next call reseals as any other."""
+    agent = flow.agent(_sealing_off(make_client), owner)
+    holder = Holder(agent.credential_id, agent.credential)
+    plain = _stored(migrated, holder)
+    assert HEX.fullmatch(plain)
+    assert isolate(owner, agent.id).status_code == 200
+    assert _me(make_client, holder) == (200, 200)
+    assert _stored(migrated, holder) == plain
+    assert lift(owner, agent.id).status_code == 200
+    assert _me(make_client, holder) == (200, 200)
+    assert _stored(migrated, holder).startswith("s1:")
 
 
 def test_reseal_on_use_leaves_a_row_replaced_meanwhile_alone(

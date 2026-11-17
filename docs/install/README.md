@@ -597,7 +597,9 @@ settings are off by default, and an upgrade switches neither on):
 
 1. Set `MAITY_SECRET_KEY`, and `MAITY_SEAL_VERIFIERS=1` on every hub
    process, and roll it out. From then on no hub writes a plain verifier,
-   and a plain one that verifies a call is sealed in that call.
+   and a plain one that verifies a call is sealed in that call's update of
+   its last use. An idle credential is not, nor is an isolated agent's,
+   whose calls write nothing: the next step seals those.
 2. Run `maity-hub seal-verifiers` with the same environment as the hub
    (`--dry-run` first, if you like: it only counts). It seals the plain
    verifiers, revoked ones too, leaves sealed ones alone and prints
