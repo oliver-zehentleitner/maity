@@ -2,15 +2,18 @@
 
 The scratch lies in `<workspaces>/<project_id>/.scratch/<placement id>`, and the agents can
 write the project's directory: any directory on the way may have been replaced by a link.
-Every operation is anchored at the workspaces root the runner was given (`under`): that
-directory is opened, and each one below it is opened from the one before without following a
-link, so a name swapped for a link after any check is refused, never followed out. The last
-directory is held open by its descriptor for the whole operation: what is made is made in it,
-what is measured or removed is reached from it, each level below opened from the one above
-(`os.fwalk`); the emptied directory itself is removed from its parent only while that name
-is still the directory held. The runner calls this in its own process when the agents are its
-own user; through sudo or on an ssh host it starts this module there (`python -I -m
-maity.runner.scratchop`, `maity runner scratchop`), which prints its answer as one JSON line.
+Every operation is anchored at the workspaces root it is given (`under`), and works only
+on a placement's scratch below it: that directory is opened, and each one below it is
+opened from the one before without following a link, so a name swapped for a link after any
+check is refused, never followed out. The last directory is held open by its descriptor for
+the whole operation: what is made is made in it, what is measured or removed is reached from
+it, each level below opened from the one above (`os.fwalk`). What is emptied is the
+directory that was measured; its name is checked against that directory just before the
+emptied directory is removed, and past that check at most an empty directory of the same
+name could go in its place, never any content. The runner calls this in its own process
+when the agents are its own user; through sudo or on an ssh host it starts this module
+there (`python -I -m maity.runner.scratchop`, `maity runner scratchop`), which prints its
+answer as one JSON line.
 
 Only the standard library: the module runs with `-I` on the agents' side.
 """
@@ -57,8 +60,8 @@ def _below(path: str, under: str) -> list[str]:
         names = PurePath(path).relative_to(PurePath(under)).parts
     except ValueError:
         raise OSError(f"{path} is not inside {under}") from None
-    if not (len(names) == 3 and TOKEN.match(names[0]) and names[1] == SCRATCH
-            and SCRATCH_ID.match(names[2])):  # fmt: skip
+    if not (len(names) == 3 and TOKEN.fullmatch(names[0]) and names[1] == SCRATCH
+            and SCRATCH_ID.fullmatch(names[2])):  # fmt: skip
         raise OSError(f"{path} is not a placement's scratch under {under}")
     return list(names)
 
@@ -138,8 +141,9 @@ def remove(under: str, path: str) -> dict[str, object]:
 
 def _remove_in(parent: int, name: str) -> dict[str, object]:
     """The directory `name` in the open `parent` removed, with its size before: measured and
-    emptied through the one descriptor opened for it, and removed from `parent` only while
-    `name` there is still that directory."""
+    emptied through the one descriptor opened for it; `name` is checked against that
+    directory just before it is removed (after the check, at most an empty directory of the
+    same name could be removed instead, never content)."""
     try:
         fd = _step(parent, name, None)
     except FileNotFoundError:

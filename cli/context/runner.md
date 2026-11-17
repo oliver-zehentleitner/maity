@@ -3843,8 +3843,9 @@ no proven writable scratch (its file tools are denied paths outside the
 clone, `external_directory: deny`).
 maity reads a named file there as in the clone, which widens the
 clone-only read (the entry under See) to the path the runner recorded.
-The runner's scratch operation refuses to run for an agent and works
-only on a placement's scratch below the root it is given; an agent's
+`maity runner scratchop` works only on a placement's scratch below the
+root it is given, and `maity runner` refuses its operator commands to a
+placed agent; an agent's
 scratch of another placement of the same OS user stays reachable until
 the operation has a runner-only entry (tsk-54492gk4xp69).
 
