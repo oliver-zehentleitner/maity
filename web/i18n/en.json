@@ -4337,6 +4337,8 @@
   "roles.saved": "Roles saved.",
   "roles.not_saved": "Roles not saved: {reason}",
   "roles.unchanged": "Nothing changed.",
+  "roles.stale": "Roles were changed by someone else since this page read them, so nothing was sent. Reload to see them; your changes are kept until you reload or leave.",
+  "roles.reload": "Reload",
   "roles.row": "row {number}",
   "roles.error.at": "{role}: {why}",
   "roles.error.format": "the name must be 2 to 24 lower-case letters, digits or hyphens, starting with a letter",

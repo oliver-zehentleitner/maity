@@ -5387,8 +5387,13 @@ window.Maity = window.Maity || {};
     // fixtures were first read, so an open one stays open.
     // §2.3 "Project roles": the project's own roles, read by every member.
     ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ builtin: BUILTIN_ROLES.map((r) => ({ ...r, scopes: r.scopes.slice() })), custom: (project(m[1], path).roles || []).slice() })],
-    // PUT …/roles (§2.3): the whole list, by a human with project:admin; a role still named by a
-    // membership cannot go (the hub's other uses are not kept here); a new base moves its members.
+    // PUT …/roles (§2.3): the whole list, by a human with project:admin, checked as
+    // project_roles.parse and routes/roles.py check it: the list, each entry's fields, a role in
+    // policy.outside_roles on a base an outsider may hold. A removal is refused while a membership
+    // or policy.outside_roles names the role; the hub's other uses (joins, invitations, cards,
+    // requests, placements, the check-in, substitutes, role memory) are not kept here. `outside` is
+    // reserved as §2.3 says, where the hub does not refuse it yet (tsk-2s1x6rjck05x).
+    // A new base moves its members.
     ["PUT", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => {
       if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
       if (!governing(mineIn(m[1]))) fail(403, "forbidden", "project:admin", path, { scope: "project:admin" });
@@ -5401,20 +5406,33 @@ window.Maity = window.Maity || {};
       const seen = new Set();
       raw.forEach((r, i) => {
         const at = "custom[" + i + "]";
-        if (Object.hasOwn(r || {}, "guide")) fields["custom[].guide"] = "moved";
+        if (r === null || typeof r !== "object" || Array.isArray(r)) { fields[at] = "not_an_object"; return; }
+        Object.keys(r).forEach((key) => {
+          if (key === "guide") fields["custom[].guide"] = "moved";
+          else if (!["name", "base", "description"].includes(key)) fields[at + "." + key] = "unknown_field";
+        });
         if (typeof r.name !== "string" || !/^[a-z][a-z0-9-]{1,23}$/.test(r.name)) fields[at + ".name"] = "format";
         else if (BUILTIN_ROLES.some((x) => x.name === r.name) || reserved.includes(r.name)) fields[at + ".name"] = "reserved";
         else if (seen.has(r.name)) fields[at + ".name"] = "duplicate";
         else seen.add(r.name);
         if (!bases.includes(r.base)) fields[at + ".base"] = "unknown";
-        if (typeof (r.description || "") !== "string" || [...(r.description || "")].length > 200) fields[at + ".description"] = "too_long";
+        const description = "description" in r ? r.description : "";
+        if (typeof description !== "string") fields[at + ".description"] = "format";
+        else if ([...description].length > 200) fields[at + ".description"] = "too_long";
       });
       if (Object.keys(fields).length) fail(400, "invalid", "invalid roles", path, { fields });
+      const outside = (project(m[1], path).policy || {}).outside_roles || ["coder"];
+      raw.forEach((r, i) => {
+        if (outside.includes(r.name) && !["coder", "designer", "writer", "blue-team", "expert"].includes(r.base)) {
+          fail(400, "invalid", "the role " + r.name + " is in policy.outside_roles", path, { fields: { ["custom[" + i + "].base"]: "outside_roles" } });
+        }
+      });
       const proj = project(m[1], path);
       const old = proj.roles || [];
       const members = file(m[1], "members.json", path).items;
       old.filter((r) => !raw.some((x) => x.name === r.name)).forEach((r) => {
-        if (members.some((x) => x.role === r.name)) fail(409, "conflict", "the role " + r.name + " is still in use", path, { reason: "role_in_use", role: r.name, uses: ["membership"] });
+        const uses = [members.some((x) => x.role === r.name) ? "membership" : null, outside.includes(r.name) ? "outside_roles" : null].filter(Boolean);
+        if (uses.length) fail(409, "conflict", "the role " + r.name + " is still in use", path, { reason: "role_in_use", role: r.name, uses });
       });
       const next = raw.map((r) => {
         const before = old.find((x) => x.name === r.name) || {};

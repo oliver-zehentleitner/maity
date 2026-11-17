@@ -54,15 +54,21 @@ window.Maity = window.Maity || {};
     const body = h("div", { class: "project-roles-body" });
     const status = M.statusLine();
     append(section, body, status.el);
-    status.busy(M.t("roles.loading"));
-    M.api.get(ctx.base + "/roles").then((answer) => {
-      status.done();
-      draw(ctx, body, answer || {}, saved);
-    }).catch((err) => status.fail(M.t("roles.load_failed"), err));
+    const load = () => {
+      status.busy(M.t("roles.loading"));
+      M.api.get(ctx.base + "/roles").then((answer) => {
+        status.done();
+        draw(ctx, body, answer || {}, saved, load);
+      }).catch((err) => status.fail(M.t("roles.load_failed"), err));
+    };
+    load();
     return section;
   }
 
-  function draw(ctx, body, answer, saved) {
+  // The project roles as compared before a save: what the PUT replaces, in the hub's order.
+  const comparable = (custom) => JSON.stringify((custom || []).map((r) => [r.name, r.base, r.description || ""]));
+
+  function draw(ctx, body, answer, saved, reload) {
     const builtin = answer.builtin || [];
     const stored = (answer.custom || []).map((r) => ({ name: r.name, base: r.base, description: r.description || "", guide: r.guide || "" }));
     clear(body);
@@ -82,6 +88,15 @@ window.Maity = window.Maity || {};
     const status = M.statusLine();
     const save = h("button", { type: "submit" }, M.t("roles.save"));
     const add = h("button", { type: "button", class: "project-roles-add" }, M.t("roles.add"));
+
+    // The draft is frozen while the confirmation is open and while the PUT runs, so what is
+    // sent is what the page shows (A963 P2-2); Back or a refusal thaws it.
+    const editors = () => [...table.querySelectorAll("input"), ...table.querySelectorAll("select"), ...table.querySelectorAll("button")];
+    const freeze = (on) => {
+      editors().forEach((el) => { el.disabled = on; });
+      add.disabled = on || rows.length >= LIMIT;
+      save.disabled = on;
+    };
 
     function drawRows() {
       clear(table);
@@ -135,7 +150,8 @@ window.Maity = window.Maity || {};
       const seen = new Set();
       next.forEach((r, i) => {
         const label = r.name || M.t("roles.row", { number: i + 1 });
-        if (!NAME.test(r.name || "")) said.push(M.t("roles.error.at", { role: label, why: fieldWords("format") }));
+        if (rows[i] && rows[i].kept) { seen.add(r.name); }
+        else if (!NAME.test(r.name || "")) said.push(M.t("roles.error.at", { role: label, why: fieldWords("format") }));
         else if (M.trust.ROLES.includes(r.name) || RESERVED.includes(r.name)) said.push(M.t("roles.error.at", { role: label, why: fieldWords("reserved") }));
         else if (seen.has(r.name)) said.push(M.t("roles.error.at", { role: label, why: fieldWords("duplicate") }));
         seen.add(r.name);
@@ -144,16 +160,30 @@ window.Maity = window.Maity || {};
       return said;
     }
 
+    // Right before the PUT the list is read again: when someone else changed it since this page
+    // read it, nothing is sent and the draft stays until Reload (the lead's decision on A963 P2-1).
+    // The hub replaces the whole list and has no revision to check against, so two saves in the
+    // same instant can still overwrite each other; this catches the usual case, a stale page.
+    function changedElsewhere() {
+      clear(errors);
+      status.done();
+      append(errors, h("li", { class: "project-roles-stale" }, M.t("roles.stale"), " ",
+        h("button", { type: "button", class: "project-roles-reload", onclick: () => reload() }, M.t("roles.reload"))));
+      freeze(false);
+    }
+
     async function send(next) {
       clear(errors);
       confirmBox.hidden = true;
-      save.disabled = true;
+      freeze(true);
       status.busy(M.t("settings.saving"));
       try {
+        const now = await M.api.get(ctx.base + "/roles");
+        if (comparable((now || {}).custom) !== comparable(stored)) { changedElsewhere(); return; }
         await M.api.put(ctx.base + "/roles", { custom: next });
         saved(M.t("roles.saved"));
       } catch (err) {
-        save.disabled = false;
+        freeze(false);
         if (err.code === "conflict" && err.details && err.details.reason === "role_in_use") {
           status.done();
           append(errors, h("li", null, M.t("roles.in_use", { role: err.details.role || "",
@@ -185,10 +215,10 @@ window.Maity = window.Maity || {};
           count: x.count, role: x.name, from: M.trust.roleLabel(x.from), to: M.trust.roleLabel(x.to) })))),
         h("p", null, M.t("roles.move.approvals")),
         h("div", { class: "actions" },
-          h("button", { type: "button", class: "project-roles-move-back", onclick: () => { confirmBox.hidden = true; save.disabled = false; save.focus(); } }, M.t("roles.move.back")),
+          h("button", { type: "button", class: "project-roles-move-back", onclick: () => { confirmBox.hidden = true; freeze(false); save.focus(); } }, M.t("roles.move.back")),
           h("button", { type: "button", class: "project-roles-move-go", onclick: () => send(next) }, M.t("roles.move.go"))));
       confirmBox.hidden = false;
-      save.disabled = true;
+      freeze(true);
       confirmBox.querySelector("button.project-roles-move-go").focus();
     }
 
