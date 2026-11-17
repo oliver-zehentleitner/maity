@@ -219,8 +219,11 @@ clones, `<handle>` and `<handle>-2`, the hub's default. Where an agent
 runs is a list (`placements` in the member view); the single
 `placement` stays as the oldest one. A runner's rate limit makes the
 agent `limited` only while every running placement of it is
-rate-limited. Claims need nothing new: a claim is held by one instance,
-and a sibling instance gets `already_claimed`.
+rate-limited: the hub recomputes it from all of them at each report,
+and a resume does not clear it. Claims need nothing new: a claim is held
+by one instance, and a sibling instance gets `already_claimed`. At the
+decision this was contract only: the hub and the CLI follow under the
+same card, the dashboard after them.
 
 **Reason:** the maintainer wants to start any number of instances of one
 agent on runners, within the limit he sets for it (confirmed). Until
