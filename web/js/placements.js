@@ -254,7 +254,13 @@ window.Maity = window.Maity || {};
         status.done();
         await hooks.made(made);
       } catch (err) {
-        status.fail(M.t("placements.new.failed"), said(err));
+        if (err.code === "placement_quota") {
+          // The limit by name and where a human admin raises it (§6.1 max_placements, tsk-6s5n7egy4e5r).
+          const max = err.details && Number.isInteger(err.details.max) ? err.details.max : (ctx.project.policy || {}).max_placements;
+          status.fail(M.t("placements.new.failed"), { message: M.t("placements.new.quota", { max: max === undefined ? 8 : max }) });
+          append(status.el, " ", M.tn("placements.new.quota_raise",
+            { link: h("a", { href: ctx.link("settings", "members"), class: "placement-quota-link" }, M.t("placements.new.quota_link")) }));
+        } else status.fail(M.t("placements.new.failed"), said(err));
       } finally {
         submit.disabled = !tool.value;
       }

@@ -2192,6 +2192,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     harness: "claude-code", mode: "interactive", model: null, workspace: { clone: "agent-f-web", branch: "main" } })
     && srBox().querySelectorAll("li.placement").length === 6 && text(srBox()).includes("Agent F on home-laptop"),
     "placements: a new profile is sent with its join fields, as in a join " + JSON.stringify(srMade[2]));
+  // The project's limit of placements reached (§6.1 max_placements, tsk-6s5n7egy4e5r): the refusal names
+  // the limit and links to where a human admin raises it. Six are active now; the limit set to six.
+  await win.Maity.api.patch("/projects/maintainer/maity", { policy: { max_placements: 6 }, reason: "the quota case" });
+  await srOpen();
+  byId("placement-new-handle").value = "agent-q"; byId("placement-new-name").value = "Agent Q";
+  srForm().requestSubmit(); for (let k = 0; k < 8; k++) await tick();
+  const srQuota = srForm() && srForm().querySelector(".send-status");
+  const srQuotaLink = srQuota && srQuota.querySelector("a.placement-quota-link");
+  expect(srQuota && text(srQuota) === "Not placed on the runner: the project allows 6 placements on runners at once, and that many are active. Raise the limit in Settings, Members and agents."
+    && srQuotaLink && srQuotaLink.getAttribute("href") === "#/maintainer/maity/settings/members" && srBox().querySelectorAll("li.placement").length === 6,
+    "placements: placement_quota names the project's limit and links to Members and agents in Project settings " + (srQuota && text(srQuota)));
+  srCancel().click(); await tick();
+  await win.Maity.api.patch("/projects/maintainer/maity", { policy: { max_placements: 8 }, reason: "back for the tests" });
+  srMade.pop();
   // Only runners that offer the project's repository, matched as the hub's fnmatch does (tsk-wn6qp27090qy):
   // one with a foreign repository is left out, one whose pattern matches is offered; with none, why.
   const srGetAll = win.Maity.api.getAll, srGet = win.Maity.api.get;
@@ -4142,6 +4156,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(maPatches.length === 1 && JSON.stringify(maPatches[0][1]) === JSON.stringify({ policy: { member_agents_max: 5 }, reason: "a bigger team" }),
     "own agents: only what changed is sent, with its reason " + JSON.stringify(maPatches[0] && maPatches[0][1]));
   await win.Maity.api.patch("/projects/maintainer/maity", { policy: { member_agents_max: 3 }, reason: "back for the tests" });
+  // Beside it, the project's placements on runners: n of max, changed by a human admin with a reason
+  // (§6.1 max_placements, tsk-6s5n7egy4e5r); out of range is said at the field and nothing is sent.
+  await go("#/maintainer/maity/inbox"); await projectSettings("members"); for (let k = 0; k < 4; k++) await tick();
+  maPatches.length = 0;
+  const mpForms = main.querySelectorAll("form").map((f) => f.getAttribute("class") || "");
+  const mpAt = mpForms.findIndex((c) => c.includes("max-placements-form"));
+  expect(mpAt > 0 && mpForms[mpAt - 1].includes("member-agents-form") && byId("max-placements").value === "8"
+    && /^Placements on runners: \d+ of 8$/.test(text(byId("max-placements-count"))),
+    "placements limit: Project settings show it next to members' own agents, with n of max " + text(byId("max-placements-count") || main));
+  byId("max-placements").value = "1001"; byId("max-placements-reason").value = "two runners";
+  main.querySelector("form.max-placements-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!maPatches.length && text(byId("max-placements-error")) === "Placements on runners: a whole number from 0 to 1000.",
+    "placements limit: out of range is said at the field, nothing is sent");
+  byId("max-placements").value = "16"; byId("max-placements-reason").value = "";
+  main.querySelector("form.max-placements-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!maPatches.length, "placements limit: no reason, nothing is sent");
+  byId("max-placements-reason").value = "two runners";
+  main.querySelector("form.max-placements-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(maPatches.length === 1 && JSON.stringify(maPatches[0][1]) === JSON.stringify({ policy: { max_placements: 16 }, reason: "two runners" })
+    && byId("max-placements") && byId("max-placements").value === "16" && /^Placements on runners: \d+ of 16$/.test(text(byId("max-placements-count"))),
+    "placements limit: the new value is sent alone with its reason and shown after the save " + JSON.stringify(maPatches[0] && maPatches[0][1]));
+  await maPatch("/projects/maintainer/maity", { policy: { max_placements: 8 }, reason: "back for the tests" });
+  // An admin agent has no such field: the policy is a human's (§2.3).
+  const mxGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mxGet(p).then((x) => Object.assign({}, x, { member: Object.assign({}, x.member, { kind: "agent" }) })) : mxGet(p));
+  await go("#/maintainer/maity/inbox"); await projectSettings("members"); for (let k = 0; k < 4; k++) await tick();
+  expect(!byId("max-placements") && !byId("member-agents-max"), "placements limit: not offered to an agent, as members' own agents");
+  win.Maity.api.get = mxGet;
   win.Maity.api.patch = maPatch;
   await go("#/maintainer/maity/inbox");
 

@@ -3360,8 +3360,8 @@ window.Maity = window.Maity || {};
       return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
     }],
     // A human with members:admin places an agent on a runner of their own attached here: one of
-    // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: not
-    // the placement quota or the spec's other validations (review of #1558); the repository's
+    // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: the
+    // placement quota (§6.1 max_placements), not the spec's other validations (review of #1558); the repository's
     // offer with `*` and `?` only (tsk-wn6qp27090qy). The placement waits for the runner
     // (reported null) and needs no consent.
     ["POST", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
@@ -3375,6 +3375,8 @@ window.Maity = window.Maity || {};
       if (prj.state === "archived") fail(409, "project_closed", "the project is closed", path);
       if (r.credential_state !== "active") fail(409, "runner_revoked", "the runner has no live credential", path);
       const live = placementsOf(m[1]).filter((x) => x.active);
+      const quota = (prj.policy || {}).max_placements === undefined ? 8 : prj.policy.max_placements;
+      if (live.length >= quota) fail(409, "placement_quota", "the project's placements are at its limit", path, { max: quota });
       const members = (fixtures()[m[1] + "/members.json"] || { items: [] }).items;
       let agent;
       if (body.agent && body.agent.id) {
@@ -3934,6 +3936,9 @@ window.Maity = window.Maity || {};
         }
         if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer", "blue-team"].includes(r))) {
           fail(400, "invalid", "a role an outsider may not hold", path, { fields: { outside_roles: "role_not_allowed" } });
+        }
+        if ("max_placements" in body.policy && !(Number.isInteger(body.policy.max_placements) && body.policy.max_placements >= 0 && body.policy.max_placements <= 1000)) {
+          fail(400, "invalid", "max_placements is 0 to 1000", path, { fields: { "policy.max_placements": "out_of_range" } });
         }
         if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });

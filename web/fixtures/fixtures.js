@@ -4130,6 +4130,7 @@ window.MAITY_FIXTURES = {
       "keep_the_why": "required",
       "keep_the_why_defaults": "adopt",
       "lease_seconds": 7200,
+      "max_placements": 8,
       "member_agents": "on",
       "member_agents_max": 3,
       "on_runner_revoke": "stop",

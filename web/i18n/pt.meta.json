@@ -13055,6 +13055,18 @@
     "en": "ddd0aac4da02e11d",
     "text": "575847758dcdfa21"
   },
+  "placements.new.quota": {
+    "en": "e3862282f036b1ae",
+    "text": "f8a5bff4c1f40292"
+  },
+  "placements.new.quota_link": {
+    "en": "8fa180b5970a7dc9",
+    "text": "597119967c501e79"
+  },
+  "placements.new.quota_raise": {
+    "en": "6ab76ee09ea92814",
+    "text": "02ff59d3cdb90c36"
+  },
   "placements.new.reading": {
     "en": "2070173fea584607",
     "text": "2959e1b59311e016"
@@ -16966,6 +16978,38 @@
   "settings.links.unknown": {
     "en": "95b7fb23ec1d83d4",
     "text": "ab7342660eea7335"
+  },
+  "settings.max_placements.bad_max": {
+    "en": "4b79f03c71f0b64d",
+    "text": "b401de43c3baf2a6"
+  },
+  "settings.max_placements.count": {
+    "en": "6775fef7ab26977e",
+    "text": "8b2238bd03af64c8"
+  },
+  "settings.max_placements.count_unknown": {
+    "en": "93db5d1db0d72fc5",
+    "text": "d0b045156cde0a05"
+  },
+  "settings.max_placements.hint": {
+    "en": "e8f1f901b2c276c7",
+    "text": "92d5a1efe81552aa"
+  },
+  "settings.max_placements.max": {
+    "en": "c2c6ebb43dd590e8",
+    "text": "6c23245c3e871560"
+  },
+  "settings.max_placements.not_saved": {
+    "en": "5a57a8b3db3bbeca",
+    "text": "ab0fb0ec32d4833b"
+  },
+  "settings.max_placements.saved": {
+    "en": "4181de0e66b45c08",
+    "text": "2b27e7dddea14849"
+  },
+  "settings.max_placements.title": {
+    "en": "22b8ece9ed431dac",
+    "text": "c73694a8b865dd3c"
   },
   "settings.member_agents.bad_max": {
     "en": "942904b5d5bda0bc",

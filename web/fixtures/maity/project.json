@@ -56,6 +56,7 @@
     "keep_the_why_defaults": "adopt",
     "member_agents": "on",
     "member_agents_max": 3,
+    "max_placements": 8,
     "on_runner_revoke": "stop"
   },
   "absence": null,

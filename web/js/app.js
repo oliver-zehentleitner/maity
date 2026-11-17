@@ -811,6 +811,7 @@ window.Maity = window.Maity || {};
     { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx) => imagesForm(ctx) },
     // Members and agents: who joins, on what terms, and who reads what.
     { tab: "members", when: humanAdminOf, build: (ctx, save) => memberAgentsForm(ctx, save) },
+    { tab: "members", when: humanAdminOf, build: (ctx, save) => maxPlacementsForm(ctx, save) },
     { tab: "members", when: humanAdminOf, build: (ctx, save) => h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)) },
     { tab: "members", when: (ctx) => ctx.canAdmin, build: (ctx) => onboardingForm(ctx) },
     // Who reads and writes the cards' restricted texts (§6.1, §6.4): a human with
@@ -1306,6 +1307,40 @@ window.Maity = window.Maity || {};
     h("label", { for: "member-agents-select" }, M.t("settings.member_agents.label")), on,
     h("label", { for: "member-agents-max" }, M.t("settings.member_agents.max")), max, error,
     h("label", { for: "member-agents-reason" }, M.t("settings.reason")), reason,
+    h("button", { type: "submit" }, M.t("board.save")));
+  }
+
+  // §6.1 max_placements, §15.5: how many placements may be active in the project, on all runners
+  // together; the start dialog's placement_quota links here. A human with project:admin, with a
+  // reason, as every policy field; the hub refuses it to every agent (tsk-6s5n7egy4e5r). n is the
+  // project's active placements as GET …/placements lists them.
+  const PLACEMENTS_DEFAULT = 8, PLACEMENTS_MAX = 1000;
+  function maxPlacementsForm(ctx, save) {
+    const current = ctx.project.policy.max_placements === undefined ? PLACEMENTS_DEFAULT : ctx.project.policy.max_placements;
+    const max = h("input", { id: "max-placements", type: "number", min: "0", max: String(PLACEMENTS_MAX), step: "1", "aria-describedby": "max-placements-count" });
+    max.value = String(current);
+    const count = h("p", { class: "hint", id: "max-placements-count", "aria-live": "polite" });
+    M.api.getAll(ctx.base + "/placements")
+      .then((r) => { count.textContent = M.t("settings.max_placements.count", { count: r.items.length, max: current }); })
+      .catch(() => { count.textContent = M.t("settings.max_placements.count_unknown", { max: current }); });
+    const reason = h("input", { id: "max-placements-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
+    const error = h("p", { class: "field-error", id: "max-placements-error", role: "alert" });
+    return h("form", {
+      class: "inline-form max-placements-form", id: "max-placements-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        error.textContent = "";
+        const n = Number(max.value);
+        if (max.value.trim() === "" || !Number.isInteger(n) || n < 0 || n > PLACEMENTS_MAX) { error.textContent = M.t("settings.max_placements.bad_max"); max.focus(); return; }
+        if (n === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { max_placements: n }, reason: reason.value.trim() }, { saved: M.t("settings.max_placements.saved"), notSaved: M.t("settings.max_placements.not_saved") });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.max_placements.title")),
+    h("p", { class: "hint" }, M.t("settings.max_placements.hint")),
+    h("label", { for: "max-placements" }, M.t("settings.max_placements.max")), max, count, error,
+    h("label", { for: "max-placements-reason" }, M.t("settings.reason")), reason,
     h("button", { type: "submit" }, M.t("board.save")));
   }
 

@@ -115,7 +115,7 @@ Set up the series and their moderators at the top of the **Jour fixe** tab; **Se
 The project's settings are in tabs, each at an address of its own, so a link, a reload or Back opens the same tab. A tab shows only where you may see or change something on it. The first four hold the project's own settings, for its admins:
 
 - **General** (`/<owner>/<slug>/settings`, the tab Settings opens on): the project's language and state, its repository and links, its name and transfer to another owner, the **Public page**, the README badge, the change ticker and forge webhook, and the logo and banner. The project's runners are linked here too.
-- **Members and agents** (`…/settings/members`): whether members may bring their own agents, whether agents of outsiders may join and in which roles, the default briefing under **Onboarding**, who reads the cards' restricted texts, agent signing, and the project's **Roles**.
+- **Members and agents** (`…/settings/members`): whether members may bring their own agents, how many agents may run on runners in the project at once (**Agents on runners**, shown as placements on runners now of the limit, default 8), whether agents of outsiders may join and in which roles, the default briefing under **Onboarding**, who reads the cards' restricted texts, agent signing, and the project's **Roles**.
 - **Way of working** (`…/settings/work`): **Who closes a card**, the project's **Memory**, whether Keep the Why is required, where a joining agent's Keep the Why personal settings come from, and a link to the jour fixe series.
 - **Moderation** (`…/settings/moderation`): removing a reported message, and everyone's pending uploads.
 
