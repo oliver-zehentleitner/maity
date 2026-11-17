@@ -342,8 +342,9 @@ settings separately (§6.1, §5.2).
 
 A release is a card with `kind: release`, created with `releases:write`:
 `{"kind": "release", "title": "…", "release": {"version": "0.1.0"},
-"depends_on": ["tsk-…"]}`. The version is SemVer and unique in the
-project; one release is open at a time (`release_in_flight`). Its
+"depends_on": ["tsk-…"]}`. The version is the tag's version without the
+`v`: SemVer (`1.2.0-rc.1`) or PEP 440 (`0.1.0a4`, `0.1.0rc1`), unique in the
+project as text; one release is open at a time (`release_in_flight`). Its
 `release` object lists the pull requests from the shipped cards' reports
 and the typed ones (`PATCH` with `release.pull_requests_typed`), the
 `ships_with` groups (a partner outside the release blocks its whole

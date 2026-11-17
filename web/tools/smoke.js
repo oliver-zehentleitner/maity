@@ -2192,6 +2192,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     harness: "claude-code", mode: "interactive", model: null, workspace: { clone: "agent-f-web", branch: "main" } })
     && srBox().querySelectorAll("li.placement").length === 6 && text(srBox()).includes("Agent F on home-laptop"),
     "placements: a new profile is sent with its join fields, as in a join " + JSON.stringify(srMade[2]));
+  // The project's limit of placements reached (§6.1 max_placements, tsk-6s5n7egy4e5r): the refusal names
+  // the limit and links to where a human admin raises it. Six are active now; the limit set to six.
+  await win.Maity.api.patch("/projects/maintainer/maity", { policy: { max_placements: 6 }, reason: "the quota case" });
+  await srOpen();
+  byId("placement-new-handle").value = "agent-q"; byId("placement-new-name").value = "Agent Q";
+  srForm().requestSubmit(); for (let k = 0; k < 8; k++) await tick();
+  const srQuota = srForm() && srForm().querySelector(".send-status");
+  const srQuotaLink = srQuota && srQuota.querySelector("a.placement-quota-link");
+  expect(srQuota && text(srQuota) === "Not placed on the runner: the project's limit of 6 active placements on runners is reached. Raise the limit in Settings, Members and agents."
+    && srQuotaLink && srQuotaLink.getAttribute("href") === "#/maintainer/maity/settings/members" && srBox().querySelectorAll("li.placement").length === 6,
+    "placements: placement_quota names the project's limit and links to Members and agents in Project settings " + (srQuota && text(srQuota)));
+  srCancel().click(); await tick();
+  await win.Maity.api.patch("/projects/maintainer/maity", { policy: { max_placements: 8 }, reason: "back for the tests" });
+  srMade.pop();
   // Only runners that offer the project's repository, matched as the hub's fnmatch does (tsk-wn6qp27090qy):
   // one with a foreign repository is left out, one whose pattern matches is offered; with none, why.
   const srGetAll = win.Maity.api.getAll, srGet = win.Maity.api.get;
@@ -4142,6 +4156,34 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(maPatches.length === 1 && JSON.stringify(maPatches[0][1]) === JSON.stringify({ policy: { member_agents_max: 5 }, reason: "a bigger team" }),
     "own agents: only what changed is sent, with its reason " + JSON.stringify(maPatches[0] && maPatches[0][1]));
   await win.Maity.api.patch("/projects/maintainer/maity", { policy: { member_agents_max: 3 }, reason: "back for the tests" });
+  // Beside it, the project's placements on runners: n of max, changed by a human admin with a reason
+  // (§6.1 max_placements, tsk-6s5n7egy4e5r); out of range is said at the field and nothing is sent.
+  await go("#/maintainer/maity/inbox"); await projectSettings("members"); for (let k = 0; k < 4; k++) await tick();
+  maPatches.length = 0;
+  const mpForms = main.querySelectorAll("form").map((f) => f.getAttribute("class") || "");
+  const mpAt = mpForms.findIndex((c) => c.includes("max-placements-form"));
+  expect(mpAt > 0 && mpForms[mpAt - 1].includes("member-agents-form") && byId("max-placements").value === "8"
+    && /^Placements on runners: \d+ of 8$/.test(text(byId("max-placements-count"))),
+    "placements limit: Project settings show it next to members' own agents, with n of max " + text(byId("max-placements-count") || main));
+  byId("max-placements").value = "1001"; byId("max-placements-reason").value = "two runners";
+  main.querySelector("form.max-placements-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!maPatches.length && text(byId("max-placements-error")) === "Placements on runners: a whole number from 0 to 1000.",
+    "placements limit: out of range is said at the field, nothing is sent");
+  byId("max-placements").value = "16"; byId("max-placements-reason").value = "";
+  main.querySelector("form.max-placements-form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  expect(!maPatches.length, "placements limit: no reason, nothing is sent");
+  byId("max-placements-reason").value = "two runners";
+  main.querySelector("form.max-placements-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  expect(maPatches.length === 1 && JSON.stringify(maPatches[0][1]) === JSON.stringify({ policy: { max_placements: 16 }, reason: "two runners" })
+    && byId("max-placements") && byId("max-placements").value === "16" && /^Placements on runners: \d+ of 16$/.test(text(byId("max-placements-count"))),
+    "placements limit: the new value is sent alone with its reason and shown after the save " + JSON.stringify(maPatches[0] && maPatches[0][1]));
+  await maPatch("/projects/maintainer/maity", { policy: { max_placements: 8 }, reason: "back for the tests" });
+  // An admin agent has no such field: the policy is a human's (§2.3).
+  const mxGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/me" ? mxGet(p).then((x) => Object.assign({}, x, { member: Object.assign({}, x.member, { kind: "agent" }) })) : mxGet(p));
+  await go("#/maintainer/maity/inbox"); await projectSettings("members"); for (let k = 0; k < 4; k++) await tick();
+  expect(!byId("max-placements") && !byId("member-agents-max"), "placements limit: not offered to an agent, as members' own agents");
+  win.Maity.api.get = mxGet;
   win.Maity.api.patch = maPatch;
   await go("#/maintainer/maity/inbox");
 
@@ -4153,6 +4195,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const roPuts = [];
   const roPut = win.Maity.api.put;
   win.Maity.api.put = (p, b) => { if (/\/roles$/.test(p)) roPuts.push(JSON.parse(JSON.stringify(b))); return roPut(p, b); };
+  // Another tab's save, as a client that read the list makes it (§2.3 "Version.").
+  const roPutNow = async (custom) => roPut("/projects/maintainer/maity/roles",
+    { custom, base_version: (await win.Maity.api.get("/projects/maintainer/maity/roles")).version });
   const roSubmit = async () => { roSection().querySelector("form.project-roles-form").dispatch("submit"); for (let k = 0; k < 10; k++) await tick(); };
   const roConfirm = () => roSection().querySelector(".project-roles-confirm");
   expect(roSection() && text(roSection()).includes("Built-in roles") && text(roSection()).includes("Coder")
@@ -4168,7 +4213,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("project-role-description-0").value = "translates the dashboard"; byId("project-role-description-0").dispatch("input");
   await roSubmit();
   for (let k = 0; k < 6; k++) await tick();
-  expect(roPuts.length === 1 && JSON.stringify(roPuts[0]) === JSON.stringify({ custom: [{ name: "translator", base: "writer", description: "translates the dashboard" }] })
+  expect(roPuts.length === 1 && JSON.stringify(roPuts[0]) === JSON.stringify({ custom: [{ name: "translator", base: "writer", description: "translates the dashboard" }], base_version: 0 })
     && text(main).includes("Roles saved.") && byId("project-role-name-0") && byId("project-role-name-0").value === "translator"
     && byId("project-role-name-0").attrs.readonly !== undefined,
     "roles: a new role is sent as the whole list and stands with its name fixed " + JSON.stringify(roPuts));
@@ -4187,36 +4232,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "roles: Back sends nothing and thaws the draft");
   await roSubmit();
   roConfirm().querySelector("button.project-roles-move-go").click(); for (let k = 0; k < 10; k++) await tick();
-  expect(roPuts.length === 2 && roPuts[1].custom[0].base === "coder" && text(main).includes("Roles saved."),
+  expect(roPuts.length === 2 && roPuts[1].custom[0].base === "coder" && roPuts[1].base_version === 1 && text(main).includes("Roles saved."),
     "roles: sent once confirmed " + JSON.stringify(roPuts));
   roSection().querySelector("button.project-roles-remove").click(); await tick();
   await roSubmit();
-  expect(roPuts.length === 3 && JSON.stringify(roPuts[2]) === JSON.stringify({ custom: [] })
+  expect(roPuts.length === 3 && JSON.stringify(roPuts[2].custom) === JSON.stringify([]) && roPuts[2].base_version === 2
     && text(roSection()).includes("The role translator is still in use (members) and was not removed."),
     "roles: the hub's role_in_use is said with what still names the role");
   expect(byId("project-role-name-0") && byId("project-role-name-0").value === "translator" && byId("project-role-name-0").attrs.readonly !== undefined
     && byId("project-role-base-0").value === "coder",
     "roles: a removal the hub refused puts the role back into the draft (A964)");
   await win.Maity.api.patch("/projects/maintainer/maity/members/agt-c", { role: "coder" });
-  await roPut("/projects/maintainer/maity/roles", { custom: [] });
-  // A page that read the roles before someone else saved sends nothing and keeps its draft (A963).
+  await roPutNow([]);
+  // A page that read the roles before someone else saved: the save names the version it read, the
+  // hub refuses it (409 `conflict`) and changes nothing, and the draft stays (A963, §2.3 "Version.").
   await go("#/maintainer/maity/inbox"); await projectSettings("members"); for (let k = 0; k < 6; k++) await tick();
   roSection().querySelector("button.project-roles-add").click(); await tick();
   byId("project-role-name-0").value = "legal"; byId("project-role-name-0").dispatch("input");
-  await roPut("/projects/maintainer/maity/roles", { custom: [{ name: "triage", base: "coder", description: "" }] });
+  await roPutNow([{ name: "triage", base: "coder", description: "" }]);
   await roSubmit();
-  expect(roPuts.length === 3 && text(roSection()).includes("Roles were changed by someone else since this page read them, so nothing was sent.")
-    && byId("project-role-name-0").value === "legal" && !byId("project-role-name-0").disabled,
-    "roles: a list changed elsewhere since the page read it is not overwritten, the draft stays");
+  const roNow = await win.Maity.api.get("/projects/maintainer/maity/roles");
+  expect(roPuts.length === 4 && roPuts[3].base_version === roNow.version - 1
+    && text(roSection()).includes("Roles were changed by someone else since this page read them, so your save was not applied.")
+    && byId("project-role-name-0").value === "legal" && !byId("project-role-name-0").disabled
+    && JSON.stringify(roNow.custom.map((r) => r.name)) === JSON.stringify(["triage"]),
+    "roles: a save on a list changed elsewhere is refused by its version, nothing overwritten, the draft stays " + JSON.stringify(roPuts[3]));
   roSection().querySelector("button.project-roles-reload").click(); for (let k = 0; k < 8; k++) await tick();
   expect(byId("project-role-name-0") && byId("project-role-name-0").value === "triage" && !byId("project-role-name-1"),
     "roles: Reload shows the list as it is now");
   // The fixture refuses what the hub refuses (A963 P3).
-  const roRefusal = async (custom) => roPut("/projects/maintainer/maity/roles", { custom }).then(() => null, (e) => (e.details && e.details.fields) || e.code);
+  const roRefusal = async (custom) => roPut("/projects/maintainer/maity/roles", { custom, base_version: 0 }).then(() => null, (e) => (e.details && e.details.fields) || e.code);
   const roRefused = [await roRefusal([null]), await roRefusal([{ name: "x-ray", base: "coder", extra: 1 }]), await roRefusal([{ name: "x-ray", base: "coder", description: null }])];
   expect(JSON.stringify(roRefused) === JSON.stringify([{ "custom[0]": "not_an_object" }, { "custom[0].extra": "unknown_field" }, { "custom[0].description": "format" }]),
     "roles: the fixture refuses a non-object, an unknown field and a description that is no text, as the hub does " + JSON.stringify(roRefused));
-  await roPut("/projects/maintainer/maity/roles", { custom: [] });
+  const roVersionRefused = [await roPut("/projects/maintainer/maity/roles", { custom: [] }).then(() => null, (e) => (e.details && e.details.fields) || e.code),
+    await roPut("/projects/maintainer/maity/roles", { custom: [], base_version: 0 }).then(() => null, (e) => e.code + " " + JSON.stringify(e.details))];
+  expect(JSON.stringify(roVersionRefused) === JSON.stringify([{ base_version: "required" }, "conflict " + JSON.stringify({ current_version: roNow.version, base_version: 0 })]),
+    "roles: the fixture refuses a save without a version and one on a stale version, as the hub does " + JSON.stringify(roVersionRefused));
+  await roPutNow([]);
   win.Maity.api.put = roPut;
   await go("#/maintainer/maity/inbox");
 
