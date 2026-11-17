@@ -4337,7 +4337,7 @@
   "roles.saved": "Rollen gespeichert.",
   "roles.not_saved": "Rollen nicht gespeichert: {reason}",
   "roles.unchanged": "Nichts geändert.",
-  "roles.stale": "Die Rollen wurden inzwischen von jemand anderem geändert, daher wurde nichts gesendet. Lade sie neu, um sie zu sehen; deine Änderungen bleiben, bis du neu lädst oder die Seite verlässt.",
+  "roles.stale": "Die Rollen wurden inzwischen von jemand anderem geändert, daher wurde deine Änderung nicht übernommen. Lade sie neu, um sie zu sehen; deine Änderungen bleiben, bis du neu lädst oder die Seite verlässt.",
   "roles.reload": "Neu laden",
   "roles.row": "Zeile {number}",
   "roles.error.at": "{role}: {why}",

@@ -723,6 +723,9 @@ project = Table(
     # The project roles (§2.3): `[{name, base, description, guide, guide_by}]`, at most
     # 12; null for none.
     Column("roles", JSON_VALUE),
+    # The list's version (§2.3 "Version."): +1 with every `PUT …/roles` that changes it, in
+    # the same UPDATE as `roles`; the `base_version` a `PUT` names.
+    Column("roles_version", Integer, nullable=False, server_default="0"),
     Column("onboarding_version", Integer, nullable=False, server_default="0"),
     Column("rules_markdown", MARKDOWN_TEXT),
     Column("rules_version", Integer, nullable=False),
