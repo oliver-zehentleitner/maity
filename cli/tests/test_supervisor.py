@@ -87,6 +87,9 @@ class FakeTmux:
     def pane_digest(self, name: str) -> str | None:
         return self.screen
 
+    def pane_has(self, name: str, texts: Sequence[str]) -> frozenset[str] | None:
+        return None if self.screen is None else frozenset(t for t in texts if t in self.screen)
+
     def type_text(self, name: str, text: str) -> None:
         self.typed.append((name, text))
         self.screen = f"{self.screen}{text}"  # the line shows in the pane
@@ -1970,6 +1973,79 @@ def interactive(world: Any, **overrides: Any) -> None:
     sup.tick()  # the first look: quiet from here
 
 
+# Codex 0.169's folder prompt for a folder it is told not to trust, and the one that would trust it.
+RESTRICTED = "Folder access\n  Do you trust …?\n› 1. Open restricted\n  2. Quit\n"
+TRUSTING = "Folder access\n  Do you trust …?\n› 1. Trust and continue\n  2. Quit\n"
+
+
+def started(world: Any, harness: str = "codex", mode: str = "interactive") -> None:
+    """A placement of `harness` in `mode`, its session started (asserted, so a test that
+    expects nothing to be pressed cannot pass on a refused start)."""
+    sup, backend, _, _, _ = world
+    harnesses = dict(sup.cfg.harnesses)
+    if harness not in harnesses:
+        harnesses[harness] = config.Harness(harness, ("interactive", "supervised"), mode, ())
+    harnesses[harness] = replace(harnesses[harness], modes=("interactive", "supervised"))
+    sup.cfg = replace(sup.cfg, harnesses=harnesses)
+    recorded(sup.cfg)
+    sup.update([placement(mode=mode, harness=harness, health=HEALTH)])
+    settle(sup)
+    assert SESSION in backend.live, sup.records
+
+
+def test_codex_s_folder_prompt_is_answered_once_with_open_restricted(world: Any) -> None:
+    """Interactive Codex stops on its folder prompt for the untrusted clone; "Open restricted"
+    keeps it untrusted (it saves nothing), and nobody else would answer it."""
+    sup, backend, reports, clock, logs = world
+    backend.screen = RESTRICTED
+    started(world)
+    sup.tick()
+    assert backend.submitted == 1
+    assert any('answered Codex\'s folder prompt with "Open restricted"' in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    sup.tick()
+    assert backend.submitted == 1  # once
+    assert states(reports)[-1] == ("running", None, None)
+
+
+def test_codex_s_folder_prompt_that_would_trust_the_folder_is_never_answered(world: Any) -> None:
+    sup, backend, _, clock, logs = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    assert backend.submitted == 0
+    said = [line for line in logs if "waiting on a first-run prompt" in line]
+    assert len(said) == 1 and "not answered" in said[0]
+
+
+@pytest.mark.parametrize(
+    ("harness", "mode", "attach"),
+    [("codex", "interactive", True), ("codex", "interactive", None),
+     ("stub", "interactive", False), ("codex", "supervised", False)],
+)  # fmt: skip
+def test_the_folder_prompt_is_left_alone_with_a_person_there_or_another_harness_or_mode(
+    world: Any, harness: str, mode: str, attach: bool | None
+) -> None:
+    sup, backend, _, _, _ = world
+    backend.screen, backend.attach = RESTRICTED, attach
+    started(world, harness, mode)
+    sup.tick()
+    assert backend.submitted == 0
+
+
+def test_the_folder_prompt_is_looked_for_only_soon_after_the_start(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = "> "
+    started(world)
+    clock.now += supervisor.FOLDER_PROMPT_WITHIN + 1
+    sup.tick()
+    backend.screen = RESTRICTED  # whatever shows later is the agent's own
+    sup.tick()
+    assert backend.submitted == 0
+
+
 def minutes(world: Any, n: int) -> None:
     """Let `n` minutes pass, one idle check a minute."""
     sup, _, _, clock, _ = world
@@ -2166,6 +2242,8 @@ def test_the_idle_reads_are_tmux_and_ps_calls(tmp_path: Path) -> None:
     session = tmux.Session(SESSION, False, None, 7, "plc-0003", 1)
     assert backend.attached(SESSION) is True
     assert backend.pane_digest(SESSION) == hashlib.sha256(b"> hello\n").hexdigest()
+    assert backend.pane_has(SESSION, ("hello", "Open restricted")) == frozenset({"hello"})
+    assert calls[-1][-4:] == ["capture-pane", "-p", "-t", SESSION]
     assert backend.activity(session) == tmux.WAITING
     assert backend.activity(replace(session, pid=None)) is None
     backend.type_line(SESSION, "a line; with -t words")

@@ -527,6 +527,40 @@ runner's profile, and one reviewer saw that switch the sandbox off.
 - Build an exec-policy layer for Codex now: unverified against the
   shipped Codex, and the sandbox already sets the boundary that matters.
 
+## An interactive Codex start answers its folder prompt with "Open restricted", and nothing else
+
+**Id:** fea3c3a3-6250-4791-b0ad-396f05507374
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-57nsjjddzk3s (an interactive Codex 0.169 placement stopped on the prompt on an operator's PC, 2026-11-17); Codex 0.169.0's own source (tui/src/onboarding: the prompt, its choices, and its test that a restricted choice saves no trust); the lead's approval of the plan on the card, 2026-11-17
+**Revisit when:** Codex gains a setting or flag that skips the folder prompt for an untrusted folder, or changes the prompt's text or what its restricted choice saves
+
+The runner marks the clone untrusted (c2acd907-0f26-4850-8272-063390f1d6a7),
+and Codex 0.169 asks about such a folder at every interactive start
+("Folder access"), its first choice "Open restricted" highlighted. Nobody
+answers in a placed session, so the agent never started while the
+placement reported `running`. For an interactive Codex, the runner
+looks at the pane for `FOLDER_PROMPT_WITHIN` after the start; when it
+shows "Folder access" and "Open restricted", and nobody is attached, it
+presses Enter once and logs it. A folder prompt without that choice
+(one offering "Trust and continue") is never answered: the log says the
+harness waits on a first-run prompt. The pane's text is only matched
+(`Tmux.pane_has`), never kept, logged or sent, as in the idle check.
+
+**Reason:** "Open restricted" keeps the folder untrusted and saves
+nothing, so the clone's own `.codex` configuration stays out exactly as
+before; Codex offers no setting that skips the prompt. Answering only that
+choice means the runner can never be the one that trusts a folder.
+
+**Rejected alternatives:**
+- Mark the clone trusted: Codex would load a committed `.codex/config.toml`
+  over the runner's profile (c2acd907).
+- Refuse interactive Codex and offer only supervised: not needed while the
+  restricted choice exists; it stays the fallback if a version drops it.
+- A placement `detail` for a harness waiting on a prompt: a contract change
+  for a case the log already names; the lead chose the log line.
+
 ## Antigravity starts in a workspace folder that holds only the clone, in a mode the runner sets
 
 **Id:** b0646ec1-c909-456c-842d-28f2d4facd54

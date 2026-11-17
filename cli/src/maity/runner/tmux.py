@@ -319,6 +319,15 @@ class Tmux:
             return None
         return hashlib.sha256(out.encode("utf-8", "replace")).hexdigest()
 
+    def pane_has(self, name: str, texts: Sequence[str]) -> frozenset[str] | None:
+        """Which of `texts` the session's pane shows now; the pane's text itself is never
+        kept, logged or sent. None when tmux could not say."""
+        try:
+            out = self._check(self._tmux("capture-pane", "-p", "-t", name))
+        except TmuxError:
+            return None
+        return frozenset(text for text in texts if text in out)
+
     def activity(self, session: Session) -> str | None:
         """What runs below the session's pane (`below`), read where the session runs; None
         when that could not be read."""

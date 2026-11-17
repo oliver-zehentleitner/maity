@@ -527,6 +527,15 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
 CODEX_PROVIDER_HOSTS = ("api.openai.com", "chatgpt.com")
 
 
+def outermost(paths: Sequence[Path]) -> tuple[Path, ...]:
+    """`paths` without those another of them already contains, in their order. Codex's
+    sandbox (bwrap) hides a path by mounting over it; a path inside one hidden before has
+    nowhere to be mounted ("Can't create file … Read-only file system"), and every command
+    fails. The outer path hides it already."""
+    unique = tuple(dict.fromkeys(paths))
+    return tuple(p for p in unique if not any(q in p.parents for q in unique))
+
+
 def codex_config(ctx: Context) -> str:
     """`config.toml` in the placement's own CODEX_HOME (§6.1): Codex's sandbox with the
     workspace profile, the clone's `.git` writable (commits need it), no approvals asked,
@@ -536,7 +545,7 @@ def codex_config(ctx: Context) -> str:
     # Unreadable: other clones (the workspaces root), the runner's state and the secrets in
     # the agents' home. The clone's own rules are more specific and win; its credential
     # stays readable, since the agent's `maity` runs inside the sandbox.
-    roots = (*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private)
+    roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private))
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
     return (
         'approval_policy = "never"\n'

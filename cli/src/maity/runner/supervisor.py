@@ -115,6 +115,12 @@ def run_join(
 
 
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
+# Codex's folder prompt at an interactive start (Codex 0.169, tui/src/onboarding): the
+# runner answers only its restricted choice, looked for this long after the start.
+FOLDER_PROMPT = "Folder access"
+OPEN_RESTRICTED = "Open restricted"
+TRUST_FOLDER = "Trust and continue"
+FOLDER_PROMPT_WITHIN = 180.0
 # The harnesses whose run without their OS sandbox is reported (`sandbox_unavailable`): those
 # whose allowlist relies on it. Codex's sandbox is its whole confinement and is checked apart.
 UNCONFINED_REPORTED = ("claude-code", "antigravity")
@@ -250,6 +256,9 @@ class Record:
     nudges: int = 0  # nudges answered since a `maity wait` was last seen
     unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
     left_typed: bool = False  # a dropped nudge's line may still sit in the input: not again
+    # Codex's folder prompt at an interactive start: None while looked for, else `answered`,
+    # `left` (a prompt the runner does not answer) or `none` (not seen in time).
+    folder_prompt: str | None = None
 
     def calm(self) -> None:
         """Forget the idle check: a new start, or an agent that is listening again."""
@@ -547,6 +556,9 @@ class Supervisor:
             backend.kill(mine.name)
             mine = None
         if mine is not None and not mine.dead:
+            if rec.state in ("starting", "running") and p.get("mode") == "interactive":
+                if self.cfg.harnesses[p["harness"]].id == "codex":
+                    self._folder_prompt(rec, mine, backend, now)
             if rec.state != "stopping" and (self.first_tick or rec.state not in LIVE):
                 rec.enter(now, "running", "adopted", started_at=None)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
@@ -634,6 +646,39 @@ class Supervisor:
         else:
             rec.enter(now, "exited", exit_code=code, crashes=decision.crashes,
                       retry_at=decision.retry_at)  # fmt: skip
+
+    def _folder_prompt(self, rec: Record, session: Session, backend: Tmux, now: float) -> None:
+        """Codex asks at an interactive start about a folder it is told not to trust (the
+        clone, `trust_level = "untrusted"`, so the clone's own `.codex` configuration is not
+        loaded), and nobody answers: the agent never starts. Its first choice, already
+        highlighted, is "Open restricted", which keeps the folder untrusted and saves nothing;
+        the runner presses Enter once that shows, with nobody attached. A folder prompt
+        without it (one that would trust the folder) is never answered: said in the log, as
+        a harness waiting on a first-run prompt. Looked for only `FOLDER_PROMPT_WITHIN` after
+        the start; the pane's text is only matched, never kept (Tmux.pane_has)."""
+        if rec.folder_prompt is not None or rec.started_at is None:
+            return
+        if now - rec.started_at > FOLDER_PROMPT_WITHIN:
+            rec.folder_prompt = "none"
+            return
+        shown = backend.pane_has(session.name, (FOLDER_PROMPT, OPEN_RESTRICTED, TRUST_FOLDER))
+        if shown is None or FOLDER_PROMPT not in shown:
+            return
+        if OPEN_RESTRICTED not in shown or TRUST_FOLDER in shown:
+            rec.folder_prompt = "left"
+            self.log(f"{session.name}: waiting on a first-run prompt: Codex asks about its "
+                     "folder without offering to open it restricted; not answered")  # fmt: skip
+            return
+        if backend.attached(session.name) is not False:  # a person there answers it
+            return
+        try:
+            backend.submit(session.name)
+        except TmuxError as exc:
+            self.log(f"{session.name}: cannot answer Codex's folder prompt: {exc}")
+            return
+        rec.folder_prompt = "answered"
+        self.log(f"{session.name}: answered Codex's folder prompt with \"Open restricted\"; "
+                 "the clone stays untrusted")  # fmt: skip
 
     def _idle(
         self, p: dict[str, Any], rec: Record, session: Session, backend: Tmux, now: float
@@ -911,6 +956,7 @@ class Supervisor:
             return 0
         retrying = rec.state in ("exited", "rate_limited")
         rec.calm()
+        rec.folder_prompt = None
         rec.enter(now, "starting", retry_at=None, started_at=now)
         rec.sandbox = view.sandbox
         if retrying:

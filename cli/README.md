@@ -1232,7 +1232,11 @@ project's own harness configuration is never loaded:
   false`). The
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
   is linked in. The clone is marked untrusted, so a `.codex/config.toml`
-  in the repository is not loaded. Codex has no per-command allowlist, so
+  in the repository is not loaded. An interactive Codex then asks about
+  the folder at its start; the runner answers "Open restricted" once it
+  shows and nobody is attached (the folder stays untrusted), and never
+  answers a prompt that would trust it: the log says the session waits
+  on a first-run prompt. Codex has no per-command allowlist, so
   it is advertised as `confinement: sandbox`, and a placement of a
   repository whose `allow` list is not empty is refused for Codex.
 - **opencode** (built, not offered yet: a configuration that names it is

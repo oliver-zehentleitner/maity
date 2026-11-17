@@ -681,6 +681,23 @@ def test_codex_hides_other_clones_the_runner_state_and_home_secrets(tmp_path: Pa
     assert f'{json.dumps(str(ctx.clone / ".git" / "maity"))}' not in text  # its maity reads it
 
 
+def test_codex_hides_no_path_inside_one_it_hides_already(tmp_path: Path) -> None:
+    """Layout `single`: the runner's configuration file lies in `.config/maity-runner`, a
+    home secret. Hiding it again inside the hidden directory broke Codex's bwrap ("Can't
+    create file … Read-only file system"), and every command of a supervised run failed."""
+    home = tmp_path / "home"
+    runner_dir = home / ".config" / "maity-runner"
+    others = tmp_path / "ws" / "p" / "agent-4" / ".git" / "maity"
+    secrets = (tmp_path / "st", runner_dir, home / ".claude.json", runner_dir / "runner.toml",
+               others, tmp_path / "st")  # fmt: skip
+    ctx = context(tmp_path, "codex", private=secrets, workspaces=tmp_path / "ws")
+    hidden = [path for path, level in tomllib.loads(adapters.codex_config(ctx))["permissions"]
+              ["maity"]["filesystem"].items() if level == "none"]  # fmt: skip
+    assert hidden == [str(tmp_path / "ws"), str(tmp_path / "st"), str(runner_dir),
+                      str(home / ".claude.json")]  # fmt: skip
+    assert adapters.outermost((Path("/a/b"), Path("/a"), Path("/ab"))) == (Path("/a"), Path("/ab"))
+
+
 def test_claude_code_denies_reading_the_runner_state_and_home_secrets(tmp_path: Path) -> None:
     secrets = (tmp_path / "st", tmp_path / "home" / ".ssh")
     ctx = context(tmp_path, private=secrets, workspaces=tmp_path / "ws", sandbox=True)
