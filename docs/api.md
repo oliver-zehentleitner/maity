@@ -6379,10 +6379,13 @@ stay through `archived` and back (§8.7); in `archived` an upload is
 `project_closed`, deleting one is not.
 
 **Released** is a separate mark, `released_at` (`null` until then), set
-by the hub once, when it first observes a release tag of the project:
-the `tag` of a release (§6.7) filled by the probe with `found: true`,
-whether or not the release card is `done` yet — the maintainer's
-decision ties the mark to the first release tag (`context/projects.md`).
+by the hub once, when it first observes a final release tag of the
+project: the `tag` of a release (§6.7) whose version has no pre-release
+part, filled by the probe with `found: true`, whether or not the release
+card is `done` yet — the maintainer's decision ties the mark to the
+first final release tag (`context/projects.md`); a pre-release tag never
+sets it. Not built yet (tsk-2t82evzkxwym): today any release tag the
+probe finds sets it.
 It is never cleared: it says the project has users. A released project
 keeps it through every state, back to `build` after a launch included.
 Setting it bumps `rules_version` with a `state_changed` event carrying
@@ -8612,10 +8615,23 @@ with `releases:write` and:
   "release": { "version": "0.1.0" }, "depends_on": ["tsk-0004", "tsk-0005", "tsk-0006"] }
 ```
 
-- `version` is SemVer (`MAJOR.MINOR.PATCH`, optional pre-release),
-  unique per project (`version_exists`); the hub checks syntax and
-  uniqueness and does not order versions. Only one release card may be
-  not `done`/`cancelled` at a time (`release_in_flight`).
+- `version` is the version the release's tag carries, without the `v`:
+  SemVer (`MAJOR.MINOR.PATCH`, optional pre-release, no build metadata:
+  `1.2.0`, `1.2.0-rc.1`) or the canonical PEP 440 form with three numbers
+  and an optional `a`, `b` or `rc` pre-release (`0.1.0`, `0.1.0a4`,
+  `0.1.0b1`, `0.1.0rc1`). Numbers are ASCII digits without leading
+  zeros. Anything else — `.post` and `.dev` releases, epochs, local
+  versions, a leading `v`, a spelling PEP 440 would normalize
+  (`0.1.0alpha4`, `0.1.0.a4`, `0.1.0A4`) — is `invalid` with
+  `details.fields.release.version: not_a_version`. Not built yet
+  (tsk-2t82evzkxwym): today only SemVer is accepted, and anything else
+  is refused with `details.fields.release.version: not_semver`. The tag the probe
+  looks for is `v` followed by the version exactly as given (`0.1.0a4` →
+  `v0.1.0a4`, `1.2.0-rc.1` → `v1.2.0-rc.1`). Versions are compared as
+  text: unique per project (`version_exists`), so `0.1.0-alpha.4` and
+  `0.1.0a4` are two releases; the hub checks syntax and uniqueness and
+  does not order versions. Only one release card may be not
+  `done`/`cancelled` at a time (`release_in_flight`).
 - `depends_on` lists the cards that ship in it; the PR list is computed
   from their reports.
 - `release.checklist` is seeded from `settings.release_checklist`. A
@@ -8701,8 +8717,13 @@ The `release` object on the card:
   `details.fields.ships_with: release_card`). Members with
   `releases:write` may `PATCH` `release.pull_requests_typed` and
   `release.checklist` on any release, holder or not. The hub never tags, pushes or merges; the
-  holder tags in its own session; `tag` is filled by the probe
-  (`GET /probe?tag=`, the same shape) and is informational.
+  holder tags in its own session; `tag` is filled by the probe for the
+  tag `v{version}` (`GET /probe?tag=`, the same shape) and is
+  informational. Only a release whose version is final — no
+  pre-release part, neither a SemVer `-…` nor a PEP 440 `a`, `b` or
+  `rc` — marks the project released when the probe finds its tag
+  (§6.1); a pre-release tag never does. Not built yet
+  (tsk-2t82evzkxwym): today any found release tag marks it.
 - `GET /projects/{owner}/{slug}/tasks?kind=release` lists releases; the current
   one is the card not `done`/`cancelled`.
 
