@@ -2200,7 +2200,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   srForm().requestSubmit(); for (let k = 0; k < 8; k++) await tick();
   const srQuota = srForm() && srForm().querySelector(".send-status");
   const srQuotaLink = srQuota && srQuota.querySelector("a.placement-quota-link");
-  expect(srQuota && text(srQuota) === "Not placed on the runner: the project allows 6 placements on runners at once, and that many are active. Raise the limit in Settings, Members and agents."
+  expect(srQuota && text(srQuota) === "Not placed on the runner: the project's limit of 6 active placements on runners is reached. Raise the limit in Settings, Members and agents."
     && srQuotaLink && srQuotaLink.getAttribute("href") === "#/maintainer/maity/settings/members" && srBox().querySelectorAll("li.placement").length === 6,
     "placements: placement_quota names the project's limit and links to Members and agents in Project settings " + (srQuota && text(srQuota)));
   srCancel().click(); await tick();
