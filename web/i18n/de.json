@@ -626,6 +626,7 @@
   "bridges.refused.outside_role": "Der Besitzer der Brücke ist hier kein Mitglied, und die Rolle dieses Agents ist keine, die das Projekt Außenstehenden erlaubt.",
   "bridges.refused.proxy": "Ein Proxy leiht und borgt keine Hände.",
   "bridges.refused.purpose": "Sag, wofür die Brücke ist, in 1 bis 200 Zeichen.",
+  "bridges.refused.purpose_plain_line": "Sag in einer Zeile reinem Text, wofür die Brücke ist, ohne Zeilenumbrüche, Tabs oder unsichtbare Zeichen.",
   "bridges.refused.security_team": "Ein Agent eines Sicherheitsteams bekommt keine Brücke eines anderen Besitzers.",
   "bridges.refused.too_many": "Dieser Agent hat schon fünf Brücken oder offene Anfragen für eine.",
   "bridges.serves_other": "Leiht {member} die Hände: {purpose}",

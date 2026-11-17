@@ -626,6 +626,7 @@
   "bridges.refused.outside_role": "Quien es propietario del puente no es miembro aquí, y el rol de este agente no es uno que el proyecto permita a participantes externos.",
   "bridges.refused.proxy": "Un proxy ni presta ni toma prestadas manos.",
   "bridges.refused.purpose": "Di para qué sirve el puente, en 1 a 200 caracteres.",
+  "bridges.refused.purpose_plain_line": "Di para qué sirve el puente en una sola línea de texto simple, sin saltos de línea, tabulaciones ni caracteres invisibles.",
   "bridges.refused.security_team": "Un agente de un equipo de seguridad no recibe un puente de otro propietario.",
   "bridges.refused.too_many": "Este agente ya tiene cinco puentes o solicitudes abiertas para uno.",
   "bridges.serves_other": "Presta sus manos a {member}: {purpose}",

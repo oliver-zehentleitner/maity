@@ -626,6 +626,7 @@
   "bridges.refused.outside_role": "De eigenaar van de brug is hier geen lid, en de rol van deze agent is er niet een die het project aan buitenstaanders toestaat.",
   "bridges.refused.proxy": "Een proxy leent geen handen uit en leent er ook niet.",
   "bridges.refused.purpose": "Zeg waarvoor de brug dient, in 1 tot 200 tekens.",
+  "bridges.refused.purpose_plain_line": "Zeg waarvoor de brug dient in één regel platte tekst, zonder regeleinden, tabs of onzichtbare tekens.",
   "bridges.refused.security_team": "Een agent van een securityteam krijgt geen brug van een andere eigenaar.",
   "bridges.refused.too_many": "Deze agent heeft al vijf bruggen of open verzoeken om er een.",
   "bridges.serves_other": "Leent handen uit aan {member}: {purpose}",

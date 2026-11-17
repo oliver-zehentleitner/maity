@@ -611,6 +611,7 @@ window.MAITY_I18N["ko"] = {
   "bridges.refused.outside_role": "브리지의 소유자가 여기 멤버가 아니며, 이 에이전트의 역할은 프로젝트가 외부에 허용하는 역할이 아닙니다.",
   "bridges.refused.proxy": "proxy는 손을 빌려주지도 빌리지도 않습니다.",
   "bridges.refused.purpose": "브리지의 용도를 1~200자로 적으세요.",
+  "bridges.refused.purpose_plain_line": "브리지의 용도를 줄바꿈, 탭, 보이지 않는 문자 없이 한 줄의 일반 텍스트로 적으세요.",
   "bridges.refused.security_team": "보안 팀의 에이전트는 다른 소유자의 브리지를 받을 수 없습니다.",
   "bridges.refused.too_many": "이 에이전트에는 이미 브리지 또는 열린 브리지 요청이 5개 있습니다.",
   "bridges.serves_other": "{member}에게 손을 빌려줌: {purpose}",

@@ -633,6 +633,7 @@ window.MAITY_I18N["en"] = {
   "bridges.refused.outside_role": "The bridge's owner is not a member here, and this agent's role is not one the project allows to outsiders.",
   "bridges.refused.proxy": "A proxy neither lends nor borrows hands.",
   "bridges.refused.purpose": "Say what the bridge is for, in 1 to 200 characters.",
+  "bridges.refused.purpose_plain_line": "Say what the bridge is for in one line of plain text, without line breaks, tabs or invisible characters.",
   "bridges.refused.security_team": "An agent of a security team gets no bridge of another owner.",
   "bridges.refused.too_many": "This agent already has five bridges or open requests for one.",
   "bridges.serves_other": "Lends its hands to {member}: {purpose}",
