@@ -814,7 +814,10 @@ def test_the_origin_is_replaced_removed_and_voided_with_the_pending_address(
     with migrated.begin() as conn:
         preferences.void_pending_address(conn, owner.id)  # a new password (§2.10)
     assert _origin(migrated, owner.id) == (None, None, None)
-    owner.patch(S, body)
+    # The fourth verification mail of this hour: past the per-human limit (context/
+    # notifications.md aedbf93a), which is not what this test is about.
+    preferences.VERIFY_BY_HUMAN_HOUR.reset()
+    assert owner.patch(S, body).status_code == 200
     assert _origin(migrated, owner.id) == ("Chrome", "Windows", "198.51.100.8")
     owner.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
     assert _origin(migrated, owner.id) == (None, None, None)
