@@ -843,7 +843,8 @@ and runs in agy's sandbox like every unlisted command. An entry with another
 a rule word is matched on its own. So agy now gets no `command(...)` allow
 from a grant's command list at all: only `command(maity)`, the `read_url`
 hosts and the file and command denies stand. The same `allow` command list
-reaches Claude Code and Codex unchanged.
+reaches Claude Code unchanged, OpenCode takes it into its own rules, and
+Codex does not get it (79837674-493a-43dd-8670-e8b163309bca).
 
 **Reason:** agy does not match a `command(...)` rule the way Claude Code
 matches `Bash(...)`. It reads the invoked command from the line first,
@@ -873,7 +874,7 @@ inside the sandbox, like an unlisted one. This narrows agy grants (a
 command that needs to run outside agy's sandbox through the `allow` list no
 longer can — arrange it another way, or run it under Claude Code;
 docs/runners.md, CHANGELOG), while the `allow` list stays unchanged for the
-other harnesses.
+other harnesses that apply it.
 
 **Limit:** one command grant remains that agy cannot be given more tightly —
 `command(maity)`. The runner must let the session reach the hub, so `maity`
