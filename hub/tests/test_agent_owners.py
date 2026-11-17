@@ -91,9 +91,7 @@ def test_the_fields_default_and_are_checked(owner: flow.Human, make_client: Clie
 
 
 def _roles(owner: flow.Human, custom: list[dict[str, str]]) -> None:
-    done = owner.client.put(
-        f"/api/v1{PROJECT}/roles", json={"custom": custom}, headers={"X-CSRF-Token": owner.csrf}
-    )
+    done = flow.put_roles(owner, PROJECT, custom)
     assert done.status_code == 200, done.text
 
 
@@ -375,23 +373,13 @@ def test_a_project_role_in_outside_roles_keeps_a_working_base(
 ) -> None:
     _roles(owner, [{"name": "doc-writer", "base": "writer"}])
     assert _set(owner, outside_roles=["doc-writer"]).status_code == 200
-    rebased = owner.client.put(
-        f"/api/v1{PROJECT}/roles",
-        json={"custom": [{"name": "doc-writer", "base": "reviewer"}]},
-        headers={"X-CSRF-Token": owner.csrf},
-    )
+    rebased = flow.put_roles(owner, PROJECT, [{"name": "doc-writer", "base": "reviewer"}])
     assert rebased.status_code == 400
     assert _fields(rebased) == {"custom[0].base": "outside_roles"}
-    removed = owner.client.put(
-        f"/api/v1{PROJECT}/roles", json={"custom": []}, headers={"X-CSRF-Token": owner.csrf}
-    )
+    removed = flow.put_roles(owner, PROJECT, [])
     assert removed.status_code == 409
     assert removed.json()["error"]["details"]["uses"] == ["outside_roles"]
-    other = owner.client.put(
-        f"/api/v1{PROJECT}/roles",
-        json={"custom": [{"name": "doc-writer", "base": "designer"}]},
-        headers={"X-CSRF-Token": owner.csrf},
-    )
+    other = flow.put_roles(owner, PROJECT, [{"name": "doc-writer", "base": "designer"}])
     assert other.status_code == 200, other.text  # another base that works
 
 

@@ -53,7 +53,7 @@ SHAPES: dict[str, tuple[str, set[str]]] = {
     "/projects/{}/{}/roles": (
         '`GET` with `project:read` answers `{"builtin": [{name, description, guide, scopes}], '
         '"custom": […]}`',
-        {"builtin", "custom"},
+        {"builtin", "custom", "version"},
     ),
     "/projects/{}/{}/tasks": PAGE,
 }

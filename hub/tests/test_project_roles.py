@@ -47,9 +47,7 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def put(owner: flow.Human, custom: Any) -> Any:
-    return owner.client.put(
-        f"/api/v1{BASE}/roles", json={"custom": custom}, headers={"X-CSRF-Token": owner.csrf}
-    )
+    return flow.put_roles(owner, BASE, custom)
 
 
 def assign(owner: flow.Human, member_id: str, role: str) -> Any:
@@ -64,7 +62,7 @@ def test_the_list_is_put_whole_and_read_back(owner: flow.Human, migrated: Engine
         {**LEGAL, "guide": "", "guide_by": None},
         {"name": "translator", "base": "writer", "description": "", "guide": "", "guide_by": None},
     ]
-    assert response.json() == {"custom": expected}
+    assert response.json() == {"custom": expected, "version": 1}
     assert owner.get(f"{BASE}/roles").json()["custom"] == expected
     with migrated.connect() as conn:
         [changed] = conn.execute(
@@ -95,7 +93,7 @@ def test_a_stored_guide_stays_with_its_role_and_a_new_role_has_none(
         {**changed, "guide": "You check", "guide_by": "maintainer"},
         {"name": "translator", "base": "writer", "description": "", "guide": "", "guide_by": None},
     ]
-    assert response.json() == {"custom": expected}
+    assert response.json() == {"custom": expected, "version": 2}
     assert owner.get(f"{BASE}/roles").json()["custom"] == expected
     # Removed and put again, the role starts without a guide.
     assert put(owner, []).status_code == 200
@@ -170,7 +168,7 @@ def test_the_list_shows_every_built_in_role_with_its_description_guide_and_scope
     # A guest reads it too, and sees the role's own scopes, not what its trust leaves it.
     guest = flow.agent(make_client, owner, trust="guest", role="coder")
     answer = guest.get(f"{BASE}/roles").json()
-    assert set(answer) == {"builtin", "custom"}
+    assert set(answer) == {"builtin", "custom", "version"}
     assert [r["name"] for r in answer["custom"]] == ["legal"]
     builtin = answer["builtin"]
     assert [r["name"] for r in builtin] == list(guide.DESCRIPTION)

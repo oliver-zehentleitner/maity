@@ -89,6 +89,17 @@ def human(make_client: ClientFactory, engine: Engine, handle: str = "maintainer"
     return Human(client, csrf, human_id, handle)
 
 
+def put_roles(owner: Human, project_path: str, custom: Any) -> Any:
+    """`PUT …/roles` (§2.3) with the list's `version` as read just before, as `base_version`:
+    the call a client makes that read the list."""
+    version = owner.get(f"{project_path}/roles").json()["version"]
+    return owner.client.put(
+        f"/api/v1{project_path}/roles",
+        json={"custom": custom, "base_version": version},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
+
+
 def project(owner: Human, slug: str = "maity", **body: Any) -> dict[str, Any]:
     # A new project is public by default (§6.1); most tests mean a private one, as they always
     # did, and say `public_page="on"` when they do not.

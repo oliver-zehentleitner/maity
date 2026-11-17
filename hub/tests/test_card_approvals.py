@@ -235,11 +235,7 @@ def test_a_report_reaches_the_testers_only_where_they_decide(
 
 
 def _roles(owner: flow.Human, base: str) -> None:
-    done = owner.client.put(
-        f"/api/v1{BASE}/roles",
-        json={"custom": [{"name": "checker", "base": base}]},
-        headers={"X-CSRF-Token": owner.csrf},
-    )
+    done = flow.put_roles(owner, BASE, [{"name": "checker", "base": base}])
     assert done.status_code == 200, done.text
 
 

@@ -267,9 +267,7 @@ def test_the_request_of_an_asker_who_left_the_project_is_withdrawn_with_them(
 
 
 def _put_roles(owner: flow.Human, custom: Any) -> Any:
-    return owner.client.put(
-        f"/api/v1{PROJECT}/roles", json={"custom": custom}, headers={"X-CSRF-Token": owner.csrf}
-    )
+    return flow.put_roles(owner, PROJECT, custom)
 
 
 def test_a_go_checks_the_calls_own_rules_against_todays_state(

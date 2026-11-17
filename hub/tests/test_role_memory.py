@@ -48,9 +48,7 @@ def items(who: Any, **params: Any) -> list[dict[str, Any]]:
 
 
 def custom(owner: flow.Human, roles: list[dict[str, str]]) -> Any:
-    return owner.client.put(
-        f"/api/v1{BASE}/roles", json={"custom": roles}, headers={"X-CSRF-Token": owner.csrf}
-    )
+    return flow.put_roles(owner, BASE, roles)
 
 
 def move(owner: flow.Human, agent: flow.Agent, role: str) -> None:
