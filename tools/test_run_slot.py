@@ -1,5 +1,6 @@
 """tools/run_slot.sh: at most MAITY_RUN_SLOTS commands at a time; a further one waits, says so
-and starts once a slot is free; a command inside a slot keeps it."""
+and starts once a slot is free; a command inside a slot keeps it; each run's start and end go to
+the slot directory's log."""
 
 from __future__ import annotations
 
@@ -114,6 +115,111 @@ class RunSlotTest(unittest.TestCase):
                 continue
             self.assertEqual(result.returncode, 2, value)
             self.assertIn("MAITY_RUN_SLOTS", result.stderr)
+
+    # The log: a start and an end line per run that got a slot.
+
+    def log_lines(self, count: int) -> list[list[str]]:
+        """The log's lines split at tabs, once it holds `count` (the end lines come from a
+        watcher that checks every second)."""
+        log = self.tmp / "slots" / "log"
+        deadline = time.monotonic() + 30
+        while True:
+            lines = log.read_text().splitlines() if log.exists() else []
+            if len(lines) >= count:
+                return [line.split("\t") for line in lines]
+            self.assertLess(time.monotonic(), deadline, f"the log has {lines}")
+            time.sleep(0.1)
+
+    def test_a_run_logs_its_start_and_its_end(self) -> None:
+        env = {**self.env, "MAITY_RUN_NAME": "coder#ab\tcd"}
+        result = subprocess.run(
+            [SCRIPT, "sh", "-c", "sleep 1.2; echo $$", "x\ny"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0)
+        pid = result.stdout.strip()  # exec keeps the pid: the shell's is the run's
+        start, end = self.log_lines(2)
+        self.assertEqual(len(start), 7, start)
+        self.assertEqual(start[0], "start")
+        self.assertRegex(start[1], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertEqual(start[2:4], ["slot=0", f"pid={pid}"])
+        # bash's SECONDS counts whole seconds of the clock: a run that did not wait shows 0 or 1.
+        self.assertRegex(start[4], r"^wait=[01]$")
+        self.assertEqual(start[5:], ["who=coder#ab cd", "cmd=sh -c sleep 1.2; echo $$ x y"])
+        self.assertEqual(len(end), 5, end)
+        self.assertEqual(end[0], "end")
+        self.assertRegex(end[1], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertEqual(end[2:4], ["slot=0", f"pid={pid}"])
+        self.assertRegex(end[4], r"^secs=[1-9]\d*$")
+        self.assertTrue((self.tmp / "slots" / "log").stat().st_mode & 0o020, "group-writable")
+
+    def test_who_defaults_to_the_user_and_a_long_command_is_cut(self) -> None:
+        env = {k: v for k, v in self.env.items() if k != "MAITY_RUN_NAME"}
+        env["USER"] = "agents"
+        subprocess.run([SCRIPT, "true", "a" * 300], env=env, check=True, timeout=30)
+        start = self.log_lines(1)[0]
+        self.assertEqual(start[5], "who=agents")
+        self.assertEqual(start[6], "cmd=" + ("true " + "a" * 300)[:200])
+
+    def test_a_run_that_waited_logs_the_wait(self) -> None:
+        gate = self.tmp / "gate"
+        ready = self.tmp / "ready"
+        env = {**self.env, "MAITY_RUN_SLOTS": "1"}
+        holder = subprocess.Popen(
+            [SCRIPT, "sh", "-c", f"touch {ready}; until [ -f {gate} ]; do sleep 0.05; done"],
+            env=env,
+        )
+        self.addCleanup(holder.wait, 30)
+        self.addCleanup(gate.touch)
+        self.wait_for(ready)
+        second = subprocess.Popen([SCRIPT, "true"], env=env, stderr=subprocess.DEVNULL)
+        time.sleep(2.5)
+        gate.touch()
+        self.assertEqual(second.wait(timeout=30), 0)
+        starts = [line for line in self.log_lines(3) if line[0] == "start"]
+        self.assertEqual(starts[0][3], f"pid={holder.pid}")
+        self.assertRegex(starts[0][4], r"^wait=[01]$")
+        self.assertEqual(starts[1][3], f"pid={second.pid}")
+        self.assertRegex(starts[1][4], r"^wait=[2-9]$")
+
+    def test_runs_at_once_write_whole_lines(self) -> None:
+        env = {**self.env, "MAITY_RUN_SLOTS": "8"}
+        runs = [subprocess.Popen([SCRIPT, "true", str(n) * 190], env=env) for n in range(8)]
+        for run in runs:
+            self.assertEqual(run.wait(timeout=30), 0)
+        lines = self.log_lines(16)
+        self.assertEqual(len(lines), 16)
+        for line in lines:
+            self.assertIn(line[0], ("start", "end"))
+            self.assertEqual(len(line), 7 if line[0] == "start" else 5, line)
+        self.assertEqual(
+            sorted(line[3] for line in lines if line[0] == "start"),
+            sorted(line[3] for line in lines if line[0] == "end"),
+        )
+
+    def test_a_log_that_cannot_be_written_does_not_stop_the_run(self) -> None:
+        slots = self.tmp / "slots"
+        slots.mkdir()
+        (slots / "log").mkdir()  # not a file: every append fails, whoever runs the test
+        result = subprocess.run(
+            [SCRIPT, "sh", "-c", "exit 3"], env=self.env, capture_output=True, text=True, timeout=30
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.stderr, "")
+
+    def test_the_watcher_holds_neither_the_slot_nor_the_output(self) -> None:
+        env = {**self.env, "MAITY_RUN_SLOTS": "1"}
+        began = time.monotonic()
+        for _ in range(3):  # with fd 7 in the watcher, the next run would wait for it
+            out = subprocess.run(
+                [SCRIPT, "echo", "hi"], env=env, capture_output=True, text=True, timeout=30
+            )
+            self.assertEqual(out.stdout, "hi\n")
+            self.assertNotIn("taken", out.stderr)
+        self.assertLess(time.monotonic() - began, 3, "a run waited for the last one's watcher")
 
 
 if __name__ == "__main__":

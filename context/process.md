@@ -1882,7 +1882,7 @@ because every version of an image stays in the history.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf
+**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf; card tsk-deaaanqsq5e2 (the slot log, the lead's go, 2026-11-17)
 **Revisit when:** contributors no longer share one machine and account, the shared machine gets enough memory for more parallel runs (two runs at once no longer bring a reap near), or CI checks a pull request's merge with the current main on PostgreSQL before review
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the tests it affects on
@@ -1892,6 +1892,14 @@ on SQLite only. On a machine several contributors share under one Unix account, 
 named after whoever runs it. `make smoke` and `with_postgres.sh` each hold one of two run slots
 (`tools/run_slot.sh`, a lock file per slot), so a third run waits instead of starting. The commands
 are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
+
+Since 2026-11-17 every run that gets a slot appends a start line (time, slot, pid, seconds waited,
+who, command) and an end line (time, seconds held) to `log` in the run-slot directory; the format
+is in the script's header. The log is append-only, one `printf` per short line. The end line
+comes from a watcher the script starts before its `exec`, not from a wrapper around the command.
+A log that cannot be written is ignored. `who` is `MAITY_RUN_NAME`, which each run sets to
+`handle#instance`. Its purpose is measuring which run holds a slot how long and for whom (card
+tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
 
 **Reason:**
 - SQLite does not show PostgreSQL's errors, and CI as the first PostgreSQL run finds them only
@@ -1915,6 +1923,13 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 - The slots and the server are files of one account (the data directory is the owner's only), so
   they bind the runs of that account. That is how the machine is shared; several accounts would
   each get two slots and a server of their own.
+- The slot log: a short line written in one `printf` onto a file opened for appending is one
+  write, so runs that log at the same moment do not interleave. A watcher keeps the `exec`, so
+  fd 7, the pid and the signals reach the command as before; a wrapper that waited for the command
+  would have to pass on every signal and its exit status. The watcher holds neither fd 7 nor the
+  run's output, and is no child of the command. Its cost: the end is when the command's process
+  ended, to the second; a process the command left running can hold the slot longer. Logging
+  never stops a run: a measurement must not become a new way for a run to fail.
 
 **Rejected alternatives:**
 - A server per contributor: what was done before, and what used the memory.
@@ -1928,6 +1943,8 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
   who holds the slots.
 - A cap in CI: each CI runner already has its own limits (the runner entries above), and the card
   left CI out.
+- For the slot log, the command as a child of the script, logged when it exits: an exact end,
+  but the `exec` goes, and with it the pid and the signals the command gets today.
 
 ## An opt-in pre-push hook runs CI's lint and types for the packages a push touches, with the lock's tool versions
 
