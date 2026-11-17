@@ -1168,6 +1168,11 @@ def test_roles_without_own_and_as_json(
     fake.routes[("GET", "/api/v1/projects/oliver/maity/roles")] = lambda seen: (200, answer)
     assert cli.main(["roles"]) == cli.EXIT_OK
     assert capsys.readouterr().out.splitlines()[-1] == "project roles: none"
+    bare = {"builtin": [], "custom": [{"name": "translator", "base": "writer", "description": ""}]}
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/roles")] = lambda seen: (200, bare)
+    assert cli.main(["roles"]) == cli.EXIT_OK
+    assert capsys.readouterr().out.splitlines()[-1] == "  translator (permissions of writer)"
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/roles")] = lambda seen: (200, answer)
     assert cli.main(["roles", "--json"]) == cli.EXIT_OK
     assert json.loads(capsys.readouterr().out) == answer
 
