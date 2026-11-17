@@ -65,12 +65,12 @@ window.Maity = window.Maity || {};
     return section;
   }
 
-  // The project roles as compared before a save: what the PUT replaces, in the hub's order.
-  const comparable = (custom) => JSON.stringify((custom || []).map((r) => [r.name, r.base, r.description || ""]));
-
   function draw(ctx, body, answer, saved, reload) {
     const builtin = answer.builtin || [];
     const stored = (answer.custom || []).map((r) => ({ name: r.name, base: r.base, description: r.description || "", guide: r.guide || "" }));
+    // The list's version as read (§2.3 "Version."): the save names it, and the hub refuses it
+    // when someone else saved since.
+    const version = answer.version;
     clear(body);
 
     // The built-in roles, read only: what each means and its guide as it applies here.
@@ -160,10 +160,10 @@ window.Maity = window.Maity || {};
       return said;
     }
 
-    // Right before the PUT the list is read again: when someone else changed it since this page
-    // read it, nothing is sent and the draft stays until Reload (the lead's decision on A963 P2-1).
-    // The hub replaces the whole list and has no revision to check against, so two saves in the
-    // same instant can still overwrite each other; this catches the usual case, a stale page.
+    // The save names the version this page read; when someone else saved since, the hub refuses
+    // it (`conflict` without a `reason`, §2.3 "Version.") and changes nothing: the draft stays
+    // until Reload (the lead's decision on A963 P2-1). No read before the PUT: the hub's check
+    // covers a stale page and two saves in the same instant alike.
     function changedElsewhere() {
       clear(errors);
       status.done();
@@ -178,12 +178,11 @@ window.Maity = window.Maity || {};
       freeze(true);
       status.busy(M.t("settings.saving"));
       try {
-        const now = await M.api.get(ctx.base + "/roles");
-        if (comparable((now || {}).custom) !== comparable(stored)) { changedElsewhere(); return; }
-        await M.api.put(ctx.base + "/roles", { custom: next });
+        await M.api.put(ctx.base + "/roles", { custom: next, base_version: version });
         saved(M.t("roles.saved"));
       } catch (err) {
         freeze(false);
+        if (err.code === "conflict" && err.details && err.details.current_version !== undefined) { changedElsewhere(); return; }
         if (err.code === "conflict" && err.details && err.details.reason === "role_in_use") {
           status.done();
           // The hub kept the role: it comes back into the draft as it was loaded, so the next
