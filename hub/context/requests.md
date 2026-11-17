@@ -108,7 +108,10 @@ The project's request routes:
 - `inbox.may_answer` is false.
 
 The human reads, answers and withdraws it through `/requests/{id}`, member of the project
-or not; a non-member's answer has `answered_by` null, and resolves no mentions. Its events
+or not; a non-member's answer has `answered_by` null, and resolves no mentions. The report
+request is the exception: its admin reads it there, but an answer or a withdrawal is 409
+`resolve_the_report` (`_refuse_a_report_request`); it closes only when its report is
+resolved or expires (`withdraw_report_request`, §16.8). A personal request's events
 carry `{id, personal, status}` only.
 
 **Reason:** the original reasons of a753a0f6 still hold for the rows with a project: one
