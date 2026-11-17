@@ -61,6 +61,12 @@ GIT_ALLOWED = {
     (None, "core"): frozenset({
         "repositoryformatversion", "filemode", "bare", "logallrefupdates", "ignorecase",
         "precomposeunicode", "symlinks",  # git for Windows writes `symlinks` on every clone
+        # The runner sets `core.hooksPath` for a placed coder so the repository's pre-push
+        # hook runs the project's checks before a push (adapters/runner setup). It only
+        # changes the agent's own git, which runs in the harness sandbox; maity's own git and
+        # the runner's `gc` both override it to `/dev/null` (proc.py, operate.py), so a clone's
+        # hooks never run outside the sandbox. Allowed so such a clone stays a plain one.
+        "hookspath",
     }),
     (None, "user"): frozenset({"name", "email"}),
     ("named", "remote"): frozenset({"url", "fetch"}),

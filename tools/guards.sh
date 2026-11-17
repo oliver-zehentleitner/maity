@@ -31,25 +31,30 @@ die() {
   exit 2
 }
 
+# git takes its repository, index and settings from GIT_* variables as well; this work tree's
+# own, as found from where the caller stands, is the one checked, and the one the default
+# HUB_PYTHON is resolved from.
+for v in $(compgen -e); do
+  case $v in GIT_*) unset "$v" ;; esac
+done
+root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git work tree"
+
 # HUB_PYTHON as an absolute path, resolved where the caller stands: the steps run it from
 # hub/ and web/, where a relative path or a bare name could name another file or none.
 # A bare name is looked up on PATH first, and what that gives can still be relative (a PATH
-# entry such as `.venv/bin`).
-hub_python=${HUB_PYTHON:-python3}
+# entry such as `.venv/bin`). Default: the work tree's own hub venv, `hub/.venv/bin/python`
+# (what `make -C hub dev` builds; what the runner builds a placed coder at setup), resolved
+# from the root, so a plain `tools/guards.sh` works without the caller setting HUB_PYTHON —
+# a review grant allows the bare command but rejects an env-assignment prefix.
+hub_python=${HUB_PYTHON:-$root/hub/.venv/bin/python}
 case $hub_python in
   */*) ;;
-  *) hub_python=$(command -v "$hub_python") || die "no ${HUB_PYTHON:-python3} on PATH (HUB_PYTHON)" ;;
+  *) hub_python=$(command -v "$hub_python") || die "no $hub_python on PATH (HUB_PYTHON)" ;;
 esac
 case $hub_python in
   /*) ;;
   *) hub_python="$PWD/$hub_python" ;;
 esac
-# git takes its repository, index and settings from GIT_* variables as well; this work tree's
-# own, as found from where the caller stands, is the one checked.
-for v in $(compgen -e); do
-  case $v in GIT_*) unset "$v" ;; esac
-done
-root=$(git rev-parse --show-toplevel 2>/dev/null) || die "not in a git work tree"
 cd "$root" || die "cannot enter $root"
 
 # The work tree's changes, as step 5 reads them: tracked files from git status, untracked ones

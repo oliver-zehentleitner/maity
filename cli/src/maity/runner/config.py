@@ -98,6 +98,20 @@ class Local:
     # "cli/requirements/dev.txt"); the runner builds a venv from it per placement and puts it
     # on the session's PATH (venv.py). None: no venv is built.
     dev_requirements: str | None = None
+    # Subpackage directories inside the clone whose own `.venv` a placed coder needs (its
+    # tests invoke `<dir>/.venv/bin/python …`): the runner builds `<dir>/.venv` from
+    # `<dir>/requirements/dev.txt` in the clone at setup, for claude-code placements only
+    # (venv.py, supervisor._coder_setup). Empty: none.
+    clone_venvs: tuple[str, ...] = ()
+    # `core.hooksPath` the runner sets in a placed coder's clone (relative, e.g.
+    # "tools/hooks"), so the repository's pre-push hook runs before a push; claude-code
+    # placements only. None: the clone's hooks path is left as git's default.
+    clone_hooks_path: str | None = None
+    # Directories the harness's OS sandbox must let a session write (absolute, or `~/…` for the
+    # agents' home), beyond the clone — e.g. a VM-wide run-slot/lock directory the tests share.
+    # Added to Claude Code's sandbox `filesystem.allowWrite` and to agy's `write_file` allows
+    # (adapters.py). Empty: the sandbox's own writable set stands.
+    sandbox_writable_dirs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -460,6 +474,13 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             dev_requirements=local_in.get(
                 "dev_requirements", str, None, check=_relative_clone_path
             ),
+            clone_venvs=tuple(local_in.get("clone_venvs", list, [], check=_relative_clone_paths)),
+            clone_hooks_path=local_in.get(
+                "clone_hooks_path", str, None, check=_relative_clone_path
+            ),
+            sandbox_writable_dirs=tuple(
+                local_in.get("sandbox_writable_dirs", list, [], check=_sandbox_dirs)
+            ),
         )
         local_in.done()
     # A table for another kind is not read, so its keys are not judged either.
@@ -620,6 +641,29 @@ def _relative_clone_path(value: Any) -> str | None:
     parts = Path(text).parts
     if Path(text).is_absolute() or not parts or ".." in parts:
         return "expected a relative path inside the clone, without '..'"
+    return None
+
+
+def _relative_clone_paths(value: Any) -> str | None:
+    """A list of paths inside a clone, each as `_relative_clone_path` requires."""
+    if not isinstance(value, list):
+        return "expected a list of relative paths inside the clone"
+    for item in value:
+        if not isinstance(item, str) or _relative_clone_path(item) is not None:
+            return "expected a list of relative paths inside the clone, without '..'"
+    return None
+
+
+def _sandbox_dirs(value: Any) -> str | None:
+    """A list of sandbox-writable directories: each absolute, or `~/…` for the agents' home;
+    no `..`, so it names one directory and not a path that climbs out of it."""
+    if not isinstance(value, list):
+        return "expected a list of absolute or '~/'-prefixed directories"
+    for item in value:
+        if not isinstance(item, str) or ".." in Path(item).parts:
+            return "expected a list of directories without '..'"
+        if not (item.startswith("/") or item.startswith("~/")):
+            return "expected each directory absolute or starting with '~/'"
     return None
 
 

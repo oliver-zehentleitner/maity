@@ -14,7 +14,7 @@ import pytest
 
 from maity import __version__, clonecheck, hub, proc, state
 from maity.runner import adapters, capabilities, config, restart, supervisor, tmux, workspace
-from maity.runner.asuser import RUNNER
+from maity.runner.asuser import RUNNER, AsUser
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
 CONFIG = """\
@@ -484,6 +484,95 @@ def test_the_context_carries_the_dev_venv_bin_when_configured(
     monkeypatch.setattr(venv, "ensure", ensure)
     ctx = sup._context(p, harness, place, target)
     assert ctx.venv_bin == str(seen[0] / "bin") and seen[0].name == "venv"
+
+
+def _coder_world(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Any, Any, workspace.Workspace, list[Path], list[list[str]]]:
+    import dataclasses
+
+    from maity.runner import venv
+
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    target = sup.targets["local"]
+    place = workspace.Workspace(tmp_path / "ws" / "c", "maity", "c")
+    for sub in ("hub", "cli"):
+        (place.repo / sub / "requirements").mkdir(parents=True)
+        (place.repo / sub / "requirements" / "dev.txt").write_text("x\n")
+    assert sup.cfg.local is not None
+    sup.cfg = dataclasses.replace(
+        sup.cfg,
+        local=dataclasses.replace(
+            sup.cfg.local, clone_venvs=("hub", "cli"), clone_hooks_path="tools/hooks"
+        ),
+    )
+    built: list[Path] = []
+    monkeypatch.setattr(venv, "ensure", lambda as_user, into, req, clone, **k: built.append(into))
+    runs: list[list[str]] = []
+
+    def run(self: Any, argv: Any, **kw: Any) -> Any:
+        runs.append(list(argv))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(AsUser, "run", run)
+    return sup, target, place, built, runs
+
+
+def test_coder_setup_builds_the_clone_venvs_and_sets_the_hooks_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """For a claude-code placement the runner builds each configured `<dir>/.venv` in the
+    clone and sets `core.hooksPath`; it is idempotent and non-fatal."""
+    sup, target, place, built, runs = _coder_world(tmp_path, monkeypatch)
+    harness = sup.cfg.harnesses["claude-code"]
+    sup._coder_setup(harness, place, target)
+    assert built == [place.repo / "hub" / ".venv", place.repo / "cli" / ".venv"]
+    hooks = [r for r in runs if "config" in r and "core.hooksPath" in r]
+    assert hooks and hooks[0][-2:] == ["core.hooksPath", "tools/hooks"]
+    assert str(place.repo) in hooks[0]  # `git -C <clone> config …`
+
+
+def test_coder_setup_leaves_agy_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only claude-code placements get the clone venvs and the hooks path; agy is untouched."""
+    sup, target, place, built, runs = _coder_world(tmp_path, monkeypatch)
+    agy = config.Harness("antigravity", ("supervised",), "supervised", binary="agy")
+    sup._coder_setup(agy, place, target)
+    assert built == [] and not any("core.hooksPath" in r for r in runs)
+
+
+def test_coder_setup_skips_a_subpackage_without_a_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A configured subpackage that ships no lock is skipped, not an error."""
+    sup, target, place, built, runs = _coder_world(tmp_path, monkeypatch)
+    (place.repo / "cli" / "requirements" / "dev.txt").unlink()
+    sup._coder_setup(sup.cfg.harnesses["claude-code"], place, target)
+    assert built == [place.repo / "hub" / ".venv"]  # cli had no lock: skipped
+
+
+def test_sandbox_writable_dirs_expand_the_agents_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `~/…` writable dir is expanded to the agents' home; an absolute one is kept as is;
+    none configured yields none."""
+    import dataclasses
+
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    target = sup.targets["local"]
+    assert sup._sandbox_writable(target) == ()
+    assert sup.cfg.local is not None
+    sup.cfg = dataclasses.replace(
+        sup.cfg,
+        local=dataclasses.replace(
+            sup.cfg.local,
+            sandbox_writable_dirs=("~/.local/state/maity/run-slots", "/var/lock/x"),
+        ),
+    )
+    home = target.as_user.home()
+    assert sup._sandbox_writable(target) == (
+        home / ".local/state/maity/run-slots",
+        Path("/var/lock/x"),
+    )
 
 
 @pytest.mark.parametrize("extra", ["", "require_sandbox = false\n"])

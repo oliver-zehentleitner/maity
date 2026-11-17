@@ -233,6 +233,96 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     }
 
 
+def test_git_dash_c_is_allowed_per_subcommand_never_blanket(tmp_path: Path) -> None:
+    """A coder may run `git -C <clone> <sub>` exactly as `git <sub>`: one allow per
+    subcommand, never a blanket `git -C <clone> *` (which would let a global `-c` after
+    `-C <clone>` slip past the `git -c` deny)."""
+    ctx = context(tmp_path)
+    ws = str(ctx.clone)
+    allow = adapters.claude_settings(ctx)["permissions"]["allow"]
+    for sub in adapters.GIT_SUBCOMMANDS:
+        assert f"Bash(git -C {ws} {sub})" in allow
+        assert f"Bash(git -C {ws} {sub} *)" in allow
+    assert "Bash(git -C " + ws + " status)" in allow and f"Bash(git -C {ws} commit *)" in allow
+    # No blanket form that would admit a global option right after `-C <clone>`.
+    assert f"Bash(git -C {ws} *)" not in allow
+    assert not any(rule == f"Bash(git -C {ws} -c *)" for rule in allow)
+
+
+def test_git_dash_c_keeps_the_dangerous_options_denied(tmp_path: Path) -> None:
+    """Every GIT_DENIED rule is mirrored with a `-C <dir>` prefix, so `git -C <dir> -c`,
+    `--config-env`, `--exec-path`, `--no-index`, `--upload-pack`, `--receive-pack`, `--exec=`
+    and a `.git/maity` path stay denied under `-C` too; deny wins over the `-C <clone>`
+    allows. A denied `-C` form is not reachable through any allow either."""
+    ctx = context(tmp_path)
+    ws = str(ctx.clone)
+    deny = adapters.claude_settings(ctx)["permissions"]["deny"]
+    assert "Bash(git -C * -c *)" in deny  # `git -C <dir> -c <config> <sub>` is refused
+    assert "Bash(git -C * --config-env*)" in deny
+    assert "Bash(git -C * --exec-path*)" in deny
+    assert "Bash(git -C * * --no-index*)" in deny
+    assert "Bash(git -C * *.git/maity*)" in deny  # the credential, behind a `-C` too
+    # Every original GIT_DENIED rule has a `-C` twin.
+    for rule in adapters.GIT_DENIED:
+        assert f"Bash({rule.replace('git ', 'git -C * ', 1)})" in deny
+    # The `-C` allows are only the subcommand forms, so `-c` after `-C <clone>` is not allowed
+    # by any rule; the deny is then belt-and-suspenders.
+    allow = adapters.claude_settings(ctx)["permissions"]["allow"]
+    assert not any(f"git -C {ws} -c" in rule for rule in allow)
+
+
+def test_git_dash_c_rules_helper_mirrors_exactly() -> None:
+    from pathlib import Path as _P
+
+    allow, deny = adapters.git_dash_c_rules(_P("/w/c"))
+    assert allow[: len(adapters.GIT_SUBCOMMANDS)] == [
+        f"git -C /w/c {sub}" for sub in adapters.GIT_SUBCOMMANDS
+    ]
+    assert deny == [rule.replace("git ", "git -C * ", 1) for rule in adapters.GIT_DENIED]
+
+
+def test_the_sandbox_lets_a_session_write_the_configured_dirs(tmp_path: Path) -> None:
+    """A configured writable directory (a shared run-slot dir the tests use) goes into Claude
+    Code's sandbox `filesystem.allowWrite`, and is kept out of the deny lists."""
+    runslots = tmp_path / "state" / "maity" / "run-slots"
+    fs = adapters.claude_settings(context(tmp_path, sandbox=True, sandbox_writable=(runslots,)))[
+        "sandbox"
+    ]["filesystem"]
+    assert fs["allowWrite"] == [str(runslots)]
+    assert str(runslots) not in fs["denyWrite"] and str(runslots) not in fs["denyRead"]
+
+
+def test_no_allow_write_key_without_configured_dirs(tmp_path: Path) -> None:
+    fs = adapters.claude_settings(context(tmp_path, sandbox=True))["sandbox"]["filesystem"]
+    assert "allowWrite" not in fs  # the sandbox's own writable set stands
+
+
+def test_the_gitignore_hides_every_sandbox_placeholder(tmp_path: Path) -> None:
+    """The committed .gitignore covers every CLAUDE_PLACEHOLDER under the semantics
+    tools/guards.sh uses to list untracked files — `ls-files --others
+    --exclude-per-directory=.gitignore`, which does NOT read .git/info/exclude — so a
+    sandboxed coder's work tree stays clean. Kept in sync with CLAUDE_PLACEHOLDERS."""
+    gitignore = Path(__file__).resolve().parents[2] / ".gitignore"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    env = {"PATH": os.environ.get("PATH", ""), "GIT_CONFIG_GLOBAL": os.devnull}
+    git = ["git", "-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, env=env)
+    (repo / ".gitignore").write_text(gitignore.read_text())
+    subprocess.run([*git, "add", ".gitignore"], check=True, env=env)
+    subprocess.run([*git, "commit", "-q", "-m", "gi"], check=True, env=env)
+    for name in adapters.CLAUDE_PLACEHOLDERS:  # each as the sandbox leaves it, here as a file
+        placeholder = repo / name
+        placeholder.parent.mkdir(parents=True, exist_ok=True)
+        placeholder.write_text("")
+    out = subprocess.run(
+        [*git, "-c", "core.fsmonitor=false", "ls-files", "--others",
+         "--exclude-per-directory=.gitignore"],
+        check=True, capture_output=True, text=True, env=env,
+    ).stdout  # fmt: skip
+    assert out.strip() == "", f"guards.sh would see these untracked: {out}"
+
+
 def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: Path) -> None:
     settings = adapters.claude_settings(context(tmp_path, sandbox=True))
     assert settings["disableAllHooks"] is False

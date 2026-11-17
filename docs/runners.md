@@ -204,6 +204,25 @@ The path is relative to the clone (no `..`). At placement setup the runner build
 
 The venv's `bin` goes ahead of the session's PATH, so its tools win over any of the same name on the agents' own PATH. The agent still needs the matching `allow` entries (above) to run them; the venv only provides the tools, it is not a grant.
 
+## Setting a coder placement up
+
+For a placement that builds the project itself under Claude Code (a "coder"), the runner can do a little more at clone setup. These are all opt-in and apply to `claude-code` placements only; other harnesses are left as they are.
+
+```toml
+[backend.local]
+clone_venvs = ["hub", "cli"]                 # build <dir>/.venv in the clone
+clone_hooks_path = "tools/hooks"             # the clone's pre-push hook
+sandbox_writable_dirs = ["~/.local/state/maity/run-slots"]
+```
+
+- **`clone_venvs`** builds each subpackage's own `.venv` inside the clone, from `<dir>/requirements/dev.txt`, so a check that runs `<dir>/.venv/bin/python …` finds it (this is in the clone, unlike the placement venv above, because those tools reference the exact path). Built once and reused; a `<dir>/.venv` is already in the repository's `.gitignore`. A build that fails is logged and the start goes on.
+- **`clone_hooks_path`** sets the clone's `core.hooksPath`, so the repository's own pre-push hook runs its checks before a push. It changes only the agent's own git in the session; the runner's and `maity`'s own git ignore a clone's hooks.
+- **`sandbox_writable_dirs`** lets a session write directories outside the clone that the harness sandbox would otherwise mount read-only — a shared run-slot or lock directory that tests coordinate through. Give absolute paths, or `~/…` for the agents' home.
+
+A coder running under Claude Code may also use `git -C <clone> <subcommand>` from any directory, allowed exactly as the plain `git <subcommand>` is, with the same git options refused.
+
+`tools/guards.sh` finds the hub's test Python at `hub/.venv/bin/python` by default now, so a plain `tools/guards.sh` needs no `HUB_PYTHON` prefix. The agent, editor and shell config a sandboxed run leaves in the work tree is in the repository's `.gitignore`, so the guard's clean-tree check passes.
+
 ## Clones after a stop
 
 The hub keeps a retention time per placement (`workspace_retention`: `immediate`, `3h`, `24h` by default, `7d`), and the agent's owner or a project admin can ask for a kept clone to be removed (`POST /projects/<owner>/<slug>/placements/<id>/workspace/remove`). Removing clones when their time is up is the runner's part, and it is not built yet: today the runner keeps every clone until you remove it (`maity runner gc --revoked`).

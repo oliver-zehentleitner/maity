@@ -216,6 +216,10 @@ class Context:
     # PATH so the project's pinned pytest, ruff, black and mypy are found (venv.py); "" when the
     # runner builds none (no pinned dev requirements configured, or the file is not in the clone).
     venv_bin: str = ""
+    # Directories the harness's sandbox must let a session write, beyond the clone (a shared
+    # run-slot/lock directory the tests use); absolute, with `~` already expanded to the
+    # agents' home. Added to Claude Code's `filesystem.allowWrite` and agy's `write_file`.
+    sandbox_writable: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -337,6 +341,25 @@ def _supervised(
 # --- Claude Code ------------------------------------------------------------------------------
 
 
+def git_dash_c_rules(clone: Path) -> tuple[list[str], list[str]]:
+    """The `git -C <clone>` forms of the git allow and deny rules, for a harness that matches
+    a command by its literal string (Claude Code), so a coder's `git -C <clone> <sub>` works
+    from any directory, exactly as `git <sub>` does.
+
+    The allow is per subcommand — `git -C <clone> <sub>` and `git -C <clone> <sub> *`, never a
+    blanket `git -C <clone> *` — so a global option such as `-c`, `--config-env` or
+    `--exec-path` right after `-C <clone>` is not allowed (a blanket allow would let
+    `git -C <clone> -c <config> <sub>` slip past the `git -c` deny, which matches only a
+    leading `git -c`). The GIT_DENIED rules are mirrored with a `-C <dir>` (any dir, `*`)
+    inserted after `git`, so those options stay denied under a `-C` prefix too; deny wins over
+    allow, so a denied `-C` form is refused even where an allow would otherwise reach it."""
+    prefix = f"git -C {clone}"
+    allow = [f"{prefix} {sub}" for sub in GIT_SUBCOMMANDS]
+    allow += [f"{prefix} {sub} *" for sub in GIT_SUBCOMMANDS]
+    deny = [rule.replace("git ", "git -C * ", 1) for rule in GIT_DENIED]
+    return allow, deny
+
+
 def claude_settings(ctx: Context) -> dict[str, Any]:
     """The grant (§6.1): maity, git, the repository's own allow list, and file tools inside
     the clone only. Absolute paths take a double slash in Claude Code's rules. The clone's
@@ -344,6 +367,10 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
+    # `git -C <clone> <sub>` allowed exactly as `git <sub>`, for a coder running git against
+    # the clone from a subdirectory; the matching `-C` denies go into `deny` below.
+    c_allow, c_deny = git_dash_c_rules(ctx.clone)
+    allow += [f"Bash({rule})" for rule in c_allow]
     allow += [f"Bash({UUID_COMMAND})"]  # an OS-made UUID v4 for Keep-the-Why entries
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
@@ -355,7 +382,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny = [f"Edit(/{git}/{name}{'/**' if name in ('hooks', 'info') else ''})"
             for name in GIT_PROTECTED]  # fmt: skip
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
-    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED)]
+    # GIT_DENIED and its `-C <dir>` mirror, so `git -c`, `--config-env`, … stay denied with or
+    # without a leading `-C <dir>`; deny wins over the `-C <clone>` allows above.
+    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *c_deny, *GH_DENIED)]
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
         # stays in the model's context; the bare name takes it out of the model's context
@@ -381,9 +410,13 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # signs with it, runs outside.
             # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
             # re-open its credential as well, and that order is unverified here.
+            # `allowWrite`: directories the sandbox otherwise mounts read-only that a session
+            # must write — a shared run-slot/lock directory the tests use (sandbox_writable).
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private)],
                            "denyWrite": [f"{git}/maity",
-                                         *(f"{git}/{name}" for name in GIT_PROTECTED)]},
+                                         *(f"{git}/{name}" for name in GIT_PROTECTED)],
+                           **({"allowWrite": [str(p) for p in ctx.sandbox_writable]}
+                              if ctx.sandbox_writable else {})},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
         # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
@@ -762,6 +795,9 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     # The whole clone, read and write, for the file tools and so the terminal sandbox mounts
     # it writable; the denies below are more specific paths under it and win.
     allow += [f"{tool}({ctx.clone}/**)" for tool in ("read_file", "write_file")]
+    # Directories outside the clone the sandbox must let a session write (a shared run-slot
+    # directory the tests use): writable to the file tools and so to agy's terminal sandbox.
+    allow += [f"write_file({path})" for path in ctx.sandbox_writable]
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]

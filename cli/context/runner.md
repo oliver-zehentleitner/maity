@@ -1013,6 +1013,82 @@ ask for.
 - Installing only the four named tools without their locked dependencies:
   they would not run; the whole lock is the pinned set.
 
+## A coder may run `git -C <clone>` under Claude Code: the subcommand allowlist and the option denylist both mirrored with a `-C` prefix
+
+**Id:** dcae12df-d296-4f2d-844a-0ec1e6893602
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved coder-checks plan (tsk-kshmb8vc92rr), relayed 2026-11-17, with the lead's approval and the coordinator naming this the security-sensitive part; the git option denylist GIT_DENIED and Claude Code's literal `Bash(...)` command matching (adapters.py)
+**Revisit when:** a GIT_DENIED rule is added or changed (its `-C` twin must follow), or Claude Code changes how a `Bash(...)` rule matches a command string
+
+Claude Code's git allow rules gain a `git -C <clone>` form so a coder can run git against the clone from a subdirectory: `git -C <clone> <sub>` and `git -C <clone> <sub> *` for each GIT_SUBCOMMANDS entry, exactly mirroring the plain `git <sub>` allows. Every GIT_DENIED rule gains a `-C <dir>` twin (any dir), e.g. `git -c *` → `git -C * -c *`, so a denied global option stays denied behind a `-C` prefix too (adapters.git_dash_c_rules).
+
+**Reason:** the allow is per subcommand, never a blanket `git -C <clone> *`. A blanket allow would admit `git -C <clone> -c <config> <sub>`, and the existing `git -c` deny matches only a command that *starts* `git -c`, not `git -C <clone> -c …`, so the global `-c` (which runs an arbitrary program through config) would slip the sandbox. With the allow limited to a subcommand right after `-C <clone>`, `-c` after `-C <clone>` is not allowed by any rule; the mirrored denies are belt-and-suspenders, since deny beats allow in Claude Code, and they also cover `--config-env`, `--exec-path`, `--no-index`, `--upload-pack`, `--receive-pack`, `--exec=` and a `.git/maity` path behind a `-C`.
+
+**Rejected alternatives:**
+- A blanket `git -C <clone> *` allow: lets a global option follow `-C <clone>` and escape the option denies — the hole this design avoids.
+- No `-C` allow at all: a coder's tool that runs `git -C <clone> …` from a subdirectory would be refused, which is the need this fills.
+- Only the allow, no mirrored deny: a denied option behind `-C` would not be matched by the plain denies, which are not `-C`-prefixed; the twin makes deny-wins hold under `-C`.
+
+## The runner prepares a coder's clone: in-clone per-subpackage venvs, the pre-push hook, and a plain clone that holds `core.hooksPath`
+
+**Id:** 65ef547a-2f43-4c6a-a9eb-d9ab4221a0d0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved coder-checks plan (tsk-kshmb8vc92rr), relayed 2026-11-17; the project's pre-push hook (#1508, `tools/hooks/pre-push` → `tools/pre_push.py`); maity's and the runner's git both run with `core.hooksPath=/dev/null` (proc.py, operate.py); CONTRIBUTING.md's documented `git config core.hooksPath tools/hooks`
+**See:** runner.md#a-placements-dev-venv-is-built-from-the-projects-pinned-lock-outside-the-clone-onto-the-session-path — 30c5fc5c-89d7-42ea-a74a-ccc0bd7afa27 — as of 2026-11-17
+**Revisit when:** a coder placement runs under a harness other than Claude Code and needs the same setup, or out-of-sandbox git (maity, gc) stops overriding a clone's hooks path
+
+For a claude-code placement the runner does two more things at clone setup (supervisor._coder_setup), both opt-in by configuration and idempotent: it builds each configured subpackage's own `<dir>/.venv` inside the clone (`clone_venvs`), from `<dir>/requirements/dev.txt` with `venv.ensure` (the same builder as the placement venv, 30c5fc5c), and it sets the clone's `core.hooksPath` (`clone_hooks_path`). To keep `core.hooksPath` from making the clone fail the plain-clone check, `core.hookspath` is added to clonecheck.GIT_ALLOWED's core keys.
+
+**Reason:** the coder's tests invoke `<dir>/.venv/bin/python …` by that exact path, so the venv must be in the clone, not in `agent_dir` like the placement venv on PATH; a built `<dir>/.venv` is git-ignored, so it does not dirty the tree. The pre-push hook runs the project's checks before a push; `core.hooksPath` is the project's documented way to turn it on. Allowing `core.hookspath` in clonecheck is safe because a clone's hooks run only for the agent's own git, which is inside the harness sandbox (the agent's own context, no escalation); maity's own git and the runner's `gc` both set `core.hooksPath=/dev/null`, so a clone's hooks never run outside the sandbox — even one an agent somehow planted. Both venvs and the hooks path are conveniences, not gates: a failure is logged and the start goes on.
+
+**Rejected alternatives:**
+- Writing `.git/hooks/pre-push` directly instead of `core.hooksPath`: avoids the clonecheck change, but diverges from the project's documented opt-in and duplicates the committed hook's body into `.git`.
+- Leaving `core.hookspath` out of GIT_ALLOWED: the first start sets it and the next start's plain-clone check then refuses the clone (`not_a_plain_clone`), breaking restarts and `gc`.
+- Building the subpackage venvs in `agent_dir` like the placement venv: the tests name `<dir>/.venv`, which is in the clone, so the path would not match.
+- Applying this to every harness: agy and the others are left unchanged (the plan scopes it to coders, who run under Claude Code); the gate is the harness id.
+
+## A shared run-slot directory outside the clone is made writable in the harness sandbox
+
+**Id:** 99587602-9f6a-48fb-91ae-c62cac5b14f6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved coder-checks plan (tsk-kshmb8vc92rr), relayed 2026-11-17, the owner sanctioning the shared coordination directory as "rather open and working"; the "Read-only file system" failure of the Postgres-backed tests (`tools/run_slot.sh` writing `~/.local/state/maity/run-slots`); Claude Code 2.1.326's sandbox filesystem keys read from its binary (`allowWrite` beside `allowRead`, `denyWrite`, `denyRead`)
+**Revisit when:** the shared directory moves, a per-placement slot directory is wanted instead of a shared one, or Claude Code renames its sandbox filesystem keys
+
+The runner can grant a harness sandbox write access to directories beyond the clone (`[backend.local] sandbox_writable_dirs`, absolute or `~/…` expanded to the agents' home): they go into Claude Code's sandbox `filesystem.allowWrite`, and into agy's `write_file` allows (so agy's terminal sandbox, whose writable region follows the file-tool rules, mounts them writable). They are kept out of every deny list.
+
+**Reason:** the Postgres-backed hub tests take a run slot by writing a lock under `~/.local/state/maity/run-slots`, a VM-wide coordination directory (slot locks, a log sink) shared across placements. Claude Code's sandbox mounts it read-only by default, so the tests died with "Read-only file system". The directory is owner-sanctioned as open and shared, so it is made writable rather than per-placement or read-only. `allowWrite` is the Claude Code sandbox key for a path it otherwise mounts read-only, the write counterpart of the `allowRead` the clone-reopen note already uses.
+
+**Rejected alternatives:**
+- A per-placement slot directory: the slots are a shared, VM-wide coordination point, so splitting them would defeat the coordination.
+- Leaving it read-only and changing the tests: the owner chose to keep the directory shared and writable over reshaping the tests.
+- Hard-coding the path in the adapter: a configuration option keeps it the operator's and reusable (another project's shared directory, an absolute path or one in the agents' home).
+
+## guards.sh's clean-tree check reads `.gitignore` only, so the sandbox placeholders are hidden in the committed `.gitignore`, not `.git/info/exclude`
+
+**Id:** 8ed00a71-5174-46d8-a6ef-5344490f6c0b
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** the approved coder-checks plan (tsk-kshmb8vc92rr), relayed 2026-11-17, the coordinator asking for a runner-side fix; `tools/guards.sh`'s untracked listing (`git ls-files --others --exclude-per-directory=.gitignore`), verified to ignore `.git/info/exclude` while `--exclude-standard` honors it; adapters.CLAUDE_PLACEHOLDERS and hide_placeholders, which write `.git/info/exclude`
+**See:** runner.md#a-placements-dev-venv-is-built-from-the-projects-pinned-lock-outside-the-clone-onto-the-session-path — 30c5fc5c-89d7-42ea-a74a-ccc0bd7afa27 — as of 2026-11-17
+**Revisit when:** `tools/guards.sh` changes how it lists untracked files, or Claude Code's set of work-tree placeholders changes (CLAUDE_PLACEHOLDERS and the `.gitignore` block must stay in sync, a test enforces it)
+
+The sandbox placeholders Claude Code leaves in the work tree (`.bashrc`, `.mcp.json`, `.claude/…`, `.vscode`, … — CLAUDE_PLACEHOLDERS) are ignored in the repository's committed `.gitignore`, and `tools/guards.sh` defaults `HUB_PYTHON` to the work tree's own `hub/.venv/bin/python`.
+
+**Reason:** `guards.sh` lists untracked files with `git ls-files --others --exclude-per-directory=.gitignore`, which by git's design consults the per-directory `.gitignore` files alone and **not** `.git/info/exclude` (verified) — deliberately, so a personal exclude cannot hide a file a guard step wrote. The runner's `hide_placeholders` writes exactly `.git/info/exclude`, so it is invisible to the guard, which is why a sandboxed coder's `git status` under the guard still saw the placeholders as untracked and failed the clean-tree gate. The guard also refuses `skip-worktree`/`assume-unchanged` and shows every tracked modification, so the only way to hide the placeholders from it is a committed `.gitignore` entry — a repository change, the one mechanism the guard honors. The placeholders are agent, editor and shell config, never project files, so ignoring them is correct in its own right. `HUB_PYTHON` now defaults to the clone's hub venv so a plain `tools/guards.sh` (which a coder's grant allows as a bare command, rejecting an env-assignment prefix) needs no `HUB_PYTHON=…` in front.
+
+**Rejected alternatives:**
+- A pure runner-side fix through `hide_placeholders`/`.git/info/exclude`: the guard does not read that file by design, so no coverage of it can reach the guard; the committed `.gitignore` is the only mechanism it honors.
+- Changing `tools/guards.sh` to read `.git/info/exclude`: the coordinator chose not to weaken the guard, whose point is that a personal exclude cannot hide a step's output.
+- Ignoring all of `.claude/`: the repository tracks `.claude/settings.json`; the block lists the specific placeholder paths so the tracked file stays tracked.
+
 ## Antigravity is re-offered with its residual command(maity) risk accepted
 
 **Id:** 28ac82c8-0921-4ffb-9d3e-9ebb2f10b111

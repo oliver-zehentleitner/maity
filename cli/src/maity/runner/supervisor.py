@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .. import __version__, hub, onboarding, state
+from .. import __version__, hub, onboarding, proc, state
 from . import adapters, capabilities, config, limitread, loop, restart, targets, venv, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
@@ -956,6 +956,7 @@ class Supervisor:
             # agy loads what lies in its start directory and above it: a workspace folder holds
             # the clone and nothing else, outside any work tree, at its real path (§15.5).
             workspace.check_folder(place, as_user)
+            self._coder_setup(harness, place, target)
             if join:
                 self._join(p, place, owner, rejoin, target)
                 with self.lock:
@@ -1082,6 +1083,7 @@ class Supervisor:
         private = self._private(target, place)
         return adapters.Context(
             venv_bin=self._venv_bin(target, place, agent_dir),
+            sandbox_writable=self._sandbox_writable(target),
             placement=p,
             harness=harness,
             binary=found.path if found else None,
@@ -1125,6 +1127,56 @@ class Supervisor:
             self.log(f"{place.path.name}: no dev venv: {exc}")
             return ""
         return str(found)
+
+    def _sandbox_writable(self, target: Target) -> tuple[Path, ...]:
+        """The configured directories the harness sandbox must let a session write, with a
+        leading `~` expanded to the agents' home as `target` sees it (adapters.Context)."""
+        local = self.cfg.local
+        if local is None or not local.sandbox_writable_dirs:
+            return ()
+        home = target.as_user.home()
+        return tuple(
+            home / item[2:] if item.startswith("~/") else Path(item)
+            for item in local.sandbox_writable_dirs
+        )
+
+    def _coder_setup(
+        self, harness: config.Harness, place: workspace.Workspace, target: Target
+    ) -> None:
+        """Clone-side setup a placed coder needs, for claude-code placements only, so agy and
+        the other harnesses are unchanged. Opt-in by configuration and idempotent:
+
+        - build each configured subpackage's own `<dir>/.venv` inside the clone, from
+          `<dir>/requirements/dev.txt`, so the coder's tests that invoke `<dir>/.venv/bin/...`
+          and `tools/guards.sh` find them (`clone_venvs`);
+        - set the clone's `core.hooksPath` so the repository's pre-push hook runs its checks
+          before a push (`clone_hooks_path`).
+
+        Both are conveniences, not gates: a failure is logged and the start goes on. A built
+        venv under `<dir>/.venv` is git-ignored, so it does not show as untracked."""
+        local = self.cfg.local
+        if harness.id != "claude-code" or local is None:
+            return
+        as_user = target.as_user
+        for sub in local.clone_venvs:
+            requirements = place.repo / sub / "requirements" / "dev.txt"
+            if not as_user.exists(requirements, "-f"):
+                continue  # the subpackage ships no lock: nothing to build, not an error
+            try:
+                venv.ensure(as_user, place.repo / sub / ".venv", requirements, place.repo)
+            except venv.VenvError as exc:
+                self.log(f"{place.path.name}: no {sub} venv: {exc}")
+        if local.clone_hooks_path:
+            # The runner's own git in the clone runs through the guarded prefix (proc.GIT: no
+            # hooks, no fsmonitor), like every other git maity and the runner start; `config`
+            # runs no hook itself, but the clone is the agent's, so nothing it wrote may run.
+            done = as_user.run(
+                [*proc.GIT, "-C", str(place.repo),
+                 "config", "core.hooksPath", local.clone_hooks_path]
+            )  # fmt: skip
+            if done.returncode != 0:
+                self.log(f"{place.path.name}: cannot set core.hooksPath: "
+                         f"{done.stderr.strip()[:200]}")  # fmt: skip
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
         """What the agent's sandbox may not read, as the agents' side of `target` sees it: its

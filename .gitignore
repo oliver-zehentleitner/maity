@@ -19,3 +19,32 @@ dist/
 .ruff_cache/
 .mypy_cache/
 maity-hub.db
+
+# Agent, editor and shell config a sandboxed coder run may leave in the work tree (not
+# project files). Under a harness's OS sandbox, Claude Code writes an empty placeholder for
+# each of these to protect the path; they must stay out of the way so `tools/guards.sh`'s
+# clean-tree check passes — it lists untracked files by .gitignore alone, so the runner's
+# .git/info/exclude does not reach it (see adapters.CLAUDE_PLACEHOLDERS; kept in sync by a
+# test). `.idea/` is covered at the top; `.claude/settings.json` stays tracked.
+/.bash_profile
+/.bashrc
+/.profile
+/.zprofile
+/.zshrc
+/.gitconfig
+/.gitmodules
+/.ripgreprc
+/.mcp.json
+/.idea
+/.vscode
+/.claude/agents
+/.claude/commands
+/.claude/hooks
+/.claude/launch.json
+/.claude/loop.md
+/.claude/output-styles
+/.claude/routines
+/.claude/scheduled_tasks.json
+/.claude/settings.local.json
+/.claude/skills
+/.claude/workflows

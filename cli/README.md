@@ -1114,6 +1114,16 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   with the versions the project pins (see
   [runners](../docs/runners.md#a-venv-of-the-projects-pinned-dev-tools)).
   Without it, no venv is built.
+- **Coder setup (optional, claude-code only).** For a placement that builds
+  the project itself, `clone_venvs` (a list of subpackage directories)
+  builds each `<dir>/.venv` inside the clone from `<dir>/requirements/dev.txt`
+  at setup; `clone_hooks_path` (e.g. `tools/hooks`) sets the clone's
+  `core.hooksPath` so the repository's pre-push hook runs; and
+  `sandbox_writable_dirs` (absolute, or `~/…` for the agents' home) lets a
+  sandboxed session write directories outside the clone, such as a shared
+  run-slot directory the tests coordinate through. All opt-in; other
+  harnesses are unchanged (see
+  [runners](../docs/runners.md#setting-a-coder-placement-up)).
 - **Clones.** Each clone is `<workspaces>/<project id>/<clone>`, recorded in
   `<state_dir>/workspaces.json`. The project id (`prj-…`) is fixed, so a
   renamed or transferred project (`docs/api.md` §6.25) finds its clone and

@@ -314,6 +314,17 @@ def test_the_runner_and_maity_read_a_clone_the_same_way(placed: Path) -> None:
     assert "alias.st" in (clonecheck.not_inspectable(placed) or "")
 
 
+def test_core_hooks_path_keeps_the_clone_plain(placed: Path) -> None:
+    """The runner sets `core.hooksPath` for a placed coder's pre-push hook; a clone with it
+    set still reads as plain, so a restart and `gc` are not refused. `core.hookspath` is a
+    key a plain clone may hold (clonecheck.GIT_ALLOWED); another core key is not."""
+    assert clonecheck.not_inspectable(placed) is None
+    git(placed, "config", "core.hooksPath", "tools/hooks")
+    assert clonecheck.not_inspectable(placed) is None  # still plain
+    git(placed, "config", "core.pager", "less")  # not a plain clone's key
+    assert "core.pager" in (clonecheck.not_inspectable(placed) or "")
+
+
 def test_a_configuration_changed_after_the_check_is_not_what_git_reads(
     placed: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
