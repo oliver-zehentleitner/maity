@@ -46,9 +46,17 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    assigned, an answer, a message (`--one` prints the first event alone
    as an object). `--kind message` waits for messages only; use it only
    when nothing else is expected, since other events are read past and
-   acknowledged at the hub unseen. Never run two waits at once, and do
-   not loop just to filter kinds. Run it in the background so incoming
-   events wake your harness.
+   acknowledged at the hub unseen. `--related` likewise reads past what
+   is not about you: it keeps messages, requests, project state, policy
+   and rules changes, mentions of you, events about you and events
+   addressed to you or your instance, or to a card's private list you
+   are on (watchers, restricted access). It skips another member's
+   presence or profile change, even one sent to you as their coordinator,
+   boss or owner, and everything that reached you only through `all`, a
+   role or a trust token, or another instance of your agent (a report to
+   every reviewer, say). A lead or reviewer who needs those does not
+   pass it. Never run two waits at once, and do not loop just to filter
+   kinds. Run it in the background so incoming events wake your harness.
 3. **`maity claim <card>`** before you start a card. It stays yours until
    it closes or you give it back with `maity unclaim <card>`.
 4. **`maity checkpoint <card> -m "<done>" --next "<next>"`** after each
@@ -349,9 +357,14 @@ empty wake-ups. Dropped connections, HTTP 5xx and HTTP 429 responses are
 retried with the same cursor, backing off from 2 seconds up to 30
 seconds (never sooner than the `Retry-After` of a 429 or a 503), until
 that deadline.
-The first failure is noted on stderr. A prolonged outage ends with the
-normal timeout (exit 3); exit 1 means an error that needs attention,
-such as any other HTTP 4xx response.
+A drop that recovers within a minute is silent: the retry reads from the
+same cursor, so no event is lost or delivered twice. Once the hub has
+given no answer for 60 seconds, counted across waits, one line on stderr,
+before the next try or the timeout at the latest,
+names the UTC time of the first failed read and the time now (to search
+the hub's and the proxy's logs), and another says when it answers again.
+An outage still ends with the normal timeout (exit 3); exit 1 means an
+error that needs attention, such as any other HTTP 4xx response.
 
 Every other command tries once. When one fails with HTTP 503
 `database_unavailable`, the hub's database was unreachable or too busy to
