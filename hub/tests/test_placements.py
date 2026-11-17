@@ -17,7 +17,7 @@ from maity_hub import tables as t
 from maity_hub.routes import runner as runner_routes
 from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.test_runner_stream import CAPABILITIES, attach, hello, send
+from tests.test_runner_stream import CAPABILITIES, attach, hello, member, send
 from tests.test_runners import Runner, call, enroll, error, paired
 from tests.test_runners import exchange as pair_exchange
 
@@ -129,6 +129,7 @@ def test_a_placement_has_the_contract_shape(setup: Setup) -> None:
         "closed_reason",
         "created_by",
         "proposed_by",
+        "foreign",
         "created_at",
         "updated_by",
         "updated_at",
@@ -313,23 +314,22 @@ def test_an_agents_proposal_waits_for_consent(setup: Setup, make_client: ClientF
     assert body["created_by"] == setup.owner.id  # the profile's owner, a human
     request_id = body["approval"]["request_id"]
     assert runner_reads(setup) == []  # the runner never sees a pending placement
-    request = setup.owner.get(f"/projects/maintainer/maity/requests/{request_id}").json()
+    request = setup.owner.get(f"/requests/{request_id}").json()
     assert request["class"] == "consent" and request["title"].startswith("Start ")
     assert request["placement"]["id"] == body["id"]
     assert request["placement"]["isolation"] == {"kind": "shared_user", "runner_separate": False}
     assert "reason: a second pair of hands" in request["summary"]
-    # Under the default `spawn_consent_by: human` no agent answers it, the proposer neither.
+    assert request["personal"] is True and request["to"] == f"human:{setup.owner.id}"
+    # A personal request of the runner's owner: no agent answers it, the proposer neither.
     own = admin.post(f"/projects/maintainer/maity/requests/{request_id}/answer", {"reply_id": "go"})
-    assert own.json()["error"]["details"] == {"reason": "humans_only"}
-    go = setup.owner.post(
-        f"/projects/maintainer/maity/requests/{request_id}/answer", {"reply_id": "go"}
-    )
+    assert (own.status_code, error(own)) == (409, "self_answer")
+    go = setup.owner.post(f"/requests/{request_id}/answer", {"reply_id": "go"})
     assert go.status_code == 200, go.text
     assert get(setup, body["id"])["approval"]["status"] == "approved"
     assert runner_reads(setup) == [body["id"]]
 
 
-def test_only_a_human_answers_a_placements_consent_by_default(
+def test_only_the_runners_owner_answers_a_placements_consent(
     setup: Setup, make_client: ClientFactory
 ) -> None:
     proposer, other = admin_agent(make_client, setup), admin_agent(make_client, setup)
@@ -337,19 +337,19 @@ def test_only_a_human_answers_a_placements_consent_by_default(
     request_id = body["approval"]["request_id"]
     path = f"/projects/maintainer/maity/requests/{request_id}/answer"
     refused = other.post(path, {"reply_id": "go"})
-    assert refused.status_code == 403
-    assert refused.json()["error"]["details"] == {"reason": "humans_only"}
-    assert other.post(path, {"reply_id": "no"}).status_code == 403  # nor a refusal
+    assert (refused.status_code, error(refused)) == (404, "not_found")  # personal: not here
+    assert other.post(path, {"reply_id": "no"}).status_code == 404  # nor a refusal
     assert get(setup, body["id"])["approval"]["status"] == "pending"
     packet = other.resume().json()["requests"]
     assert request_id not in [r["id"] for r in packet["to_answer"]]
     # An agent cannot change who answers: setting the policy is a human's.
     change = {"policy": {"spawn_consent_by": "role"}, "reason": "let us"}
     assert other.patch("/projects/maintainer/maity", change).status_code == 403
-    assert setup.owner.post(path, {"reply_id": "go"}).status_code == 200
+    assert setup.owner.post(path, {"reply_id": "go"}).status_code == 404
+    assert setup.owner.post(f"/requests/{request_id}/answer", {"reply_id": "go"}).status_code == 200
 
 
-def test_under_role_an_admin_agent_answers_a_placements_consent(
+def test_spawn_consent_by_decides_nothing_for_a_placement(
     setup: Setup, make_client: ClientFactory
 ) -> None:
     setup.owner.patch(
@@ -359,10 +359,10 @@ def test_under_role_an_admin_agent_answers_a_placements_consent(
     body = place(setup, proposer, reason="more hands").json()
     request_id = body["approval"]["request_id"]
     packet = other.resume().json()["requests"]
-    assert request_id in [r["id"] for r in packet["to_answer"]]
+    assert request_id not in [r["id"] for r in packet["to_answer"]]
     go = other.post(f"/projects/maintainer/maity/requests/{request_id}/answer", {"reply_id": "go"})
-    assert go.status_code == 200, go.text
-    assert get(setup, body["id"])["approval"]["status"] == "approved"
+    assert go.status_code == 404
+    assert get(setup, body["id"])["approval"]["status"] == "pending"
     # Never the proposer itself, whatever the policy.
     again = place(setup, proposer, agent={"id": other.id}, reason="you too").json()
     self_answer = proposer.post(
@@ -376,17 +376,17 @@ def test_no_refuses_and_a_withdrawal_closes(setup: Setup, make_client: ClientFac
     admin = admin_agent(make_client, setup)
     first = place(setup, admin, reason="try").json()
     setup.owner.post(
-        f"/projects/maintainer/maity/requests/{first['approval']['request_id']}/answer",
+        f"/requests/{first['approval']['request_id']}/answer",
         {"reply_id": "no"},
     )
     refused = get(setup, first["id"])
     assert (refused["approval"]["status"], refused["closed_reason"]) == ("refused", "refused")
     second = place(setup, admin, reason="again").json()  # a refused one blocks nothing
-    admin.post(
-        f"/projects/maintainer/maity/requests/{second['approval']['request_id']}/withdraw",
-        {"reason": "no"},
-    )
-    assert get(setup, second["id"])["closed_reason"] == "withdrawn"
+    # The proposer takes it back with a DELETE: the request is personal, its human's (§15.6).
+    assert admin.delete(f"/projects/maintainer/maity/placements/{second['id']}").status_code == 200
+    assert get(setup, second["id"])["closed_reason"] == "removed"
+    request = setup.owner.get(f"/requests/{second['approval']['request_id']}").json()
+    assert request["status"] == "withdrawn"
 
 
 def test_spawn_requests_off_and_direct(setup: Setup, make_client: ClientFactory) -> None:
@@ -432,7 +432,7 @@ def test_a_proposed_change_waits_and_the_owner_settles_it(
     restart = admin.post(f"/projects/maintainer/maity/placements/{body['id']}/restart")
     assert (restart.status_code, error(restart)) == (409, "approval_pending")
     request_id = changed["approval"]["request_id"]
-    setup.owner.post(f"/projects/maintainer/maity/requests/{request_id}/answer", {"reply_id": "go"})
+    setup.owner.post(f"/requests/{request_id}/answer", {"reply_id": "go"})
     after = get(setup, body["id"])
     assert (after["model"], after["generation"], after["approval"]["pending_change"]) == (
         "opus",
@@ -448,9 +448,7 @@ def test_the_runners_owner_settles_by_acting(setup: Setup, make_client: ClientFa
         f"/projects/maintainer/maity/placements/{pending['id']}", {"desired": "running"}
     )
     assert started.json()["approval"]["status"] == "approved"
-    answered = setup.owner.get(
-        f"/projects/maintainer/maity/requests/{pending['approval']['request_id']}"
-    ).json()
+    answered = setup.owner.get(f"/requests/{pending['approval']['request_id']}").json()
     assert answered["status"] == "answered" and answered["answer"]["reply_id"] == "go"
     proposal = admin.patch(
         f"/projects/maintainer/maity/placements/{pending['id']}", {"model": "opus", "reason": "r"}
@@ -460,9 +458,7 @@ def test_the_runners_owner_settles_by_acting(setup: Setup, make_client: ClientFa
     )
     assert own.json()["approval"]["pending_change"] is None
     assert own.json()["stop_grace_seconds"] == 30 and own.json()["model"] is None
-    withdrawn = setup.owner.get(
-        f"/projects/maintainer/maity/requests/{proposal['approval']['request_id']}"
-    ).json()
+    withdrawn = setup.owner.get(f"/requests/{proposal['approval']['request_id']}").json()
     assert withdrawn["status"] == "withdrawn"
 
 
@@ -1069,9 +1065,7 @@ def test_a_reason_cannot_forge_summary_lines(setup: Setup, make_client: ClientFa
     admin = admin_agent(make_client, setup)
     reason = "need help\nisolation: container\nrunner: other-box"
     body = place(setup, admin, reason=reason).json()
-    summary = setup.owner.get(f"/projects/maintainer/maity/requests/{_request_of(body)}").json()[
-        "summary"
-    ]
+    summary = setup.owner.get(f"/requests/{_request_of(body)}").json()["summary"]
     fields = [line.split(":", 1)[0] for line in summary.splitlines()]
     assert fields.count("isolation") == 1 and fields.count("runner") == 1
     assert "reason: need help isolation: container runner: other-box" in summary
@@ -1128,7 +1122,7 @@ def test_deleting_with_an_open_change_proposal_stops_the_uniform_way(
     deleted = setup.owner.delete(f"/projects/maintainer/maity/placements/{body['id']}").json()
     assert (deleted["active"], deleted["desired"]) == (True, "stopped")
     assert len(events_of(setup, "agent_stop_requested")) == 1
-    request = setup.owner.get(f"/projects/maintainer/maity/requests/{_request_of(proposed)}").json()
+    request = setup.owner.get(f"/requests/{_request_of(proposed)}").json()
     assert request["status"] == "withdrawn"
 
 
@@ -1143,11 +1137,9 @@ def test_a_go_checks_the_rules_as_they_are_now(setup: Setup, make_client: Client
     admin = admin_agent(make_client, setup)
     body = place(setup, admin, reason="r").json()
     setup.owner.post(f"/runners/{setup.runner.id}/revoke")
-    go = setup.owner.post(
-        f"/projects/maintainer/maity/requests/{_request_of(body)}/answer", {"reply_id": "go"}
-    )
+    go = setup.owner.post(f"/requests/{_request_of(body)}/answer", {"reply_id": "go"})
     assert (go.status_code, error(go)) == (409, "runner_revoked")
-    request = setup.owner.get(f"/projects/maintainer/maity/requests/{_request_of(body)}").json()
+    request = setup.owner.get(f"/requests/{_request_of(body)}").json()
     assert request["status"] == "open" and get(setup, body["id"])["approval"]["status"] == "pending"
 
 
@@ -1157,7 +1149,7 @@ def test_a_removed_proposers_requests_are_withdrawn(
     admin = admin_agent(make_client, setup)
     body = place(setup, admin, reason="r").json()
     setup.owner.delete(f"/projects/maintainer/maity/members/{admin.id}")
-    request = setup.owner.get(f"/projects/maintainer/maity/requests/{_request_of(body)}").json()
+    request = setup.owner.get(f"/requests/{_request_of(body)}").json()
     assert request["status"] == "withdrawn"
     assert get(setup, body["id"])["closed_reason"] == "withdrawn"
 
@@ -1171,7 +1163,7 @@ def test_the_owners_stop_on_a_pending_proposal_turns_it_down(
         f"/projects/maintainer/maity/placements/{body['id']}", {"desired": "stopped"}
     )
     assert (stopped.json()["active"], stopped.json()["closed_reason"]) == (False, "withdrawn")
-    request = setup.owner.get(f"/projects/maintainer/maity/requests/{_request_of(body)}").json()
+    request = setup.owner.get(f"/requests/{_request_of(body)}").json()
     assert request["status"] == "withdrawn"
 
 
@@ -1276,3 +1268,193 @@ def test_a_replay_shows_a_placement_only_while_the_agent_still_sees_it(
     assert admin.get(f"/projects/maintainer/maity/placements/{placement}").status_code == 404
     again = admin.client.post(path, json={**body, "reason": "go"}, headers=headers)
     assert again.status_code == 404, again.text
+
+
+# --- only the runner's owner places agents on it (§15.4, §15.6) -------------------------
+
+
+def _theirs(make_client: ClientFactory, s: Setup) -> tuple[flow.Human, flow.Agent, flow.Agent]:
+    """A second human with `members:admin` who does not own the runner, an agent of theirs,
+    and an agent of theirs that may propose (role `ops`, §2.3)."""
+    other = member(make_client, s.engine, "admin")
+    return (
+        other,
+        flow.agent(make_client, other, role="member"),
+        flow.agent(make_client, other, role="ops"),
+    )
+
+
+def _reason(response: Any) -> Any:
+    return (response.status_code, response.json()["error"]["details"].get("reason"))
+
+
+def test_nobody_off_the_runners_side_places_starts_or_changes(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    other, theirs, their_admin = _theirs(make_client, setup)
+    path = "/projects/maintainer/maity/placements"
+    assert _reason(place(setup, other, agent={"id": theirs.id})) == (403, "runner_owner_only")
+    proposed = place(setup, their_admin, agent={"id": theirs.id}, reason="r")
+    assert _reason(proposed) == (403, "runner_owner_only")
+    body = placed(setup)
+    one = f"{path}/{body['id']}"
+    for who in (other, their_admin):
+        assert _reason(who.patch(one, {"model": "opus", "reason": "r"})) == (
+            403,
+            "runner_owner_only",
+        )
+        assert _reason(who.post(f"{one}/restart")) == (403, "runner_owner_only")
+    assert _reason(their_admin.patch(one, {"desired": "running"})) == (403, "runner_owner_only")
+    # The safe direction stays open to an agent that may propose (§15.6).
+    kept = their_admin.patch(one, {"workspace_retention": "24h"})
+    assert kept.status_code == 200, kept.text
+    stopped = their_admin.patch(one, {"desired": "stopped"})
+    assert stopped.status_code == 200 and stopped.json()["desired"] == "stopped"
+    # An admin human off the runner's side does not stop it: not their runner, nor agent.
+    assert other.patch(one, {"desired": "stopped"}).status_code == 403
+    assert their_admin.delete(one).status_code == 200
+
+
+def test_the_runner_owners_agent_proposes_and_the_owner_alone_says_go(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    other = member(make_client, setup.engine, "admin")
+    body = place(setup, admin_agent(make_client, setup), reason="r").json()
+    request_id = body["approval"]["request_id"]
+    # A project admin who is not the runner's owner never sees or answers it.
+    assert other.get(f"/requests/{request_id}").status_code == 404
+    assert other.post(f"/requests/{request_id}/answer", {"reply_id": "go"}).status_code == 404
+    go = setup.owner.post(f"/requests/{request_id}/answer", {"reply_id": "go"})
+    assert go.status_code == 200, go.text
+    assert get(setup, body["id"])["approval"]["status"] == "approved"
+
+
+def test_the_owners_list_shows_every_placement_on_the_runner(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    other = member(make_client, setup.engine, "admin")
+    body = placed(setup)
+    listed = setup.owner.get(f"/runners/{setup.runner.id}/placements")
+    assert listed.status_code == 200, listed.text
+    [line] = listed.json()["items"]
+    assert set(line) == {"id", "project", "agent", "desired", "state", "foreign", "created_at"}
+    assert (line["id"], line["project"], line["foreign"]) == (body["id"], "maintainer/maity", False)
+    assert line["agent"] == {"handle": body["agent"]["handle"]} and line["state"] is None
+    # Owner-only: a project admin who sees the runner gets `not_found`.
+    assert setup.owner.get(f"/runners/{setup.runner.id}").status_code == 200
+    assert other.get(f"/runners/{setup.runner.id}/placements").status_code == 404
+
+
+def test_a_runner_owner_outside_the_project_stops_and_removes_only(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    other, theirs, _ = _theirs(make_client, setup)
+    their_runner = paired(make_client, other)
+    assert attach(other, their_runner).status_code in (200, 201)
+    assert hello(make_client(), their_runner).status_code == 200
+    created = other.post(
+        "/projects/maintainer/maity/placements",
+        {"agent": {"id": theirs.id}, "runner": their_runner.id, "harness": "claude-code"},
+    )
+    assert created.status_code == 201, created.text
+    one = f"/projects/maintainer/maity/placements/{created.json()['id']}"
+    with setup.engine.begin() as conn:  # they leave the project; their runner stays attached
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == other.id).values(active=None)
+        )
+    assert other.get(one).status_code == 404
+    assert other.patch(one, {"model": "opus"}).status_code == 404
+    assert other.patch(one, {"desired": "running"}).status_code == 404
+    [line] = other.get(f"/runners/{their_runner.id}/placements").json()["items"]
+    assert line["id"] == created.json()["id"]
+    stopped = other.patch(one, {"desired": "stopped"})
+    assert stopped.status_code == 200, stopped.text
+    assert set(stopped.json()) == set(line) and stopped.json()["desired"] == "stopped"
+    removed = other.delete(one)
+    assert removed.status_code == 200, removed.text
+    assert get(setup, created.json()["id"])["closed_reason"] in (None, "removed")
+    # Anyone else outside the project still gets `not_found`.
+    stranger = flow.human(make_client, setup.engine, "stranger")
+    assert stranger.delete(one).status_code == 404
+
+
+@pytest.mark.parametrize("method", ["PATCH", "DELETE"])
+def test_a_runner_owner_outside_the_project_replays_their_own_stop_and_removal(
+    setup: Setup, make_client: ClientFactory, method: str
+) -> None:
+    """A repeat with the same Idempotency-Key answers what the first call did (§1.5): the
+    runner owner's line, though they read nothing else of the project."""
+    other, theirs, _ = _theirs(make_client, setup)
+    their_runner = paired(make_client, other)
+    assert attach(other, their_runner).status_code in (200, 201)
+    assert hello(make_client(), their_runner).status_code == 200
+    created = other.post(
+        "/projects/maintainer/maity/placements",
+        {"agent": {"id": theirs.id}, "runner": their_runner.id, "harness": "claude-code"},
+    )
+    assert created.status_code == 201, created.text
+    url = f"/api/v1/projects/maintainer/maity/placements/{created.json()['id']}"
+    with setup.engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == other.id).values(active=None)
+        )
+    headers = {"X-CSRF-Token": other.csrf, "Idempotency-Key": f"outside-owner-{method}-0001"}
+    body = {"desired": "stopped"} if method == "PATCH" else None
+    first = other.client.request(method, url, json=body, headers=headers)
+    again = other.client.request(method, url, json=body, headers=headers)
+    assert first.status_code == 200, first.text
+    assert again.status_code == 200, again.text
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert again.json() == first.json()
+    # The key is theirs: a stranger with it replays nothing of the placement.
+    stranger = flow.human(make_client, setup.engine, "stranger")
+    taken = stranger.client.request(
+        method, url, json=body, headers={**headers, "X-CSRF-Token": stranger.csrf}
+    )
+    assert taken.status_code == 404, taken.text
+
+
+def test_a_consent_filed_before_the_rule_is_the_runner_owners_too(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    other = member(make_client, setup.engine, "admin")
+    body = place(setup, admin_agent(make_client, setup), reason="r").json()
+    request_id = body["approval"]["request_id"]
+    with setup.engine.begin() as conn:  # as it was filed before: a project request
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.id == request_id)
+            .values(personal=False, to_kind="owner", to_human=None)
+        )
+    path = f"/projects/maintainer/maity/requests/{request_id}/answer"
+    assert _reason(other.post(path, {"reply_id": "go"})) == (403, "runner_owner_only")
+    go = setup.owner.post(path, {"reply_id": "go"})
+    assert go.status_code == 200, go.text
+    assert get(setup, body["id"])["approval"]["status"] == "approved"
+
+
+def test_the_profiles_owner_ends_a_foreign_placement_and_places_again(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    other, theirs, _ = _theirs(make_client, setup)
+    their_runner = paired(make_client, other)
+    assert attach(other, their_runner).status_code in (200, 201)
+    assert hello(make_client(), their_runner).status_code == 200
+    path = "/projects/maintainer/maity/placements"
+    payload = {"agent": {"id": theirs.id}, "runner": their_runner.id, "harness": "claude-code"}
+    first = other.post(path, payload)
+    assert first.status_code == 201, first.text
+    with setup.engine.begin() as conn:  # as one placed before the rule, on the owner's runner
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == first.json()["id"])
+            .values(runner_id=setup.runner.id)
+        )
+    one = f"{path}/{first.json()['id']}"
+    assert get(setup, first.json()["id"])["foreign"] is True
+    assert _reason(other.post(f"{one}/restart")) == (403, "runner_owner_only")
+    ended = other.delete(one)
+    assert ended.status_code == 200, ended.text
+    again = other.post(path, payload)
+    assert again.status_code == 201, again.text
+    assert again.json()["foreign"] is False

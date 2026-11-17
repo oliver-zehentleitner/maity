@@ -279,6 +279,8 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         "closed_reason": placement.closed_reason,
         "created_by": placement.created_by,
         "proposed_by": _principal(conn, placement.proposed_by),
+        # Placed by someone but the runner's owner, before only its owner could (§15.5).
+        "foreign": profile_owner(conn, placement) != runner.owner_id,
         "created_at": ts(placement.created_at),
         "updated_by": placement.updated_by,
         "updated_at": ts(placement.updated_at),
@@ -290,6 +292,22 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         found["session_hint"] = placement.session_hint
         found["logs_hint"] = f"maity runner logs {placement.id}"
     return found
+
+
+def owner_line(conn: Connection, placement: Any) -> dict[str, Any]:
+    """The runner owner's line (§15.3): where an agent runs on their runner and who placed
+    it, nothing else of the placement or its project, since the owner need not be a
+    member there. It is what the runner on the owner's machine holds already."""
+    runner = _runner(conn, placement.runner_id)
+    return {
+        "id": placement.id,
+        "project": namespace.name_of(conn, placement.project_id),
+        "agent": {"handle": _agent(conn, placement)["handle"]},
+        "desired": placement.desired,
+        "state": (placement.reported or {}).get("state"),
+        "foreign": profile_owner(conn, placement) != runner.owner_id,
+        "created_at": ts(placement.created_at),
+    }
 
 
 def workspace_outcome(placement: Any) -> dict[str, Any] | None:
