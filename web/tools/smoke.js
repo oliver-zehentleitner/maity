@@ -5095,7 +5095,37 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-maintainer")
     : p === "/projects/maintainer/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.map((x) => Object.assign({}, x, x.kind === "agent" ? { owner_id: "hum-other" } : {})), next_cursor: null })) : plGetAll(p));
   await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
-  expect(plBox() && btn(plRow("plc-0003"), "Restart"), "placements: one's own runner gives a project admin the actions, also over another owner's agent");
+  expect(plBox() && btn(plRow("plc-0003"), "Restart") && btn(plRow("plc-0003"), "Remove"),
+    "placements: one's own runner gives a project admin the actions, Remove too, also over another owner's agent");
+  // One's own agent, placed by oneself (not `foreign`) on a runner someone else owns (tsk-44x5grp6fcsq): the
+  // profile's owner may DELETE it (§15.6) to start it elsewhere, so Remove is offered; Start and Restart stay
+  // the runner's side. Remove asks first; declined it sends nothing, confirmed it is one DELETE.
+  {
+    const ownDels = [];
+    const ownDel = win.Maity.api.del, ownConfirm = win.confirm;
+    let ownAsked = null;
+    win.Maity.api.del = (p) => { ownDels.push(p); return Promise.resolve({}); };
+    win.Maity.api.getAll = (p) => (p === "/runners" ? plRunner("hum-other")
+      : p === "/projects/maintainer/maity/placements" ? plGetAll(p).then(plNoHints) : plGetAll(p));
+    win.Maity.api.get = plGet;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+    const ownRun = plRow("plc-0001"), ownOther = plRow("plc-0002");
+    const shown = [ownRun, ownOther].map((li) => li.querySelectorAll("button").map((b) => b.textContent));
+    win.confirm = (q) => { ownAsked = q; return false; };
+    btn(plRow("plc-0001"), "Remove").click(); for (let k = 0; k < 4; k++) await tick();
+    const declined = ownDels.length;
+    win.confirm = () => true;
+    btn(plRow("plc-0002"), "Remove").click(); for (let k = 0; k < 6; k++) await tick();
+    win.confirm = ownConfirm; win.Maity.api.del = ownDel;
+    // Both are wanted running by now (the restarts above), so each row shows Stop beside Remove.
+    expect(JSON.stringify(shown) === JSON.stringify([["Stop", "Remove"], ["Stop", "Remove"]])
+      && btn(ownRun, "Remove").getAttribute("aria-label") === "Remove Agent B"
+      && ownAsked === "Remove Agent B from this runner? The agent stops there and the placement closes; its owner can place it again on a runner of their own."
+      && declined === 0 && JSON.stringify(ownDels) === JSON.stringify(["/projects/maintainer/maity/placements/plc-0002"]),
+      "placements: one's own agent, not foreign, on another's runner offers Stop and Remove, no Start or Restart; Remove asks, then one DELETE "
+        + JSON.stringify({ shown, ownAsked, ownDels }));
+    win.Maity.api.getAll = plGetAll;
+  }
   // No agent yet: the section is still there for a placement that creates its profile.
   win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/members" ? plGet(p).then((r) => Object.assign({}, r, { items: r.items.filter((x) => x.kind !== "agent") })) : plGet(p));
   win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/members" ? plGetAll(p).then((r) => ({ items: r.items.filter((x) => x.kind !== "agent"), next_cursor: null })) : plGetAll(p));
