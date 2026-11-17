@@ -828,8 +828,11 @@ RELATED_RULE_KINDS = frozenset({"state_changed", "policy_changed", "rules_change
 # by `member:`: related only when they are about the reader itself.
 MEMBER_STATUS_KINDS = frozenset({"member_joined", "member_updated", "member_availability_changed"})
 # Audience tokens the hub resolves into a private list of members and delivers only to a
-# reader on it (§8.2): an event that reached the reader by one is meant for it.
+# reader on it (§6.4, §8.2): `watchers:<task id>` and a card's `restricted:<task id>`. An
+# event that reached the reader by one is meant for it. `restricted:set` (a change of the
+# restricted-access set, no card) wakes nobody and is not counted.
 PRIVATE_LIST_TOKENS = ("watchers:", "restricted:")
+NOT_A_CARD_LIST = "restricted:set"
 
 
 def _related(
@@ -841,14 +844,16 @@ def _related(
     `mentions` name the reader; (d) an event about the reader, its `subject` the member or its
     `payload.member_id`; (e) an event whose audience names the reader itself: `member:<id>`,
     this instance's `instance:` token (any of the agent's with no instance and no bridge, as
-    `_meant_for`), or a private list the hub delivers only to readers on it
-    (PRIVATE_LIST_TOKENS: a card's watchers, and one further such list); except
-    a presence or profile change (MEMBER_STATUS_KINDS) about another member. Of the audience
-    tokens the hub writes, the rest (`held:` and `waiting:`, which reach the agent's owner,
-    never the agent, and `runner:`) never deliver an event to the agent by themselves, so
-    anything else reached the reader only through `all`, a `role:` or `trust:` token or
-    another instance's token, and is read past. A bridge (`carried`) reads for the served
-    agent, which has no instance there."""
+    `_meant_for`), or a card's private list the hub delivers only to readers on it
+    (`watchers:<task id>`, `restricted:<task id>`; not `restricted:set`).
+
+    Read past, then: a presence or profile change (MEMBER_STATUS_KINDS) about another member
+    by that rule, even when it names the reader by `member:` as coordinator, boss or owner;
+    and any other event whose audience reaches the reader only through `all`, a `role:` or
+    `trust:` token, or another instance's token of its agent (`instance:<id>#<other>`). The
+    hub's remaining tokens (`held:` and `waiting:`, which reach the agent's owner, never the
+    agent, `runner:`, `restricted:set`) deliver nothing to the agent's wait by themselves. A
+    bridge (`carried`) reads for the served agent, which has no instance there."""
     if not member:
         return True  # nobody to compare with: keep everything rather than guess
     kind = event.get("kind")
@@ -873,7 +878,7 @@ def _related(
     own = f"instance:{member}#"
     return any(
         token == f"member:{member}"
-        or token.startswith(PRIVATE_LIST_TOKENS)
+        or (token.startswith(PRIVATE_LIST_TOKENS) and token != NOT_A_CARD_LIST)
         or (
             token.startswith(own)
             and (token == f"{own}{instance}" or (instance is None and not carried))
@@ -1243,6 +1248,10 @@ def cmd_wait(args: argparse.Namespace) -> int:
                 query=[("after", str(cursor)), ("wait", str(poll)), *served],
                 timeout=read_timeout,
             )
+            if not isinstance(page, dict):
+                # An empty answer or one that is no object (headers cut, a proxy's page) is
+                # no answer from the hub: retried as a lost connection, the outage clock kept.
+                raise hub.HubError("the hub's answer was no page of events")
         except hub.HubError as exc:
             until = hub.maintenance_until(exc)
             if until is not None:
@@ -4933,11 +4942,12 @@ def build_parser() -> argparse.ArgumentParser:
         "with --keep-cursor; with --kind, both must match). Related: a message or request "
         "event; a project state, policy or rules change; an event that mentions you or is "
         "about you; one whose audience names you (member:, this instance's instance:, or a "
-        "private list the hub delivers only to readers on it, such as a card's watchers:) "
-        "unless it is another member's presence or profile change. "
-        "Skipped: everything else, such as what reached you only through all, a role or "
-        "trust token (a task_reported to role:reviewer too), and another member's "
-        "member_availability_changed, member_updated or member_joined",
+        "card's private list: watchers:<card> or restricted:<card>) unless it is another "
+        "member's presence or profile change. Skipped: another member's "
+        "member_availability_changed, member_updated or member_joined, even when it names "
+        "you by member: as coordinator, boss or owner; and anything that reached you only "
+        "through all, a role or trust token or another instance's instance: token (a "
+        "task_reported to role:reviewer too)",
     )
     p.add_argument(
         "--keep-cursor",

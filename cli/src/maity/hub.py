@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import re
@@ -290,8 +291,8 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
         code = error.get("code", code)
         message = error.get("message", message)
         details = error.get("details") or {}
-    except (ValueError, OSError):
-        pass
+    except (ValueError, OSError, http.client.HTTPException):
+        pass  # a body cut short (IncompleteRead) leaves the status to speak for itself
     details = details if isinstance(details, dict) else {}
     # The hub's words reach a terminal: one line each, every escape shown, never acted on.
     if isinstance(code, str):
@@ -679,6 +680,12 @@ class Client:
                 raise err from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise HubError(f"cannot reach {self.base}: {getattr(exc, 'reason', exc)}") from exc
+            except http.client.HTTPException as exc:
+                # The answer broke off: a status line or a body cut short (BadStatusLine,
+                # IncompleteRead). A lost connection like any other, with no status and no
+                # code: `wait` retries it, every other command fails once with this line.
+                shown = onboarding.inline(type(exc).__name__)
+                raise HubError(f"{self.base} broke off its answer ({shown})") from exc
         raise AssertionError("unreachable")
 
 

@@ -40,7 +40,7 @@ KEPT = {
     ),
     "my card's pull request merged": _event("link_observed", ["all", f"member:{ME}"]),
     "a card I watch": _event("task_updated", ["watchers:tsk-1"]),
-    "a further private list the hub delivers to me": _event(
+    "a card's restricted list": _event(
         "restricted_changed", ["restricted:tsk-1"], payload={"task_id": "tsk-1"}
     ),
     "a report of mine stalled, to me as its boss": _event(
@@ -60,6 +60,9 @@ SKIPPED = {
     "a report to the reviewers": _event("task_reported", ["role:reviewer", "trust:admin"]),
     "a sibling instance's card": _event("task_claimed", [f"instance:{ME}#other"]),
     "a project update": _event("project_updated", ["all"]),
+    "a change of the restricted-access set": _event(
+        "restricted_changed", ["restricted:set"], payload={"task_id": None}
+    ),
 }
 
 
@@ -111,11 +114,11 @@ def test_wait_related_acknowledges_what_it_reads_past_and_waits_on(
     assert state.load_state(joined)["cursor"] == 11
 
 
-def test_wait_related_returns_an_event_of_a_private_list(
+def test_wait_related_returns_an_event_of_a_cards_restricted_list(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An event the hub delivered by a private list (PRIVATE_LIST_TOKENS) is printed, not
-    acknowledged unseen."""
+    """A card's `restricted_changed`, delivered by `restricted:<task id>` alone, is printed,
+    not acknowledged unseen."""
     fake.events += [
         _event("link_observed", ["all"], 17),
         _event("restricted_changed", ["restricted:tsk-1"], 18, payload={"task_id": "tsk-1"}),

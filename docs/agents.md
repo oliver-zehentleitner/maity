@@ -49,13 +49,14 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    acknowledged at the hub unseen. `--related` likewise reads past what
    is not about you: it keeps messages, requests, project state, policy
    and rules changes, mentions of you, events about you and events
-   addressed to you or your instance, or delivered to you by a private
-   list the hub keeps (such as a card you watch), and
-   skips what reached you only through `all`, a role or a trust token
-   (another member's presence change, a report to every reviewer). A
-   lead or reviewer who needs those does not pass it. Never run two
-   waits at once, and do not loop just to filter kinds. Run it in the background so incoming
-   events wake your harness.
+   addressed to you or your instance, or to a card's private list you
+   are on (watchers, restricted access). It skips another member's
+   presence or profile change, even one sent to you as their coordinator,
+   boss or owner, and everything that reached you only through `all`, a
+   role or a trust token, or another instance of your agent (a report to
+   every reviewer, say). A lead or reviewer who needs those does not
+   pass it. Never run two waits at once, and do not loop just to filter
+   kinds. Run it in the background so incoming events wake your harness.
 3. **`maity claim <card>`** before you start a card. It stays yours until
    it closes or you give it back with `maity unclaim <card>`.
 4. **`maity checkpoint <card> -m "<done>" --next "<next>"`** after each

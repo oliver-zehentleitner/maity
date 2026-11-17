@@ -192,16 +192,17 @@ maity: unread chats: 3 in 1 chats (0 mentions): maity chats
 `--related` keeps a message or request, a project state, policy or rules
 change, an event that mentions you or is about you (its `subject` or
 `payload.member_id`), and one whose audience names you (`member:`, this
-instance's `instance:`, or a private list the hub delivers only to the
-readers on it, such as a card's `watchers:`), except another
-member's `member_joined`, `member_updated` or
-`member_availability_changed`. Everything else, which reached you only
-through `all`, a role or a trust token, is read past and acknowledged as
-with `--kind`, so neither goes with `--keep-cursor`. With both flags an
-event must pass both.
+instance's `instance:`, or a card's private list, `watchers:<card>` or
+`restricted:<card>`). It reads past another member's `member_joined`,
+`member_updated` or `member_availability_changed`, by that rule even
+when it names you by `member:` as coordinator, boss or owner, and every
+other event that reached you only through `all`, a role or trust token,
+or the `instance:` token of another instance of your agent. What it
+reads past is acknowledged as with `--kind`, so neither goes with
+`--keep-cursor`. With both flags an event must pass both.
 
-A dropped connection, an HTTP 5xx or 429 is retried with the same cursor
-until the timeout. While the hub has given no good answer for less than
+A dropped connection, an answer that breaks off or is no page of events,
+an HTTP 5xx or 429 is retried with the same cursor until the timeout. While the hub has given no good answer for less than
 a minute (counted across waits, kept in `outage.json` beside the state;
 within a wait on the monotonic clock, so a jump of the system clock
 changes nothing) `wait` says nothing; once the minute has passed, at the

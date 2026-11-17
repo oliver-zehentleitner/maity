@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import socket
+import threading
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -805,3 +808,124 @@ def test_a_failed_resume_keeps_the_last_successful_hint(
     fake.routes[("POST", "/api/v1/me/resume")] = lambda seen: answer
     assert cli.main(["resume"]) != cli.EXIT_OK
     assert state.load_state(joined)["wait_timeout"] == 120
+
+
+class RawHub:
+    """A hub on a loopback socket, inside the test, that answers each connection with the
+    next scripted reply as raw bytes and closes it, so an answer can break off where
+    urllib and http.client really see it: a status line, headers or a body cut short.
+    After the script, `last` is sent to every further request."""
+
+    def __init__(self, replies: list[bytes], last: bytes) -> None:
+        self.replies = list(replies)
+        self.last = last
+        self.requests: list[str] = []
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen()
+        self.url = f"http://127.0.0.1:{self.sock.getsockname()[1]}"
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    def _serve(self) -> None:
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            with conn:
+                data = b""
+                while b"\r\n\r\n" not in data:
+                    chunk = conn.recv(65536)
+                    if not chunk:
+                        break
+                    data += chunk
+                self.requests.append(data.split(b"\r\n", 1)[0].decode("latin-1"))
+                conn.sendall(self.replies.pop(0) if self.replies else self.last)
+                conn.shutdown(socket.SHUT_WR)
+
+    def close(self) -> None:
+        # A close alone does not wake a thread blocked in accept() on Linux, and a later test's
+        # socket can reuse the descriptor: shut it down first, then wait for the thread.
+        try:
+            self.sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        self.sock.close()
+        self.thread.join(timeout=5)
+        assert not self.thread.is_alive()
+
+
+def _ok(body: Any) -> bytes:
+    data = json.dumps(body).encode()
+    head = f"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {len(data)}\r\n"
+    return head.encode() + b"\r\n" + data
+
+
+@pytest.fixture
+def raw(joined: Path) -> Iterator[Any]:
+    """`raw(replies, last)` starts a RawHub and points the joined clone at it."""
+    hubs: list[RawHub] = []
+
+    def start(replies: list[bytes], last: bytes) -> RawHub:
+        made = RawHub(replies, last)
+        hubs.append(made)
+        state.save_state(joined, {**state.load_state(joined), "hub": made.url})
+        return made
+
+    yield start
+    for made in hubs:
+        made.close()
+
+
+BROKEN = {
+    "body cut, Content-Length": b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+    b'Content-Length: 100\r\n\r\n{"items": [',
+    "body cut, chunked": b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+    b'Transfer-Encoding: chunked\r\n\r\n40\r\n{"items": [',
+    "status line cut": b"HTTP/1.1 20",
+    "a 503's body cut, chunked": b"HTTP/1.1 503 Service Unavailable\r\n"
+    b'Transfer-Encoding: chunked\r\n\r\n40\r\n{"error": ',
+    "headers cut": b"HTTP/1.1 200 OK\r\nContent-Ty",
+    "an empty 200": b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n",
+    "a 200 that is no object": _ok([]),
+}
+
+
+@pytest.mark.parametrize("broken", BROKEN.values(), ids=BROKEN.keys())
+def test_an_answer_that_breaks_off_is_retried_from_the_same_cursor(
+    joined: Path, clock: Clock, raw: Any, capsys: pytest.CaptureFixture[str], broken: bytes
+) -> None:
+    state.save_state(joined, {**state.load_state(joined), "cursor": 17})
+    page = {"items": [{"seq": 18, "kind": "message"}], "cursor": 18}
+    served = raw([broken], _ok(page))
+    assert cli.main(["wait", "--timeout", "60"]) == cli.EXIT_OK
+    captured = capsys.readouterr()
+    assert [e["seq"] for e in json.loads(captured.out)] == [18]
+    events = [r for r in served.requests if "/events?" in r]
+    assert len(events) == 2 and all("after=17&" in r for r in events)
+    assert "connection lost" not in captured.err and "hub answered" not in captured.err
+    assert state.load_state(joined)["cursor"] == 18
+
+
+def test_a_page_that_is_no_object_keeps_the_outage_clock(
+    joined: Path, clock: Clock, raw: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A 200 that is no page is no answer: it neither ends a running outage (no recovery line,
+    the clock kept) nor is taken as events."""
+    clock_file = {"since": "2026-11-17T09:59:30Z", "last": "2026-11-17T09:59:59Z"}
+    state.save_state(joined, {**clock_file, "reported": True}, cli.OUTAGE_FILE)
+    raw([], _ok([]))
+    assert cli.main(["wait", "--timeout", "10"]) == cli.EXIT_TIMEOUT
+    captured = capsys.readouterr()
+    assert captured.out == "" and "answering again" not in captured.err
+    assert state.load_state(joined, cli.OUTAGE_FILE)["since"] == "2026-11-17T09:59:30Z"
+
+
+def test_another_command_fails_once_on_an_answer_that_breaks_off(
+    joined: Path, raw: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    served = raw([], BROKEN["body cut, Content-Length"])
+    assert cli.main(["messages"]) == cli.EXIT_ERROR
+    assert "broke off its answer (IncompleteRead)" in capsys.readouterr().err
+    assert len(served.requests) == 1
