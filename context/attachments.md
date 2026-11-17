@@ -204,18 +204,22 @@ area.
 **Source:** card tsk-qa9r26kb2teq; the maintainer's note of 2026-11-05 on the card (every limit has both sources, the environment variable and the admin field) and his decisions through the lead on 2026-11-07: requests req-h185j92my7zq (default and range), req-a4j6x89a679z (names, "no legacy"), req-xhz9dwn5z1a8 (wording); `docs/api.md` §8.7 and §16.5
 **Revisit when:** plans (§2.7) set storage per account or per plan, or a project's owner needs a quota of their own below the instance's value
 **See:** attachments.md#the-instance-caps-all-attachments-together-checked-under-the-projects-lock-and-without-numbers-for-the-member — 67adfb38-efa6-4636-986c-33fad578a128 — as of 2026-11-07
+**See:** scope.md#the-operator-lifts-or-lowers-a-limit-for-one-project-or-one-account-the-hubs-own-bounds-stay — 7d8669c6-3dd9-4b4f-a257-8a9135cf1141 — as of 2026-11-17
 
 The bytes one project may store are the limit `max_attachment_storage_per_project`
 in the admin section Limits (§16.5), with the environment variable
 `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` under the same source rules as every
-other limit: a set variable wins and the field shows it read-only, else the
-admin's value, else the default of 1 GiB. The range is 1 MiB to 1 PiB, or
+other limit. For the instance's value — and since 2026-11-17 only for it — a set
+variable wins and the field shows it read-only, else the admin's value, else the
+default of 1 GiB. The range is 1 MiB to 1 PiB, or
 `unlimited`. The refusal stays `attachment_quota` with `scope: "project"` and its
 numbers, and lowering the value deletes nothing.
-Since 2026-11-17 the instance admin may set another value for one project
-(§16.5.1, not built yet); that override comes before the instance's value from
-any of these sources, as recorded in
-scope.md#the-operator-lifts-or-lowers-a-limit-for-one-project-or-one-account-the-hubs-own-bounds-stay.
+Changed on 2026-11-17 (the lead's decision on card tsk-spmhjqm7szag): the
+instance admin may set another value for one project (§16.5.1, not built yet),
+and that override comes before the instance's value from any of these sources,
+a set variable included. "The variable wins" no longer holds for such a
+project; it holds for the instance's value, which every other project takes
+(entry 7d8669c6).
 
 **Reason:** the operator sets every other limit in the admin area, and this one
 was the only one that needed a restart and a deployment change. The name
