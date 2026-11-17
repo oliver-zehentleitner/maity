@@ -418,8 +418,8 @@ def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
         )
     if grant.pull_requests:
         left.append(
-            "pull_requests is not given to codex: its `maity` runs inside its sandbox, "
-            "where `maity gh` is not meant to run, so `maity gh` refuses for it"
+            "pull_requests is not given to codex: its `maity` runs inside its sandbox, and "
+            "the runner sets up `maity gh` only for a `maity` outside it"
         )
     return left
 

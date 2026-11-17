@@ -1064,8 +1064,10 @@ check` warns when a grant with `pull_requests` lists it). A gh entry in
 `allow` is not applied: `maity runner check` warns about it and the
 runner still starts. With its sandbox on, a Codex placement starts
 without the grant's `allow` list and `pull_requests`: Codex has no
-command allowlist, and its `maity` runs inside its sandbox, where
-`maity gh` is not meant to run, so `maity gh` refuses for it. With its
+command allowlist, and its `maity` runs inside its sandbox, while the
+runner sets up `maity gh` only for a `maity` outside it, so the runner
+gives a Codex placement no pull-request grant. It does not enforce that
+a Codex agent opens none. With its
 sandbox off, such a grant refuses the Codex start. `maity runner check`
 and the runner's log at each start name what a Codex placement does not
 get.
@@ -1240,8 +1242,8 @@ project's own harness configuration is never loaded:
   in the repository is not loaded. Codex has no per-command allowlist, so
   it is advertised as `confinement: sandbox`. A repository's `allow`
   list is not applied to Codex (every command runs in its sandbox,
-  listed or not) and `pull_requests` is not given to it (`maity gh`
-  refuses there); `maity runner check` names both. Without its sandbox,
+  listed or not) and `pull_requests` is not given to it (the runner sets
+  up no pull-request grant for it, without enforcing that); `maity runner check` names both. Without its sandbox,
   a grant with either part refuses the Codex start.
 - **opencode** (built, not offered yet: a configuration that names it is
   refused until the maintainer decides) runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a

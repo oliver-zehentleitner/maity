@@ -821,7 +821,7 @@ def test_without_pull_requests_the_record_is_empty_and_the_prompt_silent(
 def test_codex_gets_no_pull_requests_record_and_no_word_of_maity_gh(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Codex's `maity` runs inside its sandbox, where `maity gh` is not meant to run: the
+    """Codex's `maity` runs inside its sandbox; `maity gh` is set up only outside one: the
     grant's pull requests are left out for it (adapters.codex_left_out)."""
     fake_gh(tmp_path, monkeypatch)
     placed = {**PLACEMENT, "workspace": {"repository": REPOSITORY}}
@@ -832,8 +832,8 @@ def test_codex_gets_no_pull_requests_record_and_no_word_of_maity_gh(
     assert adapters.codex_left_out(PULLS) == [
         "allow 'make test' is not applied to codex: Codex has no command allowlist, so every"
         " command runs in its sandbox, listed or not (refused without the sandbox)",
-        "pull_requests is not given to codex: its `maity` runs inside its sandbox, where"
-        " `maity gh` is not meant to run, so `maity gh` refuses for it",
+        "pull_requests is not given to codex: its `maity` runs inside its sandbox, and the"
+        " runner sets up `maity gh` only for a `maity` outside it",
     ]
     assert adapters.codex_left_out(config.RepositoryGrant(network=("pypi.org",))) == []
 

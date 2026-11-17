@@ -1903,7 +1903,7 @@ def test_codex_starts_without_the_grant_parts_it_cannot_enforce(
     world: Any, grant: config.RepositoryGrant, said: list[str]
 ) -> None:
     """Codex has no command allowlist, and its `maity` runs inside its sandbox, where
-    `maity gh` is not meant to run: with its sandbox on it starts without those parts, named
+    `maity gh` is set up only outside it: with its sandbox on it starts without those parts, named
     at each start, instead of being refused (cli/context/runner.md)."""
     sup, _, reports, _, logs = world
     sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": grant})

@@ -540,9 +540,10 @@ runner's profile, and one reviewer saw that switch the sandbox off.
 With its sandbox on, a Codex placement starts on a repository whose
 grant has an `allow` list or `pull_requests`. It does not get those two
 parts (`adapters.codex_left_out`): the `allow` list is not applied, so
-every command runs in Codex's sandbox, listed or not, and the
-pull-request record stays empty, so `maity gh` refuses as without the
-grant. With its sandbox off (`require_sandbox` unset, so the start is not
+every command runs in Codex's sandbox, listed or not, and the runner
+writes no pull-request grant for it (an empty record, no word of `maity
+gh` in its prompt), as without the grant; it does not enforce that a
+Codex agent opens no pull request. With its sandbox off (`require_sandbox` unset, so the start is not
 refused for the sandbox alone), such a grant refuses the start
 (`harness_refused`), as every such grant did before.
 `maity runner check` warns about each part for every such repository
@@ -3004,8 +3005,9 @@ forge now refuses, so every plain `gh pr view` failed on such a runner (the E2E 
 `maity runner check` warns about it and names `pull_requests`, and the
 runner still starts. Codex gets neither `allow` nor `pull_requests`
 (79837674-493a-43dd-8670-e8b163309bca): it cannot honour a command
-allowlist, and its `maity` runs inside its sandbox, where `maity gh` is
-not meant to run. Without its sandbox, such a grant refuses the start.
+allowlist, and its `maity` runs inside its sandbox, while `maity gh` is
+set up only for a `maity` outside it. Without its sandbox, such a grant
+refuses the start.
 
 **Reason:** before this, an agent could push but could not open its pull
 request, and the card's test needs it to. The forge login on the machine
