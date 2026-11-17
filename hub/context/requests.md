@@ -60,9 +60,9 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the code at main 43e2c728 (`routes/requests.py` and every module that files a personal request, found by its `file_*` calls and `to_kind` writes; `tables.py` `to_shape`, `personal_shape`, `scope_known`); review A977 of #1916 (the two jour fixe shapes); docs/api.md §7 "Personal requests", §6.2, §6.26; the clean-up card tsk-jy01skphpb6y; the `scope_known` CHECK came with commit aec28415 (organisations, part 2), `to_kind: "human"` with 49263526 (a human's preferences, §19.4)
+**Source:** the code at main 43e2c728 (`routes/requests.py` and every module that files a personal request, found by its `file_*` calls and `to_kind` writes; `tables.py` `to_shape`, `personal_shape`, `scope_known`); review A977 of #1916 (the two jour fixe shapes); docs/api.md §7 "Personal requests", §6.2, §6.26; the clean-up card tsk-jy01skphpb6y; the lead's decision of 2026-11-17 on the §7 withdrawal wording (card tsk-hbehkvr07s9s); the `scope_known` CHECK came with commit aec28415 (organisations, part 2), `to_kind: "human"` with 49263526 (a human's preferences, §19.4)
 **See:** requests.md#a-personal-request-is-a-request-row-with-the-askers-project-hidden-from-every-project-route-but-the-askers — a753a0f6-a606-43dd-86db-3431a1679721 — as of 2026-11-17
-**Revisit when:** a personal request needs a table of its own, a request without a project gets an asker or events, or §7's withdrawal bullet and §6.2/§6.26 are brought into one wording
+**Revisit when:** a personal request needs a table of its own, or a request without a project gets an asker or events
 
 A personal request is still an ordinary `request` row with `personal` true, tied by the
 `personal_shape` CHECK to one of two addressings, which only the hub writes:
@@ -102,7 +102,8 @@ The project's request routes:
   even to the agent in `asked_by`; the asker's `answer` is `self_answer`, everyone
   else's `not_found`;
 - `withdraw` is `not_found`, except for: a cross-owner `reports_to` pair and a bridge's
-  consents, by their own rule (`cross_owner.may_withdraw`, `bridges.may_withdraw`); a
+  consents, by their own rule (`cross_owner.may_withdraw`, §6.2; `bridges.may_withdraw`,
+  §2.3); a
   transfer into an organisation, by the member who started it (§6.26); and a request for
   a change of another owner's agent, by its asker (`_foreign_asker`, §6.2);
 - `inbox.may_answer` is false.
@@ -129,9 +130,12 @@ project.
   project query would need a guard; the `scope_known` CHECK confines the null to the
   shapes above instead. Whether that was weighed when they came in: unknown.
 
-The contract's §7 withdrawal bullet still says `not_found` "for every caller" on the
-project route, while §6.2 and §6.26 give the exceptions the code implements; which
-wording is meant to hold is open.
+The contract's §7 once said a personal request is `not_found` "for every caller" on the
+project withdraw route, while §6.2, §2.3 and §6.26 gave the exceptions the code
+implements. Settled by the lead on 2026-11-17 (card tsk-hbehkvr07s9s): the docs follow the
+code. §7 now names the four exceptions above and points to §6.2 (the pair and another
+owner's agent), §2.3 (the bridge) and §6.26 (the transfer); §6.2 "Another owner's agent"
+states the asker's withdrawal itself.
 
 ## A question blocks its card only when it says it waits; `while_open`'s default follows the class
 

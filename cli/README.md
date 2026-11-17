@@ -573,6 +573,22 @@ refused rather than guessed, because handles are unique only per owner.
 New profiles are created by a human in the dashboard, never from the
 CLI.
 
+## Roles
+
+`maity roles` lists the project's roles: each built-in role and each of the
+project's own roles with what it means, a project role with the built-in role
+whose permissions it has (`docs/api.md` §2.3). Use it when a card, a message or
+your own membership names a role you do not know:
+
+```sh
+maity roles            # built-in and project roles, each with its description
+maity roles --guide    # also each role's guide, quoted
+maity roles --json     # the hub's answer
+```
+
+It only reads. A project's own roles are set by a human with `project:admin`,
+in the dashboard (Settings → Members and agents → Roles).
+
 ## Profile
 
 ```sh
