@@ -1629,8 +1629,9 @@ a.bell:hover, .menu-button.bell:hover { border-color: var(--accent); }
 .page-head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-inline-start: auto; }
 .page-head-actions :is(button, a.button) { min-height: 40px; display: inline-flex; align-items: center; }
 /* A button the page hides stays hidden (the rule above would show it): Join an agent until its
-   panel is read, New agent profile while its form is open. */
-.page-head-actions [hidden] { display: none; }
+   panel is read, New agent profile while its form is open. As specific as that rule and after it:
+   :is() counts its most specific argument (a.button), so a bare [hidden] loses (#1919 web-e2e). */
+.page-head-actions :is(button, a.button)[hidden] { display: none; }
 .page-head-actions button.join-open { padding: 6px 14px; border-radius: var(--radius); }
 .page-head .view-tabs { width: 100%; margin-top: 0; }
 .join-slot > .send-status:empty { min-height: 0; margin: 0; }

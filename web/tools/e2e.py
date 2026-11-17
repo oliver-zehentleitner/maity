@@ -6373,7 +6373,8 @@ def page_heads_step(run: Run, page: Page) -> None:
             opener = head.get_by_role("button", name="Join an agent", exact=True)
             expect(opener).not_to_have_attribute("aria-haspopup", re.compile(".*"))
             opener.click()
-            panel = page.locator("main .join-slot .join-panel")
+            # The Agents tab has the panel wired to its own lists (.join-panel-slot); Team mounts one in .join-slot.
+            panel = page.locator("main .join-panel")
             expect(panel).to_be_visible()
             run.shot(page, f"page-head-{path}-{width}")
             panel.get_by_role("button", name="Cancel", exact=True).click()
