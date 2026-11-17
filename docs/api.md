@@ -6321,8 +6321,7 @@ project: the `tag` of a release (§6.7) whose version has no pre-release
 part, filled by the probe with `found: true`, whether or not the release
 card is `done` yet — the maintainer's decision ties the mark to the
 first final release tag (`context/projects.md`); a pre-release tag never
-sets it. Not built yet (tsk-2t82evzkxwym): today any release tag the
-probe finds sets it.
+sets it.
 It is never cleared: it says the project has users. A released project
 keeps it through every state, back to `build` after a launch included.
 Setting it bumps `rules_version` with a `state_changed` event carrying
@@ -8539,9 +8538,7 @@ with `releases:write` and:
   zeros. Anything else — `.post` and `.dev` releases, epochs, local
   versions, a leading `v`, a spelling PEP 440 would normalize
   (`0.1.0alpha4`, `0.1.0.a4`, `0.1.0A4`) — is `invalid` with
-  `details.fields.release.version: not_a_version`. Not built yet
-  (tsk-2t82evzkxwym): today only SemVer is accepted, and anything else
-  is refused with `details.fields.release.version: not_semver`. The tag the probe
+  `details.fields.release.version: not_a_version`. The tag the probe
   looks for is `v` followed by the version exactly as given (`0.1.0a4` →
   `v0.1.0a4`, `1.2.0-rc.1` → `v1.2.0-rc.1`). Versions are compared as
   text: unique per project (`version_exists`), so `0.1.0-alpha.4` and
@@ -8638,8 +8635,7 @@ The `release` object on the card:
   informational. Only a release whose version is final — no
   pre-release part, neither a SemVer `-…` nor a PEP 440 `a`, `b` or
   `rc` — marks the project released when the probe finds its tag
-  (§6.1); a pre-release tag never does. Not built yet
-  (tsk-2t82evzkxwym): today any found release tag marks it.
+  (§6.1); a pre-release tag never does.
 - `GET /projects/{owner}/{slug}/tasks?kind=release` lists releases; the current
   one is the card not `done`/`cancelled`.
 
