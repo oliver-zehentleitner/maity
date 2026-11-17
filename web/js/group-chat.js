@@ -442,6 +442,7 @@ window.Maity = window.Maity || {};
       hintMention();
       const button = h("button", { type: "submit", class: "primary" }, M.t("group.compose.send"));
       const files = M.attachments ? M.attachments.picker(ctx, "group") : null;
+      if (files) files.pasteInto(text);
       // The meat-proxy mode for this chat (§9.3): only a participant has an entry of its own.
       const meat = M.meatProxy ? M.meatProxy.toggle(ctx, base, view.participants.find((p) => p.member_id === ctx.me.id) || null) : null;
       const sendIt = async (e) => {

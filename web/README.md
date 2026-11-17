@@ -816,6 +816,19 @@ too.
      send) are read from the hub and offered under the composer, to
      **Attach** to this message or **Remove**: they count against the
      pending cap until then.
+   - **Pasting an image.** An image pasted into the composer's text
+     field (a screenshot) takes a chosen file's way: uploaded at once,
+     pending by name and size with **Remove**, no preview (`web/context/rendering.md`,
+     52e88bfb). It is named `pasted-image-YYYYMMDD-HHMMSS.<ext>` in the
+     account's time zone (`-2`, `-3` for more in one paste), and must be
+     a PNG, JPEG, WebP or GIF by its bytes; one whose bytes cannot be
+     read is said, and the paste's others still go. Until its images are
+     read and uploaded the composer is busy, and a Send says a file is
+     still uploading, as while a chosen one uploads. A
+     paste that carries text too, a lone space included, pastes the text
+     only: an office program puts a picture of the copied cells beside
+     their text. Only where **Attach files** is
+     offered; dragging a file in is not taken.
    - **Refused before sending:** over 10 MiB, or more than ten in one
      message. The hub's own refusals (the 20-file or 100 MiB pending
      cap, the project's quota, an image's size in pixels, a closed
@@ -1635,6 +1648,16 @@ key not yet translated. `make check` fails on a code of `docs/api.md` §1.3 with
   status line, for a screen reader too, unless a header control has the
   focus. Only the switcher is redrawn: what is typed on the page and how
   far a tab row is scrolled stay.
+- Every API answer names the dashboard the hub serves (`Maity-Web-Version`,
+  `docs/api.md` §1.1); the shell names the one the page runs (§16.11). When
+  they differ, `js/new-version.js` draws a band above the header with
+  **Reload** and **Later**; it never reloads by itself. Before the reload
+  it asks "You have unsent input. Reload anyway?" by a simple rule, not a
+  complete one (`context/refresh.md` 9d7aee6c): a text field typed into (a
+  trusted `input` event) that still holds text, or a chat draft that is not
+  blank (`M.newVersion.holds`, js/chat.js). **Later** holds for each version
+  it was chosen for. No request of its own: it reads the header of the
+  answers above.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
   members, then `after=<cursor>&wait=0` every 15 seconds, page by page,
@@ -1770,8 +1793,8 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
    the open conversation; the owner answers there, the agent's `maity wait`
    wakes with that message, and after a reload it is "reached a session";
    the owner then attaches an image (the e2e hub has a local attachment
-   store, `MAITY_ATTACHMENT_DIR`), sends it, and it shows inline from the
-   hub's own path;
+   store, `MAITY_ATTACHMENT_DIR`) and pastes another into the message
+   field, sends both, and they show inline from the hub's own path;
 10. **Pause**: the owner pauses the agent with a reason; the agent's own
     `PATCH /me` is refused (`forbidden`, a human paused it), its `resume`
     does not lift it and its packet shows it (`membership.paused`, by the owner); the owner

@@ -133,7 +133,8 @@ boundary.
 
 **Id:** 97a02556-475b-4041-8db5-6ce845ceb7fa
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 320a6e51-5a65-4684-8da8-df911d4273c1
 **Evidence:** confirmed
 **Source:** the maintainer's statement, 2026-10-22, relayed by the coordinator; contract change in `docs/api.md` (`spawn_consent_by`)
 **Revisit when:** the admin and the admin agent agree on a start policy
@@ -153,6 +154,46 @@ only a human with `members:admin` sets the policy.
 **Reason:** the maintainer's decision; the reason was not stated.
 
 **Alternatives:** unknown. The policy itself is still open.
+
+## Only a runner's owner places agents on it, wherever the runner is attached
+
+**Id:** 320a6e51-5a65-4684-8da8-df911d4273c1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's statement, 2026-11-16, relayed by the lead with the design's approval; contract change in `docs/api.md` §15.3–§15.6 (tsk-qgmz0yrc3g5x)
+**See:** scope.md#a-runner-starts-an-agent-only-after-the-maintainers-go-until-a-policy-says-otherwise — 97a02556-475b-4041-8db5-6ce845ceb7fa — as of 2026-11-16
+**See:** https://github.com/oliver-zehentleitner/maity — 22e17362-56cb-4bf7-94fa-c245119e6eac — as of 2026-11-16
+
+Attaching a runner to a project shows it there; it lets nobody but the
+runner's owner place agents on it. Only the runner's side — its owner and
+the agents whose profile that owner owns — creates a placement on it,
+changes a placement's spec, moves a placement onto it or off it by a
+replacement (the old runner runs the handover), or starts,
+restarts and nudges one there; anyone else is `forbidden` with
+`runner_owner_only`, whatever their trust. The go of an agent's proposal
+comes from the runner's owner alone, as a personal request, never from an
+agent or a proxy; `policy.spawn_consent_by` stays in the policy and
+decides nothing for placements. Stopping and removing stay open to those
+who may today, and the owner may stop and remove every placement on their
+runner, a foreign one included. Placements made by others before the rule
+are not closed by themselves: the owner sees them (`foreign`) and decides.
+The agent profile's owner removes such a placement too and places the agent
+again on a runner of their own; a replacement does not move it, since the
+old runner would run the handover.
+
+**Reason:** the runner is the owner's machine: whoever places an agent on
+it spends its compute and the owner's model budget. Attaching it to a
+project is meant to share it for the owner's own agents there, not to
+hand it to the project's other members.
+
+**Rejected alternatives:** a go from any human holding `requests:answer`,
+or from agents under `spawn_consent_by: role` (the rule of 2026-10-22):
+that human need not own the runner. Closing the placements others made
+before, on deploy: rejected for the owner's own look and decision.
+Leaving start, restart and nudge open to every agent with
+`agents:propose`, as re-runs of something approved: rejected, since a
+start spends the owner's compute just like a creation.
 
 ## What revoking a runner does to its agents is a setting: the operator sets the default and a floor, the project chooses within it
 

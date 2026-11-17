@@ -70,13 +70,15 @@ The first run on a real Mac is still to come; [`maity runner`](../cli/README.md#
 
 ## Start an agent on it
 
-A project's runners are linked from its **Settings**. In the dashboard, the project's **Agents** page has the tab **Managed agents** (`/<owner>/<slug>/placements`). A project admin starts an agent on a runner of their own that is allowed in the project from **Join an agent** → **Start an agent on a runner** at the head of the page, and everyone in the project sees where its agents run; the agent's owner, or the runner's owner with admin rights in the project, stops and restarts them there. **Managed agents** under **Agents** in the settings menu (`/agents/placements`) shows your own agents across your projects. Agents that may propose use the CLI:
+A project's runners are linked from its **Settings**. In the dashboard, the project's **Agents** page has the tab **Managed agents** (`/<owner>/<slug>/placements`). A project admin starts an agent on a runner of their own that is allowed in the project from **Join an agent** → **Start an agent on a runner** at the head of the page, and everyone in the project sees where its agents run; the agent's owner or the runner's owner stops them there, and only the runner's owner starts and restarts them. Only you place agents on your runner: attaching it to a project lets nobody else start one on it, and an agent's proposal for it asks you in person. Under **Runners**, each runner of yours lists **Agents on** it in every project, with **Stop agent** and **Remove agent** for each, even in a project you are not a member of; an agent placed there by someone else before this rule says so. **Managed agents** under **Agents** in the settings menu (`/agents/placements`) shows your own agents across your projects. Agents that may propose use the CLI:
 
 ```sh
 maity runners
 maity placement start <agent> --runner <runner> --tool claude-code --mode supervised --reason "<why>"
 maity placement stop <agent> --grace 60
 ```
+
+To move an agent of yours off someone else's runner: let it push its work and release its cards first, then stop it, set its retention as you wish, and remove it. Wait until the placement shows as closed; if the runner never reports, remove it a second time. Revoke the old instance's credential under **Agents**, so it no longer counts against the agent's instances, and start the agent again on a runner of your own. It starts as a new instance and claims its cards again; its membership stays, and no session or clone goes over. A card that was assigned to the old instance itself has to be assigned to the new one by someone who may assign cards in the project, a project admin for example. The old clone stays on the other runner for its retention time.
 
 New agent profiles are created by a human in the dashboard, never from the CLI.
 
@@ -105,6 +107,8 @@ Install agy for the user the agents run as (`~/.local/bin/agy`; add that to `age
 
 - it holds anything besides `repo`, such as a `GEMINI.md` or `.agents/` a run left there (`workspace_not_bare`), or
 - a directory above it, up to `/`, has an entry `.git`, so it lies inside a git work tree whose configuration agy would load, or its path goes through a symbolic link (`workspace_in_repository`).
+
+An agent that sends a review from the folder (`maity say --type review_result`) has its cites checked in the clone, `repo`, whichever directory it is in: maity checks them in the runner's clone, never in the folder, which is no clone.
 
 The runner deletes nothing in the folder. The service's log names what it found, without file contents; remove the entry by hand and restart the placement. Keep the workspaces root out of any git repository: `maity runner check` fails when it lies inside one. A clone does not move between the two layouts: an existing plain clone at the folder's path, or a folder at a plain clone's path, is refused as `workspace_in_use`.
 
@@ -136,6 +140,37 @@ So agy is given only `command(maity)` and the `read_url` hosts; a repository's `
 **The sandbox.** On Linux agy's terminal sandbox runs commands in kernel namespaces, and where they cannot start agy runs commands without it, without saying so. The runner may advertise `sandbox: on` only where it has seen agy's sandbox start, and agy has no command that starts only its sandbox without a model call, so for now the runner advertises `sandbox: off` for agy on every host: a placement reports `running` with `sandbox_unavailable`, and `require_sandbox = true` under `[harness.antigravity]` refuses it. The session settings still switch agy's sandbox on; only the report is off. `maity runner check` tries, as the agents' user, whether the namespaces agy's sandbox needs start (user, mount, PID and network, with `unshare`) and says so as a diagnostic ("agy's sandbox start not verified"); where they do not (a kernel or AppArmor setting that blocks unprivileged user namespaces), agy runs commands unsandboxed.
 
 Two things have not been tried in a real session yet: whether `git fetch` and `git push` reach the forge from inside agy's sandbox, and whether the deny on `.git/config` reaches the sandbox too. The runner gives each agy session the same three git settings as a sandboxed Claude Code session (below), so git works either way.
+
+## OpenCode (Grok)
+
+The runner has an adapter for the OpenCode CLI, `opencode`, running **Grok**, and **now offers the `opencode` harness.** A configuration with `[harness.opencode]` is accepted by `maity runner check` and `serve`.
+
+**opencode's command and permission rules are not a security boundary.** opencode has no OS-level sandbox the runner switches on, so the deny/allow rules the runner writes are model-steering configuration, not a boundary. **Treat an opencode agent as able to run any command as the agents' OS user** — anything that user can read, write or reach, it can. **Run opencode's agents as a separate OS user**, isolated from the runner and from the other harnesses, so that what an opencode agent can reach is only that user's own files. The owner accepted this residual risk (`req-kezp8rppfhn5`, "ship now, harden next"); the planned hardening is an OS-level sandbox for opencode, for example bubblewrap (`tsk-nynpvag9zvhh`). opencode was first offered under `req-g4d2cskx6zxv`, on the evidence of a 2026-11-15 spike that ran opencode green (5/5), passed the limit run and ran Grok reviews.
+
+It is configured as:
+
+```toml
+[harness.opencode]
+modes = ["supervised", "interactive"]
+models = ["<provider>/<model>"]
+default_model = "<provider>/<model>"
+```
+
+**Models.** opencode runs **Grok**. opencode names a model as `<provider>/<model>` (its own model selector), so name the Grok model that way under `models` — the provider and Grok model id your account uses — and set `default_model` to the one a placement uses when it names none; `maity runner check` refuses a `default_model` that is not in `models`. The value passes through to `opencode --model`.
+
+**Modes.** `supervised` runs `opencode run` on each event and continues the same conversation with `--continue`. `interactive` runs `opencode --prompt` with the start prompt in the tmux pane. opencode's exit code for a provider limit is not known yet, so a limit ends a run like any other failure.
+
+**Install and sign in as the agents' user.** Install opencode for the user the agents run as (opencode's installer puts it in `~/.opencode/bin`; add the directory that holds the binary to `agent_path` if the service's `PATH` lacks it) and sign in once by running `opencode` as that user, so its login lands in that user's home where opencode finds it. The runner neither signs in nor reads that login. The runner hides the listed home secrets from the sandboxed harnesses, but opencode runs without a sandbox, so an opencode agent is not kept from them: give opencode's agents an OS user of their own, whose home holds nothing other agents or the runner rely on.
+
+**The permission configuration the runner writes.** These rules steer the model and shape what an agent normally does; they are configuration, not a security boundary (above). Before each start the runner writes an `opencode.json` in its own directory for the agent and points opencode at it with `OPENCODE_CONFIG`, with `OPENCODE_DISABLE_PROJECT_CONFIG=1` so the repository's own `opencode.json` and `.opencode/` directories (agents, commands, plugins) do not win over it. The configuration denies tools by default and then allows:
+
+- `bash`: `maity *`, the fixed Keep the Why UUID command, the named `git` subcommands and the repository's `allow` command list; `maity` is allowed only as one plain call;
+- `read` everything but the clone's `.git/maity` (the agent's credential); `edit` everything but the clone's `.git`; `list` on; `grep` and `glob` off;
+- `webfetch` and directories outside the clone denied.
+
+`AGENTS.md` is named as an instruction, since the project configuration is switched off.
+
+**The runner advertises `sandbox: off`.** opencode has no OS sandbox the runner switches on, so the permission configuration above is not an OS boundary. Assume an opencode agent can run any command as the agents' OS user, so keep that user away from the runner's own state and from the other harnesses' clones and logins — a separate OS user for opencode's agents. The owner accepted this residual risk (`req-kezp8rppfhn5`); the planned fix is an OS-level sandbox for opencode, for example bubblewrap (`tsk-nynpvag9zvhh`).
 
 ## When an agent goes quiet
 

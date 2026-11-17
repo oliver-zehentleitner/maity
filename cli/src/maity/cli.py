@@ -2428,7 +2428,12 @@ def cmd_say(args: argparse.Namespace) -> int:
     # The review is checked in the clone before any request, the recipient's lookup included:
     # a refused review asks nothing of the hub.
     if review is not None:
-        cites = citecheck.check(Path.cwd(), review)
+        cites = citecheck.check(_review_clone(), review)
+        if cites.refused:
+            # Under a placement the clone is the runner's: one its checks refuse is not "no
+            # clone here", and a review checked nowhere is not sent (cli/context/commands.md).
+            _err(f"not sent: the review's cites cannot be checked: {cites.unchecked}")
+            return EXIT_ERROR
         names = (
             textcheck.check(cites.top, review["head"], text).bad if cites.top is not None else []
         )
@@ -2497,6 +2502,16 @@ def _say_event(
 
     event = _post_with(session, attach, post)
     return _done(args, event, f"{said} (seq {_field(event, 'seq')})")
+
+
+def _review_clone() -> Path:
+    """Where a review's cites are checked: under a runner placement the runner's clone,
+    whatever directory the agent works in (for agy the workspace folder that holds it as
+    `repo`, §15.5); else the current directory. A placement whose clone cannot be named is
+    refused before anything is sent (CommandError): maity never falls back to the current
+    directory there (cli/context/runner.md b4a8030d)."""
+    root = _placement_clone()
+    return root if root is not None else Path.cwd()
 
 
 def _say_body(value: str | None, attach: list[str]) -> str:
@@ -3598,6 +3613,41 @@ def cmd_runners(args: argparse.Namespace) -> int:
             f"{show(runner.get('id'))}  {show(runner.get('name'))}  {show(runner.get('presence'))}"
             f"  {show(caps.get('running'))}/{show(caps.get('max_agents'))} running"
             f"  tools: {tools or '-'}"
+        )
+    return EXIT_OK
+
+
+def cmd_roles(args: argparse.Namespace) -> int:
+    """`GET …/roles` (§2.3): the built-in roles and the project's own, each with what it means;
+    a project role with the built-in role whose permissions it has. Read only: a project's roles
+    are set by a human with `project:admin`, in the dashboard."""
+    session = Session()
+    answer = session.client.call("GET", session.project_path("roles"))
+    if args.json:
+        _print_json(answer)
+        return EXIT_OK
+    answer = _obj(answer)
+
+    def entries(key: str) -> list[dict[str, Any]]:
+        return [r for r in answer.get(key) or [] if isinstance(r, dict)]
+
+    def show(role: dict[str, Any], line: str) -> None:
+        description = role.get("description")
+        print(f"  {line}: {onboarding.inline(description)}" if description else f"  {line}")
+        if args.guide and role.get("guide"):
+            for quoted in onboarding.quote(role["guide"]):
+                print(f"    {quoted}")
+
+    print("built-in roles")
+    for role in entries("builtin"):
+        show(role, onboarding.inline(role.get("name")))
+    own = entries("custom")
+    print("project roles" if own else "project roles: none")
+    for role in own:
+        show(
+            role,
+            f"{onboarding.inline(role.get('name'))} (permissions of "
+            f"{onboarding.inline(role.get('base'))})",
         )
     return EXIT_OK
 
@@ -5505,7 +5555,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument(
         "--needs",
         metavar="ROLE",
-        help="which role the card is for (coder, reviewer, a project role, ...); routes nothing",
+        help="which role the card is for (coder, reviewer, a project role, ...; `maity roles` "
+        "lists them); routes nothing",
     )
     r.add_argument("--parent", type=_id, help="make it a subtask of this card")
     r.add_argument(
@@ -5686,6 +5737,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_runners)
+
+    p = add(
+        "roles",
+        "the project's roles: the built-in ones and its own, with what each means",
+        "List the project's roles (GET …/roles, §2.3): each built-in role and each of the "
+        "project's own roles with its description, a project role with the built-in role whose "
+        "permissions it has. Read only: a human with project:admin sets them in the dashboard.",
+    )
+    p.add_argument("--guide", action="store_true", help="also print each role's guide")
+    _json_flag(p)
+    p.set_defaults(handler=cmd_roles)
 
     p = sub.add_parser(
         "help",

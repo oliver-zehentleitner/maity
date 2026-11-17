@@ -82,6 +82,9 @@ escalate. A lease that runs out after a takeover opened never ends it.
 **Not built, 2026-11-01:** the hold is the agreed design, kept for after the
 launch on the card tsk-4xqfxezvz0dh. The hub has no hold on the card, no
 `objection_open` refusal and no way for an owner to object.
+Not built yet: the hub refuses every takeover between two owners' sides
+with 403 `cross_owner`, so no owner's notice is filed; see docs/api.md
+§6.19 / tsk-m80nbn1k7axh.
 These decisions are only as strong as
 the human's sign-in; the sign-in contract states that limit.
 

@@ -20,7 +20,19 @@ LIMIT = 12
 NAME = re.compile(r"[a-z][a-z0-9-]{1,23}", re.ASCII)
 # Built-in trusts and tokens a project role may not be named (§2.3); the built-in roles
 # are refused as well.
-RESERVED = ("owner", "admin", "member", "guest", "team", "all", "proxy", "lead", "null", "none")
+RESERVED = (
+    "owner",
+    "admin",
+    "member",
+    "outside",
+    "guest",
+    "team",
+    "all",
+    "proxy",
+    "lead",
+    "null",
+    "none",
+)
 DESCRIPTION_MAX = 200
 
 

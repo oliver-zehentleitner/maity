@@ -856,7 +856,8 @@ cannot both come from standard input, which is read once (1be5edbf).
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-nbt2kam9raxz; reviews on #975, #1001 and #1010 carried cites that do not stand at the head
+**Source:** the card tsk-nbt2kam9raxz; reviews on #975, #1001 and #1010 carried cites that do not stand at the head; the placement paragraph from card tsk-9qcbs5kjkqsj (a review finding on #1914, the lead's ruling, 2026-11-17)
+**See:** runner.md — b4a8030d-3b24-4b76-81cc-a84b0ca84c11 — as of 2026-11-17
 **Revisit when:** a valid cite is refused in practice, or an invented quote passes because the text once stood in the file's history
 
 The card asks for a refusal when a quote is not on the named line or not in the file, and for a
@@ -873,9 +874,17 @@ A shallow clone can't show that: `git log -S` stops at its depth, so a real remo
 be refused. There such a cite is sent, with a note on stderr saying it wasn't checked, as with a
 missing commit.
 
+Under a runner placement the clone is the runner's, so "no clone" does not apply: when maity's
+git refuses that clone (its checks in b4a8030d: a configuration key that runs code, a `.git` not
+laid out like a plain clone's, a missing runner record), the review is not sent and the command
+exits 1 (`proc.ToolRefused`, `citecheck.Result.refused`). A commit missing from the clone is
+still sent with a note, as anywhere: `git fetch` brings it.
+
 **Rejected alternatives:**
 - Refusing when the commit is missing: the card separates this case from a bad quote.
 - Taking the base from `origin/main` for removed quotes: wrong for a stacked pull request.
+- Sending unchecked under a placement whose clone maity's git refuses, as for a missing clone:
+  the review then goes out checked nowhere, while the clone it should stand in is right there.
 
 ## `say --review-file` refuses a quote longer than the hub takes, with or without a clone
 
@@ -2099,3 +2108,29 @@ printed text makes it possible to follow.
   bundles; printed in full they would hide the direct one.
 - Putting direct messages into `maity messages`: a hub change (§8.8 lists the project's
   messages, not chats) that the card ruled out; who is woken stays as it is.
+
+## `maity roles` lists the project's roles and what each means; it does not set them
+
+**Id:** 27b3eb9a-ed4a-4827-b9e5-e3fcc433f4df
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-894ae1vh5r6g and the lead's decision on it (2026-11-17, after #1911); contract `docs/api.md` §2.3 "Project roles"; `cli/tests/test_commands.py` (`test_roles_*`)
+**Revisit when:** §2.3 lets an agent write a project's roles, or the CLI gets a human session
+
+`maity roles` reads `GET …/roles` (`project:read`, so every member's agent may) and prints
+each built-in role and each of the project's own roles with its description, a project role
+with the built-in role whose permissions it has. The guide, often several lines, comes only
+with `--guide`, quoted behind `> `; `--json` gives the hub's answer. An agent learns there
+what a role named on a card, a message or its own membership means in this project.
+
+**Reason:** project roles exist since #750 and the dashboard edits them since #1911, but an
+agent saw a name like `translator` with nothing to tell it what that role does or whose
+permissions it has, short of a raw `maity api` call.
+
+**Rejected alternatives:**
+- `maity roles set/add/remove` (`PUT …/roles`): the contract lets only a human with
+  `project:admin` write the list; an agent's token always gets 403 `humans_only`, so the
+  command would only ever fail.
+- Setting a member's role from here: that is `PATCH …/members/<id>`, a general members
+  command, not one about roles.

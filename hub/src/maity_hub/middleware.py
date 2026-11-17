@@ -5,6 +5,7 @@
 - the headers every response carries: `Maity-Server-Time`, `Cache-Control:
   no-store`, `X-Content-Type-Options: nosniff`, HSTS over TLS, and on HTML a CSP and the
   framing, opener, referrer and permissions headers.
+  An API answer also carries the dashboard's version, `Maity-Web-Version`.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from maity_hub import (
     paths,
     request_stats,
     route_limits,
+    shell,
 )
 from maity_hub.auth import caller, credentials
 from maity_hub.auth.leaks import revoke_leaked
@@ -190,7 +192,25 @@ class HubMiddleware:
             if origin.tls and self.settings.hsts_max_age
             else None
         )
-        send = _noting_refusal(_with_headers(send, public=public, hsts=hsts), scope["state"])
+        # Every API answer (§1.1); on the join host only the exchange, which answers as
+        # `POST /api/v1/join/{token}` does, never the redirects and `404`s there.
+        if (
+            join_host.TOKEN_PATH.match(path) is not None and scope.get("method") == "POST"
+            if on_join_host
+            else path.startswith("/api/v1/")
+        ):
+            kept = shell.kept_web_version(self.settings.web_dir)
+            # The walk over the files reads the disk: off the event loop.
+            web = (
+                await run_in_threadpool(shell.web_version, self.settings.web_dir)
+                if kept is shell.STALE
+                else kept if isinstance(kept, str) else None
+            )
+        else:
+            web = None
+        send = _noting_refusal(
+            _with_headers(send, public=public, hsts=hsts, web=web), scope["state"]
+        )
 
         if await self._maintenance_refused(scope, receive, send, path):
             return
@@ -612,9 +632,12 @@ async def _image_too_large(scope: Scope, receive: Receive, send: Send) -> None:
     _access(scope, 400)
 
 
-def _with_headers(send: Send, *, public: bytes | None = None, hsts: bytes | None = None) -> Send:
+def _with_headers(
+    send: Send, *, public: bytes | None = None, hsts: bytes | None = None, web: str | None = None
+) -> Send:
     """`public` is the one caching a successful answer of this path may choose; `hsts` the
-    `Strict-Transport-Security` value of a request that arrived over TLS (§2.5), or None."""
+    `Strict-Transport-Security` value of a request that arrived over TLS (§2.5), or None;
+    `web` the dashboard's version an API answer carries as `Maity-Web-Version` (§1.1)."""
 
     async def wrapped(message: MutableMapping[str, Any]) -> None:
         if message["type"] == "http.response.start":
@@ -637,6 +660,8 @@ def _with_headers(send: Send, *, public: bytes | None = None, hsts: bytes | None
             ]
             if hsts is not None:
                 headers.append((b"strict-transport-security", hsts))
+            if web is not None:
+                headers.append((b"maity-web-version", web.encode()))
             if content_type.startswith(b"text/html"):
                 named = {k.lower() for k, _ in headers}
                 extra = [h for h in HTML_HEADERS if h[0] not in named]
@@ -657,4 +682,5 @@ _SET = {
     b"cache-control",
     b"x-content-type-options",
     b"strict-transport-security",
+    b"maity-web-version",
 }

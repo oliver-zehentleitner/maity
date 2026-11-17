@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy import Engine, select, update
 
 from maity_hub import clock, events
 from maity_hub import tables as t
+from maity_hub.routes import requests
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_requests import answer, asked
@@ -48,6 +50,25 @@ def test_a_withdrawal_wakes_the_asking_instance(
     )
     assert withdrawn.status_code == 200, withdrawn.text
     assert _last(migrated, "request_withdrawn").audience == [_token(first, second.instance)]
+
+
+def test_the_asking_instance_is_the_sessions_only_for_the_asking_membership(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine  # noqa: F811
+) -> None:
+    """A session of another membership names no instance of the asker: a request a bridge
+    filed for an agent carries the bridge's session (§2.3)."""
+    first, _ = _pair(make_client, owner)
+    request = asked(first, to="owner")
+    with migrated.connect() as conn:
+        row = conn.execute(select(t.request).where(t.request.c.id == request["id"])).one()
+        other = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.human_id == owner.id)
+        ).scalar_one()
+        elsewhere = SimpleNamespace(asked_session_id=row.asked_session_id, asked_by=other)
+        no_session = SimpleNamespace(asked_session_id=None, asked_by=row.asked_by)
+        assert requests._asking_instance(conn, row) == first.instance
+        assert requests._asking_instance(conn, elsewhere) is None
+        assert requests._asking_instance(conn, no_session) is None
 
 
 def test_a_human_asker_is_reached_as_the_member(

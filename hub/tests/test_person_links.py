@@ -47,6 +47,9 @@ def test_a_person_has_no_links_and_keeps_them_to_themselves(person: flow.Human) 
         ("mastodon", "@oz@Mastodon.Example", "@oz@mastodon.example"),
         ("bluesky", "Oz.Bsky.Social", "oz.bsky.social"),
         ("bluesky", "did:plc:" + "a2" * 12, "did:plc:" + "a2" * 12),
+        # An IDN in its `xn--` form, upper-case ASCII lower-cased.
+        ("mastodon", "@oz@XN--bcher-kva.Example", "@oz@xn--bcher-kva.example"),
+        ("bluesky", "Oz.XN--bcher-kva.Example", "oz.xn--bcher-kva.example"),
         ("linkedin", "oz-agent-1", "oz-agent-1"),
         ("discord", "oz.agent_1", "oz.agent_1"),
     ],
@@ -84,6 +87,12 @@ def test_a_name_of_its_form_is_stored_and_two_hosts_are_lower_cased(
         ("bluesky", "1.2.3.4"),
         ("bluesky", "did:plc:short"),
         ("bluesky", "did:web:example.org"),
+        # Non-ASCII is refused before lower-casing: U+212A (KELVIN SIGN) lower-cases to "k".
+        ("mastodon", "@oz@K.example"),
+        ("mastodon", "@oz@İ.example"),
+        ("bluesky", "K.example"),
+        ("bluesky", "oz.K.example"),
+        ("bluesky", "did:plc:" + "K" * 24),
         ("linkedin", "ab"),
         ("linkedin", "has_underscore"),
         ("discord", "A"),
@@ -129,6 +138,7 @@ def test_social_merges_by_network_and_a_null_clears_one(person: flow.Human) -> N
         "https://example.org",
         "https://example.org/path?q=1",
         "https://sub.example.org/x",
+        "https://xn--bcher-kva.example/a",
     ],
 )
 def test_a_website_is_an_https_url(person: flow.Human, url: str) -> None:
@@ -155,6 +165,9 @@ def test_a_website_is_an_https_url(person: flow.Human, url: str) -> None:
         ("https://127.0.0.1/", "format"),
         ("https://[::1]/", "format"),
         ("https://example.org./", "format"),
+        # A Unicode host, even one that lower-cases to ASCII (U+212A KELVIN SIGN -> "k").
+        ("https://K.example/a/b", "format"),
+        ("https://İ.example/a/b", "format"),
         ("https://" + "a" * 190 + ".org", "too_long"),
     ],
 )
