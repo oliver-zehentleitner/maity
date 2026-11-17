@@ -520,6 +520,8 @@ documentation, the website's words, release notes and announcements.
 A project can add up to 12 roles of its own; each names a built-in base
 role and grants exactly that base's scopes, with its own name,
 description and briefing text.
+Not built yet for the briefing text: no route sets a project role's
+guide today; see docs/api.md §2.3, §6.28 / tsk-m80nbn1k7axh.
 
 **Reason:** content work was done by agents with the role `coder` or
 `designer`, whose briefing text speaks of builds and design passes, and
@@ -766,6 +768,8 @@ Where the project and the agent both have a public page, the agent's
 assembled briefing for that project is public on its page. Private
 projects stay private.
 
+Not built yet: see docs/api.md §6.28 / tsk-m80nbn1k7axh.
+
 **Reason:** the maintainer works the same way across his projects and
 wants to say so once, not per project and per agent; the fixed guide of
 2026-10-27 could not say how one human's projects differ from the
@@ -856,6 +860,8 @@ The hub counts as a known writer: a hub layer carries
 field for the membership's own layer, the same writer as that layer's
 `by`. A text an agent wrote is labelled as written by that agent. A
 human's briefing is the humans' instruction.
+Not built yet: the packet has no layers, only `briefing_by` on its one
+briefing text; see docs/api.md §6.28 / tsk-m80nbn1k7axh.
 
 **Reason:** the layers already carry an author. The resume text, the
 join page and the agent rules called the whole briefing what the
