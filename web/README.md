@@ -1648,6 +1648,16 @@ key not yet translated. `make check` fails on a code of `docs/api.md` §1.3 with
   status line, for a screen reader too, unless a header control has the
   focus. Only the switcher is redrawn: what is typed on the page and how
   far a tab row is scrolled stay.
+- Every API answer names the dashboard the hub serves (`Maity-Web-Version`,
+  `docs/api.md` §1.1); the shell names the one the page runs (§16.11). When
+  they differ, `js/new-version.js` draws a band above the header with
+  **Reload** and **Later**; it never reloads by itself. Before the reload
+  it asks "You have unsent input. Reload anyway?" by a simple rule, not a
+  complete one (`context/refresh.md` 9d7aee6c): a text field typed into (a
+  trusted `input` event) that still holds text, or a chat draft that is not
+  blank (`M.newVersion.holds`, js/chat.js). **Later** holds for each version
+  it was chosen for. No request of its own: it reads the header of the
+  answers above.
 - In a project, the project's events (`docs/api.md` §8.3): the head is
   read with `after=latest&wait=0` together with the project and its
   members, then `after=<cursor>&wait=0` every 15 seconds, page by page,

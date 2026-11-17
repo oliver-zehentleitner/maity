@@ -7143,9 +7143,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelectorAll(".msg").length === 2, "conversation with A");
   expect(main.querySelector("li.msg.in .md p") && main.querySelector("li.msg.in .md br"), "chat: an agent's message is drawn as Markdown, its line break kept");
   const quoteBtn = main.querySelector("li.msg.in").querySelectorAll("button").find((b) => b.textContent === "Quote");
+  // What a reload would lose (js/new-version.js): the chat's drafts, the other chats' put aside here.
+  const nvOtherDrafts = new Map(win.Maity.chatParts.drafts);
+  win.Maity.chatParts.drafts.clear();
   quoteBtn.click(); await tick();
   expect(byId("chat-text").value.startsWith("> Agent A:\n> Endpoints for join, tasks and requests are drafted.\n> Messages and presence follow this afternoon.\n\n"),
     "chat: Quote puts the message into the composer as a quote");
+  expect(win.Maity.newVersion.unsentInput(), "chat: a quoted draft is input a reload would lose");
+  byId("chat-text").value = "   "; byId("chat-text").dispatch("input");
+  expect(!win.Maity.newVersion.unsentInput(), "chat: a draft of blanks alone is no input");
+  const nvPosts = [];
+  const nvPost = win.Maity.api.post;
+  win.Maity.api.post = async (p, b) => { nvPosts.push(p); return { id: "evt-nv", seq: 99001, kind: "message", body: b.body, sender: { id: "maintainer", kind: "human", handle: "maintainer", display_name: "Maintainer" }, created_at: "2026-10-22T09:30:00Z" }; };
+  const nvList = main.querySelector("ol.messages");
+  const nvNodes = new Set(nvList.childNodes);
+  byId("chat-text").value = "Sent with Ctrl+Enter"; byId("chat-text").dispatch("input");
+  expect(win.Maity.newVersion.unsentInput(), "chat: a typed draft is input a reload would lose");
+  byId("chat-text").dispatch("keydown", { key: "Enter", ctrlKey: true }); for (let k = 0; k < 4; k++) await tick();
+  expect(nvPosts.length === 1 && byId("chat-text").value === "" && !win.Maity.newVersion.unsentInput(),
+    "chat: sent with Ctrl+Enter, no submit at all, the draft is gone and a reload asks nothing " + JSON.stringify(nvPosts));
+  win.Maity.api.post = nvPost;
+  nvOtherDrafts.forEach((v, k) => win.Maity.chatParts.drafts.set(k, v));
+  // The message sent here was the stub's alone: what it added to the list goes again.
+  Array.from(nvList.childNodes).filter((n) => !nvNodes.has(n)).forEach((n) => nvList.removeChild(n));
   byId("chat-text").value = ""; byId("chat-text").dispatch("input");
   // §9.7: Agree, Disagree with its sentence, and Take back, on the agent's message; one's own offers none.
   {
@@ -18541,12 +18561,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The fake hub's clock is 10 minutes behind this one.
   const HUB_TIME = new Date(Date.now() - 10 * 60000).toISOString().replace(/\.\d+Z$/, "Z");
   let mode = "ok";
+  // The dashboard the fake hub serves (Maity-Web-Version, docs/api.md §1.1); none until a case sets it.
+  let hubWeb = null;
   ctx.fetch = async (url, init) => {
     if (mode === "down") throw new Error("connection refused");
     calls.push({ url, method: init.method, headers: Object.assign({}, init.headers) });
     const [p, q] = url.replace("/api/v1", "").split("?");
     const json = (status, data) => ({ ok: status < 400, status, statusText: "x",
-      headers: { get: (k) => (k === "Maity-Error" && data.error ? data.error.code : k === "Maity-Server-Time" ? HUB_TIME : null) }, json: async () => data });
+      headers: { get: (k) => (k === "Maity-Error" && data.error ? data.error.code : k === "Maity-Server-Time" ? HUB_TIME : k === "Maity-Web-Version" ? hubWeb : null) }, json: async () => data });
     if (mode === "expired" && p !== "/openapi.json" && p !== "/auth/methods") return json(401, { error: { code: "unauthenticated", message: "Session ended" } });
     // 204 No Content: a body that is no JSON at all.
     if (init.method === "DELETE") return { ok: true, status: 204, statusText: "No Content", headers: { get: (k) => (k === "Maity-Server-Time" ? HUB_TIME : null) },
@@ -18565,6 +18587,154 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   await go("#/maintainer/maity/inbox");
   expect(!main.querySelector(".error"), "API mode against a fake hub renders the inbox");
   expect(Math.abs(win.Maity.api.now() - Date.parse(HUB_TIME)) < 5000, "API mode: the hub's clock from Maity-Server-Time");
+  // A newer dashboard deployed under the open page (docs/api.md §1.1, §16.11, tsk-y19gcsk731aa): the
+  // band above the header offers a reload, never reloads by itself; Later hides it for that version.
+  {
+    const OWN = "0123456789abcdef", NEWER = "fedcba9876543210", NEWEST = "00000000ffffffff";
+    const nvMeta = document.createElement("meta");
+    nvMeta.setAttribute("name", "maity-web-version"); nvMeta.setAttribute("content", OWN);
+    head.appendChild(nvMeta);
+    // Above the header, wherever the page's frame holds it (js/site-chrome.js).
+    const band = () => (header.parentNode ? header.parentNode.childNodes.find((n) => n.id === "new-version-banner") : null) || null;
+    const nvReload0 = win.Maity.newVersion.reloadPage;
+    let reloads = 0;
+    win.Maity.newVersion.reloadPage = () => { reloads++; };
+    // The page's own question before the reload (window.confirm), its answer chosen by the test.
+    const nvConfirm0 = win.confirm;
+    let asked = [], answer = true;
+    win.confirm = (q) => { asked.push(q); return answer; };
+    hubWeb = OWN;
+    await win.Maity.api.get("/me");
+    expect(!band(), "new version: an answer naming the page's own dashboard draws no band");
+    hubWeb = NEWER;
+    await win.Maity.api.get("/me");
+    const b1 = band();
+    expect(b1 && b1.nextSibling === header && text(b1).includes("A new version of Maity is available.")
+      && b1.getAttribute("role") === "status" && b1.querySelectorAll("button").map((x) => text(x)).join("|") === "Reload|Later",
+      "new version: an answer naming another dashboard draws the band above the header, Reload and Later " + (b1 && text(b1)));
+    hubWeb = OWN;
+    await win.Maity.api.get("/me");
+    expect(!!b1 && band() === b1 && !reloads, "new version: an old hub answering again during the deploy leaves the band, and nothing reloads by itself");
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    // The same node: a band drawn anew would be announced again and take its buttons' focus.
+    expect(band() === b1, "new version: the band stands over a page switch, the same band, not drawn anew");
+    band().querySelector("button.new-version-later").click();
+    expect(!band(), "new version: Later hides the band");
+    hubWeb = NEWER;
+    await win.Maity.api.get("/me");
+    expect(!band(), "new version: Later holds for that version");
+    hubWeb = NEWEST;
+    await win.Maity.api.get("/me");
+    expect(!!band(), "new version: a newer one still brings the band back");
+    band().querySelector("button.new-version-later").click();
+    hubWeb = NEWER;
+    await win.Maity.api.get("/me");
+    expect(!band(), "new version: two hubs answering two newer versions, both put off with Later, bring no band back");
+    const NEXT = "1111111111111111";
+    hubWeb = NEXT;
+    await win.Maity.api.get("/me");
+    // Drafts of the chats before are put aside: only what this block types counts.
+    const nvDrafts = new Map(win.Maity.chatParts.drafts);
+    win.Maity.chatParts.drafts.clear();
+    band().querySelector("button.new-version-reload").click();
+    expect(reloads === 1 && !asked.length, "new version: Reload reloads at once with nothing typed, nothing asked");
+    // What the browser does with a person's typing: a trusted input event, at the document, in the capture phase.
+    const nvTyped = (f, trusted) => docListeners.input({ target: f, isTrusted: trusted !== false });
+    const nvClick = () => { const r0 = reloads, a0 = asked.length; band().querySelector("button.new-version-reload").click(); return { asked: asked.length > a0, reloaded: reloads > r0 }; };
+    const nvSays = (x) => JSON.stringify(x);
+    // A field the page filled in, or a value a script set, is no typing.
+    const nvForm = document.createElement("form");
+    const nvFilled = document.createElement("input");
+    nvFilled.value = "3";
+    nvForm.appendChild(nvFilled);
+    body.appendChild(nvForm);
+    let nv = nvClick();
+    expect(!nv.asked && nv.reloaded, "new version: a field the page filled in asks nothing " + nvSays(nv));
+    nvFilled.value = "5"; nvTyped(nvFilled, false);
+    nv = nvClick();
+    expect(!nv.asked && nv.reloaded, "new version: a value a script set, its event untrusted, asks nothing " + nvSays(nv));
+    // Typed into: the page asks in the dashboard's words; No keeps the page, Yes reloads.
+    nvTyped(nvFilled);
+    answer = false;
+    nv = nvClick();
+    expect(nv.asked && !nv.reloaded && asked[asked.length - 1] === "You have unsent input. Reload anyway?",
+      "new version: with text typed, the page asks first, and No keeps the page " + nvSays(nv) + " " + asked[asked.length - 1]);
+    answer = true;
+    nv = nvClick();
+    expect(nv.asked && nv.reloaded, "new version: Yes reloads " + nvSays(nv));
+    body.removeChild(nvForm);
+    // In a form or not: a textarea, a search field, a contenteditable, typed into, hold text too.
+    const nvLoose = document.createElement("textarea");
+    body.appendChild(nvLoose);
+    nvLoose.value = "a reason"; nvTyped(nvLoose);
+    expect(nvClick().asked, "new version: text typed into a field outside a form asks");
+    body.removeChild(nvLoose);
+    const nvEdit = document.createElement("div");
+    nvEdit.setAttribute("contenteditable", "true");
+    nvEdit.appendChild(document.createTextNode("a note"));
+    body.appendChild(nvEdit);
+    nvTyped(nvEdit);
+    expect(nvClick().asked, "new version: text typed into a contenteditable asks");
+    body.removeChild(nvEdit);
+    // The attribute in another case edits all the same (contenteditable="TRUE").
+    const nvEditUpper = document.createElement("div");
+    nvEditUpper.setAttribute("contenteditable", "TRUE");
+    nvEditUpper.appendChild(document.createTextNode("hello"));
+    body.appendChild(nvEditUpper);
+    nvTyped(nvEditUpper);
+    expect(nvClick().asked, "new version: a contenteditable spelled TRUE, typed into, asks too");
+    body.removeChild(nvEditUpper);
+    expect(!nvClick().asked, "new version: an editable host gone from the page asks nothing");
+    // A host off the page is dropped at that look even when another field already asks: put
+    // back after it, it is a host no one typed into since.
+    const nvHeld = document.createElement("textarea");
+    body.appendChild(nvHeld);
+    nvHeld.value = "kept"; nvTyped(nvHeld);
+    const nvGone = document.createElement("div");
+    nvGone.setAttribute("contenteditable", "true");
+    nvGone.appendChild(document.createTextNode("typed"));
+    body.appendChild(nvGone);
+    nvTyped(nvGone);
+    body.removeChild(nvGone);
+    expect(nvClick().asked, "new version: a textarea still holding text asks, a host gone beside it");
+    nvHeld.value = "";
+    body.appendChild(nvGone);
+    expect(!nvClick().asked, "new version: a host gone at the last look is dropped even when another field asked");
+    body.removeChild(nvGone);
+    body.removeChild(nvHeld);
+    // Sent asynchronously, as every form here is: a failed sending keeps the text and asks, one that
+    // succeeded cleared its field and asks nothing.
+    let nvOk = false;
+    const nvNoteForm = document.createElement("form");
+    const nvNote = document.createElement("textarea");
+    nvNoteForm.appendChild(nvNote);
+    nvNoteForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try { await (nvOk ? Promise.resolve() : Promise.reject(new Error("conflict"))); nvNote.value = ""; } catch (err) { /* kept, said */ }
+    });
+    body.appendChild(nvNoteForm);
+    nvNote.value = "half a sentence"; nvTyped(nvNote);
+    nvNoteForm.dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+    expect(nvNote.value === "half a sentence" && nvClick().asked, "new version: a sending that failed keeps the text, and Reload still asks");
+    nvOk = true;
+    nvNoteForm.dispatch("submit"); for (let k = 0; k < 3; k++) await tick();
+    nv = nvClick();
+    expect(nvNote.value === "" && !nv.asked && nv.reloaded, "new version: a sending that succeeded cleared the field, and Reload asks nothing " + nvSays(nv));
+    body.removeChild(nvNoteForm);
+    // The chats' drafts, kept outside any field: one not blank asks, in a chat not open too.
+    win.Maity.chatParts.drafts.set("maintainer/maity/agt-b", "   ");
+    expect(!nvClick().asked, "new version: a chat draft of blanks alone asks nothing");
+    win.Maity.chatParts.drafts.set("maintainer/maity/agt-b", "for later");
+    expect(nvClick().asked, "new version: a draft in a chat not open asks");
+    win.Maity.chatParts.drafts.clear();
+    nvDrafts.forEach((v, k) => win.Maity.chatParts.drafts.set(k, v));
+    win.confirm = nvConfirm0;
+    band().querySelector("button.new-version-later").click();
+    win.Maity.newVersion.reloadPage = nvReload0;
+    head.removeChild(nvMeta);
+    hubWeb = null;
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  }
   expect(!text(header).includes("Fixtures"), "no fixture label in API mode");
   let noContent = "unset";
   try { noContent = await win.Maity.api.del("/orgs/oz-team/members/invitations/oinv-1"); } catch (err) { noContent = err; }
