@@ -28,7 +28,7 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import admin, catalog, clock, languages
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
-from maity_hub.auth.email_links import MARK_EARLY, recipient_over
+from maity_hub.auth.email_links import recipient_over
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
@@ -52,10 +52,10 @@ VERIFY_BY_HUMAN_DAY = Limiter(10, 86400, name="notifications.verify.human_day")
 VERIFY_BY_RECIPIENT_HOUR = Limiter(3, 3600, name="notifications.verify.recipient_hour")
 VERIFY_BY_RECIPIENT_DAY = Limiter(10, 86400, name="notifications.verify.recipient_day")
 VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS = Limiter(
-    1, 3600 - MARK_EARLY, name="notifications.verify.recipient_hour_accounts"
+    1, 3600, name="notifications.verify.recipient_hour_accounts"
 )
 VERIFY_BY_RECIPIENT_DAY_ACCOUNTS = Limiter(
-    1, 86400 - MARK_EARLY, name="notifications.verify.recipient_day_accounts"
+    1, 86400, name="notifications.verify.recipient_day_accounts"
 )
 VERIFY_BY_RECIPIENT_MAILS_HOUR = Limiter(
     9, 3600, name="notifications.verify.recipient_mails_hour", exact=True

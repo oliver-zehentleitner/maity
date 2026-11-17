@@ -79,9 +79,11 @@ class Limiter:
             return self._shared_take(key, count)[0]
         return self._take_at(key, count, time.monotonic())
 
-    def _shared_take(self, key: str, count: int) -> tuple[int, datetime]:
+    def _shared_take(
+        self, key: str, count: int, at: datetime | None = None
+    ) -> tuple[int, datetime]:
         if self.exact:
-            log, at = shared_counts.log_take(self.name, key, self.window, count, self.limit)
+            log, at = shared_counts.log_take(self.name, key, self.window, count, self.limit, at=at)
             return (0, at) if at is not None else (self._log_wait(log, count), log.now)
         window = shared_counts.add(self.name, key, self.window, count)
         if window.estimate() <= self.limit:
@@ -131,15 +133,25 @@ class Limiter:
             self._hits.move_to_end(key)
             return 0
 
-    def place(self, key: str, count: int = 1) -> tuple[int, Mark]:
+    def place(self, key: str, count: int = 1, *, at: Mark = None) -> tuple[int, Mark]:
         """Like `take`, and the mark of the attempts it recorded (None when refused), for
-        `release` to give back exactly those later: work that did not happen after all."""
+        `release` to give back exactly those later: work that did not happen after all.
+
+        `at`, another exact limiter's mark from `place`, records the attempts at that moment
+        instead of now, so that they leave the window together with those (the mark that a
+        network holds a place, `email_links.recipient_over`). Only for an exact limiter, and
+        only where an attempt at a later moment refuses it anyway (a limit of 1): an earlier
+        moment behind a later one would break the order the window relies on."""
         if count > self.limit:
             raise ValueError(f"{self.name}: {count} attempts never fit a limit of {self.limit}")
         if self._shared():
-            wait, start = self._shared_take(key, count)
+            if at is not None and not (self.exact and isinstance(at, datetime)):
+                raise ValueError(f"{self.name}: `at` needs an exact limit and a recorded moment")
+            wait, start = self._shared_take(key, count, at if isinstance(at, datetime) else None)
             return wait, (None if wait else start)
-        now = time.monotonic()
+        if at is not None and not isinstance(at, float):
+            raise ValueError(f"{self.name}: `at` must be a moment this process recorded")
+        now = time.monotonic() if at is None else at
         wait = self._take_at(key, count, now)
         return wait, (None if wait else now)
 

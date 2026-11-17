@@ -492,3 +492,99 @@ def test_four_networks_at_their_pair_limits_never_reach_the_mail_count(
     sent = _flood(limits, now, [f"198.51.100.{n}" for n in range(1, 5)])
     assert refused == [] and len(sent) == 4 * 20  # each its 10 a day, over two days
     assert _windows(sent, 3600) <= 40 and _windows(sent, 86400) <= 40
+
+
+def test_a_network_asking_again_late_in_its_hold_takes_no_second_place(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A1027 P12: a network's mark ends with its place, not before it, so asking again late in
+    # the hold takes no second place: three networks leave the owner's fourth its mail.
+    now = _clock(monkeypatch)
+    limits = links.RequestLimits()
+    for source in ("198.51.100.1", "198.51.100.2", "198.51.100.3"):
+        assert limits.take("human@example.org", source) == (0, True)
+    now[0] = 3591.0
+    for source in ("198.51.100.1", "198.51.100.2"):
+        assert limits.take("human@example.org", source) == (0, True)
+    now[0] = 3595.0
+    assert limits.take("human@example.org", "203.0.113.1") == (0, True)
+
+
+def _places_held(limits: links.RequestLimits, now: float) -> int:
+    hits = limits.recipient_hour._hits.get(links.digest("recipient\0human@example.org"), ())
+    return sum(1 for at in hits if at > now - 3600)
+
+
+def test_four_networks_asking_as_their_places_end_never_hold_all_five(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A1027's sustained run: four networks, ten seconds apart, ask again 9 seconds before each
+    # place ends and the moment it ends, within their pair limits, for thirty hours. Not one
+    # second has all five places held, so a fifth network always finds one.
+    now = _clock(monkeypatch)
+    limits = links.RequestLimits()
+    networks = [f"198.51.100.{n}" for n in range(1, 5)]
+    asks = sorted(
+        (n * 10.0 + k * 3600.0 + early, source)
+        for n, source in enumerate(networks)
+        for k in range(30)
+        for early in ((0.0,) if k == 0 else (-9.0, 0.0))
+    )
+    most, at = 0, 0
+    for second in range(30 * 3600):
+        now[0] = float(second)
+        while at < len(asks) and asks[at][0] <= second:
+            limits.take("human@example.org", asks[at][1])
+            at += 1
+        most = max(most, _places_held(limits, now[0]))
+    assert most == 4
+
+
+def test_a_mark_taken_late_ends_with_its_place(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A1027 N2: a request held 15 seconds between its place and its mark. The mark takes the
+    # place's moment, so once the place has left the hour the network holds nothing there.
+    now = _clock(monkeypatch)
+    limits = links.RequestLimits()
+    marks = limits.recipient_hour_networks
+    for name in ("place", "hit"):
+        original = getattr(marks, name)
+
+        def stalled(*args: Any, original: Any = original, **kwargs: Any) -> Any:
+            now[0] += 15.0
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(marks, name, stalled)
+    assert limits.take("human@example.org", "198.51.100.1") == (0, True)
+    monkeypatch.undo()
+    now = _clock(monkeypatch)
+    now[0] = 3601.0
+    assert limits.take("human@example.org", "198.51.100.1") == (0, True)  # a new place
+    others = [limits.take("human@example.org", f"203.0.113.{n}")[1] for n in range(1, 6)]
+    assert others == [True] * 4 + [False]  # it holds one of the five, not none
+
+
+def test_of_two_requests_of_one_network_at_once_one_gives_its_place_back(
+    counts: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A1027 F5: the first request is held between its places and its mark; a second of the
+    # same network runs through and marks it. The first then gives its places back, and the
+    # network holds one place: four more networks fit, a fifth does not.
+    limits = links.RequestLimits()
+    marks = limits.recipient_hour_networks
+    original = marks.place
+    second: list[tuple[int, bool]] = []
+    holding = [True]
+
+    def held(key: str, count: int = 1, **kwargs: Any) -> Any:
+        if holding[0]:
+            holding[0] = False  # only the first request is held, once
+            second.append(limits.take("human@example.org", "198.51.100.1"))
+        return original(key, count, **kwargs)
+
+    monkeypatch.setattr(marks, "place", held)
+    assert limits.take("human@example.org", "198.51.100.1") == (0, True)
+    assert second == [(0, True)]
+    monkeypatch.undo()
+    others = [limits.take("human@example.org", f"203.0.113.{n}")[1] for n in range(1, 6)]
+    assert others == [True] * 4 + [False]
+    assert limits.take("human@example.org", "198.51.100.1") == (0, True)  # it holds its one

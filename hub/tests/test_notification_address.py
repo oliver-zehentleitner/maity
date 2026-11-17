@@ -957,3 +957,18 @@ def test_two_accounts_at_their_own_limits_never_reach_the_verification_mail_coun
     # Each its own 10 a day, all delivered: the count of the mails never refused one.
     assert len(sent) == 2 * 20
     assert _most_in(sent, 3600) == 6 and _most_in(sent, 86400) == 20
+
+
+def test_an_account_asking_again_late_in_its_hold_takes_no_second_place(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A1027 P12 for verification: two accounts ask again late in their hold; the owner's
+    # account, a third, still gets its mail.
+    now, sent, ask = _verify_clock(monkeypatch)
+    for human in ("h1", "h2"):
+        assert ask(human) == 1
+    now[0] = 3591.0
+    for human in ("h1", "h2"):
+        assert ask(human) == 1
+    now[0] = 3595.0
+    assert ask("owner") == 1

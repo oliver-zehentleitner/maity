@@ -58,12 +58,8 @@ BY_ADDRESS_HOUR = Limiter(
     links.RECIPIENT_PER_HOUR, 3600, name="routes.registration.BY_ADDRESS_HOUR"
 )
 BY_ADDRESS_DAY = Limiter(links.RECIPIENT_PER_DAY, 86400, name="routes.registration.BY_ADDRESS_DAY")
-BY_ADDRESS_HOUR_NETWORKS = Limiter(
-    1, 3600 - links.MARK_EARLY, name="routes.registration.BY_ADDRESS_HOUR_NETWORKS"
-)
-BY_ADDRESS_DAY_NETWORKS = Limiter(
-    1, 86400 - links.MARK_EARLY, name="routes.registration.BY_ADDRESS_DAY_NETWORKS"
-)
+BY_ADDRESS_HOUR_NETWORKS = Limiter(1, 3600, name="routes.registration.BY_ADDRESS_HOUR_NETWORKS")
+BY_ADDRESS_DAY_NETWORKS = Limiter(1, 86400, name="routes.registration.BY_ADDRESS_DAY_NETWORKS")
 BY_ADDRESS_MAILS_HOUR = Limiter(
     links.RECIPIENT_MAILS_PER_HOUR,
     3600,

@@ -239,9 +239,6 @@ RECIPIENT_PER_DAY = 20
 # any hour or day, so these never stop fewer than five.
 RECIPIENT_MAILS_PER_HOUR = 50
 RECIPIENT_MAILS_PER_DAY = 200
-# A mark that a network holds a place lives this much shorter than the place: it is taken a
-# moment after the place, and must never outlast it.
-MARK_EARLY = 10.0
 
 Recipient = tuple[Limiter, Limiter, Limiter, Limiter, Limiter, Limiter]
 
@@ -252,12 +249,13 @@ def recipient_over(limiters: Recipient, normalised: str, asker: str) -> bool:
     nothing is recorded.
 
     `limiters`: the address's places per hour and per day, the marks of the askers holding
-    one (limit 1, windows `MARK_EARLY` shorter), and its mails per hour and per day; each is an
-    attribute of its own where it is held, so that the tests find and reset it. The places
-    are taken first, then the mails; a mark is set only once all of them were had, and never
-    given back, so a mark seen by a concurrent request is a place really held. Two concurrent
-    first requests of one asker both take a place; the one that finds the mark set after
-    gives its place back."""
+    one (limit 1, the same windows), and its mails per hour and per day; each is an attribute
+    of its own where it is held, so that the tests find and reset it. The places are taken
+    first, then the mails; a mark is set only once all of them were had, at its place's own
+    moment (`Limiter.place(at=)`), so that mark and place leave the window together, and it
+    is never given back: a mark seen by a concurrent request is a place really held, and a
+    network without a mark holds no place. Two concurrent first requests of one asker both
+    take a place; the one that finds the mark set after gives its place back."""
     hour, day, hour_askers, day_askers, mails_hour, mails_day = limiters
     address = digest(f"recipient\0{normalised}")
     pair = digest(f"recipient\0{normalised}\0{asker}")
@@ -281,7 +279,7 @@ def recipient_over(limiters: Recipient, normalised: str, asker: str) -> bool:
             return give_back()
         taken.append((mails, mark, None))
     for limiter, mark, marks in taken:
-        if marks is not None and marks.hit(pair):
+        if marks is not None and marks.place(pair, at=mark)[0]:
             limiter.release(address, mark)  # a concurrent request marked it with its own place
     return False
 
@@ -302,10 +300,10 @@ class RequestLimits:
             RECIPIENT_PER_DAY, 86400, name="auth.email_links.recipient_day"
         )
         self.recipient_hour_networks = Limiter(
-            1, 3600 - MARK_EARLY, name="auth.email_links.recipient_hour_networks"
+            1, 3600, name="auth.email_links.recipient_hour_networks"
         )
         self.recipient_day_networks = Limiter(
-            1, 86400 - MARK_EARLY, name="auth.email_links.recipient_day_networks"
+            1, 86400, name="auth.email_links.recipient_day_networks"
         )
         self.recipient_mails_hour = Limiter(
             RECIPIENT_MAILS_PER_HOUR,

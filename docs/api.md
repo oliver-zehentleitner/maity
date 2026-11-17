@@ -2063,8 +2063,9 @@ it is, IPv6 by its /64. A network's first mail to the address in the
 window takes a place; its further mails take none and are held by its
 pair limit alone. A request counts only once its pair limit let it
 through, and a network the address had no place for holds none
-afterwards. A place is marked as held only once it was had, so
-concurrent requests from one network take no mail past it. The windows
+afterwards. A place is marked as held only once it was had, and the
+mark ends with the place, so concurrent requests from one network take
+no mail past it and a network never holds two places. The windows
 slide, so a place passes from one network to the next within an hour or
 a day; the mails themselves are therefore counted too: an address is sent
 at most 50 of these mails in any hour and 200 in any day, from all
