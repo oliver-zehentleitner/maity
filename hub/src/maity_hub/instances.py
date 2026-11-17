@@ -27,7 +27,7 @@ from maity_hub.models import Strict
 from maity_hub.scopes import tokens_of
 
 INSTANCE_PATTERN = re.compile(r"[2-9a-hjkmnp-z]{4,5}")
-MAX_INSTANCES = 16
+BOUND = 1000  # the hub's bound of `max_instances`; its ceiling is in ceilings.py (§6.31)
 
 
 def address(member_id: str, instance: str) -> str:
@@ -199,14 +199,42 @@ def active_count(conn: Connection, membership_id: int) -> int:
     )
 
 
-def refuse_over_quota(conn: Connection, member: Any, adding: int = 1) -> None:
-    """`instance_quota` when the team would have more active instances than it may."""
-    if active_count(conn, member.id) + adding > member.max_instances:
+def max_instances_limit(conn: Connection, member: Any, project: Any | None = None) -> Any:
+    """`max_instances` in effect for the agent membership `member` (§6.31): its stored value,
+    or its ceiling when that is lower, the agent profile owner's account override counting."""
+    from maity_hub import ceilings
+
+    if project is None:
+        project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == member.agent_id)
+    ).scalar_one()
+    return ceilings.resolve(conn, "max_instances", project, member.max_instances, owner), owner
+
+
+def refuse_over_quota(
+    conn: Connection, member: Any, adding: int = 1, caller_id: str | None = None
+) -> None:
+    """`instance_quota` with the quota details (§6.31) when the team would have more active
+    instances than `max_instances` in effect allows. The ceiling's value is shown to the
+    agent profile's owner, who sets the value; `caller_id` names the caller."""
+    from maity_hub import ceilings, namespace
+
+    count = active_count(conn, member.id)
+    project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
+    limit, owner = max_instances_limit(conn, member, project)
+    if count + adding > limit.limit:
         raise ApiError(
             409,
             "instance_quota",
             "the team has as many instances as its rulebook allows",
-            {"max": member.max_instances},
+            ceilings.details(
+                limit,
+                count,
+                namespace.full_name(conn, project),
+                sees_ceiling=caller_id is not None and caller_id == owner,
+                member_id=member.agent_id,
+            ),
         )
 
 
@@ -660,7 +688,7 @@ def refresh_team_wake(conn: Connection, project_id: str) -> None:
 
 
 class TeamIn(Strict):
-    max_instances: int | None = Field(default=None, ge=1, le=MAX_INSTANCES)
+    max_instances: int | None = Field(default=None, ge=1, le=BOUND)
     distribution: Literal["free", "lead", "round_robin"] | None = None
     lead_instance: str | None = Field(default=None, max_length=5)
     wake: Literal["all", "lead", "next_free"] | None = None
@@ -749,6 +777,16 @@ def _set_team(conn: Connection, target: Any, team: TeamIn, caller: Caller) -> No
             if value is None:
                 raise invalid({f"team.{field}": "required"})
             values[field] = value
+    if "max_instances" in values:
+        from maity_hub import ceilings
+
+        project = conn.execute(select(t.project).where(t.project.c.id == target.project_id)).one()
+        owner = conn.execute(
+            select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == target.agent_id)
+        ).scalar_one()
+        cap = ceilings.ceiling(conn, "max_instances", project, owner)
+        if values["max_instances"] > cap.value:
+            raise ceilings.above_ceiling("team.max_instances", cap)
     if "lead_instance" in given:
         if team.lead_instance is not None:
             if not INSTANCE_PATTERN.fullmatch(team.lead_instance):

@@ -20,6 +20,7 @@ from maity_hub import (
     attachments,
     availability,
     bridges,
+    ceilings,
     clock,
     commitment,
     contract_text,
@@ -591,9 +592,9 @@ def _apply_policy(
         if not policy.LEASE_MIN <= change.lease_seconds <= policy.LEASE_MAX:
             errors["policy.lease_seconds"] = "out_of_range"
         proposed["lease_seconds"] = change.lease_seconds
+    ceiling_hit: list[int] = []
     if change.max_placements is not None:
-        if not 0 <= change.max_placements <= policy.MAX_PLACEMENTS_MAX:
-            errors["policy.max_placements"] = "out_of_range"
+        _check_bound(conn, project_id, "max_placements", change.max_placements, errors, ceiling_hit)
         proposed["max_placements"] = change.max_placements
     if "keep_the_why" in change.model_fields_set and change.keep_the_why is None:
         # Only `required` or `optional` (§6.1): a null would clear the human's value.
@@ -601,8 +602,9 @@ def _apply_policy(
     if change.keep_the_why == "required" and not memory_on:
         errors["policy.keep_the_why"] = "no_memory_provider"
     if change.member_agents_max is not None:
-        if not 0 <= change.member_agents_max <= policy.MEMBER_AGENTS_MAX_MAX:
-            errors["policy.member_agents_max"] = "out_of_range"
+        _check_bound(
+            conn, project_id, "member_agents_max", change.member_agents_max, errors, ceiling_hit
+        )
         proposed["member_agents_max"] = change.member_agents_max
     if change.outside_roles is not None:
         roles = list(dict.fromkeys(change.outside_roles))
@@ -640,8 +642,35 @@ def _apply_policy(
             errors["policy.coordinator_substitute"] = "not_an_agent_admin"
         proposed["coordinator_substitute"] = stand_in
     if errors:
+        if ceiling_hit:  # §6.31: the ceiling in effect beside the field
+            raise ApiError(
+                400,
+                "invalid",
+                "the request does not validate",
+                {"fields": errors, "ceiling": ceiling_hit[0]},
+            )
         raise invalid(errors)
     return proposed
+
+
+def _check_bound(
+    conn: Connection,
+    project_id: str,
+    name: str,
+    value: int,
+    errors: dict[str, str],
+    ceiling_hit: list[int],
+) -> None:
+    """A project value within the hub's bound (`out_of_range`) and within its ceiling
+    (`above_ceiling`, §6.31)."""
+    if not 0 <= value <= ceilings.BOUND:
+        errors[f"policy.{name}"] = "out_of_range"
+        return
+    project = conn.execute(select(t.project).where(t.project.c.id == project_id)).one()
+    cap = ceilings.ceiling(conn, name, project)
+    if value > cap.value:
+        errors[f"policy.{name}"] = "above_ceiling"
+        ceiling_hit.append(cap.value)
 
 
 def _set_keep_the_why(change: PolicyIn | None) -> dict[str, Any]:
@@ -1486,6 +1515,7 @@ HUMANS_ONLY_POLICY = {
     "on_runner_revoke",
     "spawn_requests",
     "merged_closes",  # set by a human with project:admin (§6.1)
+    "max_placements",  # set by a human with project:admin (§6.1, §6.31)
     "member_agents",  # who may bring agents into the project (§3.1, §6.1)
     "member_agents_max",
     "agent_owners",  # whether an agent's owner must be a member (§6.1, §6.2)

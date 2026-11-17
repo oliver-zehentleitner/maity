@@ -284,7 +284,24 @@ def test_the_quota_the_closed_project_and_the_revoked_runner(
     placed(setup)
     other = flow.agent(make_client, setup.owner)
     over = place(setup, agent={"id": other.id})
-    assert (over.status_code, over.json()["error"]["details"]) == (409, {"max": 1})
+    assert (over.status_code, over.json()["error"]["details"]) == (
+        409,
+        {
+            "name": "max_placements",
+            "limit": 1,
+            "count": 1,
+            "max": 1,
+            "scope": "project",
+            "project": "maintainer/maity",
+            "source": "project",
+            "ceiling": {"value": 1000, "source": "default"},
+            "raise": {
+                "right": "project:admin",
+                "path": "/api/v1/projects/maintainer/maity",
+                "field": "policy.max_placements",
+            },
+        },
+    )
     setup.owner.patch(
         "/projects/maintainer/maity", {"policy": {"max_placements": 8}, "reason": "more"}
     )

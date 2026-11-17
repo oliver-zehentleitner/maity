@@ -139,7 +139,13 @@ def test_member_agents_is_a_humans_project_admin_field(
         response = admin.patch(PROJECT, {"policy": change, "reason": "test"})
         assert response.status_code == 403
         assert response.json()["error"]["details"]["reason"] == "humans_only"
+    # Past the default ceiling of 20 (§6.31), past the hub's bound of 1000.
     bad = owner.patch(PROJECT, {"policy": {"member_agents_max": 21}, "reason": "test"})
+    assert bad.json()["error"]["details"] == {
+        "fields": {"policy.member_agents_max": "above_ceiling"},
+        "ceiling": 20,
+    }
+    bad = owner.patch(PROJECT, {"policy": {"member_agents_max": 1001}, "reason": "test"})
     assert bad.json()["error"]["details"]["fields"] == {"policy.member_agents_max": "out_of_range"}
     bad = owner.patch(PROJECT, {"policy": {"member_agents": "maybe"}, "reason": "test"})
     assert bad.json()["error"]["details"]["fields"] == {"policy.member_agents": "unknown"}
@@ -179,7 +185,17 @@ def test_the_limit_counts_distinct_profiles_and_never_an_instance(
     first = _bring(friend, 1).json()
     over = _bring(friend, 2)
     assert over.status_code == 403
-    assert over.json()["error"]["details"] == {"reason": "member_agents_max", "max": 1}
+    details = over.json()["error"]["details"]
+    assert (details["reason"], details["name"], details["limit"], details["count"]) == (
+        "member_agents_max",
+        "member_agents_max",
+        1,
+        1,
+    )
+    assert (details["max"], details["scope"], details["source"]) == (1, "member", "project")
+    # Not the setter: the ceiling's source without its value.
+    assert details["ceiling"] == {"source": "default"}
+    assert details["raise"]["right"] == "project:admin"
     # The same profile's second open join counts once.
     again = friend.post(JOINS, {"agent": {"id": first["agent_id"]}})
     assert again.status_code == 201, again.text
