@@ -18267,7 +18267,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `reported_current` | computed, never stored: `true` when `reported.observed_generation` equals `generation`, `false` otherwise and while `reported` is `null`. The dashboard shows the placement as pending while it is `false` |
 | `session_hint` | from the runner's report: what the operator types to look at the session; never a secret by construction |
 | `logs_hint` | set by the hub: `maity runner logs <placement id>` |
-| `health`, `nudge`, `replaces`, `replaced_by`, `handover`, `kept_until` | placement health: the hub's check-in state and the settings that apply, the latest nudge, an open or finished replacement and the handover each runner needs, and when an old placement kept after its replacement is stopped (§15.14) |
+| `health`, `nudge`, `replaces`, `replaced_by`, `handover`, `kept_until` | placement health: the hub's check-in state and the settings that apply, the latest nudge, an open or finished replacement and the handover each runner needs, and when an old placement kept after its replacement is stopped (§15.14; `replaces`, `replaced_by`, `handover` and `kept_until` are not built yet, as the replacement is not) |
 
 **Who sees what.**
 
@@ -18305,7 +18305,8 @@ clone Z. It is the only thing the hub asks of a runner.
   `instance_quota` (409, `details.max`), and nothing is created. The
   pickup checks again (§15.9). Neither a replacement's new placement
   nor its instance counts while the replacement is open or the old
-  instance is kept (`keep_old`, §15.14). The project's
+  instance is kept (`keep_old`, §15.14; the replacement is not built
+  yet). The project's
   `max_placements` and the runner's `max_agents` (§15.3, `capacity`,
   §15.7) apply on top, as before. `max_instances` is 1 by default, so a
   second instance needs its owner to raise it first: the dashboard's
@@ -18324,8 +18325,8 @@ clone Z. It is the only thing the hub asks of a runner.
   (project, runner, clone), whatever the target: on one runner a clone
   name in a project is one workspace and one identity. A second is
   `placement_exists`. Two instances of one agent on one runner
-  therefore work in two clones (`workspace`, above), and so does a
-  replacement on the same runner (§15.14).
+  therefore work in two clones (`workspace`, above), and so would a
+  replacement on the same runner (§15.14, not built yet).
 - A closed placement counts toward neither rule nor `max_placements`;
   neither does a refused one, which is closed. Its instance keeps
   counting toward `max_instances` until its credential is revoked
@@ -19022,7 +19023,8 @@ POST /api/v1/runner/placements/plc-0003/join
   `max_instances` applies (`instance_quota`), as it did at the
   placement's creation (§15.5; the check at creation is not built yet,
   tsk-rfa7fwa2sz5g). A replacement's pickup
-  (§15.14) is a `new_instance` beside the live old one; neither the new
+  (§15.14; the replacement is not built yet) is a `new_instance` beside
+  the live old one; neither the new
   placement nor its instance counts toward `max_instances` while the
   replacement is open or the old instance is kept (`keep_old`); the
   claims move later,
@@ -20099,7 +20101,13 @@ It reports `exited` with `reason: hung`, `detail: tool`, then resumes.
 This is the backstop for a call that never returns, such as a command
 waiting for input nobody gives.
 
-**Replacing an agent.** `POST
+**Replacing an agent.** Not built yet (whether it is built is a feature
+decision; noted under tsk-rfa7fwa2sz5g): today the hub serves no
+`…/replace` route and no handover routes, a placement carries no
+`replaces`, `replaced_by`, `handover` or `kept_until`, and there is no
+`replace_open`. An agent moves to another runner by a stop or `DELETE`
+of its placement and a new placement. What follows in this part, up to
+the end of the replacement's rules, is the design. `POST
 /projects/{owner}/{slug}/placements/{id}/replace` moves an agent to a
 new placement. The body is `{runner, target?, harness?, mode?, model?,
 workspace?, handover, keep_old?, reason?}`: the fields of a creation
