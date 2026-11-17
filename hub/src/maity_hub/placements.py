@@ -1041,6 +1041,28 @@ def clamp_since(since: datetime, previous: dict[str, Any] | None, now: datetime)
     return min(since, now)
 
 
+def runner_quota(runner_id: str, quota: dict[str, Any]) -> dict[str, Any]:
+    """A `capacity` report's `quota` as the quota details of §6.31: the runner's own limit,
+    which only its owner lifts, in its configuration (`raise.path` null, `field` its key)."""
+    target = quota["scope"] == "target"
+    scope: dict[str, Any] = {"scope": quota["scope"], "runner": runner_id}
+    if target:
+        scope["target"] = quota["target"]
+    return {
+        "name": "max_agents",
+        "limit": quota["max"],
+        "count": quota["count"],
+        "max": quota["max"],
+        **scope,
+        "source": "runner",
+        "raise": {
+            "right": "runner_owner",
+            "path": None,
+            "field": "backend.ssh.hosts[].max_agents" if target else "limits.max_agents",
+        },
+    }
+
+
 def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor) -> Any:
     """A status report, as a compare-and-set on `seq`. Returns the placement after it."""
     if placement.active is None or body["seq"] <= placement.reported_seq:
@@ -1069,6 +1091,8 @@ def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor)
         "target": body["target"],
         "reported_at": clock.rfc3339(now),
     }
+    if body.get("quota") is not None:
+        fields["quota"] = runner_quota(placement.runner_id, body["quota"])
     values: dict[str, Any] = {"reported_seq": body["seq"]}
     if current:
         values["reported"] = fields

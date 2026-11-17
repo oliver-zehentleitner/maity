@@ -492,7 +492,7 @@ def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing
             raise member_join_limit("takes_over")
 
 
-def _agents_held(conn: Connection, project_id: str, owner_id: str) -> set[str]:
+def agents_held(conn: Connection, project_id: str, owner_id: str) -> set[str]:
     """The owner's distinct agent profiles with an active membership in the project or an
     open first join to it (§3.1): a profile counts once, an instance join not at all."""
     owned = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == owner_id)
@@ -523,7 +523,7 @@ def _agents_held(conn: Connection, project_id: str, owner_id: str) -> set[str]:
 def _require_slot(conn: Connection, project: Any, owner_id: str, agent_id: str) -> None:
     """The owner's agents stay within `policy.member_agents_max`, read under the
     project's lock the caller took."""
-    held = _agents_held(conn, project.id, owner_id)
+    held = agents_held(conn, project.id, owner_id)
     limit = _member_agents_limit(conn, project)
     if agent_id not in held and len(held) >= limit.limit:
         quota = ceilings.details(
@@ -577,7 +577,7 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
     # their memberships and open first joins, this join's own included, against the
     # maximum now. Another open join naming the same profile is no exemption: a lowered
     # maximum holds for it too.
-    held = _agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
+    held = agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
     if len(held) > _member_agents_limit(conn, project).limit:
         raise not_found()
 

@@ -171,3 +171,51 @@ def test_only_the_instance_admin_reads_or_sets_them(
         assert error(other.patch(path, {"max_placements": 5}))[:2] == (403, "forbidden")
     assert admin.get("/admin/projects/maintainer/nothing/limits").status_code == 404
     assert admin.get("/admin/users/hum-nobody/limits").status_code == 404
+
+
+# --- the overview (§6.31) ------------------------------------------------------------------
+
+
+def test_the_overview_shows_each_limit_with_its_source_and_who_raises_it(
+    admin: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, admin)
+    view = admin.get(f"{PROJECT}/limits").json()
+    assert view["project"]["max_placements"] == {
+        "limit": 8,
+        "source": "default",
+        "count": 0,
+        "ceiling": {"value": 1000, "source": "default"},
+        "editable": True,
+        "raise": {
+            "right": "project:admin",
+            "path": "/api/v1/projects/maintainer/maity",
+            "field": "policy.max_placements",
+        },
+    }
+    assert view["project"]["member_agents_max"]["count"] == 1  # the owner's own agent
+    [mine] = view["agents"]
+    assert (mine["member"], mine["max_instances"]["limit"], mine["max_instances"]["count"]) == (
+        agent.id,
+        1,
+        1,
+    )
+    assert mine["max_instances"]["editable"] is True
+    assert view["runners"] == []
+    # The agent reads its own row, and no ceiling's value: it sets nothing here.
+    own = agent.get(f"{PROJECT}/limits").json()
+    assert own["project"]["max_placements"]["ceiling"] == {"source": "default"}
+    assert own["project"]["max_placements"]["editable"] is False
+    assert [a["member"] for a in own["agents"]] == [agent.id]
+
+
+def test_never_listened_is_an_instance_without_a_session(
+    admin: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, admin)
+    # A read with the credential sets `last_seen_at`; the instance still never listened.
+    assert agent.get("/me").status_code == 200
+    [row] = admin.get(f"{PROJECT}/limits").json()["agents"]
+    [never] = row["never_listened"]
+    assert (never["credential_id"], never["instance"]) == (agent.credential_id, agent.instance)
+    assert set(never) == {"credential_id", "instance", "created_at"}

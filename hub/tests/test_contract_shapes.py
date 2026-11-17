@@ -62,6 +62,7 @@ SHAPES: dict[str, tuple[str, set[str]]] = {
             "rules_version", "created_at", "public_page", "public_about",
         },
     ),  # fmt: skip
+    "/projects/{}/{}/limits": ("**The overview.**", {"project", "agents", "runners"}),
     "/projects/{}/{}/members": PAGE,
     "/projects/{}/{}/requests": PAGE,
     "/projects/{}/{}/roles": (
