@@ -23,15 +23,30 @@ from ..hub import HubError, hub_base
 DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
+DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
+# Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
+# domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
+# configuration, which in the `single` layout is the operator's (cli/context/runner.md).
+DEFAULT_GIT_NAME = "Maity agent"
+DEFAULT_GIT_EMAIL = "maity-agent@invalid"
 
-HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub")
+HARNESSES = (
+    "claude-code", "codex", "opencode", "antigravity", "pi", "hermes", "kimi", "cline", "omp",
+    "stub",
+)  # fmt: skip
 # No command allowlist in their own configuration (runner design §6.3): refused unless they
 # run in a pod and the operator says so for each.
 NOT_UNATTENDED = ("pi", "hermes", "kimi", "cline", "omp")
 # Built but not offered: the maintainer decides on these when the runner goes into use.
+# Antigravity was held back while its one command grant was unconfined; the owner has now
+# accepted that residual risk (req-9spwe33neh1z) and the harness is offered again, while the
+# OS-level confinement of command(maity) is added incrementally (tsk-zjv2xyhyggnm).
 NOT_OFFERED_YET = ("opencode",)
-BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode", "pi": "pi",
-            "hermes": "hermes", "kimi": "kimi", "cline": "cline", "omp": "omp"}  # fmt: skip
+# Why a not-offered harness is held back, where there is a specific reason to name.
+NOT_OFFERED_WHY: dict[str, str] = {}
+BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode",
+            "antigravity": "agy", "pi": "pi", "hermes": "hermes", "kimi": "kimi", "cline": "cline",
+            "omp": "omp"}  # fmt: skip
 MODES = ("interactive", "supervised")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 # A project as the hub names it (§6.25): the namespace owner's handle and the slug.
@@ -108,10 +123,16 @@ class Harness:
     models: tuple[str, ...] = ()
     default_model: str | None = None
     binary: str | None = None
-    require_sandbox: bool = False
+    # True: no start without the harness's sandbox. None (unset): Claude Code is refused when
+    # its sandbox tools are there but its version keeps the sandbox off. False: never refused
+    # for the sandbox (capabilities.sandbox_refused).
+    require_sandbox: bool | None = None
     env_file: Path | None = None
     stub_exit_code: int = 0
     stub_run_seconds: int = 30
+    # §15.16: whether the runner installs a missing tool, and looks for a newer one daily.
+    install: bool = False
+    update: str = "never"
 
 
 @dataclass(frozen=True)
@@ -126,6 +147,15 @@ class RepositoryGrant:
 
 
 @dataclass(frozen=True)
+class GitIdentity:
+    """The author and committer of every placed session's commits (`[git]`)."""
+
+    name: str = DEFAULT_GIT_NAME
+    email: str = DEFAULT_GIT_EMAIL
+    configured: bool = False  # `[git]` named one; else the default, which `check` warns about
+
+
+@dataclass(frozen=True)
 class Config:
     path: Path
     hub_url: str
@@ -136,6 +166,11 @@ class Config:
     harnesses: dict[str, Harness]
     repositories: dict[str, RepositoryGrant]
     ssh: Ssh | None = None
+    git: GitIdentity = GitIdentity()
+    maity_update: str = "never"  # `[maity] update` (§15.16)
+    # The versions the runner installs (§15.16): beside, not inside, state_dir, which no
+    # sandboxed command may read, while a harness's sandbox runs the harness's own files.
+    tools_dir: Path = Path(DEFAULT_TOOLS_DIR).expanduser()
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -254,6 +289,32 @@ def _names_maity(argument: str) -> bool:
     """Whether any part of `argument` is maity: `/tmp/a:b/maity`, `C:/bin/MAITY.EXE`,
     `C:maity`, `--exec=maity`."""
     return any(_program_name(part) == "maity" for part in _ARGUMENT_PARTS.split(argument))
+
+
+# A name or an address git records as written: git drops `<` and `>` from a name and trims
+# its ends, so those are refused here instead of committed changed. Only what
+# `str.isprintable()` takes (the ASCII space included): no control character (C0, DEL, C1),
+# whose NUL cannot be passed in the session's environment at all and the rest would land in
+# every commit, and no format character, line or paragraph separator, other space, private
+# or unassigned code point either. That also refuses U+200C, which some names use; an
+# identity for agents does without it, and nothing invisible reaches a commit
+# (cli/context/runner.md). At most 200 characters.
+_GIT_NAME = re.compile(r"[^<>]{1,200}")
+_GIT_EMAIL = re.compile(r"[^<>\s@]+@[^<>\s@]+")
+
+
+def _git_name(value: Any) -> str | None:
+    if not _GIT_NAME.fullmatch(value) or value != value.strip() or not value.isprintable():
+        return ("a name of 1 to 200 printable characters (no control or format characters), "
+                "no < or >, no space at either end")  # fmt: skip
+    return None
+
+
+def _git_email(value: Any) -> str | None:
+    if len(value) > 200 or not _GIT_EMAIL.fullmatch(value) or not value.isprintable():
+        return ("an address like team@example.org: printable characters (no control or format "
+                "characters), one @, no spaces, < or >")  # fmt: skip
+    return None
 
 
 def _commands(values: Any) -> str | None:
@@ -439,10 +500,42 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             )
             table.done()
 
+    git = GitIdentity()
+    git_in = root.table("git")
+    if git_in is not None:
+        git = GitIdentity(
+            name=git_in.get("name", str, DEFAULT_GIT_NAME, required=True, check=_git_name),
+            email=git_in.get("email", str, DEFAULT_GIT_EMAIL, required=True, check=_git_email),
+            configured=True,
+        )
+        git_in.done()
+
+    maity_update = "never"
+    maity_in = root.table("maity")
+    if maity_in is not None:
+        maity_update = maity_in.get("update", str, "never", check=_one_of("daily", "never"))
+        maity_in.done()
+
+    # §15.16 "Where": the runner manages tools on its local target only; on an ssh target it
+    # reports what it finds. Managed versions live in the runner user's own tools_dir, which
+    # the agents' own user in the agent_user layout cannot rely on (lotse 131453, not yet).
+    for name, harness in harnesses.items():
+        if not harness.install and harness.update == "never":
+            continue
+        if kind != "local":
+            problems.append(f"harness.{name}: install and update work on the local backend only")
+        elif local is not None and local.layout == "agent_user":
+            problems.append(
+                f"harness.{name}: install and update are not available in the agent_user "
+                "layout yet"
+            )
+
     root.done()
     if problems:
         raise ConfigError(problems)
-    return Config(path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh)
+    return Config(
+        path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh, git, maity_update
+    )
 
 
 _RESTART = Restart()
@@ -537,6 +630,8 @@ def unsupported(cfg: Config) -> list[str]:
     for harness in cfg.harnesses.values():
         if harness.env_file is not None:
             found.append(f"harness.{harness.id}.env_file is not passed on yet (R5)")
+    if cfg.maity_update != "never":
+        found.append('maity.update is not carried out yet; remove it or set "never"')
     return found
 
 
@@ -608,8 +703,11 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
             "(runner design §6.3)"
         )
     elif name in NOT_OFFERED_YET:
+        why = NOT_OFFERED_WHY.get(name)
+        reason = f": {why}" if why else ""
         problems.append(
-            f"{where}: not offered yet; for now the runner runs claude-code and codex (and stub)"
+            f"{where}: not offered yet{reason}; for now the runner runs claude-code, codex and"
+            " antigravity (and stub)"
         )
     modes = tuple(
         table.get(
@@ -629,6 +727,18 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     if default_model is not None and default_model not in models:
         problems.append(f"{where}.default_model: must be one of its models")
     env_file = table.get("env_file", str, None)
+    install = table.get("install", bool, False)
+    update = table.get("update", str, "never", check=_one_of("daily", "never"))
+    if install or update != "never":
+        from maity.runner import installers  # noqa: F401  (fills tools.INSTALLERS)
+        from maity.runner.tools import INSTALLERS
+
+        if name not in INSTALLERS:
+            problems.append(
+                f"{where}: the runner has no installer for this harness; " "drop install and update"
+            )
+        if "binary" in table.data:
+            problems.append(f"{where}.binary: a tool the runner installs or updates is its own")
     harness = Harness(
         id=name,
         modes=modes,
@@ -636,8 +746,10 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         models=models,
         default_model=default_model,
         binary=None if name == "stub" else table.get("binary", str, BINARIES.get(name)),
-        require_sandbox=table.get("require_sandbox", bool, False),
+        require_sandbox=table.get("require_sandbox", bool, None),
         env_file=Path(env_file).expanduser() if env_file else None,
+        install=install,
+        update=update,
     )
     if name == "stub":
         return Harness(

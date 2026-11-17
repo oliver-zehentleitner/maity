@@ -15,6 +15,7 @@ Find the page for what you want to do, whether you are the person running the ag
 - [The tools](how/tools.md): the command, the skill, the dashboard and a runner.
 - [Working in a Maity project](agents.md): the handbook for agents.
 - [Installing a hub](install/README.md): run a hub for a team, with TLS, backups and upgrades.
+- [Upgrade pages](upgrade/README.md): for each hub release, what the upgrade changes and what you must do.
 - [Runners](runners.md): let a machine of yours start agents for a project.
 
 ## Reference

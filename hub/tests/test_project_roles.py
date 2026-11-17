@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import events, guide, merged, scopes
+from maity_hub import events, guide, merged, project_roles, scopes
 from maity_hub import tables as t
 from maity_hub.views import principal_id
 from tests import flow
@@ -19,6 +21,22 @@ LEGAL = {
     "base": "reviewer",
     "description": "Checks licences",
 }
+
+
+CONTRACT = Path(__file__).parents[2] / "docs" / "api.md"
+
+
+def contract_reserved() -> list[str]:
+    """The names §2.3 lists as "none of the built-in roles, trusts or tokens (…)", read
+    from the contract, so a name added there and missing in the hub fails here."""
+    text = " ".join(CONTRACT.read_text(encoding="utf-8").split())
+    section = text.split("**Project roles.**", 1)[1]
+    listed = re.search(r"built-in roles, trusts or tokens \(([^)]*)\)", section)
+    assert listed, "§2.3 no longer lists the reserved names in the form this test reads"
+    return re.findall(r"`([^`]+)`", listed.group(1))
+
+
+RESERVED_IN_CONTRACT = contract_reserved()
 
 
 @pytest.fixture
@@ -113,6 +131,25 @@ def test_the_list_is_checked(owner: flow.Human, custom: Any, fields: dict[str, s
     response = put(owner, custom)
     assert response.status_code == 400, response.text
     assert response.json()["error"]["details"]["fields"] == fields
+
+
+def test_the_contracts_reserved_list_is_read() -> None:
+    """Guards the parametrization below against a parse that finds nothing."""
+    assert len(RESERVED_IN_CONTRACT) >= 11
+    assert {"owner", "outside", "none"} <= set(RESERVED_IN_CONTRACT)
+
+
+@pytest.mark.parametrize("name", RESERVED_IN_CONTRACT)
+def test_every_name_the_contract_reserves_is_refused(owner: flow.Human, name: str) -> None:
+    """§2.3: a project role named after a built-in role, trust or token is `invalid`,
+    `details.fields.name: "reserved"`."""
+    response = put(owner, [{"name": name, "base": "coder"}])
+    assert response.status_code == 400, response.text
+    error = response.json()["error"]
+    assert error["code"] == "invalid"
+    assert error["details"]["fields"] == {"custom[0].name": "reserved"}
+    # Refused by the hub's own list, not by a check that happens to catch it.
+    assert name in scopes.ROLES or name in project_roles.RESERVED
 
 
 def test_only_a_human_with_project_admin_puts_the_list(

@@ -50,6 +50,10 @@ def _dns(host: str) -> bool:
 def normalised(network: str, name: str) -> str | None:
     """The name as stored, or None when it is not of its form: the host of a Mastodon name and
     a Bluesky handle are lower-cased, every other name is stored as given."""
+    # Before lower-casing: `str.lower` maps U+212A (KELVIN SIGN) to ASCII "k", which would store
+    # a different host or handle. A Unicode host is refused; an IDN only in its `xn--` form.
+    if network in ("mastodon", "bluesky") and not name.isascii():
+        return None
     if network == "mastodon":
         user, _, host = name[1:].partition("@") if name.startswith("@") else ("", "", "")
         host = host.lower()
@@ -78,6 +82,11 @@ def website_problem(value: str, max_length: int = WEBSITE_MAX) -> str | None:
         host = parts.hostname
         parts.port  # noqa: B018  (a port that is no number raises)
     except ValueError:
+        return "format"
+    # Before case-folding: `hostname` is lower-cased, and `str.lower` maps U+212A (KELVIN SIGN)
+    # to ASCII "k", which would accept a different host. A Unicode host is refused; an IDN is
+    # accepted only already written in its `xn--` form.
+    if not parts.netloc.isascii():
         return "format"
     # `netloc` is the host alone: no user part, no port, no IPv6 brackets.
     if parts.scheme != "https" or not host or parts.netloc.lower() != host or not _dns(host):

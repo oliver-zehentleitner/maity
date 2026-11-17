@@ -37,6 +37,8 @@ from maity_hub import (
     orgs,
     placements,
     public_pages,
+    runner_revoke,
+    runners,
     wakeups,
     write_guard,
 )
@@ -143,16 +145,132 @@ def lock_account(conn: Connection, human_id: str) -> None:
     ).first()
 
 
-def _lock_namespace(conn: Connection, human_id: str) -> None:
-    """`lock_project` on every project in the human's namespace, in a stable order."""
-    for project_id in (
-        conn.execute(
-            select(t.project.c.id).where(t.project.c.owner_id == human_id).order_by(t.project.c.id)
-        )
-        .scalars()
-        .all()
-    ):
+def lock_first(conn: Connection, human_id: str) -> None:
+    """The deletion's first pass, right after its account lock and before it writes anything:
+    every organisation and then every project whose lock the deletion takes later, each set in
+    the order of its ids (`_orgs_to_lock`, `_projects_to_lock`).
+
+    After this pass the deletion takes no organisation's or project's lock it does not hold
+    already. It writes the human's record (a withdrawn personal request, an ended session) and
+    so locks the human's row long before its end, while the writers that file to the human or
+    notify them (a personal request, a chat request, a restricted card's notice, an
+    organisation's invitation, a jour fixe filing) hold their project's or organisation's lock
+    and then lock the human's row. Both orders on one row deadlocked; now such a writer either
+    holds its lock first, and the deletion waits for it here, holding no row of the human's, or
+    waits for the deletion's commit. A lock taken later, out of these orders, could also wait
+    for another deletion that holds it and waits for one of these. The human's account lock
+    keeps the human's own calls from adding to the sets meanwhile (a runner attached, a
+    membership made)."""
+    for org_id in _orgs_to_lock(conn, human_id):
+        orgs.lock(conn, org_id)
+    for project_id in _projects_to_lock(conn, human_id):
         lock_project(conn, project_id)
+
+
+def _orgs_to_lock(conn: Connection, human_id: str) -> list[str]:
+    """The organisations the human belongs to (§6.26, "One organisation, one lock"), those
+    with a live invitation to or from the human, and those a transfer the human started goes
+    into, in the order of their ids."""
+    found = set(
+        _ids(conn, select(t.org_member.c.org_id).where(t.org_member.c.human_id == human_id))
+    )
+    invited = select(t.request.c.id).where(t.request.c.to_human == human_id)
+    found.update(
+        _ids(
+            conn,
+            select(t.org_invitation.c.org_id).where(
+                t.org_invitation.c.live.is_(True),
+                (t.org_invitation.c.invited_by == human_id)
+                | t.org_invitation.c.request_id.in_(invited),
+            ),
+        )
+    )
+    from maity_hub import project_names
+
+    found.update(
+        str(row.proposal["to"])
+        for row in project_names.started_by(conn, human_id)
+        if row.proposal.get("to")
+    )
+    return sorted(found)
+
+
+def _projects_to_lock(conn: Connection, human_id: str) -> list[str]:
+    """Every project whose lock `delete_account` takes, in the order of their ids: the
+    namespace's, those the removal of the human's runners locks (`runner_revoke.projects_to_lock`),
+    those of the placements and invitations the human made, of the decisions their memberships
+    hold, of their agents' memberships, of the transfers they started, of their own memberships,
+    of the repositories they confirmed, of the invitations by handle to them and of the personal
+    requests to them. Each part matches the query of the step that locks it."""
+    found = set(_ids(conn, select(t.project.c.id).where(t.project.c.owner_id == human_id)))
+    for runner_id in _ids(
+        conn,
+        select(t.runner.c.id).where(
+            t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None)
+        ),
+    ):
+        found.update(runner_revoke.projects_to_lock(conn, runner_id))
+    found.update(
+        p.project_id
+        for p in placements.active_rows(
+            conn, t.placement.c.created_by == human_id, t.placement.c.membership_id.is_(None)
+        )
+    )
+    now = clock.now()
+    found.update(
+        row.project_id
+        for row in conn.execute(select(t.invitation).where(t.invitation.c.created_by == human_id))
+        if invitations.state(row, now) == "open"
+    )
+    found.update(
+        _ids(
+            conn,
+            select(t.request.c.project_id).where(
+                t.request.c.id.in_(_held(human_id)), t.request.c.project_id.is_not(None)
+            ),
+        )
+    )
+    agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
+    found.update(
+        _ids(
+            conn,
+            select(t.membership.c.project_id).where(
+                t.membership.c.agent_id.in_(agents), t.membership.c.active.is_(True)
+            ),
+        )
+    )
+    from maity_hub import project_names
+
+    found.update(row.project_id for row in project_names.started_by(conn, human_id))
+    found.update(
+        _ids(
+            conn,
+            select(t.membership.c.project_id).where(
+                t.membership.c.human_id == human_id, t.membership.c.active.is_(True)
+            ),
+        )
+    )
+    found.update(
+        _ids(conn, select(t.project.c.id).where(t.project.c.repository_confirmed_by == human_id))
+    )
+    found.update(
+        _ids(
+            conn,
+            select(t.invitation.c.project_id).where(t.invitation.c.invitee_id == human_id),
+        )
+    )
+    found.update(
+        _ids(
+            conn,
+            select(t.request.c.project_id).where(
+                t.request.c.personal.is_(True),
+                t.request.c.to_human == human_id,
+                t.request.c.status == "open",
+                t.request.c.project_id.is_not(None),
+            ),
+        )
+    )
+    return sorted(found)
 
 
 def _verified_address(conn: Connection, human_id: str) -> str | None:
@@ -283,9 +401,10 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
         return None
     human_id = str(payload.get("h"))
     # The account's lock before any other (`write_guard`): every transaction of the
-    # human's own calls (a newer request, a password or address change) and an address's
-    # confirmation link hold it shared before their first lock, so each either commits
-    # before this one (and this link may be dead) or waits for it. The human row needs
+    # human's own calls (a newer request, a password or address change), an address's
+    # confirmation link and the mail links of a password reset, the daily cap's unlock and
+    # an admin's second-factor reset hold it shared before their first lock, so each either
+    # commits before this one (and this link may be dead) or waits for it. The human row needs
     # no lock of its own here: ordinary work locks it after project locks, and taking
     # it before the projects would invert that order.
     lock_account(conn, human_id)
@@ -296,11 +415,10 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
     if row is None:
         return None
     # The organisations before any project, in the order of their ids (§6.26): a promotion or
-    # a transfer into an organisation takes the same order.
-    orgs.lock_all_of(conn, human.id)
-    # The namespace's projects under their locks before the re-check: a state change
-    # takes the same lock, so a reopen commits first (and this refuses) or waits.
-    _lock_namespace(conn, human.id)
+    # a transfer into an organisation takes the same order. Then every project the deletion
+    # locks later, the namespace's among them, before the re-check: a state change takes the
+    # same lock, so a reopen commits first (and this refuses) or waits.
+    lock_first(conn, human.id)
     refusal = blocker(conn, human.id)
     if refusal is not None:
         return refusal.code
@@ -326,16 +444,13 @@ def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
 
     now = clock.now()
     # Its runners, as `DELETE /runners/{id}` with `agents: stop` (§15.3): placements
-    # closed, the agents' credentials revoked at once, the runner credential revoked.
-    for runner_id in _ids(
-        conn,
-        select(t.runner.c.id)
-        .where(t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None))
-        .order_by(t.runner.c.id)
-        .with_for_update(),
+    # closed, the agents' credentials revoked at once, the runner credential revoked. Each
+    # live credential is locked before its runner, as the runner's own calls take them.
+    for runner in runners.lock(
+        conn, t.runner.c.owner_id == human_id, t.runner.c.removed_at.is_(None)
     ):
         runner_routes.remove(
-            conn, runner_id, agents="stop", instance_rule=hub.on_runner_revoke, by=human_id
+            conn, runner.id, agents="stop", instance_rule=hub.on_runner_revoke, by=human_id
         )
     # Its unused runner enrollments (§15.2) and agent joins (§3.1).
     conn.execute(
@@ -467,17 +582,24 @@ def _return_held(conn: Connection, human_id: str) -> None:
     addressee if an owner's round filed it (§20.7)."""
     from maity_hub.routes.requests import return_held
 
+    for request_id in _ids(
+        conn,
+        select(t.request.c.id)
+        .where(t.request.c.id.in_(_held(human_id)))
+        .order_by(t.request.c.created_at, t.request.c.id),
+    ):
+        return_held(conn, request_id, human_id, "the holder's account was deleted")
+
+
+def _held(human_id: str) -> Any:
+    """The open requests one of the human's memberships, or one of their agents', holds."""
     agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == human_id)
     mine = select(t.membership.c.id).where(
         (t.membership.c.human_id == human_id) | t.membership.c.agent_id.in_(agents)
     )
-    for request_id in _ids(
-        conn,
-        select(t.request.c.id)
-        .where(t.request.c.holder_member.in_(mine), t.request.c.status == "open")
-        .order_by(t.request.c.created_at, t.request.c.id),
-    ):
-        return_held(conn, request_id, human_id, "the holder's account was deleted")
+    return select(t.request.c.id).where(
+        t.request.c.holder_member.in_(mine), t.request.c.status == "open"
+    )
 
 
 def _off_restricted_lists(conn: Connection, human_id: str, owned: list[str]) -> None:
@@ -547,6 +669,8 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
             wakeups.forget_token_everywhere(conn, hub.github_app, installation_id)
     conn.execute(delete(t.email_sign_in).where(t.email_sign_in.c.human_id == human_id))
     conn.execute(delete(t.email_sign_in_day).where(t.email_sign_in_day.c.human_id == human_id))
+    # The day's wrong second-factor codes (§2.8.6).
+    conn.execute(delete(t.second_factor_day).where(t.second_factor_day.c.human_id == human_id))
     # Open reset links and the day's wrong codes at resets (§2.10).
     conn.execute(delete(t.password_reset).where(t.password_reset.c.human_id == human_id))
     conn.execute(
@@ -642,6 +766,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             public_agents="public_projects",
             interface_language=None,
             start_tabs=None,  # project ids only, but the person's choice (§5.1)
+            experiment_notice_understood_at=None,  # the person's own confirmation (§5.1)
             broadcasts=None,  # the owner's choice of hub broadcasts (§16.12)
             deleted_at=clock.now(),
         )

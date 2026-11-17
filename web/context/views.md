@@ -890,11 +890,41 @@ that does not exist. Talk for another owner's agent: the hub refuses it
 alone and `talk` are accepted: a hub change for what the dashboard can
 tell from the request today; the Revisit when names it.
 
+## Unread mentions are the bell's alone: no line under the project's tabs, no number on a pill or in the tab title
+
+**Id:** 5e333da0-4b01-4900-a5a6-16235309135b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's statements of 2026-11-16 on card tsk-e78jc2jgqhcb (the line "1 unread mention" under the tabs of a project's Inbox, and the card note that a mention must not count as "(1)" either: "Mentions go to the bell only"); docs/api.md §18.2 (`counts`, `by_project`)
+**Revisit when:** the maintainer wants mentions back beside the requests and chats, or the hub sends a count without mentions
+**See:** views.md#a-projects-unread-mentions-are-a-link-beside-its-tabs-to-notifications-filtered-to-the-project — 0906c3fe-ffe3-4baf-94c1-c093de6fee54 — as of 2026-11-16
+**See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-16
+
+An unread mention is announced by the bell (its count, its "Mentions" line and the item in its
+list) and by nothing else in the header. There is no line under a project's tabs on any tab, and
+the numbers on the project pills, on All projects and in the browser tab's title ("(6) …") are the
+open requests plus the unread chats: the dashboard adds `inbox` and `chat` of `counts` and of each
+`by_project` entry itself instead of showing the hub's `total`, which adds `mention` (§18.2). The
+hub's answer is unchanged. `/notifications?kind=mention&project=<owner>/<slug>` still reads and
+marks one project's mentions when opened by its address.
+
+**Reason:** the maintainer wants mentions in one place, the bell; a line and a number elsewhere
+announced the same mention twice or three times, and a "(1)" on a project read as a waiting
+message that the project's tabs did not show.
+
+**Rejected alternatives:**
+- Keeping the line and only dropping it from the Inbox tab: the maintainer asked for it gone
+  above the tabs, and the Chat tab already went without it.
+- A hub `total` without mentions: a contract change for what the dashboard can add up from the
+  counts it already reads.
+
 ## A project's unread mentions are a link beside its tabs, to /notifications filtered to the project
 
 **Id:** 0906c3fe-ffe3-4baf-94c1-c093de6fee54
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 5e333da0-4b01-4900-a5a6-16235309135b
 **Evidence:** inferred
 **Source:** card tsk-xb7bf1x0h3cy (the owner's report: the Maity pill showed 2, the Inbox and Chat tabs nothing), the plan agreed with the lead on the card, 2026-11-03; docs/api.md §18.2 (`kind`, `project`), §18.3 (`up_to` with `kind` and `project`), §18.8 "Per-project badges"; the maintainer's decision to drop the line on the Chat tab, card tsk-sesdq48m9ewk, 2026-11-10 (chats 102080 and 103539)
 **See:** views.md#the-inbox-is-the-requests-alone-activity-is-on-the-bell-the-chat-button-and-notifications — 2ff6afe9-ed47-4ffd-b12d-947cfb7774ca — as of 2026-11-03
@@ -1489,7 +1519,8 @@ refuse are left out too, and with none left the section says why.
 
 **Id:** ecbeaecb-2dcf-45ff-ae44-d8b2b455e218
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
 **Evidence:** confirmed
 **Source:** the maintainer's feedback of 2026-10-25 ("project settings da oben ist komisch, das muss eher runter auf die projekt ebene, z.B. nach Runners und Why ein Settings wäre logischer", tsk-r7qja01wwzvv) and bug report (a save in Project settings landed on the inbox, tsk-t407bnycxera); the dashboard's implementation, 2026-10-25
 **Revisit when:** the settings grow enough to need sub-pages, or the designer renames the tab
@@ -3252,7 +3283,7 @@ named in the digest can be resumed or ended only from one's agents.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11
+**Source:** the maintainer's report that `/wolfgang` showed nothing (seq 15767) and the card tsk-dnxgm9k0f317, 2026-10-30; the read the dashboard lacked, proposed with the card and settled by the coordinator as docs/api.md §6.27 (#738), with its later changes (`page_served`, `projects` with `shared` and `projects_total`, a placeholder for a `null` picture, `not_found` for whoever shows the reader nothing), 2026-10-30; §6.27's `agents` and the tab **Agents** at `/<handle>/agents` (§16.11), built for the card tsk-zrjxhxanfwzd, 2026-11-11, the tab taken back for the card tsk-2t7efzj1p8zt, 2026-11-15
 **Revisit when:** §6.27 changes its answer, the hub serves a person's page images, or follows (`friends`) exist
 
 `/<handle>` (one segment, not one of the dashboard's own words) is the
@@ -3269,14 +3300,12 @@ Overview, any other to its public page. An alias answers with the
 current handle and the address follows it; `not_found` says that there
 is nobody to see, as for an unknown name.
 
-A person's view has two tabs, **Profile** at `/<handle>` and **Agents**
-at `/<handle>/agents` (card tsk-zrjxhxanfwzd, 2026-11-11: the public
-agents page existed, the signed-in address showed nothing). The Agents
-tab draws the same answer's `agents` (§6.27), as the public agents page
-lists them (§16.9); it does not read `GET /public/pages/<handle>/agents`
-signed in. Signed out, the dashboard's copy of that page
-(`person_agents`, `js/visitor.js`) draws its list with the same helper
-and carries the same tabs, so the address shows one list either way.
+A person's view lists the same answer's `agents` (§6.27) under the
+projects, as their public page lists them (§16.9). From 2026-11-11 (card
+tsk-zrjxhxanfwzd) to 2026-11-15 they were a tab **Agents** at
+`/<handle>/agents`; the maintainer took the tab back (root
+`context/members.md`, "A person's agents stand on their one page"), and
+that address is now the dashboard's "not found", read from nothing.
 
 **Reason:** what a reader may see of another person (the bio only while
 the page is public, the links by `links_visible`, a picture by §6.10)
@@ -3292,7 +3321,8 @@ shares no project with, and no organisation for a non-member. A
 generated avatar from the handle: it would differ from the one every
 other view draws for the same person, and change with a rename. Hiding
 the picture's place: the layout would jump from one person to the next.
-For the Agents tab, reading the visitors' route signed in as well: §6.27
+For the person's agents (once a tab, on the page itself since
+tsk-2t7efzj1p8zt), reading the visitors' route signed in as well: §6.27
 names `GET /people` as the dashboard's read of a person, and gives the
 same list there (the hub's `listed_agents` serves both), so a second
 route would add a read without adding anything to see.
@@ -3467,7 +3497,7 @@ handle, and is clicked away too easily.
 
 **Id:** 43c080d3-e47c-45a3-9add-3da834cdf588
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy)
 **Revisit when:** §2.3 adds or drops a built-in role, or a project's own roles (§2.3) get a place in the pickers
@@ -3510,7 +3540,7 @@ form it explains.
 
 **Id:** b71cebbf-56d9-4f65-aef9-cbb4ab5131a1
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** docs/api.md §2.3 (trust × role, owner_only, the guest's limits) and the card for the dashboard's part (tsk-tx9qcehevfnk), which replaces the interim mapping at the API boundary, 2026-10-28
 **Revisit when:** a project's own roles (§2.3) get a place in the dashboard, or the hub lets a non-owner grant trust admin
@@ -4077,7 +4107,8 @@ for want of `review`.
 
 **Id:** f37bbdb4-2ad3-432e-babf-dd58f6e3ff79
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
 **Evidence:** confirmed
 **Source:** the maintainer's wish for only one Settings in a project (relayed on the card tsk-wzqeneerfacp, 2026-10-30); docs/api.md §16.11 after the contract #741 (the `settings` view with two tabs, the project's at `settings` for `project:admin`, the caller's own at `settings/mine` for every member, a caller without `project:admin` at `settings` gets `settings/mine`; `my-settings` is no project view any more); the alpha rule, no redirect from the old path
 **Revisit when:** a member without `project:admin` needs to read a project setting the overview does not show, or one's own settings for a project grow into a page of their own
@@ -4102,6 +4133,70 @@ Project tab read only, as before: the contract shows it to admins only,
 and what a member may read of it (language, memory) is on the overview
 or in the project's files. A redirect from `my-settings`: the alpha
 rule, no route kept for an old address.
+
+## A project's Settings are in sub-tabs, one address each: General, Members and agents, Way of working, Moderation and Mine
+
+**Id:** bc864bf2-d64b-4947-b3d6-3d3a2e500eea
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's request on the card tsk-chtvqs62cd10, 2026-11-13 (sub-tabs instead of one long page, an address per tab, General the default, only the tabs with something for the reader, presentation only, the dashboard's existing tab pattern, and a proposed grouping open to review); where Keep the Why personal settings and the sections the card did not list went is the implementer's, 2026-11-13
+**Revisit when:** the review rules (tsk-kymz2pdrf85k), the rule settings (tsk-z5h7h1v7kmjd) or outsider removal (tsk-yr3ckca01b9q) land, a tab grows into a long page again, or the maintainer moves a section
+**See:** views.md#a-project-has-one-settings-view-project-for-its-admins-mine-at-settingsmine-for-every-human-member — f37bbdb4-2ad3-432e-babf-dd58f6e3ff79 — as of 2026-11-13
+**See:** views.md#project-settings-are-the-projects-last-tab-not-a-panel-from-the-gear-menu — ecbeaecb-2dcf-45ff-ae44-d8b2b455e218 — as of 2026-11-14
+
+The project's **Settings** view is a row of tabs, drawn by the same
+`M.tabBar` as the Team and Agents pages (links in a `nav`, the shown one
+`aria-current="page"`), each tab at its own address: **General** at
+`settings`, **Members and agents** at `settings/members`, **Way of
+working** at `settings/work`, **Moderation** at `settings/moderation` and
+**Mine** at `settings/mine`. One table in `js/app.js`
+(`SETTINGS_SECTIONS`) names every section once with its tab and the rule
+of who gets it, the rule each section had on the one page; a tab is shown
+where one of its sections is, the project's tabs only to `project:admin`,
+Mine to every human. An address of a tab the reader is not shown (a
+member without the right at `settings`, the restricted-access notice's
+`settings/members`) leads on to the first tab they are shown, as
+`settings` led such a member to `settings/mine` before; `settings/general`
+leads to `settings`. Each section keeps its form, words and checks; a save
+redraws the tab it was made on.
+
+Grouping: General holds what the project is and where it lives (state,
+language, repository and its grant, links, name and transfer, public
+page, badge, ticker and webhook, logo and banner, the runners link);
+Members and agents who joins on what terms and who reads what (members'
+own agents, agents of owners who are not members, onboarding, restricted
+access, signing); Way of working how work is done and kept (who closes a
+card, the memory provider, the Keep the Why commitment, Keep the Why
+personal settings, the jour fixe link); Moderation the reported-message
+removal and everyone's pending uploads; Mine one's own settings, leaving
+the project, and the owner's absence.
+
+Settings stays the project's last tab, never a panel from the gear menu,
+and a save stays on it (ecbeaecb, whose revisit condition, sub-pages,
+this meets). An agent neither admin nor owner is offered no Settings in
+the project's row, as before, and a typed settings address is the
+page-not-found page; the view itself falls back to Mine and its
+humans-only sentence should no tab be offered, never an empty page.
+
+**Reason:** the one page had grown to some twenty sections, and an admin
+looking for one scrolled through all of them. An address per tab keeps a
+link, a reload and Back on the tab, as the account's and the Overview's
+tabs already do. Keep the Why personal settings went to Way of working,
+not to Mine as the card proposed: the form sets the project's policy
+`keep_the_why_defaults` (whether a joining agent adopts the project's
+defaults), with a reason, for every member's agents, not the reader's own
+setting; it stands beside the commitment it belongs with. The memory
+provider goes there too, since the commitment follows it.
+
+**Rejected alternative:** the one long page with a list of anchors at
+its top: a place on a page is a route and one checked anchor
+(web/context/routing.md), and the page would stay as long. Tabs switched
+in the page without an address: the card asks that a link, a reload and
+Back land on the same tab. A tab bar of its own with arrow-key roving
+(`role="tablist"`): the dashboard's view tabs are links, and the card asks
+for the existing pattern. Keep the Why personal settings on Mine, as
+proposed: see the reason.
 
 ## The meat-proxy switch has its two parts under it, each sent alone; the hub decides the switch and the note
 
@@ -4406,7 +4501,7 @@ the window, so the input sat past the bottom edge and the page had to be scrolle
 **See:** views.md#a-chat-fills-the-window-from-where-it-starts-less-what-stands-below-it-sending-stands-in-the-composers-row — 21fd7884-0462-49dc-8e47-da59f57ef557 — as of 2026-11-08
 
 At phone width (`max-width: 600px`, the dashboard's one phone breakpoint):
-- The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other three parts and the separators are not shown.
+- The product line is only its first part, the Maity icon, `Maity` and the year (§16.13). The other four parts and the separators are not shown (re-checked 2026-11-15, when "Chat with us on Discord" became the fifth part, tsk-01tt7j11yx3w: the rule hides every part after the first, so this holds).
 - A group chat shows no "In it: …" line over the messages. Its participants stay under Manage.
 - The composer's label ("Message (@handle reaches someone in the chat)") is out of sight but still the field's label. A reader still hears what the field is for.
 
@@ -4481,7 +4576,7 @@ The tabs menu ("…", `tabsMenu` in `js/app.js`) ends with a separator and **New
 **Revisit when:** the tabs menu gets a view of its own, or the row of tabs gets groups or pinned tabs
 **See:** views.md#the-row-of-tabs-has-no-new-project-tab-the-tabs-menu-follows-the-tabs-a-dragged-tabs-place-is-a-line — 4ff40142-df78-4c11-8f0c-c0024adecd79 — as of 2026-11-11
 
-The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 40px)` on `.switcher` in a row with the menu), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
+The tabs menu ("⋯", `tabsMenu` in `js/app.js`) is drawn like a project tab: the same pill, padding, height, font, colours and bottom edge, on the tabs' line, the tabs' gap after the last one (`.tabs-menu-box .menu-button.tabs-menu` in `css/app.css`). Wider than a phone, many tabs scroll before the row wraps (`max-width: calc(100% - 24px - 0.88rem)` on `.switcher` in a row with the menu, the menu's own width at any root font size), so the menu stays on their line; before, tabs enough to fill the line pushed the menu to a line of its own. Open, it takes the current tab's accent edge and raised ground. It stays an `M.menuButton`: `aria-haspopup="menu"`, named "Project tabs", no `role="tab"`, and Enter, ArrowDown and Escape work as before. It stands outside `nav.switcher`, so dragging and Alt+Shift+Arrow move only the project tabs and never past it, and on a phone, where the tabs scroll, it keeps the row's right end.
 
 **Reason:** the owner wants it to read as part of the row; a lone square button beside the pills looked like it belonged elsewhere. Outside the tabs it is fixed by construction, which is the owner's rule that it never moves.
 
@@ -5575,8 +5670,13 @@ reset.
 Signed out, the sign-in and `/register` draw their form into gj6k's door layout, then ask
 `GET /site/chrome` with the address's `?lang=` (or the last one this page saw, `M.i18n.frameAddress`),
 and take the frame's language from its answer. While the page stands, the hub's
-`/assets/landing/landing.css` and `public-pages.css` are linked (without `?v`, so the hub answers
-the current file with an ETag), and `html` carries `public-frame`. The frame's header and footer
+`/assets/landing/landing.css`, `public-pages.css` and `public-sections.css` are linked (the third, the
+public pages' design, was the dashboard's own `css/public-sections.css` until 2026-11-15, tsk-zhyqdtt5v59c):
+the links the hub's shell already put at the head's end with their `?v`, after `css/app.css` as appended
+ones stand, where it carries a page in the dashboard's design (hub/context/public-pages.md 2388f990), else
+without `?v`, so the hub answers the current file with an ETag; and `html` carries `public-frame`. Leaving
+the frame turns the sheets off, the shell's too where the frame was never entered (a failed page, a session
+found after all). The frame's header and footer
 are elements of their own beside `#header` and `#main`, built from the model as the hub's
 `render.py` builds them; the app's bar is hidden meanwhile and comes back where the read fails.
 The sign-in stands in the frame wherever it is drawn without a session: `/login`, the root after a
@@ -5690,6 +5790,224 @@ built for the sign-in, so the visitor's page reuses it rather than a third desig
   between the landing's header and footer, unlike the stored pages it stands beside.
 - A Sign in without `?next=`: the visitor would land on their own start after signing in, not on
   the page they were reading.
+
+## A visitor's project page has the mockup's hero, band and tab bar; their rules are one stylesheet of the dashboard, loaded with the frame's
+
+**Id:** ceca5e16-eb8f-4936-b15d-c4e75333959c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9482zxza3gs3 and the lead's cut of it (PR 1: the parts that need no new data; the shared rules into web/css once, for the person and agent pages too); the designer's approved mockup (project.html, pp.css, README points 3, 5 and 8; the maintainer's approval in group chat seq 118113, 2026-11-12); `web/js/visitor.js`, `web/js/site-chrome.js`, `web/css/public-sections.css`, 2026-11-14
+**See:** views.md#a-visitors-public-page-stands-in-the-landings-frame-the-apps-bar-only-where-the-frame-cannot-be-read — 6d168e98-d442-4a3a-bd1c-57158eeeb273 — as of 2026-11-14
+
+Signed out, a project's page and its views (`js/visitor.js`) open with the dark page hero of the
+landing (`section.phero.hero.dz`): the crumb `owner / slug`, the project's tile, the title and, on
+the Overview, the state chip, the about text, the hero's buttons, the project's links as one row
+and who is online. The Overview adds a band of figures; every view then has the views as a bar
+across the page (`nav.ptabs`), and the view itself stands under it in the stored pages' look.
+
+- The tile is the project's first letter, as the hub's `/explore` draws it (`monogram` in
+  `public_projects.py`, mirrored in the dashboard): projects have no picture.
+- The members figure is the project's `members` (§16.9, the Team tab's count, those it names and
+  those it only counts; since part 2, tsk-h822960mytm9 brought the field); the other figures are
+  `statistics.totals`. A figure that is 0 or `null` is left out.
+- "Try it" goes where the header's call to action goes (the frame model's `header.cta`, the
+  landing hero's primary button), filled in once the frame is read: where the header has none,
+  neither has the hero.
+- A tab's own answer has no state, about, links or figures, so its hero has the crumb, the tile
+  (from the slug), the slug, "Try it" and Report; the Overview's parts are not read a second
+  time for it. "Try it" and Report stay on every view: the README (point 10) puts every tab under
+  the same project hero, and Report stands under the title of every public page (§16.8).
+- The about text's Markdown can use the dashboard's own tokens, which the dark zone does not set:
+  `--surface-2` under a fenced code block (`.md-code`) and its Copy button, `--ok` for "Copied".
+  The hero maps them to dark values. Inline code gets no ground there (the about text is
+  `.sub.about`, not `.md`, so `.md code` does not apply): it stays on the hero's ground in the
+  text's muted colour, which passes on the dark zone.
+
+The rules (`.phero`, `.band`/`.stats5`, `.ptabs`, `.sec-h`, `.mgrid`/`.mcard`, `.prgrid`/`.pr`, …)
+are `public-sections.css`, one file for the project, person and agent pages (the hub's
+`/assets/landing/public-sections.css` since tsk-zhyqdtt5v59c, 2026-11-15; `web/css/` before).
+It is the hub's third frame sheet (§16.7.5): `js/site-chrome.js` links it in `SHEETS` behind
+`landing.css` and `public-pages.css` the first time the frame is entered and switches it on and off
+with them; `index.html` no longer names it. A name the dashboard's `app.css` also
+uses (`.dot`) is scoped to the part that draws it. Signed in, a non-member's view is unchanged.
+
+**Reason:** the rules build on the landing's tokens and classes (`.hero`, `.dz`, `.wrap`, `.btn`,
+`.stat`), which exist only while the frame's stylesheets are on; loaded after them, the same
+selectors win without `!important`, and off the frame nothing of the app can be restyled. One
+file keeps the person and agent pages that follow on the same rules instead of copies.
+
+**Rejected alternatives:**
+- The rules in `css/app.css`: they would apply signed in too, where the landing's tokens are
+  absent, and load before `landing.css`, which then wins every rule of equal weight.
+- The rules in the hub's `public-pages.css`: the hub's stored pages do not draw these parts yet,
+  and the lead asked for them in `web/css`; the shared `.sec` and `.pmark` stay there, used by
+  `/explore`.
+- A link in `index.html` that stays where it is and always on: before the frame's stylesheets in
+  the cascade, and on in the signed-in app.
+- A `<link>` the frame adds by its own name: the shell versions only the files `index.html` names
+  (and lists `brand/`, `js/i18n/`, `vendor/` for scripts), so it would be named without a version.
+
+**Revisit when:** the hub's stored pages (`?as=public`) draw the same hero and band, so the rules
+belong with `public-pages.css`; or the signed-in frame gets the same look.
+
+## A visitor's project page shows twelve team cards and eight faces, a letter where no picture is, merges as cards and decisions as lines
+
+**Id:** d0565716-aca3-48f1-8168-4752e733ca3a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9482zxza3gs3, part 2 (the parts that needed tsk-h822960mytm9's data, #1816); the designer's approved mockup (project.html: twelve cards, "All 29 members →", nine faces and "+12", PR cards over a decision list; README points 3, 5 and 6; the maintainer's approval in group chat seq 118113, 2026-11-12); docs/api.md §16.9 (`people`, `agents`, `members`, `ticker[].merge`, `online.named` with `picture`); `web/js/visitor.js`, 2026-11-15
+**See:** views.md#a-visitors-project-page-has-the-mockups-hero-band-and-tab-bar-their-rules-are-one-stylesheet-of-the-dashboard-loaded-with-the-frames — ceca5e16-eb8f-4936-b15d-c4e75333959c — as of 2026-11-15
+
+Signed out, a project's Overview (`js/visitor.js`) draws under the tab bar two sections across the
+page, in the mockup's section style: **Team** and **Recently merged**. The hero's **Right now**
+shows who is online as faces.
+
+- Team: the people, then the agents, in the hub's order, the first 12 as cards (picture, name,
+  `@handle`, role chip, an agent's harness, a dot while the member is in `online.named`). The line
+  beside the heading counts the listed people and agents; the link "All N members →" leads to the
+  Team tab and names `members`, so a member the page only counts is there too.
+- Right now: the first 8 of `online.named` as a stack of faces, each a link to the member's page
+  named by its `aria-label`, then "+N" for the rest of the named.
+- A picture is the public address the hub sends, asked at the size it serves (`?s=64` for the
+  stack's 30 px, `?s=128` for a card's 44 px). Where the hub sends none (a person whose profile is
+  off), the address is not the hub's own, or the image does not load, the face is the member's
+  first letter, the same rule as the project's tile. A person is round, an agent a rounded square.
+- Recently merged: the ticker's `merge` entries as pull request cards from `merge`'s fields
+  (number, "Merged", time, title, author, areas), each a link to the pull request; every other
+  entry (a decision) as a line in a list under the cards. Without a merge the heading reads
+  "Recently". All entries the hub sends are drawn: §16.9 caps them at 20 of the last 7 days, the
+  sentence under the heading says so.
+- Signed in, a non-member's view keeps its lists: `public-sections.css` is off there.
+
+**Reason:** the mockup shows 12 cards and a stack of 9 faces in a hero panel that must not wrap on a
+phone (8 faces + "+N" fit 390 px); a page of 30 cards would push what happened lately far down,
+and the Team tab already lists everyone. The letter keeps a card the same size whatever the
+profile says, and needs no account id, which the generated identicon would (§6.10). The hub sends
+merge facts as fields so that no client parses `text`.
+
+**Rejected alternatives:**
+- The dashboard's identicon (`M.avatar`) as the placeholder: it is built from a member id the
+  public data does not carry, and would differ from the hub's own pages.
+- Every member as a card: long for a team of agents, and the Team tab is one click away.
+- Merges and decisions mixed in one list, as before: the mockup splits them, a merge has facts a
+  decision has not.
+- Restyling the Board, Team, Organisation and Why tabs in the same PR (README point 10): the Team
+  tab's answer carried no pictures, and the lead asked for small PRs; done in part 3
+  (703f091b-fa40-47f9-9c02-b0a8036ea48f).
+
+**Revisit when:** the Team tab's answer carries pictures (it can then draw the same cards), or the
+ticker's limit of 20 changes.
+
+## A visitor's person and agent pages have the mockup's hero, band and cards; a missing picture is the letter, the networks are built as the hub builds them
+
+**Id:** ef3a254d-6ab5-419a-9dd1-cda1f9381821
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-2t7efzj1p8zt (the person page without tabs, the agents as cards; the owner's picture null while the owner's profile is off drawn as a placeholder; the stored first paint changed as little as possible, the hub's skeleton rendering of these pages a later PR); the designer's approved mockup (overview.png, README-public-pages.md); docs/api.md §16.9 (`person`, `agent`); `web/js/visitor.js`, `web/css/public-sections.css`, 2026-11-15
+**See:** views.md#a-visitors-project-page-shows-twelve-team-cards-and-eight-faces-a-letter-where-no-picture-is-merges-as-cards-and-decisions-as-lines — d0565716-aca3-48f1-8168-4752e733ca3a — as of 2026-11-15
+
+Signed out, a person's page (`/<handle>`) and an agent's page (`/<owner>/agents/<handle>`)
+(`js/visitor.js`) stand in the landing's frame as a project's page does, with the same
+stylesheet (`/assets/landing/public-sections.css`, the hub's since tsk-zhyqdtt5v59c,
+`section.profile-view`):
+
+- Hero (`section.uhero.hero.dz`): the 128 px picture (96 px on a phone, stacked above the name),
+  the crumb Person or Agent, the h1, a meta line (`@handle`, Online, member since). A person's
+  bio, website and networks as chips (`.socs`); an agent's "Agent of" its owner with the owner's
+  22 px picture, and its harness and model as facts (`dl.facts`). The Report link under them.
+- Band: the figures of the last 30 days, three for a person, four for an agent (with handovers).
+  A 0 is drawn, as the mockup draws it; a figure the hub does not send is left out.
+- The public projects as tile cards with the role (`.pgrid`, three columns, one on a phone); on a
+  person's page the agents as the project page's member cards (picture, roles, harness).
+- A picture the hub sends as null (the person's own, or an agent's owner while the owner's
+  public profile is off) is the first letter, the project page's rule.
+- A network link is built in the SPA by the same rules as the hub's stored page
+  (`public_people.person_links`: github, gitlab, x, mastodon `@user@host`, bluesky, linkedin;
+  discord as text), `rel="me nofollow"`.
+- Signed in, a non-member's view keeps its lists.
+
+The classes are a contract: since PR 4 of tsk-zhyqdtt5v59c (2026-11-16) the hub stores these pages
+in the same structure (`public_design.profile`, from the same `data`), so the shell's first paint is
+this page and the drawing over it keeps its place; smoke compares the drawing with the hub's
+skeletons (`web/tools/public-skeletons.json`, kinds `person` and `agent`). Until then the stored
+first paint was left as is, in its simpler column.
+
+**Reason:** one look for all public pages, light and dark, desktop and phone, from the stylesheet
+the project page already loads. A 0 on a person's band says "nothing this month", which is a
+fact about the person; on a project's band an empty figure was hidden because a project has more
+figures than room. The letter keeps the owner line and the hero the same size whatever the
+profile says and needs no account id. Building the network addresses in the client needs no
+contract change: §16.9 sends the handles, and the hub's stored page already has the rules.
+
+**Rejected alternatives:**
+- The hub sending finished network URLs in `social`: a contract change for addresses both sides
+  can build from the handle; open if a network's address rule ever becomes non-trivial.
+- Hiding a 0 on the profile band as on the project's: the mockup draws it, and three or four
+  figures always fit.
+- Redesigning the stored first paint in the same PR: the hub's skeleton rendering was planned as
+  its own PR that copies this markup (it landed as PR 4 of tsk-zhyqdtt5v59c); changing it twice
+  would have collided.
+- The dashboard's identicon as placeholder: see d0565716-aca3-48f1-8168-4752e733ca3a.
+
+**Revisit when:** §16.9's `social` changes shape, or the network rules of
+`person_links.py` change (the hub's stored page and this view build the links the same way).
+
+## A visitor's Board, Team, Organisation and Why tabs are sections across the page in the Overview's style, their content unchanged
+
+**Id:** 703f091b-fa40-47f9-9c02-b0a8036ea48f
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-9482zxza3gs3, part 3 (the lead's cut, seq 134942 and 135122: the tabs in the section style, with the members' pictures in the Organisation tab by the Team tab's rule, seq 135036); the designer's approved mockup's README, point 10 ("their content stays as it is today … drawn in the same section style (cards, chips). They are not mocked separately"); docs/api.md §16.9 (`team`, `organisation` with `picture`); `web/js/visitor.js`, `web/css/public-sections.css`, 2026-11-15
+**See:** views.md#a-visitors-project-page-shows-twelve-team-cards-and-eight-faces-a-letter-where-no-picture-is-merges-as-cards-and-decisions-as-lines — d0565716-aca3-48f1-8168-4752e733ca3a — as of 2026-11-15
+
+Signed out, each of a project's Board, Team, Organisation and Why tabs (`js/visitor.js`) draws one
+section across the page under the tab bar (`section.sec.tab-sec`), as the Overview's Team and
+Recently merged do: an h2 with the tab's name and a line beside it, then the tab's parts. A card's
+own page keeps the stored pages' column.
+
+- Board: the same columns (the app's grid, sideways on a phone; the empty board's focusable region
+  kept), each a panel; a column's name is an h3 and a card's title an h4 under the section's h2; a
+  card's label a chip. The line counts the cards shown.
+- Team: every member the tab names as the Overview's card (picture or letter, name, `@handle`,
+  role chip), the people first, then the agents; those it only counts as their number beside a
+  role chip. No online dot and no harness: the tab's answer has neither, and the Overview's cards
+  are one click away.
+- Organisation: the same tree and the same rule against a line back to a node already drawn, each
+  node a small card (a 30 px picture or letter, name, `@handle`, role chip) that links the member's
+  page; a node the page does not name is only its role chip, in a dashed box. The lines to those
+  who report to a node are a border at their left, indented less on a phone.
+- Why: the entries' count beside the heading; the family as cards with the name's first letter
+  (the project tile's rule), each a link to its published dashboard where one is safe; what needs
+  attention as lines with its status as a chip. An unread Why says so in the section.
+- Whether a member is an agent is read from its page, `/<owner>/agents/<handle>`, as the hub builds
+  it; the Team and Organisation answers carry no other mark.
+- Signed in, a non-member's view keeps its lists and headings: `public-sections.css` is off
+  there, and `framed` is false.
+
+**Reason:** the README asks for the tabs in the same section style without a mockup of their own and
+with their content unchanged, so each tab reuses the Overview's parts (the section head, `.mgrid`
+and `.mcard`, the faces, the chips, the `.dec` lines) instead of new shapes; a reader moving
+between the tabs sees one page. Pictures in the Organisation tab come from its own answer, by the
+Team tab's rule, so the tab needs no second read.
+
+**Rejected alternatives:**
+- The tabs in the stored pages' narrow column, restyled there: the Overview's sections run across
+  the page and the bar above both is as wide as the window; a narrow column under it read as a
+  different page.
+- The Organisation as a drawn chart (boxes side by side joined by lines): a wide team would scroll
+  sideways on a phone; the indented tree, as the signed-in Organisation tab (`js/org.js`) draws
+  it, keeps the hub's order and wraps.
+- Telling an agent from a person by `trust` in the Team tab's answer: `trust` is the membership's
+  trust level, not a kind, and the Organisation's answer has none.
+- New words for the lines beside the headings: the Overview's ("3 people and 26 agents"), the
+  board's "N cards" and the Why's "N entries" exist in every language already.
+
+**Revisit when:** the mockup draws these tabs itself, or the Team or Organisation answer gains
+presence or a harness.
 
 ## A consent line names who is asked and calls saved only what the member, read again, already has
 
@@ -6066,6 +6384,33 @@ still varies with the host and reads oddly when cut; a filled-in example
 only on wide screens, which gives two texts to keep true. The example
 `agent-e` or `oz-team` as a fixed word was dropped too: it read as a fact
 about the reader's own agent or organisation.
+
+## A handle field's rule and its word while typed come from one helper, and nothing is lower-cased
+
+**Id:** 8a767a5d-9e7b-4d4b-937a-5d28777f23a7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-pxc5cx4hgb0y (an owner request, 2026-11-14: an upper-case letter was only refused after sending); web/js/handles.js `rule`, `problem`; the rename editor's old `toLowerCase()`
+**Revisit when:** a handle may hold upper-case letters, or a field takes a handle with another syntax
+**See:** views.md#a-handle-fields-hint-is-a-sentence-of-fixed-words-with-no-handle-or-address-filled-in — e9c2136d-efa9-4222-b013-6042a56ec86c — as of 2026-11-14
+
+Where a person picks or changes a handle (their own, an organisation's, an agent's on Agents and in
+a placement), `M.handles.rule(input)` puts `NAME_RULES.handle`'s text beside the field and a status
+line under it that says, while the field is typed in, what breaks the rule, an upper-case letter in
+words of its own ("Lowercase only"). The join form keeps its free-or-taken line and gives an
+upper-case letter the same word. The rename of one's own handle sends what was typed: before, it
+lower-cased it without saying so. The sign-up's handle is on the hub's page, with the same rule
+(hub/context/registration.md, 0c6183d9-2214-4d16-a10c-a28f8ab1c0c5). `/register` takes the address that page
+hands over in a cookie, reads it once and removes it.
+
+**Reason:** a lower-cased `Ada` becomes a handle the person did not type, and they learn it from
+the answer. One helper keeps the rule and its words alike at every field, as `explain` does for what
+a handle is.
+
+**Rejected alternatives:** lower-casing as the person types (the card ruled it out: the person
+should see the rule, not have their text changed); the rule said only in the error after sending,
+as before.
 
 ## A message's seq is drawn with its "#" from the stylesheet, so a copy takes the number alone
 
@@ -6522,7 +6867,7 @@ took the keyboard focus off its link (third review of #1716).
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §9.6 ("The request": the inbox shows a box per waiting or held agent, all ticked, and one for that side's human, not ticked; `chat_access` beside an allow reply; `chat_access_request` in `GET /requests/{id}` only); the card tsk-5c6hw63ncq3m, its PR 3 (the web); the dashboard's implementation, 2026-11-13
+**Source:** docs/api.md §9.6 ("The request": the inbox shows a box per waiting or held agent, all ticked, and one for that side's human, not ticked; `chat_access` beside an allow reply; `chat_access_request` in `GET /requests/{id}` only); the card tsk-5c6hw63ncq3m, its PR 3 (the web); the dashboard's implementation, 2026-11-13; the owner's feedback of 2026-11-15 on the two parts, relayed by the lead on card tsk-3b2znzcw4rxv (seq 137594, 137612)
 **Revisit when:** the request view carries what an answer ticked, the reach on the other side (`their_agents`) is wanted in the inbox, or the hub accepts an allow with no agent as a no
 
 The inbox draws the request's boxes from `chat_access_request`, which the
@@ -6541,11 +6886,19 @@ is needed; No and Block stay. The reach on the other side is not offered:
 the hub's default (that side's agents in the chats and the authors of the
 held messages) goes, and a narrower one is set through the API.
 
+The form has two parts (the owner's feedback of 2026-11-15): first "Which
+of your agents may chat", the boxes of one's own agents alone; then "With
+whom", a line naming that side's agents in these chats and messages as always included, and the box
+for that side's human, "Also @… in person", with its hint.
+
 **Reason:** an allow with no agent writes no entry, and the hub files a
 new request at once: the owner's click would seem to do nothing. The
 human's box covers the human's own free work messages too, not only the
 chats, so it is shown even where the human is in no chat. An empty rule
-sent as `""` would be stored as a rule saying nothing.
+sent as `""` would be stored as a rule saying nothing. The two parts say
+which side is which: in one list, the other side's person read as one of
+one's own agents, and the list did not say who is the source and who the
+target.
 
 **Alternatives considered:**
 - Sending an allow with no agent and letting the hub ask again: rejected
@@ -6555,6 +6908,9 @@ sent as `""` would be stored as a rule saying nothing.
 - A field for the reach (`their_agents`): left out of this part; the
   default covers what the request names, and the lists page is where an
   entry is narrowed.
+- The human's box as one more line in the list of one's agents (the form
+  until 2026-11-15): rejected by the owner, it read as one of one's own
+  agents.
 ## Who may chat with one's agents is a tab of /agents; whom an entry names is chosen among the members of one's projects
 
 **Id:** 5be40abe-674f-412a-b4a4-7cfec2ff960d
@@ -6689,3 +7045,163 @@ panel the same edge, and a new form inside it needs no width of its own.
 - A `dl` of facts at the full width like a list: rejected, its pairs are
   short, and in a padded box (the settings' webhook) the column's parts
   beside it would end the box's padding past the column's edge.
+
+## A tab row brings its current tab into sight again once the fonts are in
+
+**Id:** 826df576-d97f-458e-bb40-89f6de67a4d6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-1cs7h9jhww36 (2026-11-13): the e2e step `account_tabs_layout` failed now and then at 390 px, "a.view-tab 'Security' is out of sight in its row" on /account/security, on main of 2026-11-11 and of 2026-11-13 alike, and passed in other runs on the same commits; reproduced every time by drawing the view in the fallback face and letting Inter arrive afterwards; the review of #1767 found the header's row of a project's views left out (Settings 16 px past its row at 390 px)
+**Revisit when:** the fonts stop loading with `font-display: swap`, or the account's tab row stops scrolling sideways
+
+The fonts load with `font-display: swap`, so a view can be drawn in the
+fallback face before Inter is in. A tab row that scrolls sideways (the
+account's tabs, the header's row of a project's views) brings its
+current tab into sight once, when it is put in the page (`showCurrent`
+in `js/app.js`). Inter is wider than the face the row was measured in:
+at 390 px the account's row is 722 px wide in Inter and 712 px in the
+page's own fallback stack (the fonts held back); the e2e step's forced
+serif face makes it 641 px. In either narrower face Security, the
+current tab, stands in sight without scrolling; from the serif face,
+once Inter is in, its right edge ended 1 px past the row's. On the
+document's `loadingdone` (`document.fonts`) every such row is set
+again: the header's rows and the account's bring their current tab
+into sight, and the fade cues follow, as on a resize. The
+e2e step draws every account tab and a project's Settings at 390 and
+360 px with no element using Inter, then lets Inter load and measures
+the account's rows and the header's.
+
+**Reason:** whether Inter arrives before the first drawing depends on
+the machine and the network, so the step failed only on a busy machine
+and a phone on a slow line meets the same cut tab.
+
+**Alternatives considered:**
+- `font-display: block`: rejected, the text would be invisible until
+  the fonts arrive, up to three seconds on a slow line, for every view.
+- Preloading the fonts: rejected, a preload makes the fonts come sooner
+  but not before the first drawing for sure, so the race stays.
+- A looser measure in the e2e step: rejected, the tab really ends
+  outside its row, and a longer label (another language) cuts more of it.
+
+## A verdict is taken back with its own button, and a pressed Disagree opens its sentence again
+
+**Id:** 8fd2e947-88f1-4cfa-8505-311211f2f833
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.7 (one verdict per human and message, `PUT` replaces it, `DELETE` takes it back, the sentence only with `disagree`); the card tsk-3d0wm9mh2f03, the web part of tsk-55x4f398dttv; web/js/chat.js `verdicts`, 2026-11-16
+**Revisit when:** the contract lets a verdict's sentence change without a `PUT` of its value, or the buttons become a toggle elsewhere in the dashboard
+
+Under someone else's chat message stand **Agree** and **Disagree**, both
+with `aria-pressed` for the reader's current verdict, and **Take back**
+only while the reader has one. A pressed **Agree** is disabled. A pressed
+**Disagree** opens its sentence field again, filled with the sentence
+given, so that the sentence is changed by a `PUT` that replaces the
+verdict.
+
+**Reason:** the sentence goes with Disagree alone, and changing it is a
+`PUT` with the same value. One gesture must therefore reach the sentence
+of a verdict already given, and a separate button keeps taking it back
+from happening by accident.
+
+**Alternatives considered:**
+- Pressing a pressed button again takes the verdict back (a toggle):
+  rejected, a pressed Disagree would then either take back or open the
+  sentence, and a reader who wanted to change the sentence would lose the
+  verdict, which wakes the agent with a taken-back event.
+- No way to change the sentence but Take back and Disagree again:
+  rejected, that writes two events and wakes the agent twice for one
+  change of words.
+
+## An open verdict sentence outlives the list being drawn again, and a re-read takes verdicts over in place
+
+**Id:** 839d984c-980f-4d2c-859c-0fe03207b9c1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-q8cd2hh4beq3 (the review A796 of #1874: an owner reading along from outside the project lost a sentence being typed at the 30-second re-read); web/js/group-chat.js `redraw` and the outsider re-read, web/js/chat.js `verdicts`, 2026-11-16
+**Revisit when:** an observer from outside the project gets events, or the group chat stops drawing the whole list again
+
+An observer from outside the project gets no events, so its view reads
+the newest page again every 30 seconds. When only verdicts changed, they
+are taken over under their messages (`takeVerdicts`, as for an event);
+the list is not drawn again. When a message came or was removed, the
+list is drawn again, and an open sentence field comes back: what is typed
+is kept per message (`verdictForms`), and `redraw` gives the field its
+focus and caret back.
+
+**Reason:** the list is a live region, so drawing it again for a verdict
+alone would also announce every message once more. A new message still
+needs the whole list, and the reader may be typing then too.
+
+**Alternatives considered:**
+- Taking verdicts over in place only: rejected, a new message at the
+  re-read still cost the sentence, which A796 had found already at the
+  base of #1874.
+- Keeping the sentence across a redraw only: rejected, a verdict alone
+  would still draw the live region again and announce its messages anew.
+
+## The hub's settings are a part of /admin's Instance information, read-only, a secret as set or not set
+
+**Id:** f19e0e48-1113-498f-b4f7-f89a99bfd159
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-f87sx61wbfdj (the project owner's wish of 2026-11-15: an admin sees at a glance how the hub is configured, not only in the startup log); the lead's answers to the design, 2026-11-16; docs/api.md §16.14
+**See:** https://github.com/oliver-zehentleitner/maity — cb544480-3808-4eb6-8ee0-3930a613129f — as of 2026-11-16
+**Revisit when:** the admin area can change a setting the environment holds, or the settings outgrow one section
+
+The section **Instance information** (`js/instance-admin.js`) keeps its read of `/health` (version,
+database, migration) and draws `GET /admin/instance` below it under **Settings**: one table per group in
+the hub's order, each row the name, the value (a secret only **Set (hidden)** or **Not set**), its source
+and the admin section that can set the same value. No new tab: it is the same question, how this
+instance runs, and the health part still answers when the settings cannot be read. Nothing in it is
+a control; the hint says the environment changes a setting at the next start, and the link to every
+setting's description points at `hub/README.md` on GitHub, as the product line's links do.
+
+**Rejected alternatives:**
+- A tab of its own: two sections answering what this hub runs, one of them only the version.
+- Values as inputs for the settings an admin can also set: those have their own sections, where the
+  environment's value wins; the overview names that section instead.
+
+## A project's roles are a section of Settings → Members and agents, the built-in ones explained, a base change of a role in use asked first
+
+**Id:** 33a23fd5-b8cd-4b98-bb06-66974fb904f9
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-c2c24vxs5qj0 (the maintainer's answer of 2026-11-16: a project role is a name and its own briefing, with a built-in role's permissions); the lead's scope of the card and its answer on a base change, 2026-11-16; docs/api.md §2.3 "Project roles", §6.4, §6.28
+**See:** views.md — b71cebbf-56d9-4f65-aef9-cbb4ab5131a1 — as of 2026-11-17
+**Revisit when:** the hub serves the project's briefings (§6.28, tsk-ssd3gcxvnrkm), §2.3 lets a project role be renamed or its base be refused while in use, or `PUT …/roles` gets a revision check
+
+`js/project-roles.js` draws **Roles** in Settings → Members and agents, for a human with
+project:admin (the `PUT …/roles` is human only): the built-in roles as `GET …/roles` explains them,
+each with its guide folded, and the project's own roles as rows of name, base and description, sent
+as the whole list. A saved name is read-only, since §2.3 has no rename. The page checks a name as the
+hub does before it sends, and says the hub's `invalid` fields and a `role_in_use` with its uses at
+the rows. A base change of a role that members hold asks first, with how many move along and that
+their approvals the new base does not give expire, because the hub moves them and drops those
+signatures in the same call. A role's own briefing and guide are not edited here: the hub does not
+serve the project's briefings yet, and the dashboard asks for no route the hub lacks.
+
+The `PUT` replaces the whole list and the hub keeps no revision of it, so a page read before
+someone else's save would remove what that save added. Right before the `PUT` the page reads the
+list again; when it differs from what the page loaded, nothing is sent, the draft stays and
+**Reload** shows the current list. This catches a stale page, not two saves in the same instant.
+While the base-change question is open and while the call runs, the draft is frozen, so what is
+sent is what the page shows (review A963).
+
+**Rejected alternatives:**
+- Refusing a base change while the role is in use (new role, move, remove, as for a name): the
+  contract's recorded behaviour is that the members move along with their signatures dropped (§2.3,
+  §6.4); the lead withdrew the idea once that was shown.
+- A tab of its own: the roles are the same question as who joins on what terms, the Members and
+  agents tab's.
+- The briefing and guide fields now, against the fixture alone: the hub answers 404 until its
+  briefings exist, so the fields would only fail.
+- A real optimistic lock (a revision on `GET`, `If-Match` on `PUT`): a contract and hub change the
+  lead kept out of this web card; it is a separate card if the maintainer wants it.
+- Merging the draft into the list read again (keeping roles others added): it would hide a
+  conflict on the same role; refusing and reloading says it.
+

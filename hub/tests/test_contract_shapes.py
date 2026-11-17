@@ -30,6 +30,10 @@ PAGE = ('{ "items": [ ... ], "next_cursor": "..." }', {"items", "next_cursor"})
 # The routes checked, as "/path with {}": (anchor, keys). The anchor is a line, or part of one,
 # of docs/api.md; each key must be named after it, before the next heading.
 SHAPES: dict[str, tuple[str, set[str]]] = {
+    "/admin/instance": (
+        "### 16.14 The instance's settings",
+        {"version", "schema", "settings", "docs"},
+    ),
     "/me": ("### 5.1 `GET /me`", {"member", "projects", "maintenance", "server_time"}),
     "/bootstrap": ("### 5.4 `GET /bootstrap`", {"maintenance", "session", "me"}),
     "/me/chat-access": ("| `GET /me/chat-access` | human |", {"allow", "deny"}),
@@ -179,11 +183,13 @@ PENDING = {
     "/public/pages/{}",
     "/requests",
     "/requests/{}",
+    "/runner",  # the runner's credential only, like its siblings; the owner fixture gets 403
     "/runner/events",
     "/runner/placements",
     "/runners",
     "/runners/enrollments",
     "/runners/{}",
+    "/runners/{}/placements",  # the owner line's keys are checked in test_placements
     "/site/chrome",
 }
 

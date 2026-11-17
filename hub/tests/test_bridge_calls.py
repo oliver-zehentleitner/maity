@@ -418,6 +418,32 @@ def test_an_isolated_served_agent_is_refused_and_keeps_its_bridge(
         assert conn.execute(select(t.bridge)).first() is not None
 
 
+@pytest.mark.parametrize("change", ["owner_suspended", "bridge_guest"])
+def test_a_bridge_carries_nothing_once_its_standing_ends(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, change: str
+) -> None:
+    # §2.3, §16.8: checked at every carried call, so no path that suspends the served
+    # agent's owner or lowers the bridge to guest leaves the connection carrying.
+    served, bridge, _ = _pair(migrated, owner)
+    calls = Calls(make_client(), bridge)
+    assert _say(calls, served.agent_id).status_code == 201
+    with migrated.begin() as conn:
+        if change == "owner_suspended":  # the served agent's owner, not the bridge's call
+            conn.execute(
+                update(t.human).where(t.human.c.id == owner.id).values(suspended_at=clock.now())
+            )
+        else:
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.id == bridge.membership_id)
+                .values(trust="guest")
+            )
+    refused = _say(calls, served.agent_id)
+    assert (refused.status_code, _reason(refused)) == (403, "not_your_bridge")
+    read = calls.get(f"{PROJECT}/members/{served.agent_id}", served.agent_id)
+    assert (read.status_code, _reason(read)) == (403, "not_your_bridge")
+
+
 def test_a_claim_through_the_bridge_is_the_served_agents_without_an_instance(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -476,6 +502,29 @@ def test_a_call_through_the_bridge_renews_what_it_holds_for_the_served_agent(
     with migrated.begin() as conn:
         conn.execute(update(t.card).where(t.card.c.id == card).values(lease_until=past))
     assert calls.get(f"{PROJECT}/members/{served.agent_id}", served.agent_id).status_code == 200
+    with migrated.connect() as conn:
+        renewed = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
+    assert renewed is not None and renewed > clock.now()
+
+
+def test_the_conversation_list_with_renew_false_renews_nothing_through_the_bridge(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`renew=false` withholds the renewal of what the bridge holds for the served agent
+    too, and only that (§9.3, §2.4)."""
+    served, bridge, _ = _pair(migrated, owner)
+    card = owner.post(f"{PROJECT}/tasks", {"title": "Carry the files"}).json()["id"]
+    calls = Calls(make_client(), bridge)
+    assert calls.post(f"{PROJECT}/tasks/{card}/claim", {}, served.agent_id).status_code == 200
+    past = clock.now() - timedelta(hours=1)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card).values(lease_until=past))
+    listed = calls.get(f"{PROJECT}/conversations?renew=false", served.agent_id)
+    assert listed.status_code == 200, listed.text
+    with migrated.connect() as conn:
+        kept = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
+    assert kept is not None and kept < clock.now()  # still in the past: not renewed
+    assert calls.get(f"{PROJECT}/conversations", served.agent_id).status_code == 200
     with migrated.connect() as conn:
         renewed = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
     assert renewed is not None and renewed > clock.now()

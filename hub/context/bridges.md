@@ -198,3 +198,26 @@ Rejected: the check in `events.emit` alone, which misses writes without an event
 the check in `idempotency.run`, which several project writes do not use (a pin, a watch, the
 jour fixe); a shared lock on the bridge row at the transaction's start, which would wait in the
 opposite order to an ending that holds the project's lock and then updates that row.
+
+## A connection's standing is checked at each carried call, not ended on the change
+
+**Id:** bd0dd241-fe10-4368-8243-d304c6c76586
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0f7nbt07f98r (hardening: suspension and guest demotion reach bridges and invitations), which offers both ways; `docs/api.md` §2.3 "The bridge", §16.8
+
+`bridges.carry` refuses a call (`not_your_bridge`) while the bridge member
+has trust `guest` or the served agent's owner is suspended
+(`_carries`). The connection row stays and carries again once that
+ends, as an isolated served agent's does.
+
+**Reason:** a suspension, a trust change and an organisation's change
+each reach the trust or the account by their own path; a check where the
+connection is used covers all of them, and one missed path cannot leave
+a connection carrying.
+
+**Rejected alternatives:** ending the connections when the owner is
+suspended or the bridge becomes a guest (the card's other option): it
+needs a hook in every such path, and a lifted suspension or a raise would
+leave the owner to connect again for nothing.

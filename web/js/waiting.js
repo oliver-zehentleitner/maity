@@ -94,8 +94,8 @@ window.Maity = window.Maity || {};
     // bell does); a security alert stays unread (§18.3). Always
     // there, off while nothing it would mark is unread.
     const markAll = h("button", { type: "button", class: "small" }, M.t("waiting.mark_all"));
-    // A filter from the address (?kind=mention&project=<owner>/<slug>, the
-    // project's mention link beside its tabs, tsk-xb7bf1x0h3cy): one kind of
+    // A filter from the address (?kind=mention&project=<owner>/<slug>,
+    // given in the address itself, tsk-xb7bf1x0h3cy): one kind of
     // §18.2 and one project of the human's, sent to the hub as they are, and
     // Mark all read marks that kind and project only (§18.3). Anything else
     // is no filter.

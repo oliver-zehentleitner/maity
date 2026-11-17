@@ -28,7 +28,7 @@ spec:
           # container of that user tars them and hands the time stamp on, so that the dump and the tar of one night belong together.
           initContainers:
             - name: attachments
-              image: postgres:17.10
+              image: postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
               command: ["/bin/sh", "-ec"]
               args:
                 - |
@@ -66,7 +66,7 @@ spec:
                 - {name: key, mountPath: /key, readOnly: true}
           containers:
             - name: dump
-              image: postgres:17.10
+              image: postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
               env:
                 - name: PGPASSWORD
                   valueFrom: {secretKeyRef: {name: maity-postgres, key: password}}

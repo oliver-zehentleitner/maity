@@ -89,8 +89,9 @@ window.Maity = window.Maity || {};
     if (t.type === "conversation") return base + "chat/" + encodeURIComponent(t.id);
     if (t.type === "task") return base + "tasks/" + encodeURIComponent(t.id);
     if (t.type === "request") return base + "inbox/" + encodeURIComponent(t.id);
-    // The restricted-access set changed (§6.4): the project's setting.
-    if (projectSetting(t)) return base + "settings";
+    // The restricted-access set changed (§6.4): the project's setting, on Settings' Members and
+    // agents tab; a member without project:admin is led on to settings/mine, where it is read.
+    if (projectSetting(t)) return base + "settings/members";
     return base + "inbox";
   }
 
@@ -105,16 +106,21 @@ window.Maity = window.Maity || {};
     return state;
   }
 
+  // Mentions are the bell's alone (the maintainer, 2026-11-16, tsk-e78jc2jgqhcb): the numbers on the
+  // pills and in the tab title are the open requests and unread chats, not the hub's `total`, which
+  // adds the mentions (§18.2).
+  const badgeCount = (c) => (c.inbox || 0) + (c.chat || 0);
+
   // What asks for the human in one project of theirs, as the hub counts it.
   function projectCount(p) {
     const c = state.byProject[p.full_name];
-    if (!c || c.member === false) return { requests: p.open_requests || 0, chat: 0, mention: 0, total: p.open_requests || 0 };
-    return { requests: c.inbox || 0, chat: c.chat || 0, mention: c.mention || 0, total: c.total || 0 };
+    if (!c || c.member === false) return { requests: p.open_requests || 0, chat: 0, total: p.open_requests || 0 };
+    return { requests: c.inbox || 0, chat: c.chat || 0, total: badgeCount(c) };
   }
 
-  // The tab title: "(6) " before it while anything asks for the human.
+  // The tab title: "(6) " before it while a request or a chat asks for the human.
   function title(base) {
-    const n = state.counts ? state.counts.total : 0;
+    const n = state.counts ? badgeCount(state.counts) : 0;
     return (n ? "(" + n + ") " : "") + base;
   }
 
@@ -466,5 +472,5 @@ window.Maity = window.Maity || {};
     return () => { watchers.delete(fn); wakeLoop(); };
   }
 
-  M.notify = { known, keepsUnread, skippedWhy, state, read, projectCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, onSessionsRev, KIND_WORDS };
+  M.notify = { known, keepsUnread, skippedWhy, state, read, projectCount, badgeCount, title, bell, chatButton, linkOf, startBrowser, stopBrowser, halt, resume, running: () => !!browserConfig && !!browserLoop, subscribe, changed, onSessionsRev, KIND_WORDS };
 })(window.Maity);

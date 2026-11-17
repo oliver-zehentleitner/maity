@@ -13,6 +13,7 @@ from maity_hub import events, namespace, runner_revoke, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
+from maity_hub.auth.permitted import Calls
 from maity_hub.config import Settings
 from maity_hub.db import retrying_async
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, unauthenticated
@@ -156,14 +157,17 @@ def _refuse_other_project(conn: Connection, caller: Caller, slug: str) -> None:
 
 # What an account that waits for approval may call (§2.7.5): its own account and
 # sessions. `/auth/methods` needs no caller and is everyone's.
-PENDING_MAY = {
-    ("GET", "/api/v1/me"),
-    ("GET", "/api/v1/auth/session"),
-    ("POST", "/api/v1/auth/logout"),
-    ("GET", "/api/v1/auth/sessions"),
-    ("POST", "/api/v1/auth/sessions/end-others"),
-    ("POST", "/api/v1/auth/password"),
-}
+PENDING_MAY = Calls(
+    ("GET", "/me"),
+    ("GET", "/auth/session"),
+    ("POST", "/auth/logout"),
+    ("GET", "/auth/sessions"),
+    ("POST", "/auth/sessions/end-others"),
+    ("POST", "/auth/password"),
+    # Its own session by id; `:path` keeps the check it has always been, anything below
+    # `/auth/sessions/` (no other DELETE route is there).
+    ("DELETE", "/auth/sessions/{public_id:path}"),
+)
 
 
 def _confine_pending(conn: Connection, caller: Caller, method: str, path: str) -> None:
@@ -177,10 +181,8 @@ def _confine_pending(conn: Connection, caller: Caller, method: str, path: str) -
         ).scalar()
     if status != "pending":
         return
-    if (method, path) in PENDING_MAY:
+    if PENDING_MAY.admits_api(method, path):
         return
-    if method == "DELETE" and path.startswith("/api/v1/auth/sessions/"):
-        return  # its own session by id
     raise ApiError(
         403, "forbidden", "the account waits for approval", {"reason": "account_pending"}
     )
@@ -226,6 +228,15 @@ async def events_caller(request: Request) -> Caller:
     return await _resolve(request, renew_leases=not waiting)
 
 
+async def conversations_caller(request: Request) -> Caller:
+    """The conversation list (§9.3): with `renew=false` it is presence, not work, and
+    renews no lease, so the unread-chats read `maity wait` makes on a timeout does not
+    keep a holder's claims alive (§2.4). Presence is written as by any call. Authentication
+    comes first, as for `events_caller`; the endpoint validates `renew` (an invalid one
+    counts as an ordinary read here)."""
+    return await _resolve(request, renew_leases=request.query_params.get("renew") != "false")
+
+
 async def presence_caller(request: Request) -> Caller:
     """`POST /me/presence` (§18.4): a human's cookie session only, checked as any call but
     writing no `last_seen_at` and renewing no lease (§2.4). An `Authorization` header (an
@@ -267,4 +278,5 @@ AnyCaller = Annotated[Caller, Depends(current_caller)]
 HumanCaller = Annotated[Caller, Depends(human_caller)]
 AgentCaller = Annotated[Caller, Depends(agent_caller)]
 EventsCaller = Annotated[Caller, Depends(events_caller)]
+ConversationsCaller = Annotated[Caller, Depends(conversations_caller)]
 RunnerCaller = Annotated[Caller, Depends(runner_caller)]

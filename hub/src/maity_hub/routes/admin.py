@@ -10,10 +10,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
-from maity_hub import avatars, handles, statistics
+from maity_hub import __version__, avatars, handles, settings_overview, statistics
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import second_factor_reset
+from maity_hub.db import current_revision
 from maity_hub.deps import HumanCaller, engine_of, settings_of
 from maity_hub.errors import forbidden, invalid
 from maity_hub.views import ts
@@ -134,6 +135,24 @@ def get_statistics(
         if caller.principal_id != instance_admin_id(conn):
             raise forbidden("instance:admin")
         return JSONResponse(statistics.CACHE.get(conn, days))
+
+
+@router.get("/admin/instance")
+def get_instance(request: Request, caller: HumanCaller) -> JSONResponse:
+    """§16.14: the hub's version, its schema and every `MAITY_*` setting with its value and
+    source, a secret only as set or not set; read-only."""
+    with engine_of(request).begin() as conn:
+        if caller.principal_id != instance_admin_id(conn):
+            raise forbidden("instance:admin")
+    revision = current_revision(engine_of(request))
+    return JSONResponse(
+        {
+            "version": __version__,
+            "schema": {"revision": revision, "head": request.app.state.schema_head},
+            "settings": settings_overview.settings_list(settings_of(request)),
+            "docs": settings_overview.DOCS,
+        }
+    )
 
 
 class ResetIn(BaseModel):

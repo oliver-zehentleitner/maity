@@ -133,7 +133,8 @@ boundary.
 
 **Id:** 97a02556-475b-4041-8db5-6ce845ceb7fa
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 320a6e51-5a65-4684-8da8-df911d4273c1
 **Evidence:** confirmed
 **Source:** the maintainer's statement, 2026-10-22, relayed by the coordinator; contract change in `docs/api.md` (`spawn_consent_by`)
 **Revisit when:** the admin and the admin agent agree on a start policy
@@ -153,6 +154,46 @@ only a human with `members:admin` sets the policy.
 **Reason:** the maintainer's decision; the reason was not stated.
 
 **Alternatives:** unknown. The policy itself is still open.
+
+## Only a runner's owner places agents on it, wherever the runner is attached
+
+**Id:** 320a6e51-5a65-4684-8da8-df911d4273c1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's statement, 2026-11-16, relayed by the lead with the design's approval; contract change in `docs/api.md` §15.3–§15.6 (tsk-qgmz0yrc3g5x)
+**See:** scope.md#a-runner-starts-an-agent-only-after-the-maintainers-go-until-a-policy-says-otherwise — 97a02556-475b-4041-8db5-6ce845ceb7fa — as of 2026-11-16
+**See:** https://github.com/oliver-zehentleitner/maity — 22e17362-56cb-4bf7-94fa-c245119e6eac — as of 2026-11-16
+
+Attaching a runner to a project shows it there; it lets nobody but the
+runner's owner place agents on it. Only the runner's side — its owner and
+the agents whose profile that owner owns — creates a placement on it,
+changes a placement's spec, moves a placement onto it or off it by a
+replacement (the old runner runs the handover), or starts,
+restarts and nudges one there; anyone else is `forbidden` with
+`runner_owner_only`, whatever their trust. The go of an agent's proposal
+comes from the runner's owner alone, as a personal request, never from an
+agent or a proxy; `policy.spawn_consent_by` stays in the policy and
+decides nothing for placements. Stopping and removing stay open to those
+who may today, and the owner may stop and remove every placement on their
+runner, a foreign one included. Placements made by others before the rule
+are not closed by themselves: the owner sees them (`foreign`) and decides.
+The agent profile's owner removes such a placement too and places the agent
+again on a runner of their own; a replacement does not move it, since the
+old runner would run the handover.
+
+**Reason:** the runner is the owner's machine: whoever places an agent on
+it spends its compute and the owner's model budget. Attaching it to a
+project is meant to share it for the owner's own agents there, not to
+hand it to the project's other members.
+
+**Rejected alternatives:** a go from any human holding `requests:answer`,
+or from agents under `spawn_consent_by: role` (the rule of 2026-10-22):
+that human need not own the runner. Closing the placements others made
+before, on deploy: rejected for the owner's own look and decision.
+Leaving start, restart and nudge open to every agent with
+`agents:propose`, as re-runs of something approved: rejected, since a
+start spends the owner's compute just like a creation.
 
 ## What revoking a runner does to its agents is a setting: the operator sets the default and a floor, the project chooses within it
 
@@ -1038,7 +1079,7 @@ page offers an instance nobody has to host.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages (2026-11-03); the maintainer's change to the credit, two icon links instead of a linked name, with "on" (card notes, 2026-11-03); the maintainer's addition of a link for security findings beside the issues, relayed by the lead on card tsk-jd3z8rr6de2t (2026-11-04); contract `docs/api.md` §16.13
+**Source:** card tsk-bpww6m2s1pbf, the maintainer's decision (2026-11-03); the lead's answer to the contract question on which pages (2026-11-03); the maintainer's change to the credit, two icon links instead of a linked name, with "on" (card notes, 2026-11-03); the maintainer's addition of a link for security findings beside the issues, relayed by the lead on card tsk-jd3z8rr6de2t (2026-11-04); the maintainer's addition of a Discord link at the end, project chat seq 136222, relayed by the lead on card tsk-01tt7j11yx3w (2026-11-15); contract `docs/api.md` §16.13
 **See:** scope.md#every-page-without-a-session-has-the-landings-header-and-footer-from-one-model-the-hub-computes — 41837936-d085-4592-88d7-b1708a8b4b3a — as of 2026-11-03
 
 The dashboard and the hub's own pages (the maintenance page,
@@ -1048,9 +1089,10 @@ public pages and end with its footer instead, §16.13): the Maity icon, "Maity" 
 Oliver Zehentleitner on" two icons (GitHub's, linked to the maintainer's
 GitHub profile, and Maity's, linked to the maintainer's page on
 maity.team), "Found a bug?" to the project's GitHub issues, and "Found a
-vulnerability?" to the project's `SECURITY.md`. The name itself is no
-link. The order is its own entry, below. It is part of the product and
-always shown, with no operator setting. The landing page, the legal
+vulnerability?" to the project's `SECURITY.md`, and "Chat with us on
+Discord", text without an icon, to the project's Discord server. The name
+itself is no link. The order is its own entry, below. It is part of the
+product and always shown, with no operator setting. The landing page, the legal
 pages, `/explore` and the public pages of §16.9 do not carry it.
 
 **Reason:** the line belongs to the software, not to an instance's
@@ -1060,7 +1102,10 @@ own site with the operator's footer, and the public pages show a
 member's or a project's content, so the product line stays off them.
 The security link stands beside the issues so that a vulnerability is
 reported privately, as `SECURITY.md` describes, and not filed as a
-public issue; alternatives to that link were not recorded. Both
+public issue; alternatives to that link were not recorded. The Discord
+link is the maintainer's addition of 2026-11-15, to the address the
+README and the docs already name; no reason or alternative was given
+beyond the wording, no logo and "Chat with us on Discord". Both
 profile links are absolute: the maintainer's page exists only on
 maity.team, and on any other instance a relative link would be dead or
 name another account.
@@ -1097,8 +1142,9 @@ name another account.
 
 The parts of the product line stand in this order: the Maity icon with
 "Maity" and the year, then "Made with ♥ by Oliver Zehentleitner on
-GitHub & Maity", then "Found a bug?", then "Found a vulnerability?".
-Only the order changed: the words, the links and their accessible names
+GitHub & Maity", then "Found a bug?", then "Found a vulnerability?",
+and last "Chat with us on Discord" (added 2026-11-15 at the end, see the
+entry above). Only the order changed: the words, the links and their accessible names
 stay as the entry above has them.
 
 **Reason:** unknown. The maintainer set the order without giving a

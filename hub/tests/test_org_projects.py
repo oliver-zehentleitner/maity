@@ -148,10 +148,21 @@ def test_an_owner_made_later_joins_every_project_archived_ones_included(
         }
     assert {(keep, before) for _, keep, before in rows} == {("raised", "member"), ("created", None)}
     # demoted again: the raised one falls back, the one the hub made ends
+    rules_before = owner.get(f"{ORG}/live").json()["rules_version"]
     demoted = owner.patch(f"/orgs/oz-team/members/{admin.id}", {"role": "member"})
     assert demoted.status_code == 200
     live = members(owner, "live")["team-admin"]
     assert (live["trust"], live["org_owner"]) == ("member", False)
+    # the fall back is a trust change as the members PATCH writes one: the rules move (§6.9)
+    # and its event names the field, as every hook of a lowering reads it
+    assert owner.get(f"{ORG}/live").json()["rules_version"] == rules_before + 1
+    fell = [
+        e
+        for e in owner.get(f"{ORG}/live/events", params={"limit": 200}).json()["items"]
+        if e["kind"] == "member_updated" and e["payload"].get("handle") == "team-admin"
+    ]
+    assert fell[-1]["payload"]["changed"] == ["trust"]
+    assert fell[-1]["payload"]["trust"] == "member"
     assert "team-admin" not in members(owner, "old")
     assert member.get(f"{ORG}/live").status_code in (200, 403, 404)
 
@@ -218,6 +229,23 @@ def test_the_invited_owner_joins_the_projects_with_their_go(
     assert members(owner)["guest"]["org_owner"] is True
 
 
+def test_an_owner_s_released_seat_revokes_their_joins_as_the_hub(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human
+) -> None:
+    """The release of a seat the hub kept is the hub's (§3.1, §6.26): `revoked_by` null, no
+    `join_revoked`, though a person changed the organisation."""
+    _, people = team(make_client, migrated, owner)
+    assert create(owner).status_code in (200, 201)
+    second = people["owner2"]
+    made = flow.join(second, "oz-team/shop")
+    assert owner.patch(f"/orgs/oz-team/members/{second.id}", {"role": "member"}).status_code == 200
+    with migrated.connect() as conn:
+        join = conn.execute(select(t.join_link).where(t.join_link.c.id == made["id"])).one()
+        told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
+    assert join.revoked_at is not None and join.revoked_by is None
+    assert told == []
+
+
 def test_the_event_of_a_seat_that_ends_does_not_say_org_owner(
     make_client: ClientFactory, migrated: Engine, owner: flow.Human
 ) -> None:
@@ -232,3 +260,37 @@ def test_the_event_of_a_seat_that_ends_does_not_say_org_owner(
     ]
     assert ended and ended[-1]["payload"].get("removed_at")
     assert ended[-1]["payload"]["org_owner"] is False
+
+
+def _onboarding(engine: Engine) -> dict[str, Any]:
+    with engine.connect() as conn:
+        settings = conn.execute(select(t.project.c.settings)).scalar_one()
+    found: dict[str, Any] = settings["onboarding"]
+    return found
+
+
+@pytest.mark.parametrize("change", ["removed", "demoted", "org_deleted", "moved_out"])
+def test_the_hub_ending_a_seat_onboarding_names_returns_it_to_the_coordinator(
+    make_client: ClientFactory, migrated: Engine, owner: flow.Human, change: str
+) -> None:
+    # §6.1, §6.26: an owner of the organisation whose seat the hub made is the project's
+    # `check_in_with`; the hub ends the seat (no person is the actor), and the setting goes back
+    # to `coordinator` as on any removal, written by the hub, without failing the change.
+    _, people = team(make_client, migrated, owner)
+    assert create(owner).status_code in (200, 201)
+    second = people["owner2"]
+    named = owner.patch(f"{ORG}/shop", {"settings": {"onboarding": {"check_in_with": second.id}}})
+    assert named.status_code == 200, named.text
+    if change == "removed":
+        done = owner.delete(f"/orgs/oz-team/members/{second.id}")
+    elif change == "demoted":
+        done = owner.patch(f"/orgs/oz-team/members/{second.id}", {"role": "admin"})
+    elif change == "org_deleted":
+        archive(migrated)
+        done = delete_org(owner, "oz-team", "oz-team")
+    else:
+        done = owner.post(f"{ORG}/shop/transfer", {"to": owner.id})
+    assert done.status_code in (200, 204), done.text
+    onboarding = _onboarding(migrated)
+    assert onboarding["check_in_with"] == "coordinator"
+    assert onboarding["by"] == {"id": "hub", "handle": "hub", "kind": "hub"}

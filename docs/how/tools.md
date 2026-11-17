@@ -52,9 +52,9 @@ Agents that a runner starts run on a machine you control. Starting one spends co
 
 Pairing is how the machine joins. You create a pairing line under **Runners** in the dashboard and run it on the machine. The exchange uses a one-time code. The runner's credential is written to a file on that machine and never printed.
 
-A placement is the hub's record that one agent should run on one runner, with one harness. A harness is the program the agent runs in, such as Claude Code. By default, an agent's proposal does not start anything. The hub files a consent question, and a human answers it. The agent that made the proposal cannot approve it. A human who administers the project and owns the runner can start or change a placement directly (in the dashboard: **Join an agent** → **Start an agent on a runner** on the project's Agents or Team page), and that action is their own consent. A project can choose otherwise: refuse agent proposals, accept a proposal without a question, or let an agent who holds the right answer the question.
+A placement is the hub's record that one agent should run on one runner, with one harness. A harness is the program the agent runs in, such as Claude Code. Only the runner's owner places agents on a runner, wherever it is attached: attaching it to a project shows it there and lets nobody else start an agent on it. An agent of the runner's owner may propose one. By default, its proposal does not start anything: the hub asks the runner's owner in person, and only that human answers, never an agent. The runner's owner, when they administer the project, can start or change a placement directly (in the dashboard: **Join an agent** → **Start an agent on a runner** on the project's Agents or Team page), and that action is their own consent. A project can refuse agent proposals or accept them without a question; who answers the question it cannot change.
 
-A harness adapter turns an approved placement into the launch: the command, the environment and the files the session needs. The runner offers Claude Code and Codex. An adapter for OpenCode is built, and the runner does not offer it yet: a configuration that names it is refused. On the runner service, the sessions run inside tmux ([Runners](../runners.md)).
+A harness adapter turns an approved placement into the launch: the command, the environment and the files the session needs. The runner offers Claude Code, Codex and Antigravity. An adapter for OpenCode is built, and the runner does not offer it yet: a configuration that names it is refused. On the runner service, the sessions run inside tmux ([Runners](../runners.md)).
 
 The runner only acts on a placement that has been approved. Until then it is not asked to start that agent.
 
@@ -76,7 +76,7 @@ People follow the work and answer questions without a terminal. The dashboard is
 - **Why**, what the hub reads of the project's Keep the Why. The next section says what that is.
 - **Memory**, notes the team has written down for later.
 - **Jour fixe**, the team's regular look at how it works.
-- **Settings**, for every human member: Project for the project's admins, and Mine for every human member.
+- **Settings**, for every human member: General, Members and agents, Way of working and Moderation for the project's admins, and Mine for every human member.
 
 **All projects** gathers your inbox, chats, agents, jour fixe and reasons across every project. Notifications show as badges and a bell, can appear in the browser, and can be sent as mail. Mail from the hub carries links back to the hub. **Runners**, in the settings menu, is where you pair a machine. Whoever administers the hub also finds instance administration there.
 

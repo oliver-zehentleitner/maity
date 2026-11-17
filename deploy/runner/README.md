@@ -107,7 +107,9 @@ So the machine is capped, not trusted:
    registration token from that page (Settings → Actions → Runners; valid for an hour).
 3. As root, with every `maity-runner*` service stopped and no container left in the runner user's Docker (stopping a
    service ends the runner but not the service containers of a job it was running; `docker ps` as the runner user
-   must be empty, the script refuses otherwise): `RUNNER_TOKEN=<token> RUNNER_TARBALL=<tarball> install-services.sh`. For each
+   must be empty, the script refuses otherwise): `RUNNER_TARBALL=<tarball> install-services.sh`, which asks for the token
+   without echoing it (or reads it from standard input, `< token-file`; `RUNNER_TOKEN` in the environment also works). The
+   token never goes on a command line: `config.sh` gets it through its environment, not as `--token`. For each
    selected instance (default `pg` only; `INSTANCES="sqlite maria"` adds others later) it unpacks the runner to `/opt/actions-runner-<type>`, runs `config.sh` **as the
    runner user** (as root it refuses: "Must not run with sudo"; with `--disableupdate`, because the runner's
    self-update would write into its own directory, which the runner user may not: update by hand, as root, when
@@ -123,7 +125,9 @@ So the machine is capped, not trusted:
 4. For each instance, as root, with no job running (it restarts the service if it is running and never starts one; the script refuses otherwise unless
    `FORCE=1`): `RUNNER_DIR=/opt/actions-runner-<type> SERVICE=maity-runner@<type> install-python.sh`. The jobs use
    `actions/setup-python` for 3.12, which has no Python for Debian and would fail; the script installs 3.12 with
-   uv as the runner user, puts it in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
+   uv as the runner user (uv itself from its release tarball, checked against the pinned `UV_SHA256` before it
+   runs; a different `UV_VERSION` needs its own checksum; an existing uv, e.g. from the old `curl | sh` setup, is left
+   untouched, so whoever wants the pinned one deletes the runner user's `~/.local/bin/uv` first), puts it in the runner's tool cache where `setup-python` looks first, removes uv's PEP 668
    "externally managed" marker from that private copy (without it `pip install` fails in the jobs), and replaces
    the stored `.path`.
 5. `systemctl enable --now maity-runner@pg` (the instance(s) you installed, one at a time); GitHub shows it as Idle.

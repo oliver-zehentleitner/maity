@@ -1,10 +1,12 @@
 // Where the project's agents run (docs/api.md §15.5–§15.7), inside the
 // Agents view: one row per placement — agent, runner, harness and model,
 // what is wanted (`desired`), what the runner last reported, the
-// generation — with Stop, Start and Restart for whoever may (§15.6: a
-// human with members:admin who owns the runner, or the agent profile's
-// owner). Stop asks nothing, it is the safe direction; a restart is
-// confirmed with one more click. A placement waiting for consent links to
+// generation — with Stop for the runner's owner and the agent profile's
+// owner, Start and Restart for the runner's side only (§15.6: the runner's
+// owner, with members:admin or as the profile's owner), and Remove for a
+// placement made before only the runner's owner could (`foreign`). Stop
+// asks nothing, it is the safe direction; a restart is confirmed with one
+// more click. A placement waiting for consent links to
 // its request in the inbox, which answers it. Every action is one contract
 // call; a refusal is the hub's envelope as it comes. Placement events
 // (§15.10) read the list again. A human with members:admin starts an agent
@@ -106,7 +108,7 @@ window.Maity = window.Maity || {};
     const own = ctx.members.filter((m) => m.kind === "agent" && !m.removed_at && m.owner_id === ctx.me.id && !placed.has(m.id));
     const agent = select("agent", [h("option", { value: "" }, M.t("placements.new.agent_new"))]
       .concat(own.map((m) => h("option", { value: m.id }, m.display_name + " (@" + m.handle + ")"))));
-    const handle = input("handle", { pattern: M.dom.NAME_RULES.handle.pattern, autocomplete: "off", "aria-describedby": id("handle") + "-hint" });
+    const handle = input("handle", { pattern: M.dom.NAME_RULES.handle.pattern, autocomplete: "off" });
     const name = input("name", { autocomplete: "off" });
     // Trust admin and the role proxy only from an owner (§3.1, owner_only §2.3), as in a join.
     const trust = select("trust", (ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"]).map((r) => h("option", { value: r }, M.trust.trustWord(r))));
@@ -125,7 +127,7 @@ window.Maity = window.Maity || {};
     const fresh = h("fieldset", { class: "placement-new-profile" }, h("legend", null, M.t("placements.new.profile")),
       // What a handle is, as at every other agent handle (#1488), and its rule.
       h("div", { class: "field" }, h("label", { for: id("handle") }, M.t("agents.handle")), handle,
-        M.handles.explain("agent", handle), h("p", { class: "hint", id: id("handle") + "-hint" }, M.dom.NAME_RULES.handle.text)),
+        M.handles.explain("agent", handle), M.handles.rule(handle)),
       field("name", M.t("agents.display_name"), name),
       field("trust", M.t("join.field.trust"), trust),
       h("div", { class: "field" }, h("label", { for: id("role") }, M.t("join.field.role")), role, roleHelp),
@@ -300,11 +302,14 @@ window.Maity = window.Maity || {};
       return !!m && m.owner_id === ctx.me.id;
     };
     const listed = (list) => (opts.own ? list.filter(owns) : list);
-    const runnerOwner = (p) => ctx.canAdmin && ctx.me.kind === "human" && mine.has(p.runner.id);
+    // `logs_hint` reaches the runner's owner only (§15.5): the hub's own word on it.
+    const ownsRunner = (p) => ctx.me.kind === "human" && (mine.has(p.runner.id) || !!p.logs_hint);
+    // Start and restart: the runner's side only (runner_owner_only, §15.6).
+    const mayStart = (p) => ownsRunner(p) && (ctx.canAdmin || owns(p));
     // Waiting for consent, the inbox answers: a stop here would withdraw
     // the request and a restart approve it, unasked (§15.6, settling).
     const pending = (p) => !!(p.approval && (p.approval.status === "pending" || p.approval.pending_change));
-    const mayAct = (p) => p.active && !pending(p) && (runnerOwner(p) || owns(p));
+    const mayAct = (p) => p.active && !pending(p) && (ownsRunner(p) || owns(p));
     // A row asking for a restart, or waiting for the hub: a redraw from an
     // event waits until it is done, so neither is wiped.
     const busy = new Set();
@@ -362,7 +367,17 @@ window.Maity = window.Maity || {};
         });
         return b;
       };
-      append(row, p.desired === "running" ? stop : start, " ", restartWith(false), revoked(p) ? [" ", restartWith(true)] : null);
+      // Ended by the runner's owner or the profile's owner, who places it again on a
+      // runner of their own: a foreign one does not move otherwise (§15.5, §15.14).
+      const remove = h("button", { type: "button", class: "danger", "aria-label": M.t("placements.remove.label", { name }),
+        onclick: () => {
+          if (!window.confirm(M.t("placements.remove.ask", { name }))) return;
+          act(p, M.t("placements.removing"), M.t("placements.not_removed"), () => M.api.del(path(p)), row);
+        } }, M.t("placements.remove"));
+      const starts = mayStart(p);
+      append(row, p.desired === "running" ? stop : starts ? start : null,
+        starts ? [" ", restartWith(false), revoked(p) ? [" ", restartWith(true)] : null] : null,
+        p.foreign ? [" ", remove] : null);
       return row;
     }
 
@@ -376,7 +391,8 @@ window.Maity = window.Maity || {};
           p.agent.id ? M.dom.memberRef(ctx, p.agent.id) : h("span", null, p.agent.display_name),
           h("span", { class: "muted" }, " ", p.target
             ? M.tn("placements.on_target", { runner: h("strong", null, p.runner.name), target: p.target })
-            : M.tn("placements.on", { runner: h("strong", null, p.runner.name) }))),
+            : M.tn("placements.on", { runner: h("strong", null, p.runner.name) })),
+          p.foreign ? h("span", { class: "muted" }, " · ", M.t("placements.foreign")) : null),
         h("dl", { class: "facts" },
           h("dt", null, M.t("placements.runs")), h("dd", null, p.harness + (p.model ? " · " + p.model : "") + " · " + p.mode),
           h("dt", null, M.t("placements.wanted")), h("dd", null, p.desired === "running" ? M.t("placements.state.running") : M.t("placements.state.stopped")),

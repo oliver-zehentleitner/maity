@@ -12,7 +12,10 @@ from sqlalchemy import Engine, select
 from starlette.routing import Mount
 
 from maity_hub import body as body_reader
+from maity_hub import middleware
 from maity_hub import tables as t
+from maity_hub.config import ConfigError, Settings
+from maity_hub.public_pages import FRAMED_CSP
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -37,8 +40,54 @@ def test_html_gets_the_content_security_policy_and_json_does_not(
     make_client: ClientFactory,
 ) -> None:
     client = make_client()
-    assert client.get("/").headers["Content-Security-Policy"] == "default-src 'self'"
+    assert client.get("/").headers["Content-Security-Policy"] == middleware.CSP
     assert "Content-Security-Policy" not in client.get("/api/v1/health").headers
+
+
+def test_html_with_its_own_policy_keeps_it_and_gains_no_referrer_rule(
+    make_client: ClientFactory,
+) -> None:
+    # /explore brings the framed pages' policy (§16.7.5, §16.11); the middleware adds the
+    # framing, opener and permissions headers to every HTML document, the referrer rule only
+    # with its own default policy.
+    page = make_client(public_pages=True).get("/explore")
+    assert page.headers["Content-Type"].startswith("text/html")
+    assert page.headers["Content-Security-Policy"] == FRAMED_CSP
+    assert page.headers["X-Frame-Options"] == "DENY"
+    assert page.headers["Cross-Origin-Opener-Policy"] == "same-origin"
+    assert "camera=()" in page.headers["Permissions-Policy"]
+    assert "Referrer-Policy" not in page.headers
+    health = make_client().get("/api/v1/health").headers
+    for name in ("X-Frame-Options", "Cross-Origin-Opener-Policy", "Permissions-Policy"):
+        assert name not in health
+
+
+def test_hsts_on_every_answer_over_tls(make_client: ClientFactory) -> None:
+    client = make_client()  # https
+    for path in ("/", "/login", "/api/v1/health", "/api/v1/nope"):
+        assert client.get(path).headers["Strict-Transport-Security"] == "max-age=31536000", path
+
+
+def test_no_hsts_over_plain_http(make_client: ClientFactory) -> None:
+    client = make_client(base_url="http://127.0.0.1:8000", peer="127.0.0.1")
+    for path in ("/", "/api/v1/health"):
+        assert "Strict-Transport-Security" not in client.get(path).headers, path
+
+
+def test_hsts_max_age_follows_the_setting_and_zero_sends_none(make_client: ClientFactory) -> None:
+    assert (
+        make_client(hsts_max_age=600).get("/").headers["Strict-Transport-Security"] == "max-age=600"
+    )
+    assert "Strict-Transport-Security" not in make_client(hsts_max_age=0).get("/").headers
+
+
+def test_hsts_max_age_is_read_from_the_environment() -> None:
+    assert Settings.from_env({}).hsts_max_age == 31536000
+    assert Settings.from_env({"MAITY_HSTS_MAX_AGE": "0"}).hsts_max_age == 0
+    assert Settings.from_env({"MAITY_HSTS_MAX_AGE": "86400"}).hsts_max_age == 86400
+    for bad in ("-1", "1y", "63072001"):
+        with pytest.raises(ConfigError, match="MAITY_HSTS_MAX_AGE"):
+            Settings.from_env({"MAITY_HSTS_MAX_AGE": bad})
 
 
 def test_an_unknown_path_is_the_not_found_envelope(make_client: ClientFactory) -> None:
@@ -299,14 +348,13 @@ def test_a_body_full_of_fake_credentials_costs_one_bounded_lookup(
 ) -> None:
     from sqlalchemy import event as sa_event
 
+    client = make_client()  # its start reads the credentials once (`verifiers.check_at_startup`)
     statements: list[str] = []
     listener = lambda *args: statements.append(args[2])  # noqa: E731
     sa_event.listen(migrated, "before_cursor_execute", listener)
     try:
         fakes = " ".join(f"mty1.crd-{i}.x" for i in range(6000))
-        response = make_client().post(
-            "/api/v1/auth/login", json={"email": "x", "password": fakes[:60000]}
-        )
+        response = client.post("/api/v1/auth/login", json={"email": "x", "password": fakes[:60000]})
     finally:
         sa_event.remove(migrated, "before_cursor_execute", listener)
     assert response.headers["Maity-Error"] == "credential_in_payload"

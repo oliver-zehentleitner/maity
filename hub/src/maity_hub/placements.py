@@ -32,7 +32,10 @@ from maity_hub.runners import attached_project_ids, human_actor, live_credential
 from maity_hub.runners import audience as runner_audience
 from maity_hub.views import principal_id, ts
 
-HARNESSES = ("claude-code", "codex", "opencode", "pi", "hermes", "kimi", "cline", "omp", "stub")
+HARNESSES = (
+    "claude-code", "codex", "opencode", "antigravity", "pi", "hermes", "kimi", "cline", "omp",
+    "stub",
+)  # fmt: skip
 MODES = ("interactive", "supervised")
 STATES = (
     "pending",
@@ -64,6 +67,8 @@ REASONS: dict[str, tuple[str, ...]] = {
     "image_pull": ("failed", "exited"),
     "stopped_by_hub": ("stopped",),
     "adopted": ("running",),
+    # §15.16: a session an older `maity` started, ended at its idle point and resumed
+    "updated": ("exited",),
     "orphaned": ("stopped",),
 }
 # `join_failed`'s detail is the hub's own error code (§15.7): any code in this form, matched
@@ -274,6 +279,8 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         "closed_reason": placement.closed_reason,
         "created_by": placement.created_by,
         "proposed_by": _principal(conn, placement.proposed_by),
+        # Placed by someone but the runner's owner, before only its owner could (§15.5).
+        "foreign": profile_owner(conn, placement) != runner.owner_id,
         "created_at": ts(placement.created_at),
         "updated_by": placement.updated_by,
         "updated_at": ts(placement.updated_at),
@@ -285,6 +292,22 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         found["session_hint"] = placement.session_hint
         found["logs_hint"] = f"maity runner logs {placement.id}"
     return found
+
+
+def owner_line(conn: Connection, placement: Any) -> dict[str, Any]:
+    """The runner owner's line (§15.3): where an agent runs on their runner and who placed
+    it, nothing else of the placement or its project, since the owner need not be a
+    member there. It is what the runner on the owner's machine holds already."""
+    runner = _runner(conn, placement.runner_id)
+    return {
+        "id": placement.id,
+        "project": namespace.name_of(conn, placement.project_id),
+        "agent": {"handle": _agent(conn, placement)["handle"]},
+        "desired": placement.desired,
+        "state": (placement.reported or {}).get("state"),
+        "foreign": profile_owner(conn, placement) != runner.owner_id,
+        "created_at": ts(placement.created_at),
+    }
 
 
 def workspace_outcome(placement: Any) -> dict[str, Any] | None:
@@ -445,6 +468,16 @@ def request_summary(conn: Connection, placement_id: str | None) -> dict[str, Any
 
 
 def _isolation(capabilities: dict[str, Any] | None, target: str | None) -> dict[str, Any] | None:
+    """The chosen target's `isolation` without the OS `user`: the request is read by the
+    agent's owner and the project's admins, and the user is the runner owner's configuration
+    (§15.3, as `runners.without_user` keeps it from them in the runner view)."""
+    found = _target_isolation(capabilities, target)
+    return None if found is None else {k: v for k, v in found.items() if k != "user"}
+
+
+def _target_isolation(
+    capabilities: dict[str, Any] | None, target: str | None
+) -> dict[str, Any] | None:
     targets = (capabilities or {}).get("targets") or []
     if target is None and len(targets) == 1:
         isolation: dict[str, Any] | None = targets[0].get("isolation")
@@ -894,10 +927,16 @@ def revoke_unused_joins(conn: Connection, *where: Any) -> None:
     )
 
 
-def runner_credential_gone(conn: Connection, runner_id: str, by: str | None) -> None:
-    """A runner without a live credential reports nothing: what was closing closes now.
-    Its unused pickups end with the credential that fetched them (§15.9)."""
+def runner_credential_gone(
+    conn: Connection, runner_id: str, by: str | None, *, replaced: bool = False
+) -> None:
+    """The runner's credential was revoked (`revoke_runner_credential` calls this). Its
+    unused pickups end with the credential that fetched them (§15.9). A runner without a
+    live credential reports nothing: what was closing closes now. A re-pair (`replaced`)
+    leaves it closing, as its new credential takes over the same placements (§15.3)."""
     revoke_unused_joins(conn, t.join_link.c.runner_id == runner_id)
+    if replaced:
+        return
     for placement in active_rows(
         conn, t.placement.c.runner_id == runner_id, t.placement.c.closing.isnot(None)
     ):
@@ -1266,7 +1305,7 @@ def _named_elsewhere(conn: Connection, placement: Any) -> bool:
 def _revoke_removed(conn: Connection, placement: Any, actor: Actor) -> None:
     """`revoked_reason: workspace_removed` (§10), told like any revocation (§15.10). The
     placement is not stopped by it: a start that came in meanwhile joins anew (`rejoin`)."""
-    from maity_hub.auth.leaks import revoke
+    from maity_hub.auth.revocation import revoke
 
     if not revoke(conn, placement.credential_id, "workspace_removed", None, stops_placements=False):
         return

@@ -37,34 +37,47 @@ After a change of these words run `make -C web fixtures`, or the web job is red 
 
 **Id:** e29065f2-c5d3-43dd-9209-f7f30b67269a
 **Type:** decision
-**Status:** needs-review
+**Status:** active
 **Evidence:** inferred
-**Source:** docs/api.md §18.1, §18.2; the implementation of tsk-32jx98jzne6z, part N1, 2026-10-23
-**Revisit when:** `GET /me/notifications` or its long-poll gets slow for a human with many busy projects, or several hub replicas serve long-polls
+**Source:** docs/api.md §18.1, §18.2; the implementation of tsk-32jx98jzne6z, part N1, 2026-10-23; body rewritten to the code of 2026-11-15 (card tsk-y5hkg2ztvwq9, item 11)
+**Revisit when:** `GET /me/notifications` or its long-poll gets slow for a human with many busy projects, or a source of items gets a stored row per notification
 **See:** https://github.com/oliver-zehentleitner/maity — d2d3356f-7a73-4e77-ac7c-3e04b07c2517 — as of 2026-10-23
+**See:** notifications.md#a-page-of-the-bell-is-cut-from-items-derived-only-as-far-as-the-page-reaches-no-cache — 24ca001c-ff28-4df3-8af1-ba6ef6d567b6 — as of 2026-11-15
+**See:** notifications.md#a-messages-possible-recipients-are-written-with-it-to-notification_recipient-the-bell-reads-them-by-index-instead-of-matching-json-text — fc79a4a6-4b27-40f3-abd9-e7edb7ddd066 — as of 2026-11-15
+**See:** notifications.md#a-membership-stores-where-its-notifications-begin-joined_seq-the-bell-no-longer-finds-it-in-the-event-log — ed1bae10-a417-4c3e-881e-617cf0b3b805 — as of 2026-11-15
 
-`maity_hub.notifications.items.derive` reads, for each project the human
-is an active member of, the events of the last 30 days since the
-membership began, of the kinds that can make an item. Since the
-maintainer's narrowing of 2026-10-26 (root context, notifications.md)
-those are only messages, `mentioned` and the request events. It
-classifies them (`inbox` over `mention` over `chat`), checks each
-against what the human may read now, and adds the human's account
-records. Counts, filters, the cursor and positions all work on that
-list in Python. A request's relation to the human (addressee, holder,
-asker) is the request's as it is when the bell is read. The only stored
-state is the read marks (`notification_read`, the chats' own marks,
-`read_at` on records). A held long-poll looks every 0.5 seconds, one per
-session, and checks the session again at every look; which long-poll is
-current is kept in the process, so a second replica would need it
-shared.
+A notification is not stored: every read derives it from the events of the last 30 days of
+the projects the human is an active member of, since the membership began, of the kinds that
+can make an item (since the maintainer's narrowing of 2026-10-26, root context,
+notifications.md: messages, `mentioned`, the request events and the jour fixe's), and from
+the human's account records. `_classify` decides each one (`inbox` over `mention` over
+`chat`) against what the human may read now. A request's relation to the human (addressee,
+holder, asker) is the request's as it is when the item is read.
+
+How much is derived depends on the reader:
+- The bell reads only what its answer needs: a page from `items.derive_page`, which derives
+  each source only as far as the page reaches (24ca001c); the counts from `items.count_items`,
+  the mentions and the security and open inbox records; the pinned alerts from
+  `items.pinned`, account records alone.
+- Message candidates come from `notification_recipient`, written with each message (fc79a4a6),
+  and where a membership's items begin from `membership.joined_seq` (ed1bae10). Both only pick
+  rows; whether a row is an item is still decided at read time.
+- The full `items.derive` is read only by the notification mailer, which needs every unread
+  item of the window, and by `POST /me/notifications/read`, which marks a choice among them.
+
+What is stored besides the events is bookkeeping, never an item: the read marks
+(`notification_read`, the chats' own marks, `read_at` on records), the candidate rows and the
+join position above, and what the mailer has sent. A held long-poll looks again every 0.5
+seconds and compares a stamp before it derives (06563fc8); which wait of a session is current
+crosses replicas through the wake-ups (replicas.md 7c2e91d4).
 
 **Reason:** §18.1 asks that an item never shows more than the human may
 read at the moment it is read or mailed. A view computed when read
 meets that by construction. Stored notifications would need every
 membership end, redaction and permission change to find and withdraw
-them. Thirty days of a few projects are small for V1, and the scan has
-one place to optimise later.
+them. The rows the bell reads by index now are candidates only, so they
+can be stale (a redaction, a membership ended) without showing anything:
+the exact test stays at read time.
 
 **Rejected alternatives:**
 - A notification row written per human and event at emit time: faster
@@ -87,7 +100,8 @@ AES-256-GCM, a random nonce in front, the human's id and
 `notifications.position` as associated data, base64url without padding.
 The key is HKDF-SHA256 of `MAITY_SECRET_KEY` with that purpose as info.
 Without an instance key, the hub makes a random 32-byte key at first use
-and keeps it as `notifications.position_key` in `instance_secret`. That
+and keeps it as `notifications.position_key` in `instance_secret`, until
+an instance key is set (then it is removed, `secretbox.prepare_fallback`). That
 value is not sealed, since there is nothing to seal it with. Past 4096
 characters the vector is stored in `notification_position` and the
 position is a sealed `{v, h: handle}`, which looks like any other
@@ -836,7 +850,8 @@ settings and a second error code that told a client what it had asked for in the
 
 **Id:** f1bba221-bde0-4988-96a5-6b55368693d3
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 5fa1d7c2-8e34-4b6a-9c07-1d3e8f20ab46
 **Evidence:** inferred
 **Source:** docs/api.md §6.2, §18.1, §18.4; the implementation of #329 (`Scope.say`, `items.WORDS`) and its review, 2026-10-29
 **Revisit when:** a third language is added, a human asks for another language in the bell than in their mail, or the titles of an item kind outgrow the table in `items.WORDS`
@@ -1271,3 +1286,201 @@ cost without a purpose; stored, the read takes it with the membership row it loa
 - A nullable column with the old lookup as a fallback: it keeps the scan reachable and hides a
   path that forgets the value.
 
+## A key per purpose comes from one helper in `secretbox`: HKDF of the instance key, else a fallback key made at first use
+
+**Id:** dc952df1-de40-4d07-b091-cb95d4063e6b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the clean-up audit tsk-hgnbapyw7hnh (area 12, item 4) and its card tsk-8vdegd61y70v, which proposed `secretbox` as the home; the follow-up card tsk-2y0qbc1zm7r1 (rate_count keys from one keyed helper); the lead's ruling on the wipe question on that card (`maity say`, seqs 129388 and 130728, 2026-11-14), after a read-only check of every reader of the fallback keys
+**Revisit when:** a keyed value needs a key that is not 32 bytes, a stored value comes to need a fallback key while an instance key is set, or the hub runs processes with and without `MAITY_SECRET_KEY` side by side
+
+`secretbox.derive` (HKDF-SHA256, no salt, the purpose as `info`),
+`secretbox.purpose_key` (derived from `MAITY_SECRET_KEY` when it is set,
+else the stored fallback key as it is) and `secretbox.prepare_fallback`
+(make the fallback at first use in a transaction of its own, keep a
+concurrent winner's) serve the address locks' pepper
+(`address.lock_pepper`), the notification positions' key and the known
+sources' fingerprints; a new keyed value (the rate counts' keys of
+tsk-2y0qbc1zm7r1) uses them too. The purpose strings are pinned by a test:
+a changed byte invalidates every lock row, position and fingerprint.
+
+**Once an instance key is set, every fallback key is removed**
+(`prepare_fallback`, at the next first use): the address pepper always
+was, the position key since the follow-up of the clean-up. The rule is
+the lead's: remove only if nothing stored still has to be read or
+compared with the fallback key once the instance key is set. The check
+found nothing. A position's stored vector (`notification_position`) is
+plain JSON; its token is held by the client and opens only under the
+derived key, so one sealed under the fallback already fails closed
+(docs/api.md §18.2: a change of `MAITY_SECRET_KEY` invalidates every
+position). Lock digests and known-source fingerprints are made again
+under the instance key. No other code reads the two names.
+
+**Limit:** while processes with and without `MAITY_SECRET_KEY` run side
+by side (a rollout), one removes the fallback key and the other makes a
+new one, so the positions the keyless process issued keep going invalid
+until every process has the key; the address locks already behaved so.
+
+**Reason:** the derivation had been copied three times, the generic part
+inside `mail/address.py` and the known sources reaching into the mail
+module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
+`cryptography` dependency, so every key the hub derives is in one module.
+
+**Rejected alternatives:**
+- Keeping a fallback key once an instance key is set (the position key
+  until the follow-up): nothing reads it, so it is only key material in
+  the database; removing the key again later makes a new one, which the
+  contract already allows, since every position is invalidated then.
+- A per-caller switch (`wipe_when_keyed`): two answers to one question.
+- A new module for the three functions: one more home for the instance
+  key, beside the one that parses and uses it.
+- `instance_settings`: it stores the fallback, but knows nothing of keys.
+
+## A notification mail's subject is defanged and cut like its body; a waiting mail is dropped once a membership it relies on ended
+
+**Id:** 64c0fbdf-0e1d-443e-af22-6bbc9c95df04
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-e2m6krwdk5rg (hardening from the security rounds, tsk-v9kheekgq115); the review of #1807 (maity-review-team-antigravity#na6z, seq 131769) moved the mark from projects to membership rows; `notifications/mailer.py` `subject_line`, `_memberships_of`, `mail/outbox.py` `_membership_ended`; tests in `tests/test_notification_mail.py` and `tests/test_mail_robustness.py`, each red without the change
+**Revisit when:** the defang helpers move to `mail/` (card tsk-xx108ajy287x), `mail_outbox` gets a project column, or a notification mail starts carrying items that rest on something other than a membership
+
+A subject that carries text the hub did not write (a project's name, an item's title with a
+display name or a card's title in it, the inviter and project of an invitation) goes through
+`mailer.subject_line`: control characters become spaces (`headers.clean`), whitespace runs become
+one space, the result is defanged with the same `defang` as the body, and it is cut at
+`SUBJECT_MAX` (120) with `…`. The body was defanged already; the subject only lost its line
+breaks. Cleaning comes before defanging, so a control character between a name and its dot cannot
+hide a host from `defang`; cutting comes after, so a cut can shorten `[.]` but never undo it.
+
+A notification mail is built with the items readable at that moment, then may wait in the outbox
+for the hour's budget. The mailer marks the row with `_memberships` (a mark, never a header): the
+ids of the membership rows its items were read through, taken from the `items.scope` that derived
+them (items with a project and `member`), with no query of their own. Before delivery the outbox
+checks that each of those rows is still `active`; if one is not, or is gone, the whole row is
+`dropped`, as a row to a disabled address is. Items of a project the human is no member of (an
+invitation) or of no project add nothing to the mark.
+
+The mark holds rows, not projects, for two cases: a human who leaves and joins again gets a new
+row whose history begins at the new join (`joined_seq`), so the old mail is not theirs to read
+any more; and on READ COMMITTED a removal can commit between the scope's read and a second query
+for the mark, which would leave the project out and let the mail go. Taking the ids from the scope
+ties the mark to exactly what the items were read through.
+
+**Reason:** the subject is read before the mail is opened, from the hub's trusted sender, so text
+there needs the same treatment as in the body. A mail that waited should not take a project's
+items to someone removed from that project in the meantime.
+
+**Rejected alternatives:**
+- Defang only the project name and title separately before formatting: same result, two places
+  to forget; one helper on the whole line also covers the second-factor subject's display name.
+- Delete waiting rows when a membership is removed: every removal path would need it, the row
+  has no project column to find them by, and a send-time check also covers leaving and any path
+  added later.
+- Drop only the items of the ended project and rebuild the mail: the outbox holds built text; a
+  rebuild belongs to the mailer. The items stay in the bell.
+- A `project_id` column on `mail_outbox`: a migration for a mark only notification mail needs,
+  and a digest spans several projects.
+- Mark the projects and check for any active membership in them (the first version of #1807):
+  a join after a leave passes with its new row, and a second query for the mark races a removal
+  on READ COMMITTED.
+
+## Account records and the mail's bookkeeping are deleted by an hourly sweep; an open inbox record stays until its matter closes
+
+**Id:** c28a0dba-829b-4476-a422-9eadcca9337a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-3ar6h2s0kff5, from the clean-up audit tsk-hgnbapyw7hnh (area 12, seq 125423); docs/api.md §2.6.5 and §18.1 ("kept 90 days"), §18.2 (open inbox items "stay listed while their matter is open, however old"; a stored position "kept at least 30 days after its last use"); `notifications/retention.py`, `mail/outbox.py` `Worker._prune`; tests in `tests/test_notification_retention.py`
+**See:** https://github.com/oliver-zehentleitner/maity — b735056d-fb73-458b-8a85-d656dc7e218b — as of 2026-11-14
+**Revisit when:** an index is built for the sweep (`mail_item_sent.mailed_at`, `notification_position.last_used_at`; card tsk-3ar6h2s0kff5 leaves it as a follow-up), the bell lists an open record past `records.KEPT` (TODO #280 for `mail_disabled`), or a new inbox record type is added to `records.INBOX`
+
+Nothing deleted `account_record`, `mail_item_sent`, `mail_delivery` or `notification_position`
+but an account's deletion, though the contract keeps records 90 days and stored positions 30 days
+after their last use; a `session_created` record holds the IP, browser and system of a sign-in.
+`outbox.Worker` now runs `retention.prune` once an hour (one pod per hour through `worker_runs`,
+name `mail-retention`; the first sweep an hour after the process starts). It deletes:
+
+- account records older than `records.KEPT` plus a day (`MARGIN`), so a reader that filters by
+  `>= now - KEPT` never races the sweep for a row at the edge;
+- `mail_item_sent` rows mailed more than `records.KEPT` plus a day ago, and the mailer reads only
+  that span of them;
+- `mail_delivery` rows older than a day: the counters (`mail.settings.counters`) and the
+  instance budget (`mailer._instance_full`) read the last hour;
+- stored positions unused for 30 days.
+
+An inbox record whose matter is still open is kept past 90 days and goes on the first sweep
+after the matter closed, judged as the bell judges it: `registration_pending` while the
+registration it names is `pending`; `mail_disabled` while the human's `address_status` is
+`disabled`; `agents_not_listening` when it is the owner's newest of the type and its count is not 0.
+
+Each table goes in batches of 500 rows chosen by key and deleted by key in a short transaction of
+their own; the DELETE checks the condition again, so a position used in between stays. Account
+records are walked by number (`n > last`), so a batch that holds only open records is passed, not
+read again. A sweep stops after 30 seconds or when the worker stops and leaves the rest to the
+next hour; the mail worker's thread runs it between two looks at the outbox.
+
+**Reason:** the contract's "kept 90 days" and "kept at least 30 days after its last use" were
+true only as filters on read; a copy of the database kept every sign-in's address for good.
+Keeping open records follows §18.2, which lists them while their matter is open, however old:
+deleting one would end that promise for good, while keeping it costs one row per matter. In
+practice none stays long: a pending registration expires after 30 days
+(`registration_accounts.PENDING_ACCOUNT_FOR`), the digest writes a new `agents_not_listening`
+record once the open one left the window (`not_listening_digest.latest`), after which the old one
+is no longer the newest; only `mail_disabled` stays as long as the address stays disabled.
+`mail_item_sent` is kept as long as records, not the 30 days of events: an item from a record (a
+sign-in's alert, a security item) is derived for 90 days, so a row deleted after 30 would mail an
+unread one again; the test fails with a 31-day window.
+
+**Rejected alternatives:**
+- Deleting `mail_item_sent` after the 30-day item window and a margin, as the card proposed: the
+  record items above would be mailed a second time.
+- Reissuing an open inbox record past 90 days instead of keeping it: a new number and `at` for an
+  old matter, so the bell would show it as new and a position would not cover it.
+- Deleting open records past 90 days: §18.2 keeps their items listed while the matter is open.
+- A worker of its own, as `known_sources.Worker`: one more thread for a pass an hour; the mail
+  worker already holds the outbox's sweep.
+- One DELETE per table without a batch (`known_sources.forget_old`): the first sweep on a hub that
+  never pruned would delete every old row in one statement and hold their locks to its end.
+- An index for the sweep in the same change: a migration needs a slot, and the sweep runs once an
+  hour, the account records' walk on their primary key.
+
+## The notice to the old address names where a change was asked from, kept with the pending address until it is verified or expires
+
+**Id:** 569a1661-3a51-45bb-b7e3-47a3f4368354
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-y5hkg2ztvwq9, item 10, from the clean-up audit tsk-hgnbapyw7hnh (area 12, seq 125423); the lead's decision for variant (a), 2026-11-15; docs/api.md §2.6.3 and §18.4 ("When the new address is verified ... from which browser, operating system and IP address"); `notifications/preferences.py` (`apply_address`, `verify`, `void_pending_address`, `NO_PENDING_ORIGIN`), `notifications/retention.py` (`_pending_origin`), migration `20261115000000_address_where`; tests in `tests/test_notification_address.py`, `tests/test_notification_retention.py`, `tests/test_export.py`, `tests/test_per_human_tables.py`
+**Revisit when:** the old-address notice gets a channel other than mail, an address change can be asked without a session (an admin's or an API key's), or the session list starts keeping where every sensitive call came from
+
+`verify` sent the notice to the old address without the "From: <browser> on <os>, <ip>" line:
+only a removal passed the session to `_tell_old_address`, while the link that confirms a change
+carries no session. `apply_address` now writes the requesting session's browser, operating system
+and IP address beside `pending_nonce` (`pending_browser`, `pending_os`, `pending_ip`), and
+`verify` names them in the notice, in the same `address_from` line, with the same fallbacks, as a
+removal does. For an approved held change the session is the approving one, as for an approved
+removal.
+
+The three columns are never kept for good. They are cleared wherever the pending address is: at
+the verification, when a new request replaces them with its own, at a removal, and when a new
+password voids the pending address (`void_pending_address`). A link that expired leaves its
+pending address in the settings, so the hourly retention sweep clears the three columns of every
+row whose `pending_expires_at` has passed. A row pending at the upgrade has none, and its notice
+leaves the line out, as before. They go with the settings row at an account's deletion, and the
+export leaves them out: a copy of the session's data for one mail, while the export's session
+list holds the browser and system.
+
+**Reason:** the notice to the old address is the account's protection against a takeover through
+its address: the person who lost the account learns when and from where it happened. Narrowing
+the contract to name the "where" only on removal would take that from the common case, a change
+confirmed by its link.
+
+**Rejected alternatives:**
+- Variant (b), changing §2.6.3 and §18.4 to give the "where" on removal only: smaller (no
+  migration), but it weakens the takeover warning where it matters most.
+- Reading the session at verify time from a stored session id: the session may have ended (its
+  `ip` is cleared then) or be another device's; the request's own data is what the notice names.
+- Keeping the columns until the next request instead of clearing them at expiry: an IP address
+  would stay for as long as nobody touches the address.

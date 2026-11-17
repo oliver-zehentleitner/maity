@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from urllib.parse import unquote_to_bytes
 
 # A human's or an organisation's handle is never one of these (§16.11), now or later.
 # `components`, `health` and `imprint` name no route today and are held back so that they
@@ -66,6 +67,57 @@ HUB_FIRST = frozenset(
     {"api", "assets", "join", "r", "mail", "badge", "impressum", "privacy", "terms"}
 )
 _HUB_FILE = re.compile(r"/(?:robots\.txt|sitemap\.xml|sitemap-\d+\.xml)\Z")
+
+# The reserved first words that name no route yet (§16.11): an address under one of them can never
+# be a page, so it is `404` with the shell, not the shell's `200`.
+NO_ROUTE_FIRST = frozenset({"components", "health", "imprint"})
+
+# The depth of the deepest route, `/<owner>/<slug>/team/<id>/sessions/<instance>` (§16.11). A
+# path below a project's Why is never too deep: a topic's file path goes into it segment by
+# segment. A release that adds a deeper route raises this number in the same change.
+DEEPEST = 6
+
+_HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,30}")  # §6.24
+
+
+_NO_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
+def _segment(raw: str) -> str:
+    """One segment as the dashboard reads it: percent-decoded, or as sent where an escape does
+    not decode (§16.11). Strict, like the dashboard's `decodeURIComponent`: any `%` that starts
+    no escape leaves the whole segment as sent, not only that escape."""
+    if _NO_ESCAPE.search(raw):
+        return raw
+    try:
+        return unquote_to_bytes(raw).decode("utf-8")
+    except UnicodeDecodeError:
+        return raw
+
+
+def never_a_page(raw_path: str) -> bool:
+    """Whether the shell answers this path with `404`: an address that can never be a page
+    (§16.11). `raw_path` is the path as sent, split at its slashes before a segment is decoded,
+    so an encoded slash stays in its segment. The path's words alone decide it, never a lookup,
+    so the status tells nobody whether a name exists; a handle- or project-shaped address stays
+    the shell's `200`. Not for a hub path."""
+    segments = [_segment(part) for part in raw_path.split("/") if part]
+    if not segments:
+        return False
+    first = segments[0]
+    if not _HANDLE.fullmatch(first) or first in NO_ROUTE_FIRST:
+        return True
+    # Below the dashboard's own first words the hub routes nothing: only the depth counts there.
+    shaped = first not in RESERVED_FIRST
+    if shaped and len(segments) == 2 and segments[1] == "agents":
+        return True  # `/<handle>/agents` names nothing (§16.9)
+    if shaped and len(segments) >= 3 and segments[1] != "agents":
+        if segments[2] not in PROJECT_VIEWS - {"members"}:
+            return True  # a project's view word that is no view
+        if segments[2] == "why":
+            return False  # a topic's file path: no bound on the depth
+    return len(segments) > DEEPEST
+
 
 NEXT_MAX = 512
 _NEXT_BAD = re.compile(r"[\\\s#\x00-\x1f\x7f]|//")
