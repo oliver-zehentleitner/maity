@@ -1429,10 +1429,13 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
 # listing with 3, as a PermissionError does there: it could hide one. A link that leads
 # nowhere is no credential, as there. Only `test` and `readlink -n` (no `realpath -m`,
 # which not every system has; `-n` keeps a name's own last line break on every system).
-# Links the system does not resolve on its own are followed here one by one, at most 40
-# (only links count, never the directories on the way); when that bound is used up, a
-# loop, or a chain longer than the system follows plus that bound, the listing ends with
-# 3; a shorter chain the system does not resolve counts as no credential, as there.
+# The look at a place stops as soon as the system resolves it (`[ -e ]`). While it does
+# not, the place's parent is looked at first, then, if the place is a link, its target is
+# read (`readlink -n`) and looked at in turn. At most 40 links are read for one place
+# (only links count, never the directories on the way); a 41st ends the listing with 3.
+# So a loop, and a chain into nothing of more than 40 links, refuse. A chain to a real
+# target that is longer than the system follows is read until its rest resolves; it then
+# counts as no credential, as there, unless that took more than 40 links read here.
 _SLOTS = r"""blocked() (
   q=$1 n=${3:-0}
   if [ -e "$q" ]; then
