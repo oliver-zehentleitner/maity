@@ -1350,6 +1350,44 @@ read together with a downstream guard that catches the relevant case was
 judged enough to raise the recorded version now, with the full runtime
 confirmation left open under **Revisit when**.
 
+## A checked Claude Code version is raised only on the probe's output from a signed-in machine
+
+**Id:** 92a0cb54-1bff-4194-bc4f-695e67784432
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision (seq 152372) after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17
+**See:** runner.md — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-17
+**Revisit when:** a CI job with its own key runs the probe against each new release (the maintainer's decision, not taken); the probe's checks no longer match what the runner relies on in the sandbox entries above
+
+`cli/tests/claude_sandbox_probe.py` re-checks what the runner relies on in
+Claude Code's sandbox, for the installed version: prefixed `maity` calls
+stay inside it, the hook's refusal paths, the hook switches in managed and
+user settings, and the credentials and `.git` paths it hides. It starts
+from the runner's own launch (`adapters.launch`) and reads each result
+from the file system, not from what the model says. Someone runs it by
+hand on a machine where Claude Code is installed and signed in. Its
+output goes into the pull request, and `capabilities.CHECKED` is raised
+in a later commit, only after every step passed.
+
+**Reason:** the earlier checks were `claude -p` runs in which the model
+made the probe calls, so a re-check needs a model login. The session that
+took the card could build the sandbox and install the new version, but
+had no login it could use. A script can be run by whoever has one.
+Because it is in the repository, the next version is checked the same
+way, and the steps are visible in review.
+
+**Rejected alternatives:**
+- A new key for the session that took the card: the lead does not create
+  credentials for this, and a session does not use its own harness login
+  for it.
+- Raising the version on a static read again, as for 2.1.325: the runtime
+  confirmation that entry left open would stay open.
+- A scheduled CI job against the newest release, and capping the runner's
+  managed updates at the last checked version: both need a key and a
+  workflow change, so they are the maintainer's decision, raised on the
+  card.
+
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 
 **Id:** 3edc329a-6a10-427d-a0a3-733127f14b20
