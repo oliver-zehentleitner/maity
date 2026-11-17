@@ -12,6 +12,7 @@ import ast
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -68,6 +69,58 @@ def test_without_the_pin_the_planted_commondir_runs_code(tmp_path: Path) -> None
     env = {k: v for k, v in session_env(clone).items() if not k.startswith("GIT_")}
     subprocess.run(["git", "status", "--short"], cwd=clone, env=env, capture_output=True,
                    check=False)  # fmt: skip
+    assert marker.exists()
+
+
+def planted_hook(tmp_path: Path, hooks_path: Path) -> tuple[Path, Path]:
+    """A clone whose `core.hooksPath` is `hooks_path`, with an executable `post-index-change`
+    hook planted both in `.git/hooks` and in `tools/hooks` (where a session can write), and a
+    tracked file left stat-stale so a `git status` refreshes and writes the index — which
+    fires `post-index-change` wherever the hooks path points. The hook touches the marker."""
+    clone = tmp_path / "ws" / "maity" / "agent-3"
+    clone.mkdir(parents=True)
+    git(clone, "init", "-q")
+    git(clone, "config", "maintenance.auto", "false")
+    git(clone, "config", "gc.auto", "0")
+    (clone / "f.txt").write_text("x\n")
+    git(clone, "add", "f.txt")
+    git(clone, "-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "-m", "one")
+    marker = tmp_path / "ran"
+    for directory in (clone / ".git" / "hooks", clone / "tools" / "hooks"):
+        directory.mkdir(parents=True, exist_ok=True)
+        hook = directory / "post-index-change"
+        hook.write_text(f"#!/bin/sh\ntouch {marker}\n")
+        hook.chmod(0o755)
+    git(clone, "config", "core.hooksPath", str(hooks_path))
+    later = time.time() + 10
+    os.utime(clone / "f.txt", (later, later))  # stat-stale: `git status` rewrites the index
+    return clone, marker
+
+
+def test_the_harness_git_runs_no_planted_hook_with_the_external_hooks_path(tmp_path: Path) -> None:
+    """The runner points `core.hooksPath` at a directory of its own, outside the clone and not
+    writable from the sandbox, holding only the pre-push hook. The harness's own out-of-sandbox
+    `git status` then runs no hook the session planted in `.git/hooks` or `tools/hooks`: the
+    opportunistic index refresh looks for `post-index-change` in the external directory, which
+    has none, so nothing runs outside the sandbox."""
+    external = tmp_path / "agent-dir" / "hooks"
+    external.mkdir(parents=True)
+    (external / "pre-push").write_text("#!/bin/sh\nexit 0\n")
+    (external / "pre-push").chmod(0o755)
+    clone, marker = planted_hook(tmp_path, external)
+    done = subprocess.run(["git", "status", "--short"], cwd=clone, env=session_env(clone),
+                          capture_output=True, check=False)  # fmt: skip
+    assert done.returncode == 0 and not marker.exists()
+
+
+def test_without_the_external_hooks_path_a_planted_hook_runs(tmp_path: Path) -> None:
+    """The control: with `core.hooksPath` pointing inside the clone (the session-writable
+    `tools/hooks`, as the earlier design left it), the same `git status` runs the planted
+    `post-index-change` hook — which is what pointing it at the external directory prevents."""
+    inside = tmp_path / "ws" / "maity" / "agent-3" / "tools" / "hooks"
+    clone, marker = planted_hook(tmp_path, inside)
+    subprocess.run(["git", "status", "--short"], cwd=clone, env=session_env(clone),
+                   capture_output=True, check=False)  # fmt: skip
     assert marker.exists()
 
 

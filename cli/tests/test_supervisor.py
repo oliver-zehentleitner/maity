@@ -499,6 +499,8 @@ def _coder_world(
     for sub in ("hub", "cli"):
         (place.repo / sub / "requirements").mkdir(parents=True)
         (place.repo / sub / "requirements" / "dev.txt").write_text("x\n")
+    (place.repo / "tools" / "hooks").mkdir(parents=True)
+    (place.repo / "tools" / "hooks" / "pre-push").write_text("#!/bin/sh\nexec true\n")
     assert sup.cfg.local is not None
     sup.cfg = dataclasses.replace(
         sup.cfg,
@@ -522,13 +524,22 @@ def test_coder_setup_builds_the_clone_venvs_and_sets_the_hooks_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """For a claude-code placement the runner builds each configured `<dir>/.venv` in the
-    clone and sets `core.hooksPath`; it is idempotent and non-fatal."""
+    clone and points `core.hooksPath` at a hooks directory of its own, outside the clone,
+    holding only the pre-push hook; the exact directory is recorded for the clone check."""
     sup, target, place, built, runs = _coder_world(tmp_path, monkeypatch)
     harness = sup.cfg.harnesses["claude-code"]
-    sup._coder_setup(harness, place, target)
+    agent_dir = tmp_path / "agent-dir"
+    sup._coder_setup(harness, place, target, agent_dir)
     assert built == [place.repo / "hub" / ".venv", place.repo / "cli" / ".venv"]
+    hooks_dir = agent_dir / "hooks"
+    hook = hooks_dir / "pre-push"
+    assert hook.is_file() and os.access(hook, os.X_OK)  # installed and executable
+    assert hooks_dir not in place.repo.parents and place.repo not in hooks_dir.parents  # outside
+    assert sorted(p.name for p in hooks_dir.iterdir()) == ["pre-push"]  # only the pre-push hook
+    recorded = (place.repo / clonecheck.HOOKS_RECORD).read_text().strip()
+    assert recorded == str(hooks_dir)  # the clone check pins core.hooksPath to exactly this
     hooks = [r for r in runs if "config" in r and "core.hooksPath" in r]
-    assert hooks and hooks[0][-2:] == ["core.hooksPath", "tools/hooks"]
+    assert hooks and hooks[0][-2:] == ["core.hooksPath", str(hooks_dir)]
     assert str(place.repo) in hooks[0]  # `git -C <clone> config …`
 
 
@@ -536,8 +547,9 @@ def test_coder_setup_leaves_agy_unchanged(tmp_path: Path, monkeypatch: pytest.Mo
     """Only claude-code placements get the clone venvs and the hooks path; agy is untouched."""
     sup, target, place, built, runs = _coder_world(tmp_path, monkeypatch)
     agy = config.Harness("antigravity", ("supervised",), "supervised", binary="agy")
-    sup._coder_setup(agy, place, target)
+    sup._coder_setup(agy, place, target, tmp_path / "agent-dir")
     assert built == [] and not any("core.hooksPath" in r for r in runs)
+    assert not (tmp_path / "agent-dir" / "hooks").exists()
 
 
 def test_coder_setup_skips_a_subpackage_without_a_lock(
@@ -546,8 +558,21 @@ def test_coder_setup_skips_a_subpackage_without_a_lock(
     """A configured subpackage that ships no lock is skipped, not an error."""
     sup, target, place, built, runs = _coder_world(tmp_path, monkeypatch)
     (place.repo / "cli" / "requirements" / "dev.txt").unlink()
-    sup._coder_setup(sup.cfg.harnesses["claude-code"], place, target)
+    sup._coder_setup(sup.cfg.harnesses["claude-code"], place, target, tmp_path / "agent-dir")
     assert built == [place.repo / "hub" / ".venv"]  # cli had no lock: skipped
+
+
+def test_coder_setup_leaves_the_hooks_path_unset_without_a_pre_push(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clone that ships no pre-push hook gets no hooks path: nothing to run there, and
+    `core.hooksPath` is not set, so the clone stays plain."""
+    sup, target, place, built, runs = _coder_world(tmp_path, monkeypatch)
+    (place.repo / "tools" / "hooks" / "pre-push").unlink()
+    sup._coder_setup(sup.cfg.harnesses["claude-code"], place, target, tmp_path / "agent-dir")
+    assert not any("core.hooksPath" in r for r in runs)
+    assert not (tmp_path / "agent-dir" / "hooks").exists()
+    assert not (place.repo / clonecheck.HOOKS_RECORD).exists()
 
 
 def test_sandbox_writable_dirs_expand_the_agents_home(
@@ -570,6 +595,40 @@ def test_sandbox_writable_dirs_expand_the_agents_home(
     )
     home = target.as_user.home()
     assert sup._sandbox_writable(target) == (
+        home / ".local/state/maity/run-slots",
+        Path("/var/lock/x"),
+    )
+
+
+def test_sandbox_writable_dirs_reject_dangerous_targets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A configured writable dir that is, contains or lies in a protected directory is
+    dropped, so opening the sandbox cannot hand the session the filesystem root, the home
+    root, the runner's state or configuration, a private path or the workspaces root; a real
+    subdirectory such as the shared run-slots dir is kept."""
+    import dataclasses
+
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    target = sup.targets["local"]
+    home = target.as_user.home()
+    secret = Path("/opt/maity-secret-xyz")  # stands for a private path (a credential dir, …)
+    assert sup.cfg.local is not None
+    dirs = (
+        "/",  # the filesystem root
+        "~/",  # the home root
+        str(sup.cfg.state_dir),  # the runner's state directory
+        str(sup.cfg.local.workspaces),  # the workspaces root
+        str(Path(sup.cfg.state_dir).parent),  # a directory that contains the state dir
+        str(secret),  # a private path itself
+        str(secret / "sub"),  # a directory inside a private path
+        "~/.local/state/maity/run-slots",  # a real shared subdir: kept
+        "/var/lock/x",  # an absolute subdir: kept
+    )
+    sup.cfg = dataclasses.replace(
+        sup.cfg, local=dataclasses.replace(sup.cfg.local, sandbox_writable_dirs=dirs)
+    )
+    assert sup._sandbox_writable(target, private=(secret,)) == (
         home / ".local/state/maity/run-slots",
         Path("/var/lock/x"),
     )

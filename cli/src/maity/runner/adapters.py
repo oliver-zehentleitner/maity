@@ -220,6 +220,11 @@ class Context:
     # run-slot/lock directory the tests use); absolute, with `~` already expanded to the
     # agents' home. Added to Claude Code's `filesystem.allowWrite` and agy's `write_file`.
     sandbox_writable: tuple[Path, ...] = ()
+    # The runner's own hooks directory for this placement (supervisor._coder_hooks_dir), outside
+    # the clone and holding only the pre-push hook, when the clone's `core.hooksPath` points at
+    # it; None otherwise. The sandbox is let read (and so run) it but never write it, so the
+    # pre-push hook is active for the agent's own pushes while the agent cannot plant a hook.
+    hooks_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -412,9 +417,15 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # re-open its credential as well, and that order is unverified here.
             # `allowWrite`: directories the sandbox otherwise mounts read-only that a session
             # must write — a shared run-slot/lock directory the tests use (sandbox_writable).
+            # `allowRead` on the runner's hooks directory (hooks_path), more specific than the
+            # `denyRead` on the agents' files it sits under, so the sandbox may read and run the
+            # pre-push hook; its `denyWrite` keeps the agent from changing it. The directory is
+            # outside the clone, so no file tool reaches it either.
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private)],
                            "denyWrite": [f"{git}/maity",
-                                         *(f"{git}/{name}" for name in GIT_PROTECTED)],
+                                         *(f"{git}/{name}" for name in GIT_PROTECTED),
+                                         *((str(ctx.hooks_path),) if ctx.hooks_path else ())],
+                           **({"allowRead": [str(ctx.hooks_path)]} if ctx.hooks_path else {}),
                            **({"allowWrite": [str(p) for p in ctx.sandbox_writable]}
                               if ctx.sandbox_writable else {})},
             "excludedCommands": ["maity *"],

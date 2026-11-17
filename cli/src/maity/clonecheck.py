@@ -29,6 +29,13 @@ PLACEMENT_ENV = "MAITY_PLACEMENT"
 # Written by the runner into every clone it starts an agent in (adapters.launch), in the
 # directory Claude Code's sandbox keeps the agent from writing.
 MARKER_PATH = Path(".git", "maity", "placement")
+# Written by the runner beside the marker, in the directory the sandbox keeps the agent from
+# writing, when it points a placed coder's `core.hooksPath` at a hooks directory of its own
+# (supervisor._coder_setup). It records that directory's exact path: clonecheck accepts
+# `core.hooksPath` only when it is exactly this value, so a hooks path set to anywhere else
+# fails the plain-clone check (_inspect). Absent when no such hooks path was set.
+HOOKS_RECORD = Path(".git", "maity", "hookspath")
+HOOKS_RECORD_MAX = 4096
 # The git the runner found: the one maity starts under the runner, not one the PATH of
 # maity's command line picks. A record of the runner's (runner_record): in its directory for
 # the agent, beside git's own repositories (GIT_PRIVATE_ENV), and only for Codex here in the
@@ -61,12 +68,11 @@ GIT_ALLOWED = {
     (None, "core"): frozenset({
         "repositoryformatversion", "filemode", "bare", "logallrefupdates", "ignorecase",
         "precomposeunicode", "symlinks",  # git for Windows writes `symlinks` on every clone
-        # The runner sets `core.hooksPath` for a placed coder so the repository's pre-push
-        # hook runs the project's checks before a push (adapters/runner setup). It only
-        # changes the agent's own git, which runs in the harness sandbox; maity's own git and
-        # the runner's `gc` both override it to `/dev/null` (proc.py, operate.py), so a clone's
-        # hooks never run outside the sandbox. Allowed so such a clone stays a plain one.
-        "hookspath",
+        # `core.hookspath` is not listed here: the runner sets it for a placed coder so the
+        # repository's pre-push hook runs the project's checks before a push, but only to a
+        # directory of its own that the sandbox keeps the agent from writing (HOOKS_RECORD).
+        # _inspect accepts `core.hooksPath` only when it equals that recorded directory, so a
+        # hooks path pointing anywhere else fails the plain-clone check.
     }),
     (None, "user"): frozenset({"name", "email"}),
     ("named", "remote"): frozenset({"url", "fetch"}),
@@ -219,14 +225,43 @@ def _inspect(
     entries = config_entries(data, git)
     if entries is None:
         return Finding("its .git/config cannot be parsed"), []
-    for name, _ in entries:
+    expected_hooks: str | None = None
+    hooks_read = False
+    for name, value in entries:
         section, _, rest = name.partition(".")
         subsection, _, key = rest.rpartition(".")
-        if key not in GIT_ALLOWED.get(("named" if subsection else None, section), ()):
+        if not subsection and section == "core" and key == "hookspath":
+            # Accepted only when it is exactly the hooks directory the runner recorded, which
+            # the sandbox keeps the agent from writing (HOOKS_RECORD). Any other value is
+            # treated like a forbidden key, so a hooks path set to anywhere else — a directory
+            # the session could write, say — fails the plain-clone check.
+            if not hooks_read:
+                expected_hooks, hooks_read = _recorded_hooks_path(dot_git, files, path), True
+            ok = expected_hooks is not None and value == expected_hooks
+        else:
+            ok = key in GIT_ALLOWED.get(("named" if subsection else None, section), ())
+        if not ok:
             # A section may be named by a URL (`[url "https://tok@…"]`): shown without a token.
             shown = onboarding.inline(without_userinfo(name))
             return Finding(f"its .git/config sets {shown}", name, setting=True), []
     return None, entries
+
+
+def _recorded_hooks_path(dot_git: Path, files: Files, root: Path) -> str | None:
+    """The hooks directory the runner recorded for this clone (HOOKS_RECORD), or None when it
+    recorded none. A regular file reached from the clone without following a link, so a record
+    the sandbox swapped for one is not followed; the agent cannot write it (it is in the
+    directory the sandbox protects, `.git/maity`)."""
+    try:
+        data = files.read(
+            dot_git / HOOKS_RECORD.relative_to(".git"), limit=HOOKS_RECORD_MAX + 1, under=root
+        )
+    except OSError:
+        return None
+    if len(data) > HOOKS_RECORD_MAX:
+        return None
+    text = data.decode("utf-8", "replace").strip()
+    return text or None
 
 
 def unsupported(finding: Finding) -> str | None:

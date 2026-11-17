@@ -1031,23 +1031,24 @@ Claude Code's git allow rules gain a `git -C <clone>` form so a coder can run gi
 - No `-C` allow at all: a coder's tool that runs `git -C <clone> …` from a subdirectory would be refused, which is the need this fills.
 - Only the allow, no mirrored deny: a denied option behind `-C` would not be matched by the plain denies, which are not `-C`-prefixed; the twin makes deny-wins hold under `-C`.
 
-## The runner prepares a coder's clone: in-clone per-subpackage venvs, the pre-push hook, and a plain clone that holds `core.hooksPath`
+## The runner prepares a coder's clone: in-clone per-subpackage venvs and a read-only pre-push hook path outside the clone
 
 **Id:** 65ef547a-2f43-4c6a-a9eb-d9ab4221a0d0
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the approved coder-checks plan (tsk-kshmb8vc92rr), relayed 2026-11-17; the project's pre-push hook (#1508, `tools/hooks/pre-push` → `tools/pre_push.py`); maity's and the runner's git both run with `core.hooksPath=/dev/null` (proc.py, operate.py); CONTRIBUTING.md's documented `git config core.hooksPath tools/hooks`
+**Source:** the approved coder-checks plan (tsk-kshmb8vc92rr), relayed 2026-11-17, with the follow-up to harden the pre-push hook path so it is not session-writable; the project's pre-push hook (#1508, `tools/hooks/pre-push` → `tools/pre_push.py`); CONTRIBUTING.md's documented `git config core.hooksPath tools/hooks`
 **See:** runner.md#a-placements-dev-venv-is-built-from-the-projects-pinned-lock-outside-the-clone-onto-the-session-path — 30c5fc5c-89d7-42ea-a74a-ccc0bd7afa27 — as of 2026-11-17
-**Revisit when:** a coder placement runs under a harness other than Claude Code and needs the same setup, or out-of-sandbox git (maity, gc) stops overriding a clone's hooks path
+**Revisit when:** a coder placement runs under a harness other than Claude Code and needs the same setup, or the hooks directory's location or the way the clone check pins it changes
 
-For a claude-code placement the runner does two more things at clone setup (supervisor._coder_setup), both opt-in by configuration and idempotent: it builds each configured subpackage's own `<dir>/.venv` inside the clone (`clone_venvs`), from `<dir>/requirements/dev.txt` with `venv.ensure` (the same builder as the placement venv, 30c5fc5c), and it sets the clone's `core.hooksPath` (`clone_hooks_path`). To keep `core.hooksPath` from making the clone fail the plain-clone check, `core.hookspath` is added to clonecheck.GIT_ALLOWED's core keys.
+For a claude-code placement the runner does two more things at clone setup (supervisor._coder_setup), both opt-in by configuration and idempotent: it builds each configured subpackage's own `<dir>/.venv` inside the clone (`clone_venvs`), from `<dir>/requirements/dev.txt` with `venv.ensure` (the same builder as the placement venv, 30c5fc5c), and it points the clone's `core.hooksPath` (`clone_hooks_path`) at a hooks directory of the runner's own, under the placement's `agent_dir` outside the clone, holding only the project's pre-push hook. The clone check (clonecheck) accepts `core.hooksPath` only when it is exactly that recorded directory (clonecheck.HOOKS_RECORD, written in `.git/maity`, which the sandbox keeps the agent from writing), so a hooks path set to anywhere else fails the plain-clone check.
 
-**Reason:** the coder's tests invoke `<dir>/.venv/bin/python …` by that exact path, so the venv must be in the clone, not in `agent_dir` like the placement venv on PATH; a built `<dir>/.venv` is git-ignored, so it does not dirty the tree. The pre-push hook runs the project's checks before a push; `core.hooksPath` is the project's documented way to turn it on. Allowing `core.hookspath` in clonecheck is safe because a clone's hooks run only for the agent's own git, which is inside the harness sandbox (the agent's own context, no escalation); maity's own git and the runner's `gc` both set `core.hooksPath=/dev/null`, so a clone's hooks never run outside the sandbox — even one an agent somehow planted. Both venvs and the hooks path are conveniences, not gates: a failure is logged and the start goes on.
+**Reason:** the coder's tests invoke `<dir>/.venv/bin/python …` by that exact path, so the venv must be in the clone, not in `agent_dir` like the placement venv on PATH; a built `<dir>/.venv` is git-ignored, so it does not dirty the tree. The pre-push hook runs the project's checks before a push. The hooks directory is the runner's, outside the clone and not writable from the sandbox, so the agent cannot change which hooks run there; the sandbox is let read (and so run) that one directory (adapters: `allowRead` with a `denyWrite`), so the pre-push hook stays active for the agent's own pushes. Pinning `core.hooksPath` in the clone check to exactly the recorded directory keeps the hooks path from being pointed anywhere else. Both the venvs and the hooks path are conveniences, not gates: a failure is logged and the start goes on.
 
 **Rejected alternatives:**
-- Writing `.git/hooks/pre-push` directly instead of `core.hooksPath`: avoids the clonecheck change, but diverges from the project's documented opt-in and duplicates the committed hook's body into `.git`.
-- Leaving `core.hookspath` out of GIT_ALLOWED: the first start sets it and the next start's plain-clone check then refuses the clone (`not_a_plain_clone`), breaking restarts and `gc`.
+- Pointing `core.hooksPath` inside the clone (e.g. `tools/hooks`): that directory is writable from the session, so it is not used; the hooks directory is the runner's, outside the clone and read-only to the sandbox.
+- A blanket `core.hookspath` allow in the clone check: it would accept a hooks path pointing anywhere, so the check pins it to the exact recorded directory instead.
+- Writing the hook into `.git/hooks` directly: it diverges from the project's documented opt-in and duplicates the committed hook's body into `.git`; a directory of the runner's own, outside the clone, is used instead.
 - Building the subpackage venvs in `agent_dir` like the placement venv: the tests name `<dir>/.venv`, which is in the clone, so the path would not match.
 - Applying this to every harness: agy and the others are left unchanged (the plan scopes it to coders, who run under Claude Code); the gate is the harness id.
 

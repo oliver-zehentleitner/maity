@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .. import __version__, hub, onboarding, proc, state
+from .. import __version__, clonecheck, hub, onboarding, proc, state
 from . import adapters, capabilities, config, limitread, loop, restart, targets, venv, workspace
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
@@ -124,6 +124,9 @@ APPROVED_FILE = "approved.json"
 LOGS = "logs"
 # The agent-side state the runner reads after a join (its member id): far below this.
 STATE_MAX = 64 * 1024
+# The project's pre-push hook is a short script; more than this is not copied into the
+# runner's hooks directory (supervisor._coder_hooks_path).
+HOOK_MAX = 64 * 1024
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
 LIVE = ("starting", "running", "stopping")
 # The idle check of an interactive session (§15.14): a pane is read at most once per IDLE_EVERY;
@@ -956,7 +959,8 @@ class Supervisor:
             # agy loads what lies in its start directory and above it: a workspace folder holds
             # the clone and nothing else, outside any work tree, at its real path (§15.5).
             workspace.check_folder(place, as_user)
-            self._coder_setup(harness, place, target)
+            assert target.agent_files is not None  # noqa: S101 - connected before a launch
+            self._coder_setup(harness, place, target, target.agent_files / "agents" / p["id"])
             if join:
                 self._join(p, place, owner, rejoin, target)
                 with self.lock:
@@ -1081,9 +1085,16 @@ class Supervisor:
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         found = view.found
         private = self._private(target, place)
+        local = self.cfg.local
+        hooks_path = (
+            _coder_hooks_dir(agent_dir)
+            if harness.id == "claude-code" and local is not None and local.clone_hooks_path
+            else None
+        )
         return adapters.Context(
             venv_bin=self._venv_bin(target, place, agent_dir),
-            sandbox_writable=self._sandbox_writable(target),
+            sandbox_writable=self._sandbox_writable(target, private),
+            hooks_path=hooks_path,
             placement=p,
             harness=harness,
             binary=found.path if found else None,
@@ -1128,29 +1139,53 @@ class Supervisor:
             return ""
         return str(found)
 
-    def _sandbox_writable(self, target: Target) -> tuple[Path, ...]:
+    def _sandbox_writable(self, target: Target, private: Sequence[Path] = ()) -> tuple[Path, ...]:
         """The configured directories the harness sandbox must let a session write, with a
-        leading `~` expanded to the agents' home as `target` sees it (adapters.Context)."""
+        leading `~` expanded to the agents' home as `target` sees it (adapters.Context).
+
+        A dangerous target is dropped with a warning, so opening the sandbox cannot hand the
+        session the home root, the filesystem root, the runner's state or configuration, the
+        other clones' credentials (`private`) or the workspaces root: a real subdirectory such
+        as `~/.local/state/maity/run-slots` is kept, its protected neighbours are not."""
         local = self.cfg.local
         if local is None or not local.sandbox_writable_dirs:
             return ()
+        here = target.as_user.here
         home = target.as_user.home()
-        return tuple(
-            home / item[2:] if item.startswith("~/") else Path(item)
-            for item in local.sandbox_writable_dirs
-        )
+
+        def norm(path: Path) -> Path:
+            return path.resolve() if here else path
+
+        roots = {norm(Path("/")), norm(home)}  # the filesystem root and the home root exactly
+        # Trees that must stay fully unreadable/unwritable: a candidate equal to one, inside
+        # one, or containing one (which would make the whole tree writable) is refused.
+        trees = {norm(self.cfg.state_dir), norm(target.workspaces), *(norm(p) for p in private)}
+        kept: list[Path] = []
+        for item in local.sandbox_writable_dirs:
+            path = home / item[2:] if item.startswith("~/") else Path(item)
+            here_path = norm(path)  # resolved only for the comparison, not for what is returned
+            if here_path in roots or any(
+                here_path == t or t in here_path.parents or here_path in t.parents for t in trees
+            ):
+                self.log(f"supervisor: refusing sandbox_writable_dir {onboarding.inline(str(path))}"
+                         ": it is, contains or lies in a protected directory")  # fmt: skip
+                continue
+            kept.append(path)
+        return tuple(kept)
 
     def _coder_setup(
-        self, harness: config.Harness, place: workspace.Workspace, target: Target
-    ) -> None:
+        self, harness: config.Harness, place: workspace.Workspace, target: Target,
+        agent_dir: Path,
+    ) -> None:  # fmt: skip
         """Clone-side setup a placed coder needs, for claude-code placements only, so agy and
         the other harnesses are unchanged. Opt-in by configuration and idempotent:
 
         - build each configured subpackage's own `<dir>/.venv` inside the clone, from
           `<dir>/requirements/dev.txt`, so the coder's tests that invoke `<dir>/.venv/bin/...`
           and `tools/guards.sh` find them (`clone_venvs`);
-        - set the clone's `core.hooksPath` so the repository's pre-push hook runs its checks
-          before a push (`clone_hooks_path`).
+        - point the clone's `core.hooksPath` at a hooks directory of the runner's own, outside
+          the clone and not writable from the sandbox, holding only the project's pre-push hook,
+          so that hook runs the project's checks before a push (`clone_hooks_path`).
 
         Both are conveniences, not gates: a failure is logged and the start goes on. A built
         venv under `<dir>/.venv` is git-ignored, so it does not show as untracked."""
@@ -1167,16 +1202,44 @@ class Supervisor:
             except venv.VenvError as exc:
                 self.log(f"{place.path.name}: no {sub} venv: {exc}")
         if local.clone_hooks_path:
-            # The runner's own git in the clone runs through the guarded prefix (proc.GIT: no
-            # hooks, no fsmonitor), like every other git maity and the runner start; `config`
-            # runs no hook itself, but the clone is the agent's, so nothing it wrote may run.
-            done = as_user.run(
-                [*proc.GIT, "-C", str(place.repo),
-                 "config", "core.hooksPath", local.clone_hooks_path]
-            )  # fmt: skip
-            if done.returncode != 0:
-                self.log(f"{place.path.name}: cannot set core.hooksPath: "
-                         f"{done.stderr.strip()[:200]}")  # fmt: skip
+            self._coder_hooks_path(local.clone_hooks_path, place, agent_dir, as_user)
+
+    def _coder_hooks_path(
+        self, hooks_source: str, place: workspace.Workspace, agent_dir: Path, as_user: AsUser
+    ) -> None:
+        """Point the clone's `core.hooksPath` at the runner's own hooks directory for this
+        placement (`agent_dir`, outside the clone and not writable from the sandbox), holding
+        only the project's pre-push hook. The agent cannot drop a hook there, so no hook it
+        plants runs for the git invocations that run outside the sandbox (the harness's own
+        `git status`, a person's git in the clone); the clone's hooks path is pinned to this
+        exact directory by the clone check (clonecheck.HOOKS_RECORD). The one hook stays active
+        for the agent's own pushes (adapters: the directory is readable in the sandbox, never
+        writable). The record and the git `config` run through the guarded prefix (proc.GIT: no
+        hooks, no fsmonitor); the agent cannot write `.git/maity` or `.git/config`."""
+        hooks_dir = _coder_hooks_dir(agent_dir)
+        source = place.repo / hooks_source / "pre-push"
+        if not as_user.exists(source, "-f"):
+            self.log(f"{place.path.name}: no {hooks_source}/pre-push to install; "
+                     "leaving the hooks path unset")  # fmt: skip
+            return
+        try:
+            body = as_user.read_whole(source, HOOK_MAX, under=place.repo).decode("utf-8")
+            as_user.mkdir(hooks_dir)
+            hook = hooks_dir / "pre-push"
+            as_user.write(hook, body)
+            as_user.make_executable(hook)
+            # In the clone's `.git/maity`, which the sandbox keeps the agent from writing: the
+            # exact path the clone check pins `core.hooksPath` to (clonecheck.HOOKS_RECORD).
+            as_user.write(place.repo / clonecheck.HOOKS_RECORD, str(hooks_dir) + "\n")
+        except (OSError, UnicodeDecodeError) as exc:
+            self.log(f"{place.path.name}: cannot install the pre-push hook: {exc}")
+            return
+        done = as_user.run(
+            [*proc.GIT, "-C", str(place.repo), "config", "core.hooksPath", str(hooks_dir)]
+        )
+        if done.returncode != 0:
+            self.log(f"{place.path.name}: cannot set core.hooksPath: "
+                     f"{done.stderr.strip()[:200]}")  # fmt: skip
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
         """What the agent's sandbox may not read, as the agents' side of `target` sees it: its
@@ -1370,6 +1433,14 @@ HOME_SECRETS = (
     ".config/maity-runner", ".local/state/maity-runner", ".aws", ".azure", ".config/gcloud",
     ".kube", ".docker", ".local/share/opencode", ".config/opencode", ".gemini",
 )  # fmt: skip
+
+
+def _coder_hooks_dir(agent_dir: Path) -> Path:
+    """The runner's own hooks directory for a placed coder: under the placement's `agent_dir`,
+    outside the clone and (as the agents' own files) not writable from the sandbox. The runner
+    writes only the project's pre-push hook there and points `core.hooksPath` at it; the clone
+    check pins that path to exactly this directory (clonecheck.HOOKS_RECORD)."""
+    return agent_dir / "hooks"
 
 
 def private_paths(

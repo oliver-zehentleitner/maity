@@ -295,6 +295,21 @@ def test_the_sandbox_lets_a_session_write_the_configured_dirs(tmp_path: Path) ->
 def test_no_allow_write_key_without_configured_dirs(tmp_path: Path) -> None:
     fs = adapters.claude_settings(context(tmp_path, sandbox=True))["sandbox"]["filesystem"]
     assert "allowWrite" not in fs  # the sandbox's own writable set stands
+    assert "allowRead" not in fs  # no runner hooks directory to re-open for reading
+
+
+def test_the_runner_hooks_dir_is_readable_but_not_writable_in_the_sandbox(tmp_path: Path) -> None:
+    """The runner's pre-push hook directory, outside the clone and under the agents' files the
+    sandbox otherwise hides, is let be read (so the hook runs for the agent's own pushes) and
+    denied writing (so the agent cannot plant or change a hook); no file tool reaches it either,
+    as it lies outside the clone."""
+    hooks = tmp_path / "agent-dir" / "hooks"
+    fs = adapters.claude_settings(context(tmp_path, sandbox=True, hooks_path=hooks))["sandbox"][
+        "filesystem"
+    ]
+    assert fs["allowRead"] == [str(hooks)]
+    assert str(hooks) in fs["denyWrite"]
+    assert "allowWrite" not in fs  # the hooks dir is readable, never writable
 
 
 def test_the_gitignore_hides_every_sandbox_placeholder(tmp_path: Path) -> None:
