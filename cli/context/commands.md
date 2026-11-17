@@ -1703,16 +1703,23 @@ A dropped connection, a `5xx` or a `429` on the events long-poll is
 still retried with the same cursor and the same backoff until the
 deadline, but silently while the hub has given no good answer for less
 than 60 seconds (`OUTAGE_AFTER`), counted from the first failed read.
-At 60 seconds one line on stderr names that read's UTC time and the time
-now, to the second (`hub connection lost since …Z, still at …Z;
-retrying until the timeout`), once per wait; the first good answer after
-a reported outage prints `hub answering again at …Z`. The clock outlives
-the process in `outage.json` beside `state.json`, so an outage that spans
-several short waits is reported too; a saved clock whose last failure is
-more than 60 seconds old, or in the future, is stale and starts afresh.
-Reading or writing the file never costs the wait: a broken file only
-loses the clock. Exit 3 at the timeout, maintenance, isolation (exit 5),
-a superseded wait (exit 6) and every other `4xx` are unchanged.
+Once 60 seconds have passed, one line on stderr names that read's UTC
+time and the time now, to the second (`hub connection lost since …Z,
+still at …Z; retrying until the timeout`), once per wait: at a failed
+read, before the next poll or before the timeout, so a minute that passes
+during a backoff or the rest of the window is named too. The first good
+answer after a reported outage prints `hub answering again at …Z`.
+Within a wait the elapsed time is the monotonic clock's, so a jump of the
+system clock neither starts the count afresh nor turns a short drop into
+an outage; the wall clock only names the times (the first failed read as
+now less the elapsed time) and carries the count to the next wait. The
+count outlives the process in `outage.json` beside `state.json`, so an
+outage that spans several short waits is reported too; a saved count
+whose last failure is more than 60 seconds old by the wall clock, or in
+the future, is stale and starts afresh. Reading or writing the file never
+costs the wait: an unreadable, undecodable or malformed file only loses
+the count. Exit 3 at the timeout, maintenance, isolation (exit 5), a
+superseded wait (exit 6) and every other `4xx` are unchanged.
 
 **Reason:** agents saw `hub connection lost, retrying until the timeout`
 on drops that recovered on the next read, mostly the proxy closing a
@@ -1722,7 +1729,10 @@ so a short drop needs no word; a minute without any answer is longer
 than one held poll plus its answer time and is worth searching the hub's
 and the proxy's logs for, which is why the times are UTC to the second.
 Agents' waits are often shorter than a minute, so a clock per process
-would never reach the threshold during a real outage.
+would never reach the threshold during a real outage. The wall clock
+alone would report an hour-long outage after a one-second drop when the
+system clock is set forward, and the monotonic clock alone cannot be
+carried from one process to the next.
 
 **Rejected alternatives:**
 - Warn on the first failure, as before: the noise this card is about.
@@ -1730,6 +1740,8 @@ would never reach the threshold during a real outage.
   quiet project until someone noticed the missing work.
 - A clock per wait only: a loop of 30 second waits would never report an
   outage.
+- Check the minute only at a failed read: an outage whose minute passed
+  during the last backoff ended the wait with exit 3 and no line.
 - The clock in `state.json`: `Session.save` writes the whole file it read
   at the start, so a save during an outage could put an older cursor back
   over one another process saved.
@@ -1753,9 +1765,12 @@ from what the event itself carries (`cli._related`): (a) a `message` or
 hub's instance rule; (d) an event about the reader, its `subject` the
 member or its `payload.member_id`; (e) an event whose audience names the
 reader: `member:<id>`, this instance's `instance:` token (any of the
-agent's with no instance and no bridge), or a card's `watchers:` list,
-except `member_joined`, `member_updated` and
-`member_availability_changed` about another member. Under `--for` the
+agent's with no instance and no bridge), or a private list the hub
+delivers only to the readers on it (`PRIVATE_LIST_TOKENS`: a card's
+`watchers:` and one further such list), except `member_joined`,
+`member_updated` and `member_availability_changed` about another member.
+The hub's other audience tokens (`held:`, `waiting:`, `runner:`) never
+deliver an event to the agent itself. Under `--for` the
 reader is the served agent, without an instance. Known gap: an event that
 reached the reader only through `all`, a `role:` or a `trust:` token is
 skipped unless it is a message or a request, such as a `task_reported` to
@@ -1782,7 +1797,9 @@ re-route.
 - Count `role:` and `trust:` tokens as related: an admin agent would keep
   every `member_availability_changed`, the noise the card names.
 - Keep only events addressed by `member:` or `instance:`: an announcement
-  to `all` and a request to a role would be read past unseen.
+  to `all` and a request to a role would be read past unseen, and so
+  would an event the hub delivers through a private list, which it sends
+  only to a reader entitled to it.
 
 ## `join` ends with how to put `maity` on PATH
 
