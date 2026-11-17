@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -148,13 +149,25 @@ class RunSlotTest(unittest.TestCase):
         self.assertEqual(start[2:4], ["slot=0", f"pid={pid}"])
         # bash's SECONDS counts whole seconds of the clock: a run that did not wait shows 0 or 1.
         self.assertRegex(start[4], r"^wait=[01]$")
-        self.assertEqual(start[5:], ["who=coder#ab cd", "cmd=sh -c sleep 1.2; echo $$ x y"])
+        self.assertEqual(start[5:], ["who=coder#ab cd", "cmd=sh -c"])
         self.assertEqual(len(end), 5, end)
         self.assertEqual(end[0], "end")
         self.assertRegex(end[1], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
         self.assertEqual(end[2:4], ["slot=0", f"pid={pid}"])
         self.assertRegex(end[4], r"^secs=[1-9]\d*$")
-        self.assertTrue((self.tmp / "slots" / "log").stat().st_mode & 0o020, "group-writable")
+        self.assertEqual((self.tmp / "slots" / "log").stat().st_mode & 0o777, 0o640)
+
+    def test_only_the_program_and_its_first_argument_are_kept(self) -> None:
+        subprocess.run(
+            [SCRIPT, "sh", "-c", "exit 0", "later", "arguments"], env=self.env, check=True, timeout=30
+        )
+        self.assertEqual(self.log_lines(1)[0][6], "cmd=sh -c")
+        who = (self.tmp / "slots" / "slot0.who").read_text()
+        self.assertTrue(who.endswith(": sh -c\n"), who)
+        self.assertNotIn("later", (self.tmp / "slots" / "log").read_text() + who)
+        subprocess.run([SCRIPT, "true"], env=self.env, check=True, timeout=30)
+        starts = [line for line in self.log_lines(3) if line[0] == "start"]
+        self.assertEqual(starts[1][6], "cmd=true")
 
     def test_who_defaults_to_the_user_and_a_long_command_is_cut(self) -> None:
         env = {k: v for k, v in self.env.items() if k != "MAITY_RUN_NAME"}
@@ -162,7 +175,7 @@ class RunSlotTest(unittest.TestCase):
         subprocess.run([SCRIPT, "true", "a" * 300], env=env, check=True, timeout=30)
         start = self.log_lines(1)[0]
         self.assertEqual(start[5], "who=agents")
-        self.assertEqual(start[6], "cmd=" + ("true " + "a" * 300)[:200])
+        self.assertEqual(start[6], "cmd=" + ("true " + "a" * 300)[:200])  # a long first one
 
     def test_a_run_that_waited_logs_the_wait(self) -> None:
         gate = self.tmp / "gate"
@@ -209,6 +222,50 @@ class RunSlotTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 3)
         self.assertEqual(result.stderr, "")
+
+    def test_a_log_that_is_a_fifo_does_not_hold_the_run(self) -> None:
+        slots = self.tmp / "slots"
+        slots.mkdir()
+        os.mkfifo(slots / "log")  # no reader: opening it for appending would block
+        marker = self.tmp / "ran"
+        result = subprocess.run(
+            [SCRIPT, "sh", "-c", f"touch {marker}; exit 3"],
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertTrue(marker.exists(), "the command never ran")
+        self.assertEqual(result.stderr, "")
+
+    @unittest.skipIf(shutil.which("setsid") is None, "needs util-linux setsid")
+    def test_a_run_cancelled_with_its_process_group_still_logs_its_end(self) -> None:
+        ready = self.tmp / "ready"
+        # A session of its own, as a supervisor would start it: the run leads its process group.
+        run = subprocess.Popen(
+            [SCRIPT, "sh", "-c", f"touch {ready}; sleep 60"],
+            env=self.env,
+            start_new_session=True,
+        )
+        try:
+            self.wait_for(ready)
+            os.killpg(run.pid, signal.SIGTERM)
+            self.assertEqual(run.wait(timeout=30), -signal.SIGTERM)
+            start, end = self.log_lines(2)  # waits up to 30 s for the watcher's end line
+            self.assertEqual(start[0], "start")
+            self.assertEqual(start[3], f"pid={run.pid}")
+            self.assertEqual(end[0], "end")
+            self.assertEqual(end[2:4], ["slot=0", f"pid={run.pid}"])
+        finally:
+            try:
+                os.killpg(run.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                run.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                pass
 
     def test_the_watcher_holds_neither_the_slot_nor_the_output(self) -> None:
         env = {**self.env, "MAITY_RUN_SLOTS": "1"}

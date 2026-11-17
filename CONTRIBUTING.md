@@ -235,10 +235,14 @@ directory and the slot files are that account's own; another account gets its ow
   `with_postgres.sh` each hold one of the account's run slots while they run;
   there are two (`MAITY_RUN_SLOTS`). A third run waits, says who holds the
   slots, and starts once one is free. Anything else heavy runs in a slot as
-  `tools/run_slot.sh <command>`. Each run that gets a slot appends a start and an end line to
-  `log` in the slot directory (`~/.local/state/maity/run-slots/log`; the format is in the
-  script's header), with `MAITY_RUN_NAME` as who ran it: set it to `handle#instance`. The end
-  line is when the command's process ended; a process it left running can hold the slot longer.
+  `tools/run_slot.sh <command>`. Each run that gets a slot appends a start line, and once its
+  process is gone an end line, to `log` in the slot directory
+  (`~/.local/state/maity/run-slots/log`; the format is in the script's header), with
+  `MAITY_RUN_NAME` as who ran it: set it to `handle#instance`. Of the command it logs the program
+  and its first argument. The end line is when the command's process ended; a process it left
+  running can hold the slot longer. Not every run gets an end line: once a run is over, a start
+  line without a matching end line (same slot and pid) means the run was aborted (killed together
+  with the watcher that writes the end line, or the machine rebooted).
 - **Two workers per run:** `pytest -n 2` at most; in a slot, `-n auto`
   starts two.
 - **No full hub suite on the agents' machine** (since 2026-10-29, after the

@@ -1894,10 +1894,15 @@ named after whoever runs it. `make smoke` and `with_postgres.sh` each hold one o
 are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 
 Since 2026-11-17 every run that gets a slot appends a start line (time, slot, pid, seconds waited,
-who, command) and an end line (time, seconds held) to `log` in the run-slot directory; the format
-is in the script's header. The log is append-only, one `printf` per short line. The end line
-comes from a watcher the script starts before its `exec`, not from a wrapper around the command.
-A log that cannot be written is ignored. `who` is `MAITY_RUN_NAME`, which each run sets to
+who, the program and its first argument), and once its process is gone an end line (time, seconds
+held), to `log` in the run-slot directory; the format is in the script's header. The log is
+append-only, one `printf` per short line, created 0640. The end line comes from a watcher the
+script starts before its `exec`, not from a wrapper around the command; the watcher runs in a
+session of its own (`setsid`) and ignores INT, HUP and TERM, so cancelling the command's process
+group leaves it running. A KILL to the watcher or a reboot still ends it, so the log does not
+promise an end line for every run: once a run is over, a start line without a matching end line
+(same slot and pid) means it was aborted. A log that is not a regular file is skipped, one that
+cannot be written is ignored. `who` is `MAITY_RUN_NAME`, which each run sets to
 `handle#instance`. Its purpose is measuring which run holds a slot how long and for whom (card
 tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
 
@@ -1930,6 +1935,17 @@ tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
   run's output, and is no child of the command. Its cost: the end is when the command's process
   ended, to the second; a process the command left running can hold the slot longer. Logging
   never stops a run: a measurement must not become a new way for a run to fail.
+- The watcher's own session (review A1081): created before the `exec`, it was in the command's
+  process group, and a supervisor that sent TERM to that group (an ordinary cancellation) took the
+  watcher along, so exactly the interrupted runs lost their end line. `setsid` comes from
+  util-linux, like `flock`; without it the watcher only ignores the signals. Only a regular file
+  (or none yet) is opened as the log: an append open of a FIFO without a reader blocks, and it
+  came after the slot was taken and before the command started, so the run held its slot without
+  running.
+- The program and its first argument, not the whole command line (review A1081): the log is kept,
+  and for measuring which kind of run holds a slot, `pytest -n` or `make smoke` says enough. The
+  slot's `.who` file names the run the same way. 0640 rather than group-writable: every run that
+  writes the log is the account's own, so only reading it needs the group.
 
 **Rejected alternatives:**
 - A server per contributor: what was done before, and what used the memory.
@@ -1945,6 +1961,8 @@ tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
   left CI out.
 - For the slot log, the command as a child of the script, logged when it exits: an exact end,
   but the `exec` goes, and with it the pid and the signals the command gets today.
+- For the slot log, the whole command line cut at 200 characters (the first version): more than
+  the measurement needs, kept in a file that is not cleaned up.
 
 ## An opt-in pre-push hook runs CI's lint and types for the packages a push touches, with the lock's tool versions
 
