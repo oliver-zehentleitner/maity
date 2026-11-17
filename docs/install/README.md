@@ -588,12 +588,33 @@ agent or runner. Sealing them at rest is opt-in, default off: with
 `MAITY_SEAL_VERIFIERS=1` and `MAITY_SECRET_KEY` set, the hub stores new
 verifiers sealed with that key, so a database read without the key
 yields no usable verifier; with the setting off they are stored as they
-are. After switching the setting on, run `maity-hub seal-verifiers` once
-(with the same environment as the hub): it seals the verifiers stored
-before, leaves sealed ones alone and prints how many it sealed;
-`maity-hub migrate` seals nothing. Sealed verifiers stay readable with the setting off as long as the key is set.
-The hub logs at startup how many live verifiers are stored unsealed and
-whether sealing is on. Keep the key apart
+are. `maity-hub migrate` seals nothing. Sealed verifiers stay readable
+with the setting off as long as the key is set. The hub logs at startup
+how many live verifiers are stored unsealed and whether sealing is on.
+
+To seal every verifier and then refuse plain ones, in this order (both
+settings are off by default, and an upgrade switches neither on):
+
+1. Set `MAITY_SECRET_KEY`, and `MAITY_SEAL_VERIFIERS=1` on every hub
+   process, and roll it out. From then on no hub writes a plain verifier,
+   and a plain one that verifies a call is sealed in that call.
+2. Run `maity-hub seal-verifiers` with the same environment as the hub
+   (`--dry-run` first, if you like: it only counts). It seals the plain
+   verifiers, revoked ones too, leaves sealed ones alone and prints
+   `sealed N, already sealed M, plain left K` per table and in all. Run it
+   again after adding the key and after every rolling deploy, since an
+   old process may still have written a plain one; it exits 1 while K is
+   not 0.
+3. Once it prints `plain left 0` and the startup log counts no unsealed
+   verifier, set `MAITY_SEALED_VERIFIERS_ONLY=1` in a rollout of its own.
+   A hub with it does not start while a live plain verifier is left: the
+   error names the count and the command, and the processes of the earlier
+   rollout keep serving. A plain verifier written after the start verifies
+   nothing; its agent or runner joins (or pairs) again.
+
+To go back, unset `MAITY_SEALED_VERIFIERS_ONLY` and restart; nothing is
+changed in the database. Never change or drop the key once verifiers are
+sealed: every sealed agent and runner would have to join again. Keep the key apart
 from the backups. Store backups like you store secrets. If a backup and
 the key, a backup made without a key, or a backup that still holds
 unsealed verifiers (the startup log counts them) were exposed, revoke the agent
