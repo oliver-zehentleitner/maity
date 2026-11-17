@@ -71,8 +71,15 @@ A personal request is still an ordinary `request` row with `personal` true, tied
   filing time in `to_human`. At 43e2c728 every such row comes from two functions: the soul
   proposal (`file_personal`, routes/memory.py) and the hub's notices of an outage, an
   unconfirmed Keep the Why commitment and an isolation (`file_hub_notice`). §7 also names
-  a takeover notice and a change of another owner's project texts; neither is filed this
-  way in the code.
+  a takeover notice and a change of another owner's project texts; neither is filed at
+  all in the code.
+  - Open: the contract described both as filed while the code files neither. The lead's
+    decision (card tsk-m80nbn1k7axh): the contract says what is built, so docs/api.md now
+    marks both "not built yet" and keeps the text as the target (§6.19 "Between two
+    owners", §6.28 "Another owner's agent", §6.3 "Project texts", the §7 list). Today the
+    hub refuses every cross-owner takeover with 403 `forbidden`, `details.reason:
+    cross_owner` (`takeovers.cross_owner`), and has no `project_texts`. Open until a card
+    builds them or the target is dropped.
 - `to_kind: "human"`: a human in person, `to_human` alone. At 43e2c728, every place that
   writes one: a preferences proposal (routes/preferences.py); a project invitation by
   handle (invitations.py); a placement's consent to the runner's owner
@@ -82,8 +89,10 @@ A personal request is still an ordinary `request` row with `personal` true, tied
   (org_invitations.py) and a transfer into an organisation (project_names.py); a jour fixe
   moderator consent to a human, from a member (`file_to_human`) or filed by the hub
   (jourfixe/moderators.py); a jour fixe triage decision to a series keeper who is no longer
-  a member (jourfixe/triage.py, §20.6); the owner's digest; the report request; and the
-  request to chat with an owner's agents.
+  a member (jourfixe/triage.py, §20.6); the owner's digest (`file_hub_digest`, called from
+  not_listening_digest.py); the report request (`file_hub_report`, called from
+  reports.py, and the backfill of migration 20261104150000_report_request); and the
+  request to chat with an owner's agents (chat_request.py).
 
 `project_id` is the asking member's project for most of them. It is null, as the
 `scope_known` CHECK allows, for two shapes: an organisation's invitation (`org_id` set,
