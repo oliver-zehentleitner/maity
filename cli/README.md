@@ -1328,16 +1328,16 @@ needs it.
 | `ssh` | the remote user's files on that host, minus that user's home secrets, its `~/.maity-runner` and the other clones' credentials listed on the host; never the runner host | run git as the remote user in an agent's clone |
 
 **Claude Code's sandbox and injected text.** maity runs outside Claude
-Code's sandbox, as a plain `maity …` call. Checked with Claude Code
-2.1.318: a command, a variable or a PATH placed in front of that call
+Code's sandbox, as a plain `maity …` call. The runner's hook refuses
+`maity` anywhere but as the first word of its line: after a variable, a
+wrapper such as `env`, `command`, `exec`, `nice` or `timeout`, a shell
+or `eval` running it, or another command. Checked with Claude Code
+2.1.326: a command, a variable or a PATH placed in front of that call
 does not run outside the sandbox (the runner's permission rules refuse
-it, and past them it runs inside). This is the harness's behaviour, not
-a contract: with another Claude Code version the runner still starts the
-agent, and `maity runner check` and the runner's log say that the
-version was not checked. The runner's hook also refuses `maity`
-anywhere but as the first word of its line: after a variable, a wrapper
-such as `env`, `command`, `exec`, `nice` or `timeout`, a shell or
-`eval` running it, or another command. A repository's grant may only add plain
+it, and past them its hook refuses it or it runs inside). This is the
+harness's behaviour, not a contract: with another Claude Code version
+the runner still starts the agent, and `maity runner check` and the
+runner's log say that the version was not checked. A repository's grant may only add plain
 commands (below, under the configuration); a rule with a variable or
 `env` in front, or that names `maity`, is refused when the configuration
 is read. Not covered: Codex. Where it does not hold, a prefixed call would run as the

@@ -11,3 +11,8 @@
   anywhere but as its first word. That covers a variable, a path or a
   wrapper such as `env`, `command`, `exec`, `nice` or `timeout` in front
   of it, a shell or `eval` running it, and `maity` after another command.
+
+### Changed
+
+- cli: the runner's Claude Code sandbox is checked with 2.1.326, so
+  `maity runner check` no longer warns about that version.

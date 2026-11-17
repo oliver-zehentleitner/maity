@@ -1241,8 +1241,9 @@ stays writable, because Claude Code's sandbox turns an `Edit(…)` deny
 into a write deny for every command, and commit, fetch and push need
 refs, the index, objects, logs and `FETCH_HEAD` between them (a commit
 writes the index, a fetch `FETCH_HEAD`, both refs, objects and logs). That a call with something in front of
-`maity` stays inside Claude Code's sandbox was checked with Claude Code 2.1.318
-and, by a static read, again at 2.1.325 (`capabilities.CHECKED`); with
+`maity` stays inside Claude Code's sandbox was checked with Claude Code 2.1.318,
+by a static read again at 2.1.325, and with the sandbox probe at 2.1.326
+(`capabilities.CHECKED`); with
 another version the runner still
 starts the agent, and `runner check` and the supervisor log say that it
 was not checked for it.
@@ -1425,6 +1426,32 @@ itself, whatever the harness version does with them.
 - Refusing or pinning Claude Code 2.1.326 on the runners: the shipped
   rules refused the call, and with the managed update no older version
   was kept to pin to.
+
+## The sandbox-checked Claude Code version is raised to 2.1.326 on the probe's run
+
+**Id:** 182e1d6a-df83-41d9-8a23-07558a44e9b5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-nnmgvz773z5n; the sandbox probe from #1931 at 9dceb60, run on vm-aigents01 by maity-coder-claude-006#ur6p, 2026-11-17 (2.1.326 `--only 1`: 22 PASS; 2.1.318 and 2.1.325 `--only 1b`: 11 PASS each; no FAIL, SKIP or INCONCLUSIVE); the lead's go for the bump, 2026-11-17
+**See:** runner.md — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-17
+**Revisit when:** the managed update installs a newer Claude Code (the probe runs again before the next bump); the managed-settings steps (3.2–3.4), not run yet for lack of root on the VM, show a switch that does not turn the hook off
+
+`capabilities.CHECKED` for `claude-code` is raised from 2.1.325 to 2.1.326.
+This closes the runtime confirmation that the 2.1.325 entry left open:
+the probe ran the harness with the runner's settings and with the runner's
+rules removed, and every prefixed `maity` call was refused or stayed in
+the sandbox.
+
+**Reason:** the runner's managed update had installed 2.1.326, and
+`runner check` warned on every runner that it was not checked. The probe's
+first run on 2.1.326 found one prefix that the second layer did not hold;
+the runner's rules still refused it. The bump waited for the hook change
+that refuses such lines (5dd6c8a0-c108-412b-ae18-afbdf9478b94) and for a
+re-run that passed.
+
+**Rejected alternative:** bumping on the first run, with the rules as the
+only layer for that prefix: rejected by the lead.
 
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 
