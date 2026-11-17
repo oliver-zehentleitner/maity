@@ -64,11 +64,10 @@ SUPERVISED_PROMPT = (
     "turn; do not run `maity wait`: you are started again on the next event."
 )
 
-# git subcommands an agent needs for project work. Not `git *`: options such as `-c`,
-# `--config-env` or `--exec-path` run arbitrary programs. `diff` still reads a file outside
-# the work tree without `--no-index` (`git diff /dev/null <path>`), so these lists stop
-# accidents and naive injection only; the boundary is the harness's OS sandbox and the OS
-# user, see cli/context/runner.md.
+# git subcommands an agent needs for project work. Not `git *`: some git options run programs,
+# and git can still read files outside the work tree, so these lists stop accidents and naive
+# injection only; the boundary is the harness's OS sandbox and the OS user, see
+# cli/context/runner.md.
 GIT_SUBCOMMANDS = (
     "status", "diff", "log", "show", "add", "commit", "push", "pull", "fetch", "checkout",
     "switch", "branch", "merge", "rebase", "restore", "rm", "mv", "stash", "tag", "rev-parse",
@@ -423,11 +422,31 @@ def trust_clone(ctx: Context) -> None:
         )
 
 
+def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
+    """The parts of a repository's grant a Codex placement starts without, each with why
+    (cli/context/runner.md): Codex has no command allowlist, and its `maity` runs inside its
+    sandbox, not outside it as `maity gh` needs. Only with its sandbox on: without it, a
+    grant with any of these parts refuses the start (supervisor `_refusal`)."""
+    left = []
+    if grant.allow:
+        listed = ", ".join(repr(rule) for rule in grant.allow)
+        left.append(
+            f"allow {listed} is not applied to codex: Codex has no command allowlist, so "
+            "every command runs in its sandbox, listed or not (refused without the sandbox)"
+        )
+    if grant.pull_requests:
+        left.append(
+            "pull_requests is not given to codex: its `maity` runs inside its sandbox, and "
+            "the runner sets up `maity gh` only for a `maity` outside it"
+        )
+    return left
+
+
 def pull_requests_record(ctx: Context) -> str:
     """The content of the runner's record `ghpr.PULL_REQUESTS`: the placement's repository
     and the gh on the runner's PATH when the grant has pull requests and gh is there, else
-    empty."""
-    if not ctx.grant.pull_requests:
+    empty. Always empty for Codex (codex_left_out)."""
+    if not ctx.grant.pull_requests or ctx.harness.id == "codex":
         return ""
     gh = proc.program("gh")
     workspace = ctx.placement.get("workspace") or {}
@@ -616,9 +635,9 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
-    # After the allows: the last match wins. A `maity` call only as one plain call, as the
-    # Claude Code hook has it (plaincall): opencode checks each command its scanner finds,
-    # and a redirect or a substitution on maity's line would pass `maity *`.
+    # After the allows: the last match wins. The rules are meant to allow `maity` only as one
+    # plain call, as the Claude Code hook has it (plaincall). Without a sandbox these rules are
+    # not a boundary, see cli/context/runner.md.
     bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
     bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
@@ -630,8 +649,7 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
         "$schema": "https://opencode.ai/config.json",
         "permission": {
             "*": "deny",
-            # grep and glob are asked about the pattern typed, not the path searched, so a path
-            # rule cannot keep them off .git/maity: they are off.
+            # grep and glob cannot be scoped to a path here, so they are off.
             "read": read, "glob": "deny", "grep": "deny", "list": "allow",
             "edit": edit,
             "bash": bash,

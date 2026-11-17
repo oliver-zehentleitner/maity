@@ -1062,8 +1062,15 @@ links. Under the harness's sandbox no placed session can run gh itself,
 and the runner adds no `api.github.com` to the sandbox (`maity runner
 check` warns when a grant with `pull_requests` lists it). A gh entry in
 `allow` is not applied: `maity runner check` warns about it and the
-runner still starts. A Codex placement is refused for a repository whose
-grant has `allow` or `pull_requests`.
+runner still starts. With its sandbox on, a Codex placement starts
+without the grant's `allow` list and `pull_requests`: Codex has no
+command allowlist, and its `maity` runs inside its sandbox, while the
+runner sets up `maity gh` only for a `maity` outside it, so the runner
+gives a Codex placement no pull-request grant. It does not enforce that
+a Codex agent opens none. With its
+sandbox off, such a grant refuses the Codex start. `maity runner check`
+and the runner's log at each start name what a Codex placement does not
+get.
 
 Open gaps:
 
@@ -1194,11 +1201,10 @@ project's own harness configuration is never loaded:
   `-c`, `--no-index` and paths under `.git/maity` are denied.
 
   These lists stop accidents and naive prompt injection; they are not a
-  security boundary. `git diff /dev/null <file>` reads a file outside the
-  work tree without saying `--no-index`, and allowed build and test
-  commands run repository code. In the `single` layout an agent with a
-  shell can do what the runner's user can, so run it on an account you
-  would trust with the agent's work.
+  security boundary. git can still read files outside the work tree, and
+  allowed build and test commands run repository code. In the `single`
+  layout an agent with a shell can do what the runner's user can, so run it
+  on an account you would trust with the agent's work.
 - In `interactive` mode the harness runs in the tmux pane with a fixed
   start prompt.
 - In `supervised` mode `maity.runner.loop` runs it headless on each event
@@ -1233,16 +1239,36 @@ project's own harness configuration is never loaded:
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
   is linked in. The clone is marked untrusted, so a `.codex/config.toml`
   in the repository is not loaded. Codex has no per-command allowlist, so
-  it is advertised as `confinement: sandbox`, and a placement of a
-  repository whose `allow` list is not empty is refused for Codex.
-- **opencode** (built, not offered yet: a configuration that names it is
-  refused until the maintainer decides) runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
-  runner-written `OPENCODE_CONFIG`: deny everything first, then allow the
-  file tools (not on `.git/maity`; `grep` and `glob` are off, because opencode
-  asks about them by the pattern typed, not the path searched), `maity *`, named `git` subcommands
-  and the repository's `allow` list; deny `webfetch` and directories
-  outside the clone. `AGENTS.md` is named as
-  an instruction.
+  it is advertised as `confinement: sandbox`. A repository's `allow`
+  list is not applied to Codex (every command runs in its sandbox,
+  listed or not) and `pull_requests` is not given to it (the runner sets
+  up no pull-request grant for it, without enforcing that); `maity runner check` names both. Without its sandbox,
+  a grant with either part refuses the Codex start.
+- **OpenCode (Grok)** (`opencode`) is offered: a configuration naming
+  `[harness.opencode]` is accepted. It runs **Grok** (name the Grok model as
+  `<provider>/<model>` under `models`, with a `default_model`), installed and
+  signed in once as the agents' user (opencode's installer puts it in
+  `~/.opencode/bin`; add the directory that holds the binary to `agent_path`
+  if the service's `PATH` lacks it). opencode
+  runs without a sandbox, so its login and the listed home secrets are not
+  kept from an opencode agent — a reason to give it an OS user of its own.
+  Each
+  session runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a runner-written
+  `OPENCODE_CONFIG` that denies tools by default and then allows the file
+  tools (not on `.git/maity`; `.git` is not editable; `grep` and `glob` are
+  off), `maity *`, the Keep the Why UUID command, named `git` subcommands and
+  the repository's `allow` list; it denies `webfetch` and directories outside
+  the clone. `AGENTS.md` is named as an instruction. `supervised` runs
+  `opencode run` and continues with `--continue`, `interactive` runs
+  `opencode --prompt`. **opencode has no OS sandbox the runner switches on**
+  (`sandbox: off`), so those permission rules are **not a security
+  boundary**: treat an opencode agent as able to run any command as the
+  agents' OS user, and run opencode's agents as a **separate OS user**,
+  isolated from the runner and the other harnesses. The owner accepted this
+  residual risk (`req-kezp8rppfhn5`, "ship now, harden next"); the planned
+  hardening is an OS-level sandbox for opencode, e.g. bubblewrap
+  (`tsk-nynpvag9zvhh`). First offered under `req-g4d2cskx6zxv`.
+  [`docs/runners.md`](../docs/runners.md#opencode-grok) has the details.
 - **Antigravity** (`agy`) starts in a workspace folder the runner makes
   per placement, `<workspaces>/<project id>/<clone>`, with the clone as
   `repo` in it, never in the clone: agy loads its start directory's own
