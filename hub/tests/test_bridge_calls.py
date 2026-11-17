@@ -372,6 +372,60 @@ def test_a_carried_write_after_its_connection_ended_is_refused_with_or_without_a
         )
 
 
+@pytest.mark.parametrize("change", ["bridge_guest", "bridge_isolated", "owner_suspended"])
+def test_a_carried_write_after_the_connections_standing_ended_is_refused(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
+) -> None:
+    """§2.3, §16.8: the bridge lowered to guest, the bridge isolated, or the served agent's
+    owner suspended after the call was carried and before the route writes: the write is
+    refused under the project's lock as an ended connection's is (`bridges.still_live`). The
+    connection itself stays live."""
+    from maity_hub import events, write_guard
+
+    served, bridge, connection = _pair(migrated, owner)
+    project_id = _project(migrated)
+    bind = write_guard.bind_bridge
+
+    def bind_then_change(project: str, bridge_id: str) -> None:
+        bind(project, bridge_id)
+        with events.transaction(migrated) as conn:
+            events.lock_project(conn, project_id)
+            if change == "owner_suspended":
+                conn.execute(
+                    update(t.human).where(t.human.c.id == owner.id).values(suspended_at=clock.now())
+                )
+                return
+            values: dict[str, Any] = (
+                {"trust": "guest"}
+                if change == "bridge_guest"
+                else {
+                    "isolated_since": clock.now(),
+                    "isolated_reason": "test",
+                    "isolated_by": "hub",
+                }
+            )
+            conn.execute(
+                update(t.membership).where(t.membership.c.id == bridge.membership_id).values(values)
+            )
+
+    calls = Calls(make_client(), bridge)
+    monkeypatch.setattr(write_guard, "bind_bridge", bind_then_change)
+    answer = _say(calls, served.agent_id, "through a bridge that no longer stands")
+    assert answer.status_code == 403, answer.text
+    assert _reason(answer) == "not_your_bridge"
+    with migrated.connect() as conn:
+        bodies = conn.execute(select(t.event.c.payload)).scalars().all()
+        assert not any("no longer stands" in str(body) for body in bodies)
+        assert (
+            conn.execute(select(t.bridge.c.live).where(t.bridge.c.id == connection)).scalar()
+            is True
+        )
+
+
 def test_a_carried_upload_through_a_live_connection_is_written(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, tmp_path: Any
 ) -> None:

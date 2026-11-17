@@ -724,11 +724,27 @@ def not_your_bridge() -> ApiError:
 
 
 def still_live(conn: Connection, bridge_id: str) -> None:
-    """Refuse a write made through a connection that has ended since the call was carried
-    (§2.3): read under the project's lock, which an ending holds as well, so no write through
-    the connection lands after the ending commits."""
-    live = conn.execute(select(t.bridge.c.live).where(t.bridge.c.id == bridge_id)).scalar()
-    if live is not True:
+    """Refuse a write made through a connection that has ended, or no longer carries, since the
+    call was carried (§2.3): the connection live, the bridge an active member that is not
+    isolated and carries (`_carries`: no guest, the served agent's owner not suspended). Read
+    under the project's lock, which an ending, a trust change and an isolation hold as well,
+    so no write through the connection lands after one of them commits. Plain reads only: the
+    account lock a suspension takes before the project's is never taken here, after it."""
+    m, b, a = t.membership.c, t.bridge.c, t.agent_profile.c
+    row = conn.execute(
+        select(b.live, b.bridge, m.active, m.isolated_since)
+        .select_from(t.bridge.join(t.membership, m.id == b.bridge))
+        .where(b.id == bridge_id)
+    ).first()
+    if row is None or row.live is not True or not row.active or row.isolated_since is not None:
+        raise not_your_bridge()
+    served_owner = conn.execute(
+        select(a.owner_id)
+        .select_from(t.bridge.join(t.membership, m.id == b.served))
+        .join(t.agent_profile, a.id == m.agent_id)
+        .where(b.id == bridge_id)
+    ).scalar()
+    if not _carries(conn, row.bridge, served_owner):
         raise not_your_bridge()
 
 

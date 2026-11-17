@@ -183,21 +183,33 @@ wakes `member:` of the served agent.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-kpaye5hmyz39; the review of #1795 found an upload through an ended connection committed, since the first check sat only in `events.emit`
+**Source:** card tsk-kpaye5hmyz39; the review of #1795 found an upload through an ended connection committed, since the first check sat only in `events.emit`, and a later review a write committed after a guest demotion, an isolation or a suspension in the same window
 **Revisit when:** a carried write must run without the project's lock, or `write_guard` stops seeing every transaction of a request
 
 `bridges.carry` reads the connection live before the route runs, but an owner may end it
 before the route writes. `deps` binds the carried connection (`write_guard.bind_bridge`), and
 the transaction's first locking statement takes the organisation's lock where the project has
 one, then the project's, and refuses with `not_your_bridge` when the connection's `live` is no
-longer true. An ending holds the project's lock too, so a carried write commits before it or
-waits and is refused, whether the write emits an event or not. `events.emit` keeps its own
-check, which costs one read under a lock it already holds.
+longer true, or the connection no longer carries: the bridge member inactive, isolated or a
+guest, or the served agent's owner suspended (`bridges.still_live`, the standing `carry` reads).
+An ending, a trust change and an isolation hold the project's lock too, so a carried write
+commits before them or waits and is refused, whether the write emits an event or not; a
+suspension committed before the write takes the lock is seen as well. `events.emit` keeps its
+own check, which costs a few reads under a lock it already holds.
+
+The standing is read with plain `SELECT`s, no lock of its own. A suspension takes the
+account's `account_lock` exclusively before the organisation's and the project's lock (and
+takes no project lock where the owner holds no live credential in the project), so a suspension
+that commits after the write took the project's lock is not waited for: the write commits as
+one carried before it would.
 
 Rejected: the check in `events.emit` alone, which misses writes without an event (an upload);
 the check in `idempotency.run`, which several project writes do not use (a pin, a watch, the
 jour fixe); a shared lock on the bridge row at the transaction's start, which would wait in the
-opposite order to an ending that holds the project's lock and then updates that row.
+opposite order to an ending that holds the project's lock and then updates that row; taking the
+served owner's `account_lock` shared (`write_guard.share`) in `still_carried` to wait for a
+suspension in progress, which would take it after the organisation's and project's locks, the
+opposite order to a suspension, and can deadlock on PostgreSQL.
 
 ## A connection's standing is checked at each carried call, not ended on the change
 
