@@ -1718,14 +1718,24 @@ system clock neither starts the count afresh nor turns a short drop into
 an outage; the wall clock only names the times (the first failed read as
 now less the elapsed time) and carries the count to the next wait. The
 count outlives the process in `outage.json` beside `state.json`, so an
-outage that spans several short waits is reported too; a saved count
-whose last failure is more than 60 seconds old by the wall clock, or in
-the future, is stale and starts afresh. Reading or writing the file never
-costs the wait: an unreadable, undecodable or malformed file only loses
-the count. An answer that breaks off (a status line, headers or body cut
-short, which `http.client` raises as an `HTTPException`) counts as a lost
-connection in every command, so `wait` retries it and any other command
-fails once with `… broke off its answer`; a `200` that is empty or no
+outage that spans several short waits is reported too. The file is read
+when the wait starts, and a saved count whose last failure was more than
+60 seconds old by the wall clock then, or in the future, is stale and
+starts afresh: judged after the first poll instead, a quiet poll held for
+55 seconds would make a reported outage stale and its end would go
+unsaid. A carried count is named by the new wait only once one of its own
+reads fails (it is not this wait's outage before it has tried the hub),
+or by the good answer that ends it; its reason is kept in the file. Every
+path to exit 3 checks the threshold last, after the unread-chats note,
+whose read on a dead hub can carry the minute past it. Reading or writing
+the file never costs the wait: an unreadable, undecodable or malformed
+file only loses the count. An answer that breaks off (a status line,
+headers or body cut short, which `http.client` raises as an
+`HTTPException`) counts as a lost connection in every command, at all
+three places `hub` opens a connection (`Client._send`, `get_text`,
+`_exchange`), so `wait` retries it, any other command fails once with
+`… broke off its answer`, and `maity runner check` records it and goes
+on; a `200` that is empty or no
 object is no page to `wait`, retried the same way, and never ends the
 outage count. Exit 3 at the timeout, maintenance, isolation (exit 5), a
 superseded wait (exit 6) and every other `4xx` are unchanged.
