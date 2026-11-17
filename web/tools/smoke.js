@@ -2079,7 +2079,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const srPost = win.Maity.api.post;
   // srHold: the next POST waits for srRelease(), as a slow hub would.
   let srHold = false, srRelease = null;
+  // srJoinHold: the next join POST waits for srJoinRefuse(err), a refusal that comes late.
+  let srJoinHold = false, srJoinRefuse = null;
   win.Maity.api.post = (p, b) => {
+    if (p === "/projects/maintainer/maity/joins" && srJoinHold) {
+      srJoinHold = false;
+      return new Promise((ok, no) => { srJoinRefuse = no; });
+    }
     if (p !== "/projects/maintainer/maity/placements") return srPost(p, b);
     srMade.push(b);
     if (!srHold) return srPost(p, b);
@@ -2130,6 +2136,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(profileOpen && !main.querySelector("form.agent-new") && srPanel() && !srPanel().hidden,
       "placements: Join an agent on Managed agents closes the open New agent profile form");
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+    // Two clicks while the panel is still read mount one form, not two (A995 at #1919).
+    srButton().click(); srButton().click(); for (let k = 0; k < 8; k++) await tick();
+    const srMounted = [main.querySelectorAll(".join-slot .join-panel").length, main.querySelectorAll("form.join-form").length];
+    expect(srMounted[0] === 1 && srMounted[1] === 1,
+      "placements: a double-click on Join an agent while its panel is read opens one panel and one form " + JSON.stringify(srMounted));
+    srCancel().click(); await tick();
   }
   const srProto = Object.getPrototypeOf(srButton()), srFocus = srProto.focus;
   srProto.focus = function () { document.activeElement = this; };
@@ -2212,6 +2224,27 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     harness: "claude-code", mode: "interactive", model: null, workspace: { clone: "agent-f-web", branch: "main" } })
     && srBox().querySelectorAll("li.placement").length === 6 && text(srBox()).includes("Agent F on home-laptop"),
     "placements: a new profile is sent with its join fields, as in a join " + JSON.stringify(srMade[2]));
+  // A join line cancelled while its POST waits, the form opened anew and placed on a runner: the
+  // old join's late refusal neither frees the newer button nor speaks in its status, and a
+  // second submit sends nothing (A995 at #1919). The placement stays waiting; the panel is cancelled.
+  await srOpen(); await srTurn(false);
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  byId("join-handle").value = "late-join"; byId("join-handle").dispatch("input"); byId("join-display").value = "Late Join";
+  srJoinHold = true;
+  srJoin().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  srCancel().click(); await tick();
+  await srOpen();
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  byId("join-handle").value = "late-place"; byId("join-handle").dispatch("input"); byId("join-display").value = "Late Place";
+  srHold = true;
+  srJoin().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  srJoinRefuse(new win.Maity.api.ApiError("late", 409, "/projects/maintainer/maity/joins", "conflict")); for (let k = 0; k < 8; k++) await tick();
+  const srLate = [srCreate().disabled, srSaid()];
+  srJoin().dispatch("submit"); for (let k = 0; k < 8; k++) await tick();
+  expect(srLate[0] && srLate[1] === "Placing the agent…" && srMade.length === 4,
+    "placements: a join refused after its panel was cancelled leaves the newer placement's button held and its status, and sends no second placement "
+    + JSON.stringify([srLate, srMade.length]));
+  srCancel().click(); await tick();
   // Only runners that offer the project's repository, matched as the hub's fnmatch does (tsk-wn6qp27090qy):
   // one with a foreign repository is left out, one whose pattern matches is offered; with none, why.
   const srGetAll = win.Maity.api.getAll, srGet = win.Maity.api.get;

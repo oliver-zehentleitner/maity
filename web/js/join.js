@@ -596,9 +596,10 @@ window.Maity = window.Maity || {};
           try {
             answer = await M.api.patch(ctx.base + "/members/" + encodeURIComponent(member.id), { reports_to: to });
           } catch (err) {
+            // Closed meanwhile: close() freed the form, and a form opened since is not this
+            // submission's to touch (review of #1919).
+            if (mine !== submission) return;
             create.disabled = false;
-            // Closed meanwhile: nothing said, and no "Saving" left for the next opening.
-            if (mine !== submission) { status.done(); return; }
             status.fail(M.t("join.reports.failed"), err);
             memberReports.focus();
             return;
@@ -614,7 +615,7 @@ window.Maity = window.Maity || {};
             bossSaid = to ? M.t("join.reports.saved", { name, boss: ctx.nameOf(to) }) : M.t("join.reports.saved_nobody", { name });
           }
           // Taken, the boss stays (kept above for the next submission); closed meanwhile, no join.
-          if (mine !== submission) { create.disabled = false; status.done(); return; }
+          if (mine !== submission) return;
         }
         const sayBoss = () => { if (bossSaid) append(status.el, " ", h("span", { class: "flag join-reports-said" }, bossSaid)); };
         status.busy(M.t("join.creating"));
@@ -626,6 +627,8 @@ window.Maity = window.Maity || {};
           j = await M.stepUp.run(() => (mine === submission ? M.api.post(ctx.base + "/joins", req)
             : Promise.reject(new M.api.ApiError(M.t("stepup.cancelled"), 0, "", "cancelled"))), stepSlot, M.t("join.step_up"));
         } catch (err) {
+          // Closed meanwhile: its refusal is not the newer form's to say.
+          if (mine !== submission) return;
           if (err.code === "cancelled") { status.done(); sayBoss(); return; }
           const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
           const why = fields.handle;
@@ -676,8 +679,12 @@ window.Maity = window.Maity || {};
           }
           return;
         } finally {
-          create.disabled = false;
+          // Only this submission's own button: a form opened since keeps its own state.
+          if (mine === submission) create.disabled = false;
         }
+        // Created after the panel was closed: the join is made, the lists catch up, and the form
+        // opened since stays as it is (review of #1919).
+        if (mine !== submission) { reread(); return; }
         status.done();
         showLine(j, member, bossSaid);
         // A new profile is named in the select, the new join is a seat.

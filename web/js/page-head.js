@@ -54,6 +54,7 @@ window.Maity = window.Maity || {};
       if (refocus) button.focus();
     }
 
+    let mounting = null; // the mount being read, shared by the clicks meanwhile
     async function openAny() {
       // Closed now (one's limit reached): said beside the button, nothing opens.
       const closed = opts.anyDisabled ? opts.anyDisabled() : null;
@@ -63,19 +64,27 @@ window.Maity = window.Maity || {};
       // The page's other form (New agent profile) closes (review of #1706).
       if (opts.closeAny) opts.closeAny();
       if (!J) {
-        try {
-          J = await M.join.mount(ctx, {
+        // One mount for every click while it is read: a double-click opens one form, not two
+        // (review of #1919). A failed mount is tried again by the next click.
+        if (!mounting) {
+          mounting = M.join.mount(ctx, {
             member: !!opts.member,
             full: () => false, // the hub refuses past one's limit (§3.1) and the panel says why
             changed: () => {},
             opened: (yes) => { if (!yes) button.focus(); },
             started: opts.started,
-          });
+          }).then((made) => {
+            J = made;
+            append(slot, J.panel, J.listStatus.el);
+          }).finally(() => { mounting = null; });
+        }
+        try {
+          await mounting;
         } catch (err) {
           status.fail(M.t("agents.project.joins_failed"), err);
           return;
         }
-        append(slot, J.panel, J.listStatus.el);
+        if (!J) return;
       }
       J.open(button, null);
     }
