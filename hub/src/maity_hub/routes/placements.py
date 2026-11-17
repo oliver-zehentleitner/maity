@@ -25,7 +25,6 @@ from maity_hub import (
     moderation,
     namespace,
     paths,
-    runner_revoke,
 )
 from maity_hub import placements as pl
 from maity_hub import tables as t
@@ -723,30 +722,14 @@ def _settle_by_right(
     return pl.approve(conn, placement, actor, by)
 
 
-def _undone_by_anyone(revoked: Any, runner: Any) -> bool:
-    """Whether a revoked credential may be replaced by a rejoin of someone other than the
-    agent's owner (§15.6): only where no person chose to end that agent. The runner removed
-    the clone (`workspace_removed`, revoked by the hub itself), or the runner's owner revoked
-    the runner and its agents' credentials with it (`runner_revoked`, by that owner). A
-    revocation by a person through the member routes, a leak's or a suspension's is the
-    owner's to undo alone. The reason alone decides nothing: a person revoking writes it
-    freely (`auth.revocation.revoke`), so who revoked is checked with it."""
-    if revoked.revoked_reason == "workspace_removed":
-        return revoked.revoked_by is None
-    if revoked.revoked_reason == runner_revoke.REASON:
-        return runner is not None and revoked.revoked_by == runner.owner_id
-    return False
-
-
 def _check_rejoin(
     conn: Connection, placement: Any, runner: Any, owner: bool, *, asked: bool
 ) -> None:
-    """A start that replaces a revoked credential, asked for (`rejoin: true`) or stored on
-    the placement (`rejoin` set by the clone's removal, §15.5): only the agent's owner
-    starts it after a revocation no one else may undo (`_undone_by_anyone`), however the
-    start comes, a `restart` with `{}` and a `PATCH desired: running` included."""
-    if not (asked or placement.rejoin):
-        return
+    """Every start of a placement whose credential is revoked: only the agent's owner
+    starts it after a revocation no one else may undo (`pl.undone_by_anyone`), however the
+    start comes, `rejoin: true`, a `restart` with `{}` and a `PATCH desired: running`
+    included, and whether or not a `rejoin` is stored on the placement yet: the clone's
+    removal may store one later (§15.5)."""
     revoked = (
         None
         if placement.credential_id is None
@@ -762,7 +745,7 @@ def _check_rejoin(
         if asked:
             raise invalid({"rejoin": "credential_not_revoked"})
         return  # nothing revoked to replace
-    if not owner and not _undone_by_anyone(revoked, runner):
+    if not owner and not pl.undone_by_anyone(revoked, runner):
         raise ApiError(
             403,
             "forbidden",
