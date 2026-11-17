@@ -501,6 +501,20 @@ def test_an_agents_community_entry_is_a_proposal_a_project_admin_confirms(
     assert _events(migrated, "memory_added")[-1].audience == ["all"]
 
 
+def test_an_agents_community_proposal_reaches_the_owner_as_it_is_filed(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`file_consent`'s `request_created` goes to `to: owner` resolved (§7, §8.2): the
+    owner's member id."""
+    agent = flow.agent(make_client, owner)
+    agent.resume()
+    request = agent.post(M, {"store": "community", "text": "Never on a Friday."}).json()
+    [created] = [
+        e for e in _events(migrated, "request_created") if e.payload["id"] == request["id"]
+    ]
+    assert created.audience == [f"member:{owner.id}"]
+
+
 @pytest.mark.parametrize("change", ["isolated", "owner_suspended"])
 def test_a_go_on_a_proposal_needs_the_proposer_still_standing(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, change: str

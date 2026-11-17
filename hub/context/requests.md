@@ -4,7 +4,8 @@
 
 **Id:** a753a0f6-a606-43dd-86db-3431a1679721
 **Type:** decision
-**Status:** needs-review
+**Status:** superseded
+**Superseded by:** 486fede1-f2ff-45b5-a276-31448bcdd60a
 **Evidence:** inferred
 **Source:** docs/api.md §7 ("Personal requests"); the hub owner's review of the schema plan, 2026-10-23 (no classification without a CHECK, `project_id` written down, `to_human` as a snapshot); implementation session, 2026-10-23
 **Revisit when:** a personal request is filed that belongs to no project, profiles change hands while requests are open (§6.19 takeovers of a profile), or human notifications (§18) need their own record of it
@@ -52,6 +53,85 @@ outsider the members' ids (§6.2). An agent on `/requests/{id}` gets `humans_onl
 - `personal` derived from `to_kind` alone, without the column: the hub filters on it in
   every project listing, and a boolean says that in one word. The CHECK keeps the two
   from disagreeing.
+
+## A personal request is a request row addressed to a human; most keep a project, a few belong to none
+
+**Id:** 486fede1-f2ff-45b5-a276-31448bcdd60a
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the code at main 43e2c728 (`routes/requests.py` and every module that files a personal request, found by its `file_*` calls and `to_kind` writes; `tables.py` `to_shape`, `personal_shape`, `scope_known`); review A977 of #1916 (the two jour fixe shapes); docs/api.md §7 "Personal requests", §6.2, §6.26; the clean-up card tsk-jy01skphpb6y; the `scope_known` CHECK came with commit aec28415 (organisations, part 2), `to_kind: "human"` with 49263526 (a human's preferences, §19.4)
+**See:** requests.md#a-personal-request-is-a-request-row-with-the-askers-project-hidden-from-every-project-route-but-the-askers — a753a0f6-a606-43dd-86db-3431a1679721 — as of 2026-11-17
+**Revisit when:** a personal request needs a table of its own, a request without a project gets an asker or events, or §7's withdrawal bullet and §6.2/§6.26 are brought into one wording
+
+A personal request is still an ordinary `request` row with `personal` true, tied by the
+`personal_shape` CHECK to one of two addressings, which only the hub writes:
+
+- `to_kind: "profile_owner"`: the owner of an agent profile (`to_profile`), its owner at
+  filing time in `to_human`. At 43e2c728 every such row comes from two functions: the soul
+  proposal (`file_personal`, routes/memory.py) and the hub's notices of an outage, an
+  unconfirmed Keep the Why commitment and an isolation (`file_hub_notice`). §7 also names
+  a takeover notice and a change of another owner's project texts; neither is filed this
+  way in the code.
+- `to_kind: "human"`: a human in person, `to_human` alone. At 43e2c728, every place that
+  writes one: a preferences proposal (routes/preferences.py); a project invitation by
+  handle (invitations.py); a placement's consent to the runner's owner
+  (routes/placements.py); the consents of a cross-owner `reports_to` pair, from a member or
+  from an owner outside the project (cross_owner.py), of a bridge's owner (bridges.py) and
+  of another owner's agent (foreign_agent.py); an organisation's invitation
+  (org_invitations.py) and a transfer into an organisation (project_names.py); a jour fixe
+  moderator consent to a human, from a member (`file_to_human`) or filed by the hub
+  (jourfixe/moderators.py); a jour fixe triage decision to a series keeper who is no longer
+  a member (jourfixe/triage.py, §20.6); the owner's digest; the report request; and the
+  request to chat with an owner's agents.
+
+`project_id` is the asking member's project for most of them. It is null, as the
+`scope_known` CHECK allows, for two shapes: an organisation's invitation (`org_id` set,
+the inviter in `asked_by_human`, no `asked_by`), and a request the hub files with no
+asker and no organisation: the owner's digest of instances that are not listening (§5.3),
+the instance admin's request about a new abuse report (§16.8) and the request to chat with
+an owner's agents (§9.6). A request without a project has no events; its human hears of
+it through the account record. `_locked_personal` takes the human's row in place of a
+project's lock for the hub's own ones but the report request, found by their shape: the
+digest, and the request to chat with an owner's agents too.
+
+The project's request routes:
+
+- the listing filters `personal = false`;
+- `GET` answers only the asker, and `not_found` for a hub-filed one (`filed_by: "hub"`)
+  even to the agent in `asked_by`; the asker's `answer` is `self_answer`, everyone
+  else's `not_found`;
+- `withdraw` is `not_found`, except for: a cross-owner `reports_to` pair and a bridge's
+  consents, by their own rule (`cross_owner.may_withdraw`, `bridges.may_withdraw`); a
+  transfer into an organisation, by the member who started it (§6.26); and a request for
+  a change of another owner's agent, by its asker (`_foreign_asker`, §6.2);
+- `inbox.may_answer` is false.
+
+The human reads, answers and withdraws it through `/requests/{id}`, member of the project
+or not; a non-member's answer has `answered_by` null, and resolves no mentions. The report
+request is the exception: its admin reads it there, but an answer or a withdrawal is 409
+`resolve_the_report` (`_refuse_a_report_request`); it closes only when its report is
+resolved or expires (`withdraw_report_request`, §16.8). A personal request's events
+carry `{id, personal, status}` only.
+
+**Reason:** the original reasons of a753a0f6 still hold for the rows with a project: one
+table keeps every personal request on the paths a request already has, and `to_human` is
+a snapshot of who was asked. Why the later requests were allowed no project instead of a
+stand-in one is not recorded; the contract describes each of them as belonging to no
+project (an organisation's, one about every project of the human's agents, one of the
+instance), and the CHECK names exactly those shapes, so no other request can lose its
+project.
+
+**Rejected alternatives:**
+- A table of its own (a753a0f6): a second set of answer, withdraw and event code for the
+  same lifecycle.
+- A nullable `project_id` for every personal request: rejected in a753a0f6 because every
+  project query would need a guard; the `scope_known` CHECK confines the null to the
+  shapes above instead. Whether that was weighed when they came in: unknown.
+
+The contract's §7 withdrawal bullet still says `not_found` "for every caller" on the
+project route, while §6.2 and §6.26 give the exceptions the code implements; which
+wording is meant to hold is open.
 
 ## A question blocks its card only when it says it waits; `while_open`'s default follows the class
 
