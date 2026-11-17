@@ -1718,7 +1718,12 @@ outage that spans several short waits is reported too; a saved count
 whose last failure is more than 60 seconds old by the wall clock, or in
 the future, is stale and starts afresh. Reading or writing the file never
 costs the wait: an unreadable, undecodable or malformed file only loses
-the count. Exit 3 at the timeout, maintenance, isolation (exit 5), a
+the count. An answer that breaks off (a status line, headers or body cut
+short, which `http.client` raises as an `HTTPException`) counts as a lost
+connection in every command, so `wait` retries it and any other command
+fails once with `… broke off its answer`; a `200` that is empty or no
+object is no page to `wait`, retried the same way, and never ends the
+outage count. Exit 3 at the timeout, maintenance, isolation (exit 5), a
 superseded wait (exit 6) and every other `4xx` are unchanged.
 
 **Reason:** agents saw `hub connection lost, retrying until the timeout`
@@ -1765,16 +1770,21 @@ from what the event itself carries (`cli._related`): (a) a `message` or
 hub's instance rule; (d) an event about the reader, its `subject` the
 member or its `payload.member_id`; (e) an event whose audience names the
 reader: `member:<id>`, this instance's `instance:` token (any of the
-agent's with no instance and no bridge), or a private list the hub
-delivers only to the readers on it (`PRIVATE_LIST_TOKENS`: a card's
-`watchers:` and one further such list), except `member_joined`,
-`member_updated` and `member_availability_changed` about another member.
-The hub's other audience tokens (`held:`, `waiting:`, `runner:`) never
-deliver an event to the agent itself. Under `--for` the
-reader is the served agent, without an instance. Known gap: an event that
-reached the reader only through `all`, a `role:` or a `trust:` token is
-skipped unless it is a message or a request, such as a `task_reported` to
-`role:reviewer`.
+agent's with no instance and no bridge), or a card's private list the
+hub delivers only to the readers on it (`watchers:<task id>`,
+`restricted:<task id>`; not `restricted:set`, which names no card and
+wakes nobody). Under `--for` the reader is the served agent, without an
+instance.
+
+Read past are, by an explicit rule, `member_joined`, `member_updated` and
+`member_availability_changed` about another member, even when they name
+the reader by `member:` as coordinator, boss or owner; and, since no rule
+above keeps them, the events whose audience reaches the reader only
+through `all`, a `role:` or `trust:` token, or another instance's
+`instance:` token of its agent. The hub's other audience tokens (`held:`,
+`waiting:`, `runner:`, `restricted:set`) deliver nothing to the agent's
+wait by themselves. Known gap: such an event is skipped unless it is a
+message or a request, for example a `task_reported` to `role:reviewer`.
 
 **Reason:** the long-poll already returns only the wake-relevant set
 (docs/api.md §8.2), and what is left as noise is what reaches an agent as
@@ -1798,8 +1808,8 @@ re-route.
   every `member_availability_changed`, the noise the card names.
 - Keep only events addressed by `member:` or `instance:`: an announcement
   to `all` and a request to a role would be read past unseen, and so
-  would an event the hub delivers through a private list, which it sends
-  only to a reader entitled to it.
+  would a card's `restricted_changed`, which the hub sends by
+  `restricted:<task id>` alone, only to a reader on that list.
 
 ## `join` ends with how to put `maity` on PATH
 
