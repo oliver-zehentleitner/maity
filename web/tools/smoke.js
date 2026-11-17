@@ -4153,6 +4153,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const roPuts = [];
   const roPut = win.Maity.api.put;
   win.Maity.api.put = (p, b) => { if (/\/roles$/.test(p)) roPuts.push(JSON.parse(JSON.stringify(b))); return roPut(p, b); };
+  // Another tab's save, as a client that read the list makes it (§2.3 "Version.").
+  const roPutNow = async (custom) => roPut("/projects/maintainer/maity/roles",
+    { custom, base_version: (await win.Maity.api.get("/projects/maintainer/maity/roles")).version });
   const roSubmit = async () => { roSection().querySelector("form.project-roles-form").dispatch("submit"); for (let k = 0; k < 10; k++) await tick(); };
   const roConfirm = () => roSection().querySelector(".project-roles-confirm");
   expect(roSection() && text(roSection()).includes("Built-in roles") && text(roSection()).includes("Coder")
@@ -4168,7 +4171,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("project-role-description-0").value = "translates the dashboard"; byId("project-role-description-0").dispatch("input");
   await roSubmit();
   for (let k = 0; k < 6; k++) await tick();
-  expect(roPuts.length === 1 && JSON.stringify(roPuts[0]) === JSON.stringify({ custom: [{ name: "translator", base: "writer", description: "translates the dashboard" }] })
+  expect(roPuts.length === 1 && JSON.stringify(roPuts[0]) === JSON.stringify({ custom: [{ name: "translator", base: "writer", description: "translates the dashboard" }], base_version: 0 })
     && text(main).includes("Roles saved.") && byId("project-role-name-0") && byId("project-role-name-0").value === "translator"
     && byId("project-role-name-0").attrs.readonly !== undefined,
     "roles: a new role is sent as the whole list and stands with its name fixed " + JSON.stringify(roPuts));
@@ -4187,36 +4190,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "roles: Back sends nothing and thaws the draft");
   await roSubmit();
   roConfirm().querySelector("button.project-roles-move-go").click(); for (let k = 0; k < 10; k++) await tick();
-  expect(roPuts.length === 2 && roPuts[1].custom[0].base === "coder" && text(main).includes("Roles saved."),
+  expect(roPuts.length === 2 && roPuts[1].custom[0].base === "coder" && roPuts[1].base_version === 1 && text(main).includes("Roles saved."),
     "roles: sent once confirmed " + JSON.stringify(roPuts));
   roSection().querySelector("button.project-roles-remove").click(); await tick();
   await roSubmit();
-  expect(roPuts.length === 3 && JSON.stringify(roPuts[2]) === JSON.stringify({ custom: [] })
+  expect(roPuts.length === 3 && JSON.stringify(roPuts[2].custom) === JSON.stringify([]) && roPuts[2].base_version === 2
     && text(roSection()).includes("The role translator is still in use (members) and was not removed."),
     "roles: the hub's role_in_use is said with what still names the role");
   expect(byId("project-role-name-0") && byId("project-role-name-0").value === "translator" && byId("project-role-name-0").attrs.readonly !== undefined
     && byId("project-role-base-0").value === "coder",
     "roles: a removal the hub refused puts the role back into the draft (A964)");
   await win.Maity.api.patch("/projects/maintainer/maity/members/agt-c", { role: "coder" });
-  await roPut("/projects/maintainer/maity/roles", { custom: [] });
-  // A page that read the roles before someone else saved sends nothing and keeps its draft (A963).
+  await roPutNow([]);
+  // A page that read the roles before someone else saved: the save names the version it read, the
+  // hub refuses it (409 `conflict`) and changes nothing, and the draft stays (A963, §2.3 "Version.").
   await go("#/maintainer/maity/inbox"); await projectSettings("members"); for (let k = 0; k < 6; k++) await tick();
   roSection().querySelector("button.project-roles-add").click(); await tick();
   byId("project-role-name-0").value = "legal"; byId("project-role-name-0").dispatch("input");
-  await roPut("/projects/maintainer/maity/roles", { custom: [{ name: "triage", base: "coder", description: "" }] });
+  await roPutNow([{ name: "triage", base: "coder", description: "" }]);
   await roSubmit();
-  expect(roPuts.length === 3 && text(roSection()).includes("Roles were changed by someone else since this page read them, so nothing was sent.")
-    && byId("project-role-name-0").value === "legal" && !byId("project-role-name-0").disabled,
-    "roles: a list changed elsewhere since the page read it is not overwritten, the draft stays");
+  const roNow = await win.Maity.api.get("/projects/maintainer/maity/roles");
+  expect(roPuts.length === 4 && roPuts[3].base_version === roNow.version - 1
+    && text(roSection()).includes("Roles were changed by someone else since this page read them, so your save was not applied.")
+    && byId("project-role-name-0").value === "legal" && !byId("project-role-name-0").disabled
+    && JSON.stringify(roNow.custom.map((r) => r.name)) === JSON.stringify(["triage"]),
+    "roles: a save on a list changed elsewhere is refused by its version, nothing overwritten, the draft stays " + JSON.stringify(roPuts[3]));
   roSection().querySelector("button.project-roles-reload").click(); for (let k = 0; k < 8; k++) await tick();
   expect(byId("project-role-name-0") && byId("project-role-name-0").value === "triage" && !byId("project-role-name-1"),
     "roles: Reload shows the list as it is now");
   // The fixture refuses what the hub refuses (A963 P3).
-  const roRefusal = async (custom) => roPut("/projects/maintainer/maity/roles", { custom }).then(() => null, (e) => (e.details && e.details.fields) || e.code);
+  const roRefusal = async (custom) => roPut("/projects/maintainer/maity/roles", { custom, base_version: 0 }).then(() => null, (e) => (e.details && e.details.fields) || e.code);
   const roRefused = [await roRefusal([null]), await roRefusal([{ name: "x-ray", base: "coder", extra: 1 }]), await roRefusal([{ name: "x-ray", base: "coder", description: null }])];
   expect(JSON.stringify(roRefused) === JSON.stringify([{ "custom[0]": "not_an_object" }, { "custom[0].extra": "unknown_field" }, { "custom[0].description": "format" }]),
     "roles: the fixture refuses a non-object, an unknown field and a description that is no text, as the hub does " + JSON.stringify(roRefused));
-  await roPut("/projects/maintainer/maity/roles", { custom: [] });
+  const roVersionRefused = [await roPut("/projects/maintainer/maity/roles", { custom: [] }).then(() => null, (e) => (e.details && e.details.fields) || e.code),
+    await roPut("/projects/maintainer/maity/roles", { custom: [], base_version: 0 }).then(() => null, (e) => e.code + " " + JSON.stringify(e.details))];
+  expect(JSON.stringify(roVersionRefused) === JSON.stringify([{ base_version: "required" }, "conflict " + JSON.stringify({ current_version: roNow.version, base_version: 0 })]),
+    "roles: the fixture refuses a save without a version and one on a stale version, as the hub does " + JSON.stringify(roVersionRefused));
+  await roPutNow([]);
   win.Maity.api.put = roPut;
   await go("#/maintainer/maity/inbox");
 

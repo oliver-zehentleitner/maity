@@ -897,15 +897,17 @@ class Supervisor:
         found = view.found
         if found is not None and not found.available:
             return ("harness_missing", found.reason)
-        repository = config.normalise_repository(p["workspace"].get("repository") or "")
-        grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
-        if harness.id == "codex" and (grant.allow or grant.pull_requests):
-            # Codex cannot honour a command allowlist, and its `maity` runs inside its
-            # sandbox, where `maity gh` reaches neither gh's login nor the forge's API.
-            return ("harness_refused", None)
         on = view.sandbox
         if capabilities.sandbox_refused(harness, on, view.held):
             return ("harness_refused", None)  # no run without it, or held back by its version
+        if harness.id == "codex" and not on:
+            # The grant parts Codex starts without are left out only for its sandbox to take
+            # their place; without it, a grant that asked for them refuses the start.
+            repository = config.normalise_repository(p["workspace"].get("repository") or "")
+            if adapters.codex_left_out(
+                self.cfg.repositories.get(repository, config.RepositoryGrant())
+            ):
+                return ("harness_refused", None)
         if on and harness.id == "claude-code":
             # The sandboxed session relies on the runner's hook; settings that switch hooks
             # off would start it without one. Read at every start: they change without us.
@@ -931,6 +933,11 @@ class Supervisor:
         harness = self.cfg.harnesses[p["harness"]]
         if harness.id not in adapters.READY:
             return self._wait(rec, f"no adapter for {harness.id} in this version", name)
+        if harness.id == "codex":  # starts without what it cannot enforce, said at each start
+            repository = config.normalise_repository(p["workspace"].get("repository") or "")
+            grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
+            for part in adapters.codex_left_out(grant):
+                self.log(f"{name}: repositories.{repository}: {part}")
         as_user = target.as_user
         agent = p.get("agent") or {}
         try:
