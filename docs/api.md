@@ -18293,7 +18293,12 @@ clone Z. It is the only thing the hub asks of a runner.
   pickup checks again (§15.9). A replacement's new placement is outside
   the limit while the replacement is open (§15.14). The project's
   `max_placements` and the runner's `max_agents` (§15.3, `capacity`,
-  §15.7) apply on top, as before.
+  §15.7) apply on top, as before. `max_instances` is 1 by default, so a
+  second instance needs its owner to raise it first: the dashboard's
+  "Start an agent on a runner" lists a member that already runs, with
+  how many of its `max_instances` instances run and where, and at the
+  limit says that the agent's owner raises `max_instances` (§6.18)
+  before another one starts.
 - **A new profile.** A placement that creates a profile counts as the
   membership it will create, keyed (project, new handle) while it is
   active: at creation the handle is checked against the existing

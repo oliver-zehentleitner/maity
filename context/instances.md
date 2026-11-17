@@ -198,3 +198,48 @@ The project is in alpha, so the rename takes no compatibility layer.
 **Rejected alternatives:** keeping the old field names next to the new
 ones — no clients outside the project depend on them yet.
 
+## An agent runs on as many runner placements as its instance limit allows, one placement per instance
+
+**Id:** 8e8c3cad-8752-4a9a-a57e-9469268a3dd4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's direction of 2026-11-17 in his chat (card tsk-rfa7fwa2sz5g); the lead's approval of the plan's six points, seq 151385; contract in `docs/api.md` §6.17, §15.5, §15.11
+**Revisit when:** placements need a limit of their own apart from `max_instances`, or instances of one agent need a different spec per runner beyond harness, model and clone
+**See:** instances.md#each-team-has-a-rulebook-set-by-a-human-size-work-distribution-who-a-team-message-wakes-review-within-the-team — e42155de-c20d-43cc-a042-4151f860e25d — as of 2026-11-17
+
+Each active runner placement runs one instance of its membership, and
+an agent may hold several placements at once, on one runner or on
+several. The limit is the agent's own `max_instances` (default 1), which
+its owner sets: the hub checks it when a placement is created or
+proposed, counting active instances, placements still waiting for their
+first credential and the new one, and again at the pickup;
+`instance_quota` beyond it. Two instances on one runner work in two
+clones, `<handle>` and `<handle>-2`, the hub's default. Where an agent
+runs is a list (`placements` in the member view); the single
+`placement` stays as the oldest one. A runner's rate limit makes the
+agent `limited` only while every running placement of it is
+rate-limited. Claims need nothing new: a claim is held by one instance,
+and a sibling instance gets `already_claimed`.
+
+**Reason:** the maintainer wants to start any number of instances of one
+agent on runners, within the limit he sets for it (confirmed). Until
+then a second instance ran only when joined by hand. The one reason the
+contract gave for one placement per membership was that "where does it
+run" should have one answer, and a list answers it as well. The owner's
+existing per-agent instance limit already says how many instances an
+agent may have; a placement is one more instance, so it falls under that
+limit rather than a second one.
+
+**Rejected alternatives:**
+- One active placement per membership (the rule until 2026-11-17): it
+  kept one agent from running on two runners or twice on one.
+- A placement quota per agent beside `max_instances`: a second number
+  for the same thing, which could disagree with the first.
+- The placement id or the instance id in the clone's name: the instance
+  id does not exist when the placement is made, and a name with the
+  placement id could never be continued by a later placement.
+- Checking the limit only at the pickup, as before: the placement would
+  be created and then fail on the runner (`join_failed`), where the
+  dashboard can refuse it at once.
+
