@@ -17,6 +17,10 @@ settings, the argv and the session's variables.
 What it checks (cli/context/runner.md, the sandbox entries):
 1. A call with something in front of `maity` does not run outside the sandbox, with the
    runner's permission rules (1a) and with Bash opened up (1b); a plain `maity` call does.
+   1a is the settings the runner writes. 1b is not a configuration the runner produces: it
+   takes the runner's permission rules away and keeps its hook and the sandbox, the second
+   layer the README promises. A FAIL in 1b alone means that layer no longer holds for that
+   prefix, while the runner's rules still refuse it.
 2. The runner's hook refuses a `maity` line that is not one plain call, and a hook that
    cannot start, exits 1 or times out refuses the call (`onFailure: "block"`).
 3. `disableAllHooks` and `allowManagedHooksOnly` in the managed settings (file and drop-in)
@@ -98,13 +102,18 @@ PREFIXED = (
     ("through sh -c", "sh -c 'maity probe {T}'"),
     ("through command", "command maity probe {T}"),
     ("after another command", "true && maity probe {T}"),
+    ("nice in front", "nice maity probe {T}"),
+    ("timeout in front", "timeout 60 maity probe {T}"),
 )
 
 
 def steps() -> list[Step]:
     """Every step, in order."""
     out: list[Step] = []
-    for part, variant, rules in (("1a", "runner", "runner's rules"), ("1b", "open", "Bash open")):
+    for part, variant, rules in (
+        ("1a", "runner", "runner's rules"),
+        ("1b", "open", "rules removed"),
+    ):
         out.append(Step(f"{part}.1", f"plain call, {rules} (control)", "Bash",
                         "maity probe {T}", variant, "escapes"))  # fmt: skip
         out += [Step(f"{part}.{n}", f"{title}, {rules}", "Bash", command, variant, "contained")

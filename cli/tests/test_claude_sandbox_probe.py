@@ -208,3 +208,17 @@ def test_the_exit_code_counts_fail_and_inconclusive_only() -> None:
     assert probe.exit_code([o("PASS", ""), o("SKIP", "")]) == 0
     assert probe.exit_code([o("PASS", ""), o("FAIL", "")]) == 1
     assert probe.exit_code([o("INCONCLUSIVE", "")]) == 1
+
+
+def test_the_runners_hook_refuses_every_prefixed_call_the_probe_makes(tmp_path: Path) -> None:
+    """1b keeps the runner's hook: each prefixed call must be refused by it before the
+    sandbox is asked, and the plain call must pass it."""
+    from maity.runner import plaincall
+
+    world = probe.build(tmp_path, "/usr/bin/claude")
+    for step in probe.steps():
+        if step.tool != "Bash" or step.id.split(".")[0] not in ("1a", "1b"):
+            continue
+        payload = {"tool_name": "Bash", "tool_input": {"command": world.fill(step.target, "t")}}
+        refused = plaincall.refusal(payload)
+        assert (refused is None) == (step.expect == "escapes"), step.id

@@ -1388,6 +1388,44 @@ way, and the steps are visible in review.
   workflow change, so they are the maintainer's decision, raised on the
   card.
 
+## The hook refuses `maity` anywhere but as the first word of its line
+
+**Id:** 5dd6c8a0-c108-412b-ae18-afbdf9478b94
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-nnmgvz773z5n; the sandbox probe's run with Claude Code 2.1.326 on the agents' VM, 2026-11-17 (the particulars held to DM with the lead and the review lead); the lead's decision for two layers, not one, 2026-11-17
+**See:** runner.md — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-17
+**Revisit when:** the probe shows a prefix that the list misses; Claude Code offers a documented way to run one exact command outside its sandbox
+
+The runner's `plaincall` hook refuses any line that runs `maity`
+other than as its first word. That covers a variable in front, a path to
+a program named `maity`, and a wrapper from one shared list
+(`plaincall.WRAPPERS`: `env`, `command`, `exec`, `nice`, `timeout`,
+`nohup`, `stdbuf`, `xargs`, `time`, `sudo` and others, shells and `eval`
+among them). It also covers `maity` after another command or inside a
+substitution. A line it cannot take apart into words is refused when it
+holds `maity`. A line that only mentions `maity` as an argument of
+another program (`git commit -m '… maity …'`, `grep maity`) is left to the
+permission rules, as before.
+
+**Reason:** the README promises two layers for a call with something in
+front of `maity`: the permission rules refuse it, and past them it stays
+in the sandbox. A re-check of 2.1.326 with the rules taken away found a
+prefix for which the second layer no longer held. The rules still refused
+it. The lead did not accept one layer, so the hook now refuses such lines
+itself, whatever the harness version does with them.
+
+**Rejected alternatives:**
+- Accepting the permission rules as the only layer for that prefix, and
+  saying so in the README: rejected by the lead.
+- Refusing every line that holds the word `maity`: agents that work on
+  this repository grep for it, commit messages name it, and those lines
+  run inside the sandbox anyway.
+- Refusing or pinning Claude Code 2.1.326 on the runners: the shipped
+  rules refused the call, and with the managed update no older version
+  was kept to pin to.
+
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 
 **Id:** 3edc329a-6a10-427d-a0a3-733127f14b20
