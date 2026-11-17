@@ -817,6 +817,9 @@ window.Maity = window.Maity || {};
     // project:admin changes it after a step-up; an admin agent reads its mode alone.
     { tab: "members", when: (ctx) => ctx.canAdmin && !!M.restricted, build: (ctx) => M.restricted.settingsSection(ctx, (said) => { settingsSaved = said; render(); }) },
     { tab: "members", when: (ctx) => ctx.canAdmin, build: (ctx, save) => signingForm(ctx, save) },
+    // The project's roles (§2.3): the built-in ones explained, the project's own added, changed
+    // and removed by a human admin, as the PUT is human only.
+    { tab: "members", when: (ctx) => humanAdminOf(ctx) && !!M.projectRoles, build: (ctx) => M.projectRoles.settingsSection(ctx, (said) => { settingsSaved = said; render(); }) },
     // Way of working: how a card is closed and what the agents keep. Humans only, as every
     // policy field (§2.3 ʰ); the commitment follows the memory provider.
     { tab: "work", when: humanAdminOf, build: (ctx, save) => doneAuthorityForm(ctx, save) },
@@ -2392,6 +2395,8 @@ window.Maity = window.Maity || {};
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
+    // A newer dashboard deployed under this page (js/new-version.js): its band follows the language.
+    if (M.newVersion) M.newVersion.draw();
     // The window and the session are read together (tsk-y8gkq1kvt63c): they were two round trips
     // one after the other. Their answers are handled in the old order, the window first. /me still
     // waits for the session: asked before it, /me fails by design for a session that owes the

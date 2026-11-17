@@ -2429,7 +2429,7 @@ def cmd_say(args: argparse.Namespace) -> int:
     # The review is checked in the clone before any request, the recipient's lookup included:
     # a refused review asks nothing of the hub.
     if review is not None:
-        cites = citecheck.check(Path.cwd(), review)
+        cites = citecheck.check(_review_clone(), review)
         names = (
             textcheck.check(cites.top, review["head"], text).bad if cites.top is not None else []
         )
@@ -2498,6 +2498,16 @@ def _say_event(
 
     event = _post_with(session, attach, post)
     return _done(args, event, f"{said} (seq {_field(event, 'seq')})")
+
+
+def _review_clone() -> Path:
+    """Where a review's cites are checked: under a runner placement the runner's clone,
+    whatever directory the agent works in (for agy the workspace folder that holds it as
+    `repo`, §15.5); else the current directory. A placement whose clone cannot be named is
+    refused before anything is sent (CommandError): maity never falls back to the current
+    directory there (cli/context/runner.md b4a8030d)."""
+    root = _placement_clone()
+    return root if root is not None else Path.cwd()
 
 
 def _say_body(value: str | None, attach: list[str]) -> str:

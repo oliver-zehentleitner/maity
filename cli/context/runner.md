@@ -3727,9 +3727,9 @@ disk to one limit per placement.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the lead's go on the design note for tsk-dpe3d5g5eh4k, 2026-11-17; the maintainer's card after the agents' VM filled with leftovers, 2026-11-16
+**Source:** the lead's go on the design note for tsk-dpe3d5g5eh4k, 2026-11-17; the maintainer's card after the agents' VM filled with leftovers, 2026-11-16; the lead's decision on the gc refusal rules and the runner's own end after the reviews of #1915, 2026-11-17
 **See:** runner.md — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-17
-**Revisit when:** agy's sandbox is shown to write somewhere the runner can name per placement, or a harness needs its scratch reported to the hub
+**Revisit when:** agy's sandbox is shown to write somewhere the runner can name per placement; opencode's adapter grants its file tools a writable path outside the clone; a harness needs its scratch reported to the hub
 
 Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`,
 passed as `MAITY_SCRATCH` with `TMPDIR` inside it. The runner removes it

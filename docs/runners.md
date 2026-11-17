@@ -108,6 +108,8 @@ Install agy for the user the agents run as (`~/.local/bin/agy`; add that to `age
 - it holds anything besides `repo`, such as a `GEMINI.md` or `.agents/` a run left there (`workspace_not_bare`), or
 - a directory above it, up to `/`, has an entry `.git`, so it lies inside a git work tree whose configuration agy would load, or its path goes through a symbolic link (`workspace_in_repository`).
 
+An agent that sends a review from the folder (`maity say --type review_result`) has its cites checked in the clone, `repo`, whichever directory it is in: maity checks them in the runner's clone, never in the folder, which is no clone.
+
 The runner deletes nothing in the folder. The service's log names what it found, without file contents; remove the entry by hand and restart the placement. Keep the workspaces root out of any git repository: `maity runner check` fails when it lies inside one. A clone does not move between the two layouts: an existing plain clone at the folder's path, or a folder at a plain clone's path, is refused as `workspace_in_use`.
 
 **Session settings.** Before each start the runner writes the settings agy gets for that session with `--settings`, in the runner's own directory for the agent, outside the folder:
@@ -200,7 +202,7 @@ Nothing in a scratch counts as unsaved work. Once the hub reads the placement as
 
 - `maity runner status` shows the size of each placement's clone and scratch, measured at most every ten minutes. `maity runner status --removed` also shows the last removals.
 - `maity runner gc --scratch` lists every scratch whose placement is no longer active. `--yes` removes them, and holds the service's lock, so stop the service first. gc asks the hub which placements are active: when it cannot ask, or one entry of the answer cannot be read, it removes nothing.
-- A runner whose own credential was revoked or removed cannot ask the hub any more, so gc cannot help there. Once the runner is gone, delete `<workspaces>/<project_id>/.scratch/` by hand, as you do its clones.
+- A runner whose own credential was revoked or removed cannot ask the hub any more, so gc cannot help there. Delete `<workspaces>/<project_id>/.scratch/` by hand, as you do its clones. After a revoke you can also pair the runner again: its closed placements are then no longer active, and `maity runner gc --scratch` finds their scratch.
 
 Neither the sizes nor the removals go to the hub.
 
