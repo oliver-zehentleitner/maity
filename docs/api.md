@@ -8306,7 +8306,8 @@ releases nothing and changes no lease:
 - `holder_stalled` (§8.2) when an instance that holds at least one claim
   in the project stops, for one of three causes:
   - a limit starts for the agent (`POST /me/limit` from the agent, or a
-    runner's limit stored by a recomputation, §6.12; today by a
+    runner's limit stored by a recomputation at any of its triggers,
+    the end of a self-set limit included, §6.12; today by a
     `rate_limited` report, the recomputation not built yet,
     tsk-rfa7fwa2sz5g): a limit is the member's, so
     the hub emits one event for each of the agent's instances that holds
@@ -9582,7 +9583,9 @@ A limit is stored as `{until, since, source, harness, reason,
 placement_id?}`. The hub **recomputes** the runner's limit whenever one
 of an agent's placements reports, closes (a close at once included, such
 as `membership_removed` or `runner_removed`, §15.5) or changes
-`desired`, from all its active placements with `desired: running`
+`desired`, and when a limit the member set itself ends (at its `until`,
+by a `resume`, or by `POST /me/limit` with `until: null`), from all its
+active placements with `desired: running`
 (§15.5; with one placement, from that one):
 - The agent is limited while every one of them last reported
   `rate_limited` with a `retry_at` still ahead; a placement whose
@@ -9595,7 +9598,11 @@ as `membership_removed` or `runner_removed`, §15.5) or changes
 - A recomputation creates, changes or clears only a limit with
   `source: runner`. A limit the member set itself (`POST /me/limit`) is
   never replaced or cleared by one, and ends as any self-set limit does;
-  while it is stored, a recomputation stores nothing.
+  while it is stored, a recomputation stores nothing. Its end is itself
+  a recomputation, so a runner's limit the placements still call for
+  starts then: with a self-set limit until 17:00 and every placement
+  `rate_limited` until 18:00, the agent is limited by the runner from
+  17:00 until 18:00.
 
 So a report of any of them that is not `rate_limited` ends the runner's
 limit, and so does a change to `desired: stopped` of the last one that
@@ -9612,7 +9619,9 @@ the limit from that placement alone and replaces any stored limit, a
 self-set one included; the member's next `resume`, a later report of the
 same placement that is not `rate_limited`, or that placement's close
 clears it; a change of `desired` recomputes nothing, so a stopped
-placement's limit lasts until its `stopped` report closes it.
+placement's limit lasts until its `stopped` report closes it; and the
+end of a self-set limit recomputes nothing, so a runner's limit starts
+only with that placement's next `rate_limited` report.
 A limit refuses nothing; it is
 a declaration the hub acts on. A self-declared `paused` (§5.3) is still
 accepted; a limit is the form the hub can schedule around.
@@ -9664,7 +9673,8 @@ owner is not in that audience (§6.2).
 
 **Leases under a limit.** The hub extends leases at one moment only:
 when a limit is stored (`POST /me/limit`, a runner's limit stored by a
-recomputation, §6.12; today by a `rate_limited` report, the
+recomputation at any of its triggers, the end of a self-set limit
+included, §6.12; today by a `rate_limited` report, the
 recomputation not built yet, tsk-rfa7fwa2sz5g) or the owner sets an `absence` with an `until`, under either
 policy and before any grace has passed, so a lease that would run out
 within the grace is kept. Each lease the member holds is then extended to
@@ -18073,6 +18083,10 @@ owner choose):
 }
 ```
 
+The example's `capabilities.handover_key` is the design of §15.14 and
+not built yet, as the replacement is not: today the hub neither stores
+nor shows it, and a runner view carries none (below).
+
 - `credential_state`: `active`, `revoked` (the latest credential is
   revoked and no live one exists), `none` (never paired). `credential`
   is the latest credential's record, never its value, and is shown to
@@ -18282,11 +18296,11 @@ clone Z. It is the only thing the hub asks of a runner.
 | `workspace_retention` | `immediate`, `3h`, `24h` (default) or `7d`: how long the runner keeps the clone after the session ended under a stop or a close, before it removes it (§15.5). The hub stores it and the runner reads it; the runner's clock and its removal are not built yet, tsk-34gb7frfbsk7 |
 | `credential_id` | the agent credential issued at the pickup or carried over; tells the runner a credential file is expected in the clone |
 | `instance` | the id of the instance the placement runs (§6.17): the instance of `credential_id`, `null` until the first pickup's exchange. A rejoin's new instance replaces it. Shown wherever the placement is, the runner owner's line (§15.3) and the member view's `placements` (§15.11) included, as `<handle>#<instance>` in the dashboard and the CLI |
-| `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `membership_isolated`, `runner_removed`, `runner_revoked`, `replaced`, `replace_failed` (§15.14) |
+| `active`, `closed_at`, `closed_reason` | a closed placement keeps its row, so the dashboard knows where an agent ran last. `closed_reason`: `removed`, `refused`, `withdrawn`, `detached`, `project_archived`, `membership_removed`, `membership_isolated`, `runner_removed`, `runner_revoked`; `replaced` and `replace_failed` (§15.14; not built yet, as the replacement is not: today no placement closes with either) |
 | `workspace_epoch` | which clone of the placement is meant: `1` for its first clone, raised by one when the hub takes a `removed` report, since the next start makes a new clone. The runner keeps the value it read when the placement started in that clone (one that continues another placement's clone starts at its own value) and names it in each workspace report (§15.8). After removing a clone, the runner makes the placement's next clone only once the hub has taken that `removed` report, and keeps the `workspace_epoch` of that answer, so no clone carries the epoch of the one before. The hub keeps and raises it; the runner side is not built yet, tsk-34gb7frfbsk7 |
 | `workspace_outcome` | the clone after a stop or a close (§15.5): `null` while the placement runs and until the runner reports; else `{state, reason, unsaved, size_bytes, removes_at, epoch, remove_requested, remove_requested_at, reported_at}`. `state` `retained` (the clock runs; `removes_at` the deadline), `removed` (final) or `kept`; `reason` `null` but for `kept`: `unsaved_work` (git found uncommitted or untracked files, commits on no remote branch or stashes; for `antigravity` also an entry beside `repo` in the workspace folder), `in_use` (a running placement of the runner names the clone, or a process holds it), `not_inspectable` (git cannot run in it or could not say what is in it, `not_a_plain_clone` included), `not_recorded` (the path is not the one the runner recorded for the clone, or a symbolic link), `remove_failed` (the file system refused); `unsaved` the number of entries git listed, plus for `antigravity` the entries beside `repo`, `0` unless `unsaved_work`; `size_bytes` the clone's size when the runner last measured it, `null` once removed; `epoch` the clone the outcome is about (`workspace_epoch` below); `remove_requested` true after a removal by hand was asked (§15.6), with `remove_requested_at`, until a report names that request. Never a file name or a commit. The hub stores and shows it; the runner does not report yet and the dashboard does not show it yet, tsk-34gb7frfbsk7 |
 | `created_by`, `proposed_by` | `created_by` is always a human: the human who created it, or for a proposal the agent profile's owner; `proposed_by` is the proposing member or `null` |
-| `foreign` | computed, never stored: `true` when the agent profile's owner is not the runner's owner. Since 2026-11-16 no new placement is foreign (§15.4, §15.6); one made before stays until its runner's owner stops or removes it, and only the runner's side starts it again. Its profile's owner ends it with a `DELETE` and places the agent again on a runner of their own; a replacement does not move it (§15.6, "Moving an agent off someone else's runner") |
+| `foreign` | computed, never stored: `true` when the agent profile's owner is not the runner's owner. Since 2026-11-16 no new placement is foreign (§15.4, §15.6); one made before stays until its runner's owner stops or removes it, and only the runner's side starts it again. Its profile's owner ends it with a `DELETE` and places the agent again on a runner of their own; a replacement (§15.14, not built yet) would not move it either (§15.6, "Moving an agent off someone else's runner") |
 | `reported` | the runner's latest report (§15.7), `null` until the first one. Only the runner writes it: a new generation does not reset it |
 | `open_run` | supervised only: `{id, opened_at}` of the run the hub saw open, else `null`. `id` is opaque, issued by the hub, unique within the placement and never issued again; `opened_at` is the `reported_at` of the report that opened it (§15.7). The runner names `id` in the run's usage record (§15.15). A new `generation` sets it to `null` |
 | `reported_current` | computed, never stored: `true` when `reported.observed_generation` equals `generation`, `false` otherwise and while `reported` is `null`. The dashboard shows the placement as pending while it is `false` |
@@ -18617,7 +18631,7 @@ POST /api/v1/projects/oliver/maity/placements
 who owns its runner and every agent whose profile that human owns. Only
 the runner's side places agents on a runner (§15.4): creating a
 placement, changing its spec, replacing it (both the old and the new
-runner on the caller's side), and starting, restarting or nudging it. A
+runner on the caller's side; §15.14, not built yet), and starting, restarting or nudging it. A
 call of these by anyone else is `forbidden` with `details.reason:
 "runner_owner_only"`, whatever trust and scopes they hold. The scope comes
 first, as everywhere: a caller the route's scope column does not let
@@ -18629,17 +18643,17 @@ open as the table says.
 
 | Caller | May |
 |---|---|
-| a human with `members:admin` who owns the runner | create (new profiles included; an existing member only when that human owns the profile, `not_yours` otherwise), change, stop, start, restart, nudge, replace (owning the new placement's runner too), delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
+| a human with `members:admin` who owns the runner | create (new profiles included; an existing member only when that human owns the profile, `not_yours` otherwise), change, stop, start, restart, nudge, replace (owning the new placement's runner too; §15.14, not built yet), delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
 | the runner's owner, member of the project with any trust or not | stop and delete every placement on their runner, a foreign one included (§15.5); their runner's list shows them all (`GET /runners/{id}/placements`, §15.3) |
 | the owner of the agent profile | `desired: stopped`, `workspace_retention`, `DELETE` and having its held clone removed (§15.5) on that profile's placement; `desired: running`, restart and nudge only when they also own the runner |
 | any other human with `members:admin` | having a held clone removed (§15.5) |
-| an agent with `agents:propose` whose own human owns the runner | propose a placement for an **existing** membership whose profile its own human owns (`not_yours` otherwise; never a new profile, never a trust, role, area or briefing), propose a change of spec, or a replacement between two runners its human owns (§15.14); stop, start, restart, nudge, change `workspace_retention` of and delete placements of the project on that runner |
+| an agent with `agents:propose` whose own human owns the runner | propose a placement for an **existing** membership whose profile its own human owns (`not_yours` otherwise; never a new profile, never a trust, role, area or briefing), propose a change of spec, or a replacement between two runners its human owns (§15.14; not built yet); stop, start, restart, nudge, change `workspace_retention` of and delete placements of the project on that runner |
 | any other agent with `agents:propose` | stop, change `workspace_retention` of and delete existing placements of the project; nothing else (`runner_owner_only`) |
 | everyone else | nothing: `forbidden` |
 
 **Moving an agent off someone else's runner.** A placement on a runner
 its profile's owner does not own (`foreign`, §15.5) does not move by a
-replacement (§15.14). Its profile's owner moves it with the existing
+replacement (§15.14; not built yet, nor for any other placement). Its profile's owner moves it with the existing
 routes, in this order:
 
 1. Before the stop, the agent checkpoints, pushes its branch and releases
@@ -18822,13 +18836,17 @@ than 7 days ahead (`too_far`). It starts the run again at `retry_at`, under
 the same generation, and reports `starting` then. The exit counts toward
 neither `crash_count` nor the restart cap; `restarts` counts the restart
 as any other. The hub recomputes the agent's runner limit (§6.12) at
-each report, close or change of `desired` of its placements: `source:
+each report, close or change of `desired` of its placements, and at the
+end of a limit the agent set itself (at its `until`, by a `resume` or by
+`POST /me/limit` with `until: null`): `source:
 runner`, `until` the earliest `retry_at` still ahead while every
 placement that should run is `rate_limited`, `harness` that placement's;
 it ends with a report of any of them that is not `rate_limited`, or when
-none is left to run. Not built yet, tsk-rfa7fwa2sz5g: today the report
+none is left to run; while a self-set limit is stored it stores
+nothing. Not built yet, tsk-rfa7fwa2sz5g: today the report
 alone is stored as the limit (`until` = `retry_at`), and the placement's
-next report that is not `rate_limited`, or its close, clears it.
+next report that is not `rate_limited`, or its close, clears it; the end
+of a self-set limit recomputes nothing.
 A harness exit the runner does not recognise as a limit stays a crash.
 `rate_limited` is its own state rather than `exited` with a `retry_at`
 (the restart policy's wait after an ordinary exit, §15.5) because it
@@ -18933,7 +18951,7 @@ Runner credential, signed (§15.1).
 | POST | `/runner/hello` | `{client, capabilities, actual: [{placement_id, generation, state, target}]}` | `200`, the runner packet below. Opens a runner session and ends the previous one. No `Idempotency-Key`: like `resume`, a repeat opens a new session |
 | GET | `/runner/events` | `after`, `wait` (0–55), `limit` | `{items, cursor, superseded, server_time, cli_version}` as in §8.3, over every project the runner reads |
 | GET | `/runner/placements` | `closed` | `{items}`: every active, approved placement of this runner, the full desired spec as below, with `workspace_epoch`; one under `desired: stopped` also carries its `workspace_outcome` (with `remove_requested` and `remove_requested_at`, §15.5). `closed=true` lists instead the placements of this runner, closed at any time, whose clone it has not reported removed (`workspace_outcome` `null`, `retained` or `kept`), but none closed with the runner's own end (`runner_revoked`, `runner_removed`: those clones are the operator's, §15.5), each with `active: false`, its `closed_reason`, `workspace_retention`, `workspace_epoch` and `workspace_outcome` (§15.5) |
-| POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, run?, nudge?, handover?}` | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
+| POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, run?, nudge?, handover?}` (`handover` not built yet, as the replacement is not, §15.14) | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
 | POST | `/runner/placements/{id}/join` | `{observed_generation}` | `201`, the join pickup (§15.9). No `Idempotency-Key`: one-time by its own guard |
 | POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement, and on every other active placement that names the revoked credential, and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
 | PUT | `/runner/placements/{id}/handover` (not built yet, §15.14) | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
@@ -18977,8 +18995,8 @@ A placement as the runner reads it:
 - `health`, `nudge` and `handover` are as in §15.14; `replace`, the
   runner's form of a replacement, is `{state, from_instance, handover}` on a replacement's new
   placement, `null` otherwise; `handover` is the part this runner
-  needs. `replace` and `handover` are not built yet, as the replacement
-  is not (§15.14).
+  needs (`replace` and `handover` not built yet, as the replacement
+  is not, §15.14: today the runner's placement carries neither).
 
 - `agent.member: false`: the profile has no membership yet, so the
   first start needs a pickup. `credential_expected: true`: the placement
@@ -19131,11 +19149,13 @@ The kinds are in §8.2. Rules that apply to all of them:
   as they read every event of the project.
 - **Never in an event:** the join URL or code, the pairing URL or code,
   a briefing, `session_hint`, `logs_hint`, any credential value.
-- A recomputation that starts or ends the agent's runner limit (§6.12)
-  emits `member_availability_changed`, with the runner as actor when a
+- A recomputation that starts or ends the agent's runner limit (§6.12),
+  whichever of its triggers ran it (a report, a close, a change of
+  `desired`, or the end of a limit the agent set itself), emits
+  `member_availability_changed`, with the runner as actor when a
   report triggered it (not built yet, tsk-rfa7fwa2sz5g: today a
   `rate_limited` report that sets the limit, and the report or close that
-  ends it, emit it). No `member_limit_ended` is emitted for an
+  ends it, emit it; the end of a self-set limit starts none). No `member_limit_ended` is emitted for an
   agent with an active placement: the runner restarts it.
 - `agent_stop_requested` is emitted with every change to `desired:
   stopped` on a placement whose agent has a membership, so the agent can
@@ -19171,15 +19191,16 @@ The kinds are in §8.2. Rules that apply to all of them:
   absent, and the generated rules tell the agent not to start `maity
   wait` and to end its turn after a checkpoint; without it `hints.duty`
   is `"self"`. The packet gains `membership.placement`: `{id,
-  runner_name, harness, mode, stop_grace_seconds, replace}` or `null`:
+  runner_name, harness, mode, stop_grace_seconds, replace}` (`replace`
+  not built yet, below) or `null`:
   the active placement that names the resuming instance's credential,
   never another instance's placement of the same membership (not built
   yet, tsk-rfa7fwa2sz5g: today the membership's active placement,
   whichever instance resumes).
   `replace` is `null` unless the placement is the new one of an open or
   just finished replacement, or the old one while it is kept
-  (`state: "kept"`, §15.14). Not built yet, as the replacement is not:
-  today the packet's placement carries no `replace`.
+  (`state: "kept"`, §15.14; not built yet, as the replacement is not:
+  today the packet's placement carries no `replace`).
 - **Supervised wake set** (§8.2). A long-poll (`wait > 0`) of a session
   opened with `supervisor` is woken by the usual wake-relevant set minus
   the events whose audience is only `all`, except `state_changed`,

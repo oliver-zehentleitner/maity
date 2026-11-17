@@ -220,7 +220,12 @@ runs is a list (`placements` in the member view); the single
 `placement` stays as the oldest one. A runner's rate limit makes the
 agent `limited` only while every running placement of it is
 rate-limited: the hub recomputes it from all of them whenever one
-reports, closes or changes `desired`, the earliest `retry_at` still
+reports, closes or changes `desired`, and when a limit the agent set
+itself ends (at its `until`, by a resume or by clearing it), so a rate
+limit still ahead takes over then (required in review A1058 on
+2026-11-17: without it an agent limited by itself until 17:00 and by
+every placement until 18:00 would count as available from 17:00), the
+earliest `retry_at` still
 ahead is its end (the placement created first on a tie), and a resume
 does not clear it. A recomputation touches only the runner's own limit,
 never one the agent set itself with `POST /me/limit` (recommended in
