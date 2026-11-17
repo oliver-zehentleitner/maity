@@ -1329,9 +1329,11 @@ needs it.
 
 **Claude Code's sandbox and injected text.** maity runs outside Claude
 Code's sandbox, as a plain `maity …` call. Checked with Claude Code
-2.1.318: a command, a variable or a PATH placed in front of that call
-does not run outside the sandbox (the runner's permission rules refuse
-it, and past them it runs inside). This is the harness's behaviour, not
+2.1.326, for each of the probe's prefixed calls
+(`cli/tests/claude_sandbox_probe.py`): a command, a variable or a PATH
+placed in front of that call did not run outside the sandbox (the
+runner's permission rules refused it, and past them the runner's hook
+refused it or it ran inside). This is the harness's behaviour, not
 a contract: with another Claude Code version the runner still starts the
 agent, and `maity runner check` and the runner's log say that the
 version was not checked. The runner's hook also decides on the words

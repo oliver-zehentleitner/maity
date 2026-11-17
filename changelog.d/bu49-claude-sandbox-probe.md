@@ -10,3 +10,8 @@
 - cli: the runner's Claude Code hook decides on the words the shell runs,
   and refuses a line that would run `maity` other than as the plain first
   word of its line.
+
+### Changed
+
+- cli: the runner's Claude Code sandbox is checked with 2.1.326, so
+  `maity runner check` no longer warns about that version.
