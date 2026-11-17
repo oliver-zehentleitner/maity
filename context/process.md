@@ -1882,7 +1882,7 @@ because every version of an image stays in the history.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf
+**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf; card tsk-deaaanqsq5e2 (the slot log, the lead's go, 2026-11-17)
 **Revisit when:** contributors no longer share one machine and account, the shared machine gets enough memory for more parallel runs (two runs at once no longer bring a reap near), or CI checks a pull request's merge with the current main on PostgreSQL before review
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the tests it affects on
@@ -1892,6 +1892,19 @@ on SQLite only. On a machine several contributors share under one Unix account, 
 named after whoever runs it. `make smoke` and `with_postgres.sh` each hold one of two run slots
 (`tools/run_slot.sh`, a lock file per slot), so a third run waits instead of starting. The commands
 are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
+
+Since 2026-11-17 every run that gets a slot appends a start line (time, slot, pid, seconds waited,
+who, the program and its first argument), and once its process is gone an end line (time, seconds
+held), to `log` in the run-slot directory; the format is in the script's header. The log is
+append-only, one `printf` per short line, created 0640. The end line comes from a watcher the
+script starts before its `exec`, not from a wrapper around the command; the watcher runs in a
+session of its own (`setsid`) and ignores INT, HUP and TERM, so cancelling the command's process
+group leaves it running. A KILL to the watcher or a reboot still ends it, so the log does not
+promise an end line for every run: once a run is over, a start line without a matching end line
+(same slot and pid) means it was aborted. A log that is not a regular file is skipped, one that
+cannot be written is ignored. `who` is `MAITY_RUN_NAME`, which each run sets to
+`handle#instance`. Its purpose is measuring which run holds a slot how long and for whom (card
+tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
 
 **Reason:**
 - SQLite does not show PostgreSQL's errors, and CI as the first PostgreSQL run finds them only
@@ -1915,6 +1928,26 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 - The slots and the server are files of one account (the data directory is the owner's only), so
   they bind the runs of that account. That is how the machine is shared; several accounts would
   each get two slots and a server of their own.
+- The slot log: a short line written in one `printf` onto a file opened for appending is one
+  write, so runs that log at the same moment do not interleave. A watcher keeps the `exec`, so
+  fd 7, the pid and the signals reach the command as before; a wrapper that waited for the command
+  would have to pass on every signal and its exit status. The watcher holds neither fd 7 nor the
+  run's output, and is no child of the command. Its cost: the end is when the command's process
+  ended, to the second; a process the command left running can hold the slot longer. Logging
+  never stops a run: a measurement must not become a new way for a run to fail.
+- The watcher's own session (review A1081): created before the `exec`, it was in the command's
+  process group, and a supervisor that sent TERM to that group (an ordinary cancellation) took the
+  watcher along, so exactly the interrupted runs lost their end line. `setsid` comes from
+  util-linux, like `flock`; without it the watcher only ignores the signals. They are ignored
+  before the watcher is forked (review A1093), so a group signal right after the `exec` cannot
+  reach it ahead of the trap. Only a regular file
+  (or none yet) is opened as the log: an append open of a FIFO without a reader blocks, and it
+  came after the slot was taken and before the command started, so the run held its slot without
+  running.
+- The program and its first argument, not the whole command line (review A1081): the log is kept,
+  and for measuring which kind of run holds a slot, `pytest -n` or `make smoke` says enough. The
+  slot's `.who` file names the run the same way. 0640 rather than group-writable: every run that
+  writes the log is the account's own, so only reading it needs the group.
 
 **Rejected alternatives:**
 - A server per contributor: what was done before, and what used the memory.
@@ -1928,6 +1961,10 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
   who holds the slots.
 - A cap in CI: each CI runner already has its own limits (the runner entries above), and the card
   left CI out.
+- For the slot log, the command as a child of the script, logged when it exits: an exact end,
+  but the `exec` goes, and with it the pid and the signals the command gets today.
+- For the slot log, the whole command line cut at 200 characters (the first version): more than
+  the measurement needs, kept in a file that is not cleaned up.
 
 ## An opt-in pre-push hook runs CI's lint and types for the packages a push touches, with the lock's tool versions
 

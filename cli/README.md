@@ -183,10 +183,37 @@ $ maity wait --timeout 5
   }
 ]
 $ maity wait --kind message                   # only messages; the rest is read past
+$ maity wait --related                        # only what concerns you; the rest is read past
 $ maity wait --timeout 60; echo $?
 maity: unread chats: 3 in 1 chats (0 mentions): maity chats
 3
 ```
+
+`--related` keeps a message or request, a project state, policy or rules
+change, an event that mentions you or is about you (its `subject` or
+`payload.member_id`), and one whose audience names you (`member:`, this
+instance's `instance:`, or a card's private list, `watchers:<card>` or
+`restricted:<card>`). It reads past another member's `member_joined`,
+`member_updated` or `member_availability_changed`, by that rule even
+when it names you by `member:` as coordinator, boss or owner, and every
+other event that reached you only through `all`, a role or trust token,
+or the `instance:` token of another instance of your agent. What it
+reads past is acknowledged as with `--kind`, so neither goes with
+`--keep-cursor`. With both flags an event must pass both.
+
+A dropped connection, an answer that breaks off or is no page of events,
+an HTTP 5xx or 429 is retried with the same cursor until the timeout. While the hub has given no good answer for less than
+a minute (counted across waits, kept in `outage.json` beside the state;
+within a wait on the monotonic clock, so a jump of the system clock
+changes nothing) `wait` says nothing; once the minute has passed, at the
+next failed read, before the next poll or before the timeout (after the
+unread-chats note), whichever comes first, one line names the UTC time of the first failed read, such as
+`maity: hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:06Z`
+(the wait goes on retrying while time is left, so exit 3 can follow it),
+and `hub answering again at …` follows once it answers. When the minute
+passes during the read that answers (a long poll held after a retried
+drop), one line names both ends instead:
+`maity: hub connection lost since …Z; hub answering again at …Z`.
 
 Messages in a group chat wake nobody unless they mention you. `resume`
 lists each chat with unread messages under `Unread chats:` (at most 10,

@@ -3,8 +3,9 @@
 // what is wanted (`desired`), what the runner last reported, the
 // generation — with Stop for the runner's owner and the agent profile's
 // owner, Start and Restart for the runner's side only (§15.6: the runner's
-// owner, with members:admin or as the profile's owner), and Remove for a
-// placement made before only the runner's owner could (`foreign`). Stop
+// owner, with members:admin or as the profile's owner), and Remove for the
+// runner's owner and the profile's owner, an own placement as much as a
+// `foreign` one (DELETE, §15.6; tsk-44x5grp6fcsq). Stop
 // asks nothing, it is the safe direction; a restart is confirmed with one
 // more click. A placement waiting for consent links to
 // its request in the inbox, which answers it. Every action is one contract
@@ -254,7 +255,13 @@ window.Maity = window.Maity || {};
         status.done();
         await hooks.made(made);
       } catch (err) {
-        status.fail(M.t("placements.new.failed"), said(err));
+        if (err.code === "placement_quota") {
+          // The limit by name and where a human admin raises it (§6.1 max_placements, tsk-6s5n7egy4e5r).
+          const max = err.details && Number.isInteger(err.details.max) ? err.details.max : (ctx.project.policy || {}).max_placements;
+          status.fail(M.t("placements.new.failed"), { message: M.t("placements.new.quota", { max: max === undefined ? 8 : max }) });
+          append(status.el, " ", M.tn("placements.new.quota_raise",
+            { link: h("a", { href: ctx.link("settings", "members"), class: "placement-quota-link" }, M.t("placements.new.quota_link")) }));
+        } else status.fail(M.t("placements.new.failed"), said(err));
       } finally {
         submit.disabled = !tool.value;
       }
@@ -368,7 +375,11 @@ window.Maity = window.Maity || {};
         return b;
       };
       // Ended by the runner's owner or the profile's owner, who places it again on a
-      // runner of their own: a foreign one does not move otherwise (§15.5, §15.14).
+      // runner of their own (§15.5, §15.14): an agent moves to another runner only once
+      // its placement here is gone (`placement_exists`), an own one as much as a foreign
+      // one. Whoever may act on a row here may delete it (§15.6 DELETE: the runner's
+      // owner with any trust, members:admin with the runner included, or the profile's
+      // owner): `mayAct` above.
       const remove = h("button", { type: "button", class: "danger", "aria-label": M.t("placements.remove.label", { name }),
         onclick: () => {
           if (!window.confirm(M.t("placements.remove.ask", { name }))) return;
@@ -377,7 +388,7 @@ window.Maity = window.Maity || {};
       const starts = mayStart(p);
       append(row, p.desired === "running" ? stop : starts ? start : null,
         starts ? [" ", restartWith(false), revoked(p) ? [" ", restartWith(true)] : null] : null,
-        p.foreign ? [" ", remove] : null);
+        " ", remove);
       return row;
     }
 
