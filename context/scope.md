@@ -458,6 +458,44 @@ high enough that nobody working alone meets it.
 - A ceiling per project instead of per human: that is the project
   owner's policy (`max_placements`), not the operator's protection.
 
+## The operator lifts or lowers a limit for one project or one account; the hub's own bounds stay
+
+**Id:** 7d8669c6-3dd9-4b4f-a257-8a9135cf1141
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's answer in the inbox, 2026-11-17 (request req-xzfcpq84ka9f), relayed on card tsk-t63d50qy3s0k; the bound of 1000 from the hub's unpaged lists (`docs/api.md` §6.2, §6.17, §15.6, §15.8); contract `docs/api.md` §6.31, §16.5.1
+**Revisit when:** the members, placements or credentials lists get paging, so the bound of 1000 could move; or plans (§2.7 part two) set limits per account
+**See:** scope.md#agents-never-limit-an-account-one-hard-ceiling-of-agent-profiles-per-human-protects-the-hosted-instance — 37803db9-3f8a-4a1a-b42f-20ba9c783e1f — as of 2026-11-17
+
+Defaults stay as they are. The instance admin, and nobody else, may set
+a different ceiling for one project or one human account: for the
+project's `max_placements`, `member_agents_max` and `max_open_claims`,
+for an agent's `max_instances`, and for the account values of §16.5.
+`unlimited` lifts the product bounds (20 agents per human in a project,
+16 instances, 1000 placements and claims as defaults). It never lifts the
+hub's own bound of 1000. A project admin and an agent's owner keep
+setting their values, within the ceiling. Every limit's refusal and the
+limits overview say the value in effect, where it comes from, and the
+right that can raise it, never the person who holds it.
+
+**Reason:** the defaults protect an instance that serves strangers. The
+maintainer wants to work without them, and an operator who knows a
+person or a project should be able to let them past without changing
+the instance for everyone. The bounds of 20 and 16 were product
+choices, not protections. 1000 protects the hub: the lists that carry
+members, placements, an agent's credentials and a runner's placements
+come in one answer without pages, and `wake: all` wakes every instance
+one by one.
+
+**Rejected alternatives:**
+- Raising the defaults for everyone: the maintainer chose to keep them,
+  so a stranger's script still meets them.
+- Letting a project admin set any value: the operator's protection
+  would then be the project's choice.
+- `unlimited` without any bound: one project could make a list the hub
+  answers in one piece without end; paging comes first.
+
 ## Usage is measured by counting what the hub already holds, never by tracking
 
 **Id:** 02f126c2-5d8c-4ea4-89bd-ceb499efd24d
