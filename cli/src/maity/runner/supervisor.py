@@ -1429,10 +1429,10 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
 # listing with 3, as a PermissionError does there: it could hide one. A link that leads
 # nowhere is no credential, as there. Only `test` and `readlink -n` (no `realpath -m`,
 # which not every system has; `-n` keeps a name's own last line break on every system).
-# A loop of links ends it with 3: links are followed here one by one, at most 40 (only
-# links count, never the directories on the way), and a dead chain longer than that ends
-# it with 3 too. A chain the system itself does not resolve, but that ends, counts as no
-# credential, as there.
+# Links the system does not resolve on its own are followed here one by one, at most 40
+# (only links count, never the directories on the way); when that bound is used up, a
+# loop, or a chain longer than the system follows plus that bound, the listing ends with
+# 3; a shorter chain the system does not resolve counts as no credential, as there.
 _SLOTS = r"""blocked() (
   q=$1 n=${3:-0}
   if [ -e "$q" ]; then

@@ -1215,7 +1215,7 @@ def test_one_dead_link_into_a_deep_missing_path_is_no_credential(
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))
-@pytest.mark.parametrize("links", [41, 60, 79])
+@pytest.mark.parametrize("links", [41, 60, 72])  # 72: within 32 + 40 on BSD too
 def test_a_chain_the_system_does_not_resolve_is_no_credential_on_every_side(
     tmp_path: Path, side: str, links: int
 ) -> None:
