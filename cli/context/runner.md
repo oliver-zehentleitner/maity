@@ -3716,13 +3716,17 @@ disk to one limit per placement.
 **Status:** active
 **Evidence:** confirmed
 **Source:** the lead's go on the design note for tsk-dpe3d5g5eh4k, 2026-11-17; the maintainer's card after the agents' VM filled with leftovers, 2026-11-16
+**See:** runner.md — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-17
 **Revisit when:** agy's sandbox is shown to write somewhere the runner can name per placement, or a harness needs its scratch reported to the hub
 
 Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`,
 passed as `MAITY_SCRATCH` with `TMPDIR` inside it. The runner removes it
 when the placement closes and after a stop on the clone's clock; nothing
 in it counts as unsaved work, and only the operator sees its size and
-removals (`maity runner status`, `removed.jsonl`).
+removals (`maity runner status`, `removed.jsonl`). Only Claude Code and
+Codex get one, the harnesses whose sandbox the runner can open for it.
+maity reads a named file there as in the clone, which widens the
+clone-only read (the entry under See) to the path the runner recorded.
 
 **Reason:** reviews and tests left evidence folders, temporary clones and
 virtual environments in the agents' shared home, which no removal of a
