@@ -1396,7 +1396,9 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     (a clone made later is covered from the agent's next start), listed as the agents' user,
     who owns them and may be the only one able to list them. A listing that is not complete
     fails closed (`workspace.Refused`): an unreadable directory could hide a credential, and
-    the sandbox would start without its deny."""
+    the sandbox would start without its deny. Each is named where it lies, as the agents'
+    side resolves it; one inside the workspaces root is named below `workspaces` as given
+    (resolved here), the form the clone's own path and the root's deny have."""
     root = workspaces.resolve() if as_user.here else workspaces
     refused = workspace.Refused("harness_refused")
     if as_user.direct:
@@ -1409,19 +1411,47 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
                               if (c / ".git" / "maity").is_dir()]  # fmt: skip
         except OSError as exc:
             raise refused from exc
+        real_root = root
     elif not as_user.exists(root, "-d"):
-        found = []  # no clone yet: nothing to hide
+        return []  # no clone yet: nothing to hide
     else:
-        # Depth 4 for a clone, 5 for the clone `repo` in a workspace folder (§15.5); a nested
-        # repository's at depth 5 in a plain clone is listed too, which only hides more.
-        done = as_user.run(["find", str(root), "-mindepth", "4", "-maxdepth", "5", "-type", "d",
-                            "-path", "*/.git/maity", "-print0"])  # fmt: skip
-        if done.returncode != 0:  # some directory could not be read: the list may be short
-            raise refused
-        found = [Path(p) for p in done.stdout.split("\0") if p]
-    found = _canonical(found, as_user, refused)
+        (real_root,) = _canonical([root], as_user, refused)
+        found = _listed(real_root, as_user, refused)
     own = (clone.resolve() if as_user.here else clone) / ".git" / "maity"
-    return sorted(p for p in found if p != own)
+    named = {_below_root(p, real_root, root) for p in _canonical(found, as_user, refused)}
+    return sorted(named - {own})
+
+
+def _listed(root: Path, as_user: AsUser, refused: workspace.Refused) -> list[Path]:
+    """The credential directories under the real directory `root`, listed as the agents'
+    user on their side: every clone's two places for one (`<clone>/.git/maity`, `<clone>/
+    repo/.git/maity`), looked at through a link as on the direct side, and any other
+    `.git/maity` directory at a clone's depth (depth 5: a nested repository's too, which
+    only hides more)."""
+    entries = as_user.run(["find", str(root), "-mindepth", "2", "-maxdepth", "2", "-print0"])
+    plain = as_user.run(["find", str(root), "-mindepth", "4", "-maxdepth", "5", "-type", "d",
+                         "-path", "*/.git/maity", "-print0"])  # fmt: skip
+    if entries.returncode != 0 or plain.returncode != 0:  # some directory could not be read
+        raise refused
+    places = [str(Path(d) / sub / ".git" / "maity") for d in entries.stdout.split("\0") if d
+              for sub in ("", workspace.REPO)]  # fmt: skip
+    found = [Path(p) for p in plain.stdout.split("\0") if p]
+    if places:
+        checked = as_user.run(["sh", "-c", 'for p; do [ -d "$p" ] && printf "%s\\0" "$p"; done; :',
+                               "sh", *places])  # fmt: skip
+        if checked.returncode != 0:
+            raise refused
+        found += [Path(p) for p in checked.stdout.split("\0") if p]
+    return found
+
+
+def _below_root(path: Path, real_root: Path, root: Path) -> Path:
+    """`path`, resolved on the agents' side, named below `root` when it lies in `real_root`
+    (what `root` resolves to there); a path outside it stays as it was resolved."""
+    try:
+        return root / path.relative_to(real_root)
+    except ValueError:
+        return path
 
 
 def _canonical(paths: list[Path], as_user: AsUser, refused: workspace.Refused) -> list[Path]:

@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import tomllib
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -890,21 +890,76 @@ def test_other_folders_credentials_are_private(tmp_path: Path, direct: bool) -> 
                      ws / "maity" / "agent-5" / ".git" / "maity"]  # fmt: skip
 
 
-@pytest.mark.parametrize("direct", [True, False])
-def test_other_credentials_are_listed_where_they_lie(tmp_path: Path, direct: bool) -> None:
-    """Listed as the agents' side resolves them: what hides them is decided on those paths
-    (adapters.outermost), so each must name the place it is."""
-    ws, elsewhere = tmp_path / "ws", tmp_path / "elsewhere" / "agent-4"
+class Remote(Agents):
+    """An ssh host's side, run here: not this machine's paths (`here` false)."""
+
+    @property
+    def here(self) -> bool:
+        return False
+
+
+SIDES: dict[str, Callable[[], AsUser]] = {
+    "single": AsUser,
+    "agent_user": lambda: Agents("a"),
+    "ssh": lambda: Remote("a"),
+}
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("linked", ["clone", "repo", "git", "maity"])
+def test_other_credentials_are_listed_where_they_lie(
+    tmp_path: Path, side: str, linked: str
+) -> None:
+    """A clone's credential reached through a link (the clone, its `repo`, its `.git` or the
+    directory itself) is listed where it lies, on every side the runner reaches."""
+    ws, elsewhere = tmp_path / "ws", tmp_path / "elsewhere"
     own = ws / "maity" / "agent-3"
-    for clone in (own, elsewhere, ws / "maity" / "agent-5"):
-        (clone / ".git" / "maity").mkdir(parents=True)
-    (ws / "maity" / "agent-4").symlink_to(elsewhere)
-    found = supervisor.other_credentials(ws, own, AsUser() if direct else Agents("a"))
+    (own / ".git" / "maity").mkdir(parents=True)
+    (ws / "maity" / "agent-5" / ".git" / "maity").mkdir(parents=True)
+    slot = {"clone": ws / "maity" / "agent-4", "repo": ws / "maity" / "agent-4" / "repo",
+            "git": ws / "maity" / "agent-4" / ".git",
+            "maity": ws / "maity" / "agent-4" / ".git" / "maity"}[linked]  # fmt: skip
+    target = elsewhere / slot.name
+    real = {"clone": target / ".git" / "maity", "repo": target / ".git" / "maity",
+            "git": target / "maity", "maity": target}[linked]  # fmt: skip
+    real.mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(target)
+    found = supervisor.other_credentials(ws, own, SIDES[side]())
     inside = ws / "maity" / "agent-5" / ".git" / "maity"
-    # The agents' user's `find` does not enter the link; listed, it is listed where it lies.
-    assert found == ([elsewhere / ".git" / "maity", inside] if direct else [inside])
+    assert real.resolve() in found and inside in found
+    assert own / ".git" / "maity" not in found
     kept = adapters.outermost((ws, *found), opened=(own,))
-    assert kept == ((ws, elsewhere / ".git" / "maity") if direct else (ws,))
+    assert real.resolve() in kept and inside not in kept
+
+
+@pytest.mark.parametrize("side", ["agent_user", "ssh"])
+def test_a_linked_workspaces_root_still_lists_every_clone(tmp_path: Path, side: str) -> None:
+    real = tmp_path / "disk" / "ws"
+    for agent in ("agent-3", "agent-4"):
+        (real / "maity" / agent / ".git" / "maity").mkdir(parents=True)
+    ws = tmp_path / "ws"
+    ws.symlink_to(real)
+    as_user = SIDES[side]()
+    found = supervisor.other_credentials(ws, ws / "maity" / "agent-3", as_user)
+    base = ws.resolve() if as_user.here else ws  # named as the runner names the clone there
+    assert found == [base / "maity" / "agent-4" / ".git" / "maity"]
+
+
+def test_on_a_host_whose_root_lies_below_a_link_its_own_credential_is_not_listed(
+    tmp_path: Path,
+) -> None:
+    """An ssh host's workspaces below a linked directory: the clone's own credential is
+    told apart, and the others stay below the root as configured, so its deny covers them."""
+    (tmp_path / "mnt" / "data").mkdir(parents=True)
+    (tmp_path / "data").symlink_to(tmp_path / "mnt" / "data")
+    ws = tmp_path / "data" / "ws"
+    own = ws / "maity" / "agent-3"
+    for agent in ("agent-3", "agent-4"):
+        (ws / "maity" / agent / ".git" / "maity").mkdir(parents=True)
+    found = supervisor.other_credentials(ws, own, Remote("a"))
+    assert found == [ws / "maity" / "agent-4" / ".git" / "maity"]
+    assert adapters.outermost((ws, *found), opened=(own,)) == (ws,)
 
 
 def test_the_agents_home_hides_agys_directory_from_other_sandboxes(tmp_path: Path) -> None:
