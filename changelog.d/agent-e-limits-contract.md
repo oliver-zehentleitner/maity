@@ -6,7 +6,7 @@
   that can raise it, never a person; `details.max` stays. A runner's `capacity` report
   says which limit holds the start and its numbers. Not built yet (docs/api.md §6.31).
 - contract: `GET /projects/{owner}/{slug}/limits`, one overview of the project's limits,
-  one's own agents' instances with those that never listened, and the attached runners'
+  one's own agents' instances with those that never had a session, and the attached runners'
   agent limits. Not built yet (§6.31).
 - contract: the instance admin may set a different ceiling, up to `unlimited`, for one
   project or one human account, and override the account values of §16.5 for one human;
