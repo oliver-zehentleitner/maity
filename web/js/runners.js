@@ -274,6 +274,44 @@ window.Maity = window.Maity || {};
       }
     }
 
+    // The agents on a runner of one's own, in every project it is attached to (§15.3), as the
+    // runner owner's line: Stop and Remove are the owner's in any project, a member there or
+    // not (§15.6); a `foreign` one was placed by someone else before only the owner could.
+    const linesOf = new Map();
+    const placementPath = (line) => "/projects/" + line.project.split("/").map(encodeURIComponent).join("/")
+      + "/placements/" + encodeURIComponent(line.id);
+    function agentsOn(r) {
+      const lines = linesOf.get(r.id);
+      if (!lines) return null;
+      return h("section", { class: "runner-placements", "aria-label": M.t("runners.placements.title", { name: r.name }) },
+        h("h4", null, M.t("runners.placements.title", { name: r.name })),
+        lines.length ? h("ul", null, lines.map((line) => {
+          const words = { agent: line.agent.handle, project: line.project };
+          return h("li", null,
+            M.tn("runners.placements.line", { agent: h("strong", { translate: "no" }, line.agent.handle), project: line.project }),
+            h("span", { class: "muted" }, " · ", line.desired === "running" ? M.t("runners.placements.running") : M.t("runners.placements.stopped"),
+              line.state ? [" · ", M.t("runners.placements.reported", { state: line.state })] : null,
+              line.foreign ? [" · ", M.t("runners.placements.foreign")] : null),
+            " ",
+            line.desired === "running" ? h("button", { type: "button", class: "small", "aria-label": M.t("runners.placements.stop.label", words),
+              onclick: () => act(M.t("runners.busy.stopping_agent"), M.t("runners.failed.stopping_agent"),
+                () => M.api.patch(placementPath(line), { desired: "stopped" })) }, M.t("runners.placements.stop")) : null,
+            " ",
+            h("button", { type: "button", class: "small danger", "aria-label": M.t("runners.placements.remove.label", words),
+              onclick: () => {
+                if (!window.confirm(M.t("runners.placements.remove.ask", words))) return;
+                act(M.t("runners.busy.removing_agent"), M.t("runners.failed.removing_agent"), () => M.api.del(placementPath(line)));
+              } }, M.t("runners.placements.remove")));
+        })) : h("p", { class: "muted" }, M.t("runners.placements.empty")));
+    }
+    async function readLines(items) {
+      const own = items.filter((r) => !r.removed_at && r.owner_id === ctx.me.id);
+      const read = await Promise.all(own.map((r) => M.api.getAll("/runners/" + encodeURIComponent(r.id) + "/placements")
+        .then((answer) => [r.id, answer.items], () => [r.id, null])));
+      linesOf.clear();
+      read.forEach(([id, lines]) => { if (lines) linesOf.set(id, lines); });
+    }
+
     function runnerCard(r) {
       const id = "runner-name-" + r.id;
       const nameInput = h("input", { id, value: r.name, pattern: NAME_PATTERN, required: true });
@@ -298,6 +336,7 @@ window.Maity = window.Maity || {};
           ? h("p", null, M.t("runners.allowed_in", { projects: names(r.projects) }))
           : h("p", { class: "muted" }, M.t("runners.allowed_nowhere")),
         capabilities(r),
+        agentsOn(r),
         cred
           ? h("p", { class: "muted" }, M.tn("runners.credential", { id: h("code", null, cred.id), time: formatTime(cred.created_at) }),
             cred.last_used_at ? " · " + M.t("runners.credential.used", { ago: formatAgo(cred.last_used_at) }) : "",
@@ -414,6 +453,7 @@ window.Maity = window.Maity || {};
     async function reload() {
       const read = ++reads;
       const [r, e] = await Promise.all([M.api.getAll("/runners"), M.api.getAll("/runners/enrollments")]);
+      await readLines(r.items);
       if (read !== reads) return;
       drawRunners(r.items);
       drawEnrollments(e.items);
@@ -422,6 +462,7 @@ window.Maity = window.Maity || {};
     append(root, h("h2", null, M.t("runners.title")),
       h("p", { class: "muted" }, M.t("runners.intro")),
       pairForm(), panel, stepSlot, status.el, pending, list);
+    await readLines(runners.items);
     drawRunners(runners.items);
     drawEnrollments(enrollments.items);
     // Presence and capabilities emit no events: re-read them (docs/api.md §15.1).

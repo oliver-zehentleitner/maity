@@ -1450,6 +1450,13 @@ def answer(
         refusal = inbox.needs_a_human(row, mine)
         if refusal is not None:
             raise humans_only(refusal)
+        if inbox.not_the_runner_owner(conn, row, mine):
+            raise ApiError(
+                403,
+                "forbidden",
+                "only the runner's owner answers a placement's consent request",
+                {"reason": "runner_owner_only"},
+            )
         if inbox.forwarded(row) and row.holder_member != mine.id:
             raise _not_holder()  # once forwarded, only its holder answers (§7)
         _refuse_by_kind(conn, row, mine)
@@ -2289,6 +2296,33 @@ def file_to_human(
     )
 
 
+def file_to_runner_owner(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    human_id: str,
+    title_text: str,
+    summary: str,
+    *,
+    placement_id: str,
+) -> str:
+    """The consent request of an agent's placement proposal, to the runner's owner in
+    person (`to: human:<id>`, §15.6): only that human gives the go, member of the project
+    or not. Answered or withdrawn, it settles the placement as the project's request did."""
+    return _file_personal(
+        conn,
+        mine,
+        caller,
+        "consent",
+        title_text,
+        summary,
+        to_kind="human",
+        to_profile=None,
+        to_human=human_id,
+        placement_id=placement_id,
+    )
+
+
 def file_to_human_outside(
     conn: Connection,
     project_id: str,
@@ -2385,6 +2419,7 @@ def _file_personal(
     task_id: str | None = None,
     proposal: dict[str, Any] | None = None,
     org_id: str | None = None,
+    placement_id: str | None = None,
 ) -> str:
     request_id = new_id("request")
     conn.execute(
@@ -2393,6 +2428,7 @@ def _file_personal(
                 "id": request_id,
                 "project_id": mine.project.id,
                 "org_id": org_id,
+                "placement_id": placement_id,
                 "class": class_,
                 "title": title_text[: t.TITLE],  # a project name alone may fill it
                 "summary": summary,
@@ -2617,6 +2653,8 @@ def answer_personal(
             not_listening_digest.record_seen(conn, row, caller.human_id)
         actor = caller.actor(member.id) if member is not None else None
         outcome = "go" if body.reply_id == "go" else "no"
+        # A placement's consent (§15.6): `go` approves, any other answer refuses.
+        placements.settle(conn, row, outcome, actor, caller.human_id)
         proposals.settle(
             conn,
             _row(conn, row.id),
@@ -2687,6 +2725,8 @@ def withdraw_personal(
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
         moved = _unblock(conn, row)
+        actor = caller.actor(member.id) if member is not None else None
+        placements.settle(conn, row, "withdrawn", actor, caller.human_id)
         # A proposal is settled wherever its request closes (`proposals`): the invited
         # human's own withdrawal of an organisation's invitation counts as their no.
         if row.proposal is not None:
