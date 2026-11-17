@@ -2901,23 +2901,27 @@ One exception to that: on any line, a word `maity` followed anywhere
 later by a word `runner` is refused (`calls_runner`), whatever the line
 starts with and whichever commands or operators stand between them. The
 check reads a line's words as the shell splits and unquotes them,
-expanding nothing; a word the shell would still expand counts as `runner`
-after a `maity` word and as `maity` before a `runner` word, quoted text
-that holds spaces or operators is read again the same way, and a line
-whose quotes never close is refused when it holds `runner` at all. Text
-is not told apart from a call: `maity say … runner` is refused too, and
-the reason points to `--body-file`. Those commands are the runner's own:
-it starts its in-session ones through the launch, the pane's pipe and
-this hook, never through an agent's tool call, so no placed session needs
-one (tsk-54492gk4xp69, part 1).
+expanding nothing. A word the shell expands counts as `runner` after a
+`maity` word and as `maity` before a `runner` word; a word that starts
+with an unquoted `~` and holds no `/` counts as one the shell expands.
+Quoted text that holds spaces or operators is read again the same way,
+four levels deep; text below that is refused when it holds `runner` at
+all. A line whose quotes never close is refused when it holds `maity` or
+`runner` at all. Text is not told apart from a call: `maity say … runner`
+is refused too, and the reason points to `--body-file`. Those commands
+are the runner's own: it starts its in-session ones through the launch,
+the pane's pipe and this hook, never through an agent's tool call, so no
+placed session needs one (tsk-54492gk4xp69, part 1).
 
 Not read: a command the shell builds only from expansions or from input
-(no literal `maity` before a literal `runner`). Such a line does not
-start with `maity` as one plain call, so it is not one the sandbox
-exclusion matches and its `maity` runs inside the sandbox (runner.md#a-placed-claude-code-agent-runs-maity-alone);
-on a line that starts with `maity` and passes as one plain call, every
-word is literal and the check is exact. Telling the runner's own starts apart by who starts them,
-not by the line, is the card's later part.
+(no literal `maity` before a literal `runner`, no expanding word next to
+either). Such a line does not start with `maity` as one plain call, so it
+is not one the sandbox exclusion matches and its `maity` runs inside the
+sandbox (runner.md#a-placed-claude-code-agent-runs-maity-alone). A line
+that starts with `maity` and passes as one plain call has `maity` as its
+first word, so a later `runner` word or any expanding word refuses it.
+Telling the runner's own starts apart by who starts them, not by the
+line, is the card's later part.
 
 Rejected: reading the line the way `maity`'s parser and the shell would
 (the first version of this check: commands split at operators, maity's
