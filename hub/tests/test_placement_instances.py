@@ -95,6 +95,31 @@ def test_a_waiting_placement_counts_toward_the_limit(setup: Setup) -> None:
     assert place(setup).status_code == 201
 
 
+def test_the_limits_overview_counts_what_the_refusal_counts(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """§6.31, §15.5: the overview's `max_instances.count` is the count `instance_quota`
+    reports: the joined instance, a placement whose credential was revoked (it holds its
+    place until it closes) and a placement that waits for its first pickup."""
+    allow_instances(setup.engine, setup.agent.id, 3)
+    revoked = placed(setup)
+    started(setup, revoked, make_client)
+    with setup.engine.connect() as conn:
+        credential = conn.execute(
+            select(t.placement.c.credential_id).where(t.placement.c.id == revoked["id"])
+        ).scalar_one()
+    gone = setup.owner.post(f"/projects/maintainer/maity/credentials/{credential}/revoke", {})
+    assert gone.status_code == 200, gone.text
+    placed(setup)  # no credential yet
+    refused = place(setup)
+    assert (refused.status_code, error(refused)) == (409, "instance_quota")
+    count = refused.json()["error"]["details"]["count"]
+    assert count == 3
+    [row] = setup.owner.get("/projects/maintainer/maity/limits").json()["agents"]
+    assert row["member"] == setup.agent.id
+    assert row["max_instances"]["count"] == count
+
+
 def test_a_placement_meets_the_max_instances_ceiling(
     setup: Setup, make_client: ClientFactory
 ) -> None:

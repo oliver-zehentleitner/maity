@@ -14,7 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import ceilings, instances, namespace
+from maity_hub import ceilings, namespace
 from maity_hub import placements as pl
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
@@ -103,7 +103,7 @@ def _agents(conn: Connection, mine: Membership, full: str) -> list[dict[str, Any
                 "handle": row.handle,
                 "max_instances": _value(
                     limit,
-                    instances.active_count(conn, row.id),
+                    pl.instances_held(conn, row.id),
                     full,
                     editable=owner,
                     member_id=row.agent_id,

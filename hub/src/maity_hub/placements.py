@@ -736,35 +736,38 @@ def free_clone(
         n += 1
 
 
+def instances_held(conn: Connection, membership_id: int) -> int:
+    """What a membership holds of its `max_instances` (§15.5, §6.31): its active instances,
+    joined by hand or by a pickup, plus its active placements that hold no live credential
+    yet (before their first pickup, or waiting to rejoin), which will each start one. The
+    count a placement's creation meets and the limits overview shows."""
+    from maity_hub import instances
+
+    live = select(t.credential.c.id).where(
+        t.credential.c.membership_id == membership_id, t.credential.c.revoked_at.is_(None)
+    )
+    waiting = conn.execute(
+        select(func.count())
+        .select_from(t.placement)
+        .where(
+            t.placement.c.membership_id == membership_id,
+            t.placement.c.active.is_(True),
+            or_(t.placement.c.credential_id.is_(None), t.placement.c.credential_id.not_in(live)),
+        )
+    ).scalar_one()
+    return instances.active_count(conn, membership_id) + int(waiting)
+
+
 def refuse_over_instances(
     conn: Connection, member: Any, *, adding: int, caller_id: str | None = None
 ) -> None:
     """`instance_quota` with the quota details (§6.31) when a placement would bring the
     membership past `max_instances` in effect (§15.5), the same ceiling a join meets
-    (`instances.refuse_over_quota`): its active instances, joined by hand or by a pickup,
-    plus its active placements that hold no live credential yet and will each start one,
-    plus `adding`. The ceiling's value is shown to the agent profile's owner; `caller_id`
-    names the caller."""
+    (`instances.refuse_over_quota`): what it holds (`instances_held`) plus `adding`. The
+    ceiling's value is shown to the agent profile's owner; `caller_id` names the caller."""
     from maity_hub import ceilings, instances
 
-    live = select(t.credential.c.id).where(
-        t.credential.c.membership_id == member.id, t.credential.c.revoked_at.is_(None)
-    )
-    running = conn.execute(
-        select(func.count())
-        .select_from(t.credential)
-        .where(t.credential.c.membership_id == member.id, t.credential.c.revoked_at.is_(None))
-    ).scalar_one()
-    waiting = conn.execute(
-        select(func.count())
-        .select_from(t.placement)
-        .where(
-            t.placement.c.membership_id == member.id,
-            t.placement.c.active.is_(True),
-            or_(t.placement.c.credential_id.is_(None), t.placement.c.credential_id.not_in(live)),
-        )
-    ).scalar_one()
-    count = int(running) + int(waiting)
+    count = instances_held(conn, member.id)
     project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
     limit, owner = instances.max_instances_limit(conn, member, project)
     if count + adding > limit.limit:
