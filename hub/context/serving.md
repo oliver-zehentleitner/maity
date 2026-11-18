@@ -816,7 +816,11 @@ reason.
   under that lock, so the gate and the pending check decide on the session
   as it stands under READ COMMITTED (#1540 review; `test_auth_statements`
   makes presence due before it checks this); that second read costs one
-  statement once a minute per session.
+  statement once a minute per session. It is made when the update matches
+  no row too: then either another call of the session wrote its presence
+  first, and the read finds the session alive, or the session ended or its
+  account was deleted since the first read, and the read refuses it before
+  any lease is renewed.
 - **The count: in the process, two fixed windows.** One minute; the
   estimate is the current minute's count plus the previous one's weighted
   by what the sliding window still covers, the estimate the shared limits

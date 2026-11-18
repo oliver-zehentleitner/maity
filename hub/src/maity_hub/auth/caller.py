@@ -272,7 +272,12 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = Tru
                 .where(t.membership.c.human_id == row.human_id, t.membership.c.removed_at.is_(None))
                 .values(last_seen_at=now)
             )
-            row = _live_session(conn, id_hash, now)
+        # Read again whether the update matched or not. No row means one of two things since
+        # the first read: another call of this session already wrote its presence (the
+        # session is alive, and this read says so), or the session ended or its account was
+        # deleted (this read refuses). Going on with the first read would renew leases and
+        # authenticate a session that has ended.
+        row = _live_session(conn, id_hash, now)
     if renew:
         # A human holder works in the dashboard; its calls renew its leases too (§6.5). Only
         # the memberships that hold an open claim have a lease to renew: reading the rest
