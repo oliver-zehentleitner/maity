@@ -3430,7 +3430,8 @@ filed (§16.8), the campaign origin while the hub still keeps it
 (§16.7.2: variant, campaign, day), the chats they pinned
 (`pinned_conversations`: project, conversation id, `pinned_at`; §9.3), their contacts
 and the people who have them as a contact (`contacts` and `contact_of`:
-handle, `since`; §6.29), the start tabs
+handle, `since`; §6.29), their allow and deny entries and the history
+of them (`chat_access` and `chat_access_history`, §9.6), the start tabs
 (`start_tabs`: project id and full name, in order; §5.1), the starred projects
 (`starred`: project id and full name, in order; §5.1), and the memberships (project full name, trust, role,
 `reports_to`, areas, their own settings there (§6.2), joined, left). From every project they are or were
@@ -16451,7 +16452,9 @@ feature) admits nobody either (the maintainer's rule of 2026-10-29).
 **History.** A human reads what happened to their own lists, and only
 their own, so as to audit their decisions (the maintainer's wish of
 2026-11-15, card tsk-v34cv43wvec3): `GET /me/chat-access/history`,
-newest first, then by `id`, paged (§1.4). Nobody else reads it, an
+newest first: in the reverse of the order the hub wrote the items, so
+the items of one write, which share their `at`, come in a fixed order
+too; paged (§1.4). Nobody else reads it, an
 instance admin included; there is no view of everyone's entries. An
 item is one of two kinds.
 
@@ -16481,10 +16484,12 @@ A change of an entry (`kind: "entry"`):
   `until` pass and let the agents it admitted wait again, "Waiting");
   `list` is `allow` or `deny`.
 - `entry` is the entry as the lists show it (above), as it was: after
-  the change for `created` and `changed`, just before it for `deleted`
-  and `expired`. `before` is the entry just before a `changed`, `null`
-  otherwise, and `fields` names the fields of the entry that differ
-  (`[]` but on `changed`).
+  the write for `created` and `changed`, before the write for `deleted`
+  and `expired`. `before` is the entry before the write of a `changed`,
+  `null` otherwise, and `fields` names the fields of the entry that
+  differ (`[]` but on `changed`). Before the write means before all of
+  it: an allow entry a deny first narrows to no agent and then deletes
+  (below) is shown with the agents it covered.
 - `cause` says how it came about:
   - `list`: the owner's write under `/me/chat-access` (the Chat access
     page, or the API);
@@ -16514,7 +16519,10 @@ and none when it changes nothing; a `DELETE` of an entry that was not
 there gives none; a deny gives its own `created` and one item per allow
 entry it removed or narrowed; an entry narrowed and then deleted by the
 same write gives only its `deleted`. A replay of an `Idempotency-Key`
-(§1.5) gives none.
+(§1.5) gives none. The deletion of an account (§2.9) is several writes
+here: each of its agent profiles is deleted on its own (§6.3), then the
+entries naming the account go, so another owner's entry that names that
+side may get a `changed` for each such agent before its `deleted`.
 
 An answer to the request to chat with the owner's agents (`kind:
 "answer"`):
@@ -16551,9 +16559,12 @@ An answer to the request to chat with the owner's agents (`kind:
 
 `names` gives, in both kinds, the handle of every agent and human the
 item names (in `entry`, `before`, `side` and `agents`), as the profile or
-the account has it at the read, a deleted one included, so the item
-still reads once an agent is gone (§2.9 keeps the handle of a deleted
-account taken).
+the account has it at the read. A deleted account is `null` there, as
+§2.9 shows a deleted person with `handle: null`, and so is a deleted
+agent profile (§6.3), whose handle its owner may give to a new agent;
+the ids stay, so the item still says which entry and which decision it
+was. The `handle` in `entry` and `before` is the same handle at the read,
+`null` for a deleted account, never the one stored at the write.
 
 The history is kept as long as the account: at most the newest 10,000
 items per human, and a write beyond that deletes the oldest. It begins
@@ -16570,7 +16581,8 @@ deleted. The owner's export carries them (`chat_access`). The history
 (above) is rows of the human too: deleted with the account, in the
 export as `chat_access_history`, oldest first. What an item names is
 not taken out of it when that agent, human or project goes: the item
-records the owner's own decision as it was.
+records the owner's own decision as it was, by ids, with the handles
+shown as above.
 
 ### 9.7 Agree and disagree on a chat message
 
