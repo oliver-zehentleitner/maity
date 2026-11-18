@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, public_pages
+from maity_hub import public_pages
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from tests import flow
@@ -87,7 +87,8 @@ def test_a_human_stars_public_projects_in_order(owner: flow.Human, reader: flow.
     ]
     assert done.json()["member"]["starred"] == expected  # the answer is `/me` as it is now
     assert _starred(reader) == expected
-    assert reader.get("/bootstrap").json()["me"]["member"]["starred"] == expected  # §5.4
+    me = reader.get("/bootstrap").json()["me"]  # a part: its status and the route's body (§5.4)
+    assert (me["status"], me["body"]["member"]["starred"]) == (200, expected)
     assert _star(reader, []).status_code == 200
     assert _starred(reader) == []
 
@@ -205,12 +206,8 @@ def test_an_invitation_drops_the_star_and_a_removed_member_stars_again(
     assert joined.status_code in (200, 201), joined.text
     assert _stored(migrated, reader.id) == [other]
     assert _field(_star(reader, [other, maity])) == "member"
-    with migrated.begin() as conn:
-        conn.execute(
-            update(t.membership)
-            .where(t.membership.c.human_id == reader.id, t.membership.c.project_id == maity)
-            .values(active=False, removed_at=clock.now())
-        )
+    left = reader.delete(f"/projects/maintainer/maity/members/{reader.id}")  # leaving (§6.2)
+    assert left.status_code == 200, left.text
     # A removed member is no member (`access`): the project may be starred again.
     assert _star(reader, [other, maity]).status_code == 200
     assert _ids(reader) == [other, maity]
