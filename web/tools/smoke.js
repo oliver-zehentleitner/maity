@@ -2261,6 +2261,40 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   srCancel().click(); await tick();
   await win.Maity.api.patch("/projects/maintainer/maity", { policy: { max_placements: 8 }, reason: "back for the tests" });
   srMade.pop();
+  // A project's own roles follow the built-in ones in a new profile's role, on any base, as the hub's
+  // validate_assignment takes them (tsk-0e7mrvccjttn); since tsk-hdczmsq2r431 that is the join form's
+  // role, the one a new profile started on a runner is sent with. The fixture refuses a role the project
+  // does not have. The roles answered here, not saved in the fixture: the Roles section's checks below
+  // count its versions from 0. The POST is held and never answered, so no placement is made.
+  const srOwnGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/roles"
+    ? Promise.resolve({ builtin: [], custom: [{ name: "popelwerfer", base: "coder", description: "throws popels" }, { name: "deployer", base: "ops", description: "" }], version: 1 })
+    : srOwnGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  await srOpen();
+  byId("join-agent").value = ""; byId("join-agent").dispatch("change");
+  const srOwnRoles = srForm() ? byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value") + ":" + text(o)) : [];
+  if (srForm()) { byId("join-role").value = "popelwerfer"; byId("join-role").dispatch("change"); }
+  expect(srOwnRoles.length === 13 && srOwnRoles.slice(-2).join("|") === "popelwerfer:popelwerfer (permissions of Coder)|deployer:deployer (permissions of Ops)"
+    && text(byId("join-role-help")) === "throws popels",
+    "placements: a new profile's role offers the project's own roles after the built-in ones, with their base and description " + JSON.stringify(srOwnRoles));
+  // The save check holds only with the option there: the DOM shim takes any value (A1248 at #1948).
+  const srOwnHas = !!srForm() && byId("join-role").querySelectorAll("option").some((o) => o.getAttribute("value") === "popelwerfer");
+  if (srForm()) {
+    byId("join-handle").value = "agent-own"; byId("join-handle").dispatch("input"); byId("join-display").value = "Agent Own";
+    srHold = true;
+    srJoin().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+  }
+  const srOwnSent = srMade[srMade.length - 1];
+  expect(srOwnHas && srOwnSent && srOwnSent.agent.handle === "agent-own" && srOwnSent.role === "popelwerfer",
+    "placements: a new profile started on a runner with an own role is sent with the role's name " + JSON.stringify([srOwnHas, srOwnSent]));
+  if (srOwnSent && srOwnSent.agent.handle === "agent-own") srMade.pop();
+  srHold = false;
+  const srOwnNope = await srPost("/projects/maintainer/maity/placements", { agent: { handle: "x-role", display_name: "X" }, role: "nope", runner: "rnr-0002", harness: "claude-code" })
+    .then(() => "made", (e) => JSON.stringify(e.details && e.details.fields));
+  expect(srOwnNope === JSON.stringify({ role: "unknown" }), "placements: the fixture refuses a role the project does not have, as the hub does " + srOwnNope);
+  if (srForm()) { srCancel().click(); await tick(); }
+  win.Maity.api.get = srOwnGet;
   // Only runners that offer the project's repository, matched as the hub's fnmatch does (tsk-wn6qp27090qy):
   // one with a foreign repository is left out, one whose pattern matches is offered; with none, why.
   const srGetAll = win.Maity.api.getAll, srGet = win.Maity.api.get;
@@ -4359,9 +4393,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "own roles: the member form lists the project's own roles after the built-in ones, with their base and description " + JSON.stringify(owrOffered));
   owrSel().value = "popelwerfer"; owrSel().dispatch("change");
   expect(text(byId("member-role-agt-d-help")) === "throws popels", "own roles: the help under the picker follows an own role");
+  // The save check holds only with the option there: the DOM shim takes any value (A1248 at #1948).
+  const owrHas = !!owrOpt("popelwerfer");
   main.querySelector("tr.member-manage form.member-edit").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   const owrHeld = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-d");
-  expect(JSON.stringify(owrPatches[owrPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-d", { role: "popelwerfer" }])
+  expect(owrHas && JSON.stringify(owrPatches[owrPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-d", { role: "popelwerfer" }])
     && owrHeld.role === "popelwerfer" && owrHeld.role_base === "coder" && owrSel() && owrSel().value === "popelwerfer",
     "own roles: saving sends the own role's name, the member holds it on its base, the form keeps it chosen " + JSON.stringify(owrPatches));
   // The fixture takes a project role in a join as the hub does (here it gets as far as the instance), not one the project lacks.
@@ -13671,10 +13707,12 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && text(byId("invite-role-help")) === "throws popels",
     "invite: the project's own roles follow the built-in ones, with their base and description " + JSON.stringify(ivOwn));
   const ivOwnBefore = ivItems().length, ivOwnSent = ivPosts.length;
+  // The send check holds only with the option there: the DOM shim takes any value (A1248 at #1948).
+  const ivOwnHas = byId("invite-role").querySelectorAll("option").some((o) => o.getAttribute("value") === "popelwerfer");
   byId("invite-address").value = "pia@example.org";
   ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
   const ivNope = await win.Maity.api.post("/projects/maintainer/maity/invitations", { role: "nope" }).then(() => "made", (e) => JSON.stringify(e.details && e.details.fields));
-  expect(ivPosts[ivOwnSent] && ivPosts[ivOwnSent][1].role === "popelwerfer" && ivItems().length === ivOwnBefore + 1 && ivItems()[0].endsWith(":open")
+  expect(ivOwnHas && ivPosts[ivOwnSent] && ivPosts[ivOwnSent][1].role === "popelwerfer" && ivItems().length === ivOwnBefore + 1 && ivItems()[0].endsWith(":open")
     && ivNope === JSON.stringify({ role: "unknown" }),
     "invite: an invitation to an own role is sent with its name and made; one the project does not have is refused " + JSON.stringify([ivPosts[ivOwnSent], ivNope]));
   await ivOwnPut([]);

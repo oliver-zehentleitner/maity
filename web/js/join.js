@@ -248,7 +248,9 @@ window.Maity = window.Maity || {};
     trust.value = "member";
     const role = h("select", { id: "join-role" });
     // The project's own roles follow the built-in ones (§2.3): for one's own agent only those on
-    // a base a member join may give (not ops), as the hub's member limits check it.
+    // a base a member join may give (not ops), as the hub's member limits check it. A new profile
+    // started on a runner takes this role too: the part is offered with members:admin only, where
+    // every base is offered, as validate_assignment takes it for a placement (§15.6).
     const takeOwn = (list) => (own ? list.filter((x) => M.trust.MEMBER_ROLES.includes(x.base)) : list);
     let ownRoles = takeOwn(M.trust.projectRoles(ctx, (list) => { ownRoles = takeOwn(list); if (ownRoles.length) fillRoles(); }));
     const fillRoles = () => {
