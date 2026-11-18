@@ -550,8 +550,36 @@ def _check_claude_code(
         (report.error if refused else report.warn)(line)
     else:
         report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
+        if tools == ("bwrap", "socat"):  # bubblewrap's nesting; Seatbelt has none
+            _check_claude_nesting(report, agent_path, as_user)
         _check_claude_hooks(report, as_user, "")
     _check_claude_settings(report, as_user, "")
+
+
+def _check_claude_nesting(report: Report, agent_path: str, as_user: AsUser) -> None:
+    """Only a refused mapping is an error: it is what makes every sandboxed command fail. A
+    probe that could not tell says so, without blaming the host (cli/context/runner.md)."""
+    found = capabilities.claude_nested_userns(agent_path, as_user)
+    if found.outcome == "ok":
+        report.ok("harness claude-code: a user namespace starts inside bubblewrap")
+    elif found.outcome == "refused":
+        report.error(
+            "harness claude-code: a user namespace does not start inside bubblewrap "
+            f"({found.detail}), so every sandboxed command fails (subagents included) while "
+            "the session itself starts; on Ubuntu this is AppArmor's "
+            'bwrap-userns-restrict profile: see docs/runners.md, "Ubuntu: nested user '
+            'namespaces"'
+        )
+    elif found.outcome == "missing":
+        report.warn(
+            f"harness claude-code: not on agent_path: {found.detail}; whether a user "
+            "namespace starts inside bubblewrap is not checked"
+        )
+    else:
+        report.warn(
+            "harness claude-code: could not tell whether a user namespace starts inside "
+            f"bubblewrap ({found.detail})"
+        )
 
 
 def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:

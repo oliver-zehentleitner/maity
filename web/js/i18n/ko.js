@@ -198,7 +198,6 @@ window.MAITY_I18N["ko"] = {
     "other": "활성 인스턴스 {active}/{count}개"
   },
   "agents.intro": "모든 프로젝트에 걸친 내 에이전트 프로필입니다. 각 프로필은 사진, 핸들, 보유한 멤버십을 가진 하나의 신원입니다. 프로젝트에 추가하면 그곳의 참여 라인이 만들어집니다.",
-  "agents.join.any": "아무 에이전트나 추가",
   "agents.join.failed": "참여를 준비하지 못했어요: {reason}",
   "agents.join.none": "에이전트를 참여시킬 수 있는 프로젝트가 없어요.",
   "agents.join.open": "에이전트 참여",
@@ -2324,17 +2323,32 @@ window.MAITY_I18N["ko"] = {
   "mail.count.failures": {
     "other": "실패 {count}건"
   },
+  "mail.count.invitation": {
+    "other": "초대 메일 {count}통"
+  },
   "mail.count.notifications": {
     "other": "알림 메일 {count}건"
   },
   "mail.count.queued": {
     "other": "대기 중인 보안 메일 {count}건"
   },
+  "mail.count.second_factor": {
+    "other": "2차 인증 메일 {count}통"
+  },
+  "mail.count.second_factor_dropped": {
+    "other": "버린 2차 인증 메일 {count}통"
+  },
   "mail.count.security": {
     "other": "보안 메일 {count}건"
   },
   "mail.count.sign_in": {
     "other": "로그인 메일 {count}건"
+  },
+  "mail.count.verification": {
+    "other": "확인 메일 {count}통"
+  },
+  "mail.count.waiting": {
+    "other": "대기 중인 확인·초대 메일 {count}통"
   },
   "mail.daily_at": "일일 및 주간 요약 메일 시각",
   "mail.day.fri": "금요일",
@@ -2348,13 +2362,16 @@ window.MAITY_I18N["ko"] = {
   "mail.field.from_address": "발신 주소",
   "mail.field.from_name": "발신자 이름",
   "mail.field.host": "SMTP 호스트",
+  "mail.field.invitation_max_per_hour": "시간당 초대 메일",
   "mail.field.max_per_hour": "시간당 알림 메일 수",
   "mail.field.port": "SMTP 포트",
   "mail.field.reply_to": "회신 주소",
+  "mail.field.second_factor_max_per_hour": "시간당 2단계 인증 메일 수",
   "mail.field.security_max_per_hour": "시간당 보안 메일 수",
   "mail.field.sign_in_max_per_hour": "시간당 로그인 메일 수",
   "mail.field.tls": "연결 보안",
   "mail.field.username": "SMTP 사용자 이름",
+  "mail.field.verification_max_per_hour": "시간당 주소 확인 메일",
   "mail.hold_while_online": "웹 앱에 접속해 있는 동안 메일 보내지 않기",
   "mail.hold_while_online.hint": "'즉시'로 보내는 메일은 대시보드를 사용하는 동안 대기합니다. 대시보드를 떠나고 몇 분 뒤, 읽지 않은 것만 메일로 보냅니다.",
   "mail.incomplete": "메일 설정이 완전하지 않습니다: {missing}.",
@@ -2367,6 +2384,7 @@ window.MAITY_I18N["ko"] = {
   "mail.kinds.hint": "요약 메일에는 보내는 시점에 아직 읽지 않은 모든 항목이 담겨요. 2단계 인증 변경, 주소 변경, 계정 삭제는 항상 즉시 메일로 보내요.",
   "mail.kinds.legend": "종류별 메일 발송 시점",
   "mail.last_hour": "최근 1시간: {notifications}, {security}, {sign_in}, {failures}, {queued}.",
+  "mail.last_hour_own": "그 밖에 최근 1시간: {verification}, {invitation}, {second_factor}, {dropped}, {waiting}.",
   "mail.mode.daily": "일일 요약",
   "mail.mode.hourly": "시간별 요약",
   "mail.mode.immediate": "즉시",
@@ -3430,9 +3448,7 @@ window.MAITY_I18N["ko"] = {
   "placements.logs": "로그",
   "placements.logs.copy": "로그 명령 복사",
   "placements.logs.region": "로그 명령",
-  "placements.new.agent_new": "새 에이전트",
   "placements.new.branch": "시작 브랜치 (선택)",
-  "placements.new.briefing": "브리핑 (선택, Markdown)",
   "placements.new.busy": "에이전트를 배치하는 중…",
   "placements.new.clone": "클론",
   "placements.new.clone_hint": "러너에 있는 에이전트 클론의 이름: 영문 소문자, 숫자, 하이픈. 비우면 에이전트의 핸들.",
@@ -3441,6 +3457,7 @@ window.MAITY_I18N["ko"] = {
   "placements.new.failed": "러너에 배치하지 못했어요: {reason}",
   "placements.new.field": "{field}: {why}",
   "placements.new.hint": "러너는 여기서 고른 도구, 모드, 모델로 이 프로젝트 저장소의 클론에서 에이전트를 시작해요. 페어링되어 이 프로젝트에 허용되고 그 저장소를 제공하는 내 러너만 보여요.",
+  "placements.new.legend": "러너에서",
   "placements.new.mode": "모드",
   "placements.new.model": "모델",
   "placements.new.model_default": "러너 기본값",
@@ -3449,8 +3466,10 @@ window.MAITY_I18N["ko"] = {
   "placements.new.no_tool": "러너가 그곳에서 설치된 도구를 제공하지 않아요.",
   "placements.new.none": "페어링된 내 러너 중 이 프로젝트에 허용된 것이 아직 없어요. {link}에서 하나를 허용해 주세요.",
   "placements.new.none_link": "이 프로젝트의 러너",
-  "placements.new.open": "러너에서 에이전트 시작",
-  "placements.new.profile": "새 에이전트의 프로필과 팀에서의 자리",
+  "placements.new.not_member": "러너에서는 이 프로젝트에 이미 있는 에이전트나 새 에이전트만 시작할 수 있습니다. 새 에이전트를 선택하거나 먼저 이 에이전트를 라인으로 참여시키세요.",
+  "placements.new.not_ready": "아직 시작할 러너와 도구가 없습니다. 이유는 러너 부분에 나와 있습니다.",
+  "placements.new.offer": "참여 라인 대신 내 러너 중 하나에서 시작",
+  "placements.new.placed": "이 에이전트는 이미 여기에서 러너로 실행 중입니다. 에이전트당 배치는 하나입니다. 해당 행은 관리되는 에이전트에 있습니다.",
   "placements.new.quota": "이 프로젝트의 러너 활성 배치 한도({max}개)에 도달했어요.",
   "placements.new.quota_link": "설정의 멤버와 에이전트",
   "placements.new.quota_raise": "{link}에서 한도를 올리세요.",
@@ -3463,7 +3482,6 @@ window.MAITY_I18N["ko"] = {
   "placements.new.submit": "러너에서 시작",
   "placements.new.target": "실행 위치",
   "placements.new.target_any": "러너가 정하는 곳",
-  "placements.new.title": "러너에서 에이전트 시작",
   "placements.new.tool": "도구",
   "placements.not_removed": "제거되지 않음: {reason}",
   "placements.not_restarted": "다시 시작하지 못했어요: {reason}",

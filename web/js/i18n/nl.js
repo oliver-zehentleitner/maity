@@ -204,7 +204,6 @@ window.MAITY_I18N["nl"] = {
     "other": "{active} van {count} instanties actief"
   },
   "agents.intro": "Je agentprofielen in alle projecten: elk is één identiteit, met een afbeelding, een handle en de lidmaatschappen die het heeft. Voeg er een aan een project toe om daar een deelnameregel te maken.",
-  "agents.join.any": "Een willekeurige agent toevoegen",
   "agents.join.failed": "De deelname kon niet worden voorbereid: {reason}",
   "agents.join.none": "Je zit in geen enkel project waarin je een agent zou kunnen meenemen.",
   "agents.join.open": "Een agent laten deelnemen",
@@ -2367,6 +2366,10 @@ window.MAITY_I18N["nl"] = {
     "one": "{count} mislukking",
     "other": "{count} mislukkingen"
   },
+  "mail.count.invitation": {
+    "one": "{count} uitnodigingsmail",
+    "other": "{count} uitnodigingsmails"
+  },
   "mail.count.notifications": {
     "one": "{count} meldingsmail",
     "other": "{count} meldingsmails"
@@ -2375,6 +2378,14 @@ window.MAITY_I18N["nl"] = {
     "one": "{count} beveiligingsmail in de wachtrij",
     "other": "{count} beveiligingsmails in de wachtrij"
   },
+  "mail.count.second_factor": {
+    "one": "{count} mail voor de tweede factor",
+    "other": "{count} mails voor de tweede factor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} mail voor de tweede factor verworpen",
+    "other": "{count} mails voor de tweede factor verworpen"
+  },
   "mail.count.security": {
     "one": "{count} beveiligingsmail",
     "other": "{count} beveiligingsmails"
@@ -2382,6 +2393,14 @@ window.MAITY_I18N["nl"] = {
   "mail.count.sign_in": {
     "one": "{count} inlogmail",
     "other": "{count} inlogmails"
+  },
+  "mail.count.verification": {
+    "one": "{count} verificatiemail",
+    "other": "{count} verificatiemails"
+  },
+  "mail.count.waiting": {
+    "one": "{count} verificatie- of uitnodigingsmail wacht",
+    "other": "{count} verificatie- of uitnodigingsmails wachten"
   },
   "mail.daily_at": "Dagelijkse en wekelijkse overzichten om",
   "mail.day.fri": "vrijdag",
@@ -2395,13 +2414,16 @@ window.MAITY_I18N["nl"] = {
   "mail.field.from_address": "Afzenderadres",
   "mail.field.from_name": "Afzendernaam",
   "mail.field.host": "SMTP-host",
+  "mail.field.invitation_max_per_hour": "Uitnodigingsmails per uur",
   "mail.field.max_per_hour": "Meldingsmails per uur",
   "mail.field.port": "SMTP-poort",
   "mail.field.reply_to": "Antwoordadres",
+  "mail.field.second_factor_max_per_hour": "Mails voor de tweede factor per uur",
   "mail.field.security_max_per_hour": "Beveiligingsmails per uur",
   "mail.field.sign_in_max_per_hour": "Inlogmails per uur",
   "mail.field.tls": "Verbindingsbeveiliging",
   "mail.field.username": "SMTP-gebruikersnaam",
+  "mail.field.verification_max_per_hour": "Mails voor adresbevestiging per uur",
   "mail.hold_while_online": "Geen e-mail zolang ik online ben in de webapp",
   "mail.hold_while_online.hint": "E-mail van wat 'Meteen' uitgaat wacht zolang je het dashboard gebruikt. Een paar minuten nadat je het hebt verlaten, wordt alleen gemaild wat je nog niet hebt gelezen.",
   "mail.incomplete": "E-mailconfiguratie is onvolledig: {missing}.",
@@ -2414,6 +2436,7 @@ window.MAITY_I18N["nl"] = {
   "mail.kinds.hint": "Een overzicht bevat alles wat nog ongelezen is als het verstuurd wordt. Een gewijzigde tweede factor, een gewijzigd adres en het verwijderen van een account worden altijd meteen gemaild.",
   "mail.kinds.legend": "Wanneer elk soort wordt gemaild",
   "mail.last_hour": "Laatste uur: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Verder in het laatste uur: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Dagelijks overzicht",
   "mail.mode.hourly": "Overzicht per uur",
   "mail.mode.immediate": "Meteen",
@@ -3518,9 +3541,7 @@ window.MAITY_I18N["nl"] = {
   "placements.logs": "Logs",
   "placements.logs.copy": "Het logs-commando kopiëren",
   "placements.logs.region": "Logs-commando",
-  "placements.new.agent_new": "Een nieuwe agent",
   "placements.new.branch": "Startbranch (optioneel)",
-  "placements.new.briefing": "Briefing (optioneel, Markdown)",
   "placements.new.busy": "Agent wordt geplaatst…",
   "placements.new.clone": "Kloon",
   "placements.new.clone_hint": "De naam van de kloon van de agent op de runner: kleine letters, cijfers en koppeltekens. Leeg: de handle van de agent.",
@@ -3529,6 +3550,7 @@ window.MAITY_I18N["nl"] = {
   "placements.new.failed": "Niet op de runner geplaatst: {reason}",
   "placements.new.field": "{field}: {why}",
   "placements.new.hint": "De runner start de agent in een kloon van de repository van dit project, met het hier gekozen hulpmiddel, de modus en het model. Alleen je eigen runners die gekoppeld zijn, in dit project zijn toegestaan en de repository ervan aanbieden, worden aangeboden.",
+  "placements.new.legend": "Op een runner",
   "placements.new.mode": "Modus",
   "placements.new.model": "Model",
   "placements.new.model_default": "De standaard van de runner",
@@ -3537,8 +3559,10 @@ window.MAITY_I18N["nl"] = {
   "placements.new.no_tool": "De runner biedt daar geen geïnstalleerd hulpmiddel aan.",
   "placements.new.none": "Nog geen van je gekoppelde runners is in dit project toegestaan. Sta er een toe onder {link}.",
   "placements.new.none_link": "Runners van dit project",
-  "placements.new.open": "Een agent op een runner starten",
-  "placements.new.profile": "Het profiel van de nieuwe agent en zijn plaats in het team",
+  "placements.new.not_member": "Alleen een agent die al in dit project zit, of een nieuwe, start op een runner. Kies een nieuwe agent, of laat deze eerst deelnemen met een regel.",
+  "placements.new.not_ready": "Er is nog geen runner met een tool om hem te starten: het runnerdeel zegt waarom.",
+  "placements.new.offer": "Op een van mijn runners starten in plaats van met een deelnameregel",
+  "placements.new.placed": "Deze agent draait hier al op een runner: één plaatsing per agent. Zijn rij staat onder Beheerde agents.",
   "placements.new.quota": "de limiet van het project van {max} actieve plaatsingen op runners is bereikt.",
   "placements.new.quota_link": "Instellingen, Leden en agents",
   "placements.new.quota_raise": "Verhoog de limiet in {link}.",
@@ -3551,7 +3575,6 @@ window.MAITY_I18N["nl"] = {
   "placements.new.submit": "Op de runner starten",
   "placements.new.target": "Waar",
   "placements.new.target_any": "Waar de runner kiest",
-  "placements.new.title": "Een agent op een runner starten",
   "placements.new.tool": "Hulpmiddel",
   "placements.not_removed": "Niet verwijderd: {reason}",
   "placements.not_restarted": "Niet opnieuw gestart: {reason}",

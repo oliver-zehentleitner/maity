@@ -380,10 +380,11 @@ nudge toward TOTP over a gate.
   instance.
 - One switch for the sign-in link and the reset together: the reset is the stronger way in, and
   a human may want the link off and the reset on.
-- Reset mails from the sign-in budget (`sign_in_max_per_hour`): the mail factor's mails come from
-  it too, so anonymous reset requests could stop them for an hour, and with them the sign-in of
-  every human without TOTP. Reset mails got `password_reset_max_per_hour` instead (review of the
-  contract PR).
+- Reset mails from the sign-in budget (`sign_in_max_per_hour`): the mail factor's mails came from
+  it too at the time, so anonymous reset requests could have stopped them for an hour, and with
+  them the sign-in of every human without TOTP. Reset mails got `password_reset_max_per_hour`
+  instead (review of the contract PR). The mail factor's mails have since a budget of their own
+  (mail.md 443bdca8-64b0-4a07-9ea5-daf368945d35).
 - Wrong TOTP codes at a reset counted only in the per-human limit: whoever holds the mailbox could
   keep guessing with fresh links unreported. Nor per link: four wrong codes on each of several
   links never reach a fifth on any one. The fifth wrong code at resets of one human in 24 hours,
@@ -975,6 +976,45 @@ but the scan does not would carry an escaped credential past it.
   no JSON, would still pass.
 - Scanning only the decoded strings: the raw scan is what covers a
   body that is not JSON, or JSON that does not decode, and the query.
+
+## Anonymous mail requests are capped per recipient in source networks, and limits per source address count an IPv6 client by its /64
+
+**Id:** ad4dc104-7b44-4049-a9e4-ebcf7aef9dd2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.5, §2.6.4, §2.7.3; tsk-q4zynccy5t0b and its review (a single source spent an address's hour under the first design), counting in networks decided by the maintainer on 2026-11-17, counting at request time on 2026-11-18; `hub/src/maity_hub/net.py` `Origin.limit_key`, `hub/src/maity_hub/auth/email_links.py` `recipient_over`; tests in `hub/tests/test_email_link_state.py`, `test_password_reset.py` and `test_registration.py`, red when every mail counts
+**See:** auth.md#the-resets-request-limits-are-buckets-of-their-own-and-an-empty-code-is-no-guess — 0e98bef7-6601-4f00-b10c-6c1a4c19222e — as of 2026-11-13
+
+`POST /auth/email-link`, `POST /auth/password-reset` and `POST /auth/register` each keep, beside the pair limits, a silent limit per recipient, in buckets of each path's own: 5 places per hour and 20 per day, counted in source networks, not in mails, and at most 50 mails queued for the address in any hour and 200 in any day from all networks together. Places and mail counts are taken when the request is answered and its mail queued, not when the outbox delivers it: the outbox checks only the path's instance-wide hourly budget, so mails queued in different windows can go out together after a delay. A network is `Origin.limit_key` (an IPv4 address as it is, an IPv6 address as its /64, an IPv4-mapped address as its IPv4); its first mail to the address in a window takes a place, its further ones take none and are held by its pair limit alone. A request counts only once its pair limit let it through. The places are taken first, then the mails, and the mark that a network holds a place is set only after both, at its place's own moment and in the same window, so that it ends with the place, and never given back; two or three concurrent first requests of one network (its quarter limit) each take a place, and each that finds the mark set gives its own back. The two mail counts keep a row per mail across replicas (`Limiter(exact=True)`). Every limit keyed on the caller's address takes `Origin.limit_key`; the session's address, a mail's text and the known sources keep the whole address.
+
+**Reason:** the pair limits bound one source, not the mails one address receives from many. Counted in mails, the cap let one source spend the address's hour with its pair limit's 3 + 2 requests, and two sources asking all day kept the owner from ever getting a link. Counted in networks, one to four networks cannot stop the owner's own network through these limits, but for the moment two or three first requests of one network run at once (each holds a place until all but one gave theirs back), longer when such a request stalls. The path's instance-wide hourly budget is a separate cap and stays the accepted denial the contract names: at the defaults, three networks at their 10 requests an hour spend the 30 reset or registration mails of an hour. The windows slide, so places alone let a place pass from one network to the next inside a window (60 mails in one hour and 380 in one day were measured in review); the count of the mails makes the bound on what is queued true, and four networks at their pair limits (10 a day each, at most 40 requested in any hour or day) never reach it, so it adds no lock-out. What stays: requests from five distinct networks in an hour (twenty in a day) leave a further network without a place, or reach the count, until the window has passed — any fixed per-address cap allows that; sessions, the password and the device code are unaffected. The price is the mailbox: at most 50 mails queued in any hour and 200 in any day for one address, and each path's instance-wide hourly budget as the outer bound on what is sent. The mark is set after the places because a mark set first and given back on refusal let concurrent requests of the same network through without a place (31 of 90 on PostgreSQL in review). It takes the place's moment because a mark that ended earlier, 10 seconds before its place (an intermediate version), let a network take a second place in that gap, so that three networks could leave the owner without a mail; one taken at its own later moment would outlive the place after a stalled request. One bucket per path keeps the reset and the sign-in link apart as before (0e98bef7). A /64 is what one IPv6 client is usually given, so a limit per full IPv6 address would count one client as many.
+
+**Rejected alternatives:**
+- Counting mails against the recipient, only those the pair limit passed (the first design): one source spends the address's hour, two its day.
+- A lock per address (in the process and a PostgreSQL advisory lock) around mark and places: heavier, and nothing else in the hub's limiters takes one; taking the places first and the mark after needs none, at the price of a brief over-count under concurrency.
+- Stating the sliding-window worst case (about 100 an hour, 400 a day) instead of counting the mails: a bound twice the places' product, and no smaller one would be true.
+- Counting every request against the recipient, refused by the pair limit or not: one source alone could then stop the address's mails at once.
+- One mail per network and hour to the address: the owner gets no second link within the hour, and one network would still spend 24 of the day's 20 without a separate day share.
+- No per-recipient cap at all: no lock-out, but no bound on a stranger's mailbox beyond the instance budget.
+- A per-recipient check at delivery too, in the outbox, so that the windows bound what arrives: the maintainer decided on 2026-11-18, in the review of PR #1797, that these limits apply at request time and the code stays as it is; the contract says so.
+- One recipient bucket shared by the three paths: requests of one kind would refuse the mails of another.
+- /56 or /48: wider prefixes put unrelated customers of one provider into one count; /64 is the smallest prefix a client is commonly handed whole.
+
+## The in-process limiter keeps its keys in order of their newest attempt and forgets idle ones from the front
+
+**Id:** 6112b6e6-f3b7-481b-911e-d6bab311242d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** tsk-q4zynccy5t0b; `hub/src/maity_hub/ratelimit.py` `Limiter._prune`
+
+`Limiter._hits` is an `OrderedDict`; an attempt moves its key to the end, and every take first drops keys from the front while their newest attempt is outside the window. Each attempt costs the keys it forgets and one look more. A key whose newest attempt was given back (`release`) may stay behind a live key a little longer.
+
+**Reason:** a pass over every key once more than 1024 were live cost each attempt time in the number of keys, exactly when many keys are live.
+
+**Rejected alternatives:**
+- Prune at most once per N calls or per part of the window: bounded on average, but memory still grows between passes and the pass itself stays a scan of all keys.
 
 ## Every anonymous sign-in and sign-up call keeps one rule, `same-site` refused too
 
