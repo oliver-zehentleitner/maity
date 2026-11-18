@@ -21,6 +21,7 @@ from maity_hub import (
     attachment_store,
     clock,
     events,
+    jcs,
     moderation,
     namespace,
     public_people,
@@ -436,8 +437,10 @@ def create(
     reason, text = body.get("reason"), body.get("text")
     if reason not in REASONS:
         raise invalid({"reason": "unknown"})
-    if text is not None and (not isinstance(text, str) or len(text.encode()) > TEXT_MAX):
-        raise invalid({"text": "too_long" if isinstance(text, str) else "not_text"})
+    if text is not None and (not isinstance(text, str) or jcs.has_lone_surrogate(text)):
+        raise invalid({"text": "not_text"})  # a lone surrogate is no text UTF-8 can encode
+    if text is not None and len(text.encode()) > TEXT_MAX:
+        raise invalid({"text": "too_long"})
     given = body.get("target")
     if not isinstance(given, dict):
         raise invalid({"target": "required"})

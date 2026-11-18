@@ -43,8 +43,8 @@ def _note(value: Any, path: str, found: Problems) -> str | None:
     if (
         not isinstance(value, str)
         or not value.strip()
+        or CONTROL.search(value)  # before the size: a lone surrogate does not encode
         or len(value.encode()) > MAX_NOTE
-        or CONTROL.search(value)
         or markdown_problem(value) is not None
     ):
         found.add(path, "invalid")

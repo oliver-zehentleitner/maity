@@ -221,6 +221,32 @@ def test_control_characters_are_refused(
     assert field(owner.patch(ADMIN_PATH, patch)) == fields
 
 
+@pytest.mark.parametrize(
+    ("patch", "fields"),
+    [
+        (
+            {"pages": {"en": page(text("a\ud800b"))}},
+            {"pages.en.sections.0.markdown": "control_character"},
+        ),
+        ({"pages": {"en": page(title="a\udfffb")}}, {"pages.en.title": "control_character"}),
+        ({"footer": {"operator": "O\ud800p"}}, {"footer.operator": "control_character"}),
+    ],
+)
+def test_a_lone_surrogate_is_a_control_character(
+    owner: flow.Human, patch: dict[str, Any], fields: dict[str, str]
+) -> None:
+    sent = json.dumps(patch).encode()  # ASCII: the surrogate travels as the escape `\ud800`
+    assert b"\\ud800" in sent or b"\\udfff" in sent
+    assert field(owner.raw("PATCH", ADMIN_PATH, sent)) == fields
+
+
+def test_an_emoji_is_text(owner: flow.Human) -> None:
+    sent = json.dumps(body(text("\U0001f642 fine"))).encode()  # `🙂`
+    saved = owner.raw("PATCH", ADMIN_PATH, sent)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["pages"]["en"]["sections"][0]["markdown"] == "🙂 fine"
+
+
 def test_tab_newline_and_carriage_return_are_text(owner: flow.Human) -> None:
     saved = owner.patch(ADMIN_PATH, body(text("# Head\r\n\n\tindented\n")))
     assert saved.status_code == 200, saved.text

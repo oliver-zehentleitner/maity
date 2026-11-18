@@ -125,6 +125,18 @@ def test_the_body_is_checked(team: dict[str, Any], migrated: Engine) -> None:
         assert field in refused.json()["error"]["details"]["fields"]
 
 
+def test_a_lone_surrogate_in_the_text_is_not_text_and_an_emoji_is(team: dict[str, Any]) -> None:
+    def sent(text: bytes) -> Any:
+        target = b'{"type": "project", "id": "%s"}' % PROJECT.encode()
+        body = b'{"target": %s, "reason": "spam", "text": "%s"}' % (target, text)
+        return team["pat"].raw("POST", "/reports", body)
+
+    refused = sent(b"a \\ud800 b")
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"text": "not_text"}
+    assert sent(b"\\ud83d\\ude42").status_code == 201
+
+
 def test_three_per_target_and_twenty_a_day(team: dict[str, Any], migrated: Engine) -> None:
     pat = team["pat"]
     card = {"type": "card", "id": a_card(team, migrated), "project": PROJECT}

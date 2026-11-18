@@ -80,6 +80,15 @@ def test_patch_and_check_refuse_the_same_way(
     assert fields(owner.post(f"{PATH}/check", written)) == {path: reason}
 
 
+def test_a_lone_surrogate_in_the_note_is_invalid_and_an_emoji_is_not(owner: flow.Human) -> None:
+    def note(text: bytes) -> bytes:
+        return b'{"pages": {"sign_in": {"de": {"note": "' + text + b'"}}}}'
+
+    refused = owner.raw("POST", f"{PATH}/check", note(b"a \\ud800 b"))
+    assert fields(refused) == {"pages.sign_in.de.note": "invalid"}
+    assert owner.raw("POST", f"{PATH}/check", note(b"\\ud83d\\ude42")).status_code == 204
+
+
 def test_check_stores_nothing(owner: flow.Human) -> None:
     assert owner.post(f"{PATH}/check", body(title="Hallo")).status_code == 204
     assert owner.get(PATH).json()["pages"]["sign_in"] == {}
