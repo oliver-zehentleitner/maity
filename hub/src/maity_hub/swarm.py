@@ -478,7 +478,7 @@ def awake(found: Window) -> dict[str, Any]:
     return {
         "hours": found.awake_hours,
         "of_hours": AWAKE_HOURS,
-        "since": clock.rfc3339(found.awake_since) if found.awake_since else None,
+        "since": clock.rfc3339_or_none(found.awake_since),
     }
 
 

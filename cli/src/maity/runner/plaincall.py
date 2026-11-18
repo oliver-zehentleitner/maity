@@ -4,8 +4,9 @@
 first word is `maity`, or whose words before a word `maity` are only assignments to the names
 in `ALLOWED_BEFORE_MAITY` (`held`), through only when it is one plain call: words of letters,
 digits and `_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
-redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is refused before the
-command runs (cli/context/runner.md). Any other line in which `maity` is a word (`prefixed`) is
+redirect, a background `&`, a substitution, a heredoc, a newline or an unescaped `$` outside
+single quotes is refused before the command runs (cli/context/runner.md). Any other line in
+which `maity` is a word (`prefixed`) is
 refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
 a subshell or a group before it, or `maity` by a path. A word counts as `maity` (and as
 `runner`) also once its backslashes and quotes are taken off (`_reads_as`), and a word that
@@ -83,8 +84,9 @@ RUNNER_REFUSED = (
 )
 REFUSED = (
     "A `maity` command runs only as one plain call: nothing piped, chained, redirected, sent to "
-    "the background or substituted, no heredoc, no newline and no `$`. Run it alone; put text "
-    "in single quotes, or write it to a file in this clone and pass that file (`--body-file`)."
+    "the background or substituted, no heredoc, no newline and no `$` outside single quotes. "
+    "Run it alone; put text in single quotes, or write it to a file in this clone and pass that "
+    "file (`--body-file`)."
 )
 FAILED = (
     "The hook failed on this tool call, so it is refused. Run each `maity` command alone, as "

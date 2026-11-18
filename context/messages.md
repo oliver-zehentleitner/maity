@@ -433,7 +433,8 @@ The hub refuses a review result without them and does not check them;
 the lead checks a sample against the diff before an approval counts.
 That sample check is a process rule for the lead, not something the
 hub enforces: the hub counts an `approve` on exactly the reported head
-on its own (`docs/api.md` §2.3, "Own approvals").
+as an own approval of outsiders' work on its own (`docs/api.md` §2.3,
+"Own approvals").
 
 **Reason:** a review that cites nothing cannot be checked except by
 redoing it; with cites the lead compares a few quotes with the diff in

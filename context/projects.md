@@ -7,7 +7,7 @@
 **Status:** active
 **Evidence:** inferred
 **Source:** contract owner, 2026-10-22; the maintainer approved the overview page the same day; contract in `docs/api.md` §6.11
-**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the counts of the open requests with the oldest one's time (`oldest_open_at`) and the cards' latest reports, and its answer repeats neither the project view nor the member view; §6.11 says the same. The hub writes the ticker's merge items since §17 (`hub/src/maity_hub/ticker.py`), and `reports` does not include them yet; the direction recorded for that moment is to add them to `reports`, de-duplicated by pull request number, not as a replacement for the card reports, and that addition is not built
+**Verification:** corroborated — re-checked 2026-11-04: `GET …/overview` (`hub/src/maity_hub/routes/overview.py`) returns only the board counts, the counts of the open requests with the oldest one's time (`oldest_open_at`) and the cards' latest reports, and its answer repeats neither the project view nor the member view; §6.11 says the same. The hub writes the ticker's merge items since §17 (`hub/src/maity_hub/ticker.py`), and `reports` does not include them yet; the direction recorded for when the change ticker landed is to add them to `reports`, de-duplicated by pull request number, not as a replacement for the card reports, and that addition is not built
 **Revisit when:** the ticker's merge items are added to `reports`, or the overview needs data no existing read has
 
 The overview page reads the project (`GET /projects/{owner}/{slug}`: name,
@@ -849,8 +849,13 @@ Only a human with `project:admin` sets them. A change of the lines
 bumps `rules_version`, so a running agent reads the new lines at its
 next resume. A value that adds no line (`false`, an empty checklist) is
 stored as given and announced, but moves no version: the rules text is
-the same. The hub cannot see a subagent or a ticked item; these are
-rules like the others.
+the same. A `PATCH` that changes the lines together with another rules
+input bumps once and writes one `rules_changed`, whose `reason` is the
+`PATCH`'s own when it gives one, else `settings.role_rules` (`docs/api.md`
+§6.1). When the same `PATCH` changes the state or the policy, its
+`state_changed` or `policy_changed` marks the new version and no
+`rules_changed` is written (§6.1). The hub cannot see a subagent or a
+ticked item; these are rules like the others.
 
 **Reason** (inferred: the decision and the alternatives are confirmed, the
 card names no reason for the two rules themselves): working a card in the main agent's context carries one

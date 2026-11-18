@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select
 
+from maity_hub import person_links
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -321,6 +323,29 @@ def test_the_person_page_shows_the_links_under_everyone_only(
     # off again: gone at once
     patch(who, links_visible="private")
     assert "example.org" not in anyone.get("/maintainer").text
+
+
+@pytest.mark.parametrize("visible", person_links.VISIBILITY)
+def test_the_page_s_links_are_the_anonymous_reader_s_case_of_admitted(
+    migrated: Engine, visible: str
+) -> None:
+    """`person_links.public`, which the person's page uses: what `admitted` gives a reader with
+    no account, the stored names of the known networks, Discord's included."""
+    human = SimpleNamespace(
+        id="hum-x",
+        links_visible=visible,
+        website="https://example.org",
+        social={"github": "octo", "discord": "oz.d", "myspace": "old"},
+    )
+    with migrated.connect() as conn:
+        anonymous = person_links.admitted(conn, {human.id: visible}, person_links.Reader(None))
+        found = person_links.public(conn, human)
+    assert (found is not None) == (human.id in anonymous) == (visible == "everyone")
+    if found is not None:
+        assert found == {
+            "website": "https://example.org",
+            "social": {"github": "octo", "discord": "oz.d"},
+        }
 
 
 def test_a_hold_on_the_profile_makes_everyone_act_as_colleagues(

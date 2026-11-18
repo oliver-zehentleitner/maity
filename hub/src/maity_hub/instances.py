@@ -25,6 +25,7 @@ from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_instance_id
 from maity_hub.models import Strict
 from maity_hub.scopes import tokens_of
+from maity_hub.seen import ONLINE, presence_by_age
 
 INSTANCE_PATTERN = re.compile(r"[2-9a-hjkmnp-z]{4,5}")
 BOUND = 1000  # the hub's bound of `max_instances`; its ceiling is in ceilings.py (§6.31)
@@ -155,7 +156,7 @@ def team(conn: Connection, row: Any, people: Mapping[str, Any] | None = None) ->
         "wake": row.wake,
         "review_within_team": bool(row.review_within_team),
         "updated_by": by,
-        "updated_at": clock.rfc3339(row.team_updated_at) if row.team_updated_at else None,
+        "updated_at": clock.rfc3339_or_none(row.team_updated_at),
     }
 
 
@@ -316,22 +317,14 @@ def resolve(
     raise invalid({field: "instance_required"}, "name the instance: the team has several")
 
 
-ONLINE_SECONDS, AWAY_SECONDS = 120, 2 * 3600
-
-
 def presence(last_used_at: datetime | None, live: bool, listening: bool) -> str:
     """One instance's presence by the table of §5.3; the membership's pause is applied
-    by the caller."""
+    by the caller. Every call writes `last_used_at`, so it is the latest call itself."""
     if listening:
         return "online"
     if not live or last_used_at is None:
         return "offline"
-    age = (clock.now() - last_used_at).total_seconds()
-    if age <= ONLINE_SECONDS:
-        return "online"
-    if age <= AWAY_SECONDS:
-        return "away"
-    return "offline"
+    return presence_by_age(clock.now() - last_used_at)
 
 
 def views(
@@ -393,11 +386,7 @@ def views(
                         "started_at": clock.rfc3339(session.started_at),
                         "listening": is_listening,
                         # When the 10 minutes ran out, while an episode is open (§5.3).
-                        "not_listening_since": (
-                            clock.rfc3339(session.not_listening_since)
-                            if session.not_listening_since is not None
-                            else None
-                        ),
+                        "not_listening_since": clock.rfc3339_or_none(session.not_listening_since),
                     }
                     if session
                     else None
@@ -407,7 +396,7 @@ def views(
                     if member.paused_since is not None or c.paused_since is not None
                     else presence(c.last_used_at, session is not None, is_listening)
                 ),
-                "last_seen_at": clock.rfc3339(c.last_used_at) if c.last_used_at else None,
+                "last_seen_at": clock.rfc3339_or_none(c.last_used_at),
                 "paused": paused_view(c),
                 "dormant": dormant_view(c),
                 "lead": member.lead_instance == c.instance,
@@ -588,11 +577,7 @@ def round_robin(conn: Connection, member: Any) -> str | None:
         if session is not None and session.id in heard:
             return True
         seen = c.last_used_at
-        return (
-            session is not None
-            and seen is not None
-            and (now - seen).total_seconds() <= ONLINE_SECONDS
-        )
+        return session is not None and seen is not None and now - seen <= ONLINE
 
     chosen: str = next((c for c in order if online(c)), order[0]).instance
     conn.execute(
