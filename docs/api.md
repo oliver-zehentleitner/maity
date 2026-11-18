@@ -4813,7 +4813,8 @@ project is public again. Such a kept entry is hidden from the client,
 so a `PATCH` cannot name it (naming it is `not_public`): the hub keeps
 every hidden entry through a `PATCH`, in its place among the entries
 the body gives (after the visible entry it followed, first when none
-did), and drops it only when the human becomes a member or the project
+did; when the body leaves that entry out, after the nearest earlier
+visible entry the body keeps, first when it keeps none), and drops it only when the human becomes a member or the project
 is deleted. A hidden entry counts toward the bound, and a `too_many`
 carries `details.hidden`, the number of hidden entries. When the bound
 is lowered below what a human holds, the stars stay: a `PATCH` that
@@ -4824,7 +4825,7 @@ to the browser session that opened it: it goes when the reader closes
 it, or when the browser starts the dashboard afresh, and it is never
 sent to the hub. Stars are private: no count, no event, no
 notification; a star is no membership (§3.4); the export (§2.9)
-carries them.
+carries them as the read shows them, hidden entries left out.
 
 For a human, `projects` lists every membership, ordered by slug, each
 with `id` (the project's fixed id, §6.25), `open_requests`: the number of open requests `GET /projects/{owner}/{slug}/requests`
@@ -21861,9 +21862,9 @@ under every value, `unlimited` included. `max_reads_per_minute` takes
 
 ### 16.5.1 Limits per project and per account
 
-`max_starred_per_human` is not built yet: the hub has no stars (§5.1,
-"Stars", tsk-yr3ckca01b9q), and a `PATCH` naming it is `invalid`
-(`extra_forbidden`).
+`max_starred_per_human` is not built yet here: the hub keeps stars
+(§5.1, "Stars", tsk-kqn8zhptf06k) bounded by the instance's value
+(§16.5) alone, and a `PATCH` naming it is `invalid` (`extra_forbidden`).
 
 The instance admin sets individual limits for one project or one human
 account, up to `unlimited`; nobody else does, and defaults stay as

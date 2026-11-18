@@ -204,6 +204,9 @@
      "social": {
       "object": {}
      },
+     "starred": {
+      "array": null
+     },
      "start_tabs": "null",
      "terms": "null",
      "timezone": "null",

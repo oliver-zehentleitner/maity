@@ -300,7 +300,7 @@ def admit(
     the caller's transaction under the project's lock, once every check of accept passed
     (§3.4). Their other open invitations by handle to this project end with it. Returns the
     new member's view."""
-    from maity_hub import project_roles, restricted, start_tabs
+    from maity_hub import project_roles, restricted, stars, start_tabs
     from maity_hub.views import member_view
 
     now = clock.now()
@@ -326,6 +326,7 @@ def admit(
     assert key is not None
     membership_id = int(key[0])
     start_tabs.append(conn, human_id, row.project_id)  # it opens as the last tab (§5.1)
+    stars.drop(conn, human_id, row.project_id)  # a membership tab from now on (§5.1 "Stars")
     actor = actor_of(membership_id)
     use(conn, row, human_id, actor)
     joined(conn, row.project_id, human_id, actor, keep=row.id)
