@@ -92,30 +92,60 @@ def aliases(conn: Connection, hub: Settings | None) -> int:
     return int(store.effective(f"limits.{ALIASES}", env, store.stored(conn, "limits"))[0])
 
 
-def agent_limit(limit: int, count: int) -> ApiError:
+def for_account(
+    conn: Connection, name: str, owner_id: str, instance_value: int | None
+) -> tuple[int | None, str]:
+    """(cap, source) of an account value for one human (§16.5.1): the instance admin's
+    override on their account first, whatever the instance's value's source, else
+    `instance_value`; None is no cap. An organisation has no account override."""
+    from maity_hub import ceilings
+
+    row = None
+    if owner_id.startswith("hum-"):
+        row = ceilings.stored_override(conn, name, human_id=owner_id)
+    if row is None:
+        return instance_value, "instance"
+    return (None if row.value == UNLIMITED else int(row.value)), "account_override"
+
+
+def project_storage(conn: Connection, hub: Settings, project_id: str) -> int | None:
+    """`max_attachment_storage_per_project` for one project (§16.5.1): the instance admin's
+    override on the project before the instance's value from any source, the environment
+    included; None is no cap."""
+    from maity_hub import ceilings
+
+    row = ceilings.stored_override(conn, PROJECT_STORAGE, project_id=project_id)
+    if row is None:
+        return of(conn, hub, PROJECT_STORAGE)
+    return None if row.value == UNLIMITED else int(row.value)
+
+
+def agent_limit(limit: int, count: int, source: str = "instance") -> ApiError:
     return ApiError(
         409,
         "agent_limit",
         "the human holds as many agent profiles as allowed",
-        {"limit": limit, "count": count},
+        {"limit": limit, "count": count, "source": source},
     )
 
 
-def project_limit(limit: int, count: int) -> ApiError:
+def project_limit(limit: int, count: int, source: str = "instance") -> ApiError:
     return ApiError(
         409,
         "project_limit",
         "the namespace holds as many projects as allowed",
-        {"limit": limit, "count": count},
+        {"limit": limit, "count": count, "source": source},
     )
 
 
 def refuse_project_over(conn: Connection, owner_id: str, limit: int | None) -> None:
     """`project_limit` when the namespace owner `owner_id` (a human or an organisation) holds
-    `limit` projects or more, archived ones included; nothing under `unlimited`. The owner's
-    row (the human's or the organisation's) is locked for the count, so that two creations or
-    moves at `limit - 1` give one project and one `project_limit`; a caller that locks an
-    organisation before a project has locked it already (§6.26)."""
+    `limit` projects or more, archived ones included; nothing under `unlimited`. `limit` is
+    the instance's value; an override on a human owner's account comes first (§16.5.1). The
+    owner's row (the human's or the organisation's) is locked for the count, so that two
+    creations or moves at `limit - 1` give one project and one `project_limit`; a caller that
+    locks an organisation before a project has locked it already (§6.26)."""
+    limit, source = for_account(conn, "max_projects_per_owner", owner_id, limit)
     if limit is None:
         return
     table = t.human if owner_id.startswith("hum-") else t.org
@@ -126,7 +156,7 @@ def refuse_project_over(conn: Connection, owner_id: str, limit: int | None) -> N
         ).scalar_one()
     )
     if count >= limit:
-        raise project_limit(limit, count)
+        raise project_limit(limit, count, source)
 
 
 def _humans_at(conn: Connection, per_human: Any, limit: int | None) -> int:
@@ -188,7 +218,8 @@ def _answer(resolved: tuple[Any, str]) -> dict[str, Any]:
 
 def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> None:
     """All of the body or nothing; `invalid` names each refused field. `null` restores the
-    default (§16.2)."""
+    default (§16.2). A value outside its range is `out_of_range`, as on the limits of one
+    project or account (§16.5.1)."""
     errors: dict[str, str] = {}
     changes: dict[str, object] = {}
     for name, value in body.items():
@@ -201,7 +232,7 @@ def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> Non
         elif value is None:
             changes[name] = None
         elif CHECKS[name](value) is None:
-            errors[name] = "invalid"
+            errors[name] = "out_of_range"
         else:
             changes[name] = value
     if errors:
