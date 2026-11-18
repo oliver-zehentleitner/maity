@@ -445,27 +445,22 @@ def test_a_successor_naming_an_owner_only_revoked_credential_waits_for_the_owner
     assert pick_up(setup, started.json()).status_code == 201
 
 
-def test_a_removal_while_another_placement_runs_on_the_credential_stops_this_one(
+def test_a_removal_after_an_owner_only_revocation_leaves_the_sibling_instance_running(
     setup: Setup, make_client: ClientFactory
 ) -> None:
-    # Another running placement names the credential, so the removal revokes nothing; after
-    # a revocation only the owner may undo, the reported placement still waits for the
-    # owner's start, and the other keeps what it had.
-    body, credential_id = with_credential(setup, make_client)
-    other = placed(setup, agent={"handle": "agent-x", "display_name": "X"})
-    with setup.engine.begin() as conn:
-        conn.execute(
-            update(t.placement)
-            .where(t.placement.c.id == other["id"])
-            .values(credential_id=credential_id)
-        )
-    _revoked_as(setup, make_client, credential_id, "leaked_in_payload", None)
-    workspace(setup, body["id"], state="removed", removes_at=None)
-    after = get(setup, body["id"])
+    """Two instances of one membership, each on its own placement and credential: the
+    removal after an owner-only revocation of the first stops the first alone (§15.5)."""
+    first, first_credential = with_credential(setup, make_client)
+    second, second_credential = with_credential(setup, make_client)
+    assert first_credential != second_credential
+    _revoked_as(setup, make_client, first_credential, "leaked_in_payload", None)
+    workspace(setup, first["id"], state="removed", removes_at=None)
+    after = get(setup, first["id"])
     assert (after["rejoin"], after["desired"]) == (True, "stopped")
-    kept = get(setup, other["id"])
-    assert (kept["rejoin"], kept["desired"]) == (False, "running")
-    assert revoked_reason(setup, credential_id) == "leaked_in_payload"
+    sibling = get(setup, second["id"])
+    assert (sibling["rejoin"], sibling["desired"]) == (False, "running")
+    assert revoked_reason(setup, first_credential) == "leaked_in_payload"
+    assert revoked_reason(setup, second_credential) is None
 
 
 def test_a_removal_without_a_credential_keeps_the_start(setup: Setup) -> None:

@@ -42,7 +42,18 @@ def setup(make_client: ClientFactory, migrated: Engine) -> Setup:
     client = make_client()
     assert hello(client, runner).status_code == 200
     agent = flow.agent(make_client, owner, role="member")
+    allow_instances(migrated, agent.id, 2)  # the joined clone plus the placement's (§15.5)
     return Setup(owner, runner, client, agent, migrated)
+
+
+def allow_instances(engine: Engine, agent_id: str, count: int) -> None:
+    """The agent's `max_instances` (§6.18), which only its owner sets through the API."""
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.agent_id == agent_id)
+            .values(max_instances=count)
+        )
 
 
 def place(s: Setup, who: Any = None, **body: Any) -> Any:
@@ -123,6 +134,7 @@ def test_a_placement_has_the_contract_shape(setup: Setup) -> None:
         "workspace_outcome",
         "approval",
         "credential_id",
+        "instance",  # the instance it runs, null before the first pickup (§15.5)
         "reported_current",
         "active",
         "closed_at",
@@ -137,6 +149,7 @@ def test_a_placement_has_the_contract_shape(setup: Setup) -> None:
         "session_hint",
         "logs_hint",
     }
+    assert body["instance"] is None
     assert body["id"].startswith("plc-") and body["project"] == "maintainer/maity"
     assert body["agent"]["id"] == setup.agent.id
     assert body["runner"] == {"id": setup.runner.id, "name": "home-laptop"}
@@ -167,6 +180,7 @@ def test_the_runner_reads_the_placement_with_its_repository(setup: Setup) -> Non
             "member": True,
             "credential_expected": False,
         },
+        "instance": None,  # until the pickup's exchange (§15.5)
         "harness": "claude-code",
         "mode": "interactive",
         "model": None,
@@ -228,13 +242,17 @@ def test_a_repository_the_runner_does_not_offer_is_refused(
     assert (response.status_code, error(response)) == (409, "repository_not_offered")
 
 
-def test_one_placement_per_membership_and_per_clone(
-    setup: Setup, make_client: ClientFactory
-) -> None:
+def test_one_placement_per_instance_and_per_clone(setup: Setup, make_client: ClientFactory) -> None:
     first = placed(setup)
+    # A member that runs is placed again as another instance, within `max_instances` (§15.5):
+    # the joined clone and the first placement fill the two it has here.
     again = place(setup, workspace={"clone": "elsewhere"})
-    assert (again.status_code, error(again)) == (409, "placement_exists")
-    assert again.json()["error"]["details"] == {"placement": first["id"]}
+    assert (again.status_code, error(again)) == (409, "instance_quota")
+    allow_instances(setup.engine, setup.agent.id, 3)
+    assert place(setup, workspace={"clone": "elsewhere"}).status_code == 201
+    taken = place(setup, workspace={"clone": first["workspace"]["clone"]})
+    assert (taken.status_code, error(taken)) == (409, "placement_exists")
+    assert taken.json()["error"]["details"] == {"placement": first["id"]}
     other = flow.agent(make_client, setup.owner)
     same_clone = place(
         setup, agent={"id": other.id}, workspace={"clone": first["workspace"]["clone"]}
@@ -364,6 +382,7 @@ def test_spawn_consent_by_decides_nothing_for_a_placement(
     assert go.status_code == 404
     assert get(setup, body["id"])["approval"]["status"] == "pending"
     # Never the proposer itself, whatever the policy.
+    allow_instances(setup.engine, other.id, 2)  # its joined clone and this placement's
     again = place(setup, proposer, agent={"id": other.id}, reason="you too").json()
     self_answer = proposer.post(
         f"/projects/maintainer/maity/requests/{again['approval']['request_id']}/answer",
@@ -468,6 +487,7 @@ def test_the_runners_owner_settles_by_acting(setup: Setup, make_client: ClientFa
 def test_who_sees_which_placement(setup: Setup, make_client: ClientFactory) -> None:
     mine = placed(setup)
     other_agent = flow.agent(make_client, setup.owner)
+    allow_instances(setup.engine, other_agent.id, 2)
     theirs = placed(setup, agent={"id": other_agent.id})
     own = setup.agent.get("/projects/maintainer/maity/placements").json()["items"]
     assert [p["id"] for p in own] == [mine["id"]]
@@ -1252,6 +1272,7 @@ def test_a_replay_shows_a_placement_only_while_the_agent_still_sees_it(
         "/projects/maintainer/maity", {"policy": {"spawn_requests": "direct"}, "reason": "go"}
     )
     other_agent = flow.agent(make_client, setup.owner)
+    allow_instances(setup.engine, other_agent.id, 2)
     path = "/api/v1/projects/maintainer/maity/placements"
     body = {"agent": {"id": other_agent.id}, "runner": setup.runner.id, "harness": "claude-code"}
     headers = admin.auth | {"Idempotency-Key": "placement-replay-0001"}
@@ -1277,11 +1298,9 @@ def _theirs(make_client: ClientFactory, s: Setup) -> tuple[flow.Human, flow.Agen
     """A second human with `members:admin` who does not own the runner, an agent of theirs,
     and an agent of theirs that may propose (role `ops`, §2.3)."""
     other = member(make_client, s.engine, "admin")
-    return (
-        other,
-        flow.agent(make_client, other, role="member"),
-        flow.agent(make_client, other, role="ops"),
-    )
+    theirs = flow.agent(make_client, other, role="member")
+    allow_instances(s.engine, theirs.id, 2)  # its joined clone and a placement's
+    return (other, theirs, flow.agent(make_client, other, role="ops"))
 
 
 def _reason(response: Any) -> Any:
@@ -1337,7 +1356,17 @@ def test_the_owners_list_shows_every_placement_on_the_runner(
     listed = setup.owner.get(f"/runners/{setup.runner.id}/placements")
     assert listed.status_code == 200, listed.text
     [line] = listed.json()["items"]
-    assert set(line) == {"id", "project", "agent", "desired", "state", "foreign", "created_at"}
+    assert set(line) == {
+        "id",
+        "project",
+        "agent",
+        "instance",  # null until the pickup; tells two instances of one agent apart (§15.3)
+        "desired",
+        "state",
+        "foreign",
+        "created_at",
+    }
+    assert line["instance"] is None
     assert (line["id"], line["project"], line["foreign"]) == (body["id"], "maintainer/maity", False)
     assert line["agent"] == {"handle": body["agent"]["handle"]} and line["state"] is None
     # Owner-only: a project admin who sees the runner gets `not_found`.

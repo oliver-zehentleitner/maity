@@ -239,8 +239,9 @@ def test_a_pickup_never_takes_over_a_live_instance(
 
 
 def test_a_pickup_respects_the_teams_instances(setup: Setup) -> None:
-    _allow_instances(setup.engine, setup.agent.id, 1)  # the joined clone has the one
     placement = placed(setup)
+    # Lowered after the creation, which checked it too (§15.5): the pickup checks again.
+    _allow_instances(setup.engine, setup.agent.id, 1)  # the joined clone has the one
     refused = pick_up(setup, placement)
     assert (refused.status_code, error(refused)) == (409, "instance_quota")
 
@@ -537,8 +538,20 @@ def test_a_new_profile_under_another_owners_boss_waits_for_the_boss_side(
 # --- supervised sessions (§15.11) ----------------------------------------------------------
 
 
+def runs(s: Setup, placement: dict[str, Any], agent: Any) -> None:
+    """The placement runs `agent`'s own instance, as after its pickup: the packet shows an
+    instance the placement that names its credential, never a sibling's (§15.11)."""
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == placement["id"])
+            .values(credential_id=agent.credential_id)
+        )
+
+
 def test_a_supervised_resume_says_so(setup: Setup) -> None:
     placement = placed(setup)
+    runs(setup, placement, setup.agent)
     supervised = setup.agent.resume(supervisor="maity-runner/0.1.0").json()
     assert supervised["hints"] == {"duty": "supervised", "cli_version": CLI_VERSION}
     assert "## Supervised" in supervised["rules"]["markdown"]
@@ -589,8 +602,43 @@ def test_each_agent_sees_its_own_placement(setup: Setup, make_client: ClientFact
     _allow_instances(setup.engine, other.id, 2)
     theirs = placed(setup, agent={"id": other.id})
     mine = placed(setup)
+    # Before its pickup a placement runs no instance yet: nobody's packet shows it.
+    assert setup.agent.resume().json()["membership"]["placement"] is None
+    runs(setup, theirs, other)
+    runs(setup, mine, setup.agent)
     assert setup.agent.resume().json()["membership"]["placement"]["id"] == mine["id"]
     assert other.resume().json()["membership"]["placement"]["id"] == theirs["id"]
+
+
+def test_each_instance_sees_its_own_placement(setup: Setup, make_client: ClientFactory) -> None:
+    """§15.11: each instance's packet names the placement that runs it, and an instance
+    joined by hand, which no placement runs, gets none, never a sibling's."""
+    _allow_instances(setup.engine, setup.agent.id, 4)
+    first, second = placed(setup), placed(setup)
+    client = make_client()
+    joined = exchange(client, pick_up(setup, second).json())
+    assert joined.status_code == 201, joined.text
+    runs(setup, first, setup.agent)  # the joined clone runs the first
+    assert setup.agent.resume().json()["membership"]["placement"]["id"] == first["id"]
+    with setup.engine.connect() as conn:
+        bound = conn.execute(
+            select(t.placement.c.credential_id).where(t.placement.c.id == second["id"])
+        ).scalar_one()
+    assert bound != setup.agent.credential_id  # the second runs an instance of its own
+    picked_up = flow.Agent(
+        client,
+        joined.text,
+        joined.headers["Maity-Credential-Id"],
+        joined.headers["Maity-Member-Id"],
+        joined.headers["Maity-Instance"],
+    )
+    assert picked_up.credential_id == bound
+    resumed = picked_up.resume()
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["membership"]["placement"]["id"] == second["id"]
+    by_hand = flow.agent(make_client, setup.owner, agent={"id": setup.agent.id}, new_instance=True)
+    assert by_hand.id == setup.agent.id and by_hand.instance not in ("", picked_up.instance)
+    assert by_hand.resume().json()["membership"]["placement"] is None
 
 
 def test_a_supervisor_is_a_runners_name(setup: Setup) -> None:
