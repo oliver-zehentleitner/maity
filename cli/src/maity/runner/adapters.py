@@ -47,7 +47,8 @@ GIT_PROMPT = (
 CLAUDE_MAITY_PROMPT = (
     " Run every `maity` command alone, as one plain call: a line that pipes, chains with `;`, "
     "`&&` or `||`, redirects, sends it to the background with `&`, uses `$(...)`, a heredoc "
-    "or a `$` is refused. Pass longer text in a file in this clone (`--body-file`)."
+    "or a `$` outside single quotes is refused. Pass longer text in a file in this clone "
+    "(`--body-file`)."
 )
 # What a line that starts with `maity` may not hold in opencode's rules (opencode_config).
 MAITY_NOT_PLAIN = (";", "&", "|", "<", ">", "`", "$", "\n")

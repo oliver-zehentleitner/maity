@@ -555,6 +555,14 @@ def _allow(conn: Connection, request: Any, reply_id: str, body: dict[str, Any]) 
             "chat_access.agents names only the request's waiting and held agents",
         )
     human = body.get("their_human", False)
+    # The reach and the rules are checked here, before any entry: an answer that writes none
+    # (no tick, or nothing to admit a ticked agent for) still records them in its history
+    # item (§9.6 "History"), which takes only what an entry would take (#1988, zxjn A1433).
+    if body.get("their_agents") is not None:
+        chat_access._their_agents(conn, side, body["their_agents"])
+    for field in ("allowed", "denied"):
+        if field in body:
+            chat_access._text(body[field], field)
     written: list[str] = []
     for agent in dict.fromkeys(ticked):
         reach = body.get("their_agents")
