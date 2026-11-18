@@ -68,17 +68,14 @@ ALLOWED = [
 NOT_DECIDED = [
     "git status | head",
     "make test && echo ok",
-    "echo maity > f",  # `maity` as another command's argument
-    "git log --grep maity | head",
-    "echo 'maity' | cat",
-    "env X='maity a' git status | cat",  # quoted text that is not `maity` as a whole
+    "env X='maity a' git status | cat",  # read again, its words are `X=maity` and `a`
 ]
 
 
 def runner_refusal(command: str) -> str:
     """The reason a runner call is refused with: a `maity` line that is not one plain call is
     refused as that, its reason naming the way out."""
-    if plaincall.applies(command) and not plaincall.plain(command):
+    if plaincall.held(command) and not plaincall.plain(command):
         return plaincall.REFUSED
     return plaincall.RUNNER_REFUSED
 
@@ -191,8 +188,8 @@ def test_quoted_text_nested_past_the_limit_is_refused_whatever_it_holds(
     assert plaincall.refusal(bash(nested(line, levels))) == plaincall.RUNNER_REFUSED
 
 
-def test_nested_text_without_runner_passes_only_up_to_the_limit() -> None:
-    assert plaincall.refusal(bash(nested("maity task show tsk-x", 4))) is None
+def test_nested_text_without_runner_is_refused_after_a_command_and_past_the_limit() -> None:
+    assert plaincall.refusal(bash(nested("maity task show tsk-x", 4))) == (plaincall.PREFIX_REFUSED)
     assert plaincall.refusal(bash(nested("maity task show tsk-x", 5))) == (plaincall.RUNNER_REFUSED)
 
 
@@ -345,12 +342,42 @@ def test_other_command_lines_are_left_to_the_permission_rules(command: str) -> N
     assert plaincall.refusal(bash(command)) is None
 
 
-# What may stand before `maity` on a line the hook decides: variable assignments and commands
-# that run the command after them, alone and combined.
-PREFIXES = [
+# Variable assignments before `maity`: one, several, `+=`, a quoted value, and a name led by a
+# letter or by `_`.
+ASSIGNMENTS = [
     "NODE_ENV=1",
     "A=1 B=2",
     "A+=1",
+    "A='x y'",
+    'A="x y"',
+    "a_b=1",
+    "_=1",
+    "_1=x",
+    "_X=1 B+=2",
+]
+
+
+@pytest.mark.parametrize("prefix", ASSIGNMENTS)
+def test_a_plain_maity_call_after_assignments_passes(prefix: str) -> None:
+    assert plaincall.refusal(bash(prefix + " maity status")) is None
+
+
+@pytest.mark.parametrize("prefix", ASSIGNMENTS)
+@pytest.mark.parametrize("rest", ["a > f", "a | x", "a && x", "a $X"])
+def test_a_maity_line_after_assignments_that_is_not_one_plain_call_is_refused(
+    prefix: str, rest: str
+) -> None:
+    assert plaincall.refusal(bash(prefix + " maity " + rest)) == plaincall.REFUSED
+
+
+@pytest.mark.parametrize("prefix", ASSIGNMENTS)
+def test_a_maity_line_after_assignments_reaching_runner_is_refused(prefix: str) -> None:
+    assert plaincall.refusal(bash(prefix + " maity runner status")) == (plaincall.RUNNER_REFUSED)
+
+
+# Anything else before `maity`: a command word by name or path, listed in an earlier version
+# or not, combined with assignments, or a shell keyword.
+PREFIXES = [
     "env",
     "env -i A=1",
     "env -u A",
@@ -377,6 +404,8 @@ PREFIXES = [
     "A=1 env nice -n 5",
     "sudo env A=1 nohup timeout 5",
     "if",
+    "stubwrap",
+    "./stubwrap -q",
 ]
 
 
@@ -386,26 +415,119 @@ def test_a_prefixed_maity_line_reaching_runner_is_refused(prefix: str) -> None:
 
 
 @pytest.mark.parametrize("prefix", PREFIXES)
-@pytest.mark.parametrize("rest", ["a > f", "a | x", "a && x", "a $X"])
-def test_a_prefixed_maity_line_that_is_not_one_plain_call_is_refused(
-    prefix: str, rest: str
-) -> None:
-    assert plaincall.refusal(bash(prefix + " maity " + rest)) == plaincall.REFUSED
+@pytest.mark.parametrize("rest", ["status", "a > f", "a | x", "a && x"])
+def test_a_maity_line_after_anything_but_assignments_is_refused(prefix: str, rest: str) -> None:
+    assert plaincall.refusal(bash(prefix + " maity " + rest)) == plaincall.PREFIX_REFUSED
 
 
 @pytest.mark.parametrize("prefix", PREFIXES)
-def test_a_prefixed_plain_maity_call_passes(prefix: str) -> None:
-    assert plaincall.refusal(bash(prefix + " maity status")) is None
+def test_a_prefixed_maity_line_with_an_expanding_word_keeps_the_runner_reason(prefix: str) -> None:
+    assert plaincall.refusal(bash(prefix + " maity a $X")) == plaincall.RUNNER_REFUSED
 
 
-# `maity` by a path, with quotes or a backslash in it, or after a `!`.
+# One line per kind of prefix that is neither assignments nor nothing.
+REFUSED_OUTRIGHT = [
+    "stubwrap maity status",  # a command word nobody listed
+    "eval maity status",
+    "eval 'maity status'",
+    "sh -c 'maity status'",
+    "bash -c 'maity status'",
+    "xargs maity status",
+    "source maity status",
+    ". maity status",
+    ": maity status",
+    ">out maity status",  # a leading redirection
+    "<in maity status",
+    "2>&1 maity status",  # a leading fd duplication
+    "if maity status",
+    "then maity status",
+    "do maity status",
+    "coproc maity status",
+    "! A=1 maity status",
+    "( true ; maity status )",  # a subshell
+    "{ true; maity status; }",  # a group
+    "/usr/local/bin/maity status",  # `maity` by a path
+    "./maity status",
+    "~/bin/maity status",
+    "A=1 /usr/local/bin/maity status",
+    "-maity status",
+    "'A=1' maity status",  # a quoted name is a command word, not an assignment
+    '"A"=1 maity status',
+    "A\\=1 maity status",
+    "\ufeffNODE_ENV=1 maity status",
+]
+
+
+@pytest.mark.parametrize("command", REFUSED_OUTRIGHT)
+def test_maity_after_anything_but_assignments_is_refused_outright(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
+
+
+# A `!`, a subshell or a group right before `maity`: the line counts as starting with `maity`
+# (a leading character a plain call may not hold is skipped) and is not one plain call.
+NOT_PLAIN_BEFORE_MAITY = ["! maity status", "!maity status", "(maity status)", "{ maity status; }"]
+
+
+@pytest.mark.parametrize("command", NOT_PLAIN_BEFORE_MAITY)
+def test_a_bang_subshell_or_group_right_before_maity_is_refused(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.REFUSED
+
+
+# A command that takes the line it runs from an option, or reads its arguments from elsewhere.
+WITH_OPTIONS = [
+    "env -S 'maity status | x'",
+    "sudo -s 'maity status | x'",
+    "xargs -a list maity",
+    "time -o out maity status",
+]
+
+
+@pytest.mark.parametrize("command", WITH_OPTIONS)
+def test_maity_after_a_command_with_options_is_refused_outright(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
+
+
+# `maity` as a word of another command's arguments, quoted or not, or in quoted text: refused,
+# and the reason names `--body-file`.
+MENTIONS = [
+    "env maity status",
+    "sudo maity status",
+    "git log --grep maity | head",
+    "echo maity | cat",
+    "echo maity > f",
+    "echo 'maity' | cat",
+    "git commit -m 'fix maity docs'",
+    'git commit -m "a; maity"',
+]
+
+
+@pytest.mark.parametrize("command", MENTIONS)
+def test_text_that_mentions_maity_as_a_word_is_refused_with_the_file_way_out(
+    command: str,
+) -> None:
+    reason = plaincall.refusal(bash(command))
+    assert reason == plaincall.PREFIX_REFUSED
+    assert "--body-file" in reason
+
+
+# Not `maity` as a word: left to the permission rules.
+NOT_A_WORD = [
+    "cat maity.md",
+    "ls maity/",
+    "git log --author maity-coder",
+    "git commit -m 'fixmaity'",
+]
+
+
+@pytest.mark.parametrize("command", NOT_A_WORD)
+def test_maity_inside_a_longer_word_is_not_decided(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is None
+
+
+# A quoted `maity` or one with a backslash, after assignments.
 DECIDED = [
-    "/usr/local/bin/maity a | x",
     "A=1 m'ai'ty a | x",
     "A=1 mai\\ty a | x",
-    "! A=1 maity a | x",
-    "! A=1 maity runner status",
-    "\ufeffNODE_ENV=1 maity a | x",  # a character the harness may trim before matching
 ]
 
 
@@ -414,9 +536,29 @@ def test_other_spellings_of_a_maity_line_are_decided(command: str) -> None:
     assert plaincall.refusal(bash(command)) == plaincall.REFUSED
 
 
+# Lines held to a plain call in an earlier version, refused outright now.
+NOW_OUTRIGHT = [
+    "/usr/local/bin/maity a | x",
+    "! A=1 maity a | x",
+    "\ufeffNODE_ENV=1 maity a | x",
+]
+
+
+@pytest.mark.parametrize("command", NOW_OUTRIGHT)
+def test_a_path_a_bang_or_a_trimmed_character_before_maity_is_refused_outright(
+    command: str,
+) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
+
+
+def test_a_runner_call_after_a_prefix_keeps_the_runner_reason() -> None:
+    assert plaincall.refusal(bash("! A=1 maity runner status")) == plaincall.RUNNER_REFUSED
+
+
 def test_an_unreadable_line_is_decided_only_when_it_names_maity() -> None:
-    assert plaincall.applies("A=1 maity a 'x")
-    assert not plaincall.applies("A=1 git a 'x")
+    assert plaincall.held("A=1 maity a 'x")
+    assert not plaincall.held("A=1 git a 'x")
+    assert not plaincall.prefixed("A=1 git a 'x")
 
 
 @pytest.mark.parametrize("command", ["maity status", "NODE_ENV=1 maity status", "git status"])

@@ -138,12 +138,17 @@ first: `maity say <to> --type notice - <<'EOF'` with a quoted heredoc, or
 `--body-file` (`say`, `ask`), `--summary -`/`--summary-file` (`report`),
 `-m -`/`--last-file` and `--next-file` (`checkpoint`).
 A placed Claude Code agent under the runner's sandbox runs `maity` only as
-one plain call: a line that starts with `maity`, also after variable
-assignments or a command such as `env`, `nice` or `sudo`, and holds a
-heredoc, a pipe, a chain, a redirect or a `$` is refused before it runs,
-so its text
+one plain call at the start of the line: a line that starts with `maity`,
+or with variable assignments and then `maity` (`NODE_ENV=1 maity status`),
+and holds a heredoc, a pipe, a chain, a redirect or a `$` is refused
+before it runs, so its text
 goes in a file in the clone (`--body-file`, `--summary-file`,
 `--last-file`, `--next-file`) or in single quotes.
+Anything else before a word `maity` refuses the line outright: another
+command (`env`, `sudo`, `sh -c`, `eval`, any other), a shell keyword, `!`,
+a redirection, a subshell or a group, and `maity` by a path. That covers
+text too: `echo maity | cat` or `git commit -m 'fix maity'` is refused,
+so text that mentions `maity` goes in a file (`--body-file`).
 `maity runner` is the runner's own command: in a placed Claude Code
 session, a line in which a word `runner` follows a word `maity` is refused,
 also when `runner` is only text, quoted or not, so such text goes in a file
