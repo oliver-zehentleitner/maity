@@ -17,6 +17,9 @@ from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
+KEPT = "private, max-age=31536000, immutable"  # a request under the current version (§6.10)
+REVALIDATED = "private, no-cache"  # any other request for a picture
+
 
 @pytest.fixture(autouse=True)
 def _fresh_changes() -> None:
@@ -60,7 +63,7 @@ def test_an_upload_is_reencoded_and_served(owner: flow.Human) -> None:
     served = owner.client.get(body["avatar_url"])
     assert served.status_code == 200
     assert served.headers["content-type"] == "image/png"
-    assert served.headers["cache-control"] == "private, no-cache"
+    assert served.headers["cache-control"] == KEPT  # avatar_url names the current version
     assert served.headers["content-security-policy"] == "default-src 'none'; sandbox"
     picture = Image.open(io.BytesIO(served.content))
     assert (picture.format, picture.size, picture.mode) == ("PNG", (256, 256), "RGBA")
@@ -230,6 +233,59 @@ def test_who_may_read_a_picture(
             tag = owner.client.get(url).headers["etag"]
             assert client.get(url, headers={**headers, "If-None-Match": tag}).status_code == 404
     assert stranger.client.get("/api/v1/avatars/hum-nobody").status_code == 404
+
+
+def test_the_current_version_is_kept_for_good_at_every_size(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    url = put_human(owner, "/me/avatar", image()).json()["avatar_url"]
+    served = owner.client.get(url)
+    assert served.status_code == 200 and served.headers["cache-control"] == KEPT
+    again = owner.client.get(url, headers={"If-None-Match": served.headers["etag"]})
+    assert again.status_code == 304 and again.headers["cache-control"] == KEPT
+    small = owner.client.get(f"{url}&s=32")  # one address names every size (§6.10, Sizes)
+    assert small.status_code == 200 and small.headers["cache-control"] == KEPT
+    assert small.headers["etag"] != served.headers["etag"]
+    agent = flow.agent(make_client, owner)  # a generated picture, not an upload
+    agent_url = agent.resume().json()["me"]["avatar_url"]
+    assert owner.client.get(agent_url).headers["cache-control"] == KEPT
+
+
+def test_any_other_version_is_revalidated(owner: flow.Human) -> None:
+    old = put_human(owner, "/me/avatar", image()).json()["avatar_url"]
+    path = old.split("?", 1)[0]
+    size_tag = owner.client.get(f"{old}&s=32").headers["etag"].strip('"')
+    url = put_human(owner, "/me/avatar", image(size=(120, 90))).json()["avatar_url"]
+    assert url != old
+    current = url.split("?v=", 1)[1]
+    for other in (
+        path,  # no `v`
+        old,  # the picture before the change
+        f"{path}?v={size_tag}&s=32",  # a size's own ETag, at that size
+        f"{path}?v={size_tag}",  # and at the stored size
+        f"{url}&v={current}",  # `v` twice
+        f"{path}?v=%22{current}%22",  # the ETag with its quotes
+    ):
+        answer = owner.client.get(other)
+        assert answer.status_code == 200, other
+        assert answer.headers["cache-control"] == REVALIDATED, other
+    assert owner.client.get(url).headers["cache-control"] == KEPT
+
+
+def test_a_caller_who_may_not_read_gets_no_cache_under_the_current_version(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    url = put_human(owner, "/me/avatar", image()).json()["avatar_url"]
+    tag = owner.client.get(url).headers["etag"]
+    stranger = flow.human(make_client, migrated, "stranger")
+    flow.project(stranger, "elsewhere")
+    for headers in ({}, {"If-None-Match": tag}):
+        refused = stranger.client.get(url, headers=headers)
+        assert refused.status_code == 404
+        assert refused.headers["cache-control"] == "no-store"
+        refused_small = stranger.client.get(f"{url}&s=32", headers=headers)
+        assert refused_small.status_code == 404
+        assert refused_small.headers["cache-control"] == "no-store"
 
 
 def test_the_picture_is_stored_once_per_owner(owner: flow.Human, migrated: Engine) -> None:

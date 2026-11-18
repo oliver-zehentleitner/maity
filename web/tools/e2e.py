@@ -804,14 +804,6 @@ def join_line(
     if not panel.is_visible():
         join_any(page)
     expect(panel).to_be_visible()
-    # The experiment notice (docs/api.md §5.1): until the person confirms it, once per account;
-    # it holds the form back in nothing.
-    notice = panel.locator(".experiment-notice")
-    if notice.count():
-        expect(notice).to_contain_text("Maity is a public experiment at an early stage.")
-        run.a11y(page, "join panel with the experiment notice")
-        notice.get_by_role("button", name="Understood", exact=True).click()
-        expect(notice).to_have_count(0)
     if handle:
         page.locator("#join-agent").select_option("")  # "A new agent profile…"
         expect(page.locator("#join-handle")).to_be_visible()
@@ -934,6 +926,7 @@ def main() -> int:
                     form_column_layout(run, browser)
                     switch_busy_layout(run, browser)
                     report_pages_round(run, browser)
+                    public_first_paint_round(run, browser)
                     stored_pages_policy_round(run, browser)
                     second_hub_round(run, browser, work, artifacts)
                     security_round(run, browser, work, artifacts)
@@ -976,7 +969,7 @@ def scenario(run: Run, page: Page) -> None:
     run.step("sign in as the owner created with maity-hub owner create")
     page.goto(run.base + "/")
     expect(page.get_by_role("button", name="Sign in", exact=True)).to_be_visible()
-    # The landing page's header and footer around it (§16.7.5), laid out by the hub's two stylesheets.
+    # The landing page's header and footer around it (§16.7.5), laid out by the hub's frame stylesheets.
     expect(page.locator("header.site-header .signin")).to_have_text("Sign in")
     expect(page.locator("footer.site-footer nav.foot-col").first).to_be_visible()
     expect(page.locator("#header")).to_be_hidden()
@@ -985,8 +978,8 @@ def scenario(run: Run, page: Page) -> None:
     expect(page.locator(".door-page")).to_have_css("display", "grid")
     run.shot(page, "sign-in")
     run.a11y(page, "sign-in")
-    # The dashboard's sheet of the public sections (css/public-sections.css) is switched with the
-    # frame's two: on in the frame, off in the signed-in dashboard (review of #1820).
+    # The sheet of the public sections (/assets/landing/public-sections.css) is switched with the
+    # frame's other two: on in the frame, off in the signed-in dashboard (review of #1820).
     sections = "() => [...document.styleSheets].some((s) => (s.href || '').split('/').pop().split('?')[0] === 'public-sections.css' && !s.disabled)"
     assert page.evaluate(sections), "the sections' stylesheet is not on in the frame"
     page.locator("#login-email").fill(OWNER_EMAIL)
@@ -1845,9 +1838,23 @@ def attachments_step(run: Run, page: Page, agent_id: str) -> None:
     pending = page.locator(".attach-pending li", has_text="e2e-shot.png")
     # Uploaded once its Remove is there (the hub answered); a refusal is a failure here.
     expect(pending.get_by_role("button", name="Remove e2e-shot.png", exact=True)).to_be_visible()
+    # A pasted image (tsk-e40k9yxt574b) takes the same way: a real ClipboardEvent in Chromium,
+    # uploaded at once, pending under its own name with Remove.
+    run.step("attachments: an image pasted into the message field is attached like a picked file")
+    page.locator("#chat-text").evaluate(
+        """(field, bytes) => {
+            const data = new DataTransfer();
+            data.items.add(new File([new Uint8Array(bytes)], "image.png", { type: "image/png" }));
+            field.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+        }""",
+        list(tiny_png(24, 24, (200, 60, 40))),
+    )
+    pasted = page.locator(".attach-pending li", has_text=re.compile(r"pasted-image-\d{8}-\d{6}\.png"))
+    expect(pasted.get_by_role("button", name=re.compile(r"^Remove pasted-image-\d{8}-\d{6}\.png$"))).to_be_visible()
     run.step("attachments: the owner sends an image to the agent; it shows inline from the hub")
     page.locator("#chat-text").fill("a picture")
     page.locator("form.compose").get_by_role("button", name="Send", exact=True).click()
+    expect(page.locator("ol.messages li.msg.out").last.locator("img.attach-image")).to_have_count(2)
     img = page.locator("ol.messages li.msg.out img.attach-image").last
     expect(img).to_have_attribute("src", re.compile(r"^/api/v1/projects/owner/e2e-alpha/attachments/[A-Za-z0-9_-]+/content$"))
     page.wait_for_function("() => { const i = [...document.querySelectorAll('img.attach-image')].pop(); return i && i.complete; }")
@@ -3909,7 +3916,8 @@ def chat_phone_views(run: Run, browser) -> None:
                 if phone:
                     assert len(parts) == 1 and parts[0].startswith("Maity ") and line and line["height"] < 48, f"{where}: {parts} {line}"
                 else:
-                    assert len(parts) == 7, f"{where}: the product line shows {parts}"
+                    # Five parts and the four separators between them, the last "Chat with us on Discord".
+                    assert len(parts) == 9 and parts[-1] == "Chat with us on Discord", f"{where}: the product line shows {parts}"
                 people = pane.locator(".group-people-line")
                 assert people.count() == 1 and people.is_visible() is not phone, f"{where}: In it: shown {people.is_visible()}"
                 label = pane.locator(".compose-head label[for='chat-text']")
@@ -4989,16 +4997,92 @@ def report_step(run: Run, page: Page) -> None:
 REPORTER = ("rita", "Rita", "rita@e2e.example", "e2e rita password")
 
 
+def public_first_paint_round(run: Run, browser) -> None:
+    """A public page's first paint is its final page (tsk-777vkhtzmq6f, tsk-zhyqdtt5v59c): signed
+    out, the hub sends its stored page inside the shell. A project's, a person's and an agent's
+    page are stored in the dashboard's design, so each stands at once, styled by the frame's
+    stylesheets the shell links, and the dashboard's drawing over it keeps its place (only an
+    organisation's page still waits in `.hub-page`). The public read is held back, so the moment
+    between the two is looked at; without a script each shows at once."""
+    run.step("public pages: the first paint is the page drawn in its frame, never a second layout")
+    pages = (
+        ("/owner/e2e-alpha", "project", "section.phero"),
+        ("/owner", "person", "section.uhero"),
+        ("/owner/agents/e2e-agent", "agent", "section.uhero"),
+    )
+    for path, kind, hero in pages:
+        context = browser.new_context(viewport={"width": 1280, "height": 900})
+        context.set_default_timeout(TIMEOUT_MS)
+        page = context.new_page()
+        watch_page(run, page)
+        held: list = []
+
+        def hold(route) -> None:
+            held.append(route)  # answered below, once the moment in between is looked at
+
+        page.route("**/api/v1/public/pages/**", hold)
+        page.goto(run.base + path)
+        waited = 0
+        while not held and waited < TIMEOUT_MS:
+            page.wait_for_timeout(50)
+            waited += 50
+        assert held, f"{path}: the dashboard never asked for the public page"
+        # Shown at once in the dashboard's design: the frame's sheets in the head, loaded once.
+        first = page.evaluate(
+            "(hero) => { const v = document.querySelector('main > section.view-visitor.public-view');"
+            " const s = v && v.querySelector(hero); const h = s && s.querySelector('h1');"
+            " return v ? [getComputedStyle(v).visibility, s ? getComputedStyle(s).backgroundColor : null,"
+            " h ? Math.round(h.getBoundingClientRect().left) : null, v.getAttribute('data-kind'),"
+            " !!document.querySelector('main .hub-page')] : null; }",
+            hero,
+        )
+        assert first is not None and first[0] == "visible" and first[1] == "rgb(11, 15, 20)" and first[2] is not None, (
+            f"{path}: the hub's stored page before the redraw: {first!r}"
+        )
+        assert first[3] == kind and not first[4], f"{path}: the hub's page, not in .hub-page: {first!r}"
+        # Kept, so the dashboard's drawing is told from the hub's page of the same structure.
+        page.evaluate("() => { window.__hubPage = document.querySelector('main > section.view-visitor'); }")
+        for route in held:  # answered before the handler goes: a removed one passes them on itself
+            route.continue_()
+        page.unroute("**/api/v1/public/pages/**")
+        # The dashboard's view, not the hub's page of the same structure kept above.
+        expect(page.locator(f"main .view-visitor[data-kind='{kind}']")).to_be_visible()
+        expect(page.locator("main .hub-page")).to_have_count(0)
+        page.wait_for_function(
+            "() => { const v = document.querySelector('main > section.view-visitor');"
+            " return v && v !== window.__hubPage; }"
+        )
+        # The drawing over it: the same name in the same column, and each sheet linked once.
+        left = page.locator(f"main {hero} h1").evaluate("h => Math.round(h.getBoundingClientRect().left)")
+        assert left == first[2], f"{path}: the name moved from {first[2]} to {left} px"
+        hrefs = page.evaluate(
+            "[...document.querySelectorAll('link[rel=stylesheet]')].map(l => l.getAttribute('href').split('?')[0])"
+            ".filter(h => h.startsWith('/assets/landing/'))"
+        )
+        assert sorted(hrefs) == sorted(set(hrefs)) and len(hrefs) == 3, f"{path}: the frame's sheets {hrefs}"
+        context.close()
+    # Without a script nothing replaces them: each shows at once.
+    context = browser.new_context(viewport={"width": 1280, "height": 900}, java_script_enabled=False)
+    context.set_default_timeout(TIMEOUT_MS)
+    page = context.new_page()
+    for path, kind, hero in pages:
+        page.goto(run.base + path)
+        shown = page.locator(f"main > section.view-visitor.public-view[data-kind='{kind}'] {hero} h1")
+        expect(shown).to_be_visible()
+        expect(page.locator("main .hub-page")).to_have_count(0)
+    context.close()
+
+
 def report_pages_round(run: Run, browser) -> None:
     """Report where a stranger sees the thing (docs/api.md §16.9 "A report link", §16.8;
     tsk-w0g9d128wgma), on the hub: signed out, a person's page, an agent's page, a project's page
     and a card's page each carry **Report** to the sign-in with the page's own address and
-    `?report`, and a person's agents page none; the sign-in through that link comes back to the
-    same address in the dashboard with the report form open, for a second person who is no
-    member. Signed in, `/<handle>/agents` is the person view's Agents tab (§6.27, §16.11), each
-    listed agent linked to its page, where Report is. Late in the first hub's run: the second
-    person would change what earlier steps count."""
-    run.step("report: each public page's Report signs in and comes back with the form open; the Agents tab")
+    `?report`, and `/<handle>/agents` names nothing; the sign-in through that link comes back to
+    the same address in the dashboard with the report form open, for a second person who is no
+    member. Signed in, a person's view lists their agents (§6.27), each linked to its page, where
+    Report is. Late in the first hub's run: the second person would change what earlier steps
+    count."""
+    run.step("report: each public page's Report signs in and comes back with the form open; a person's agents")
     handle, name, address, password = REPORTER
     hub_command(run, ["owner", "create", "--handle", handle, "--display-name", name, "--email", address], password + "\n")
 
@@ -5015,10 +5099,14 @@ def report_pages_round(run: Run, browser) -> None:
     card = page.locator("a[href*='/owner/e2e-alpha/tasks/tsk-']").first.get_attribute("href")
     card = "/" + card.split("://", 1)[-1].split("/", 1)[-1] if "://" in card else card
     assert re.fullmatch(r"/owner/e2e-alpha/tasks/tsk-[a-z0-9]+", card), card
-    # Signed out, the person's agents page carries no Report (§16.9): each agent has its own page.
-    page.goto(f"{run.base}/owner/agents")
-    expect(page.locator("main a[href='/owner/agents/e2e-agent']")).to_be_visible()
-    expect(page.locator("a[href*='%3Freport']")).to_have_count(0)
+    # Signed out, /<handle>/agents names nothing since the agents stand on the person's page
+    # (§16.9, tsk-2t7efzj1p8zt): the dashboard's not found at the same address, no redirect, and
+    # the hub's `404` with the shell, an address that can never be a page (§16.11).
+    got = page.goto(f"{run.base}/owner/agents")
+    assert got is not None and got.status == 404, got and got.status
+    run.problems[:] = [p for p in run.problems if p != "GET /owner/agents answered 404"]
+    expect(page.locator("section.view-not-found")).to_contain_text("This page does not exist, or it is not public.")
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/agents$"))
     context.close()
 
     pages = (
@@ -5047,21 +5135,20 @@ def report_pages_round(run: Run, browser) -> None:
             run.a11y(page, "report, signed in from a person's page")
         context.close()
 
-    # Signed in: the Agents tab of a person's view lists their agents, each linked to its page,
-    # which carries Report (#1719: the address showed "couldn't load" before).
+    # Signed in: a person's view lists their agents under the projects, no tabs (§6.27, §16.9,
+    # tsk-2t7efzj1p8zt), each linked to its page, which carries Report (#1719).
     context, page = fresh()
     page.goto(run.base + "/login")
     page.locator("#login-email").fill(address)
     page.locator("#login-password").fill(password)
     page.get_by_role("button", name="Sign in", exact=True).click()
     expect(page.locator("header .me")).to_contain_text(name)
-    page.goto(run.base + "/owner/agents")
-    tabs = page.locator("nav.person-tabs")
-    expect(tabs.get_by_role("link", name="Agents", exact=True)).to_have_attribute("aria-current", "page")
+    page.goto(run.base + "/owner")
+    expect(page.locator("nav.person-tabs")).to_have_count(0)
     agent = page.locator("ul.person-agents li", has_text="(e2e-agent)").get_by_role("link")
     expect(agent).to_have_attribute("href", "/owner/agents/e2e-agent")
-    run.shot(page, "person-agents-tab")
-    run.a11y(page, "a person's Agents tab, signed in")
+    run.shot(page, "person-view-agents")
+    run.a11y(page, "a person's view with their agents, signed in")
     agent.click()
     expect(page).to_have_url(re.compile(r"/owner/agents/e2e-agent$"))
     expect(page.get_by_role("button", name="Report this agent to the instance's admins", exact=True)).to_be_visible()
@@ -5078,7 +5165,7 @@ def report_pages_round(run: Run, browser) -> None:
 
 
 def stored_pages_policy_round(run: Run, browser) -> None:
-    """Every stored public page the sitemap lists, plus a person's agents page, as a visitor
+    """Every stored public page the sitemap lists, plus a person's and an agent's page, as a visitor
     without a session: once at its address, where the page stands inside the app shell under
     the shell's policy (`default-src 'self'`, no inline style), and once at `?as=public` under the
     page's own. Not one refusal by the policy (tsk-8fk897a9tan8): the per-day bars of a project's
@@ -5088,7 +5175,7 @@ def stored_pages_policy_round(run: Run, browser) -> None:
     with urllib.request.urlopen(run.base + "/sitemap.xml", timeout=10) as answer:
         sitemap = answer.read().decode()
     # One page of each shape: every page of the first project, one card of each kind (task,
-    # release, contract), the person's pages and their agents'. The page bucket spends 60 reads a
+    # release, contract), the person's page and their agents'. The page bucket spends 60 reads a
     # minute per address (§16.9), and pages of one shape share one render.
     paths: list[str] = []
     shapes: set[str] = set()
@@ -5105,7 +5192,7 @@ def stored_pages_policy_round(run: Run, browser) -> None:
         shapes.add(shape)
         paths.append(path)
     # Pages a sitemap leaves out (`noindex` ones among them) but a visitor reaches all the same.
-    paths += [p for p in ("/owner", "/owner/agents", "/owner/agents/e2e-agent") if p not in paths]
+    paths += [p for p in ("/owner", "/owner/agents/e2e-agent") if p not in paths]
     assert "/owner/e2e-alpha" in paths and any("/tasks/" in p for p in paths), paths
     context = browser.new_context(viewport={"width": 1280, "height": 900})
     context.set_default_timeout(TIMEOUT_MS)
@@ -5304,7 +5391,10 @@ def stored_page_layout(run: Run, browser) -> None:
             assert answer is not None and answer.status == 200, f"{where}: {answer.status if answer else None}"
             expect(seen.locator("header.site-header")).to_be_visible()
             expect(seen.locator("footer.site-footer")).to_be_visible()
-            expect(seen.locator("main .stored-page h1")).to_be_visible()
+            # A project's page is stored in the dashboard's design: it stands in <main> as it is,
+            # where the dashboard puts its view (§16.9, tsk-zhyqdtt5v59c).
+            expect(seen.locator("main > section.view-visitor.public-view[data-kind='project'] section.phero h1")).to_be_visible()
+            expect(seen.locator("main .stored-page")).to_have_count(0)
             # The landing page's controls (req-q34v0gr2rbw2): its one script, the theme switch, the
             # language row keeping `as=public`.
             scripts = seen.evaluate("[...document.scripts].map(s => (s.src || 'inline').split('/').pop().split('?')[0])")
@@ -5334,7 +5424,7 @@ def stored_page_layout(run: Run, browser) -> None:
             else:
                 expect(toggle).to_be_hidden()
             sheets = seen.evaluate("[...document.styleSheets].map(s => (s.href || '').split('/').pop().split('?')[0])")
-            assert {"landing.css", "public-pages.css"} <= set(sheets), f"{where}: {sheets}"
+            assert {"landing.css", "public-pages.css", "public-sections.css"} <= set(sheets), f"{where}: {sheets}"
             wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
             assert wide <= 0, f"{where}: {wide} px wider than the window"
             assert not refused, f"{where}: {refused}"
@@ -5446,6 +5536,82 @@ def visitor_layout(run: Run, browser) -> None:
             context.close()
 
 
+def profile_layout(run: Run, browser) -> None:
+    """A person's and an agent's page for a visitor in the approved mockup's layout (person.html,
+    agent.html; tsk-2t7efzj1p8zt), light and dark, desktop and phone: the dark hero with the
+    picture beside the name (stacked on a phone), the projects as tile cards, the person's agents
+    as cards on the one page with no tabs, the agent's figures as a band; nothing wider than the
+    window, no policy refusal, axe clean. The state changes once after loading (from the person's
+    page to the agent's by its card, a route change) and is compared with a fresh load of it."""
+
+    def measure(seen: Page, where: str, kind: str, width: int) -> dict:
+        # The view of this kind, not the one being left: after a route change the old view stays,
+        # inert, until the new one is drawn (js/app.js render), so a check of "a hero" could read
+        # the old page or a style mid-switch. The colour is waited for, as the page settles.
+        hero = seen.locator(f"section.view-visitor.profile-view[data-kind='{kind}']:not([inert]) section.uhero")
+        expect(hero.locator("h1")).to_be_visible()
+        expect(hero).to_have_css("background-color", "rgb(11, 15, 20)")  # the dark zone
+        expect(hero.locator("p.crumb")).to_have_text("Agent" if kind == "agent" else "Person")
+        pic = hero.locator(".wrap > .av")
+        side = pic.evaluate("e => Math.round(e.getBoundingClientRect().width)")
+        assert side == (96 if width < 760 else 128), f"{where}: the picture is {side} px"
+        assert pic.evaluate("e => getComputedStyle(e).borderRadius") != "50%" if kind == "agent" else True, f"{where}: the agent's picture is round"
+        stacked = hero.locator(".wrap").evaluate("e => getComputedStyle(e).flexDirection") == "column"
+        assert stacked == (width < 760), f"{where}: the hero stacked is {stacked}"
+        expect(seen.locator("nav.person-tabs, nav.ptabs")).to_have_count(0)
+        projects = seen.locator("section.profile-projects .pgrid")
+        expect(projects.locator("a.pcard").first).to_be_visible()
+        got = {"stacked": stacked, "projects": projects.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")}
+        assert got["projects"] == (1 if width < 760 else 3), f"{where}: {got['projects']} project columns"
+        if kind == "person":
+            agents = seen.locator("section.profile-agents .mgrid")
+            expect(agents.locator("a.mcard[href='/owner/agents/e2e-agent']")).to_be_visible()
+            got["agents"] = agents.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
+            assert got["agents"] == (1 if width < 760 else 4), f"{where}: {got['agents']} agent columns"
+        else:
+            expect(hero.locator("p.owner a[href='/owner']")).to_be_visible()
+            expect(hero.locator("dl.facts dt").first).to_be_visible()
+            band = seen.locator("section.band .stats4")
+            expect(band.locator(".stat").first).to_be_visible()
+            got["figures"] = band.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
+            assert got["figures"] == (2 if width < 760 else 4), f"{where}: {got['figures']} figure columns"
+        sheets = seen.evaluate("[...document.styleSheets].filter(s => !s.disabled).map(s => (s.href || '').split('/').pop().split('?')[0])")
+        assert "public-sections.css" in sheets, f"{where}: {sheets}"
+        expect(seen.locator("header.site-header")).to_be_visible()
+        expect(seen.locator("footer.site-footer")).to_be_visible()
+        wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        assert wide <= 0, f"{where}: {wide} px wider than the window"
+        return got
+
+    run.step("public pages: a person's and an agent's page in the mockup's layout, light and dark, desktop and phone")
+    for width, height in ((1280, 900), (390, 844)):
+        for scheme in ("light", "dark"):
+            context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+            context.set_default_timeout(TIMEOUT_MS)
+            seen = context.new_page()
+            refused: list[str] = []
+            seen.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
+            # The person's page: the shell carries the hub's stored page until the dashboard draws.
+            seen.goto(f"{run.base}/owner")
+            measure(seen, f"/owner at {width}x{height} {scheme}", "person", width)
+            refused.clear()
+            run.shot(seen, f"visitor-person-{width}-{scheme}")
+            if width == 1280:
+                run.a11y(seen, f"/owner for a visitor, {scheme}")
+            # Once changed after loading: on to the agent's page by its card, drawn by the dashboard.
+            seen.locator("section.profile-agents a.mcard[href='/owner/agents/e2e-agent']").click()
+            expect(seen).to_have_url(f"{run.base}/owner/agents/e2e-agent")
+            changed = measure(seen, f"/owner/agents/e2e-agent after a change at {width}x{height} {scheme}", "agent", width)
+            assert not refused, f"{width}x{height} {scheme}: {refused[:2]}"
+            seen.goto(f"{run.base}/owner/agents/e2e-agent")
+            fresh = measure(seen, f"/owner/agents/e2e-agent at {width}x{height} {scheme}", "agent", width)
+            assert changed == fresh, f"{width}x{height} {scheme}: after a change {changed}, fresh {fresh}"
+            run.shot(seen, f"visitor-agent-{width}-{scheme}")
+            if width == 1280:
+                run.a11y(seen, f"/owner/agents/e2e-agent for a visitor, {scheme}")
+            context.close()
+
+
 def visitor_step(run: Run, page: Page) -> None:
     """A browser without a session never ends at the login on a public address (tsk-jj1tfre7n6zb)."""
     run.step("public pages: a visitor reaches them, a dashboard address links them from the login")
@@ -5484,6 +5650,7 @@ def visitor_step(run: Run, page: Page) -> None:
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha/board")
     expect(guest.locator('section.view-visitor[data-kind="board"]')).to_be_visible()
     visitor_layout(run, page.context.browser)
+    profile_layout(run, page.context.browser)
     # The way to sign in leads to the form, and the address it came from is kept.
     guest.locator("header.site-header a.signin").click()
     expect(guest.locator("#login-email")).to_be_visible()
@@ -6118,38 +6285,34 @@ def notifications_step(run: Run, page: Page, alpha: Path) -> None:
     page.keyboard.press("Escape")  # the focus is on the bell after the click
     expect(panel).to_be_hidden()
     expect(bell).to_be_focused()
-    # A mention of the owner (nte-nkwh5y6n4ve2): the unread line beside the project's tabs and the
-    # filtered All notifications page it leads to, each under axe; Mark all read there marks the
-    # mentions of that project only, and the line goes. "@owner" is a group word, never a member
-    # (§8.6), so the agent names the owner by the alias handle_hints_step left (LONG_OWNER).
-    run.step("notifications: a mention of the owner shows its line beside the tabs and the filtered list, both under axe")
+    # A mention of the owner (nte-nkwh5y6n4ve2): the bell announces it and nothing else does (the maintainer,
+    # 2026-11-16, tsk-e78jc2jgqhcb): no line under the project's tabs, no number on its pill for it. The filtered
+    # All notifications page still lists it by its address, under axe; Mark all read there marks the mentions of
+    # that project only. "@owner" is a group word, never a member (§8.6), so the agent names the owner by the alias
+    # handle_hints_step left (LONG_OWNER).
+    run.step("notifications: a mention of the owner is in the bell, with no line under the tabs; the filtered list under axe")
     cursor = run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after="latest", wait=0)["cursor"]
     run.maity(alpha, "say", "all", f"A mention for @{LONG_OWNER} in the e2e run.", "--type", "notice")
     said = [e for e in run.api(alpha, "GET", "/projects/owner/e2e-alpha/events", after=cursor, wait=0)["items"]
             if e.get("kind") == "message"]
     assert len(said) == 1 and len(said[0]["payload"].get("mentions") or []) == 1, said  # the alias resolved to the owner
     page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    line = page.locator("header p.mention-note a")
-    expect(line).to_be_visible(timeout=20000)
-    expect(line).to_have_attribute("href", "/notifications?kind=mention&project=owner%2Fe2e-alpha")
-    run.a11y(page, "the unread mention line")
-    # Not on the Chat tab, the maintainer's choice, where the list shows chat mentions as an @ (tsk-sesdq48m9ewk); back on the
-    # inbox the line is there again.
-    page.goto(f"{run.base}/owner/e2e-alpha/chat")
-    expect(page.locator(".chat-list-pane")).to_be_visible()
+    expect(page.locator("main section.view-inbox")).to_be_visible()
+    bell.click()
+    panel = page.locator("header .bell-panel")
+    expect(panel).to_be_visible()
+    expect(panel.locator(".bell-counts")).to_contain_text("Mentions", timeout=20000)
+    run.a11y(page, "the bell with an unread mention")
+    page.keyboard.press("Escape")
+    expect(panel).to_be_hidden()
     expect(page.locator("header p.mention-note")).to_have_count(0)
-    page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    expect(line).to_be_visible(timeout=20000)
-    line.click()
-    expect(page).to_have_url(re.compile(r"/notifications\?kind=mention&project=owner%2Fe2e-alpha$"))
+    expect(page.locator("header")).not_to_contain_text("unread mention")
+    page.goto(f"{run.base}/notifications?kind=mention&project=owner%2Fe2e-alpha")
     mark_all = page.get_by_role("button", name="Mark all read", exact=True)
     expect(mark_all).to_be_enabled(timeout=10000)  # the unread mention is listed
     run.a11y(page, "notifications filtered to mentions in a project")
     mark_all.click()
     expect(mark_all).to_be_disabled()
-    page.goto(f"{run.base}/owner/e2e-alpha/inbox")
-    expect(page.locator("main section.view-inbox")).to_be_visible()
-    expect(page.locator("header p.mention-note")).to_be_hidden(timeout=20000)
     no_problems(run, "notifications")
 
 
@@ -7934,8 +8097,8 @@ def project_tabs_step(run: Run, page: Page) -> None:
 SETTINGS_SECTIONS = {
     "General": ["Project language", "Project state", "Repository", "Links", "Project name", "Public page",
                 "README badge", "Change ticker", "Forge webhook", "Logo and banner"],
-    "Members and agents": ["Members' own agents", "Agents of owners who are not members", "Onboarding",
-                           "Restricted access", "Agent signing"],
+    "Members and agents": ["Members' own agents", "Agents on runners", "Agents of owners who are not members", "Onboarding",
+                           "Restricted access", "Agent signing", "Roles"],
     "Way of working": ["Who closes a card", "Memory", "Keep the Why commitment", "Keep the Why personal settings",
                        "Jour fixe series"],
     "Moderation": ["Remove a reported message", "Files waiting to be sent"],

@@ -106,11 +106,43 @@ window.Maity = window.Maity || {};
   // is still caught there: ids.js links only what M.route.isRoute accepts.
   M.reservedFirst = OWN_WORDS;
 
-  // Throws URIError on a malformed escape; called inside render's try.
+  // An address that can never be a page (docs/api.md §16.11), as the hub answers it `404`
+  // (hub/src/maity_hub/paths.py, `never_a_page`): the path's words alone decide, never a read,
+  // so "not found" there tells nobody whether a name exists.
+  const NO_ROUTE_FIRST = ["components", "health", "imprint"];
+  // The deepest route, /<owner>/<slug>/team/<id>/sessions/<instance>; below Why there is no bound.
+  const DEEPEST = 6;
+  const HANDLE = /^[a-z0-9][a-z0-9-]{1,30}$/; // §6.24
+  function neverAPage(parts) {
+    if (!parts.length) return false;
+    const first = parts[0];
+    if (!HANDLE.test(first) || NO_ROUTE_FIRST.includes(first)) return true;
+    // Below the dashboard's own first words only the depth counts.
+    const shaped = !OWN_WORDS.includes(first);
+    if (shaped && parts.length === 2 && parts[1] === "agents") return true;
+    if (shaped && parts.length >= 3 && parts[1] !== "agents") {
+      if (!NAV.some((n) => n.route === parts[2])) return true;
+      if (parts[2] === "why") return false;
+    }
+    return parts.length > DEEPEST;
+  }
+  M.neverAPage = neverAPage;
+
+  // One segment, split before it is decoded (§16.11): an escape that does not decode leaves the
+  // segment as it was sent, where it used to throw and draw the failed page.
+  function segmentOf(raw) {
+    try {
+      return decodeURIComponent(raw);
+    } catch (err) {
+      return raw;
+    }
+  }
+
   function parseRoute() {
     // A route's own query (/login?next=…) is the page's to read (M.route.current).
-    const parts = M.route.current().path.split("/").filter(Boolean).map(decodeURIComponent);
+    const parts = M.route.current().path.split("/").filter(Boolean).map(segmentOf);
     if (!parts.length) return { scope: null };
+    if (neverAPage(parts)) return { scope: "never" };
     // Signed out as much as signed in: an invitation (§3.4) and registration (§2.7).
     if (parts[0] === "invite" && parts[1]) return { scope: "invite", token: parts[1] };
     // /invite alone: the person invitations of one's projects (§16.11, js/invitations.js).
@@ -143,8 +175,10 @@ window.Maity = window.Maity || {};
       || parts[1] === "pages" && !parts[3] && (!parts[2] || ["landing", "legal", "sign-in", "sign-up", "site"].includes(parts[2])))) {
       return { scope: "instance-admin", section: parts[1], args: parts.slice(2) };
     }
-    // /<handle>/agents: the person's tab Agents (§6.27, §16.11); `agents` is never a slug (a project
-    // view), and an agent's own page, /<owner>/agents/<handle>, stays the project scope's.
+    // /<handle>/agents names nothing since the person's agents stand on their one page (§16.9, "A
+    // person's agents", tsk-2t7efzj1p8zt): the person scope answers it with "not found", no redirect.
+    // `agents` is never a slug (a project view), and an agent's own page, /<owner>/agents/<handle>,
+    // stays the project scope's.
     if (parts.length === 2 && parts[1] === "agents" && !OWN_WORDS.includes(parts[0])) return { scope: "person", handle: parts[0], tab: "agents" };
     if (parts[1] && !OWN_WORDS.includes(parts[0])) {
       return { scope: "project", slug: parts[0] + "/" + parts[1], route: parts[2] || "inbox", args: parts.slice(3) };
@@ -155,11 +189,12 @@ window.Maity = window.Maity || {};
   }
 
   // Whether an address shows a visitor nothing once its public page, if any, was asked for
-  // (§16.11): a handle, or a project address whose view word is none of the dashboard's. An
+  // (§16.11): an address that can never be a page (neverAPage, the hub's `404`), a handle, or a
+  // project address whose view word is none of the dashboard's. An
   // address under one of the dashboard's own first words keeps the sign-in, which leads on
   // there (`/sign-in/code`, `/requests/<id>` from a mail, `/inbox`), even where it names no view.
   function showsVisitorNothing(where) {
-    if (where.scope === "person") return true;
+    if (where.scope === "person" || where.scope === "never") return true;
     return where.scope === "project" && !NAV.some((n) => n.route === where.route);
   }
 
@@ -544,7 +579,7 @@ window.Maity = window.Maity || {};
 
   // The repository (§6.1, project:admin, humans only): where the probe, the
   // Keep the Why dashboard and the runners' clones look. https only here;
-  // the hub checks the forge host. Changing or removing it asks first.
+  // the hub checks the rest of the shape. Changing or removing it asks first.
   function repositoryForm(ctx) {
     const current = ctx.project.repository && ctx.project.repository.url;
     const status = statusLine();
@@ -560,9 +595,12 @@ window.Maity = window.Maity || {};
         e.preventDefault();
         error.textContent = "";
         input.removeAttribute("aria-invalid");
-        const url = input.value.trim().replace(/\/+$/, "");
+        // One trailing slash comes off, as the hub takes it off (§6.1 step 2); a second stays,
+        // so the shape check below refuses it, as the hub would for its empty segment.
+        const url = input.value.trim().replace(/([^/])\/$/, "$1");
         if (url === (current || "")) { status.done(); append(status.el, h("span", { class: "ok" }, M.t("settings.repo.unchanged"))); return; }
-        if (url && !/^https:\/\/[^\s/]+\/[^\s/]+\/[^\s/]+$/.test(url)) { fail(forgeRule()); return; }
+        // The shape alone, a GitLab group path included; the hub checks the rest (§6.1).
+        if (url && !/^https:\/\/[^\s/]+(?:\/[^\s/]+){2,22}$/i.test(url)) { fail(forgeRule()); return; }
         if (current && !window.confirm(url
           ? M.t("settings.repo.confirm_change", { url })
           : M.t("settings.repo.confirm_remove"))) return;
@@ -573,7 +611,7 @@ window.Maity = window.Maity || {};
         } catch (err) {
           const fields = err.code === "invalid" && err.details && err.details.fields;
           const why = fields && (fields["repository.url"] || fields.repository);
-          if (why) { status.done(); fail(why === "not_a_configured_forge" ? forgeRule() : String(why)); }
+          if (why) { status.done(); fail(why === "not_a_repository_url" ? forgeRule() : String(why)); }
           else status.fail(M.t("settings.repo.not_saved"), err);
         }
       },
@@ -773,12 +811,16 @@ window.Maity = window.Maity || {};
     { tab: "general", when: (ctx) => ctx.canAdmin, build: (ctx) => imagesForm(ctx) },
     // Members and agents: who joins, on what terms, and who reads what.
     { tab: "members", when: humanAdminOf, build: (ctx, save) => memberAgentsForm(ctx, save) },
+    { tab: "members", when: humanAdminOf, build: (ctx, save) => maxPlacementsForm(ctx, save) },
     { tab: "members", when: humanAdminOf, build: (ctx, save) => h("div", { class: "agent-owners-slot" }, agentOwnersForm(ctx, save)) },
     { tab: "members", when: (ctx) => ctx.canAdmin, build: (ctx) => onboardingForm(ctx) },
     // Who reads and writes the cards' restricted texts (§6.1, §6.4): a human with
     // project:admin changes it after a step-up; an admin agent reads its mode alone.
     { tab: "members", when: (ctx) => ctx.canAdmin && !!M.restricted, build: (ctx) => M.restricted.settingsSection(ctx, (said) => { settingsSaved = said; render(); }) },
     { tab: "members", when: (ctx) => ctx.canAdmin, build: (ctx, save) => signingForm(ctx, save) },
+    // The project's roles (§2.3): the built-in ones explained, the project's own added, changed
+    // and removed by a human admin, as the PUT is human only.
+    { tab: "members", when: (ctx) => humanAdminOf(ctx) && !!M.projectRoles, build: (ctx) => M.projectRoles.settingsSection(ctx, (said) => { settingsSaved = said; render(); }) },
     // Way of working: how a card is closed and what the agents keep. Humans only, as every
     // policy field (§2.3 ʰ); the commitment follows the memory provider.
     { tab: "work", when: humanAdminOf, build: (ctx, save) => doneAuthorityForm(ctx, save) },
@@ -1268,6 +1310,40 @@ window.Maity = window.Maity || {};
     h("button", { type: "submit" }, M.t("board.save")));
   }
 
+  // §6.1 max_placements, §15.5: how many placements may be active in the project, on all runners
+  // together; the start dialog's placement_quota links here. A human with project:admin, with a
+  // reason, as every policy field; the hub refuses it to every agent (tsk-6s5n7egy4e5r). n is the
+  // project's active placements as GET …/placements lists them.
+  const PLACEMENTS_DEFAULT = 8, PLACEMENTS_MAX = 1000;
+  function maxPlacementsForm(ctx, save) {
+    const current = ctx.project.policy.max_placements === undefined ? PLACEMENTS_DEFAULT : ctx.project.policy.max_placements;
+    const max = h("input", { id: "max-placements", type: "number", min: "0", max: String(PLACEMENTS_MAX), step: "1", "aria-describedby": "max-placements-count" });
+    max.value = String(current);
+    const count = h("p", { class: "hint", id: "max-placements-count", "aria-live": "polite" });
+    M.api.getAll(ctx.base + "/placements")
+      .then((r) => { count.textContent = M.t("settings.max_placements.count", { count: r.items.length, max: current }); })
+      .catch(() => { count.textContent = M.t("settings.max_placements.count_unknown", { max: current }); });
+    const reason = h("input", { id: "max-placements-reason", required: true, placeholder: M.t("settings.reason_placeholder") });
+    const error = h("p", { class: "field-error", id: "max-placements-error", role: "alert" });
+    return h("form", {
+      class: "inline-form max-placements-form", id: "max-placements-form",
+      onsubmit: (e) => {
+        e.preventDefault();
+        error.textContent = "";
+        const n = Number(max.value);
+        if (max.value.trim() === "" || !Number.isInteger(n) || n < 0 || n > PLACEMENTS_MAX) { error.textContent = M.t("settings.max_placements.bad_max"); max.focus(); return; }
+        if (n === current) return;
+        if (!reason.value.trim()) { reason.focus(); return; }
+        save({ policy: { max_placements: n }, reason: reason.value.trim() }, { saved: M.t("settings.max_placements.saved"), notSaved: M.t("settings.max_placements.not_saved") });
+      },
+    },
+    h("h2", { class: "panel-title" }, M.t("settings.max_placements.title")),
+    h("p", { class: "hint" }, M.t("settings.max_placements.hint")),
+    h("label", { for: "max-placements" }, M.t("settings.max_placements.max")), max, count, error,
+    h("label", { for: "max-placements-reason" }, M.t("settings.reason")), reason,
+    h("button", { type: "submit" }, M.t("board.save")));
+  }
+
   // Where a joining agent's personal Keep the Why settings come from (§6.23). The values stay
   // in the repository's .keep-the-why: the hub does not read that file, so this names it.
   function keepTheWhyDefaultsForm(ctx, save) {
@@ -1401,16 +1477,17 @@ window.Maity = window.Maity || {};
   // the cross-project view with the total.
   function switcher(ctx) {
     const N = M.notify.state;
-    // What asks for the human, requests, unread chats and mentions
-    // (docs/api.md §18.2); until the counts are read, the open requests.
-    const total = N.counts ? N.counts.total : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
+    // What asks for the human, requests and unread chats (docs/api.md §18.2);
+    // mentions are the bell's alone (tsk-e78jc2jgqhcb). Until the counts are
+    // read, the open requests.
+    const total = N.counts ? M.notify.badgeCount(N.counts) : ctx.projects.reduce((n, p) => n + (p.open_requests || 0), 0);
     const count = (n) => (n ? h("span", { class: "count", "aria-label": M.t("header.count.open", { count: n }) }, String(n)) : null);
     // The same words on every pill: what the number is made of.
     const counted = (c) => (c.total ? h("span", { class: "count", "aria-label": M.fmt.list([c.requests ? M.t("header.count.open", { count: c.requests }) : null,
-      c.chat ? M.t("header.count.unread_chats", { count: c.chat }) : null, c.mention ? M.t("header.count.mentions", { count: c.mention }) : null].filter(Boolean)) },
+      c.chat ? M.t("header.count.unread_chats", { count: c.chat }) : null].filter(Boolean)) },
     String(c.total)) : null);
     const pill = (p) => (N.counts ? counted(M.notify.projectCount(p)) : count(p.open_requests));
-    const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, mention: N.counts.mention, total }) : count(total);
+    const all = N.counts ? counted({ requests: N.counts.inbox, chat: N.counts.chat, total }) : count(total);
     return h("nav", { class: "switcher", "aria-label": M.t("header.projects") },
       h("a", { href: "/all", "aria-current": !ctx.visiting && ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
       // The tabs this browser has open, in its order (js/tabs.js): dragged
@@ -1600,20 +1677,6 @@ window.Maity = window.Maity || {};
     return n ? h("span", { class: "count", "aria-label": route === "inbox" ? M.t("header.count.open", { count: n }) : M.t("header.count.unread", { count: n }) }, String(n)) : null;
   }
 
-  // The project's mentions have no tab (the inbox is the requests alone),
-  // yet the pill counts them (§18.2): while some are unread, a link beside
-  // the tabs leads to them on /notifications, filtered to this project
-  // (tsk-xb7bf1x0h3cy). Filled again with every count read.
-  const mentionsHref = (fullName) => "/notifications?kind=mention&project=" + encodeURIComponent(fullName);
-  function fillMentionNote(ctx, box) {
-    clear(box);
-    const n = M.notify.state.counts
-      ? M.notify.projectCount(ctx.projects.find((p) => p.full_name === ctx.slug) || { full_name: ctx.slug }).mention : 0;
-    box.hidden = !n;
-    if (n) append(box, h("a", { href: mentionsHref(ctx.slug) }, M.t("header.mentions.unread", { count: n })));
-    return box;
-  }
-
   // All projects has two pages (the maintainer, tsk-gw59z3w3fenf): the
   // requests across projects and every chat across them, each with what
   // the hub counts for it (§18.2).
@@ -1646,8 +1709,6 @@ window.Maity = window.Maity || {};
       });
       return;
     }
-    const note = document.getElementById("header").querySelector(".mention-note");
-    if (note) fillMentionNote(ctx, note);
     nav.querySelectorAll("a").forEach((a) => {
       // dom.h writes a route through M.route.href (a fragment in the fixture), so compare with that.
       const route = NAV.find((n) => a.getAttribute("href") === M.route.href(projectLink(ctx.slug, n.route)));
@@ -1822,11 +1883,7 @@ window.Maity = window.Maity || {};
         : ALL_PAGES.some((page) => page.scope === ctx.scope)
           ? h("nav", { class: "views", "aria-label": M.t("all.pages") },
             ALL_PAGES.filter((page) => !page.when || page.when(ctx)).map((page) => h("a", { href: page.href, "aria-current": !ctx.visiting && ctx.scope === page.scope ? "page" : null }, page.label(), allCount(page))))
-          : null,
-      // Not on the Chat tab, the maintainer's choice (tsk-sesdq48m9ewk): its list shows each chat's unread mention as an @
-      // at a glance. The @ covers chat mentions only; those in project messages and on cards stay in the bell and on the
-      // other tabs' line, which is why the maintainer kept the removal (chat 103539).
-      ctx.scope === "project" && current !== "chat" ? fillMentionNote(ctx, h("p", { class: "mention-note" })) : null);
+          : null);
     M.dom.keepImages(previous, fresh);
     while (fresh.firstChild) header.appendChild(fresh.firstChild);
     header.querySelectorAll("nav").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
@@ -2332,8 +2389,9 @@ window.Maity = window.Maity || {};
     // takes no click or key any more: an action there (a Revoke) would be
     // answered into a view that is gone, while the new one shows what it read
     // before. Every way out of render() replaces main or renders again.
-    // The hub's own page in <main> (§16.9) counts for this first drawing only, and stays usable
-    // meanwhile: it is what stands if its data cannot be read.
+    // The hub's own page in <main> (§16.9) counts for this first drawing only. A page in the
+    // dashboard's design stands and stays usable meanwhile; any other stays hidden (css/app.css,
+    // `.hub-page`) until it is replaced or 3 s pass. Either is what stands if its data cannot be read.
     const hubPage = !!(main.hasAttribute && main.hasAttribute("data-public-page"));
     if (hubPage) main.removeAttribute("data-public-page");
     // Busy too, for a screen reader; the bar it shows is in css/app.css.
@@ -2346,6 +2404,9 @@ window.Maity = window.Maity || {};
     // page, a failed page, every signed-in drawing).
     if (M.api.session()) M.siteChrome.leave();
     let where = { scope: "unknown" };
+    // The path `where` was parsed from: a click while this drawing waits moves the address on, and
+    // the newer drawing answers it; this one reads the page of its own address, if any (tsk-25x1t18ergxz).
+    let wherePath = null;
     let ctx;
     let keptSlug = null;
     // The invitation's token is in its path: no referrer before this drawing asks anything
@@ -2369,6 +2430,8 @@ window.Maity = window.Maity || {};
     // §16.12: the window as the hub has it, read at most once a minute; while it runs, the
     // full page stands instead of the view (heldPage), the sign-in and its step excepted.
     M.maintenance.drawing();
+    // A newer dashboard deployed under this page (js/new-version.js): its band follows the language.
+    if (M.newVersion) M.newVersion.draw();
     // The window and the session are read together (tsk-y8gkq1kvt63c): they were two round trips
     // one after the other. Their answers are handled in the old order, the window first. /me still
     // waits for the session: asked before it, /me fails by design for a session that owes the
@@ -2392,6 +2455,7 @@ window.Maity = window.Maity || {};
     if (seq !== renderSeq) return;
     try {
       where = parseRoute();
+      wherePath = M.route.current().path;
       const held = M.maintenance.running();
       // The reset reads no session: it ends every one and signs nobody in (§2.10).
       if (where.scope === "reset" && M.passwordReset && !held) { await M.passwordReset.page(main, document.getElementById("header")); return; }
@@ -2420,8 +2484,10 @@ window.Maity = window.Maity || {};
             return;
           }
           // A public page of this address, read-only (§16.9), in the landing's frame as the
-          // sign-in is (js/visitor.js); otherwise the login.
-          const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, M.route.current().path, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
+          // sign-in is (js/visitor.js); otherwise the login. A drawing overtaken while it read the
+          // session asks for no page: a click during the first drawing went elsewhere.
+          if (seq !== renderSeq) return;
+          const shown = M.visitor ? await M.visitor.page(main, document.getElementById("header"), where, wherePath, { signedIn: false, brand: brandTitle(false), tools: themeMenu(), live: () => seq === renderSeq }) : false;
           if (shown) return;
           // The hub's own page in <main> stands when its data could not be read. A dashboard
           // route asks for the sign-in; an address that shows a visitor nothing says so
@@ -2429,7 +2495,7 @@ window.Maity = window.Maity || {};
           // has no page: a read that failed otherwise (null) keeps the sign-in.
           if (seq === renderSeq && !hubPage) {
             if (M.notFound && shown === false && showsVisitorNothing(where)) {
-              M.notFound.page(main, document.getElementById("header"), M.route.current().path, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
+              M.notFound.page(main, document.getElementById("header"), wherePath, h("div", { class: "bar" }, brandTitle(false, "div"), themeMenu()));
             } else renderLogin(main);
           }
           return;
@@ -2487,7 +2553,7 @@ window.Maity = window.Maity || {};
           own.visiting = true;
           if (seq === renderSeq) renderHeader(own, null);
         };
-        if (await M.visitor.page(main, null, where, M.route.current().path, { signedIn: true, head, live: () => seq === renderSeq })) return;
+        if (await M.visitor.page(main, null, where, wherePath, { signedIn: true, head, live: () => seq === renderSeq })) return;
         if (seq !== renderSeq) return;
       }
       // An earlier address of a project (a rename, a transfer) leads to its current one.
@@ -2625,7 +2691,7 @@ window.Maity = window.Maity || {};
     else if (where.scope === "runners") label = M.t("view.runners");
     else if (where.scope === "invitations") label = M.t("header.invitations");
     else if (where.scope === "agents") label = M.t("view.agents");
-    else if (where.scope === "person") label = where.tab === "agents" ? M.t("person.title.agents", { name: "@" + where.handle }) : "@" + where.handle;
+    else if (where.scope === "person") label = "@" + where.handle;
     else if (where.scope === "instance-admin") label = M.t("view.instance_admin");
     else if (where.scope === "observe") label = M.t("view.read_along", { slug: where.slug });
     else if (known) label = item.label + " · " + ctx.project.name;

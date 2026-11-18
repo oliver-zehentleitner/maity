@@ -148,10 +148,21 @@ def test_an_owner_made_later_joins_every_project_archived_ones_included(
         }
     assert {(keep, before) for _, keep, before in rows} == {("raised", "member"), ("created", None)}
     # demoted again: the raised one falls back, the one the hub made ends
+    rules_before = owner.get(f"{ORG}/live").json()["rules_version"]
     demoted = owner.patch(f"/orgs/oz-team/members/{admin.id}", {"role": "member"})
     assert demoted.status_code == 200
     live = members(owner, "live")["team-admin"]
     assert (live["trust"], live["org_owner"]) == ("member", False)
+    # the fall back is a trust change as the members PATCH writes one: the rules move (§6.9)
+    # and its event names the field, as every hook of a lowering reads it
+    assert owner.get(f"{ORG}/live").json()["rules_version"] == rules_before + 1
+    fell = [
+        e
+        for e in owner.get(f"{ORG}/live/events", params={"limit": 200}).json()["items"]
+        if e["kind"] == "member_updated" and e["payload"].get("handle") == "team-admin"
+    ]
+    assert fell[-1]["payload"]["changed"] == ["trust"]
+    assert fell[-1]["payload"]["trust"] == "member"
     assert "team-admin" not in members(owner, "old")
     assert member.get(f"{ORG}/live").status_code in (200, 403, 404)
 

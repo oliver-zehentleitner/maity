@@ -135,6 +135,9 @@ async def authenticated(
     request.state.caller = caller
     if caller.kind == "human" and caller.human_id is not None:
         write_guard.bind(caller.human_id)  # its writes commit only while it exists (§2.9)
+    if caller.bridge is not None and caller.project_id is not None:
+        # A bridge's writes for an agent commit only while the connection lives (§2.3).
+        write_guard.bind_bridge(caller.project_id, caller.bridge.bridge_id)
     return caller
 
 
@@ -225,6 +228,15 @@ async def events_caller(request: Request) -> Caller:
     return await _resolve(request, renew_leases=not waiting)
 
 
+async def conversations_caller(request: Request) -> Caller:
+    """The conversation list (§9.3): with `renew=false` it is presence, not work, and
+    renews no lease, so the unread-chats read `maity wait` makes on a timeout does not
+    keep a holder's claims alive (§2.4). Presence is written as by any call. Authentication
+    comes first, as for `events_caller`; the endpoint validates `renew` (an invalid one
+    counts as an ordinary read here)."""
+    return await _resolve(request, renew_leases=request.query_params.get("renew") != "false")
+
+
 async def presence_caller(request: Request) -> Caller:
     """`POST /me/presence` (§18.4): a human's cookie session only, checked as any call but
     writing no `last_seen_at` and renewing no lease (§2.4). An `Authorization` header (an
@@ -266,4 +278,5 @@ AnyCaller = Annotated[Caller, Depends(current_caller)]
 HumanCaller = Annotated[Caller, Depends(human_caller)]
 AgentCaller = Annotated[Caller, Depends(agent_caller)]
 EventsCaller = Annotated[Caller, Depends(events_caller)]
+ConversationsCaller = Annotated[Caller, Depends(conversations_caller)]
 RunnerCaller = Annotated[Caller, Depends(runner_caller)]

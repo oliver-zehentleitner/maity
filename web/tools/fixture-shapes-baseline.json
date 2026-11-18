@@ -32,7 +32,6 @@
   ".logo.etag: the hub sends no such key",
   ".policy.coordinator: the fixture leaves it out",
   ".policy.coordinator_substitute: the fixture leaves it out",
-  ".policy.max_placements: the fixture leaves it out",
   ".policy.merged_closes: the fixture leaves it out",
   ".policy.spawn_consent_by: the fixture leaves it out",
   ".policy.spawn_requests: the fixture leaves it out",
@@ -178,14 +177,10 @@
  ],
  "POST /projects/{project}/conversations/{agent}/messages": [
   ".from_instance: the fixture leaves it out",
-  ".mentions: the fixture leaves it out",
-  ".redacted: the fixture leaves it out",
-  ".redaction: the fixture leaves it out"
+  ".mentions: the fixture leaves it out"
  ],
  "POST /projects/{project}/conversations/{group}/messages": [
   ".from_instance: the fixture leaves it out",
-  ".redacted: the fixture leaves it out",
-  ".redaction: the fixture leaves it out",
   ".to_instance: the fixture leaves it out"
  ],
  "POST /projects/{project}/tasks": [

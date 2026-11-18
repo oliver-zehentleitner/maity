@@ -130,6 +130,7 @@
   "password_reset.mail_mailbox": "This mailbox is your second factor too, so whoever reads it can reset your password and sign in. Set up an authenticator app under Security in your account: then a reset also needs its code.\n\n",
   "password_reset.subject": "[Maity] Reset your password",
   "product.bug": "Found a bug?",
+  "product.discord": "Chat with us on Discord",
   "product.love": "love",
   "product.made_by": "Made with {heart} by {name} on {github} & {maity}",
   "product.security": "Found a vulnerability?",

@@ -30,6 +30,8 @@ class Result:
     bad: list[str]  # one line per cite that does not stand at the commit
     unchecked: str | None = None  # why nothing could be checked
     top: Path | None = None  # the top of the clone that has the commit, for the text check
+    # Under a placement maity's git refused the clone (proc.ToolRefused): nothing is sent.
+    refused: bool = False
 
 
 def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -123,6 +125,8 @@ def check(cwd: Path, review: Any) -> Result:
             elif problem is not None:
                 place = f"{path}:{line}" if line is not None else path
                 bad.append(f"review.cites.{index} {place}: {problem}: {json.dumps(quote)}")
+    except proc.ToolRefused as exc:
+        return Result(long, str(exc), refused=True)
     except proc.ToolError as exc:
         return Result(long, str(exc))
     if unsure:

@@ -63,7 +63,7 @@ window.Maity = window.Maity || {};
     string_too_short: () => M.t("new_project.reason.required"),
     string_too_long: () => M.t("new_project.reason.too_long"),
     missing: () => M.t("new_project.reason.required"),
-    not_a_configured_forge: () => M.FORGE_RULE,
+    not_a_repository_url: () => M.FORGE_RULE,
     unknown: () => M.t("new_project.reason.unknown"),
     // owner: the same answer for every handle that is no organisation of one's own.
     owner_unknown: () => M.t("new_project.reason.owner_unknown"),

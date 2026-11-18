@@ -87,6 +87,9 @@ class FakeTmux:
     def pane_digest(self, name: str) -> str | None:
         return self.screen
 
+    def pane_has(self, name: str, texts: Sequence[str]) -> frozenset[str] | None:
+        return None if self.screen is None else frozenset(t for t in texts if t in self.screen)
+
     def type_text(self, name: str, text: str) -> None:
         self.typed.append((name, text))
         self.screen = f"{self.screen}{text}"  # the line shows in the pane
@@ -425,6 +428,31 @@ def test_an_old_or_unknown_claude_code_is_refused_by_default_where_its_sandbox_c
     assert ("claude-code" in target.held) is (tools and version != "2.1.295")
     found = sup._refusal(placement(harness="claude-code"), target)
     assert (found == ("harness_refused", None)) is refused
+
+
+def test_the_launch_uses_the_binary_and_sandbox_the_gate_decided_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The keeper may swap a tool (a rollback) between the start gate and the launch: the
+    launch keeps the gate's binary and sandbox, never the new binary under the old answer."""
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    target = sup.targets["local"]
+    p = placement(harness="claude-code")
+    view = supervisor.GateView.of(target, "claude-code")
+    assert view == supervisor.GateView(capabilities.Probe("/usr/bin/claude", "2.1.325", None),
+                                       True, False)  # fmt: skip
+    # the rollback, as Keeper.refresh writes it
+    target.probes["claude-code"] = capabilities.Probe("/old/claude", "2.1.294", None)
+    target.sandbox["claude-code"] = False
+    target.held.add("claude-code")
+    assert sup._refusal(p, target, view) is None  # the gate's view
+    assert sup._refusal(p, target) == ("harness_refused", None)  # a new look refuses
+    place = workspace.Workspace(tmp_path / "ws" / "c", "maity", "c")
+    harness = sup.cfg.harnesses["claude-code"]
+    ctx = sup._context(p, harness, place, target, view=view)
+    assert (ctx.binary, ctx.sandbox) == ("/usr/bin/claude", True)
+    later = sup._context(p, harness, place, target)
+    assert (later.binary, later.sandbox) == ("/old/claude", False)
 
 
 @pytest.mark.parametrize("extra", ["", "require_sandbox = false\n"])
@@ -1863,30 +1891,71 @@ def test_a_rejoin_happens_once_per_generation(world: Any, monkeypatch: pytest.Mo
     assert len(calls) == 1 and len(backend.started) == 2
 
 
-def test_codex_is_refused_where_the_repository_grants_commands(world: Any) -> None:
-    sup, backend, reports, _, _ = world
+@pytest.mark.parametrize(
+    ("grant", "said"),
+    [
+        (config.RepositoryGrant(allow=("make test",)), ["'make test' is not applied to codex"]),
+        (config.RepositoryGrant(pull_requests=True), ["pull_requests is not given to codex"]),
+        (
+            config.RepositoryGrant(allow=("make test",), pull_requests=True),
+            ["'make test' is not applied to codex", "pull_requests is not given to codex"],
+        ),
+    ],
+)
+def test_codex_starts_without_the_grant_parts_it_cannot_enforce(
+    world: Any, grant: config.RepositoryGrant, said: list[str]
+) -> None:
+    """Codex has no command allowlist, and its `maity` runs inside its sandbox, where
+    `maity gh` is set up only outside it: with its sandbox on it starts without those parts, named
+    at each start, instead of being refused (cli/context/runner.md)."""
+    sup, _, reports, _, logs = world
+    sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": grant})
+    sup.targets["local"].sandbox["codex"] = True
+    assert sup._refusal(placement(harness="codex"), sup.targets["local"]) is None
+    sup.update([placement(harness="codex")])
+    sup.tick()
+    assert ("failed", "harness_refused", None) not in states(reports)
+    left = [
+        line
+        for line in logs
+        if "codex:" in line and "github.com/oliver-zehentleitner/maity" in line
+    ]
+    assert len(left) == len(said) and all(any(s in line for line in left) for s in said), left
+
+
+@pytest.mark.parametrize(
+    "grant",
+    [
+        config.RepositoryGrant(allow=("make test",)),
+        config.RepositoryGrant(pull_requests=True),
+    ],
+)
+def test_codex_without_its_sandbox_is_refused_where_the_grant_has_parts_it_leaves_out(
+    world: Any, grant: config.RepositoryGrant
+) -> None:
+    """The left-out parts are left to Codex's sandbox: with it off (`require_sandbox` unset,
+    so the start is not refused for the sandbox alone), such a grant refuses the start."""
+    sup, _, reports, _, _ = world
+    sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": grant})
+    sup.targets["local"].sandbox["codex"] = False
+    assert sup._refusal(placement(harness="codex"), sup.targets["local"]) == (
+        "harness_refused", None,
+    )  # fmt: skip
+    network = config.RepositoryGrant(network=("pypi.org",))
+    sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": network})
+    assert sup._refusal(placement(harness="codex"), sup.targets["local"]) is None
+
+
+def test_claude_code_is_not_told_what_codex_starts_without(world: Any) -> None:
+    sup, _, _, _, logs = world
     sup.cfg = replace(
         sup.cfg,
         repositories={"github.com/oliver-zehentleitner/maity": config.RepositoryGrant(
-            allow=("make test",))},
+            allow=("make test",), pull_requests=True)},
     )  # fmt: skip
-    sup.update([placement(harness="codex")])
+    sup.update([placement(harness="stub")])
     sup.tick()
-    assert states(reports) == [("failed", "harness_refused", None)]
-
-
-def test_codex_is_refused_where_the_repository_grants_pull_requests(world: Any) -> None:
-    """Codex's `maity` runs inside its sandbox, where `maity gh` reaches neither the login
-    nor the forge's API (cli/context/runner.md 9f43804d)."""
-    sup, backend, reports, _, _ = world
-    sup.cfg = replace(
-        sup.cfg,
-        repositories={"github.com/oliver-zehentleitner/maity": config.RepositoryGrant(
-            pull_requests=True)},
-    )  # fmt: skip
-    sup.update([placement(harness="codex")])
-    sup.tick()
-    assert states(reports) == [("failed", "harness_refused", None)]
+    assert not [line for line in logs if "codex" in line]
 
 
 # --- the project namespace (§6.25, §15.5) ------------------------------------------------------
@@ -1943,6 +2012,161 @@ def interactive(world: Any, **overrides: Any) -> None:
     sup.tick()
     assert states(reports)[-1] == ("running", None, None)
     sup.tick()  # the first look: quiet from here
+
+
+# Codex 0.169's folder prompt for a folder it is told not to trust, and the one that would trust it.
+RESTRICTED = "Folder access\n  Do you trust …?\n› 1. Open restricted\n  2. Quit\n"
+TRUSTING = "Folder access\n  Do you trust …?\n› 1. Trust and continue\n  2. Quit\n"
+
+
+def started(world: Any, harness: str = "codex", mode: str = "interactive") -> None:
+    """A placement of `harness` in `mode`, its session started (asserted, so a test that
+    expects nothing to be pressed cannot pass on a refused start)."""
+    sup, backend, _, _, _ = world
+    harnesses = dict(sup.cfg.harnesses)
+    if harness not in harnesses:
+        harnesses[harness] = config.Harness(harness, ("interactive", "supervised"), mode, ())
+    harnesses[harness] = replace(harnesses[harness], modes=("interactive", "supervised"))
+    sup.cfg = replace(sup.cfg, harnesses=harnesses)
+    recorded(sup.cfg)
+    sup.update([placement(mode=mode, harness=harness, health=HEALTH)])
+    settle(sup)
+    assert SESSION in backend.live, sup.records
+
+
+def test_codex_s_folder_prompt_is_answered_once_with_open_restricted(world: Any) -> None:
+    """Interactive Codex stops on its folder prompt for the untrusted clone; "Open restricted"
+    keeps it untrusted (it saves nothing), and nobody else would answer it."""
+    sup, backend, reports, clock, logs = world
+    backend.screen = RESTRICTED
+    started(world)
+    sup.tick()
+    assert backend.submitted == 1
+    assert any('answered Codex\'s folder prompt with "Open restricted"' in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    sup.tick()
+    assert backend.submitted == 1  # once
+    assert states(reports)[-1] == ("running", None, None)
+
+
+def test_codex_s_folder_prompt_that_would_trust_the_folder_is_never_answered(world: Any) -> None:
+    sup, backend, _, clock, logs = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    assert backend.submitted == 0
+    said = [line for line in logs if "waiting on a first-run prompt" in line]
+    assert len(said) == 1 and "not answered" in said[0]
+
+
+@pytest.mark.parametrize(
+    ("harness", "mode", "attach"),
+    [("codex", "interactive", True), ("codex", "interactive", None),
+     ("stub", "interactive", False), ("codex", "supervised", False)],
+)  # fmt: skip
+def test_the_folder_prompt_is_left_alone_with_a_person_there_or_another_harness_or_mode(
+    world: Any, harness: str, mode: str, attach: bool | None
+) -> None:
+    sup, backend, _, _, _ = world
+    backend.screen, backend.attach = RESTRICTED, attach
+    started(world, harness, mode)
+    sup.tick()
+    assert backend.submitted == 0
+
+
+def test_a_folder_prompt_showing_both_choices_is_left_alone(world: Any) -> None:
+    sup, backend, _, _, logs = world
+    backend.screen = RESTRICTED + TRUSTING
+    started(world)
+    sup.tick()
+    assert backend.submitted == 0
+    said = [line for line in logs if "waiting on a first-run prompt" in line]
+    assert len(said) == 1 and "without offering only to open it restricted" in said[0]
+
+
+def test_a_new_start_looks_for_the_folder_prompt_again(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = RESTRICTED
+    started(world)
+    sup.tick()
+    assert backend.submitted == 1
+    backend.exit(SESSION, 0)
+    sup.tick()
+    clock.now += 600
+    settle(sup)
+    sup.tick()
+    assert SESSION in backend.live and backend.submitted == 2
+
+
+def test_a_folder_prompt_left_alone_gets_no_idle_nudge(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    for _ in range(45):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [] and backend.submitted == 0
+
+
+def test_the_idle_check_resumes_once_a_left_prompt_is_answered(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    backend.screen = "> "  # a person attached, answered it and left
+    sup.tick()
+    for _ in range(31):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [(SESSION, supervisor.NUDGE_LINE)]
+
+
+def test_no_idle_line_goes_into_a_prompt_one_look_missed(world: Any) -> None:
+    """A look without the prompt's title (a redraw caught midway) does not open the session
+    to the idle check for good: the prompt back, nothing is typed into it."""
+    sup, backend, _, clock, _ = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    backend.screen = "> "  # one look misses it
+    sup.tick()
+    backend.screen = TRUSTING
+    for _ in range(61):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [] and backend.submitted == 0
+
+
+def test_no_idle_line_goes_into_a_prompt_shown_late(world: Any) -> None:
+    """A folder prompt that shows only after `FOLDER_PROMPT_WITHIN` is not answered, and the
+    idle check types nothing into it."""
+    sup, backend, _, clock, _ = world
+    backend.screen = "> "
+    started(world)
+    clock.now += supervisor.FOLDER_PROMPT_WITHIN + 1
+    sup.tick()
+    backend.screen = TRUSTING
+    for _ in range(61):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [] and backend.submitted == 0
+
+
+def test_the_folder_prompt_is_looked_for_only_soon_after_the_start(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = "> "
+    started(world)
+    clock.now += supervisor.FOLDER_PROMPT_WITHIN + 1
+    sup.tick()
+    backend.screen = RESTRICTED  # whatever shows later is the agent's own
+    sup.tick()
+    assert backend.submitted == 0
 
 
 def minutes(world: Any, n: int) -> None:
@@ -2141,6 +2365,8 @@ def test_the_idle_reads_are_tmux_and_ps_calls(tmp_path: Path) -> None:
     session = tmux.Session(SESSION, False, None, 7, "plc-0003", 1)
     assert backend.attached(SESSION) is True
     assert backend.pane_digest(SESSION) == hashlib.sha256(b"> hello\n").hexdigest()
+    assert backend.pane_has(SESSION, ("hello", "Open restricted")) == frozenset({"hello"})
+    assert calls[-1][-4:] == ["capture-pane", "-p", "-t", SESSION]
     assert backend.activity(session) == tmux.WAITING
     assert backend.activity(replace(session, pid=None)) is None
     backend.type_line(SESSION, "a line; with -t words")
@@ -2456,9 +2682,9 @@ def test_a_new_generation_does_not_resume_the_hung_session(
     seen: list[bool] = []
     context = sup._context
 
-    def spy(*args: Any) -> Any:
+    def spy(*args: Any, **kwargs: Any) -> Any:
         seen.append(args[-1])
-        return context(*args)
+        return context(*args, **kwargs)
 
     monkeypatch.setattr(sup, "_context", spy)
     sup.update([placement(mode="interactive", health=HEALTH, generation=2)])

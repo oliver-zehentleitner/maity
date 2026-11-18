@@ -185,6 +185,41 @@ def test_to_all_reaches_everyone_and_never_wakes_the_poster(
     assert all(by[a.id]["wake"] for a in team.values())
 
 
+@pytest.mark.parametrize(
+    ("value", "accepted"),
+    [
+        ("https://ci.example/run/1", True),
+        ("HTTPS://ci.example/run/1", True),  # the scheme in any case, from a post or a forge
+        ("http://ci.example/run/1", False),
+        ("https://ci.example/a b", False),
+        ("https://" + "x" * 2041, False),  # 2049 characters
+        (None, False),
+    ],
+)
+def test_one_https_rule_for_a_post_and_a_forge(value: Any, accepted: bool) -> None:
+    """§17.1's one absolute https URL of at most 2048 characters, the same for a manual
+    post's `url` and `deploy.log_url` and for a forge deployment's `log_url`."""
+    assert ticker.https_url(value) is accepted
+    assert ticker._https_or_none(value) == (value if accepted else None)
+
+
+def test_a_post_reads_the_members_once(
+    owner: flow.Human, team: dict[str, flow.Agent], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `to` check, the audience and the item share one read of the active members,
+    however many `member:` tokens the post names."""
+    calls: list[str] = []
+    read = ticker.members
+
+    def counted(conn: Any, project_id: str) -> Any:
+        calls.append(project_id)
+        return read(conn, project_id)
+
+    monkeypatch.setattr(ticker, "members", counted)
+    note(owner, to=[f"member:{a.id}" for a in team.values()], areas=None)
+    assert len(calls) == 1, calls
+
+
 def test_a_token_list_is_resolved_to_members(
     owner: flow.Human, team: dict[str, flow.Agent]
 ) -> None:

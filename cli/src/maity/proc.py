@@ -40,6 +40,11 @@ class ToolError(Exception):
     """git or gh is missing, or did not answer in time."""
 
 
+class ToolRefused(ToolError):
+    """Under a runner placement maity refuses to run git here (clonecheck.Refused): not a
+    missing tool but a clone or a session the runner's checks do not accept."""
+
+
 def allowed(transports: str) -> str:
     """`transports`, less any the environment's own `GIT_ALLOW_PROTOCOL` leaves out."""
     given = os.environ.get("GIT_ALLOW_PROTOCOL")
@@ -91,7 +96,7 @@ def run(
             return _start(cmd, cwd, timeout, {**kept, "GIT_ALLOW_PROTOCOL": allowed(transports),
                                               **pinned.env}, pinned.git)  # fmt: skip
     except clonecheck.Refused as exc:
-        raise ToolError(f"maity runs no git here: {exc}") from None
+        raise ToolRefused(f"maity runs no git here: {exc}") from None
 
 
 def _start(

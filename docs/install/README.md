@@ -205,12 +205,15 @@ ufw allow from 10.42.0.0/16 to any   # pods
 ufw allow from 10.43.0.0/16 to any   # services
 ```
 
-**2. k3s.** Download the installer, read it, then run it with a pinned
-version (tested: v1.36.5+k3s1). Then put the Traefik configuration where
-k3s watches for it:
+**2. k3s.** Download the installer of the pinned version (tested:
+v1.36.5+k3s1) from its release tag, check its checksum, read it, then run
+it with that version. The installer checks the k3s binary against the
+release's own checksums. Then put the Traefik configuration where k3s
+watches for it:
 
 ```sh
-curl -sfL -o k3s-install.sh https://get.k3s.io
+curl -sfL -o k3s-install.sh https://raw.githubusercontent.com/k3s-io/k3s/v1.36.5%2Bk3s1/install.sh
+echo "46177d4c99440b4c0311b67233823a8e8a2fc09693f6c89af1a7161e152fbfad  k3s-install.sh" | sha256sum -c
 INSTALL_K3S_VERSION=v1.36.5+k3s1 sh k3s-install.sh
 cp deploy/k3s-single/traefik-config.yaml /var/lib/rancher/k3s/server/manifests/
 ```
@@ -220,13 +223,27 @@ client addresses, and redirects plain HTTP to HTTPS at Traefik. Its syntax
 is Traefik chart v40's: `ports.web.http.redirections.entryPoint`.
 
 **3. cert-manager**, from its Helm chart with the CRDs, pinned (tested:
-v1.20.4):
+v1.20.4). The chart archive is checked against its checksum before it is
+installed, and its five images (controller, webhook, cainjector,
+startupapicheck, acmesolver) are pinned by the digest of their multi-arch
+index on quay.io, so a moved tag cannot change what runs:
 
 ```sh
 helm repo add jetstack https://charts.jetstack.io
-helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace \
-  --version v1.20.4 --set crds.enabled=true
+helm pull jetstack/cert-manager --version v1.20.4
+echo "aa916e8fb726ee573f8c2fbed6899de7dbb77a017ac1deef63fee91cc5bfcd03  cert-manager-v1.20.4.tgz" | sha256sum -c
+helm install cert-manager ./cert-manager-v1.20.4.tgz -n cert-manager --create-namespace \
+  --set crds.enabled=true \
+  --set image.digest=sha256:d4d576c7e6ed3cfe5730f5458fa096b7d8713368d2ccb7ff01b2951861483838 \
+  --set webhook.image.digest=sha256:303a962e77acbed075716379ed8045de65a72fdd5514f9367f449a1f9a907aa7 \
+  --set cainjector.image.digest=sha256:30c8617ebb3b4a9054da555ee9c6389a7faa464fffe3c7679f80892a9cfbf213 \
+  --set startupapicheck.image.digest=sha256:83e70f57255e133e2fff5129e8372ac493ca66e39446c536798b4742d95f9f49 \
+  --set acmesolver.image.digest=sha256:bbec214d3935cbbeb3ab88c57ee36e2b2511a0017e48ffc14a999e48fa30d3a2
 ```
+
+The images k3s brings itself (Traefik, CoreDNS, klipper, the metrics
+server and the local-path provisioner) are pulled by tag: k3s bundles
+them with its release, and this guide does not pin them.
 
 **4. Namespace and secrets.**
 - The values go through files made with `umask 077` and never appear on
@@ -549,17 +566,60 @@ in [`hub/README.md`](../../hub/README.md#settings-for-a-public-instance).
    choose the mode in the dashboard. `GET /api/v1/admin/settings/registration`
    shows `effective_mode` and, under `missing`, what still holds it closed.
 
+## The agent firewall
+
+`MAITY_AGENT_FIREWALL` (`on` or `off`, default `off`) switches on the gate
+of [`docs/api.md` §9.6](../api.md#96-who-may-chat-with-an-agent): an agent
+waits in a group chat with someone of another owner, and a free work
+message from another owner is held for it, until its owner says yes in the
+inbox. While it is off, chats and messages reach as before, and owners can
+still prepare their allow and deny entries under **Agents → Chat access**.
+Switch it on by setting it to `on` on every hub process of the instance and
+restarting: the first start judges every open group chat once, honouring the
+entries that exist, and asks each owner whose agent now waits; later starts
+change nothing more. Setting it back to `off` leaves what was stored as it
+is and takes effect at the next start.
+
 ## Backups
 
 The database is the whole hub. It also holds the verifiers of every agent
 and runner credential, and a verifier is enough to sign requests as that
-agent or runner. With `MAITY_SECRET_KEY` set, the hub stores them sealed
-with that key, so a database read without the key yields no usable
-verifier; without the key they are stored as they are. Verifiers stored
-before the key was set are sealed when `maity-hub migrate` runs the
-migration that seals them with the key set; otherwise they stay unsealed
-until their agent or runner joins again, and the hub logs their number at
-startup. Keep the key apart
+agent or runner. Sealing them at rest is opt-in, default off: with
+`MAITY_SEAL_VERIFIERS=1` and `MAITY_SECRET_KEY` set, the hub stores new
+verifiers sealed with that key, so a database read without the key
+yields no usable verifier; with the setting off they are stored as they
+are. `maity-hub migrate` seals nothing. Sealed verifiers stay readable
+with the setting off as long as the key is set. The hub logs at startup
+how many live verifiers are stored unsealed and whether sealing is on.
+
+To seal every verifier and then refuse plain ones, in this order (both
+settings are off by default, and an upgrade switches neither on):
+
+1. Set `MAITY_SECRET_KEY`, and `MAITY_SEAL_VERIFIERS=1` on every hub
+   process, and roll it out. From then on no hub writes a plain verifier,
+   and a plain one that verifies a call is sealed in that call's update of
+   its last use. An idle credential is not, nor is an isolated agent's,
+   whose calls write nothing: the next step seals those.
+2. Run `maity-hub seal-verifiers` with the same environment as the hub
+   (`--dry-run` first, if you like: it only counts). It seals the plain
+   verifiers, revoked ones too, leaves sealed ones alone and prints
+   `sealed N, already sealed M, plain left K` per table and in all. Run it
+   again after adding the key and after every rolling deploy, since an
+   old process may still have written a plain one; it exits 1 while K is
+   not 0.
+3. Once it prints `plain left 0` and the startup log counts no unsealed
+   verifier, set `MAITY_SEALED_VERIFIERS_ONLY=1` in a rollout of its own.
+   A hub with it does not start while a live plain verifier is left: the
+   error names the count and the command. In a rolling update the
+   processes of the earlier rollout keep serving; with `Recreate` (the
+   chart's default single pod) or a single process the hub stays down
+   until `maity-hub seal-verifiers` has run or the setting is unset again.
+   A plain verifier written after the start verifies
+   nothing; its agent or runner joins (or pairs) again.
+
+To go back, unset `MAITY_SEALED_VERIFIERS_ONLY` and restart; nothing is
+changed in the database. Never change or drop the key once verifiers are
+sealed: every sealed agent and runner would have to join again. Keep the key apart
 from the backups. Store backups like you store secrets. If a backup and
 the key, a backup made without a key, or a backup that still holds
 unsealed verifiers (the startup log counts them) were exposed, revoke the agent
@@ -600,7 +660,10 @@ k3s steps above show one way). Open it again only when both parts are done.
 
 ## Upgrades
 
-1. Read the `CHANGELOG.md` section of the new version.
+1. Read the [upgrade page](../upgrade/README.md) of every version between
+   yours and the new one, oldest first (`docs/upgrade/<version>.md`), and do
+   what its "What the operator must do" says before the upgrade. The
+   `CHANGELOG.md` sections list every change in detail.
 2. **Back up.** On Helm, `deploy/scripts/helm-upgrade.sh` takes the dump
    itself, by default: it runs a Job from the CronJob `maity-pg-dump`
    (`DUMP_CRONJOB` names another) and stops before it changes anything when
@@ -621,7 +684,10 @@ k3s steps above show one way). Open it again only when both parts are done.
      `migrate` service runs, and the new one starts after it.
    - Helm: `deploy/scripts/helm-upgrade.sh -f values.yaml` (step 2), or
      `helm upgrade … --timeout 10m` after a backup of your own. The hook Job
-     migrates first.
+     migrates first. The script checks the image's signature first, so the
+     host that deploys needs cosign v3 or later and the image pinned by digest
+     (`image.digest`); `NO_SIGNATURE_CHECK=1` is only for an image you built
+     yourself.
 
 There is **no downgrade**. `maity-hub` has no command that takes the
 schema back, and an older hub refuses a newer schema. To go back, restore

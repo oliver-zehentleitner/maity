@@ -324,6 +324,9 @@ def settings(database_url: str, web_dir: Path) -> Settings:
             "MAITY_DATABASE_URL": database_url,
             "MAITY_PUBLIC_URL": "https://hub.example",
             "MAITY_WEB_DIR": str(web_dir),
+            # The agent firewall's tests are written against the gate on; the default (off) is
+            # tested where it is set (`agent_firewall=False`, tests/test_firewall_switch.py).
+            "MAITY_AGENT_FIREWALL": "on",
         }
     )
 
@@ -420,6 +423,9 @@ def _fresh_process_state() -> Iterator[None]:
     # are emptied between tests anyway, and the next app configures its own.
     shared_counts.configure(None)
     shared_budget.configure(None)
+    from maity_hub import chat_gate
+
+    chat_gate.configure(True)  # as the `settings` above, for a test that builds no app
     verifiers.configure(None)  # a credential written outside an app is stored plain
     listening.stop(every=True)  # a test's apps left on PostgreSQL share nothing with the next
     listening.reset()

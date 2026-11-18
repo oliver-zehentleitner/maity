@@ -4,7 +4,7 @@
 // sign-in, the invitation and the full maintenance page end with it, whatever
 // replaced <main>; render() draws it again with each view (the language may change).
 //
-// [Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon] · Found a bug? · Found a vulnerability?
+// [Maity icon] Maity 2026 · Made with ♥ by Oliver Zehentleitner on [GitHub icon] & [Maity icon] · Found a bug? · Found a vulnerability? · Chat with us on Discord
 //
 // The icons are inline SVG with presentation attributes only (§16.13, "The icons");
 // css/app.css switches the Maity mark's fill under a dark theme.
@@ -17,6 +17,8 @@ window.Maity = window.Maity || {};
   const ISSUES = "https://github.com/oliver-zehentleitner/maity/issues";
   // Where a vulnerability is reported privately, never as a public issue.
   const SECURITY = "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md";
+  // The project's Discord server, as README, the docs and the issue chooser name it.
+  const DISCORD = "https://discord.gg/VRWUe7zKzp";
   const GITHUB = "https://github.com/oliver-zehentleitner";
   const PROFILE = "https://maity.team/oliver-zehentleitner";
   const NAME = "Oliver Zehentleitner";
@@ -91,6 +93,8 @@ window.Maity = window.Maity || {};
       h("span", { class: "product-part" }, external(ISSUES, null, M.t("product.bug"))),
       h("span", { class: "product-sep", "aria-hidden": "true" }, " · "),
       h("span", { class: "product-part" }, external(SECURITY, null, M.t("product.security"))),
+      h("span", { class: "product-sep", "aria-hidden": "true" }, " · "),
+      h("span", { class: "product-part" }, external(DISCORD, null, M.t("product.discord"))),
     ];
   }
 

@@ -45,7 +45,7 @@ from maity_hub import (
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, member_row_or_removed, membership
 from maity_hub.auth.caller import Caller
-from maity_hub.auth.leaks import revoke
+from maity_hub.auth.revocation import revoke
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project

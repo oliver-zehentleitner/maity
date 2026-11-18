@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import re
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import release_gate as g
+import upgrade_page
 
 TAG = "a" * 40
 LATER = "b" * 40  # a later commit of main with the same hub files
@@ -406,10 +410,46 @@ class Workflows(unittest.TestCase):
             text = (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
             self.assertIn('python tools/release_gate.py --sha "$GITHUB_SHA"', text, name)
             self.assertEqual("--mariadb" in text, mariadb, name)
+            # The hub's releases (package and image) ask for the version's upgrade page.
+            self.assertEqual("--upgrade-page" in text, mariadb, name)
             self.assertNotIn("make check", text, name)
             dependent = "publish" if name.startswith("release") else "image"
             block = text[text.index(f"\n  {dependent}:") :]
             self.assertRegex(block, rf"needs: (\[[^\]]*\b{job}\b[^\]]*\]|{job})", name)
+
+    def test_the_image_is_built_only_for_a_v_tag(self):
+        # No hand start and no branch: an image from main is signed as
+        # refs/heads/main and never deployed (req-ry02xngnedjq).
+        text = (ROOT / ".github/workflows/publish-image.yml").read_text(encoding="utf-8")
+        on = re.search(r"^on:\n((?:[ #].*\n|\n)*)", text, re.M).group(1)
+        triggers = [line.strip() for line in on.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+        self.assertEqual(triggers, ["push:", 'tags: ["v*"]'])
+        self.assertNotIn("workflow_dispatch", text)
+        self.assertNotIn("branches", on)
+        gate_job = text[text.index("\n  gate:") : text.index("\n  image:")]
+        image_job = text[text.index("\n  image:") : text.index("\n  sign:")]
+        for job in (gate_job, image_job):
+            condition = job[job.index("\n    if:") : job.index("\n    runs-on:")]
+            self.assertIn("github.ref_type == 'tag' && startsWith(github.ref_name, 'v')", condition)
+            self.assertNotIn("refs/heads", condition)
+            self.assertNotIn("||", condition)
+        # The image is built only after the gate passed, never when it was skipped.
+        self.assertIn("needs.gate.result == 'success' &&", image_job)
+        self.assertNotIn("'skipped'", image_job)
+        self.assertNotIn("always()", image_job)
+
+    def test_the_documented_verify_accepts_only_a_tag_signature(self):
+        # Every deploy is a release: a signature from main is refused.
+        text = (ROOT / "deploy/helm/maity-hub/README.md").read_text(encoding="utf-8")
+        identities = re.findall(r"--certificate-identity-regexp '([^']*)'", text)
+        self.assertEqual(
+            identities,
+            [
+                r"^https://github\.com/oliver-zehentleitner/maity/"
+                r"\.github/workflows/publish-image\.yml@refs/tags/v[^/]+$"
+            ],
+        )
+        self.assertNotIn("heads/main", identities[0])
 
     def test_hand_title_names_the_tested_commit(self):
         text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")
@@ -469,6 +509,63 @@ class Main(unittest.TestCase):
     def test_short_sha_is_refused(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             g.main(["--sha", "abc123"])
+
+    def test_a_missing_upgrade_page_stops_before_any_api_call(self):
+        failing = g.State("fail", "docs/upgrade/0.1.0a9.md is missing")
+        with mock.patch.object(g, "page_state", return_value=failing), mock.patch.object(
+            g, "Api", side_effect=AssertionError("no API call")
+        ):
+            self.assertEqual(g.main(["--sha", TAG, "--upgrade-page"]), 1)
+
+    def test_the_page_check_gets_the_tag_only_on_a_tag_run(self):
+        failing = g.State("fail", "x")
+        for env, tag in (
+            ({"GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": "v0.1.0a9"}, "v0.1.0a9"),
+            ({"GITHUB_REF_TYPE": "branch", "GITHUB_REF_NAME": "main"}, None),
+            ({}, None),
+        ):
+            with self.subTest(env=env), mock.patch.dict(os.environ, env):
+                for k in ("GITHUB_REF_TYPE", "GITHUB_REF_NAME"):
+                    if k not in env:
+                        os.environ.pop(k, None)
+                with mock.patch.object(g, "page_state", return_value=failing) as page:
+                    self.assertEqual(g.main(["--sha", TAG, "--upgrade-page"]), 1)
+                page.assert_called_once_with(tag=tag)
+
+
+class UpgradePage(unittest.TestCase):
+    def page_state(self, page, tag=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "hub").mkdir()
+            (root / "hub" / "pyproject.toml").write_text('version = "0.1.0a9"\n', encoding="utf-8")
+            if page is not None:
+                (root / "docs" / "upgrade").mkdir(parents=True)
+                (root / "docs" / "upgrade" / "0.1.0a9.md").write_text(page, encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                state = g.page_state(root, tag)
+        return state, out.getvalue()
+
+    COMPLETE = "".join(f"## {s}\n\nNothing.\n\n" for s in upgrade_page.SECTIONS)
+
+    def test_a_tag_of_the_pyproject_version_passes(self):
+        state, _ = self.page_state(self.COMPLETE, "v0.1.0a9")
+        self.assertEqual(state.kind, "ok")
+
+    def test_a_tag_of_another_version_fails_even_with_a_complete_page(self):
+        state, out = self.page_state(self.COMPLETE, "v0.1.0a10")
+        self.assertEqual(state.kind, "fail")
+        self.assertIn("::error::the tag v0.1.0a10 is not v0.1.0a9", out)
+
+    def test_the_tagged_versions_page_must_exist(self):
+        state, out = self.page_state(None)
+        self.assertEqual(state.kind, "fail")
+        self.assertIn("::error::docs/upgrade/0.1.0a9.md is missing", out)
+
+    def test_a_complete_page_passes(self):
+        page = "".join(f"## {s}\n\nNothing.\n\n" for s in upgrade_page.SECTIONS)
+        state, _ = self.page_state(page)
+        self.assertEqual(state.kind, "ok")
 
 
 if __name__ == "__main__":

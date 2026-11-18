@@ -797,6 +797,151 @@ outlive the human's change of it.
 text differs (every other session ends, not every one), and the bell and the mail name what the
 human did in the account apart from a reset by mail.
 
+## The mail links and the second-factor resets of another human take that human's account lock first, as the deletion does
+
+**Id:** 8dfeeba9-9c68-4fab-a06c-3cc457abdd49
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-a9jk1ec1frgk, from review A319 of #1756, 2026-11-14, and review A543 of #1827, 2026-11-15; each deadlock reproduced on PostgreSQL by the race tests in `test_account_deletion.py` (`test_a_mail_link_pressed_first_…`, `test_a_second_factor_reset_by_the_admin_or_the_operator_…`); `write_guard.share`, `routes/password_reset._live`, `auth/second_factor._unlockable`, `auth/second_factor_reset._alive`, `request`, `operator_reset`
+**Revisit when:** a path locks a human's factor, human or day row without that human's account lock, or the deletion stops taking `account_lock` before everything else
+**See:** auth.md#the-daily-cap-of-wrong-second-factor-codes-is-a-row-per-human-and-utc-day-refuses-before-the-compare-and-its-alert-mail-carries-the-one-link-that-lifts-it — bdb3d207-90bb-4f5c-999c-110a8a9f10fb — as of 2026-11-15
+
+The `POST` of a password reset link (§2.10), of the link that lifts the daily cap (§2.8.6) and
+of an admin's second-factor reset link (§2.8.3) takes the human's `account_lock` shared
+(`write_guard.share`) before any other lock, as the address's confirmation link already did.
+So do an admin's request for that link and the operator's reset (`maity-hub second-factor
+reset`), before they lock the other human's factor: the admin's own write guard holds only the
+admin's account lock, the operator's command none. One order for every path: the account lock,
+then the factor, the human, the day. The deletion's confirmation takes the account lock
+exclusively before anything else (`lock_account`), so these paths and a deletion run one after
+the other. A path that came first commits, and the deletion then goes on: after a password reset
+it deletes nothing, since the reset withdrew the pending deletion; after the unlock link or a
+second-factor reset it deletes the account. A link that came second waits for the deletion's
+commit and then finds nothing left to change (its `POST` answers as a dead link).
+
+**Reason:** these paths ran without the human's account lock (the links carry no session, the
+admin's guard is the admin's, the command has none), and the deletion's later locks crossed
+theirs. The reset link held the factor and the human and then withdrew the pending deletion,
+whose row the confirmation held while it waited for the human; the unlock link held the factor
+and then wrote the day's row, which the deletion had already deleted on its way to the factor;
+the admin's reset link held the factor and its reset row and then wrote the human's record,
+while the deletion held the human and waited for that row; the admin's request and the
+operator's reset held the factor and then wrote rows that wait for the human's row or its
+sessions, which the deletion held while it waited for the factor. Each deadlocked on PostgreSQL.
+A lock in front of both sides removes every such crossing at once, whatever the deletion locks
+later.
+
+**Rejected alternatives:**
+- The deletion locking the factor's row right after the account lock, so it follows "the factor,
+  the human, the day" too: a human without TOTP has no factor row to lock, and the reset link
+  still crossed the deletion on the human's row and the deletion request's row.
+- The deletion locking the human's row early: ordinary work locks it after project locks, and the
+  deletion takes its project locks after the account lock (`confirm`), so that would invert the
+  order against every other write.
+
+## A path without the human's session takes the account lock before it locks a row of that human's
+
+**Id:** 20c2cbdf-3159-4ed6-889f-18dc7d1302f2
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-srrd56vs9h99, from review A551 of #1827, 2026-11-15: an audit of every path that locks a human's row (`records.lock_human`, `email_links.lock_human`, a record written) for a human other than the bound caller; each deadlock reproduced on PostgreSQL by the race tests in `test_account_deletion.py` (`test_a_way_in_racing_the_deletion_…`, `test_the_hourly_digest_pass_…`, `test_a_worker_writing_the_humans_record_…`); `not_listening_digest.reconcile`, `routes/auth.login`, `routes/email_sign_in._lock`, `routes/password_reset.deliver`, `outbox._settle`, `ForgeAccess._token_rejected_owner`, `forge_links.set_status`
+**Revisit when:** a path without the human's session locks the human's row or another row of the account before that human's account lock
+**See:** auth.md#the-mail-links-and-the-second-factor-resets-of-another-human-take-that-humans-account-lock-first-as-the-deletion-does — 8dfeeba9-9c68-4fab-a06c-3cc457abdd49 — as of 2026-11-15
+**See:** auth.md#the-deletion-locks-every-project-and-organisation-it-locks-later-in-its-first-sorted-pass — 7835ed73-66eb-4f79-b235-c03b8c254cd0 — as of 2026-11-15
+
+A transaction that changes a human's account without that human's session takes the human's
+`account_lock` shared (`write_guard.share`) before its first lock, as the mail links of #1827
+do. These now do so too:
+
+- the sign-ins that have no session yet: the password (`POST /auth/login`, after the password is
+  checked), the mailed link's `POST` and its code (`email_sign_in._lock`);
+- the mails of a sign-in link and of a password reset link, sent after the response
+  (`email_sign_in.deliver`, `password_reset.deliver`);
+- the hourly pass of the agents that do not listen (`not_listening_digest.reconcile`), which then
+  leaves a deleted owner alone;
+- the mail worker's outcome of a mail to a human (`outbox._settle`), whose third hard failure
+  writes the human's record;
+- the forge's refusal of an owner's token and a link's new status (`ForgeAccess._token_rejected_owner`,
+  `forge_links.set_status`), which write the owner's record;
+- a sign-in in a browser that presents another account's live session (`auth.end_presented`),
+  which ends that session and writes that account's record; it runs before the addresses' pass
+  (`sessions.forget_expired_addresses`), which may lock an expired session of the same account.
+
+A path whose caller is the human (the write guard holds that account lock already) or that
+takes the target's lock already (an invitation by handle, a moderation, a contact, a chat access
+entry, a join's or a runner's owner, a device code's sign-in through `moderation.refuse_suspended`)
+needs nothing more. A registration's record for the instance admin locks nothing of the admin's
+the deletion touches before it, and an approval changes an account that has none to delete.
+
+**Reason:** the deletion's confirmation holds the human's rows in two orders. It ends the
+memberships, removes the sign-in and reset links and withdraws the human's open personal requests
+before it writes the human's row at its end, and it writes the human's record (locking the row)
+for a withdrawn request or an ended session before it removes the mails, the forge rows and the
+sign-in rows. A sign-in or a link's mail locks the human's row and then a membership, the mail
+settings or a link row; the hourly pass locks the human's row and then the digest request; the
+mail and forge workers lock the mail, the token or the link and then the human's row. Each crossed
+the deletion and deadlocked on PostgreSQL. A shared account lock in front of them makes them wait
+for the deletion's exclusive lock, or the deletion wait for them, whatever either locks later.
+
+**Closed (2026-11-15, card tsk-nt30de6r799x):** this entry first recorded as open that the deletion
+itself takes a project's lock after it first locks the human's row (`_withdraw_personal`,
+`invitations.invitee_deleted`), against writers that hold that project's lock and then lock the
+human's row. Those writers find the human only under the project's lock, so the account lock
+cannot go first there; the deletion's order changed instead (7835ed73). `auth.end_presented`, the
+corner named with it, is in the list above.
+
+**Rejected alternatives:**
+- Taking the account lock inside `records.lock_human` or `email_links.lock_human`: most callers lock
+  a project or a row of the account before they write a record, and a shared account lock taken
+  there would wait for a deletion while holding what the deletion waits for.
+- Retrying the deadlock (`db.TRANSIENT`): the workers and the mails after a response run once, and
+  a sign-in answered 503 is a failed sign-in; the order removes the cycle instead.
+
+## The deletion locks every project and organisation it locks later in its first sorted pass
+
+**Id:** 7835ed73-66eb-4f79-b235-c03b8c254cd0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-nt30de6r799x, the open case of 20c2cbdf (#1841), design accepted by the lead, 2026-11-15; each deadlock reproduced on PostgreSQL by the race tests in `test_account_deletion.py` (`test_a_writer_holding_a_project_lock_meets_the_deletion_…`, `test_an_organisations_invitation_meets_the_deletion_…`, `test_a_sign_in_ending_the_presented_session_…`); `account_deletion.lock_first`, `_orgs_to_lock`, `_projects_to_lock`, `routes/auth.end_presented`
+**Revisit when:** `delete_account` gains a step that locks a project or an organisation, a step's query changes which ones it locks, or a writer finds the human under a lock other than a project's or an organisation's
+**See:** auth.md#a-path-without-the-humans-session-takes-the-account-lock-before-it-locks-a-row-of-that-humans — 20c2cbdf-3159-4ed6-889f-18dc7d1302f2 — as of 2026-11-15
+
+`account_deletion.confirm` takes, right after the account lock and before it writes anything, the
+rows of every organisation and then of every project whose lock the deletion takes later
+(`lock_first`), each set in the order of its ids. The organisations: those the human belongs to,
+those with a live invitation to or from the human, those a transfer the human started goes into.
+The projects: the namespace's, those the removal of the runners locks, those of the placements and
+invitations the human made, of the decisions their memberships hold, of their agents' and their own
+memberships, of the transfers they started, of the repositories they confirmed, of the invitations
+by handle to them and of the personal requests to them. Each part reads what the step that locks it
+reads. `test_the_deletion_takes_no_project_or_organisation_lock_after_its_first_pass` checks, from the
+statements, that nothing is locked later that the pass did not lock.
+
+**Reason:** the deletion writes the human's record for each withdrawn request and each ended session,
+so it holds the human's row from its first record to its commit. Writers that file to the human or
+notify them (a personal request, a chat request, a restricted card's notice, a jour fixe filing, an
+organisation's invitation and its revocation) hold their project's or organisation's lock and then
+lock the human's row; they find the human only under that lock, so the account lock cannot go first
+there (20c2cbdf). With every such lock taken before the first record, a writer either holds its lock
+first and the deletion waits for it in the pass, holding no row of the human's, or it waits for the
+deletion's commit. The ids' order keeps two deletions, or a deletion and a runner's removal, from
+crossing in the pass.
+
+A request filed to the human in a project outside the pass, and committed after the pass and before
+the deletion's first record, is withdrawn under a project lock taken after the human's row; a second
+writer in that project at that moment can still meet it. The database then rolls one back as a
+transient deadlock, and the confirmation is run again (`db.retrying`).
+
+**Rejected alternatives:**
+- Locking the human's row at the end of the pass as well, to keep new filings out: it narrows the
+  window above, but moves the human's row ahead of every row the deletion locks later, and each of
+  those would need the audit of #1841 again.
+- Taking the human's account lock in the writers: they find the human under the project's lock, and
+  a shared account lock taken there waits for a deletion while holding what it waits for.
+
 ## The credential filter has no boundary in front, and reads a JSON body's decoded strings too
 
 **Id:** d539d36c-45e7-4178-8428-835e67549e0f

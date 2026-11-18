@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import fnmatch
 import json
 import os
 import shlex
@@ -129,6 +130,41 @@ def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) 
     opencode_base = adapters.opencode_config(plain)["permission"]["bash"]
     assert [r for r in claude if r not in claude_base] == ["Bash(make test)"]
     assert [r for r in opencode if r not in opencode_base] == ["make test", "make test *"]
+
+
+def test_an_os_uuid_v4_source_is_allowed_for_the_allowlist_harnesses(tmp_path: Path) -> None:
+    """Keep-the-Why gives every entry an Id made by an OS command (AGENTS.md); under a
+    deny-by-default command allowlist `uuidgen`, `node` and `od` on `/dev/urandom` are all
+    refused, so the runner allows the kernel's generator. Claude Code and opencode gate
+    commands this way; Codex and agy run an unlisted command in their sandbox instead."""
+    assert adapters.UUID_COMMAND == "cat /proc/sys/kernel/random/uuid"
+    rule = f"Bash({adapters.UUID_COMMAND})"
+    # Present with and without the harness's own sandbox, and independent of the grant.
+    plain = dataclasses.replace(context(tmp_path), grant=config.RepositoryGrant())
+    assert rule in adapters.claude_settings(plain)["permissions"]["allow"]
+    assert (
+        rule
+        in adapters.claude_settings(context(tmp_path / "s", sandbox=True))["permissions"]["allow"]
+    )
+    # opencode resolves a command by the LAST rule in the map whose glob matches (§6.1), so
+    # check the whole map in order, not only the dict value: the bare command is allowed, and
+    # the exact rule is not reached around by a line that chains it with another command — only
+    # the catch-all `*` deny matches that, so it stays denied.
+    bash = adapters.opencode_config(context(tmp_path / "o", harness_id="opencode"))["permission"][
+        "bash"
+    ]
+
+    def resolve(command: str) -> str:
+        verdict = "deny"
+        for pattern, value in bash.items():
+            if fnmatch.fnmatchcase(command, pattern):
+                verdict = value
+        return verdict
+
+    assert bash[adapters.UUID_COMMAND] == "allow"
+    assert resolve(adapters.UUID_COMMAND) == "allow"
+    assert resolve(f"{adapters.UUID_COMMAND} && id") == "deny"
+    assert resolve(f"{adapters.UUID_COMMAND}; rm -rf /") == "deny"
 
 
 def test_claude_code_grant(tmp_path: Path) -> None:
@@ -645,6 +681,57 @@ def test_codex_hides_other_clones_the_runner_state_and_home_secrets(tmp_path: Pa
     assert f'{json.dumps(str(ctx.clone / ".git" / "maity"))}' not in text  # its maity reads it
 
 
+def test_codex_hides_no_path_inside_one_it_hides_already(tmp_path: Path) -> None:
+    """Layout `single`: the runner's configuration file lies in `.config/maity-runner`, a
+    home secret. Hiding it again inside the hidden directory broke Codex's bwrap ("Can't
+    create file … Read-only file system"), and every command of a supervised run failed."""
+    home = tmp_path / "home"
+    runner_dir = home / ".config" / "maity-runner"
+    others = tmp_path / "ws" / "p" / "agent-4" / ".git" / "maity"
+    secrets = (tmp_path / "st", runner_dir, home / ".claude.json", runner_dir / "runner.toml",
+               others, tmp_path / "st")  # fmt: skip
+    ctx = context(tmp_path, "codex", private=secrets, workspaces=tmp_path / "ws")
+    hidden = [path for path, level in tomllib.loads(adapters.codex_config(ctx))["permissions"]
+              ["maity"]["filesystem"].items() if level == "none"]  # fmt: skip
+    assert hidden == [str(tmp_path / "ws"), str(tmp_path / "st"), str(runner_dir),
+                      str(home / ".claude.json")]  # fmt: skip
+    assert adapters.outermost((Path("/a/b"), Path("/a"), Path("/ab"))) == (Path("/a"), Path("/ab"))
+
+
+def test_codex_keeps_a_hidden_path_inside_its_own_clone_hidden(tmp_path: Path) -> None:
+    """The clone is opened inside the hidden workspaces root, so a hidden path inside the
+    clone is not hidden by the root and stays listed."""
+    inner = tmp_path / "ws" / "maity" / "agent-3" / "sub" / ".git" / "maity"  # in its clone
+    ctx = context(
+        tmp_path,
+        "codex",
+        workspaces=tmp_path / "ws",
+        private=(inner, tmp_path / "ws" / "maity" / "agent-4" / ".git" / "maity"),
+    )
+    assert inner.is_relative_to(ctx.clone)
+    hidden = [path for path, level in tomllib.loads(adapters.codex_config(ctx))["permissions"]
+              ["maity"]["filesystem"].items() if level == "none"]  # fmt: skip
+    assert hidden == [str(tmp_path / "ws"), str(inner)]
+    assert adapters.outermost((Path("/w"), Path("/w/c/x"), Path("/w/c/x/y"), Path("/w/d")),
+                              opened=(Path("/w/c"),)) == (Path("/w"), Path("/w/c/x"))  # fmt: skip
+
+
+def test_the_home_secrets_are_listed_under_the_home_resolved(tmp_path: Path) -> None:
+    """A home reached through a link: its secrets and the runner's configuration (resolved)
+    must be seen as one inside the other, or Codex's profile would list both."""
+    real = tmp_path / "real-home"
+    (real / ".config" / "maity-runner").mkdir(parents=True)
+    (real / ".config" / "maity-runner" / "runner.toml").write_text("")
+    (tmp_path / "home").symlink_to(real)
+    clone = tmp_path / "ws" / "p" / "agent-3"
+    found = supervisor.private_paths(
+        None, tmp_path / "home", clone,
+        extra=(tmp_path / "home" / ".config" / "maity-runner" / "runner.toml",),
+    )  # fmt: skip
+    assert real / ".config" / "maity-runner" in found
+    assert adapters.outermost(found).count(real / ".config" / "maity-runner" / "runner.toml") == 0
+
+
 def test_claude_code_denies_reading_the_runner_state_and_home_secrets(tmp_path: Path) -> None:
     secrets = (tmp_path / "st", tmp_path / "home" / ".ssh")
     ctx = context(tmp_path, private=secrets, workspaces=tmp_path / "ws", sandbox=True)
@@ -780,6 +867,26 @@ def test_without_pull_requests_the_record_is_empty_and_the_prompt_silent(
     launch = adapters.launch(ctx)
     assert (ctx.agent_dir / "git" / "pull_requests").read_text() == ""
     assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED
+
+
+def test_codex_gets_no_pull_requests_record_and_no_word_of_maity_gh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex's `maity` runs inside its sandbox; `maity gh` is set up only outside one: the
+    grant's pull requests are left out for it (adapters.codex_left_out)."""
+    fake_gh(tmp_path, monkeypatch)
+    placed = {**PLACEMENT, "workspace": {"repository": REPOSITORY}}
+    assert adapters.pull_requests_record(context(tmp_path / "c", grant=PULLS, placement=placed))
+    ctx = context(tmp_path, "codex", grant=PULLS, placement=placed)
+    assert adapters.pull_requests_record(ctx) == ""
+    assert "maity gh" not in adapters._sandbox_prompt(ctx)
+    assert adapters.codex_left_out(PULLS) == [
+        "allow 'make test' is not applied to codex: Codex has no command allowlist, so every"
+        " command runs in its sandbox, listed or not (refused without the sandbox)",
+        "pull_requests is not given to codex: its `maity` runs inside its sandbox, and the"
+        " runner sets up `maity gh` only for a `maity` outside it",
+    ]
+    assert adapters.codex_left_out(config.RepositoryGrant(network=("pypi.org",))) == []
 
 
 def test_pull_requests_without_gh_on_the_path_record_nothing(

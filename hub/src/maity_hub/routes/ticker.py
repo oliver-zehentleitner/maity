@@ -30,19 +30,10 @@ PAGE_MAX = 200
 # §17.6: at most 20 manual posts per membership per hour, of them 5 to everyone.
 POSTS = Limiter(20, 3600, name="routes.ticker.POSTS")
 POSTS_TO_ALL = Limiter(5, 3600, name="routes.ticker.POSTS_TO_ALL")
-URL_MAX = 2048
 TOKENS_MAX = 20
 AREAS_MAX = 20
 ENVIRONMENT_MAX = ticker.ENVIRONMENT_MAX
 TOKEN = re.compile(r"^(member|role|trust|area):\S{1,255}$")
-
-
-def _https(value: Any) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) <= URL_MAX
-        and re.fullmatch(r"https://[^\s]+", value, re.IGNORECASE) is not None
-    )
 
 
 def _text(value: Any) -> bool:
@@ -64,8 +55,9 @@ class PostIn(Strict):
 PER_TYPE = {"release_task_id": "release", "areas": "note", "deploy": "deploy"}
 
 
-def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
-    """§17.6's field rules, all at once; returns the release card for a release."""
+def _check(conn: Connection, mine: Membership, body: PostIn) -> tuple[Any, list[ticker.Member]]:
+    """§17.6's field rules, all at once; returns the release card for a release, and the
+    project's active members, read once for the `to` check and for the item."""
     given = body.model_fields_set
     errors: dict[str, str] = {}
     kind = body.type
@@ -79,7 +71,7 @@ def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
         errors["text"] = "required"
     elif not _text(body.text):
         errors["text"] = "invalid"
-    if body.url is not None and not _https(body.url):
+    if body.url is not None and not ticker.https_url(body.url):
         errors["url"] = "invalid"
     to = body.to if "to" in given else "computed"
     if not (
@@ -136,17 +128,16 @@ def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
                 for k in ("sha", "version")
             ):
                 errors["deploy"] = "invalid"
-            elif deploy.get("log_url") is not None and not _https(deploy["log_url"]):
+            elif deploy.get("log_url") is not None and not ticker.https_url(deploy["log_url"]):
                 errors["deploy.log_url"] = "invalid"
     if errors:
         raise invalid(errors)
+    people = ticker.members(conn, mine.project.id)
     if isinstance(to, list):
         for token in to:
-            if token.startswith("member:") and not ticker.resolve(
-                ticker.members(conn, mine.project.id), token
-            ):
+            if token.startswith("member:") and not ticker.resolve(people, token):
                 raise invalid({"to": "invalid"}, f"{token} names no active member")
-    return card
+    return card, people
 
 
 def _charge(conn: Connection, mine: Membership, to_all: bool) -> None:
@@ -167,10 +158,9 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("ticker:post")
-        card = _check(conn, mine, body)
+        card, people = _check(conn, mine, body)
         to = body.to if "to" in body.model_fields_set else "computed"
         kind = body.type
-        people = ticker.members(conn, mine.project.id)
         facts: dict[str, Any] = {}
         key: str | None = None
         if kind == "note":
@@ -217,6 +207,7 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
             dedupe_key=key,
             facts=facts,
             held=held,
+            people=people,
         )
         if seq is not None and held:  # each held agent's owner is asked (§9.6, "The request")
             chat_request.note_held_by(conn, mine, seq, "ticker", held)

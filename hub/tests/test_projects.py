@@ -126,10 +126,9 @@ def test_probe_configured_says_whether_the_hub_holds_a_token(
 @pytest.mark.parametrize(
     "url",
     [
-        "https://gitlab.com/a/b",
         "http://github.com/a/b",
         "https://github.com/a",
-        "https://evil.example/a/b",
+        "https://github.com/a/b/c",
         "https://github.com/a/..",
         "https://github.com/./b",
         "https://github.com/a/b%2F..",
@@ -143,10 +142,10 @@ def test_probe_configured_says_whether_the_hub_holds_a_token(
         "https://github.com/a/b//",
     ],
 )
-def test_a_repository_must_be_on_a_configured_forge(owner: flow.Human, url: str) -> None:
+def test_a_repository_url_must_match_the_contract(owner: flow.Human, url: str) -> None:
     response = owner.post("/projects", {"slug": "x1", "name": "X", "repository": {"url": url}})
     assert response.json()["error"]["details"]["fields"] == {
-        "repository.url": "not_a_configured_forge"
+        "repository.url": "not_a_repository_url"
     }
 
 

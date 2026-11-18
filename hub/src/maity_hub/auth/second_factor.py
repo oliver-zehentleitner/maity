@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import admin, clock, secretbox, shared_counts
+from maity_hub import admin, clock, secretbox, shared_counts, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import mail_factor, passwords, sessions, totp
 from maity_hub.auth.caller import Caller, session_expires_at
@@ -582,6 +582,7 @@ def _unlockable(conn: Connection, hub: Settings, token: str, *, lock: bool) -> A
     if not all(isinstance(n, int) and not isinstance(n, bool) for n in (unlocks, generation)):
         return None
     if lock:
+        write_guard.share(conn, human_id)  # before any other, as against a deletion
         factor_of(conn, human_id, lock=True)  # the lock order of every check
     row = _day(conn, human_id, day)
     current = conn.execute(

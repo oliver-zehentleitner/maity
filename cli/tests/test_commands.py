@@ -1119,6 +1119,64 @@ def test_runners(joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixt
     assert "rnr-0002  home  online  1/4 running  tools: claude-code" in capsys.readouterr().out
 
 
+ROLES = {
+    "builtin": [
+        {"name": "coder", "description": "writes code", "guide": "Small PRs.\nOne card each.",
+         "scopes": ["tasks:claim"]},
+        {"name": "reviewer", "description": "reviews", "guide": None, "scopes": []},
+    ],
+    "custom": [
+        {"name": "translator", "base": "writer", "description": "translates\x1b[31m the docs",
+         "guide": "Keep the terms.", "guide_by": None},
+    ],
+}  # fmt: skip
+
+
+def test_roles_lists_the_built_in_and_the_projects_own(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/roles")] = lambda seen: (200, ROLES)
+    assert cli.main(["roles"]) == cli.EXIT_OK
+    out = capsys.readouterr().out
+    assert out.splitlines() == [
+        "built-in roles",
+        "  coder: writes code",
+        "  reviewer: reviews",
+        "project roles",
+        "  translator (permissions of writer): translates\\x1b[31m the docs",
+    ], out
+    assert "Small PRs" not in out  # the guide only on request
+    assert fake.signed()[-1].method == "GET"
+
+
+def test_roles_guide_is_quoted_under_its_role(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/roles")] = lambda seen: (200, ROLES)
+    assert cli.main(["roles", "--guide"]) == cli.EXIT_OK
+    lines = capsys.readouterr().out.splitlines()
+    at = lines.index("  coder: writes code")
+    assert lines[at + 1 : at + 3] == ["    > Small PRs.", "    > One card each."]
+    assert lines[lines.index("  reviewer: reviews") + 1] == "project roles"
+    assert lines[-1] == "    > Keep the terms."
+
+
+def test_roles_without_own_and_as_json(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    answer = {"builtin": ROLES["builtin"], "custom": []}
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/roles")] = lambda seen: (200, answer)
+    assert cli.main(["roles"]) == cli.EXIT_OK
+    assert capsys.readouterr().out.splitlines()[-1] == "project roles: none"
+    bare = {"builtin": [], "custom": [{"name": "translator", "base": "writer", "description": ""}]}
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/roles")] = lambda seen: (200, bare)
+    assert cli.main(["roles"]) == cli.EXIT_OK
+    assert capsys.readouterr().out.splitlines()[-1] == "  translator (permissions of writer)"
+    fake.routes[("GET", "/api/v1/projects/oliver/maity/roles")] = lambda seen: (200, answer)
+    assert cli.main(["roles", "--json"]) == cli.EXIT_OK
+    assert json.loads(capsys.readouterr().out) == answer
+
+
 def test_an_exact_placement_id_wins_and_ambiguity_is_refused(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:

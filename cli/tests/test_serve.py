@@ -607,3 +607,48 @@ def test_status_prints_the_attach_line_of_a_running_placement(
     assert cli.main(["runner", "status", "--config", str(path), "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)["placements"]
     assert [(p["state"], p["attach"]) for p in shown][:2] == [("running", hint), ("failed", None)]
+
+
+def test_the_keeper_changes_the_targets_tools_under_the_supervisors_lock(
+    tmp_path: Path,
+) -> None:
+    """The keeper writes the local target's own probes, sandbox and held state, and under
+    the lock the start gate reads them under (supervisor.GateView): never half of a swap."""
+    cfg = _tools_config(tmp_path, "\ninstall = true\n")
+    state.write_credential(cfg.state_dir, state.Secret(fakehub.CREDENTIAL))
+    svc = serve.open_service(cfg, {})
+    assert svc.keeper is not None and svc.supervisor is not None
+    local = svc.supervisor.targets["local"]
+    assert svc.keeper.guard is svc.supervisor.lock
+    assert svc.keeper.probes is local.probes
+    assert svc.keeper.sandbox is local.sandbox and svc.keeper.held is local.held
+
+
+def _tools_config(tmp_path: Path, codex: str) -> config.Config:
+    """test_supervisor's configuration, with `codex` appended to its [harness.codex]."""
+    from test_supervisor import CONFIG
+
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path, max_agents=2) + codex)
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    return config.load(path)
+
+
+@pytest.mark.parametrize(
+    ("codex", "reports"), [("", False), ("\ninstall = true\n", True),
+                           ('\nupdate = "daily"\n', True)],
+)  # fmt: skip
+def test_only_a_runner_that_manages_a_tool_reports_tools(
+    tmp_path: Path, codex: str, reports: bool
+) -> None:
+    """A hub from before §15.16 refuses `capabilities.tools`: a runner that manages no tool
+    leaves it out, and its hello is what such a hub accepts; one that manages a tool sends
+    it, and runs the tool thread."""
+    cfg = _tools_config(tmp_path, codex)
+    state.write_credential(cfg.state_dir, state.Secret(fakehub.CREDENTIAL))
+    svc = serve.open_service(cfg, {})
+    assert ("tools" in svc.advertised) is reports
+    assert (svc.keeper is not None) is reports
+    if reports:
+        ids = [entry["id"] for entry in svc.advertised["tools"]]
+        assert ids == ["codex", "maity"]

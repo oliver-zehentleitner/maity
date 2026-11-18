@@ -10,7 +10,7 @@ the credential is the response body and nothing else.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Query, Request
@@ -35,7 +35,7 @@ from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.auth import credentials, second_factor, verifiers
 from maity_hub.auth.caller import Caller, require_secure_transport
-from maity_hub.auth.leaks import revoke_runner_credential
+from maity_hub.auth.revocation import revoke_runner_credential
 from maity_hub.codes import code_matches, digest, new_code, new_token, normalise_code
 from maity_hub.db import retrying
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, origin_of, settings_of
@@ -82,6 +82,10 @@ class Pair(Strict):
 
 class RunnerUpdate(Strict):
     name: str = Field(pattern=HANDLE_PATTERN)
+
+
+class UpdateNow(Strict):
+    tool: str = Field(min_length=1, max_length=200, pattern=r"^[\x20-\x7e]+$")
 
 
 class RunnerRevoke(Strict):
@@ -628,6 +632,22 @@ def get_runner(runner_id: str, request: Request, caller: HumanCaller) -> JSONRes
         return JSONResponse(runner_view(conn, row, caller.principal_id))
 
 
+@router.get("/runners/{runner_id}/placements")
+def runner_placements(runner_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
+    """The owner's list of the active placements on their runner, in every project it is
+    attached to (§15.3): the owner stops or removes any of them, a foreign one too (§15.6)."""
+    with engine_of(request).begin() as conn:
+        row = _own_runner(conn, caller, runner_id)
+        found = conn.execute(
+            select(t.placement).where(
+                t.placement.c.runner_id == row.id, t.placement.c.active.is_(True)
+            )
+        ).all()
+        views = [placements.owner_line(conn, p) for p in found]
+        views.sort(key=lambda v: (v["project"], v["agent"]["handle"] or "", v["id"]))
+        return JSONResponse({"items": views, "next_cursor": None})
+
+
 @router.patch("/runners/{runner_id}")
 def update_runner(
     runner_id: str, body: RunnerUpdate, request: Request, caller: HumanCaller
@@ -650,6 +670,60 @@ def update_runner(
                 raise taken from None
         return idempotency.Outcome(
             200, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
+        )
+
+    return idempotency.run(engine_of(request), request, caller, action)
+
+
+def _request_time(stored: list[Any], tool_id: str) -> str:
+    """A request's identity (§15.16): the hub's time in milliseconds, made strictly later
+    than the last request the hub issued for the tool, standing or `done`. The floor is the
+    hub's own; nothing a runner reports moves it, so no two requests for a tool on a runner
+    are ever the same string."""
+    moment = clock.now().astimezone(UTC)
+    moment = moment.replace(microsecond=moment.microsecond // 1000 * 1000)
+    for entry in stored:
+        if entry.get("tool") != tool_id:
+            continue
+        try:
+            before = datetime.fromisoformat(str(entry.get("requested_at")))
+        except ValueError:
+            continue
+        if before.tzinfo is not None and moment <= before:
+            moment = before.astimezone(UTC) + timedelta(milliseconds=1)
+            moment = moment.replace(microsecond=moment.microsecond // 1000 * 1000)
+    return clock.rfc3339(moment, millis=True)
+
+
+@router.post("/runners/{runner_id}/updates")
+def update_now(
+    runner_id: str, body: UpdateNow, request: Request, caller: HumanCaller
+) -> JSONResponse:
+    """`Update now` (§15.16): the owner asks the runner to look for a newer version of one
+    tool. Only a tool the runner reports with `update: "daily"`; the runner's configuration
+    decides and the runner checks again. A second request for the tool replaces the first;
+    the runner reads them with `GET /runner` and nothing else wakes it."""
+
+    def action(conn: Connection) -> idempotency.Outcome:
+        row = _own_runner(conn, caller, runner_id, lock=True)
+        _refuse_removed(row)
+        tools = (row.capabilities or {}).get("tools") or []
+        if not any(tool["id"] == body.tool and tool["update"] != "never" for tool in tools):
+            raise ApiError(
+                409,
+                "conflict",
+                "the runner does not update this tool",
+                {"reason": "updates_off"},
+            )
+        stored = row.update_requests or []
+        at = _request_time(stored, body.tool)
+        requests = [r for r in stored if r["tool"] != body.tool]
+        requests.append({"tool": body.tool, "requested_at": at})
+        conn.execute(
+            update(t.runner).where(t.runner.c.id == runner_id).values(update_requests=requests)
+        )
+        return idempotency.Outcome(
+            202, "runner", runner_id, load_runner(conn, runner_id, caller.principal_id)
         )
 
     return idempotency.run(engine_of(request), request, caller, action)

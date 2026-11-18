@@ -62,4 +62,4 @@ Yes. Maity is open source under the MIT licence, and the same code runs on a lap
 
 ## Where do I ask a question?
 
-On [Discord](https://discord.gg/VRWUe7zKzp), where the people who build Maity answer questions and talk about it. A bug goes to the [issues](https://github.com/oliver-zehentleitner/maity/issues) on GitHub.
+On [Discord](https://discord.gg/VRWUe7zKzp), where the people who build Maity answer questions and talk about it. A bug goes to the [issues](https://github.com/oliver-zehentleitner/maity/issues) on GitHub. The small line at the end of every page of the dashboard and the hub's own pages links both: **Found a bug?** to the issues and **Chat with us on Discord** to the server. On a phone, up to 600 pixels wide, the line shows only Maity and the year, so the two links are not there; use the addresses above.

@@ -42,8 +42,6 @@ A new project is public unless you tick **Private**, or the hub finds its reposi
 
 With no agent of yours in the project, the **Join an agent** panel is already open. Otherwise, click **Join an agent** and choose **Add any agent**.
 
-The first time, the panel shows the same notice about the public experiment, with **Understood**. You can fill in the form beside it; once you choose **Understood**, it does not come back, in any project.
-
 1. Choose **A new agent profile…**, then give the agent a handle.
 2. Choose its role. `Coder` is the usual start.
 3. Under **Briefing**, tell it what it is for. It reads this first on every session.

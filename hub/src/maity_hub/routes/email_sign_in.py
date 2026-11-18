@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, Engine, select
 
-from maity_hub import catalog, clock, landing, link_frame, paths, render
+from maity_hub import catalog, clock, landing, link_frame, paths, render, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import anonymous, second_factor, sessions, sign_in_settings
 from maity_hub.auth import email_links as links
@@ -132,6 +132,15 @@ def _eligible(conn: Connection, hub: Settings, human_id: str, epoch: int | None 
     return row
 
 
+def _lock(conn: Connection, human_id: str) -> None:
+    """The account's lock, shared, then the human's row, before any other lock: a link's mail,
+    its code and its `POST` have no session to take the account lock (`write_guard`), and a
+    deletion of the account takes it exclusively before anything else, so the two run one
+    after the other; after the deletion `_eligible` finds no address to use."""
+    write_guard.share(conn, human_id)
+    links.lock_human(conn, human_id)
+
+
 def deliver(
     engine: Engine,
     hub: Settings,
@@ -153,7 +162,7 @@ def deliver(
         ).scalar()
         if human_id is None:
             return
-        links.lock_human(conn, human_id)
+        _lock(conn, human_id)
         row = _eligible(conn, hub, human_id)
         # The address may have changed after the non-locking lookup.
         if row is None or row.address_normalized != address.normalized(given):
@@ -251,7 +260,7 @@ def redeem_code(body: CodeRequest, request: Request) -> JSONResponse:
         _enabled(conn, hub)
         row = links.live(conn, pending=request.cookies.get(device_codes.PENDING_COOKIE))
         if row is not None:
-            links.lock_human(conn, row.human_id)
+            _lock(conn, row.human_id)
             if (
                 _eligible(conn, hub, row.human_id, row.address_epoch) is not None
                 and hub.mail.signing_key is not None
@@ -360,7 +369,7 @@ async def complete_link(token: str, request: Request) -> Response:
         row = links.live(conn, nonce_hash=links.digest(payload["n"]))
         if row is None or row.human_id != payload["h"]:
             return _dead(conn, request)
-        links.lock_human(conn, row.human_id)
+        _lock(conn, row.human_id)
         if _eligible(conn, hub, row.human_id, row.address_epoch) is None or not links.use(
             conn, row
         ):

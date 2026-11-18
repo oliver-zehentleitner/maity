@@ -75,7 +75,8 @@ def test_no_swagger_ui_but_the_openapi_document(client: TestClient) -> None:
 def test_the_shell_is_served_at_the_root_and_at_every_dashboard_path(
     client: TestClient, web_dir: Path
 ) -> None:
-    for path in ("/", "/login", "/maintainer/maity/board", "/a/b/c/d", "/no-such-page"):
+    # `/a/b/c/d` would be no handle (one letter): `404`, tests/test_never_a_page.py.
+    for path in ("/", "/login", "/maintainer/maity/board", "/ab/cd/board/x", "/no-such-page"):
         response = client.get(path)
         assert response.status_code == 200, path
         assert "<title>dashboard</title>" in response.text

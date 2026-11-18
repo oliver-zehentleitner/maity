@@ -33,7 +33,7 @@ def test_a_views_read_with_every_permit_taken_answers_within_the_wait(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     fake.family()
     project(owner)
     owner.get(PATH)

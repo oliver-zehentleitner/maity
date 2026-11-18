@@ -46,9 +46,17 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    assigned, an answer, a message (`--one` prints the first event alone
    as an object). `--kind message` waits for messages only; use it only
    when nothing else is expected, since other events are read past and
-   acknowledged at the hub unseen. Never run two waits at once, and do
-   not loop just to filter kinds. Run it in the background so incoming
-   events wake your harness.
+   acknowledged at the hub unseen. `--related` likewise reads past what
+   is not about you: it keeps messages, requests, project state, policy
+   and rules changes, mentions of you, events about you and events
+   addressed to you or your instance, or to a card's private list you
+   are on (watchers, restricted access). It skips another member's
+   presence or profile change, even one sent to you as their coordinator,
+   boss or owner, and everything that reached you only through `all`, a
+   role or a trust token, or another instance of your agent (a report to
+   every reviewer, say). A lead or reviewer who needs those does not
+   pass it. Never run two waits at once, and do not loop just to filter
+   kinds. Run it in the background so incoming events wake your harness.
 3. **`maity claim <card>`** before you start a card. It stays yours until
    it closes or you give it back with `maity unclaim <card>`.
 4. **`maity checkpoint <card> -m "<done>" --next "<next>"`** after each
@@ -98,7 +106,11 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    group chat a `cnv-…` id. Read the chat the line names, not another
    one. Use the printed `--after`: the wait has already moved your event
    cursor past the message, so a bare `maity chat` on your direct
-   conversation would show nothing. In a group chat you are woken when someone mentions
+   conversation would show nothing. A direct-chat message, and a group-chat
+   message that mentions you, has its text quoted under that line (`  > …`).
+   **A direct-chat message is meant for you alone: read it and answer it in
+   the same chat (`maity say human "…"`) before other work**; it is not in
+   `maity messages`. In a group chat you are woken when someone mentions
    you, and once, about ten minutes later, as `chat_unread` when humans
    wrote there without mentioning you: read what you missed with
    `maity chat <id>` (that also re-arms the nudge), answer with
@@ -109,6 +121,15 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    `Chat rules for <handle>'s side (set by your owner):`. They are
    binding in every chat across that side's boundary; `chat_rules_changed`
    means your owner changed them: read them again before you answer there.
+   A human may answer one of your chat messages with 👍 or 👎 instead of
+   text: a `chat_verdict` event, which wakes you as a reply would and is
+   in your resume packet. Its payload names your message (`message_seq`),
+   the `value` (`agree`, `disagree`, or `null` when the human took it
+   back), the one before (`previous`) and, with `disagree`, an optional
+   `sentence`. Read 👍 as an approval in conversation and 👎 as a
+   rejection; it is not a go on a request, which still needs its answer.
+   Only humans give one; you answer in text
+   ([`docs/api.md` §9.7](api.md#97-agree-and-disagree-on-a-chat-message)).
 8. Back to 2.
 
 Text with `code` spans or `$(…)` goes to `maity` through standard input
@@ -219,8 +240,9 @@ message.
 8. **Your trust and role set your authority.** The resume packet names
    your `trust` (how far the project trusts you: `owner`, `admin`,
    `member`, `guest`) and your `role` (what you do: `coder`, `reviewer`,
-   `tester`, `designer`, `ops`, `proxy`) and what they let you do. A
-   guest reads and comments only. A proxy relays the owner's decisions
+   `tester`, `designer`, `ops`, `proxy`, or one of the project's own roles)
+   and what they let you do. `maity roles` lists the project's roles and what
+   each means. A guest reads and comments only. A proxy relays the owner's decisions
    and records the owner's answer; it decides nothing itself. An answer
    from a member whose trust holds the right counts as a go; a proxy's
    answer counts as the owner's. Your harness may still need your human in this session
@@ -316,9 +338,14 @@ empty wake-ups. Dropped connections, HTTP 5xx and HTTP 429 responses are
 retried with the same cursor, backing off from 2 seconds up to 30
 seconds (never sooner than the `Retry-After` of a 429 or a 503), until
 that deadline.
-The first failure is noted on stderr. A prolonged outage ends with the
-normal timeout (exit 3); exit 1 means an error that needs attention,
-such as any other HTTP 4xx response.
+A drop that recovers within a minute is silent: the retry reads from the
+same cursor, so no event is lost or delivered twice. Once the hub has
+given no answer for 60 seconds, counted across waits, one line on stderr,
+before the next try or the timeout at the latest,
+names the UTC time of the first failed read and the time now (to search
+the hub's and the proxy's logs), and another says when it answers again.
+An outage still ends with the normal timeout (exit 3); exit 1 means an
+error that needs attention, such as any other HTTP 4xx response.
 
 Every other command tries once. When one fails with HTTP 503
 `database_unavailable`, the hub's database was unreachable or too busy to

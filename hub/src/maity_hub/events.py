@@ -317,6 +317,12 @@ def emit(
     watcher list (§6.4) the caller already read with `card_watches.at_write` for this event's
     card, so that what it decided from that list and the list stored here are one read."""
     project = lock_project(conn, project_id)
+    if actor is not None and actor.bridge is not None:
+        # The connection was read live before the route ran (`bridges.carry`); ended since, under
+        # this lock, nothing more is written through it (§2.3).
+        from maity_hub import bridges
+
+        bridges.still_live(conn, str(actor.bridge["bridge_id"]))
     if kind == "member_updated":
         # Everyone reads it; these tokens are who it wakes (§8.2).
         from maity_hub.availability import coordinator_token  # availability writes events itself
@@ -928,6 +934,12 @@ def read(
     (`readable_by`)."""
 
     def wanted(row: Any, hidden: frozenset[str]) -> bool:
+        if (
+            chat_windows is not None
+            and row.kind == "chat_verdict"
+            and (row.payload or {}).get("author") != principal
+        ):
+            return False  # in the packet only for the member whose message it names (§5.2, §9.7)
         if chat_windows is not None and _group_chat(row) and row.kind == "message":
             window = chat_windows.get(row.conversation_id)
             mentioned = (row.payload or {}).get("mentions") or []
@@ -1138,6 +1150,19 @@ def wakes(
         # team's rule selected; `all` and the round's readers read it unwoken (§20.9).
         own = instance is not None and f"instance:{principal}#{instance}" in (row.audience or [])
         return own and row.actor_membership != membership.id
+    if row.kind == "chat_verdict":
+        # It wakes the message's author when that is an agent, as a reply would, by its
+        # team's `wake` rule (§6.18), and nobody else of the chat (§9.7). A redacted one
+        # names no author any more and wakes nobody.
+        if (
+            membership.agent_id is None
+            or (row.payload or {}).get("author") != principal
+            or f"member:{principal}" not in (row.audience or [])
+            or row.actor_membership == membership.id
+        ):
+            return False
+        chosen = (row.wakes or {}).get(principal)
+        return chosen is None or instance is None or instance in chosen
     if row.kind == "request_forwarded":
         # Only a forward to a member wakes, and only that member; an opening to the
         # admins wakes no agent, it would wake every admin agent at once (§7).

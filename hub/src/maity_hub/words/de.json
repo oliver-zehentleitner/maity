@@ -130,6 +130,7 @@
   "password_reset.mail_mailbox": "Dieses Postfach ist auch dein zweiter Faktor: Wer es liest, kann dein Passwort zurücksetzen und sich anmelden. Richte unter Sicherheit in deinem Konto eine Authenticator-App ein, dann braucht ein Zurücksetzen auch deren Code.\n\n",
   "password_reset.subject": "[Maity] Passwort zurücksetzen",
   "product.bug": "Einen Fehler gefunden?",
+  "product.discord": "Chatte mit uns auf Discord",
   "product.love": "Liebe",
   "product.made_by": "Mit {heart} gemacht von {name} auf {github} & {maity}",
   "product.security": "Eine Sicherheitslücke gefunden?",

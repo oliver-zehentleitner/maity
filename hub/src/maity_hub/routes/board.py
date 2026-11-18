@@ -22,6 +22,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.auth.leaks import revoke_leaked
 from maity_hub.board import history, importing, links, notes
 from maity_hub.cards import CLOSED
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import (
     ApiError,
@@ -277,7 +278,7 @@ def get_history(
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         card = _card(conn, mine, card_id)
@@ -433,7 +434,7 @@ def list_notes(
     limit: int = Query(default=PAGE_DEFAULT, ge=1, le=PAGE_MAX),
     cursor: str | None = None,
 ) -> JSONResponse:
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         card = _card(conn, mine, card_id)
@@ -722,6 +723,11 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
     if replayed is not None:
         return replayed
     project = mine.project
+    # Off GitHub the import is a probe read that does not run (§6.14, §11). Checked
+    # before the URL is parsed, so a non-GitHub repository is never fetched.
+    admin = mine.may("project:admin")
+    if project.repository_url is not None and forge.kind_of(project.repository_url) != "github":
+        raise probe_not_configured("forge_not_github" if admin else None)
     # The project's own reader (§11.4): the owner's grant for its repository, or the
     # operator's token for a public one.
     fg = reader_of(request).for_project(project.id)
@@ -731,9 +737,10 @@ def import_issue(slug: str, body: ImportIn, request: Request, caller: AnyCaller)
         raise invalid({"issue_url": error.code}) from None
     if not links.is_own_repository(ref, project.repository_url):
         raise invalid({"issue_url": "foreign_repository"})  # the hub reads only its own
-    admin = mine.may("project:admin")
     if not fg.configured_for(project.repository_url):
-        raise probe_not_configured((fg.refused or "no_grant") if admin else None)
+        raise probe_not_configured(
+            forge.unread_reason(fg, project.repository_url) if admin else None
+        )
     at = clock.rfc3339(clock.now())
     try:
         assert ref.number is not None  # an issue's URL names its number

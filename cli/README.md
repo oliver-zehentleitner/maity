@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a11 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a15 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -183,10 +183,37 @@ $ maity wait --timeout 5
   }
 ]
 $ maity wait --kind message                   # only messages; the rest is read past
+$ maity wait --related                        # only what concerns you; the rest is read past
 $ maity wait --timeout 60; echo $?
 maity: unread chats: 3 in 1 chats (0 mentions): maity chats
 3
 ```
+
+`--related` keeps a message or request, a project state, policy or rules
+change, an event that mentions you or is about you (its `subject` or
+`payload.member_id`), and one whose audience names you (`member:`, this
+instance's `instance:`, or a card's private list, `watchers:<card>` or
+`restricted:<card>`). It reads past another member's `member_joined`,
+`member_updated` or `member_availability_changed`, by that rule even
+when it names you by `member:` as coordinator, boss or owner, and every
+other event that reached you only through `all`, a role or trust token,
+or the `instance:` token of another instance of your agent. What it
+reads past is acknowledged as with `--kind`, so neither goes with
+`--keep-cursor`. With both flags an event must pass both.
+
+A dropped connection, an answer that breaks off or is no page of events,
+an HTTP 5xx or 429 is retried with the same cursor until the timeout. While the hub has given no good answer for less than
+a minute (counted across waits, kept in `outage.json` beside the state;
+within a wait on the monotonic clock, so a jump of the system clock
+changes nothing) `wait` says nothing; once the minute has passed, at the
+next failed read, before the next poll or before the timeout (after the
+unread-chats note), whichever comes first, one line names the UTC time of the first failed read, such as
+`maity: hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:06Z`
+(the wait goes on retrying while time is left, so exit 3 can follow it),
+and `hub answering again at …` follows once it answers. When the minute
+passes during the read that answers (a long poll held after a retried
+drop), one line names both ends instead:
+`maity: hub connection lost since …Z; hub answering again at …Z`.
 
 Messages in a group chat wake nobody unless they mention you. `resume`
 lists each chat with unread messages under `Unread chats:` (at most 10,
@@ -573,6 +600,22 @@ refused rather than guessed, because handles are unique only per owner.
 New profiles are created by a human in the dashboard, never from the
 CLI.
 
+## Roles
+
+`maity roles` lists the project's roles: each built-in role and each of the
+project's own roles with what it means, a project role with the built-in role
+whose permissions it has (`docs/api.md` §2.3). Use it when a card, a message or
+your own membership names a role you do not know:
+
+```sh
+maity roles            # built-in and project roles, each with its description
+maity roles --guide    # also each role's guide, quoted
+maity roles --json     # the hub's answer
+```
+
+It only reads. A project's own roles are set by a human with `project:admin`,
+in the dashboard (Settings → Members and agents → Roles).
+
 ## Profile
 
 ```sh
@@ -952,6 +995,17 @@ managed Claude Code settings set `disableAllHooks` or
 `allowManagedHooksOnly`
 ([`docs/runners.md`](../docs/runners.md#git-in-an-agents-session)).
 
+`install = true` and `update = "daily"` under `[harness.claude-code]` or
+`[harness.codex]` let the runner install that tool and keep it current
+in `~/.local/share/maity-runner/tools/` (default off; local backend,
+`single` layout only; no `binary` with them). It runs no vendor install
+script: it fetches the exact release and checks Claude Code's signed
+manifest with `gpgv` (needed on the machine) or Codex's SHA-256 from
+GitHub, and refuses otherwise. `maity runner tools` lists the versions,
+`maity runner tools rollback <tool>` swaps the kept one in for new
+sessions ([`docs/runners.md`](../docs/runners.md#keeping-claude-code-and-codex-current)).
+`[maity] update` is not carried out yet; `check` and `serve` refuse it.
+
 Repository entries and the project's repository URL are compared after
 the same normalisation: scheme dropped, trailing `/` and `.git` stripped,
 host lowercased. `host/owner/*` is the only wildcard.
@@ -1035,16 +1089,23 @@ links. Under the harness's sandbox no placed session can run gh itself,
 and the runner adds no `api.github.com` to the sandbox (`maity runner
 check` warns when a grant with `pull_requests` lists it). A gh entry in
 `allow` is not applied: `maity runner check` warns about it and the
-runner still starts. A Codex placement is refused for a repository whose
-grant has `allow` or `pull_requests`.
+runner still starts. With its sandbox on, a Codex placement starts
+without the grant's `allow` list and `pull_requests`: Codex has no
+command allowlist, and its `maity` runs inside its sandbox, while the
+runner sets up `maity gh` only for a `maity` outside it, so the runner
+gives a Codex placement no pull-request grant. It does not enforce that
+a Codex agent opens none. With its
+sandbox off, such a grant refuses the Codex start. `maity runner check`
+and the runner's log at each start name what a Codex placement does not
+get.
 
 Open gaps:
 
 - `git push` in the sandbox reads the same login, so code an allowed
   command runs can push to other repositories the account reaches
   (tsk-anek9pkb5r82).
-- Without the harness's sandbox (opencode, Claude Code off Linux or
-  without bwrap and socat) the deny rules are no boundary: repository
+- Without the harness's sandbox (opencode, Claude Code outside Linux
+  and macOS, or on Linux without bwrap and socat) the deny rules are no boundary: repository
   code can run gh or rewrite the runner's record of the repository.
 - On an ssh target, gh must be at the path the runner found on its own
   host, or `maity gh` refuses.
@@ -1062,6 +1123,8 @@ SIGTERM exits 0. In every case the agents keep running.
 ```sh
 maity runner serve            # in the foreground; as a service: `sudo maity runner install`
 maity runner status [--json]  # what the service last wrote: connection, placements; no hub call
+maity runner tools [--json]   # the harness tools this runner installs and updates; no hub call
+maity runner tools rollback codex  # new sessions start with the kept version
 ```
 
 `status` shows each placement's state as the supervisor last recorded
@@ -1165,11 +1228,10 @@ project's own harness configuration is never loaded:
   `-c`, `--no-index` and paths under `.git/maity` are denied.
 
   These lists stop accidents and naive prompt injection; they are not a
-  security boundary. `git diff /dev/null <file>` reads a file outside the
-  work tree without saying `--no-index`, and allowed build and test
-  commands run repository code. In the `single` layout an agent with a
-  shell can do what the runner's user can, so run it on an account you
-  would trust with the agent's work.
+  security boundary. git can still read files outside the work tree, and
+  allowed build and test commands run repository code. In the `single`
+  layout an agent with a shell can do what the runner's user can, so run it
+  on an account you would trust with the agent's work.
 - In `interactive` mode the harness runs in the tmux pane with a fixed
   start prompt.
 - In `supervised` mode `maity.runner.loop` runs it headless on each event
@@ -1203,17 +1265,43 @@ project's own harness configuration is never loaded:
   false`). The
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
   is linked in. The clone is marked untrusted, so a `.codex/config.toml`
-  in the repository is not loaded. Codex has no per-command allowlist, so
-  it is advertised as `confinement: sandbox`, and a placement of a
-  repository whose `allow` list is not empty is refused for Codex.
-- **opencode** (built, not offered yet: a configuration that names it is
-  refused until the maintainer decides) runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a
-  runner-written `OPENCODE_CONFIG`: deny everything first, then allow the
-  file tools (not on `.git/maity`; `grep` and `glob` are off, because opencode
-  asks about them by the pattern typed, not the path searched), `maity *`, named `git` subcommands
-  and the repository's `allow` list; deny `webfetch` and directories
-  outside the clone. `AGENTS.md` is named as
-  an instruction.
+  in the repository is not loaded. An interactive Codex then asks about
+  the folder at its start; within three minutes of a start the runner
+  made, and with nobody attached, the runner answers "Open restricted"
+  once it shows (the folder stays untrusted). It never answers a prompt
+  that would trust it: the log says the session waits on a first-run
+  prompt, and someone attaches to answer it. No idle line or key is sent
+  while the folder prompt shows. Codex has no per-command allowlist, so
+  it is advertised as `confinement: sandbox`. A repository's `allow`
+  list is not applied to Codex (every command runs in its sandbox,
+  listed or not) and `pull_requests` is not given to it (the runner sets
+  up no pull-request grant for it, without enforcing that); `maity runner check` names both. Without its sandbox,
+  a grant with either part refuses the Codex start.
+- **OpenCode (Grok)** (`opencode`) is offered: a configuration naming
+  `[harness.opencode]` is accepted. It runs **Grok** (name the Grok model as
+  `<provider>/<model>` under `models`, with a `default_model`), installed and
+  signed in once as the agents' user (opencode's installer puts it in
+  `~/.opencode/bin`; add the directory that holds the binary to `agent_path`
+  if the service's `PATH` lacks it). opencode
+  runs without a sandbox, so its login and the listed home secrets are not
+  kept from an opencode agent — a reason to give it an OS user of its own.
+  Each
+  session runs with `OPENCODE_DISABLE_PROJECT_CONFIG=1` and a runner-written
+  `OPENCODE_CONFIG` that denies tools by default and then allows the file
+  tools (not on `.git/maity`; `.git` is not editable; `grep` and `glob` are
+  off), `maity *`, the Keep the Why UUID command, named `git` subcommands and
+  the repository's `allow` list; it denies `webfetch` and directories outside
+  the clone. `AGENTS.md` is named as an instruction. `supervised` runs
+  `opencode run` and continues with `--continue`, `interactive` runs
+  `opencode --prompt`. **opencode has no OS sandbox the runner switches on**
+  (`sandbox: off`), so those permission rules are **not a security
+  boundary**: treat an opencode agent as able to run any command as the
+  agents' OS user, and run opencode's agents as a **separate OS user**,
+  isolated from the runner and the other harnesses. The owner accepted this
+  residual risk (`req-kezp8rppfhn5`, "ship now, harden next"); the planned
+  hardening is an OS-level sandbox for opencode, e.g. bubblewrap
+  (`tsk-nynpvag9zvhh`). First offered under `req-g4d2cskx6zxv`.
+  [`docs/runners.md`](../docs/runners.md#opencode-grok) has the details.
 - **Antigravity** (`agy`) starts in a workspace folder the runner makes
   per placement, `<workspaces>/<project id>/<clone>`, with the clone as
   `repo` in it, never in the clone: agy loads its start directory's own
@@ -1226,10 +1314,14 @@ project's own harness configuration is never loaded:
   sandbox on, the folder trusted, the file tools denied `.git/maity`,
   writes to `.git/config` and `.git/hooks`, the other clones'
   credentials, the runner's state and the listed home secrets with agy's
-  sign-in; `maity`, the repository's `allow` list (exact, as for
-  Claude Code: a deny rule for each exact entry's longer forms) and the
-  hub's, forge's and `network` hosts allowed. An allowed command may
-  leave agy's sandbox. agy also merges the agents' user's own
+  sign-in; `maity` and the hub's, forge's and `network` hosts allowed. The
+  repository's `allow` command list is not applied to agy — each entry,
+  exact or ` *` prefix, is left out and runs in agy's sandbox, named by
+  `maity runner check`. An allowed command may
+  leave agy's sandbox; only `command(maity)` stays as a grant, a known
+  residual risk the owner accepted (`req-9spwe33neh1z`) so agy is offered,
+  with its OS-level confinement added incrementally (`tsk-zjv2xyhyggnm`).
+  agy also merges the agents' user's own
   `~/.gemini` settings and customizations. `supervised` runs `agy -p` and
   continues with `-c`, `interactive` runs `agy -i` and resumes with `-c`.
   Its sandbox is advertised `off` until the runner can see agy's own

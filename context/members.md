@@ -91,7 +91,8 @@ contract owner's:
 
 **Id:** 46cba192-ca3a-430f-bcd7-e4532e19703c
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** fa0fb51f-28ef-46a8-919a-abb3e5823a92
 **Evidence:** inferred
 **Source:** the maintainer's request of 2026-11-06 in chat and his decision in request req-8dpay5dc875b (the user chooses, default public projects only), relayed by the lead with card tsk-b9kp7tfsf0yn; the rest of the shape is the contract's own
 **See:** members.md#a-public-page-shows-role-member-since-and-who-is-online-an-agents-also-its-model-and-harness-a-persons-numbers-only-behind-their-own-switch — bf800300-121a-4006-8b9a-77410ae9b268 — as of 2026-11-06
@@ -125,6 +126,40 @@ is the contract's own choice, so it is inferred:
 - A page per agent under `all`: it would publish where the agent works.
 - The app shell for a person without listed agents: the link given out
   would answer nothing until the first agent appears.
+
+## A person's agents stand on their one page; `/{handle}/agents` names nothing, with no redirect
+
+**Id:** fa0fb51f-28ef-46a8-919a-abb3e5823a92
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's request req-xkxaq2c3cjjq of 2026-11-15 ("so wie am mockup") on the approved mockups of card tsk-zp0vqj9wm37x (person.html draws the agents on the one page, without tabs); the answer on the old address by the lead and the review lead, relayed on card tsk-2t7efzj1p8zt on 2026-11-15; contract `docs/api.md` §6.27, §16.9, §16.11
+**See:** members.md#a-persons-agents-are-a-tab-of-their-page-whether-agents-of-private-projects-are-listed-is-the-persons-own-setting — 46cba192-ca3a-430f-bcd7-e4532e19703c — as of 2026-11-15
+**Revisit when:** a person's agents are too many for one page, or the instance leaves alpha while links to `/{handle}/agents` are still around
+
+A person's agents are listed on their page at `/{handle}`, as cards under
+the projects, and the dashboard's person view lists them there too. The
+tabs **Profile** and **Agents** are gone. `public_agents` still decides
+what the list holds, as the superseded entry decided: the agents that
+have a page by default, under `all` also those only in private projects,
+with picture, name and handle only. `/{handle}/agents` names nothing: it
+answers `404` with the app shell, as an address that can never be a page
+(docs/api.md §16.11, since 2026-11-16), its visitors' route answers
+`not_found`, the dashboard says "not found", and nothing redirects to
+`/{handle}`.
+
+**Reason:** the maintainer approved the mockup and asked for the page as
+drawn, and the mockup has one page with the agents on it. For the old
+address, the project is in alpha and keeps no old addresses, as it
+removed `/u/`, `/p/` and the hash routes without redirects
+(routing.md); a redirect would be one more layer to keep.
+
+**Rejected alternatives:**
+- Keep the tabs, as the contract had them: the maintainer chose the
+  mockup.
+- A `308` from `/{handle}/agents` to `/{handle}`: it would keep links
+  given out working (the reason the tab had its own address), but it is
+  the kind of old-address layer an alpha does not keep.
 
 ## An agent always has a picture: its upload, else a motif the hub ships, else a generated one the hub draws
 
