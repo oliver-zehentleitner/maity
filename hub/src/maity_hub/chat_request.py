@@ -43,7 +43,7 @@ from typing import Any
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import chat_access, chat_access_history, clock, namespace, proposals
+from maity_hub import chat_access, chat_access_history, clock, namespace, proposals, write_guard
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.ids import CROCKFORD, PREFIXES
@@ -559,6 +559,10 @@ def _allow(conn: Connection, request: Any, reply_id: str, body: dict[str, Any]) 
     # (no tick, or nothing to admit a ticked agent for) still records them in its history
     # item (§9.6 "History"), which takes only what an entry would take (#1988, zxjn A1433).
     if body.get("their_agents") is not None:
+        # The side's `account_lock` before its agents' rows, the order every write keeps
+        # (`write_guard`, `chat_access._human`): else a deletion of that side deadlocks with
+        # this answer (#1988, 55bz A1453).
+        write_guard.share(conn, side)
         chat_access._their_agents(conn, side, body["their_agents"])
     for field in ("allowed", "denied"):
         if field in body:
