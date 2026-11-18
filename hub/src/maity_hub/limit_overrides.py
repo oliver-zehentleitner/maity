@@ -15,10 +15,10 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select
 
-from maity_hub import ceilings, clock, limits
+from maity_hub import ceilings, clock, events, limits, write_guard
 from maity_hub import tables as t
 from maity_hub.config import Settings
-from maity_hub.errors import invalid
+from maity_hub.errors import invalid, not_found
 from maity_hub.views import ts
 
 UNLIMITED = ceilings.UNLIMITED
@@ -42,6 +42,26 @@ def _valid(name: str, value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
 
 
+def _lock(conn: Connection, *, project_id: str | None, human_id: str | None) -> None:
+    """The row the overrides hang on, `FOR UPDATE`, before the first write: the project's, or
+    the human's after their `account_lock` shared (the order of `write_guard`, as an admin's
+    change of another account takes it). Two `PATCH`es of one field otherwise both delete the
+    row that is not there yet and both insert, and the second fails on the unique key (500 on
+    PostgreSQL); under the lock the second waits and replaces the first's row. A deletion of
+    the account holds `account_lock` exclusively: a `PATCH` waiting for it finds the account
+    gone, `not_found`, as before the wait. SQLite's `BEGIN IMMEDIATE` serialises it anyway."""
+    if project_id is not None:
+        events.lock_project(conn, project_id)
+        return
+    assert human_id is not None
+    write_guard.share(conn, human_id)
+    deleted = conn.execute(
+        select(t.human.c.deleted_at).where(t.human.c.id == human_id).with_for_update()
+    ).first()
+    if deleted is None or deleted.deleted_at is not None:
+        raise not_found()
+
+
 def patch(
     conn: Connection,
     body: dict[str, Any],
@@ -61,6 +81,7 @@ def patch(
             errors[name] = "out_of_range"
     if errors:
         raise invalid(errors)
+    _lock(conn, project_id=project_id, human_id=human_id)
     lo = t.limit_override.c
     target = lo.project_id == project_id if project_id is not None else lo.human_id == human_id
     for name, value in body.items():

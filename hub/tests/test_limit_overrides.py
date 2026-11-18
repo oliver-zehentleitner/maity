@@ -6,9 +6,12 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 
-from tests import flow
+from maity_hub import limit_overrides
+from maity_hub import tables as t
+from tests import factory, flow
+from tests.concurrency import finished, race, waiting
 from tests.conftest import ClientFactory
 
 PROJECT = "/projects/maintainer/maity"
@@ -219,3 +222,33 @@ def test_never_listened_is_an_instance_without_a_session(
     [never] = row["never_listened"]
     assert (never["credential_id"], never["instance"]) == (agent.credential_id, agent.instance)
     assert set(never) == {"credential_id", "instance", "created_at"}
+
+
+@pytest.mark.parametrize("on", ["project", "account"])
+def test_two_patches_of_one_field_both_land_the_second_wins(migrated: Engine, on: str) -> None:
+    """Two `PATCH`es of the same field at once: the second waits for the first's lock on the
+    project's or the human's row and then replaces its row; never the unique key's error
+    (a 500). Skipped on SQLite, which serialises every write (`tests.concurrency`)."""
+    by = factory.human(migrated)
+    target: dict[str, str] = (
+        {"project_id": factory.project(migrated)}
+        if on == "project"
+        else {"human_id": factory.human(migrated)}
+    )
+    with race(migrated) as r:
+        limit_overrides.patch(r.first, {"max_placements": 5}, by, **target)
+
+        def second() -> None:
+            limit_overrides.patch(r.second, {"max_placements": 7}, by, **target)
+
+        step = r.run(r.second, second)
+        assert waiting(step)  # blocked on the row lock the first holds
+        r.first.commit()
+        finished(step)  # no IntegrityError on uq_limit_override_*
+        r.second.commit()
+    lo = t.limit_override.c
+    column = lo.project_id if on == "project" else lo.human_id
+    where = column == next(iter(target.values()))
+    with migrated.connect() as conn:
+        rows = conn.execute(select(lo.name, lo.value).where(where)).all()
+    assert [(row.name, row.value) for row in rows] == [("max_placements", 7)]
