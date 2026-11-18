@@ -245,7 +245,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
-| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9); `details.max`, and the quota details of §6.31 |
+| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9), each against `max_instances` in effect, its ceiling included (§6.31); `details.max`, and the quota details of §6.31 |
 | 409 | `instance_assigned` | a claim by an instance of an agent while the card's `assigned_instance` names another instance, or under `distribution: lead` while it is unset (§6.18); `details.assigned_instance` |
 | 409 | `takeover_required` | an agent's `assign`, `release` or `PATCH assigned_to` that would move a card someone else holds with an active lease (§6.19); `details.holder`, `details.instance` |
 | 409 | `takeover_open` | a takeover on a card that has an open one, or an agent's `assign`, `release` or `PATCH assigned_to` on such a card (§6.19); `details.takeover` |
@@ -18552,9 +18552,11 @@ clone Z. It is the only thing the hub asks of a runner.
   those joined by hand included), plus its active placements that hold
   no live credential yet (before their first pickup, or waiting to
   rejoin), plus one for the new placement unless it carries a
-  credential over (below), stay within `max_instances`. Otherwise
-  `instance_quota` (409, `details.max` and the quota details of §6.31),
-  and nothing is created. The
+  credential over (below), stay within `max_instances` in effect, its
+  ceiling included, the same value a join meets (§6.31). Otherwise
+  `instance_quota` (409, `details.max` and the quota details of §6.31,
+  the ceiling's `value` to the agent profile's owner only), and nothing
+  is created. The
   pickup checks again (§15.9). Neither a replacement's new placement
   nor its instance counts while the replacement is open or the old
   instance is kept (`keep_old`, §15.14; the replacement is not built

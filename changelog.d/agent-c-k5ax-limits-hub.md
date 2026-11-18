@@ -17,6 +17,9 @@
   `member_agents_max`) carries the quota details: the limit, its source, the count, its
   ceiling, and the right and path that can raise it (§6.31); `details.max` stays.
   `agent_limit`, `org_limit` and `project_limit` carry `details.source`.
+- hub: a placement's creation or proposal counts against `max_instances` in effect, its
+  ceiling included, as a join does, and its `instance_quota` carries the quota details
+  (§15.5).
 - hub: `member_agents_max` and `max_instances` go up to their ceiling, 20 and 16 unless the
   instance admin set another; a value above it is `invalid` with `above_ceiling` and
   `details.ceiling`.

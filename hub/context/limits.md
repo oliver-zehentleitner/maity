@@ -6,7 +6,7 @@
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-t63d50qy3s0k and tsk-spmhjqm7szag (built by jg97 on agent-e/limits-hub, finished by k5ax); the lead's decisions of 2026-11-18 on PR 2 (seq 160760: the `out_of_range` alignment, the lock in `limit_overrides.patch`, the CLI in its own PR; seq 160775: the migration slot after #1938); contract `docs/api.md` §6.31, §16.5, §16.5.1; code `hub/src/maity_hub/ceilings.py`, `hub/src/maity_hub/limit_overrides.py`
+**Source:** card tsk-t63d50qy3s0k and tsk-spmhjqm7szag (built by jg97 on agent-e/limits-hub, finished by k5ax); the lead's decisions of 2026-11-18 on PR 2 (seq 160760: the `out_of_range` alignment, the lock in `limit_overrides.patch`, the CLI in its own PR; seq 160775: the migration slot after #1938); contract `docs/api.md` §6.31, §16.5, §16.5.1; code `hub/src/maity_hub/ceilings.py`, `hub/src/maity_hub/limit_overrides.py`, `hub/src/maity_hub/placements.py`
 **Revisit when:** the members, placements or credentials lists get paging (the bound of 1000 could move); or plans (§2.7 part two) set limits per account; or a project gets more than one owner account
 **See:** https://github.com/oliver-zehentleitner/maity — 7d8669c6-3dd9-4b4f-a257-8a9135cf1141 — as of 2026-11-18
 
@@ -19,7 +19,10 @@ for a project in an organisation's namespace) and the agent profile owner's for
 `max_instances`: an agent's instances are its owner's, whoever owns the project it works in.
 `unlimited` is stored as the string and resolves to the hub's bound of 1000 (`ceilings.BOUND`),
 never past it. The value in effect is the stored value, or the ceiling when that is lower; a
-ceiling lowered below a stored value ends nothing and only refuses new things.
+ceiling lowered below a stored value ends nothing and only refuses new things. A placement's
+creation or proposal meets the same `max_instances` in effect as a join and the pickup do
+(`placements.refuse_over_instances` resolves it through `instances.max_instances_limit`), so
+the ceiling holds however an instance comes about.
 
 Only who holds the right that sets a value reads the ceiling's `value` in the quota details
 and the overview (`project:admin` for the project's values, the agent's owner for
