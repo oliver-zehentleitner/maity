@@ -18331,6 +18331,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The admin cases below count the mail settings' writes only.
   for (let i = adminWrites.length - 1; i >= 0; i--) if (adminWrites[i][0] === "/admin/settings/limits") adminWrites.splice(i, 1);
   expect(byId("mail-host").attrs.disabled === "" && text(main).includes("Set by the environment."), "admin: environment field cannot be edited");
+  expect(text(main.querySelector("p.mail-last-hour-own")) === "Also in the last hour: 0 verification mails, 0 invitation mails, 0 second-factor mails, 0 second-factor mails dropped; 0 verification or invitation mails waiting.",
+    "admin: the kinds with a budget of their own have a last-hour line too " + text(main.querySelector("p.mail-last-hour-own")));
   byId("mail-host").value = "ignored.example"; byId("mail-reply_to").value = "reply@example.org"; byId("mail-password").value = "temporary-test-value";
   main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
   expect(JSON.stringify(adminWrites[0]) === JSON.stringify(["/admin/settings/mail", { reply_to: "reply@example.org", password: "temporary-test-value" }]), "admin: only changed writable fields, password once");
@@ -18370,6 +18372,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("mail-password").value = "failed-test-value";
   main.querySelector("form.admin-mail-form").dispatch("submit"); await tick(); await tick();
   expect(byId("mail-password").value === "" && text(main).includes("instance encryption key is not configured") && !text(main).includes("failed-test-value"), "admin: failed save clears password and explains field refusal");
+  // Distinct counts pin which counter feeds which slot of the line for the kinds with a budget of their own.
+  win.Maity.api.get = (path) => path === "/admin/settings/mail" ? adminGet(path).then((v) => ({ ...v,
+    verification_sent_last_hour: 2, invitation_sent_last_hour: 3, second_factor_sent_last_hour: 5,
+    second_factor_dropped_last_hour: 7, verification_queued: 11, invitation_queued: 13, security_queued: 17 })) : adminGet(path);
+  await go("#/all"); await go("#/admin");
+  expect(text(main.querySelector("p.mail-last-hour-own")) === "Also in the last hour: 2 verification mails, 3 invitation mails, 5 second-factor mails, 7 second-factor mails dropped; 24 verification or invitation mails waiting.",
+    "admin: each own-budget counter feeds its own slot " + text(main.querySelector("p.mail-last-hour-own")));
   win.Maity.api.get = (path) => path === "/admin/settings/mail" ? Promise.reject(new win.Maity.api.ApiError("denied", 403, path, "forbidden")) : adminGet(path);
   await go("#/all"); await go("#/admin");
   expect(text(main).includes("Mail settings could not be read: denied") && text(main).includes("Instance information"), "admin:403 is visible and other sections still load");
