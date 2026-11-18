@@ -1246,7 +1246,7 @@ history is one human and one project with one kind of item (requests).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** review findings on #755 by agt-2dkh5tfqppxd and agt-mbf0gthrsash (2026-10-30); task tsk-hzjqn875bcmt
+**Source:** review findings on #755 by two reviewers (2026-10-30); task tsk-hzjqn875bcmt
 **See:** https://github.com/oliver-zehentleitner/maity — 7cc9feea-3b89-4e54-b7d8-0f4dc1f09880 — as of 2026-10-30
 **Revisit when:** CLI documentation is generated directly from `cli.py` argparse definitions
 

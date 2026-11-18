@@ -3758,7 +3758,7 @@ the view already says the organisation is suspended.
 
 `M.orgs.handleOf` decodes the handle from `/account/orgs/<handle>`,
 trims it, drops a leading `@` and writes it in lowercase, for the call
-and for the page title, so `/account/orgs/%40OZ-Team` opens @oz-team.
+and for the page title, so `/account/orgs/%40Acme-Team` opens @acme-team.
 
 **Reason:** a link copied with an `@` or typed with capitals names the
 same organisation for a human.
@@ -6384,8 +6384,8 @@ words keep every hint's length known whatever the handle or the host.
 
 **Rejected alternatives:** a filled-in example cut to a length, which
 still varies with the host and reads oddly when cut; a filled-in example
-only on wide screens, which gives two texts to keep true. The example
-`agent-e` or `oz-team` as a fixed word was dropped too: it read as a fact
+only on wide screens, which gives two texts to keep true. An example
+agent or organisation handle as a fixed word was dropped too: it read as a fact
 about the reader's own agent or organisation.
 
 ## A handle field's rule and its word while typed come from one helper, and nothing is lower-cased
