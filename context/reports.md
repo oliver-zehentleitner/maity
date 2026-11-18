@@ -44,7 +44,8 @@ the same pull request. The report and the probe are updated; status,
 `closed_at` and the claim are not. One exception since 2026-11-15:
 on outsiders' work a new head sends the card back to `review`, so the
 project's own approvals cover it, and its claim stays only while its
-holder may hold it now, else it is released (members.md, dab6ae4a).
+holder may hold it now, else it is released and the card goes to
+`open` with the new head as its report (members.md, dab6ae4a).
 
 **Reason:** without it the card keeps showing a head the branch no
 longer has, and the new head travels only in a free-text message, which
