@@ -345,9 +345,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
     # The same subcommands through `git -C <clone>`, which agents working from a sibling
     # directory (a package subfolder, another clone's path) need. Scoped to this clone's exact
-    # path, never `git -C *`: a free `-C` would point git at any repository. The `-C` escapes
-    # are denied below, mirroring GIT_DENIED, so `git -C <clone> diff --no-index …` cannot read
-    # outside the work tree (tsk-66zyvc4xnhtv, runner.toml note).
+    # path, never `git -C *`: a free `-C` would point git at any repository. The `-C` form
+    # carries the same denies as plain git — the GIT_DENIED escapes are mirrored below for it —
+    # so it is gated no more and no less than `git <sub>` (tsk-66zyvc4xnhtv, runner.toml note).
     allow += [f"Bash(git -C {ws} {sub})" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash(git -C {ws} {sub} *)" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash({UUID_COMMAND})"]  # an OS-made UUID v4 for Keep-the-Why entries
@@ -479,14 +479,17 @@ def pull_requests_record(ctx: Context) -> str:
 
 
 def _sandbox_prompt(ctx: Context) -> str:
-    """What the start prompt adds: under the harness's sandbox the git commands that fail, and
-    for Claude Code that `maity` runs alone; with the grant's pull requests, `maity gh`."""
+    """What the start prompt adds. Claude Code's `dontAsk` allowlist is set for every placement
+    (claude_settings), sandbox or not, so a claude-code session always gets the command-phrasing
+    guidance; the git-config notice and the `maity`-alone hint are only about the sandbox (the
+    unwritable `.git/config`, the plaincall hook); with the grant's pull requests, `maity gh`."""
     pulls = PULL_REQUEST_PROMPT if pull_requests_record(ctx) else ""
     is_claude = ctx.harness.id == "claude-code"
-    claude = (CLAUDE_MAITY_PROMPT + CLAUDE_COMMAND_PROMPT) if is_claude else ""
+    command = CLAUDE_COMMAND_PROMPT if is_claude else ""
     if not writes_denied(ctx):
-        return pulls
-    return GIT_PROMPT + claude + pulls
+        return command + pulls
+    maity = CLAUDE_MAITY_PROMPT if is_claude else ""
+    return GIT_PROMPT + maity + command + pulls
 
 
 def hide_placeholders(ctx: Context) -> None:

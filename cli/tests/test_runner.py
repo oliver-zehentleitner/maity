@@ -79,6 +79,16 @@ def test_tilde_is_expanded(home: Path) -> None:
     assert cfg.local.workspaces == home / "maity-workspaces"
 
 
+@pytest.mark.parametrize("bad", ["/srv/ws*", "/srv/w?rk", "/srv/[ab]/ws"])
+def test_a_workspaces_root_with_a_glob_character_is_refused(bad: str) -> None:
+    """The clone path, built under the workspaces root, is embedded literally in a
+    `Bash(git -C <clone> …)` allow rule, where Claude Code treats `*`, `?` and `[]` as
+    wildcards; a root carrying one would widen the rule, so it is refused (tsk-66zyvc4xnhtv,
+    #1962 round 2)."""
+    found = problems(minimal(b=f'\n[backend.local]\nworkspaces = "{bad}"\n'))
+    assert any("backend.local.workspaces" in p and "must not contain" in p for p in found)
+
+
 @pytest.mark.parametrize(
     ("old", "new", "expected"),
     [

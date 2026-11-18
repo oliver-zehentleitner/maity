@@ -448,7 +448,9 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
             else state_dir
         )
         local = Local(
-            workspaces=Path(local_in.get("workspaces", str, DEFAULT_WORKSPACES)).expanduser(),
+            workspaces=Path(
+                local_in.get("workspaces", str, DEFAULT_WORKSPACES, check=_no_glob)
+            ).expanduser(),
             tmux_socket=Path(
                 local_in.get("tmux_socket", str, str(agent_files / "tmux.sock"), check=_absolute)
             ).expanduser(),
@@ -609,6 +611,19 @@ def _repositories(values: Any) -> str | None:
 
 def _absolute(value: Any) -> str | None:
     return None if Path(value).expanduser().is_absolute() else "expected an absolute path"
+
+
+# Characters Claude Code's permission matcher treats as wildcards. The clone path, built under
+# the workspaces root, is embedded literally in a `Bash(git -C <clone> …)` allow rule
+# (adapters.claude_settings); one of these in the root would make that rule match more than the
+# clone, so a root carrying one is refused here (fail-closed). The ssh host's workspaces path is
+# already confined by REMOTE_PATH, and the project and clone tokens by TOKEN (workspace.locate).
+_GLOB_CHARS = "*?[]"
+
+
+def _no_glob(value: Any) -> str | None:
+    bad = " ".join(sorted({c for c in str(value) if c in _GLOB_CHARS}))
+    return f"must not contain the character(s) {bad}" if bad else None
 
 
 def home_of(user: str) -> Path:

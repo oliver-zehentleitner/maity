@@ -206,7 +206,7 @@ The runner passes the identity to each session as `GIT_AUTHOR_NAME`, `GIT_AUTHOR
 
 ## Letting agents run a repository's checks
 
-Besides `maity` and `git`, an agent may run only the commands its repository's grant lists. For a Python repository that runs pytest, Keep the Why's linter, black, ruff and mypy, add:
+Besides `maity` and `git`, an agent may run only the commands its repository's grant lists. On Claude Code those git subcommands are also allowed through `git -C <clone>`, for the placement's own clone path only, so an agent working from another directory can still drive the clone's git. For a Python repository that runs pytest, Keep the Why's linter, black, ruff and mypy, add:
 
 ```toml
 [repositories."github.com/you/demo"]
@@ -227,7 +227,7 @@ allow = [
 
 Each entry is a plain command; [`maity runner`](../cli/README.md#maity-runner) lists what is refused.
 
-**A UUID source for Keep the Why.** Beyond `maity`, `git` and the grant, the runner also allows one fixed command, `cat /proc/sys/kernel/random/uuid`, on the harnesses that gate commands with an allowlist (Claude Code and opencode). Keep the Why gives every entry an `Id` made by an OS command, never from memory, and under the allowlist the usual sources — `uuidgen`, `node`, `od /dev/urandom` — are all refused, so an agent could record no reasoning. The kernel's generator needs no package installed and prints a lowercase v4 directly. Only the allowlist harnesses need the explicit allow: Codex has no per-command allowlist, so the command already runs inside its sandbox and needs no entry, and antigravity gates commands with its sandbox rather than an allowlist, so the command runs inside agy's sandbox, where that starts, like any unlisted command and needs no entry. The skill names `uuidgen` first and this path second; it was chosen because it needs no `util-linux` and no lowercasing step.
+**A UUID source for Keep the Why.** Beyond `maity`, `git` and the grant, the runner also allows one fixed command, `cat /proc/sys/kernel/random/uuid`, on the harnesses that gate commands with an allowlist (Claude Code and opencode). Keep the Why gives every entry an `Id` made by an OS command, never from memory, and under the allowlist the usual sources — `uuidgen`, `node`, `od /dev/urandom` — are all refused, so an agent could record no reasoning. The kernel's generator needs no package installed and prints a lowercase v4 directly. On Claude Code the allow for this is a Read rule on the path, not a Bash rule: Claude Code resolves a `cat <path>` line through the Read tool's file permission, so a `cat` command is allowed by reading-permission on its path. Only the allowlist harnesses need the explicit allow: Codex has no per-command allowlist, so the command already runs inside its sandbox and needs no entry, and antigravity gates commands with its sandbox rather than an allowlist, so the command runs inside agy's sandbox, where that starts, like any unlisted command and needs no entry. The skill names `uuidgen` first and this path second; it was chosen because it needs no `util-linux` and no lowercasing step.
 
 ## Clones after a stop
 

@@ -143,6 +143,13 @@ pipe, a chain, a redirect or a `$` is refused before it runs, so its text
 goes in a file in the clone (`--body-file`, `--summary-file`,
 `--last-file`, `--next-file`) or in single quotes.
 
+A placed Claude Code agent runs its allowed commands from an allowlist, so
+phrase each one plainly: run one command per Bash call, use `make -C <pkg>`
+and path arguments (for example `python3 -m pytest cli/tests`) rather than
+`cd <pkg> && …`, and do not prefix a command with a variable (such as
+`PYTHONPATH=… python3 …`) — a wrapped or chained form may not match the
+rule that allows the command.
+
 Under a runner placement a Claude Code or Codex session also has a
 scratch: `$MAITY_SCRATCH`, a directory beside your clone (not in it),
 with `TMPDIR` inside it. Keep what you need only for a while there: a

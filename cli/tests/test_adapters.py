@@ -41,7 +41,10 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
     launch = adapters.launch(ctx)
     argv = launch.argv
     assert argv[0] == "/usr/bin/claude"
-    assert argv[-1] == adapters.START_PROMPT  # no sandbox: nothing about git or `maity` alone
+    # No sandbox: nothing about git's config or `maity` alone, but the command-phrasing guidance
+    # is there — the dontAsk allowlist gates commands in every claude-code placement.
+    assert argv[-1] == adapters.START_PROMPT + adapters.CLAUDE_COMMAND_PROMPT
+    assert adapters.CLAUDE_MAITY_PROMPT not in argv[-1] and adapters.GIT_PROMPT not in argv[-1]
     assert argv[argv.index("--setting-sources") + 1] == "user"
     assert argv[argv.index("--permission-mode") + 1] == "dontAsk"
     assert "--strict-mcp-config" in argv and argv[argv.index("--model") + 1] == "opus"
@@ -67,6 +70,18 @@ def test_claude_code_interactive_resumes_its_conversation_after_hung(tmp_path: P
     assert adapters.START_PROMPT not in launch.argv
 
 
+def test_an_unsandboxed_claude_placement_still_gets_the_command_guidance(tmp_path: Path) -> None:
+    """The `dontAsk` allowlist gates commands in every claude-code placement (claude_settings),
+    so an unsandboxed one hits the same chain/`cd`/variable-prefix refusals and needs the
+    command-phrasing guidance; it does not get the sandbox-only `maity`-alone hint or the
+    git-config notice (tsk-66zyvc4xnhtv, #1962 round 2)."""
+    prompt = adapters._sandbox_prompt(context(tmp_path))  # claude-code, no sandbox
+    assert adapters.CLAUDE_COMMAND_PROMPT in prompt
+    assert adapters.CLAUDE_MAITY_PROMPT not in prompt and adapters.GIT_PROMPT not in prompt
+    # A non-claude placement gets neither (nothing gates its commands this way).
+    assert adapters._sandbox_prompt(context(tmp_path / "o", harness_id="opencode")) == ""
+
+
 def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_prompt(
     tmp_path: Path,
 ) -> None:
@@ -75,7 +90,8 @@ def test_claude_code_interactive_without_a_model_ends_the_mcp_option_before_the_
     and Claude Code exited 1 at once (2.1.319, the first runner test)."""
     ctx = context(tmp_path, placement={"id": "plc-0003", "mode": "interactive"})
     argv = adapters.launch(ctx).argv
-    assert argv[-1] == adapters.START_PROMPT and "--model" not in argv
+    assert argv[-1] == adapters.START_PROMPT + adapters.CLAUDE_COMMAND_PROMPT
+    assert "--model" not in argv
     assert argv[-2].startswith("--mcp-config=") and "--mcp-config" not in argv
 
 
@@ -222,12 +238,14 @@ def test_claude_code_grant(tmp_path: Path) -> None:
 
 
 def _bash_allowed(allow: list[str], command: str) -> bool:
-    """Whether Claude Code's Bash allowlist lets `command` run, as a single-command line is
-    matched in dont-ask mode (verified against Claude Code 2.1.327, tsk-66zyvc4xnhtv): a rule
-    `Bash(P *)` matches a command that starts with `P ` (a trailing argument after a space); a
-    rule `Bash(P)` matches only the exact command `P`. A `cat <path>` line is NOT covered by a
-    `Bash(cat …)` rule at all — Claude Code routes it to the Read tool's file permission — so
-    this helper refuses it, which is why the kernel-UUID source needs a Read rule."""
+    """A test approximation of whether Claude Code's Bash allowlist lets a plain `command` run in
+    dont-ask mode — enough for the exact commands these tests pass, not a full model of the
+    matcher (which also strips some wrappers and known-safe env assignments; see Claude Code's
+    permissions docs). What is used here was observed on Claude Code 2.1.327 (tsk-66zyvc4xnhtv):
+    a rule `Bash(P *)` matches a command that starts with `P ` (a trailing argument after a
+    space); a rule `Bash(P)` matches the exact command `P`. A `cat <path>` line is NOT covered by
+    a `Bash(cat …)` rule — Claude Code routes it to the Read tool's file permission — so this
+    helper refuses it, which is why the kernel-UUID source needs a Read rule."""
     body = [r[len("Bash(") : -1] for r in allow if r.startswith("Bash(") and r.endswith(")")]
     if command.split(" ", 1)[0] == "cat":
         return False
@@ -241,8 +259,8 @@ def _bash_allowed(allow: list[str], command: str) -> bool:
 
 
 def _bash_denied(deny: list[str], command: str) -> bool:
-    """Whether a `Bash(…)` deny rule matches `command` (fnmatch globs, as Claude Code applies
-    a deny rule to the whole line)."""
+    """A test approximation of whether a `Bash(…)` deny rule matches `command` (fnmatch globs);
+    enough for the exact commands these tests pass, not a full model of Claude Code's matcher."""
     for rule in deny:
         if rule.startswith("Bash(") and rule.endswith(")"):
             if fnmatch.fnmatchcase(command, rule[len("Bash(") : -1]):
@@ -251,7 +269,7 @@ def _bash_denied(deny: list[str], command: str) -> bool:
 
 
 def _read_allowed(allow: list[str], path: str) -> bool:
-    """Whether a `Read(/…)` allow rule covers the absolute `path` (double-slash form)."""
+    """Whether a `Read(/…)` allow rule names the absolute `path` exactly (double-slash form)."""
     for rule in allow:
         if rule.startswith("Read(") and rule.endswith(")"):
             pattern = rule[len("Read(") : -1]
@@ -279,14 +297,13 @@ def test_the_claude_code_allowlist_lets_a_coder_use_git_dash_c_and_the_uuid_sour
     assert _bash_allowed(allow, f"git -C {clone} commit -m x")
     assert f"Bash(git -C {clone} status)" in allow and f"Bash(git -C {clone} status *)" in allow
     assert not any(r == "Bash(git -C *)" for r in allow)  # no unscoped `-C`
-    # The `-C` escapes are denied too, mirroring GIT_DENIED, so the allow cannot be widened by a
-    # config override or a `--no-index` read outside the work tree.
+    # The `-C` escapes are denied too, mirroring GIT_DENIED, so the `-C` form carries the same
+    # denies as plain git — gated no more and no less.
     assert _bash_denied(deny, f"git -C {clone} -c core.pager=sh log")
     assert _bash_denied(deny, f"git -C {clone} diff --no-index /etc/passwd /etc/passwd")
     assert _bash_denied(deny, f"git -C {clone} --exec-path=/tmp log")
-    # A kernel UUID for Keep-the-Why: the Bash rule alone never runs (cat → Read), so a Read rule
-    # on the proc path is what makes it work.
-    assert not _bash_allowed(allow, adapters.UUID_COMMAND)  # cat is routed away from Bash
+    # A kernel UUID for Keep-the-Why: a `Bash(cat …)` rule is routed to the Read tool, so a Read
+    # rule on the proc path is what makes `cat /proc/sys/kernel/random/uuid` run.
     assert _read_allowed(
         allow, adapters.UUID_PATH
     ), "a Read rule for the kernel UUID path must let `cat /proc/sys/kernel/random/uuid` run"
@@ -360,7 +377,8 @@ def test_claude_code_supervised_runs_the_loop(tmp_path: Path) -> None:
     launch = adapters.launch(ctx)
     assert launch.argv[1:4] == ["-I", "-m", "maity.runner.loop"]
     spec = json.loads(Path(launch.argv[-1]).read_text())
-    assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT]
+    # Unsandboxed, but still a claude-code placement, so the command-phrasing guidance is there.
+    assert spec["first"][-2:] == ["-p", adapters.SUPERVISED_PROMPT + adapters.CLAUDE_COMMAND_PROMPT]
     assert spec["env"]["MAITY_SUPERVISOR"] == f"maity-runner/{__version__}"
     assert spec["again"][-1] == "--continue" and "--model" not in spec["first"]
     assert spec["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"

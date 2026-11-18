@@ -445,35 +445,45 @@ with free arguments.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-66zyvc4xnhtv (a placed coder's field report that its Task subagent was refused most Bash commands); a controlled reproduction with headless Claude Code 2.1.327 over a copy of a placement's settings
-**Verification:** corroborated — each command's allow/deny verdict, and that a Task subagent resolves permissions identically to the main session, were observed directly in the reproduction
+**Source:** card tsk-66zyvc4xnhtv (a placed coder's field report that its Task subagent was refused most Bash commands); a controlled reproduction with headless Claude Code 2.1.327 over a copy of a placement's settings; #1962 round-2 review
+**Verification:** corroborated — on Claude Code 2.1.327 each verdict below was observed directly, including that a Task subagent resolves permissions identically to the main session
 **See:** runner.md — 0a639f39-f76c-4a77-ac43-ae8ce1d42434 — as of 2026-11-18
 **Revisit when:** Claude Code changes how it matches a Bash allowlist, stops routing `cat <path>` through the Read tool, or gains a grant with a deny list that could express the `-C` escapes
 
-Three additions to `claude_settings`, bundled because they share one cause:
-Claude Code matches the allow and deny rules against the command line
-**as written**, and gates some commands by the tool they resemble rather
-than by the `Bash(...)` rule.
+Additions to `claude_settings` and the start briefing. The specific
+behaviours below were observed on Claude Code 2.1.327; the matcher also
+normalises some wrapper and environment-assignment forms (its permissions
+docs), so item 3 guides phrasing rather than assuming the whole line is
+matched verbatim.
 
 1. `git -C <clone> <subcommand>` is allowed like plain git, as fixed rules
    scoped to the placement's own clone path, with every `GIT_DENIED` escape
-   (`-c`, `--exec-path`, `--no-index`, …) mirrored in the `-C` form so a
-   deny still wins. A coder working from a sibling directory needs `-C`;
-   plain `git <sub>` only works from the work tree.
+   (`-c`, `--exec-path`, `--no-index`, …) mirrored in the `-C` form so the
+   `-C` form carries the same denies as plain git — gated no more and no
+   less. A coder working from a sibling directory needs `-C`; plain
+   `git <sub>` only works from the work tree.
 
 2. The kernel UUID source needs a `Read(//proc/sys/kernel/random/uuid)`
-   rule, not only the `Bash(cat …)` rule of 0a639f39. Claude Code routes a
-   `cat <path>` line to the Read tool's file permission, so the Bash rule
-   never let it run — the UUID source was dead in every Claude placement.
-   The Read rule makes the command the skill already runs pass (observed on
-   2.1.327).
+   rule, not only the `Bash(cat …)` rule of 0a639f39. Claude Code resolves a
+   `cat <path>` line through the Read tool's file permission, so the Bash
+   rule never let it run — the UUID source was dead in every Claude
+   placement. The Read rule makes the command the skill already runs pass
+   (observed on 2.1.327).
 
 3. The start briefing tells the agent to run one command per Bash call, to
    use `make -C <pkg>` and path arguments instead of `cd <pkg> && …`, and
-   not to prefix a command with a variable.
+   not to prefix a command with a variable. This is added for every
+   claude-code placement, sandbox or not, because the `dontAsk` allowlist
+   gates commands in every one — the git-config notice and the
+   `maity`-alone hint stay sandbox-only.
 
-**Reason:** the three refusals a coder hit all come from line-as-written
-matching. `git -C` must be fixed code, not a grant entry: the grant has no
+4. The configured workspaces root is refused when it holds a glob-special
+   character (`*`, `?`, `[]`). The clone path is built under that root and
+   embedded literally in the `git -C <clone>` rule, where Claude Code treats
+   those as wildcards, so a root carrying one would widen the rule; refusing
+   it (fail-closed) keeps the rule matching the clone and nothing else.
+
+**Reason:** `git -C` must be fixed code, not a grant entry: the grant has no
 deny field, so an allow-only `git -C *` there would let `git -C <dir> -c
 <config> <subcommand>` slip past the `git -c` deny, and a free `-C` would
 point git at any repository — the allow is scoped to the clone and the
@@ -497,6 +507,10 @@ is the whole lever; nothing subagent-specific is needed.
 - `autoAllowBashIfSandboxed: true` to reach subagents: rejected as
   unnecessary and a widening — subagents already apply the allowlist, and it
   would pass every command whenever a sandbox stands (tsk-yp2bprwv9whv).
+- Validating the glob character in `workspace.locate` instead of config
+  parse: the realistic source is the configured workspaces root, and the
+  project and clone tokens are already confined by `TOKEN`, so the root is
+  refused where it is read (`config.parse`).
 
 ## The command allowlists are not a boundary until agents run as their own user
 
