@@ -15,6 +15,6 @@
 - docs: `docs/upgrade/README.md` lists and links every version page, oldest
   first; each release pull request adds its line, and
   `tools/upgrade_page.py check` refuses a version page the list does not link.
-  Only links the rendered README shows count (inline or reference links, also
-  with `./` or a `#fragment`), not ones in a code example or a comment
-  (tsk-tzknz9zzy1m2).
+  A page counts as linked only by a list line `- [version](version.md)`
+  (also with `./` or a `#fragment`), not one in a code example or a comment;
+  the error names the line to add (tsk-tzknz9zzy1m2).

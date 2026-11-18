@@ -239,6 +239,7 @@ class Listing(unittest.TestCase):
         with Tree(readme="# Upgrade pages\n\nNo list.\n") as root:
             (found,) = u.unlisted(root)
         self.assertIn("docs/upgrade/README.md does not link 0.1.0a9.md", found)
+        self.assertIn('add the list line "- [0.1.0a9](0.1.0a9.md)" to docs/upgrade/README.md', found)
 
     def refused(self, readme):
         with Tree(readme=readme) as root:
@@ -251,6 +252,7 @@ class Listing(unittest.TestCase):
 
     def test_a_link_inside_a_comment_does_not_count(self):
         self.refused("# Upgrade pages\n\n<!-- - [0.1.0a9](0.1.0a9.md) -->\n")
+        self.refused("# Upgrade pages\n\n<!--\n- [0.1.0a9](0.1.0a9.md)\n-->\n")
 
     def test_a_link_inside_a_fenced_example_does_not_count(self):
         self.refused("# Upgrade pages\n\n```markdown\n- [0.1.0a9](0.1.0a9.md)\n```\n")
@@ -269,14 +271,56 @@ class Listing(unittest.TestCase):
 
     def test_a_link_with_a_fragment_or_angle_brackets_counts(self):
         self.accepted("# Upgrade pages\n\n- [0.1.0a9](0.1.0a9.md#x)\n")
-        self.accepted("# Upgrade pages\n\n- [0.1.0a9](<./0.1.0a9.md#x> \"title\")\n")
+        self.accepted("# Upgrade pages\n\n- [0.1.0a9](<./0.1.0a9.md#x>)\n")
 
-    def test_a_reference_link_counts(self):
-        self.accepted("# Upgrade pages\n\n- [0.1.0a9][A9]\n\n[a9]: 0.1.0a9.md\n")
+    def test_a_star_list_line_with_trailing_text_counts(self):
+        self.accepted("# Upgrade pages\n\n   * [0.1.0a9](0.1.0a9.md) (skip it)\n")
 
-    def test_an_indented_line_continuing_a_paragraph_is_text(self):
-        # CommonMark: an indented code block cannot interrupt a paragraph, so the link shows.
-        self.accepted("# Upgrade pages\n\nThe pages:\n    [0.1.0a9](0.1.0a9.md)\n")
+    # Forms a fuller recognizer accepted (9ecab5fe), refused by the list-line rule.
+    def test_a_reference_link_does_not_count(self):
+        self.refused("# Upgrade pages\n\n- [0.1.0a9][A9]\n\n[a9]: 0.1.0a9.md\n")
+
+    def test_a_link_on_a_paragraph_continuation_line_does_not_count(self):
+        self.refused("# Upgrade pages\n\nThe pages:\n    [0.1.0a9](0.1.0a9.md)\n")
+
+    def test_a_link_inside_a_paragraph_does_not_count(self):
+        self.refused("# Upgrade pages\n\nSee [0.1.0a9](0.1.0a9.md) for the steps.\n")
+
+    def test_a_link_with_a_title_does_not_count(self):
+        self.refused('# Upgrade pages\n\n- [0.1.0a9](0.1.0a9.md "title")\n')
+
+    # A1413: what the fuller recognizer counted although the rendered README does not link the page.
+    def test_a_reference_to_another_label_does_not_count(self):
+        self.refused("# Upgrade pages\n\n- [0.1.0a9][elsewhere]\n\n[0.1.0a9]: 0.1.0a9.md\n[elsewhere]: other.md\n")
+
+    def test_an_image_does_not_count(self):
+        self.refused("# Upgrade pages\n\n![picture][a9]\n\n[a9]: 0.1.0a9.md\n")
+        self.refused("# Upgrade pages\n\n- ![0.1.0a9](0.1.0a9.md)\n")
+
+    def test_a_code_span_between_text_and_destination_does_not_count(self):
+        self.refused("# Upgrade pages\n\n- [0.1.0a9]`x`(0.1.0a9.md)\n")
+
+    def test_a_comment_between_text_and_destination_does_not_count(self):
+        self.refused("# Upgrade pages\n\n- [0.1.0a9]<!-- x -->(0.1.0a9.md)\n")
+
+    def test_an_escaped_bracket_does_not_count(self):
+        self.refused("# Upgrade pages\n\n- \\[0.1.0a9](0.1.0a9.md)\n")
+        self.refused("# Upgrade pages\n\n- [0.1.0a9\\](0.1.0a9.md)\n")
+
+    def test_a_comment_opener_in_a_code_span_hides_no_later_list_line(self):
+        self.accepted("# Upgrade pages\n\nWrite `<!--` to open a comment.\n\n- [0.1.0a9](0.1.0a9.md)\n")
+
+    # A1414: an opener inside a line opens no comment block, so the list lines after it count.
+    def test_an_unclosed_comment_inside_prose_hides_no_later_list_line(self):
+        self.accepted("# Upgrade pages\n\nText <!-- not closed\n\n- [0.1.0a9](0.1.0a9.md)\n")
+
+    def test_the_real_readme_with_a_code_span_opener_still_links_every_page(self):
+        text = (ROOT / "docs" / "upgrade" / "README.md").read_text(encoding="utf-8")
+        anchor = "on its own and how to go back.\n"
+        self.assertIn(anchor, text)
+        probe = text.replace(anchor, anchor + "A section that holds only a `<!--` comment counts as empty.\n")
+        self.assertEqual(u.links(probe), u.links(text))
+        self.assertIn("0.1.0a9.md", u.links(probe))
 
     def test_check_refuses_an_unlisted_page_before_the_fold_too(self):
         with Tree(folded=False, readme="# Upgrade pages\n") as root:

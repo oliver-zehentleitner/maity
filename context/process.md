@@ -2781,10 +2781,19 @@ check runs in ci's changelog job and the release gate on the standard library
 alone. `docs/upgrade/README.md` lists every version page, oldest first: the
 docs site renders only that README (`docs/nav.yml`), so its links are how a
 site reader finds a page. `check` refuses, on every pull request and before
-the fold too, a version page the README does not link. Only a link the
-rendered README shows counts, never one in code or a comment: an inline link,
-or a reference link whose definition is there; `./`, a `#fragment` and angle
-brackets do not change the page it names. The release gate does not ask
-again, since the release pull request has passed ci. Listing each version in
+the fold too, a version page the README does not link. A page counts as
+linked only by a list line `- [version](version.md)` (or `* `, up to three
+spaces in front; `./`, a `#fragment` and angle brackets allowed; no `[`, `]`,
+backtick or backslash in the text) that is no code and in no comment block
+opened at the start of a line, with no backtick or `<!--` before its link
+closes. Reference links, links inside a paragraph and images do not count;
+the error names the line to add. Why so narrow: each round of a fuller
+recognizer (inline and reference links on the rendered text) found the next
+edge: a reference resolved to the wrong label, an image, a link glued across
+a code span or a comment, an escaped bracket, an unclosed `<!--` that hid
+every later link; a list line is all the README needs, and the check stays
+standard library only. A full CommonMark inline parser was left out for the
+same reason as a Markdown library. The release gate does not ask again,
+since the release pull request has passed ci. Listing each version in
 `docs/nav.yml` as a page of its own was left out: it would grow the site's
 navigation by one entry per release.

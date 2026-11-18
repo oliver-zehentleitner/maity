@@ -34,19 +34,25 @@ nothing is asked. `--version X` checks the page of X whatever CHANGELOG.md says;
 tools/release_gate.py asks for the tagged version this way. `check` also asks,
 always, that docs/upgrade/README.md links every version page in docs/upgrade/:
 the docs site renders only that README (docs/nav.yml), so its links are the way
-a reader of the site finds the version pages. Only links the rendered README
-shows count, never ones in a code block, a code span or an HTML comment: an
-inline link `[text](dest)` (not an image), or a reference link `[text][label]`,
-`[label][]` or `[label]` whose definition `[label]: dest` starts a paragraph.
-A destination names a page after its angle brackets and `#fragment` are
-dropped and its path is normalised, so `<./0.1.0a9.md#top>` names 0.1.0a9.md.
+a reader of the site finds the version pages. A page counts as linked only by
+a list line of the README: up to three spaces, `- ` (or `* `), then `[text]`
+with no `[`, `]`, backtick or backslash in the text and not starting with `!`,
+then at once `(dest)`, then anything. dest is the page's file name, with an
+optional `./` in front, an optional `#fragment` after, optionally inside
+`<...>`, so `- [0.1.0a9](<./0.1.0a9.md#top>)` names 0.1.0a9.md. A line in a
+fenced or indented code block or in an HTML comment block does not count, nor
+one with a backtick or `<!--` before its link closes; a comment opened inside
+a line hides no later line. Nothing else counts: no reference link, no link
+inside a paragraph, no image. The grammar is one pattern, not a parser: a list
+line inside an HTML block other than a comment (a `<div>`) still counts, though
+CommonMark shows it as raw HTML; any form the rule does not know is refused,
+and the error message names the plain line `- [version](version.md)` to add.
 Standard library only.
 """
 
 from __future__ import annotations
 
 import argparse
-import posixpath
 import re
 import sys
 from pathlib import Path
@@ -67,13 +73,11 @@ FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 COMMENT_START = re.compile(r"^ {0,3}<!--")
 # An HTML comment, or an unclosed one up to the end of the section.
 COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
-# Links, within one paragraph: an inline link (not an image), a reference definition, a use of a label.
-INLINE_LINK = re.compile(
-    r"(?<!!)\[[^\[\]]*\]\(\s*(<[^<>\n]*>|[^\s()<>]+)(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^()]*\)))?\s*\)"
+# The README's list line that links a version page: "- [text](dest)"; the module's docstring has the rules.
+LIST_LINK = re.compile(
+    r"^ {0,3}[-*] \[(?!!)[^\[\]`\\]+\]"
+    r"\((?P<open><)?(?:\./)?(?P<name>[^\s()<>#`\\/]+)(?:#[^\s()<>`\\]*)?(?(open)>)\)"
 )
-LINK_DEF = re.compile(r"^ {0,3}\[([^\[\]]+)\]:[ \t]*(<[^<>\n]*>|\S+)")
-REF_USE = re.compile(r"(?<!!)\[([^\[\]]+)\](?!\()")
-CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).+?(?<!`)\1(?!`)", re.DOTALL)
 
 
 def hub_version(root: Path = ROOT) -> str:
@@ -128,7 +132,8 @@ def indent(line: str) -> int:
 
 def lines(text: str) -> list[tuple[str, str]]:
     """Each line of a page with its kind: "heading" (a `##` heading, given as its title),
-    "code" (in a fenced or indented code block) or "text"; fence lines are left out.
+    "code" (in a fenced or indented code block), "comment" (in an HTML comment block that
+    opens at the start of a line) or "text"; fence lines are left out.
     The module's docstring has the rules."""
     out: list[tuple[str, str]] = []
     fence: str | None = None  # the opening run of the open fence
@@ -150,7 +155,7 @@ def lines(text: str) -> list[tuple[str, str]]:
             continue
         if comment:
             comment = "-->" not in line
-            out.append(("text", line))
+            out.append(("comment", line))
             continue
         if not line.strip(" \t"):
             paragraph = False
@@ -173,15 +178,16 @@ def lines(text: str) -> list[tuple[str, str]]:
         if start:
             comment = "-->" not in line[start.end() :]
             paragraph = False
-        else:
-            paragraph = not ATX.match(line)
+            out.append(("comment", line))
+            continue
+        paragraph = not ATX.match(line)
         out.append(("text", line))
     return out
 
 
 def sections(text: str) -> tuple[list[str], dict[str, tuple[list[str], list[str]]]]:
     """The second-level headings in order, and per heading its body as (prose lines,
-    code lines)."""
+    comment block lines included; code lines)."""
     headings: list[str] = []
     bodies: dict[str, tuple[list[str], list[str]]] = {}
     for kind, line in lines(text):
@@ -189,7 +195,7 @@ def sections(text: str) -> tuple[list[str], dict[str, tuple[list[str], list[str]
             headings.append(line)
             bodies[line] = ([], [])
         elif headings:
-            bodies[headings[-1]][0 if kind == "text" else 1].append(line)
+            bodies[headings[-1]][1 if kind == "code" else 0].append(line)
     return headings, bodies
 
 
@@ -198,38 +204,16 @@ def has_text(prose: list[str], code: list[str]) -> bool:
     return any(line.strip() for line in code) or bool(COMMENT.sub("", "\n".join(prose)).strip())
 
 
-def label(text: str) -> str:
-    """A link label as CommonMark matches it: case and runs of whitespace do not count."""
-    return " ".join(text.split()).casefold()
-
-
-def destination(text: str) -> str:
-    """A link destination without angle brackets and #fragment, its path normalised."""
-    if text.startswith("<") and text.endswith(">"):
-        text = text[1:-1]
-    return posixpath.normpath(text.split("#", 1)[0] or ".")
-
-
 def links(text: str) -> set[str]:
-    """The destinations of the links a rendered page shows; the module's docstring has the rules."""
-    rendered: list[str] = []
+    """The page names the README's list lines link; the module's docstring has the rules.
+    Only text lines count: code, headings and HTML comment blocks (as lines() opens them,
+    at the start of a line) are left out."""
+    names = set()
     for kind, line in lines(text):
-        rendered += ["", line, ""] if kind == "heading" else [line if kind == "text" else ""]
-    definitions: dict[str, str] = {}
-    paragraphs: list[str] = []
-    for paragraph in re.split(r"\n(?:[ \t]*\n)+", COMMENT.sub("", "\n".join(rendered))):
-        rest = paragraph.split("\n")
-        while rest and (found := LINK_DEF.match(rest[0])):
-            definitions.setdefault(label(found.group(1)), found.group(2))
-            rest = rest[1:]
-        paragraphs.append(CODE_SPAN.sub("", "\n".join(rest)))
-    targets = set()
-    for paragraph in paragraphs:
-        targets.update(found.group(1) for found in INLINE_LINK.finditer(paragraph))
-        for found in REF_USE.finditer(paragraph):
-            if label(found.group(1)) in definitions:
-                targets.add(definitions[label(found.group(1))])
-    return {destination(target) for target in targets}
+        found = LIST_LINK.match(line) if kind == "text" else None
+        if found and "`" not in found.group(0) and "<!--" not in found.group(0):
+            names.add(found.group("name"))
+    return names
 
 
 def unlisted(root: Path) -> list[str]:
@@ -238,8 +222,8 @@ def unlisted(root: Path) -> list[str]:
     readme = folder / "README.md"
     linked = links(readme.read_text(encoding="utf-8-sig")) if readme.is_file() else set()
     return [
-        f"docs/upgrade/README.md does not link {page.name}: add the line"
-        f" '- [{page.stem}]({page.name})' to its list of versions"
+        f"docs/upgrade/README.md does not link {page.name}: add the list line"
+        f' "- [{page.stem}]({page.name})" to docs/upgrade/README.md (only such a line counts)'
         for page in sorted(folder.glob("*.md"))
         if page.name != "README.md" and page.name not in linked
     ]
