@@ -28,8 +28,9 @@ from maity_hub.auth.permitted import API, Calls
 from maity_hub.auth.sign_in_settings import second_factor_policy
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError, invalid, rate_limited, unauthenticated
-from maity_hub.notifications import preferences, records, tokens
+from maity_hub.notifications import records, tokens
 from maity_hub.ratelimit import Attempt, Limiter
+from maity_hub.text_language import text_language
 
 SECOND_STEP = timedelta(minutes=5)  # a second-factor session's life
 # The longest of them, a mail session's: what the wrong codes of one session are counted over, so
@@ -598,7 +599,7 @@ def unlock_page(conn: Connection, hub: Settings, token: str) -> str | None:
     row = _unlockable(conn, hub, token, lock=False)
     if row is None:
         return None
-    return preferences.text_language(conn, row.human_id)
+    return text_language(conn, row.human_id)
 
 
 def unlock(conn: Connection, hub: Settings, token: str) -> bool:

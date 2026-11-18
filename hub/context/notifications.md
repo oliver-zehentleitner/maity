@@ -12,7 +12,7 @@ stages is in the root `context/notifications.md`.
 **Source:** card tsk-ya56x9gx986r, 2026-11-02; docs/api.md §6.2; review of #1111
 **Revisit when:** a language needs plural forms in a hub text, or a translation changes a placeholder
 
-`preferences.text_language` picks the language (chosen interface language, else `language` when it is one
+`text_language.text_language` picks the language (chosen interface language, else `language` when it is one
 of the ten, else `en`); `catalog.section` reads `words/<lang>.json`, English under any key without a
 translation. Mails, link pages, bell titles and the public pages' frame all go this way, so adding a
 language touches no module. Sentences are whole keys with placeholders; none is built from pieces, which
@@ -32,6 +32,37 @@ After a change of these words run `make -C web fixtures`, or the web job is red 
 - Reading `interface_language` at each call site: the fallback would be repeated a dozen times.
 - `language` as the unconditional fallback: it reads `en` for everyone who never set it.
 - Translating the API's messages too: §6.2 keeps them English, a client goes by `code`.
+
+## The text language is a module of its own, not part of `languages.py` or the notification settings
+
+**Id:** 0ea8c13c-857d-4155-b004-688023ec140d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-xx108ajy287x item 16 (clean-up audit tsk-hgnbapyw7hnh, area 12); the lead's go on the design, 2026-11-18
+**Revisit when:** the language a human is written to is stored anywhere other than `human.interface_language` and the notification settings' `email.language`
+**See:** notifications.md#the-hubs-own-words-live-in-one-catalog-per-language-read-through-one-rule — 5fa1d7c2-8e34-4b6a-9c07-1d3e8f20ab46 — as of 2026-11-18
+
+`text_language(conn, human_id)` lives in `maity_hub/text_language.py`, beside `languages.py`, and
+imports only the tables and `languages`. It reads the two stored values directly: the interface
+language chosen, and `email.language` from the notification settings row, read as English when it
+is not stored, which is the settings' default. Every module that writes to a human in their
+language (the mail factor, the second-factor reset, sign-in and password-reset mail, mail-link
+pages, the bell, reports, the subagent instruction, the address mails) imports it from there.
+
+**Reason:** it used to be `notifications.preferences.text_language`, so every mail-sending module
+imported the notification settings only for the language, and the bell (`items.scope`) needed a
+function-local import against the cycle. The address lifecycle, which moves out of
+`preferences.py` next (item 16b), needs the language too, and would otherwise import
+`preferences` back.
+
+**Rejected alternatives:**
+- Into `languages.py`, as the audit proposed: `languages` is data with no hub imports, and
+  `preferences` imports it already. Reading the settings from there would turn it into a module
+  that depends on the notifications, and a cycle.
+- Keep it in `preferences.py` and read the merged settings (`_merged`): the defaults merge gives
+  the same answer for this one key, but it ties every caller to the whole settings module.
+- A function-local import in each caller: the workaround this card removes.
 
 ## Items are derived on every read from 30 days of the human's projects, with the relations as they are now
 

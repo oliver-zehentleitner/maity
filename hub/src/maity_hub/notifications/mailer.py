@@ -37,6 +37,7 @@ from maity_hub.mail.environment import MailEnvironment
 from maity_hub.mail.text import defang, quoted, subject_line
 from maity_hub.notifications import items, listing, preferences, presence, records, retention
 from maity_hub.notifications.items import Item
+from maity_hub.text_language import text_language
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ def for_human(
     state = _state(conn, human_id)
     # The settings, with the language this mail is in (§6.2).
     email = preferences.preferences(conn, human_id)["email"]
-    prefs = {**email, "language": preferences.text_language(conn, human_id)}
+    prefs = {**email, "language": text_language(conn, human_id)}
     # What the bell's long-poll compares before it derives again, and the human's settings
     # with it: unchanged since the last pass, and nothing left waiting for its hour, means
     # there is nothing to mail, and the pass costs a few aggregates, not 30 days of the
