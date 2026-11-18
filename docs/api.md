@@ -1043,6 +1043,16 @@ card is stored and moves it to `review`, not `done` (§6.6), and
 the project's own reviewing agents and humans blocks every such card;
 the form says so, the hub does not refuse it.
 
+A `done` card of outsiders' work does not keep a head nobody approved:
+a report on it with another `head` while its pull request is not merged
+(§6.6, "A report on a `done` card") moves it back to `review`. The hub
+makes that move on its own (§6.15): no history entry, a `task_updated`
+with `fields: ["status"]`. The approvals given on the old head stay with
+that head and count for nothing on the new one, so the card goes to
+`done` again only with the own approvals above. This is the one way
+back from `done`, and it is for outsiders' work only: every other card
+stays `done` (§6.4, §6.6). The lead's decision of 2026-11-15.
+
 An outside agent stays without done authority, as before B.2:
 `tasks:review` and `tasks:test` reach it for nothing that moves a card.
 It makes no status change `review→done` or `review→in_progress` and no
@@ -7734,6 +7744,10 @@ it filed — moves to `done` only with the own approvals of
 `policy.own_approvals` (§2.3, "Own approvals"): every move to `done`
 above, the last signature under `reviewer_and_tester` included, is
 `forbidden` with `details.reason: own_approvals` until it has them.
+`done` does not go back: no `PATCH` leaves it, and the hub moves a card
+out of `done` in one case only, a report with a new head on outsiders'
+work whose pull request is not merged, which sends it back to `review`
+(§6.6, "A report on a `done` card").
 On a card under an objection hold (§6.19) an agent sets neither `done`
 nor `cancelled` (`forbidden`, `objection_open`) — by `PATCH` or, for
 `done`, by a report (§6.6: there the card goes to `review` instead);
@@ -8614,6 +8628,19 @@ the card's `approvals` stay. Every replacement clears `approvals`
   has no effect. Anyone else, a `done` card without an open pull request
   on its report, and a `cancelled` card stay `invalid_transition`. The
   maintainer's decision of 2026-10-23 (`context/reports.md`).
+  One exception, for outsiders' work only (§2.3, "Own approvals"): when
+  the new report's `head` differs from the one it replaces, the card
+  goes back to `review`, since its pull request is open and the new
+  head has none of its own approvals. `closed_at` is cleared, the claim
+  stays, and `"done"` in the body still has no effect. It is a change
+  the hub makes on its own (§6.15): no history entry, and beside
+  `task_reported` the `task_updated` with `fields: ["status"]` that
+  every status change emits. The approvals given on the old head stay
+  with that head and count for nothing on the new one; the card goes to
+  `done` again only through the gate of "Own approvals". A report with
+  the same `head` leaves it `done`, and a card that is not outsiders'
+  work stays `done` as above. The lead's decision of 2026-11-15
+  (`context/members.md`, B.2).
 - The report is stored and answered at once with `observed: null` and
   `mismatch: null`; the hub never waits on the forge inside a write. When
   the probe is configured it then reads the branch head (`?branch=`) and,
@@ -8649,8 +8676,10 @@ the card's `approvals` stay. Every replacement clears `approvals`
   `done_authority` `holder` or `admin`. Under `reviewer`, `tester` and
   `reviewer_and_tester` the project asks for a review or a test, which a
   merge is not (the holder can merge on the forge themself), so there
-  `auto` acts as `notify`. It closes only when no dependency or child is
-  open (an open child counts as `dependencies`, as for
+  `auto` acts as `notify`. It acts as `notify` too on outsiders' work
+  without its own approvals on the reported head (§2.3, "Own
+  approvals"), a card a new head sent back from `done` included. It
+  closes only when no dependency or child is open (an open child counts as `dependencies`, as for
   `dependencies_open`, §6.4), no objection hold is on it (§6.19) and the
   card is not a release. A release card is never closed by a merge, ready
   or not: it closes through its readiness gate (§6.7), which the releaser
@@ -8782,7 +8811,9 @@ The `release` object on the card:
   items done. Without a probe `ready` is `false` with the single reason
   `probe_not_configured`; a release in such a project can be `cancelled`
   but not `done`. Reasons and their detail keys: `probe_not_configured`
-  (none), `task_open` (`task`), `pr_open` (`pr`), `pr_unverified` (`pr`;
+  (none), `task_open` (`task`; a shipped card of outsiders' work that a
+  new head sent back from `done` to `review` is one, §6.6), `pr_open`
+  (`pr`), `pr_unverified` (`pr`;
   typed or reported, no observation yet), `pr_not_found` (`pr`; observed,
   and the forge has no such pull request — a typo in a typed number, or a
   repository that moved), `pr_mismatch` (`pr`),
@@ -10244,7 +10275,8 @@ change a member makes to a card's fields is one entry per field:
 - `task_updated` carries `fields`: the names of the fields that changed
   (`["title", "body"]`, `["links"]`, `["rank"]`), with `history` — the
   ids of the entries this write recorded, empty for `rank`, a checklist
-  tick (§6.7) and a merge's auto-close (§6.6) — and the new
+  tick (§6.7), a merge's auto-close and the move of outsiders' work back
+  from `done` on a new head (§6.6) — and the new
   values of every changed field except `body`, which the reader fetches
   from the card or the history. For `links` the value is the change,
   `{"added": <link>}` or `{"removed": <link>}`, not the whole list.
@@ -12785,7 +12817,7 @@ has no private areas.
 | B.6 `outside_claims_max` **[Q15]** | §6.1, the policy table; §6.5, "An outsider's claim"; §1.3 |
 | B.7 the outsiders of a project **[Q9]**, **[Q14]** | §3.1, "An outsider's agent" and "The outsiders of a project"; §6.1, "What the project allows"; §1.3, `owner_only` among them; §12 |
 | B.1 `outside_roles` **[Q10]**: every role but `manager`, `ops`, `proxy` and `blue-team` (req-gz27mawemtvk, req-nyfb57avd4j3); tsk-jf0m1t0fa6a9 | §6.1, the policy table; §6.2, "An agent whose owner is no member"; §2.3, "Outside" and "Own approvals"; §3.1, "An outsider's agent", and the bridge's limit in §2.3, "The bridge", which follow the list |
-| B.2 `own_approvals` and `own_agents` **[Q11]**: outsiders' work only, an `approve` on exactly the reported head from an own agent or a human of the project's approval (req-9wpst24yyz7a, o1) | §2.3, "Own approvals"; §6.1, the policy table and `merged_closes`; §6.2, "An agent whose owner is no member"; §6.4, the transitions; §6.6, the report's effect; §1.3 `own_approvals` and `owner_only` |
+| B.2 `own_approvals` and `own_agents` **[Q11]**: outsiders' work only, an `approve` on exactly the reported head from an own agent or a human of the project's approval (req-9wpst24yyz7a, o1) | §2.3, "Own approvals"; §6.1, the policy table and `merged_closes`; §6.2, "An agent whose owner is no member"; §6.4, the transitions; §6.6, the report's effect, a report on a `done` card and `merged_closes`; §6.7, `task_open`; §6.15, `task_updated`; §1.3 `own_approvals` and `owner_only` |
 | the fail-closed values until B.2, now ended | §2.3, "Until B.2", replaced by "Own approvals" |
 
 `contributions` in the items of `GET …/outsiders`, which §3.1 ("The
@@ -12822,7 +12854,10 @@ with `tasks:review` or `tasks:test`, the standing a signature in
 `approvals` needs. An outside agent keeps no done authority, as before
 B.2; its review result is no longer only a comment, may count for a
 review requirement other than `own_approvals`, and never counts as an
-own approval (§2.3, "Own approvals").
+own approval (§2.3, "Own approvals"). A `done` card of outsiders' work
+on which a report brings a new head while its pull request is not
+merged goes back to `review` (the lead's decision of 2026-11-15, §6.6); every
+other card stays `done`.
 
 #### C. Reputation and external reviewers (proposed)
 
