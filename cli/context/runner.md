@@ -158,32 +158,44 @@ only the runner's own process may be signalled.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-yfc9n6kmvs52; the reconnect-count reproduction tests in `cli/tests/test_supervisor.py`
+**Source:** card tsk-yfc9n6kmvs52; round-2 review tqgb A1256; the reconnect-count reproduction tests in `cli/tests/test_supervisor.py`
 **See:** runner.md#serve-ends-with-78-on-anything-retrying-cannot-fix-and-never-takes-the-agents-with-it — e210a162-44c7-4efd-9176-c3c3f66b3e63 — as of 2026-11-18
 **Revisit when:** the capabilities shape, the advertise throttle, or how `serve` and the supervisor share the capabilities dict changes
 
 `maity runners` shows a runner's `running`/`max_agents` straight from the
 capabilities the runner advertised; the hub stores and returns that number
-unchanged. The count is kept correct across a reconnect three ways, together:
+unchanged. The count is kept correct across a reconnect four ways, together:
 
 - The supervisor writes each advertised total (and the per-target counts) back
   into the shared capabilities dict, so serve's next `hello` carries the live
   count, not the `running: 0` the dict was first built with.
 - `serve`'s `hello` reads that dict through the supervisor under the
-  supervisor's lock (`advertised_capabilities`), and after each `hello` signals
-  the supervisor to clear its advertise cache, so the next tick re-PATCHes the
-  freshly counted total even when it has not changed.
+  supervisor's lock (`advertised_capabilities`), and after each `hello` marks an
+  invalidation — it bumps a generation counter — so the next tick re-PATCHes
+  whatever the count then is, even 0, an empty counts dict, or a count unchanged
+  since the last PATCH.
+- A successful PATCH commits its counts (and the capabilities write-back) only
+  when no invalidation arrived while it was in flight; it records the generation
+  it reflects, so an older in-flight PATCH cannot clear an invalidation it did
+  not send for.
 - `capabilities.build` starts every target's `running` at 0, the honest value
   before anything is counted; the supervisor refreshes them.
+
+Only the `running` fields of the capabilities dict are coordinated by the lock;
+the keeper writes the harness/tools parts of the same dict on its own, outside
+this lock.
 
 **Reason:** the capabilities dict is shared between serve's connection thread
 (`hello`) and the supervisor's tick thread (`_advertise`). Without the
 write-back a reconnect re-asserted the build-time `0`, and the advertise
 throttle (one `PATCH /runner` per changed count, at most every 60 s) then
 suppressed the correction while the count stayed steady — so the hub read `0/N`
-while the placements ran on. This was a latent gap the capabilities shape had
-from the start; reconnects during a routine CLI upgrade exposed it, so it is a
-design gap, not a regression a single change introduced.
+while the placements ran on. The invalidation is a generation rather than an
+emptied cache, because an empty cache reads as "nothing to send" (a 0 count
+never leaves) and an in-flight PATCH would overwrite it. This was a latent gap
+the capabilities shape had from the start; reconnects during a routine CLI
+upgrade exposed it, so it is a design gap, not a regression a single change
+introduced.
 
 **Rejected alternative:** have `hello` read only the scalar `advertised_running`
 int (atomic under the GIL) instead of locking the dict. Rejected because
@@ -192,10 +204,17 @@ running, harnesses — so a coherent snapshot of the dict is needed regardless;
 one lock over the running fields covers the top-level and per-target counts in
 one place.
 
-**Rejected alternative:** force an immediate re-advertise (`advertise_now`) at
-the reconnect instead of clearing the cache. Rejected because the authoritative
-count is the next tick's live session snapshot, not the cached one; clearing
-the cache lets that tick send the true total unconditionally and avoids
+**Rejected alternative:** represent the invalidation by emptying the advertise
+cache (`advertised_counts = {}`). Rejected because `_advertise` drops zero
+entries, so an empty cache equals the empty counts of a runner with nothing
+running — it reads as "already sent", and a count that fell to 0 never reaches
+the hub — and an in-flight PATCH's commit overwrites the empty cache and
+swallows the invalidation.
+
+**Rejected alternative:** force an immediate re-advertise (`advertise_now`) from
+the reconnect instead of marking it for the next tick. Rejected because the
+authoritative count is the next tick's live session snapshot, not the cached
+one; marking the generation lets that tick send the true total and avoids
 re-asserting a possibly one-tick-stale cached count at the reconnect moment.
 
 ## Capabilities say `sandbox: off` until an adapter switches a sandbox on

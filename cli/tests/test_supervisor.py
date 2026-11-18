@@ -969,12 +969,18 @@ def test_records_survive_a_restart(world: Any) -> None:
 class FakeHub:
     """Keeps a runner's ``running`` the way the real hub does: the last of a ``hello`` or a
     ``PATCH /runner`` wins, since both store the whole capabilities. It records what each spoke
-    carried, so a test can see what ``hello`` sent on its own."""
+    carried. Optionally it holds a ``PATCH`` of a chosen total in flight on an event (so a test
+    can land a reconnect during it) and stops serve's event poll (so ``Service.run`` runs one
+    connect cycle and returns)."""
 
-    def __init__(self) -> None:
+    def __init__(self, gate_total: int | None = None, stop_events: bool = False) -> None:
         self.running: int | None = None
         self.hello_running: list[int] = []
         self.patched: list[int] = []
+        self.gate_total = gate_total
+        self.patch_started = threading.Event()
+        self.patch_release = threading.Event()
+        self.stop_events = stop_events
 
     def call(self, method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
         if path == "/runner/hello":
@@ -982,18 +988,26 @@ class FakeHub:
             self.hello_running.append(self.running)
             return {"runner": {"id": "rnr-1", "name": "home", "session_id": "s"},
                     "cursor": 0, "placements": []}  # fmt: skip
+        if path == "/runner/events" and self.stop_events:
+            raise serve.Stop
         if method == "PATCH" and path == "/runner":
-            self.running = body["capabilities"]["running"]
-            self.patched.append(self.running)
+            total = body["capabilities"]["running"]
+            if self.gate_total is not None and total == self.gate_total:
+                self.patch_started.set()
+                self.patch_release.wait(5)
+            self.running = total
+            self.patched.append(total)
         return {}
 
 
-def connected(world: Any) -> tuple[Any, Any, Any, FakeHub, serve.Service]:
+def connected(
+    world: Any, fake: FakeHub | None = None
+) -> tuple[Any, Any, Any, FakeHub, serve.Service]:
     """A supervisor and a real ``serve.Service`` over one ``FakeHub``, as serve wires them: the
     service holds the same capabilities dict the supervisor does, and both call the same hub."""
     sup, backend, _, clock, _ = world
     sup.capabilities = capabilities.build(sup.cfg, sup.probes)  # running = 0, as serve builds it
-    fake = FakeHub()
+    fake = fake or FakeHub()
     sup.client = cast(Any, fake)
     svc = serve.Service(
         sup.cfg, cast(Any, fake), sup.capabilities,
@@ -1068,11 +1082,8 @@ def test_hello_around_an_advertise_never_sends_a_stale_count(world: Any) -> None
 
 def test_a_reconnect_with_a_changing_count_ends_at_the_new_count(world: Any) -> None:
     """A placement ends between the reconnect and the next tick. The hub must end at the new
-    count -- not 0, not the old count -- even within the advertise throttle, where only clearing
-    the cache on reconnect lets the next tick re-PATCH.
-
-    Counter-check: with the fix reverted there is no reconnect signal and the throttled tick is
-    suppressed, so the hub stays at the hello's 0 and the final assert fails (red)."""
+    count -- not 0, not the old count -- even within the advertise throttle, where only the
+    reconnect's pending invalidation lets the next tick re-PATCH."""
     sup, backend, clock, fake, svc = connected(world)
     adopt(sup, backend, 3, 4)
     sup.tick()
@@ -1090,6 +1101,86 @@ def test_a_reconnect_with_a_changing_count_ends_at_the_new_count(world: Any) -> 
     clock.now += 1  # still inside the advertise throttle
     sup.tick()
     assert fake.running == 1, fake.running
+
+
+def test_a_reconnect_with_a_zero_count_reaches_the_hub(world: Any) -> None:
+    """P2.1: a reconnect's invalidation must send even when the live count is 0. One placement,
+    then its session and the placement are gone; the hub must be told 0, not left at 1.
+
+    Counter-check (red on 9ca66dba): ``reconnected`` emptied the cache, and ``_advertise`` drops
+    zero entries, so ``counts == advertised_counts == {}`` read as unchanged and nothing was sent
+    -- the hub stayed at 1. Mutant killed: ``reconnected`` made a no-op, or the dirty bypass
+    dropped from ``_advertise``."""
+    sup, backend, clock, fake, svc = connected(world)
+    adopt(sup, backend, 3)
+    sup.tick()
+    assert fake.running == 1
+
+    backend.live.pop("maity_maity_agent-3", None)
+    sup.update([])  # the placement is gone; the live count is now 0
+    svc.hello()  # the reconnect's hello carries the last known count
+    sup.reconnected()
+
+    clock.now += 1  # inside the advertise throttle
+    sup.tick()
+    assert fake.running == 0, fake.running
+
+
+def test_an_inflight_advertise_does_not_swallow_a_reconnect(world: Any) -> None:
+    """P2.2: a reconnect that arrives while a PATCH is in flight must not be lost. The in-flight
+    PATCH(2) must not commit over the invalidation, so the next tick sends again.
+
+    Counter-check (red on 9ca66dba): the in-flight PATCH's write-back set the cache
+    unconditionally, overwriting the reconnect's empty cache, so the next tick (count 2) was
+    suppressed and no second PATCH went out. Mutant killed: the generation guard dropped from the
+    commit."""
+    sup, backend, clock, fake, svc = connected(world, FakeHub(gate_total=2))
+    adopt(sup, backend, 3)
+    sup.tick()  # PATCH(1), committed
+    assert fake.patched == [1]
+
+    backend.live["maity_maity_agent-4"] = tmux.Session(
+        "maity_maity_agent-4", False, None, 94, "plc-0004", 1
+    )
+    sup.update([placement(3), placement(4)])
+    clock.now += supervisor.ADVERTISE_EVERY + 1  # past the throttle, so the changed count sends
+
+    # A tick on a worker thread starts PATCH(2), which the hub holds in flight.
+    worker = threading.Thread(target=sup.tick)
+    worker.start()
+    assert fake.patch_started.wait(5), "PATCH(2) started"
+
+    sup.reconnected()  # the reconnect's invalidation arrives during the in-flight PATCH
+    fake.patch_release.set()
+    worker.join(5)
+
+    before = len(fake.patched)
+    clock.now += 1  # inside the throttle: only the pending invalidation can make this send
+    sup.tick()
+    assert len(fake.patched) > before, "the next tick re-sent after the in-flight PATCH"
+    assert fake.running == 2, fake.running
+
+
+def test_the_run_loop_signals_the_reconnect(world: Any) -> None:
+    """The reconnect invalidation must be driven by ``Service.run``, not only by a direct call,
+    so a zero count reaches the hub after a real reconnect cycle (the P2.1 path through ``run``).
+
+    Counter-check (red on 9ca66dba): the zero is suppressed and the hub stays at 1. Mutant killed:
+    removing ``self.supervisor.reconnected()`` from ``Service.run`` -- then no invalidation is
+    raised and the throttled zero tick is suppressed."""
+    sup, backend, clock, fake, svc = connected(world, FakeHub(stop_events=True))
+    adopt(sup, backend, 3)
+    sup.tick()
+    assert fake.running == 1
+
+    backend.live.pop("maity_maity_agent-3", None)
+    sup.update([])
+    with pytest.raises(serve.Stop):
+        svc.run()  # one connect cycle: hello, the run loop's reconnect signal, then Stop
+
+    clock.now += 1  # inside the advertise throttle
+    sup.tick()
+    assert fake.running == 0, fake.running
 
 
 # --- workspaces: clone, records, no git in an existing clone ---------------------------------
