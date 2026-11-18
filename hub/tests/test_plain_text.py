@@ -17,9 +17,9 @@ from maity_hub.plain_text import NOT_PLAIN, plain, plain_line, plain_name
 from tests import flow
 from tests.conftest import ClientFactory
 from tests.test_board import REPOSITORY
+from tests.test_board import link as card_link
 from tests.test_bridges import _cross as bridge_pair
 from tests.test_bridges import connect as bridge_connect
-from tests.test_board import link as card_link
 from tests.test_invitations import PATH as INVITATIONS
 from tests.test_invitations import issue, page, token_of
 from tests.test_joins import _token
