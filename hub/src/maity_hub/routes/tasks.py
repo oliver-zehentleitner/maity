@@ -759,7 +759,7 @@ def list_tasks(
             )
         query = query.order_by(t.card.c.updated_at.desc(), t.card.c.id.desc())
         if search is None:
-            taken = conn.execute(query.limit(limit + 1)).all()
+            taken = list(conn.execute(query.limit(limit + 1)).all())
         else:
             taken = _take(_updated_batches(conn, query, limit), limit + 1, search)
         page = taken[:limit]
