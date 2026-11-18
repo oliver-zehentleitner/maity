@@ -1532,6 +1532,12 @@ fail-closed adapter of #1969 starts a model-less placement on its
 safe on both, so the form does not depend on the runner's version. The
 list `MODEL_NAMED` in `web/js/placements.js` holds the tools this applies
 to; the other tools keep the runner's default.
+Local mode follows the same rule: `maity runner opencode` starts only
+with `--model` (docs/api.md §15.13). The reason is concrete: on
+2026-11-18 two opencode reviewers ran with no model set, so on
+opencode's hosted model, and repository content went to opencode's
+servers. Fail closed on the model wherever opencode starts, the lead's
+decision (lotse), recorded 2026-11-18.
 Rejected: keeping "The runner's default" for OpenCode, since only the
 runner knows whether it resolves to a configured model; offering
 OpenCode without models and letting the runner refuse it, a choice that
