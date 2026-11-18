@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select
 
-from maity_hub import events
+from maity_hub import events, longpoll
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -122,6 +122,36 @@ def test_a_carried_read_of_events_hides_the_bridges_own_window(
     # The agent itself reads its window-free history in full.
     own = _seqs(_get(client, served, f"{PROJECT}/events?after=0&limit=200"))
     assert set(meanwhile) <= set(own)
+
+
+def test_a_wait_for_an_agent_reads_the_bridges_windows_as_of_its_pass(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The long-poll reads the bridge's windows when the carried read is admitted, not as of
+    the call's start: an isolation lifted with its events hidden before the wait's first
+    pass hides that window from the pass too (§2.3, §6.2)."""
+    served, bridge = _pair(migrated, owner)
+    before = _tell(owner, served.agent_id, "before")
+    real = longpoll.registry.enter
+    meanwhile: dict[str, Any] = {}
+
+    def lifted_meanwhile(waiter: Any) -> None:
+        if waiter.bridge_id is not None and not meanwhile:
+            meanwhile["seqs"], meanwhile["window"] = _isolated_bridge_window(owner, bridge, served)
+            meanwhile["after"] = _tell(owner, served.agent_id, "after")
+        real(waiter)
+
+    monkeypatch.setattr(longpoll.registry, "enter", lifted_meanwhile)
+    read = _seqs(
+        _get(make_client(), bridge, f"{PROJECT}/events?after={before}&wait=1&for={served.agent_id}")
+    )
+    window = meanwhile["window"]
+    assert meanwhile["after"] in read  # the pass read, and past the window
+    assert not set(meanwhile["seqs"]) & set(read)
+    assert not any(window["from_seq"] <= seq <= window["to_seq"] for seq in read)
 
 
 def test_a_carried_read_of_the_direct_conversation_hides_the_bridges_own_window(

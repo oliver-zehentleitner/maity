@@ -810,14 +810,6 @@ def carried_row(row: Any, bridge_windows: Sequence[dict[str, int]]) -> Any:
     return CarriedRow(row, bridge_windows) if bridge_windows else row
 
 
-def bridge_windows_of(row: Any) -> list[dict[str, int]]:
-    """The bridge's own windows a `carried_row` adds, so a row read again can carry them."""
-    if not isinstance(row, CarriedRow):
-        return []
-    own = list(getattr(row._row, "isolation_windows", None) or [])
-    return [w for w in row.reader_windows if w not in own]
-
-
 def windows_of(membership: Any) -> list[dict[str, int]]:
     """The reader's effective hidden windows (§6.2): its own `isolation_windows`, and for a
     bridge's read for an agent the bridge's too (`CarriedRow`). A reader that is no
