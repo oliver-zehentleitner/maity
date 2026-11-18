@@ -13,11 +13,18 @@ window.Maity = window.Maity || {};
 
   // Closed cards older than this are left out (closed_after).
   const CLOSED_WINDOW_DAYS = 14;
-  // A closed column draws the cards closed last up to this, the rest on "Show more" (tsk-a5pxwgkgr73e):
-  // 783 closed cards cost a full redraw about 640 ms in Chromium, 100 of them about 100 ms.
+  // A hub search's closed column draws the cards closed last up to this, the rest on "Show more"
+  // (tsk-a5pxwgkgr73e): 783 closed cards cost a full redraw about 640 ms in Chromium, 100 of them about 100 ms.
   const CLOSED_SHOWN = 50;
-  // The open column groups the board reads side by side; the closed one, with its window, after them.
+  // The board reads a closed column one page at a time, the cards closed last first, and the next
+  // page only on its "Show more" (tsk-d4anfsk1e94j, the owner's req-aa0jka1xsfsy).
+  const CLOSED_PAGE = 50;
+  // The hub's largest page (docs/api.md §1.4): a reload reads again at most this many of a column.
+  const PAGE_MAX = 200;
+  // The open column groups the board reads side by side; the closed columns, with their window, each
+  // its own first page.
   const LIST_GROUPS = ["proposed", "open", "in_progress", "blocked,review"];
+  const CLOSED_GROUPS = ["done", "cancelled"];
   // The read of the cards changed while the groups were read (below): a page of the newest, and how
   // far before the reads began it looks.
   const RECENT_PAGE = 50;
@@ -684,7 +691,7 @@ window.Maity = window.Maity || {};
     // project of 1,135 cards). The closed window applies to the closed group alone. Each column is
     // ordered by the board itself (byOrder), so the groups may answer in any order. The statuses are
     // the contract's seven (§6.4).
-    // The groups are five snapshots, not one: a card moved from a group not yet answered into one
+    // The groups are six snapshots, not one: a card moved from a group not yet answered into one
     // already answered would be in neither (review of #1536). So, once they have all answered, the
     // cards changed since the reads began are read again, newest first (`order=updated`, §6), until
     // the first one older than that; each replaces or adds its card. The start is taken on the hub's
@@ -695,8 +702,13 @@ window.Maity = window.Maity || {};
     // least as new as the newest the pass before saw; a pass of one page has no gap and ends it.
     // After RECONCILE_PASSES passes that all paged (the board changing faster than it can be read),
     // one list of every status in the window is read instead and replaces the cards.
-    const listPaths = LIST_GROUPS.map((g) => ctx.base + "/tasks?status=" + g)
-      .concat([ctx.base + "/tasks?status=done,cancelled&closed_after=" + encodeURIComponent(since)]);
+    // The closed columns are read apart, done and cancelled each with its own first page: the hub
+    // orders a closed list by column first (hub/context/persistence.md, 7bad4e04), so one page of
+    // both would hold no cancelled card until every done card in the window had been read.
+    const listPaths = LIST_GROUPS.map((g) => ctx.base + "/tasks?status=" + g);
+    const closedPath = (s, limit) => ctx.base + "/tasks?status=" + s + "&closed_after=" + encodeURIComponent(since) + "&limit=" + limit;
+    // Each closed column's cursor to its next page, as the hub handed it out; null: none to read.
+    let closedNext = {};
     const windowPath = ctx.base + "/tasks?status=all&closed_after=" + encodeURIComponent(since);
     const recentPath = windowPath + "&order=updated&limit=" + RECENT_PAGE;
     // One pass: from the first page, every card updated at or after `from`; whether it followed a
@@ -718,12 +730,16 @@ window.Maity = window.Maity || {};
       return { paged, newest };
     };
     // shown(cards), where given, is called once the four open groups have answered, with their cards,
-    // before the closed group's pages (tsk-a5pxwgkgr73e): on the maintainer's project that group was
+    // before the closed columns' pages (tsk-a5pxwgkgr73e): on the maintainer's project those were
     // 783 cards in four pages one after the other, about 0.9 s after the other groups had answered.
-    const readList = async (shown) => {
+    // A closed column is one page now (tsk-d4anfsk1e94j): CLOSED_PAGE cards, or for a reload as many
+    // as the column held (limits, at most PAGE_MAX), so that a write does not fold back what Show more
+    // loaded. Resolves with the cards and each closed column's next cursor.
+    const readList = async (shown, limits) => {
       const began = M.api.now() - RECONCILE_MARGIN_MS;
-      const groups = listPaths.map((path) => M.api.getAll(path));
-      // A closed group failing while the open ones are awaited is handled by Promise.all below.
+      const groups = listPaths.map((path) => M.api.getAll(path))
+        .concat(CLOSED_GROUPS.map((s) => M.api.get(closedPath(s, (limits && limits[s]) || CLOSED_PAGE))));
+      // A closed column failing while the open ones are awaited is handled by Promise.all below.
       groups.forEach((read) => read.catch(() => {}));
       if (shown) {
         const open = new Map();
@@ -733,16 +749,19 @@ window.Maity = window.Maity || {};
       const parts = await Promise.all(groups);
       const cards = new Map();
       parts.forEach((r) => r.items.forEach((t) => { if (!cards.has(t.id)) cards.set(t.id, t); }));
+      const next = {};
+      CLOSED_GROUPS.forEach((s, i) => { next[s] = parts[LIST_GROUPS.length + i].next_cursor || null; });
       // The groups have answered; a failure from here on is the read again of the cards changed
       // meanwhile, said as such (recheck), not as a failed read of the closed cards.
       try {
         let from = began;
         for (let pass = 0; pass < RECONCILE_PASSES; pass++) {
           const { paged, newest } = await recentPass(cards, from);
-          if (!paged) return [...cards.values()];
+          if (!paged) return { cards: [...cards.values()], next };
           from = newest;
         }
-        return (await M.api.getAll(windowPath)).items;
+        // The one list of the whole window holds every closed card in it: no page is left to read.
+        return { cards: (await M.api.getAll(windowPath)).items, next: {} };
       } catch (err) {
         throw Object.assign(err instanceof Error ? err : new Error(String(err)), { recheck: true });
       }
@@ -760,7 +779,7 @@ window.Maity = window.Maity || {};
     const openRead = new Promise((resolve) => { openShown = resolve; });
     const firstRead = readList((open) => openShown(open));
     firstRead.catch(() => {});
-    let items = await Promise.race([openRead, firstRead]);
+    let items = await Promise.race([openRead, firstRead.then((r) => r.cards)]);
     let boardItems = items;
     let searchVersion = 0;
     let hubResults = false;
@@ -811,9 +830,12 @@ window.Maity = window.Maity || {};
 
     async function reload(focusKey, inPanel) {
       const read = ++reads;
-      const fresh = await readList();
+      const limits = {};
+      CLOSED_GROUPS.forEach((s) => { limits[s] = Math.min(PAGE_MAX, Math.max(CLOSED_PAGE, boardItems.filter((t) => t.status === s).length)); });
+      const fresh = await readList(null, limits);
       if (!apply(read)) return;
-      boardItems = fresh;
+      boardItems = fresh.cards;
+      closedNext = fresh.next;
       closedPending = false;
       closedError = null;
       sayClosed();
@@ -993,15 +1015,16 @@ window.Maity = window.Maity || {};
       return col;
     }
 
-    // The cards a column draws: a closed one the CLOSED_SHOWN closed last (by closed_at, newest first)
-    // until Show more opened it for this view, and the marked card wherever it stands, so a link to it
-    // still finds it on the board, folded under a parent or not. They keep the column's order; only which
-    // of them are drawn changes.
+    // The cards a column draws. The board's own closed columns hold the pages read so far and draw
+    // them all. A hub search's closed column, which comes whole, draws the CLOSED_SHOWN closed last
+    // (by closed_at, newest first) until Show more opened it for this view, and the marked card wherever
+    // it stands, so a link to it still finds it, folded under a parent or not. They keep the column's
+    // order; only which of them are drawn changes.
     const shownWhole = new Set();
     const closedLater = (a, b) => ((a.closed_at || "") < (b.closed_at || "") ? 1 : (a.closed_at || "") > (b.closed_at || "") ? -1
       : a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
     function shownOf(s, cards) {
-      if (!(s === "done" || s === "cancelled") || shownWhole.has(s) || cards.length <= CLOSED_SHOWN) return { drawn: cards, rest: 0 };
+      if (!hubResults || !(s === "done" || s === "cancelled") || shownWhole.has(s) || cards.length <= CLOSED_SHOWN) return { drawn: cards, rest: 0 };
       const kept = new Set(cards.slice().sort(closedLater).slice(0, CLOSED_SHOWN).map((c) => c.id));
       // The marked card, and the card it is folded under: a folded child is found under its parent only
       // where that parent is drawn (review of #1645). The walk up stops after three ids, whatever the data.
@@ -1009,8 +1032,112 @@ window.Maity = window.Maity || {};
       const drawn = cards.filter((c) => kept.has(c.id));
       return { drawn, rest: cards.length - drawn.length };
     }
-    // Show more draws the column whole; the first card it adds takes the focus, the button being gone.
+    // The board's closed column: Show more reads its next page with the cursor the hub handed out and
+    // adds it, saying how many of the column's cards are loaded. It is there while the hub names a
+    // next page, and disabled while that page is read, so that a second click reads nothing twice.
+    const closedBusy = new Set();
+    const loadedOf = (s) => boardItems.filter((t) => t.status === s).length;
+    const moreKey = (s) => "more:" + s;
+    const moreButtonOf = (s) => Array.from(columnsBox.querySelectorAll("button")).find((b) => b.getAttribute("data-focus") === moreKey(s)) || null;
+    // Whether the focus is still where the click left it: on this column's Show more (the one clicked,
+    // gone or not, or the one a redraw put in its place), or nowhere, as when the clicked button was
+    // taken away. Anywhere else the reader moved it while the page was read, and it stays there.
+    const focusOnMore = (s, clicked) => {
+      const at = document.activeElement;
+      return !at || at === document.body || at === document.documentElement || at === clicked
+        || (!!at.getAttribute && at.getAttribute("data-focus") === moreKey(s));
+    };
+    // The page read, or the column read again: the focus stays on Show more; on the last page, which
+    // takes the button away, it goes to the first card the page added, or to the status line. Where the
+    // reader moved the focus meanwhile, it stays.
+    function moreShown(s, ours, added) {
+      if (ours) {
+        const stays = moreButtonOf(s);
+        const first = added.length ? Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === added[0].id) : null;
+        const title = first && first.querySelector("a.card-open");
+        if (stays) stays.focus();
+        else if (title || first) (title || first).focus();
+        else status.el.focus();
+      }
+      closedStatus.textContent = M.t("board.closed.more_loaded", { count: loadedOf(s) });
+    }
+    // Taken before a draw: puts back after it the focus the reader moved away from Show more, and an
+    // open menu's item.
+    const keepFocus = (ours) => {
+      const back = ours ? null : focusSpot();
+      const menuBack = openMenuSpot();
+      return () => {
+        if (back) back();
+        if (menuBack) menuBack();
+      };
+    };
+    // again: the column was read again from its first page after the hub refused the cursor; a second
+    // refusal is said as a failure, not read again once more.
+    async function readMore(s, again) {
+      const cursor = closedNext[s];
+      if (!cursor || closedBusy.has(s)) return;
+      closedBusy.add(s);
+      const button = moreButtonOf(s);
+      if (button) button.disabled = true;
+      // A reload that starts meanwhile reads the column again and supersedes this page.
+      const read = reads;
+      // Settled on every way out: a reload drawn meanwhile drew the button disabled (closedBusy), by
+      // its attribute.
+      const settle = () => {
+        closedBusy.delete(s);
+        const now = moreButtonOf(s);
+        if (now) { now.disabled = false; now.removeAttribute("disabled"); }
+      };
+      let page;
+      try {
+        page = await M.api.get(closedPath(s, CLOSED_PAGE) + "&cursor=" + encodeURIComponent(cursor));
+      } catch (err) {
+        // A closed cursor is bound to the list's filters (the hub's fingerprint), so one from before a
+        // hub release is refused as invalid and would be refused again: the board is read again, each
+        // closed column from its first page with as many cards as it held, and the page asked for is
+        // read with the fresh cursor; the button stays disabled meanwhile. A reload started meanwhile
+        // already reads them so.
+        const refused = err && err.code === "invalid" && err.details && err.details.fields && err.details.fields.cursor;
+        if (refused && !again && read === reads && closedNext[s] === cursor) {
+          const restore = keepFocus(focusOnMore(s, button));
+          try {
+            await reload();
+          } catch (failed) {
+            settle();
+            restore();
+            status.fail(M.t("board.closed.more_failed"), failed);
+            return;
+          }
+          settle();
+          restore();
+          if (closedNext[s] && !hubResults) return readMore(s, true);
+          moreShown(s, focusOnMore(s, button), []);
+          return;
+        }
+        settle();
+        status.fail(M.t("board.closed.more_failed"), err);
+        return;
+      }
+      settle();
+      if (read !== reads || closedNext[s] !== cursor) return;
+      const known = new Set(boardItems.map((t) => t.id));
+      const added = page.items.filter((t) => !known.has(t.id));
+      boardItems = boardItems.concat(added);
+      closedNext = { ...closedNext, [s]: page.next_cursor || null };
+      if (!hubResults) items = boardItems;
+      const ours = focusOnMore(s, button);
+      const restore = keepFocus(ours);
+      draw(true);
+      restore();
+      moreShown(s, ours, added);
+    }
+    // A hub search's Show more draws the column whole; the first card it adds takes the focus, the button being gone.
     function moreButton(s, cards) {
+      if (!hubResults) {
+        if (!CLOSED_GROUPS.includes(s) || closedWaiting(s) || !closedNext[s]) return null;
+        return h("button", { type: "button", class: "small show-more", "data-focus": moreKey(s), disabled: closedBusy.has(s) ? true : null,
+          onclick: () => readMore(s) }, M.t("board.closed.show_more_loaded", { count: loadedOf(s) }));
+      }
       const { drawn, rest } = shownOf(s, cards);
       if (!rest) return null;
       const first = cards.find((c) => !drawn.includes(c));
@@ -1380,7 +1507,8 @@ window.Maity = window.Maity || {};
       const at = document.activeElement;
       const back = focusSpot();
       const menuBack = openMenuSpot();
-      boardItems = all;
+      boardItems = all.cards;
+      closedNext = all.next;
       closedPending = false;
       sayClosed();
       if (!hubResults) items = boardItems;
