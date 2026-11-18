@@ -2,7 +2,8 @@
 when mail is enabled.
 
 It goes through the mail outbox in the caller's transaction, so it leaves only if the invitation
-commits, on the security budget (§16.2): over it the mail waits for the next hour, never dropped.
+commits, on the invitation budget of its own (§16.2), so invitations never hold up security mail:
+over it the mail waits for the next hour, never dropped.
 Without mail (not complete or not enabled) nothing is queued and the inviter passes the `url` on,
 as the contract says. Plain text, in English, with the inviter's display name, the project's name,
 the trust and role, the `note` and the link; the address may belong to nobody on the hub yet, so
@@ -48,7 +49,7 @@ def send(conn: Connection, *, invitation_id: str, to: str, url: str, hub: Any) -
             t.notification_settings.c.address_status.in_(("verified", "disabled")),
         )
     ).scalar()
-    outbox.enqueue(conn, kind="security", to=to, human_id=holder, subject=subject, body=body)
+    outbox.enqueue(conn, kind="invitation", to=to, human_id=holder, subject=subject, body=body)
 
 
 def text(

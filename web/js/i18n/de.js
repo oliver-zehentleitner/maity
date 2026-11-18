@@ -2482,6 +2482,10 @@ window.MAITY_I18N["de"] = {
     "one": "{count} Fehler",
     "other": "{count} Fehler"
   },
+  "mail.count.invitation": {
+    "one": "{count} Einladungsmail",
+    "other": "{count} Einladungsmails"
+  },
   "mail.count.notifications": {
     "one": "{count} Benachrichtigungsmail",
     "other": "{count} Benachrichtigungsmails"
@@ -2490,6 +2494,14 @@ window.MAITY_I18N["de"] = {
     "one": "{count} Sicherheitsmail in der Warteschlange",
     "other": "{count} Sicherheitsmails in der Warteschlange"
   },
+  "mail.count.second_factor": {
+    "one": "{count} Mail für den zweiten Faktor",
+    "other": "{count} Mails für den zweiten Faktor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} Mail für den zweiten Faktor verworfen",
+    "other": "{count} Mails für den zweiten Faktor verworfen"
+  },
   "mail.count.security": {
     "one": "{count} Sicherheitsmail",
     "other": "{count} Sicherheitsmails"
@@ -2497,6 +2509,14 @@ window.MAITY_I18N["de"] = {
   "mail.count.sign_in": {
     "one": "{count} Anmeldemail",
     "other": "{count} Anmeldemails"
+  },
+  "mail.count.verification": {
+    "one": "{count} Bestätigungsmail",
+    "other": "{count} Bestätigungsmails"
+  },
+  "mail.count.waiting": {
+    "one": "{count} Bestätigungs- oder Einladungsmail wartet",
+    "other": "{count} Bestätigungs- oder Einladungsmails warten"
   },
   "mail.daily_at": "Tägliche und wöchentliche Sammelmails um",
   "mail.day.fri": "Freitag",
@@ -2510,13 +2530,16 @@ window.MAITY_I18N["de"] = {
   "mail.field.from_address": "Absenderadresse",
   "mail.field.from_name": "Absendername",
   "mail.field.host": "SMTP-Host",
+  "mail.field.invitation_max_per_hour": "Einladungsmails pro Stunde",
   "mail.field.max_per_hour": "Benachrichtigungsmails pro Stunde",
   "mail.field.port": "SMTP-Port",
   "mail.field.reply_to": "Antwortadresse",
+  "mail.field.second_factor_max_per_hour": "Mails für den zweiten Faktor pro Stunde",
   "mail.field.security_max_per_hour": "Sicherheitsmails pro Stunde",
   "mail.field.sign_in_max_per_hour": "Anmeldemails pro Stunde",
   "mail.field.tls": "Verbindungssicherheit",
   "mail.field.username": "SMTP-Benutzername",
+  "mail.field.verification_max_per_hour": "Mails zur Adressbestätigung pro Stunde",
   "mail.hold_while_online": "Keine Mail, solange ich in der Web-App online bin",
   "mail.hold_while_online.hint": "Mails mit „Sofort“ warten, solange du das Dashboard nutzt. Ein paar Minuten nachdem du es verlassen hast, geht nur noch, was du nicht gelesen hast.",
   "mail.incomplete": "Die Mail-Konfiguration ist unvollständig: {missing}.",
@@ -2529,6 +2552,7 @@ window.MAITY_I18N["de"] = {
   "mail.kinds.hint": "Eine Sammelmail enthält alles, was beim Versand noch ungelesen ist. Ein geänderter zweiter Faktor, eine geänderte Adresse und eine Kontolöschung werden immer sofort gemailt.",
   "mail.kinds.legend": "Wann jede Art gemailt wird",
   "mail.last_hour": "Letzte Stunde: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Außerdem in der letzten Stunde: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Tägliche Sammelmail",
   "mail.mode.hourly": "Stündliche Sammelmail",
   "mail.mode.immediate": "Sofort",
