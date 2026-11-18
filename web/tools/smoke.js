@@ -2206,6 +2206,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   srCancel().click(); await tick();
   await win.Maity.api.patch("/projects/maintainer/maity", { policy: { max_placements: 8 }, reason: "back for the tests" });
   srMade.pop();
+  // A project's own roles follow the built-in ones in a new profile's role, on any base, as the hub's
+  // validate_assignment takes them (tsk-0e7mrvccjttn); the fixture refuses a role the project does not have.
+  // The roles answered here, not saved in the fixture: the Roles section's checks below count its versions from 0.
+  const srOwnGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/roles"
+    ? Promise.resolve({ builtin: [], custom: [{ name: "popelwerfer", base: "coder", description: "throws popels" }, { name: "deployer", base: "ops", description: "" }], version: 1 })
+    : srOwnGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
+  await srOpen();
+  const srOwnRoles = srForm() ? byId("placement-new-role").querySelectorAll("option").map((o) => o.getAttribute("value") + ":" + text(o)) : [];
+  if (srForm()) { byId("placement-new-role").value = "popelwerfer"; byId("placement-new-role").dispatch("change"); }
+  expect(srOwnRoles.length === 13 && srOwnRoles.slice(-2).join("|") === "popelwerfer:popelwerfer (permissions of Coder)|deployer:deployer (permissions of Ops)"
+    && text(byId("placement-new-role-help")) === "throws popels",
+    "placements: a new profile's role offers the project's own roles after the built-in ones, with their base and description " + JSON.stringify(srOwnRoles));
+  const srOwnNope = await srPost("/projects/maintainer/maity/placements", { agent: { handle: "x-role", display_name: "X" }, role: "nope", runner: "rnr-0002", harness: "claude-code" })
+    .then(() => "made", (e) => JSON.stringify(e.details && e.details.fields));
+  expect(srOwnNope === JSON.stringify({ role: "unknown" }), "placements: the fixture refuses a role the project does not have, as the hub does " + srOwnNope);
+  if (srForm()) { srCancel().click(); await tick(); }
+  win.Maity.api.get = srOwnGet;
   // Only runners that offer the project's repository, matched as the hub's fnmatch does (tsk-wn6qp27090qy):
   // one with a foreign repository is left out, one whose pattern matches is offered; with none, why.
   const srGetAll = win.Maity.api.getAll, srGet = win.Maity.api.get;
@@ -4102,6 +4121,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && byId("join-reports") && byId("join-reports").querySelectorAll("option").map((o) => o.getAttribute("value")).join() === "hum-maintainer"
     && byId("join-reports").value === "hum-maintainer" && !byId("join-areas") && text(main.querySelector(".join-panel")).includes("Join my agent"),
     "own agents: the panel offers only member or guest, every role but ops and proxy, reports to oneself or one's own managers (§3.1), no areas");
+  // The project's own roles follow there, only those on a base a member join may give: not one on ops,
+  // which the hub's member limits refuse (§3.1, tsk-0e7mrvccjttn).
+  const byoRolesGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity/roles"
+    ? Promise.resolve({ builtin: [], custom: [{ name: "popelwerfer", base: "coder", description: "" }, { name: "deployer", base: "ops", description: "" }], version: 1 })
+    : byoRolesGet(p));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/agents"); for (let k = 0; k < 6; k++) await tick(); await openAgentCards();
+  await joinAny(); for (let k = 0; k < 4; k++) await tick();
+  const byoOwnRoles = byId("join-role") ? byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")).join() : null;
+  expect(byoOwnRoles === "coder,reviewer,tester,designer,writer,manager,red-team,blue-team,purple-team,expert,popelwerfer",
+    "own agents: the project's own roles follow the built-in ones, one on ops not " + byoOwnRoles);
+  win.Maity.api.get = byoRolesGet;
   // One's own agent with the role manager is offered as its boss; one on a project role based on
   // manager is not: the hub takes the literal role here (§3.1, _own_manager; review of #1477).
   const byoAll = win.Maity.api.getAll;
@@ -4271,6 +4302,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "roles: the fixture refuses a save without a version and one on a stale version, as the hub does " + JSON.stringify(roVersionRefused));
   await roPutNow([]);
   win.Maity.api.put = roPut;
+  await go("#/maintainer/maity/inbox");
+  // A project's own role is picked for an agent (tsk-0e7mrvccjttn): the member form lists the project's
+  // own roles after the built-in ones, each with its base and its description as the help, and saving
+  // sends its name; Add any agent by members:admin offers them too, one on ops included.
+  await roPutNow([{ name: "popelwerfer", base: "coder", description: "throws popels" }, { name: "deployer", base: "ops", description: "" }]);
+  const owrPatches = [];
+  const owrPatch = win.Maity.api.patch;
+  win.Maity.api.patch = (p, b) => { owrPatches.push([p, b]); return owrPatch(p, b); };
+  await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
+  btn(mRow("Agent D"), "Manage").click(); for (let k = 0; k < 4; k++) await tick();
+  const owrSel = () => byId("member-role-agt-d");
+  const owrOpt = (v) => owrSel().querySelectorAll("option").find((o) => o.getAttribute("value") === v);
+  const owrOffered = owrSel() ? owrSel().querySelectorAll("option").map((o) => o.getAttribute("value")) : [];
+  expect(owrOffered.slice(-2).join() === "popelwerfer,deployer" && owrOffered.includes("coder") && owrOffered.includes("ops")
+    && text(owrOpt("popelwerfer")) === "popelwerfer (permissions of Coder)" && owrOpt("popelwerfer").getAttribute("title") === "throws popels"
+    && owrOpt("deployer").getAttribute("title") === "a role of this project, with the permissions of Ops",
+    "own roles: the member form lists the project's own roles after the built-in ones, with their base and description " + JSON.stringify(owrOffered));
+  owrSel().value = "popelwerfer"; owrSel().dispatch("change");
+  expect(text(byId("member-role-agt-d-help")) === "throws popels", "own roles: the help under the picker follows an own role");
+  main.querySelector("tr.member-manage form.member-edit").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const owrHeld = (await win.Maity.api.getAll("/projects/maintainer/maity/members")).items.find((x) => x.id === "agt-d");
+  expect(JSON.stringify(owrPatches[owrPatches.length - 1]) === JSON.stringify(["/projects/maintainer/maity/members/agt-d", { role: "popelwerfer" }])
+    && owrHeld.role === "popelwerfer" && owrHeld.role_base === "coder" && owrSel() && owrSel().value === "popelwerfer",
+    "own roles: saving sends the own role's name, the member holds it on its base, the form keeps it chosen " + JSON.stringify(owrPatches));
+  // The fixture takes a project role in a join as the hub does (here it gets as far as the instance), not one the project lacks.
+  const owrJoin = (role) => win.Maity.api.post("/projects/maintainer/maity/joins", { agent: { id: "agt-d" }, role })
+    .then(() => "made", (e) => JSON.stringify(e.details && e.details.fields));
+  const owrJoins = [await owrJoin("popelwerfer"), await owrJoin("nope")];
+  expect(JSON.stringify(owrJoins) === JSON.stringify([JSON.stringify({ instance: "required" }), JSON.stringify({ role: "unknown" })]),
+    "own roles: the fixture's join takes a project role and refuses one the project does not have " + JSON.stringify(owrJoins));
+  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/team"); for (let k = 0; k < 6; k++) await tick();
+  await joinAny(); for (let k = 0; k < 4; k++) await tick();
+  const owrJoinRoles = byId("join-role") ? byId("join-role").querySelectorAll("option").map((o) => o.getAttribute("value")) : [];
+  expect(owrJoinRoles.slice(-2).join() === "popelwerfer,deployer" && owrJoinRoles.includes("ops"),
+    "own roles: Add any agent by members:admin offers every own role, one on ops included " + JSON.stringify(owrJoinRoles));
+  win.Maity.api.patch = owrPatch;
+  await owrPatch("/projects/maintainer/maity/members/agt-d", { role: "coder" });
+  await roPutNow([]);
   await go("#/maintainer/maity/inbox");
 
   // A card's restricted text (§6.1, §6.4, tsk-g8ts5vxhj1md): the setting with its widening preview,
@@ -13545,6 +13614,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(ivBox().querySelectorAll("li.invite-item").find((li) => li.getAttribute("data-invitation") === "inv-0003"), "Revoke").click(); for (let k = 0; k < 6; k++) await tick();
   expect(ivDels[0] === "/projects/maintainer/maity/invitations/inv-0003" && ivItems().includes("inv-0003:revoked") && text(ivBox()).includes("Revoked; the link no longer works."),
     "invite: an open invitation revoked, said so");
+  // A project's own roles can be invited to (tsk-0e7mrvccjttn): after the built-in ones, with their base,
+  // on any base; the fixture takes one and refuses a role the project does not have, as the hub does.
+  const ivOwnPut = async (custom) => win.Maity.api.put("/projects/maintainer/maity/roles",
+    { custom, base_version: (await win.Maity.api.get("/projects/maintainer/maity/roles")).version });
+  await ivOwnPut([{ name: "popelwerfer", base: "coder", description: "throws popels" }, { name: "deployer", base: "ops", description: "" }]);
+  await go("#/maintainer/maity/inbox"); await go("#/invite?project=" + encodeURIComponent("maintainer/maity")); for (let k = 0; k < 8; k++) await tick();
+  const ivOwn = byId("invite-role").querySelectorAll("option").map((o) => o.getAttribute("value") + ":" + text(o));
+  byId("invite-role").value = "popelwerfer"; byId("invite-role").dispatch("change");
+  expect(ivOwn.slice(-2).join("|") === "popelwerfer:popelwerfer (permissions of Coder)|deployer:deployer (permissions of Ops)"
+    && text(byId("invite-role-help")) === "throws popels",
+    "invite: the project's own roles follow the built-in ones, with their base and description " + JSON.stringify(ivOwn));
+  const ivOwnBefore = ivItems().length, ivOwnSent = ivPosts.length;
+  byId("invite-address").value = "pia@example.org";
+  ivBox().querySelector("form.invite-form").dispatch("submit"); for (let k = 0; k < 6; k++) await tick();
+  const ivNope = await win.Maity.api.post("/projects/maintainer/maity/invitations", { role: "nope" }).then(() => "made", (e) => JSON.stringify(e.details && e.details.fields));
+  expect(ivPosts[ivOwnSent] && ivPosts[ivOwnSent][1].role === "popelwerfer" && ivItems().length === ivOwnBefore + 1 && ivItems()[0].endsWith(":open")
+    && ivNope === JSON.stringify({ role: "unknown" }),
+    "invite: an invitation to an own role is sent with its name and made; one the project does not have is refused " + JSON.stringify([ivPosts[ivOwnSent], ivNope]));
+  await ivOwnPut([]);
   // A member without members:admin sees no inviting.
   const ivGet = win.Maity.api.get;
   win.Maity.api.get = (p) => ivGet(p).then((v) => (p === "/me" ? Object.assign({}, v, { projects: v.projects.map((x) => Object.assign({}, x, { trust: "member", role: "coder" })) }) : v));

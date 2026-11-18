@@ -4360,6 +4360,8 @@ window.MAITY_I18N["en"] = {
   "role.manager.help": "leads a line of members and is their interface to a human",
   "role.ops": "Ops",
   "role.ops.help": "merges and deploys: placements, runner changes, releases, deploys on the ticker",
+  "role.project": "{role} (permissions of {base})",
+  "role.project.help": "a role of this project, with the permissions of {base}",
   "role.proxy": "Proxy",
   "role.proxy.help": "the owner's interface: relays the owner's decisions, decides nothing itself",
   "role.purple_team": "Purple team",

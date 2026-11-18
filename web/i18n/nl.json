@@ -4174,6 +4174,8 @@
   "role.manager.help": "leidt een lijn van leden en is hun interface naar een mens",
   "role.ops": "Ops",
   "role.ops.help": "merget en deployt: plaatsingen, runnerwijzigingen, releases, deploys op de ticker",
+  "role.project": "{role} (rechten van {base})",
+  "role.project.help": "een rol van dit project, met de rechten van {base}",
   "role.proxy": "Proxy",
   "role.proxy.help": "de interface van de eigenaar: geeft de beslissingen van de eigenaar door, beslist zelf niets",
   "role.purple_team": "Purple team",
