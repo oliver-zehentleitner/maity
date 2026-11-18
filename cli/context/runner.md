@@ -4032,6 +4032,19 @@ Claude Code's background-shell memory-pressure reaper does not kill the
 placement's background `maity wait`. It is set on the base environment both
 the interactive and the supervised launch inherit.
 
+The variable turns Claude Code's memory-pressure stop off for every idle
+background shell of the placement, not only that `maity wait` — the accepted
+trade-off of the fix. The runner sets no memory bound of its own:
+`backend.local.memory_max` is refused as not enforced yet, and the shipped
+service unit sets no `MemoryMax` or ulimit, so under host memory pressure a
+placement's background shells are bounded only by the kernel OOM killer and
+the operator's own unit or cgroup limits. The reaper only ever stopped idle
+background shells, never the Claude Code process, so keeping the placement
+reachable is worth more than that stop; the lever against host memory
+pressure is the agent count per host. A memory-pressure warning or capacity
+guidance in the runner (incident candidate 3) is deferred, tracked with
+candidates 2/3 of the incident card.
+
 **Reason:** on the lab host a low-memory event (not a kernel OOM) had Claude
 Code's own reaper — automatic memory-pressure reaping of idle background
 shell commands, added in Claude Code 2.1.193 — kill the `maity wait` of two
