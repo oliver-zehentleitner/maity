@@ -341,24 +341,45 @@ def agy_namespaces(path: str, as_user: AsUser = RUNNER) -> bool:
 # it, so `maity runner check` starts the same nesting once (cli/context/runner.md).
 CLAUDE_NESTED_USERNS = ("--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
                         "--unshare-user", "--unshare-pid", "--")  # fmt: skip
+# The refusal itself: unshare could create the inner namespace but not map the user in it.
+# Read under LC_ALL=C, so the message is util-linux's English one.
+NESTED_REFUSED = ("/proc/self/uid_map", "/proc/self/setgroups", "/proc/self/gid_map")
 
 
-def claude_nested_userns(path: str, as_user: AsUser = RUNNER) -> bool | None:
-    """A diagnostic for `maity runner check`: whether a user namespace with the user mapped
-    starts inside bubblewrap, as the agents' user and on their PATH. None where bwrap or
-    `unshare` is missing (the sandbox check names that); it never changes a capability."""
-    bwrap, unshare = which("bwrap", path, as_user), which("unshare", path, as_user)
-    if bwrap is None or unshare is None:
-        return None
-    argv = [bwrap, *CLAUDE_NESTED_USERNS, unshare, "--user", "--map-root-user", "true"]
+@dataclass(frozen=True)
+class NestedUserns:
+    """The nested-namespace probe's answer: `ok`, `refused` (the mapping inside bubblewrap was
+    denied, the one outcome that means sandboxed commands fail), `inconclusive` (the probe
+    could not tell: a timeout, a launch error, another failure) or `missing` (a tool is not
+    on the agents' PATH). `detail` says which, for `check`'s line."""
+
+    outcome: str
+    detail: str = ""
+
+
+def claude_nested_userns(path: str, as_user: AsUser = RUNNER) -> NestedUserns:
+    """A diagnostic for `maity runner check`, Linux only: whether a user namespace with the
+    user mapped starts inside bubblewrap, as the agents' user, with their PATH and every
+    command by its absolute path. It never changes a capability."""
+    found = {name: which(name, path, as_user) for name in ("bwrap", "unshare", "true")}
+    missing = [name for name, where in found.items() if where is None]
+    if missing:
+        return NestedUserns("missing", ", ".join(missing))
+    argv = [str(found["bwrap"]), *CLAUDE_NESTED_USERNS, str(found["unshare"]),
+            "--user", "--map-root-user", str(found["true"])]  # fmt: skip
     try:
-        if as_user.direct:
-            done = proc.run(argv, cwd=Path.home(), timeout=30)
-        else:
-            done = as_user.run(argv, env={"PATH": path}, timeout=30)
-    except (proc.ToolError, subprocess.TimeoutExpired, OSError):
-        return False
-    return done.returncode == 0
+        done = as_user.run(argv, env={"PATH": path, "LC_ALL": "C"}, timeout=30)
+    except subprocess.TimeoutExpired:
+        return NestedUserns("inconclusive", "the probe timed out")
+    except OSError as exc:
+        return NestedUserns("inconclusive", f"the probe did not start: {exc.strerror or exc}")
+    if done.returncode == 0:
+        return NestedUserns("ok")
+    said = (done.stderr or "").strip().splitlines()
+    last = ascii_text(said[-1], 160) if said else f"exit {done.returncode}"
+    if done.returncode == 1 and any(mark in (done.stderr or "") for mark in NESTED_REFUSED):
+        return NestedUserns("refused", last)
+    return NestedUserns("inconclusive", last)
 
 
 def agy_login(as_user: AsUser = RUNNER) -> Path:

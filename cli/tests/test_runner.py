@@ -550,8 +550,8 @@ def test_check_warns_about_inherited_claude_settings(
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
     fake_tool(bin_dir, "claude", "2.1.325 (Claude Code)")  # the checked one: no warning for it
-    fake_tool(bin_dir, "bwrap")
-    fake_tool(bin_dir, "socat")
+    for tool in ("bwrap", "socat", "unshare", "true"):  # the nesting probe passes: no warning
+        fake_tool(bin_dir, tool)
     (home / ".claude").mkdir()
     (home / ".claude" / "settings.json").write_text(
         '{"permissions": {"allow": ["Bash(rm:*)"]}, "hooks": {"Stop": []}}'
@@ -654,51 +654,125 @@ def test_check_names_claude_codes_sandbox_for_the_platform(
     assert found == [said], found
 
 
-@pytest.mark.parametrize(("nested", "code"), [(0, 0), (1, 1)])
+REFUSED_MAP = "unshare: write failed /proc/self/uid_map: Operation not permitted"
+
+
+@pytest.mark.parametrize(
+    ("exit_code", "stderr", "level", "code"),
+    [
+        (0, "", "ok", 0),
+        (1, REFUSED_MAP, "error", 1),
+        (1, "bwrap: No permissions to create a new namespace", "warn", 0),
+        (127, "sh: 1: unshare: not found", "warn", 0),
+    ],
+)  # fmt: skip
 def test_check_starts_a_nested_user_namespace_inside_bubblewrap(
-    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], nested: int, code: int
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    exit_code: int,
+    stderr: str,
+    level: str,
+    code: int,
 ) -> None:
     """Ubuntu's bwrap-userns-restrict lets bwrap start but takes every capability from what it
     starts: Claude Code's seccomp step opens a second user namespace and fails, so every
-    sandboxed command does. `check` starts that nesting once and says so as an error."""
+    sandboxed command does. Only that refused mapping is an error; a probe that fails some
+    other way could not tell, and says so as a warning."""
     if not sys.platform.startswith("linux"):
         pytest.skip("Claude Code's bubblewrap sandbox is Linux only")
-    for tool in ("tmux", "maity", "socat", "unshare"):
+    for tool in ("tmux", "maity", "socat", "unshare", "true"):
         fake_tool(bin_dir, tool)
     fake_tool(bin_dir, "claude", "2.1.325")
     bwrap = bin_dir / "bwrap"  # records its arguments, then answers as the host would
-    bwrap.write_text(f'#!/bin/sh\necho "$@" > "{bin_dir}/bwrap.args"\nexit {nested}\n')
+    bwrap.write_text(
+        f'#!/bin/sh\necho "$@" > "{bin_dir}/bwrap.args"\n'
+        f'echo "$PATH $LC_ALL" > "{bin_dir}/bwrap.env"\necho "{stderr}" >&2\nexit {exit_code}\n'
+    )
     bwrap.chmod(0o755)
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
     said = [line for line in lines(capsys) if "inside bubblewrap" in line]
-    assert [line.split()[0] for line in said] == (["error"] if nested else [])
+    assert [line.split()[0] for line in said] == [level], said
+    if level == "error":
+        assert "uid_map" in said[0]
     args = (bin_dir / "bwrap.args").read_text().split()
-    assert args[-4:] == [str(bin_dir / "unshare"), "--user", "--map-root-user", "true"]
+    assert args[-4:] == [str(bin_dir / "unshare"), "--user", "--map-root-user",
+                         str(bin_dir / "true")]  # fmt: skip
     assert "--unshare-user" in args
 
 
-def test_the_nested_namespace_probe_needs_bwrap_and_unshare(
-    bin_dir: Path, monkeypatch: pytest.MonkeyPatch
+def test_the_nested_probe_runs_with_the_agents_path_not_the_runners(
+    bin_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Without either tool there is nothing to start: None, and the sandbox line names the
-    missing one; a failure to run the probe counts as refused."""
-    from maity import proc
+    """The runner's own PATH may hold other tools, or none: the probe looks every command up
+    on the agents' PATH, starts it by its absolute path and passes that PATH on."""
     from maity.runner import capabilities
 
+    agents = tmp_path / "agents-bin"
+    agents.mkdir()
+    for tool in ("unshare", "true"):
+        fake_tool(agents, tool)
+    bwrap = agents / "bwrap"
+    bwrap.write_text(f'#!/bin/sh\necho "$PATH|$LC_ALL" > "{tmp_path}/env"\nexit 0\n')
+    bwrap.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))  # the runner's: no bwrap, no unshare
+    found = capabilities.claude_nested_userns(str(agents))
+    assert found.outcome == "ok"
+    assert (tmp_path / "env").read_text().strip() == f"{agents}|C"
+
+
+def test_the_nested_probe_names_missing_tools_and_cannot_tell_on_a_launch_error(
+    bin_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing tool is `missing`, with its name; a probe that times out or does not start
+    is `inconclusive`, never `refused`."""
+    import subprocess
+
+    from maity.runner import capabilities
+    from maity.runner.asuser import AsUser
+
     path = str(bin_dir)
-    assert capabilities.claude_nested_userns(path) is None
-    fake_tool(bin_dir, "unshare")
-    assert capabilities.claude_nested_userns(path) is None
-    fake_tool(bin_dir, "bwrap")
-    assert capabilities.claude_nested_userns(path) is True
+    found = capabilities.claude_nested_userns(path)
+    assert (found.outcome, found.detail) == ("missing", "bwrap, unshare, true")
+    for tool in ("bwrap", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    assert capabilities.claude_nested_userns(path).outcome == "ok"
 
-    def broken(*args: object, **kwargs: object) -> None:
-        raise OSError("exec format error")
+    def timeout(self: AsUser, argv: object, **kwargs: object) -> None:
+        raise subprocess.TimeoutExpired("bwrap", 30)
 
-    monkeypatch.setattr(proc, "run", broken)
-    assert capabilities.claude_nested_userns(path) is False
+    monkeypatch.setattr(AsUser, "run", timeout)
+    assert capabilities.claude_nested_userns(path).outcome == "inconclusive"
+
+    def broken(self: AsUser, argv: object, **kwargs: object) -> None:
+        raise OSError(8, "Exec format error")
+
+    monkeypatch.setattr(AsUser, "run", broken)
+    found = capabilities.claude_nested_userns(path)
+    assert (found.outcome, found.detail) == (
+        "inconclusive",
+        "the probe did not start: Exec format error",
+    )
+
+
+def test_check_runs_no_bubblewrap_probe_under_seatbelt(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On macOS the sandbox is Seatbelt: unrelated bwrap and unshare on PATH are not asked."""
+    for tool in ("tmux", "maity", "sandbox-exec", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    bwrap = bin_dir / "bwrap"
+    bwrap.write_text(f'#!/bin/sh\ntouch "{bin_dir}/bwrap.ran"\nexit 1\n')
+    bwrap.chmod(0o755)
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    assert not any("inside bubblewrap" in line for line in lines(capsys))
+    assert not (bin_dir / "bwrap.ran").exists()
 
 
 def test_check_refuses_a_loose_state_dir(

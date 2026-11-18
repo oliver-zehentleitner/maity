@@ -3919,8 +3919,11 @@ placement ends without asking what in it matters.
 **Revisit when:** Claude Code's Linux sandbox stops opening a second user namespace; the runner sets up the host's AppArmor itself (runner init); Ubuntu changes `bwrap-userns-restrict`
 
 On Linux, beside finding bwrap and socat, `check` runs `bwrap … -- unshare
---user --map-root-user true` once as the agents' user and on their PATH.
-Where that fails it reports an error, not a warning.
+--user --map-root-user true` once as the agents' user and on their PATH, every command by its absolute
+path. Only a refused mapping (unshare's write to `/proc/self/uid_map`,
+`gid_map` or `setgroups` fails, read under `LC_ALL=C`) is an error. A probe
+that times out, does not start or fails otherwise is a warning that
+blames nothing, and so is a missing tool. Seatbelt (macOS) is not probed.
 
 **Reason:** Ubuntu 23.10+'s AppArmor profile `bwrap-userns-restrict` lets
 bubblewrap start and takes every capability from what it starts. Claude
@@ -3936,3 +3939,6 @@ that host no card work is possible, so a warning would understate it.
   not need to know why.
 - Start Claude Code itself in the check: it costs a model call and needs
   the login, as with agy's sandbox.
+- Every failure of the probe as a refusal: a timeout, a launch error or a
+  tool missing on the agents' PATH then claimed that sandboxed commands
+  fail and blamed AppArmor on a host without the lock (review of #1949).
