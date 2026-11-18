@@ -4098,6 +4098,8 @@ window.MAITY_I18N["zh-Hans"] = {
   "role.manager.help": "带领一组成员，并作为他们与人之间的接口",
   "role.ops": "Ops",
   "role.ops.help": "负责合并和上线：部署、运行器变更、发布，以及动态中的上线记录",
+  "role.project": "{role}（{base} 的权限）",
+  "role.project.help": "本项目自己的角色，拥有 {base} 的权限",
   "role.proxy": "Proxy",
   "role.proxy.help": "所有者的接口：转达所有者的决定，自己不做任何决定",
   "role.purple_team": "Purple team",

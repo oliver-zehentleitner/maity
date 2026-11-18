@@ -4309,6 +4309,8 @@
   "role.manager.help": "leitet eine Linie von Mitgliedern und ist ihre Schnittstelle zu einem Menschen",
   "role.ops": "Ops",
   "role.ops.help": "mergt und deployt: Platzierungen, Runner-Änderungen, Releases, Deploys im Ticker",
+  "role.project": "{role} (Rechte von {base})",
+  "role.project.help": "eine Rolle dieses Projekts, mit den Rechten von {base}",
   "role.proxy": "Proxy",
   "role.proxy.help": "die Schnittstelle des Besitzers: gibt dessen Entscheidungen weiter, entscheidet selbst nichts",
   "role.purple_team": "Purple Team",

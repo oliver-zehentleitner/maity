@@ -3486,6 +3486,7 @@ window.MAITY_FIXTURES = {
         "kind": "human",
         "last_seen_at": "2026-10-21T13:40:00Z",
         "paused": null,
+        "placements": [],
         "presence": "online",
         "reports_to": null,
         "role": "coder",
@@ -3516,6 +3517,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer",
         "owner_preferences": false,
         "paused": null,
+        "placements": [],
         "presence": "online",
         "reports_to": "hum-maintainer",
         "role": "coder",
@@ -3579,6 +3581,15 @@ window.MAITY_FIXTURES = {
         "name": "maintainer/agent-b",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "placements": [
+          {
+            "desired": "running",
+            "id": "plc-0001",
+            "instance": "wle2",
+            "runner_name": "home-laptop",
+            "state": "running"
+          }
+        ],
         "presence": "online",
         "reports_to": "agt-a",
         "role": "coder",
@@ -3646,6 +3657,15 @@ window.MAITY_FIXTURES = {
           "reason": "Waiting for the API contract in docs/api.md.",
           "since": "2026-10-21T12:04:00Z"
         },
+        "placements": [
+          {
+            "desired": "stopped",
+            "id": "plc-0002",
+            "instance": "k3pa",
+            "runner_name": "home-laptop",
+            "state": "stopped"
+          }
+        ],
         "presence": "paused",
         "reports_to": "agt-a",
         "role": "coder",
@@ -3684,6 +3704,15 @@ window.MAITY_FIXTURES = {
         "name": "maintainer/agent-d",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "placements": [
+          {
+            "desired": "running",
+            "id": "plc-0003",
+            "instance": null,
+            "runner_name": "home-laptop",
+            "state": "failed"
+          }
+        ],
         "presence": "online",
         "reports_to": null,
         "role": "coder",
@@ -3721,6 +3750,15 @@ window.MAITY_FIXTURES = {
         "name": "maintainer/reviewer",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "placements": [
+          {
+            "desired": "running",
+            "id": "plc-0004",
+            "instance": null,
+            "runner_name": "home-laptop",
+            "state": null
+          }
+        ],
         "presence": "offline",
         "reports_to": "agt-a",
         "role": "reviewer",

@@ -54,22 +54,56 @@ window.Maity = window.Maity || {};
   };
   const trustWord = (t) => (Object.hasOwn(TRUST_WORDS, t) ? TRUST_WORDS[t]() : t);
   const roleWord = (r) => (Object.hasOwn(ROLE_LINE_WORDS, r) ? ROLE_LINE_WORDS[r]() : r);
-  const roleLabel = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[0] : r);
-  const roleHelp = (r) => (Object.hasOwn(ROLE_WORDS, r) ? ROLE_WORDS[r]()[1] : "");
+  // `own`: the project's own roles as GET …/roles answers them ({name, base, description}), so
+  // that one of them reads with its base: "popelwerfer (permissions of Coder)", its description
+  // as the help. Without them a name outside §2.3 stays as it comes, with no help.
+  const ownRole = (r, own) => (Object.hasOwn(ROLE_WORDS, r) ? null : (own || []).find((x) => x.name === r) || null);
+  function roleLabel(r, own) {
+    if (Object.hasOwn(ROLE_WORDS, r)) return ROLE_WORDS[r]()[0];
+    const x = ownRole(r, own);
+    return x ? M.t("role.project", { role: x.name, base: roleLabel(x.base) }) : r;
+  }
+  function roleHelp(r, own) {
+    if (Object.hasOwn(ROLE_WORDS, r)) return ROLE_WORDS[r]()[1];
+    const x = ownRole(r, own);
+    return x ? x.description || M.t("role.project.help", { base: roleLabel(x.base) }) : "";
+  }
+
+  // The project's own roles (§2.3 "Project roles"), read once per view (its ctx) for every
+  // role picker drawn in it. Answers those known now: none before the read answers, and none
+  // where it fails (the pickers keep the built-in roles). `arrived(list)` is called once they
+  // arrive, for a picker drawn before; a choice made meanwhile stays (fillRoles' `wanted`).
+  const ownRead = new WeakMap();
+  function projectRoles(ctx, arrived) {
+    if (!ctx || !ctx.base) return [];
+    let read = ownRead.get(ctx);
+    if (!read) {
+      read = { list: null };
+      read.answer = M.api.get(ctx.base + "/roles").then((r) => ((r && r.custom) || []).filter((x) => x && x.name && x.base), () => [])
+        .then((list) => { read.list = list; return list; });
+      ownRead.set(ctx, read);
+    }
+    if (read.list) return read.list;
+    if (arrived) read.answer.then((list) => { if (list.length) arrived(list); });
+    return [];
+  }
 
   // A role picker's options: each role by its label, its help as the
-  // tooltip; `wanted` chosen where offered, else `fallback`.
+  // tooltip; `wanted` chosen where offered, else `fallback`. `own`: the
+  // project's own roles among `offered`, read by projectRoles.
   const hints = new WeakMap();
-  function fillRoles(select, offered, wanted, fallback) {
+  const owns = new WeakMap();
+  function fillRoles(select, offered, wanted, fallback, own) {
     const { h, append, clear } = M.dom;
-    append(clear(select), offered.map((r) => h("option", { value: r, title: roleHelp(r) }, roleLabel(r))));
+    owns.set(select, own || []);
+    append(clear(select), offered.map((r) => h("option", { value: r, title: roleHelp(r, own) }, roleLabel(r, own))));
     select.value = offered.includes(wanted) ? wanted : fallback;
     if (hints.has(select)) hints.get(select)();
   }
   // The help line under a role picker: what the chosen role does.
   function roleHint(select) {
     const el = M.dom.h("p", { class: "hint role-help", id: select.id + "-help" });
-    const set = () => { el.textContent = roleHelp(select.value); };
+    const set = () => { el.textContent = roleHelp(select.value, owns.get(select)); };
     hints.set(select, set);
     select.setAttribute("aria-describedby", el.id);
     select.addEventListener("change", set);
@@ -126,5 +160,5 @@ window.Maity = window.Maity || {};
     return token;
   }
 
-  M.trust = { trustWord, roleWord, TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, words, tokenWords };
+  M.trust = { trustWord, roleWord, TRUSTS, ROLES, NEEDS_ROLES, MEMBER_TRUSTS, MEMBER_ROLES, roleLabel, roleHelp, projectRoles, fillRoles, roleHint, governs, owner, guest, roleIs, reviews, tests, releases, words, tokenWords };
 })(window.Maity);

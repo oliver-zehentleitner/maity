@@ -266,8 +266,13 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
         """The events after `since` and the new cursor; None when a bridge's connection
         ended or the bridge was isolated or removed since the call began (§2.3)."""
         with engine.begin() as conn:
-            if carried and not _still_carried(conn, reader):
-                return None
+            # A bridge's own windows as of this admission, beside the agent's (§2.3, §6.2).
+            bridge_windows: list[dict[str, int]] = []
+            if carried:
+                admitted = _carried_windows(conn, reader)
+                if admitted is None:
+                    return None
+                bridge_windows = admitted
             # As of now, not as of the call's start: an isolation, a revoked credential, an
             # ended session or a human's removal that committed since reads nothing more
             # (§6.2, "Isolation", §8.3). An agent's removal revokes its credentials; `active`
@@ -281,6 +286,7 @@ async def read_events(slug: str, request: Request, caller: EventsCaller) -> JSON
                 return None
             if caller.kind == "agent" and waking and events.is_isolated(row):
                 return None
+            row = events.carried_row(row, bridge_windows)
             if waking:
                 rows, examined = events.read_waking(
                     conn,
@@ -490,23 +496,29 @@ def _reader(
     return bridges.carry(conn, caller, served, request.url.path, slug, renew_leases=not waiting)
 
 
-def _still_carried(conn: Connection, reader: Caller) -> bool:
-    """The connection a bridge reads through is live and the bridge an active agent that is
-    not isolated, as of now: a long-poll outlives the check at its start (§2.3)."""
+def _carried_windows(conn: Connection, reader: Caller) -> list[dict[str, int]] | None:
+    """The bridge's own hidden windows as of now (§6.2) while the connection it reads through
+    is live and the bridge an active agent that is not isolated; None otherwise. A long-poll
+    outlives the check at its start (§2.3), so each pass's read takes both from here, in one
+    statement, rather than the windows from the call's start."""
     assert reader.bridge is not None
-    return (
-        conn.execute(
-            select(t.bridge.c.id)
-            .join(t.membership, t.membership.c.id == t.bridge.c.bridge)
-            .where(
-                t.bridge.c.id == reader.bridge.bridge_id,
-                t.bridge.c.live.is_(True),
-                t.membership.c.active.is_(True),
-                t.membership.c.isolated_since.is_(None),
-            )
-        ).first()
-        is not None
-    )
+    found = conn.execute(
+        select(t.membership.c.isolation_windows)
+        .select_from(t.bridge)
+        .join(t.membership, t.membership.c.id == t.bridge.c.bridge)
+        .where(
+            t.bridge.c.id == reader.bridge.bridge_id,
+            t.bridge.c.live.is_(True),
+            t.membership.c.active.is_(True),
+            t.membership.c.isolated_since.is_(None),
+        )
+    ).first()
+    return None if found is None else list(found.isolation_windows or [])
+
+
+def _still_carried(conn: Connection, reader: Caller) -> bool:
+    """The bridge still reads for the agent as of now (`_carried_windows`, §2.3)."""
+    return _carried_windows(conn, reader) is not None
 
 
 def answer(items: list[dict[str, Any]], cursor: int, superseded: bool) -> JSONResponse:
