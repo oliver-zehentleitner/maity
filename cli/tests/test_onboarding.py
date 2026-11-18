@@ -91,6 +91,20 @@ def test_resume_names_this_instance_and_its_siblings() -> None:
     ) in text
 
 
+def test_a_negative_claims_count_is_left_out_and_zero_and_more_still_show() -> None:
+    sibs = [
+        {"id": "k7mq", "address": "agt-b#k7mq", "presence": "online", "claims": -1},
+        {"id": "ap44", "address": "agt-b#ap44", "presence": "online", "claims": 0},
+        {"id": "x9zz", "address": "agt-b#x9zz", "presence": "online", "claims": 2},
+    ]
+    text = onboarding.render({**packet(), "team": sibs})
+    assert "-1 claim" not in text
+    assert (
+        "Other instances of you: agent-b#k7mq (online); agent-b#ap44 (online, 0 claims); "
+        "agent-b#x9zz (online, 2 claims)"
+    ) in text
+
+
 def test_a_team_of_one_shows_no_sibling_line() -> None:
     text = onboarding.render({**packet(), "team": []})
     assert "Other instances" not in text
@@ -821,6 +835,16 @@ TAKES_OVER = {"member_id": "agt-c", "handle": "agent-ops-opus", "name": None}
             {"kind": "message", "id": 9},
             "; the hand-over is in message #9: maity messages --after 8.",
         ),
+        (
+            {"kind": "message", "id": 5},
+            "; the hand-over is in message #5: maity messages --after 4.",
+        ),
+        (
+            {"kind": "message", "id": 1},
+            "; the hand-over is in message #1: maity messages --after 0.",
+        ),
+        ({"kind": "message", "id": 0}, "."),  # event seqs start at 1
+        ({"kind": "message", "id": -1}, "."),  # a negative id names no message
         (None, "."),
     ],
 )
@@ -862,6 +886,8 @@ def test_a_takeover_without_a_briefing_points_at_the_hand_over_above() -> None:
         {"kind": "task"},
         {"kind": "message", "id": "9"},
         {"kind": "message", "id": True},
+        {"kind": "message", "id": 0},
+        {"kind": "message", "id": -1},
         {"kind": "file"},
     ],
 )

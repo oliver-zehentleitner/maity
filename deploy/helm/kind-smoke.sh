@@ -100,7 +100,8 @@ kubectl -n "$ns" create secret generic maity-hub-database --from-file=database-u
 (umask 077; python3 -c 'import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode(), end="")' >"$work/mail-signing-key")
 kubectl -n "$ns" create secret generic maity-hub-mail --from-file=mail-signing-key="$work/mail-signing-key"
 
-values=(--set image.repository=maity-hub --set image.tag=kind-smoke --set image.pullPolicy=Never
+# The image is a local build loaded into kind, which has no registry digest: the tag, as the chart's explicit opt-in.
+values=(--set image.repository=maity-hub --set image.allowTag=true --set image.tag=kind-smoke --set image.pullPolicy=Never
     --set database.existingSecret=maity-hub-database --set config.publicUrl=https://maity.test
     --set mail.signingKeySecret.existingSecret=maity-hub-mail --set mail.host=127.0.0.1 --set mail.port=2525
     --set mail.tls=none --set mail.from=maity@maity.test)

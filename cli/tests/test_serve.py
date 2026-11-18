@@ -54,7 +54,12 @@ class Script:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def call(self, method: str, path: str, **kwargs: Any) -> Any:
+        if list(kwargs.get("query") or ()) == [("closed", "true")]:
+            path += "?closed=true"
         self.calls.append((f"{method} {path}", kwargs))
+        closed = path.endswith("?closed=true")
+        if closed and (not self.steps or self.steps[0][0] != f"{method} {path}"):
+            return {"items": []}  # the closed placements (§15.5), unless a test scripts them
         if not self.steps:
             raise serve.Stop
         expected, answer = self.steps.pop(0)
@@ -130,7 +135,8 @@ def test_hello_then_a_wake_rereads_the_placements(tmp_path: Path) -> None:
     assert hello["client"] == hub.CLIENT and hello["actual"] == []
     assert script.calls[1][1]["query"] == [("after", "5120"), ("wait", "55")]
     assert script.calls[1][1]["timeout"] == serve.POLL_WAIT + serve.POLL_SLACK
-    assert script.calls[3][1]["query"][0] == ("after", "5121")
+    assert script.calls[3][0] == "GET /runner/placements?closed=true"
+    assert script.calls[4][1]["query"][0] == ("after", "5121")
     assert [len(p) for p in seen] == [1, 2]
 
 
@@ -328,8 +334,10 @@ def test_serve_end_to_end_signed_with_the_runner_credential(
     runner_calls = [s for s in fake.signed() if s.path.startswith("/api/v1/runner/")]
     assert [s.path for s in runner_calls] == [
         "/api/v1/runner/hello", "/api/v1/runner/events", "/api/v1/runner/placements",
-        "/api/v1/runner/events",
+        "/api/v1/runner/placements", "/api/v1/runner/events",
     ]  # fmt: skip
+    # After the active placements, the closed ones, for their scratch (§15.5).
+    assert [runner_calls[2].query, runner_calls[3].query] == ["", "closed=true"]
     assert all(
         s.headers["authorization"] == f"Maity-HMAC {fakehub.RUNNER_CREDENTIAL_ID}"
         for s in runner_calls
@@ -343,8 +351,9 @@ def test_serve_end_to_end_signed_with_the_runner_credential(
     view = json.loads(capsys.readouterr().out)
     # No supervisor record yet: the stub placement was not started in this run.
     assert view["runner_id"] == "rnr-0002" and view["placements"] == [
-        {**PLACEMENT, "agent": None, "state": None, "attach": None}
-    ]
+        {**PLACEMENT, "agent": None, "state": None, "attach": None, "clone_bytes": None,
+         "scratch_bytes": None}
+    ]  # fmt: skip
 
 
 def test_serve_refuses_to_start_without_a_credential(
@@ -438,17 +447,42 @@ def test_retry_after_is_capped(tmp_path: Path) -> None:
     assert clock.slept == [serve.RETRY_AFTER_CAP]
 
 
-def test_a_state_directory_that_cannot_be_written_ends_with_78(
+def test_a_status_that_cannot_be_written_backs_off_and_the_service_runs_on(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    script = Script(HELLO)
-    svc, _, _ = service(tmp_path, script)
+    """A full disk while serving: the status write fails, the service backs off and says
+    `hello` again instead of ending with EXIT_CONFIG, which the unit would not restart."""
+    script = Script(HELLO, HELLO, events())
+    svc, seen, clock = service(tmp_path, script)
     (tmp_path / "st").mkdir(mode=0o500)
+
+    def freed(seconds: float) -> None:  # the disk has room again after the first backoff
+        clock.sleep(seconds)
+        (tmp_path / "st").chmod(0o700)
+
+    svc.sleep = freed
     try:
-        assert run(svc) == serve.EXIT_CONFIG
+        assert run(svc) is None  # ended by the script running out, never with EXIT_CONFIG
     finally:
         (tmp_path / "st").chmod(0o700)
-    assert "cannot be written" in capsys.readouterr().err
+    assert clock.slept == [0.5 * 2.0]  # backoff(1): full jitter up to 2 s
+    assert [c for c, _ in script.calls].count("POST /runner/hello") == 2
+    assert (tmp_path / "st" / serve.STATUS_FILE).is_file()
+    err_text = capsys.readouterr().err
+    assert "local state cannot be written" in err_text and "trying again in 1 s" in err_text
+
+
+def test_a_state_directory_that_cannot_be_written_at_the_start_ends_with_78(
+    tmp_path: Path, home: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A unit pointed at a directory it cannot write ends at once, not every ten seconds."""
+    path = paired(tmp_path, fake)
+    (tmp_path / "st").chmod(0o500)
+    try:
+        assert cli.main(["runner", "serve", "--config", str(path)]) == serve.EXIT_CONFIG
+    finally:
+        (tmp_path / "st").chmod(0o700)
+    assert "cannot start" in capsys.readouterr().err
 
 
 def test_an_unreadable_runner_file_ends_with_78(
@@ -499,15 +533,18 @@ def test_the_unit_ships_with_the_package(capsys: pytest.CaptureFixture[str]) -> 
     assert "PrivateTmp" not in unit.replace("No PrivateTmp", "")
 
 
-def test_local_trouble_while_backing_off_ends_with_78(tmp_path: Path) -> None:
+def test_local_trouble_while_backing_off_is_logged_and_the_backoff_goes_on(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     script = Script(("POST /runner/hello", err(503)))
     svc, _, clock = service(tmp_path, script)
     (tmp_path / "st").mkdir(mode=0o500)
     try:
-        assert run(svc) == serve.EXIT_CONFIG
+        assert run(svc) is None  # the script ran out: never EXIT_CONFIG
     finally:
         (tmp_path / "st").chmod(0o700)
-    assert clock.slept == []
+    assert clock.slept == [1.0]
+    assert "local state cannot be written" in capsys.readouterr().err
 
 
 def test_hub_words_never_forge_a_log_line(
@@ -579,3 +616,48 @@ def test_status_prints_the_attach_line_of_a_running_placement(
     assert cli.main(["runner", "status", "--config", str(path), "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)["placements"]
     assert [(p["state"], p["attach"]) for p in shown][:2] == [("running", hint), ("failed", None)]
+
+
+def test_the_keeper_changes_the_targets_tools_under_the_supervisors_lock(
+    tmp_path: Path,
+) -> None:
+    """The keeper writes the local target's own probes, sandbox and held state, and under
+    the lock the start gate reads them under (supervisor.GateView): never half of a swap."""
+    cfg = _tools_config(tmp_path, "\ninstall = true\n")
+    state.write_credential(cfg.state_dir, state.Secret(fakehub.CREDENTIAL))
+    svc = serve.open_service(cfg, {})
+    assert svc.keeper is not None and svc.supervisor is not None
+    local = svc.supervisor.targets["local"]
+    assert svc.keeper.guard is svc.supervisor.lock
+    assert svc.keeper.probes is local.probes
+    assert svc.keeper.sandbox is local.sandbox and svc.keeper.held is local.held
+
+
+def _tools_config(tmp_path: Path, codex: str) -> config.Config:
+    """test_supervisor's configuration, with `codex` appended to its [harness.codex]."""
+    from test_supervisor import CONFIG
+
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path, max_agents=2) + codex)
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    return config.load(path)
+
+
+@pytest.mark.parametrize(
+    ("codex", "reports"), [("", False), ("\ninstall = true\n", True),
+                           ('\nupdate = "daily"\n', True)],
+)  # fmt: skip
+def test_only_a_runner_that_manages_a_tool_reports_tools(
+    tmp_path: Path, codex: str, reports: bool
+) -> None:
+    """A hub from before §15.16 refuses `capabilities.tools`: a runner that manages no tool
+    leaves it out, and its hello is what such a hub accepts; one that manages a tool sends
+    it, and runs the tool thread."""
+    cfg = _tools_config(tmp_path, codex)
+    state.write_credential(cfg.state_dir, state.Secret(fakehub.CREDENTIAL))
+    svc = serve.open_service(cfg, {})
+    assert ("tools" in svc.advertised) is reports
+    assert (svc.keeper is not None) is reports
+    if reports:
+        ids = [entry["id"] for entry in svc.advertised["tools"]]
+        assert ids == ["codex", "maity"]

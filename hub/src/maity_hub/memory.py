@@ -11,6 +11,7 @@ a notice that it is quoted, not an instruction (§19.3).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -53,19 +54,22 @@ def who(conn: Connection, kind: str, principal: str | None) -> dict[str, Any] | 
 # --- the soul (§19.1) ---------------------------------------------------------------------------
 
 
+def _soul_fields(conn: Connection, row: Any) -> dict[str, Any]:
+    """A soul row's text and who wrote and confirmed it; each view adds its own time."""
+    return {
+        "markdown": row.markdown,
+        "version": row.version,
+        "by": who(conn, row.by_kind, row.by_id),
+        "confirmed_by": who(conn, "human", row.confirmed_by),
+    }
+
+
 def soul_view(conn: Connection, agent_id: str) -> dict[str, Any]:
     row = conn.execute(select(t.soul).where(t.soul.c.agent_id == agent_id)).first()
     if row is None:
         return {"agent_id": agent_id, "markdown": "", "version": 0, "by": None,
                 "confirmed_by": None, "updated_at": None}  # fmt: skip
-    return {
-        "agent_id": agent_id,
-        "markdown": row.markdown,
-        "version": row.version,
-        "by": who(conn, row.by_kind, row.by_id),
-        "confirmed_by": who(conn, "human", row.confirmed_by),
-        "updated_at": ts(row.updated_at),
-    }
+    return {"agent_id": agent_id, **_soul_fields(conn, row), "updated_at": ts(row.updated_at)}
 
 
 def version_view(conn: Connection, ref: str) -> dict[str, Any]:
@@ -77,14 +81,7 @@ def version_view(conn: Connection, ref: str) -> dict[str, Any]:
             t.soul_version.c.agent_id == agent_id, t.soul_version.c.version == int(version)
         )
     ).one()
-    return {
-        "agent_id": agent_id,
-        "markdown": row.markdown,
-        "version": row.version,
-        "by": who(conn, row.by_kind, row.by_id),
-        "confirmed_by": who(conn, "human", row.confirmed_by),
-        "updated_at": ts(row.at),
-    }
+    return {"agent_id": agent_id, **_soul_fields(conn, row), "updated_at": ts(row.at)}
 
 
 idempotency.register(
@@ -181,6 +178,8 @@ def _soul_proposal_view(conn: Connection, request: Any, proposal: dict[str, Any]
 def _settle_soul(conn: Connection, settled: proposals.Settlement) -> None:
     if settled.outcome != "go":
         return
+    if proposals.proposer_row(conn, settled.request) is None:
+        raise proposals.proposer_lost()  # proposed on a standing it no longer has
     agent = conn.execute(
         select(t.agent_profile).where(t.agent_profile.c.id == settled.proposal["agent_id"])
     ).one()
@@ -203,16 +202,7 @@ def soul_versions(conn: Connection, agent_id: str) -> list[dict[str, Any]]:
         .where(t.soul_version.c.agent_id == agent_id)
         .order_by(t.soul_version.c.version.desc())
     ).all()
-    return [
-        {
-            "version": r.version,
-            "markdown": r.markdown,
-            "by": who(conn, r.by_kind, r.by_id),
-            "confirmed_by": who(conn, "human", r.confirmed_by),
-            "at": ts(r.at),
-        }
-        for r in rows
-    ]
+    return [{**_soul_fields(conn, r), "at": ts(r.at)} for r in rows]
 
 
 # --- team, role and community memory (§19.2) -----------------------------------------------------
@@ -224,40 +214,98 @@ def member(conn: Connection, membership_id: int | None) -> Any:
     return conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
 
 
-def _by(conn: Connection, kind: str | None, membership_id: int | None) -> dict[str, Any] | None:
-    row = member(conn, membership_id)
-    if row is None or kind is None:
-        return None
-    principal = row.agent_id or row.human_id
-    found = who(conn, kind, principal) or {}
-    return {"kind": kind, "member_id": principal, "handle": found.get("handle")}
+def _handles(conn: Connection, kind: str, ids: set[str]) -> dict[str, str | None]:
+    """The handles of several humans or agent profiles, in one query."""
+    if not ids:
+        return {}
+    table = t.human if kind == "human" else t.agent_profile
+    rows = conn.execute(select(table.c.id, table.c.handle).where(table.c.id.in_(ids))).all()
+    return {row.id: row.handle for row in rows}
+
+
+def entry_views(conn: Connection, rows: Sequence[Any]) -> list[dict[str, Any]]:
+    """The views of several entries in a fixed number of queries: the memberships they
+    name, then the handles of each kind (as `views.principal_ids` does for lists), so a
+    packet or a page does not cost several queries per entry."""
+    wanted = {
+        i
+        for r in rows
+        for i in (r.team_membership, r.by_membership, r.deleted_by_membership)
+        if i is not None
+    }
+    members: dict[int, Any] = {}
+    if wanted:
+        found = conn.execute(
+            select(t.membership.c.id, t.membership.c.agent_id, t.membership.c.human_id).where(
+                t.membership.c.id.in_(wanted)
+            )
+        ).all()
+        members = {m.id: m for m in found}
+        missing = wanted - members.keys()
+        if missing:
+            raise LookupError(f"membership rows {sorted(missing)} do not exist")
+
+    def principal(membership_id: int) -> str:
+        m = members[membership_id]
+        return str(m.agent_id or m.human_id)
+
+    ids: dict[str, set[str]] = {"human": set(), "agent": set()}
+    for r in rows:
+        for kind, membership_id in (
+            (r.by_kind, r.by_membership),
+            (r.deleted_by_kind if r.deleted_at is not None else None, r.deleted_by_membership),
+        ):
+            if kind is not None and membership_id is not None:
+                ids["human" if kind == "human" else "agent"].add(principal(membership_id))
+        if r.confirmed_by is not None:
+            ids["human"].add(r.confirmed_by)
+    handles = {kind: _handles(conn, kind, found) for kind, found in ids.items()}
+
+    def by(kind: str | None, membership_id: int | None) -> dict[str, Any] | None:
+        if membership_id is None or kind is None:
+            return None
+        who_id = principal(membership_id)
+        handle = handles["human" if kind == "human" else "agent"].get(who_id)
+        return {"kind": kind, "member_id": who_id, "handle": handle}
+
+    views = []
+    for row in rows:
+        author = by(row.by_kind, row.by_membership) or {}
+        if row.by_kind == "agent":
+            author |= {"instance": row.by_instance, "session_id": row.by_session_id}
+        deleted = None
+        if row.deleted_at is not None:
+            deleted = {
+                "by": by(row.deleted_by_kind, row.deleted_by_membership),
+                "reason": row.deleted_reason,
+                "at": ts(row.deleted_at),
+            }
+        team = members.get(row.team_membership) if row.team_membership is not None else None
+        confirmed = row.confirmed_by
+        views.append(
+            {
+                "id": row.id,
+                "store": row.store,
+                **({"role": row.role} if row.store == "role" else {}),
+                "member_id": team.agent_id if team is not None else None,
+                "text": row.text,
+                "tags": row.tags or [],
+                "by": author,
+                "confirmed_by": (
+                    {"kind": "human", "id": confirmed, "handle": handles["human"].get(confirmed)}
+                    if confirmed is not None
+                    else None
+                ),
+                "request_id": row.request_id,
+                "created_at": ts(row.created_at),
+                "deleted": deleted,
+            }
+        )
+    return views
 
 
 def entry_view(conn: Connection, row: Any) -> dict[str, Any]:
-    team = member(conn, row.team_membership)
-    by = _by(conn, row.by_kind, row.by_membership) or {}
-    if row.by_kind == "agent":
-        by |= {"instance": row.by_instance, "session_id": row.by_session_id}
-    deleted = None
-    if row.deleted_at is not None:
-        deleted = {
-            "by": _by(conn, row.deleted_by_kind, row.deleted_by_membership),
-            "reason": row.deleted_reason,
-            "at": ts(row.deleted_at),
-        }
-    return {
-        "id": row.id,
-        "store": row.store,
-        **({"role": row.role} if row.store == "role" else {}),
-        "member_id": team.agent_id if team is not None else None,
-        "text": row.text,
-        "tags": row.tags or [],
-        "by": by,
-        "confirmed_by": who(conn, "human", row.confirmed_by),
-        "request_id": row.request_id,
-        "created_at": ts(row.created_at),
-        "deleted": deleted,
-    }
+    return entry_views(conn, [row])[0]
 
 
 def entry_row(conn: Connection, entry_id: str) -> Any:
@@ -478,6 +526,8 @@ def settle(conn: Connection, settled: proposals.Settlement) -> None:
     if settled.outcome != "go":
         return
     request = settled.request
+    if proposals.proposer_row(conn, request) is None:
+        raise proposals.proposer_lost()  # proposed on a standing it no longer has
     writer = Writer(member(conn, request.asked_by), "agent", settled.proposer.session_id)
     add_entry(
         conn,
@@ -554,9 +604,9 @@ def _compact(conn: Connection, where: Any) -> dict[str, Any]:
     c = t.memory_entry.c
     live = and_(where, c.deleted_at.is_(None))
     total = conn.execute(select(func.count()).select_from(t.memory_entry).where(live)).scalar_one()
-    items: list[dict[str, Any]] = []
+    kept: list[Any] = []
     used, offset = 0, 0
-    while len(items) < total:
+    while len(kept) < total:
         rows = conn.execute(
             select(t.memory_entry)
             .where(live)
@@ -568,11 +618,11 @@ def _compact(conn: Connection, where: Any) -> dict[str, Any]:
             break
         for row in rows:
             used += size(row.text)
-            if used > PACKET_TEXT and items:
-                return {"items": items, "total": total, "truncated": True}
-            items.append(entry_view(conn, row))
+            if used > PACKET_TEXT and kept:
+                return {"items": entry_views(conn, kept), "total": total, "truncated": True}
+            kept.append(row)
         offset += len(rows)
-    return {"items": items, "total": total, "truncated": len(items) < total}
+    return {"items": entry_views(conn, kept), "total": total, "truncated": len(kept) < total}
 
 
 def compact_block(conn: Connection, mine: Membership, agent_id: str) -> dict[str, Any]:

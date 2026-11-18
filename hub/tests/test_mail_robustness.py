@@ -337,3 +337,18 @@ def test_human_and_organisation_display_names_refuse_c1_and_unicode_line_breaks(
                 "display_name": "invalid"
             }
     assert orgs.display_name_ok("Team ‍👩‍💻")
+
+
+def test_the_invitation_subject_is_cut_like_every_subject() -> None:
+    subject, _body = invitation_mail.text(
+        inviter="Ann " + "a" * 200,
+        project_name="see evil.example " + "p" * 200,
+        full_name="ann/evil",
+        public_url="https://maity.example",
+        trust="member",
+        role="coder",
+        note=None,
+        url="https://maity.example/i/t",
+        expires_at=clock.now(),
+    )
+    assert len(subject) <= 120 and subject.endswith("…")

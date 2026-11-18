@@ -58,7 +58,8 @@ route's own value when that value is on its list (`ROUTE_CACHE`: the images'
 `private, max-age=21600` on the image and on its `304`, the avatars' and attachments'
 `private, no-cache`, the dashboard's files' `no-cache` (serving.md c6768529), and a few more), or the request is a `GET` or `HEAD` on the public host (never
 the join host) of a path a visitor may cache: `PUBLIC_PATHS` (`public, max-age=60`), a public
-avatar, `robots.txt` and the sitemaps, the landing page's files, and a stored public page (§16.9),
+avatar, a member's picture under its current version (`private, max-age=31536000, immutable`,
+which only `routes.avatars.get_avatar` sets), `robots.txt` and the sitemaps, the landing page's files, and a stored public page (§16.9),
 each list with its own value. A route with a new value must add it there, or it is served `no-store`.
 The body cap is 64 KiB except for image uploads (logo, banner and avatars: 1 MiB, a larger
 body answers `invalid` with `fields.body: too_large`, as §11.2 says, rather than 413),
@@ -331,3 +332,50 @@ hub's settings.
 - Drawing the generated picture on each read instead of storing it:
   the contract stores it, and the public address finds a picture by its
   digest in the table.
+
+## A member's picture under its current version is cached for good, privately, whatever its size
+
+**Id:** 1774d1bb-64e4-4665-a177-3067ea8492aa
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-vvyqmk9vwg8e and the owner's caching decision (req-s246xb6k1mpp, option A), 2026-11-15 (`docs/api.md` §1, §6.10); `private` over `public` and the match at any size are the implementer's reading of the card
+**Revisit when:** who may read a picture changes, `avatar_url` stops carrying the stored digest, a size can change without the stored picture changing, or access has to end at once for a picture already shown
+**See:** images.md#an-answer-is-no-store-unless-its-caching-is-on-the-middlewares-list-uploads-have-a-cap-of-their-own — 96d70040-21c8-4c0f-9d75-0b7a5802ef4c — as of 2026-11-15
+**See:** images.md#a-smaller-size-runs-through-the-same-child-in-a-size-mode-and-is-kept-next-to-the-picture-it-was-made-from — 76c6f13e-6c46-4d71-bc4e-3eb93b7c7ff8 — as of 2026-11-15
+
+`GET /avatars/{id}` answers `Cache-Control: private, max-age=31536000,
+immutable` when the request carries exactly one `v` and it is the stored
+image's `ETag` without quotes, the value `avatars.url_of` writes into
+every `avatar_url`, at any `s`. The check runs after `may_read` and after
+the picture is found, so a refused caller still gets `not_found` with
+`no-store`. Any other request keeps `private, no-cache`. The middleware
+lets the long value through on `200` and `304` of that path only
+(`AVATARS`); the public address by digest keeps its own caching.
+
+**Reason:** about 28 avatars per board or card page each cost a
+revalidation on every load; an address that names one picture and no
+other can be kept by the browser without asking. `private`, because the
+route answers only after `may_read`: a shared cache would hand the
+picture to callers the hub refuses, which widens who can read it. `v` is
+matched against the stored digest rather than per size, because a size
+is made from the stored picture and dropped with it (entry 76c6f13e), so
+`?v=<digest>&s=32` also names one picture for good, and `avatar_url`
+carries only the stored digest.
+
+**Trade-off accepted:** access no longer ends for a picture a browser
+already holds. Before, `no-cache` made every use ask the hub, so a
+picture stopped showing once the session, the membership or the account
+ended. Now a browser holding the current address may keep showing that
+picture until the picture changes and its `avatar_url` with it; it never
+gets a new picture, nor this one again from the hub. `docs/api.md`
+§6.10 says so.
+
+**Rejected alternatives:**
+- `public, max-age=31536000, immutable`: a proxy or CDN could serve the
+  picture to anyone with the address, past `may_read`.
+- Matching `v` against each size's own `ETag`: `avatar_url` never carries
+  one, so it would only add addresses nothing links to; a size's `ETag`
+  in `v` stays `no-cache`.
+- Keeping `no-cache` everywhere: a warm load would still send every
+  avatar request and wait for its `304`.

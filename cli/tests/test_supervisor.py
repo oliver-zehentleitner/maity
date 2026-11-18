@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
@@ -13,7 +14,17 @@ from typing import Any, cast
 import pytest
 
 from maity import __version__, clonecheck, hub, proc, state
-from maity.runner import adapters, capabilities, config, restart, supervisor, tmux, workspace
+from maity.runner import (
+    adapters,
+    capabilities,
+    config,
+    restart,
+    scratch,
+    supervisor,
+    tmux,
+    workspace,
+)
+from maity.runner.asuser import RUNNER
 
 REPO = "https://github.com/oliver-zehentleitner/maity"
 CONFIG = """\
@@ -85,6 +96,9 @@ class FakeTmux:
 
     def pane_digest(self, name: str) -> str | None:
         return self.screen
+
+    def pane_has(self, name: str, texts: Sequence[str]) -> frozenset[str] | None:
+        return None if self.screen is None else frozenset(t for t in texts if t in self.screen)
 
     def type_text(self, name: str, text: str) -> None:
         self.typed.append((name, text))
@@ -182,6 +196,7 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     ((name, argv, env),) = backend.started
     assert sup.cfg.local is not None
     clone = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3").path
+    scratch = sup.cfg.local.workspaces.resolve() / "maity" / ".scratch" / "plc-0003"
     assert name == "maity_maity_agent-3"
     assert env == {
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(clone / ".git"),
@@ -191,10 +206,14 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
         **adapters.SESSION_GIT_CONFIG,
         "GIT_AUTHOR_NAME": "Maity agent", "GIT_AUTHOR_EMAIL": "maity-agent@invalid",
         "GIT_COMMITTER_NAME": "Maity agent", "GIT_COMMITTER_EMAIL": "maity-agent@invalid",
+        "MAITY_SCRATCH": str(scratch), "TMPDIR": str(scratch / "tmp"),
     }  # fmt: skip
     private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
     assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
     assert clone not in private.parents
+    # Its scratch (§15.5): beside the clones, made with `tmp`, and named in a runner record.
+    assert (scratch / "tmp").is_dir() and clone not in scratch.parents
+    assert (private / clonecheck.SCRATCH_RECORD).read_text() == f"{scratch}\n"
     assert argv[1:4] == ["-I", "-m", "maity.runner.stub"]  # -I: nothing from the clone loads
     assert argv[-3:] == ["1", "--run-seconds", "5"]
     clock.now += supervisor.RUNNING_AFTER
@@ -424,6 +443,31 @@ def test_an_old_or_unknown_claude_code_is_refused_by_default_where_its_sandbox_c
     assert ("claude-code" in target.held) is (tools and version != "2.1.295")
     found = sup._refusal(placement(harness="claude-code"), target)
     assert (found == ("harness_refused", None)) is refused
+
+
+def test_the_launch_uses_the_binary_and_sandbox_the_gate_decided_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The keeper may swap a tool (a rollback) between the start gate and the launch: the
+    launch keeps the gate's binary and sandbox, never the new binary under the old answer."""
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    target = sup.targets["local"]
+    p = placement(harness="claude-code")
+    view = supervisor.GateView.of(target, "claude-code")
+    assert view == supervisor.GateView(capabilities.Probe("/usr/bin/claude", "2.1.325", None),
+                                       True, False)  # fmt: skip
+    # the rollback, as Keeper.refresh writes it
+    target.probes["claude-code"] = capabilities.Probe("/old/claude", "2.1.294", None)
+    target.sandbox["claude-code"] = False
+    target.held.add("claude-code")
+    assert sup._refusal(p, target, view) is None  # the gate's view
+    assert sup._refusal(p, target) == ("harness_refused", None)  # a new look refuses
+    place = workspace.Workspace(tmp_path / "ws" / "c", "maity", "c")
+    harness = sup.cfg.harnesses["claude-code"]
+    ctx = sup._context(p, harness, place, target, view=view)
+    assert (ctx.binary, ctx.sandbox) == ("/usr/bin/claude", True)
+    later = sup._context(p, harness, place, target)
+    assert (later.binary, later.sandbox) == ("/old/claude", False)
 
 
 @pytest.mark.parametrize("extra", ["", "require_sandbox = false\n"])
@@ -1043,7 +1087,9 @@ def test_hooks_and_fsmonitor_planted_in_a_clone_never_run(
     hook.chmod(0o755)
     with (place.path / ".git" / "config").open("a") as fh:
         fh.write(f"[core]\n\tfsmonitor = touch {marker}\n\tpager = touch {marker}\n")
-    workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0005")
+    with pytest.raises(workspace.Refused) as refused:  # read, never run, and then refused
+        workspace.prepare(cfg, place, str(origin_repo), "agt-3", "plc-0005")
+    assert refused.value.detail == "not_a_plain_clone"
     workspace.stale_index_lock(place.path)
     assert not marker.exists()
 
@@ -1052,6 +1098,123 @@ def test_hooks_and_fsmonitor_planted_in_a_clone_never_run(
 def test_workspace_paths_come_from_tokens_only(tmp_path: Path, project: str, clone: str) -> None:
     with pytest.raises(workspace.Refused):
         workspace.locate(tmp_path, project, clone)
+
+
+# --- what the supervisor reads from a clone --------------------------------------------------
+
+SPARSE = 100 * 1024**3  # 100 GiB, of which nothing is on the disk
+UNSAFE = ("fifo", "endless", "sparse")
+
+
+def plant(path: Path, kind: str) -> None:
+    """Put at `path` what an agent could leave as a file the runner reads: a FIFO nobody
+    writes, a link to an endless device, or a huge sparse file."""
+    path.unlink(missing_ok=True)
+    if kind == "fifo":
+        os.mkfifo(path)
+    elif kind == "endless":
+        path.symlink_to("/dev/zero")
+    else:
+        with path.open("wb") as fh:
+            fh.truncate(SPARSE)
+
+
+def within(seconds: float, call: Any, *args: Any) -> Any:
+    """`call(*args)` in a thread, failing the test when it has not returned in `seconds`:
+    a read that blocks or never ends shows as a failure, not as a hung run."""
+    import threading
+
+    found: list[Any] = []
+    failed: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            found.append(call(*args))
+        except BaseException as exc:  # noqa: BLE001 - raised again in the test's thread
+            failed.append(exc)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    assert not thread.is_alive(), f"{getattr(call, '__name__', call)} did not return"
+    if failed:
+        raise failed[0]
+    return found[0] if found else None
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX: FIFOs and the runner")
+@pytest.mark.parametrize("kind", UNSAFE)
+def test_a_clones_git_config_is_read_safely_and_bounded(tmp_path: Path, kind: str) -> None:
+    """Read as a regular file only, never through a link, never waiting on a FIFO, never
+    more than clonecheck.CONFIG_MAX: whatever stands there, `origin` answers at once."""
+    (tmp_path / ".git").mkdir()
+    plant(tmp_path / ".git" / "config", kind)
+    assert within(10, workspace.origin, tmp_path) is None
+    with pytest.raises(OSError):
+        within(10, lambda: RUNNER.read_whole(tmp_path / ".git" / "config", 1024, under=tmp_path))
+
+    # What `gc` and maity under the runner read with: a plain file up to the limit only.
+    def local() -> bytes:
+        return clonecheck.LOCAL.read(tmp_path / ".git" / "config", limit=1024, under=tmp_path)
+
+    if kind == "sparse":
+        assert within(10, local) == b"\0" * 1024
+    else:
+        with pytest.raises(OSError):
+            within(10, local)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX: FIFOs and the runner")
+@pytest.mark.parametrize("kind", UNSAFE)
+def test_a_planted_git_config_never_holds_the_supervisor(world: Any, kind: str) -> None:
+    """The tick reads nothing in a clone under its lock; the start task reads the clone
+    after the clone checks and refuses it. The supervisor goes on serving every agent."""
+    sup, backend, _, _, logs = world
+    place = recorded(sup.cfg)
+    plant(place.path / ".git" / "config", kind)
+    sup.update([placement(), placement(4)])
+    within(10, sup.tick)
+    for task in list(sup.tasks.values()):
+        task.join(10)
+        assert not task.is_alive(), "the start task did not end"
+    within(10, sup.update, [placement()])  # the lock is free: the hub's changes get in
+    within(10, sup.tick)
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail) == (
+        "failed", "workspace_in_use", "not_a_plain_clone"
+    )  # fmt: skip
+    assert backend.started == []
+
+
+def test_inspecting_an_existing_clone_happens_in_the_start_task(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under the supervisor's lock only the runner's record is read; the clone's `.git`
+    is read by the start task, after the clone checks, with the lock free."""
+    import threading
+
+    sup, backend, _, _, _ = world
+    recorded(sup.cfg)
+    seen: list[tuple[str, str]] = []
+    checks, reads = clonecheck.not_inspectable, workspace.origin
+
+    def checked(path: Path, files: Any = clonecheck.LOCAL) -> str | None:
+        seen.append(("check", threading.current_thread().name))
+        return checks(path, files)
+
+    def read(path: Path, as_user: Any = RUNNER) -> str | None:
+        seen.append(("origin", threading.current_thread().name))
+        return reads(path, as_user)
+
+    monkeypatch.setattr(clonecheck, "not_inspectable", checked)
+    monkeypatch.setattr(workspace, "origin", read)
+    sup.update([placement()])
+    sup.tick()
+    for task in list(sup.tasks.values()):
+        task.join(5)
+    # Read once each, by the start task, the clone check first; the tick read nothing.
+    assert seen == [("check", "maity-start-plc-0003"), ("origin", "maity-start-plc-0003")]
+    assert [name for name, _, _ in backend.started] == ["maity_maity_agent-3"]
 
 
 # --- tmux commands ---------------------------------------------------------------------------
@@ -1083,6 +1246,141 @@ def test_tmux_starts_the_server_under_a_clean_environment(
     assert 'update-environment ""' in (tmp_path / "tmux.conf").read_text()
     log = tmp_path / "logs" / "plc-0003.log"
     assert oct(log.stat().st_mode & 0o777) == "0o600"
+    pipe = calls[3]  # the pane's output goes through logcap, held to limits.log_keep_bytes
+    assert pipe[3:7] == ["pipe-pane", "-o", "-t", "maity_maity_agent-3"]
+    assert pipe[-1].endswith(f"-m maity.runner.logcap {log} {10 * 1024 * 1024}")
+
+
+def test_a_pane_log_is_held_to_its_limit_with_the_newest_output(tmp_path: Path) -> None:
+    from maity.runner import logcap
+
+    log = tmp_path / "plc-0003.log"
+    log.write_bytes(b"o" * 900)  # from an earlier start of the placement
+    read, write = os.pipe()
+    chunks = [bytes([65 + n % 26]) * 300 for n in range(40)]
+    with os.fdopen(write, "wb") as fh:
+        for chunk in chunks:  # 12 000 bytes, a few at a time as a pane writes them
+            fh.write(chunk)
+            fh.flush()
+    assert logcap.run(str(log), 1000, read) == 0
+    os.close(read)
+    kept = log.read_bytes()
+    assert 0 < len(kept) <= 1000
+    assert kept.endswith(chunks[-1])  # the newest output stays
+    assert not (tmp_path / "plc-0003.log.cut").exists()
+
+
+def _pane(log: Path, limit: int) -> tuple[int, Callable[[], int]]:
+    """logcap writing `log` from a pipe in a thread: the pipe's write end, and a call that
+    closes it and returns logcap's exit code."""
+    import threading
+
+    from maity.runner import logcap
+
+    read, write = os.pipe()
+    done: list[int] = []
+    # A daemon: a failed test leaves it reading, and must not keep the test run from ending.
+    thread = threading.Thread(
+        target=lambda: done.append(logcap.run(str(log), limit, read)), daemon=True
+    )
+    thread.start()
+
+    def end() -> int:
+        os.close(write)
+        thread.join(10)
+        os.close(read)
+        assert done, "logcap did not end"
+        return done[0]
+
+    return write, end
+
+
+def _until(check: Callable[[], bool]) -> None:
+    """Wait for logcap to have taken what was written: a condition, not a duration."""
+    import time
+
+    deadline = time.monotonic() + 10
+    while not check():
+        assert time.monotonic() < deadline, "logcap did not take the write"
+        time.sleep(0.005)
+
+
+def test_a_pane_log_holds_its_limit_when_another_writer_appends(tmp_path: Path) -> None:
+    """The log is on the agents' side: bytes another writer appends count at logcap's next
+    write, from the file's real size, so the log stays within the limit."""
+    log = tmp_path / "plc-0003.log"
+    write, end = _pane(log, 100)
+    os.write(write, b"a" * 10)
+    _until(lambda: log.exists() and log.stat().st_size == 10)
+    with log.open("ab") as other:  # another writer, between two of the pane's writes
+        other.write(b"x" * 100)
+    os.write(write, b"b" * 10)
+    assert end() == 0
+    kept = log.read_bytes()
+    assert len(kept) <= 100 and kept.endswith(b"b" * 10)
+
+
+def test_a_pane_log_appended_to_after_the_last_write_is_cut_when_the_pane_ends(
+    tmp_path: Path,
+) -> None:
+    log = tmp_path / "plc-0003.log"
+    write, end = _pane(log, 100)
+    os.write(write, b"a" * 10)
+    _until(lambda: log.exists() and log.stat().st_size == 10)
+    with log.open("ab") as other:
+        other.write(b"x" * 200)
+    assert end() == 0
+    assert len(log.read_bytes()) <= 100
+
+
+def test_a_pane_log_put_back_by_another_file_is_the_one_written(tmp_path: Path) -> None:
+    """A log renamed away and replaced is opened anew: the pane's output goes to the file at
+    the log's path, held to the limit, never on into the file moved away."""
+    log = tmp_path / "plc-0003.log"
+    write, end = _pane(log, 100)
+    os.write(write, b"a" * 10)
+    _until(lambda: log.exists() and log.stat().st_size == 10)
+    log.rename(tmp_path / "moved.log")
+    log.write_bytes(b"x" * 95)
+    os.write(write, b"b" * 10)
+    assert end() == 0
+    assert (tmp_path / "moved.log").read_bytes() == b"a" * 10
+    kept = log.read_bytes()
+    assert len(kept) <= 100 and kept.endswith(b"b" * 10)
+
+
+def test_a_full_disk_drops_log_output_and_the_pane_goes_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import errno
+
+    from maity.runner import logcap
+
+    log = tmp_path / "plc-0003.log"
+    read, write = os.pipe()
+    os.write(write, b"lost")
+    real, calls = os.write, []
+
+    def full(fd: int, data: bytes) -> int:
+        calls.append(data)
+        if len(calls) == 1:
+            raise OSError(errno.ENOSPC, "No space left on device")
+        return real(fd, data)
+
+    monkeypatch.setattr(os, "write", full)  # what logcap writes with
+    done: list[int] = []
+    import threading
+
+    reader = threading.Thread(target=lambda: done.append(logcap.run(str(log), 1000, read)))
+    reader.start()
+    while not calls:
+        reader.join(0.01)
+    real(write, b"kept")
+    os.close(write)
+    reader.join(10)
+    monkeypatch.undo()
+    os.close(read)
+    assert done == [0] and log.read_bytes() == b"kept"
 
 
 def test_tmux_without_a_server_has_no_sessions(tmp_path: Path) -> None:
@@ -1608,30 +1906,71 @@ def test_a_rejoin_happens_once_per_generation(world: Any, monkeypatch: pytest.Mo
     assert len(calls) == 1 and len(backend.started) == 2
 
 
-def test_codex_is_refused_where_the_repository_grants_commands(world: Any) -> None:
-    sup, backend, reports, _, _ = world
+@pytest.mark.parametrize(
+    ("grant", "said"),
+    [
+        (config.RepositoryGrant(allow=("make test",)), ["'make test' is not applied to codex"]),
+        (config.RepositoryGrant(pull_requests=True), ["pull_requests is not given to codex"]),
+        (
+            config.RepositoryGrant(allow=("make test",), pull_requests=True),
+            ["'make test' is not applied to codex", "pull_requests is not given to codex"],
+        ),
+    ],
+)
+def test_codex_starts_without_the_grant_parts_it_cannot_enforce(
+    world: Any, grant: config.RepositoryGrant, said: list[str]
+) -> None:
+    """Codex has no command allowlist, and its `maity` runs inside its sandbox, where
+    `maity gh` is set up only outside it: with its sandbox on it starts without those parts, named
+    at each start, instead of being refused (cli/context/runner.md)."""
+    sup, _, reports, _, logs = world
+    sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": grant})
+    sup.targets["local"].sandbox["codex"] = True
+    assert sup._refusal(placement(harness="codex"), sup.targets["local"]) is None
+    sup.update([placement(harness="codex")])
+    sup.tick()
+    assert ("failed", "harness_refused", None) not in states(reports)
+    left = [
+        line
+        for line in logs
+        if "codex:" in line and "github.com/oliver-zehentleitner/maity" in line
+    ]
+    assert len(left) == len(said) and all(any(s in line for line in left) for s in said), left
+
+
+@pytest.mark.parametrize(
+    "grant",
+    [
+        config.RepositoryGrant(allow=("make test",)),
+        config.RepositoryGrant(pull_requests=True),
+    ],
+)
+def test_codex_without_its_sandbox_is_refused_where_the_grant_has_parts_it_leaves_out(
+    world: Any, grant: config.RepositoryGrant
+) -> None:
+    """The left-out parts are left to Codex's sandbox: with it off (`require_sandbox` unset,
+    so the start is not refused for the sandbox alone), such a grant refuses the start."""
+    sup, _, reports, _, _ = world
+    sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": grant})
+    sup.targets["local"].sandbox["codex"] = False
+    assert sup._refusal(placement(harness="codex"), sup.targets["local"]) == (
+        "harness_refused", None,
+    )  # fmt: skip
+    network = config.RepositoryGrant(network=("pypi.org",))
+    sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": network})
+    assert sup._refusal(placement(harness="codex"), sup.targets["local"]) is None
+
+
+def test_claude_code_is_not_told_what_codex_starts_without(world: Any) -> None:
+    sup, _, _, _, logs = world
     sup.cfg = replace(
         sup.cfg,
         repositories={"github.com/oliver-zehentleitner/maity": config.RepositoryGrant(
-            allow=("make test",))},
+            allow=("make test",), pull_requests=True)},
     )  # fmt: skip
-    sup.update([placement(harness="codex")])
+    sup.update([placement(harness="stub")])
     sup.tick()
-    assert states(reports) == [("failed", "harness_refused", None)]
-
-
-def test_codex_is_refused_where_the_repository_grants_pull_requests(world: Any) -> None:
-    """Codex's `maity` runs inside its sandbox, where `maity gh` reaches neither the login
-    nor the forge's API (cli/context/runner.md 9f43804d)."""
-    sup, backend, reports, _, _ = world
-    sup.cfg = replace(
-        sup.cfg,
-        repositories={"github.com/oliver-zehentleitner/maity": config.RepositoryGrant(
-            pull_requests=True)},
-    )  # fmt: skip
-    sup.update([placement(harness="codex")])
-    sup.tick()
-    assert states(reports) == [("failed", "harness_refused", None)]
+    assert not [line for line in logs if "codex" in line]
 
 
 # --- the project namespace (§6.25, §15.5) ------------------------------------------------------
@@ -1688,6 +2027,161 @@ def interactive(world: Any, **overrides: Any) -> None:
     sup.tick()
     assert states(reports)[-1] == ("running", None, None)
     sup.tick()  # the first look: quiet from here
+
+
+# Codex 0.169's folder prompt for a folder it is told not to trust, and the one that would trust it.
+RESTRICTED = "Folder access\n  Do you trust …?\n› 1. Open restricted\n  2. Quit\n"
+TRUSTING = "Folder access\n  Do you trust …?\n› 1. Trust and continue\n  2. Quit\n"
+
+
+def started(world: Any, harness: str = "codex", mode: str = "interactive") -> None:
+    """A placement of `harness` in `mode`, its session started (asserted, so a test that
+    expects nothing to be pressed cannot pass on a refused start)."""
+    sup, backend, _, _, _ = world
+    harnesses = dict(sup.cfg.harnesses)
+    if harness not in harnesses:
+        harnesses[harness] = config.Harness(harness, ("interactive", "supervised"), mode, ())
+    harnesses[harness] = replace(harnesses[harness], modes=("interactive", "supervised"))
+    sup.cfg = replace(sup.cfg, harnesses=harnesses)
+    recorded(sup.cfg)
+    sup.update([placement(mode=mode, harness=harness, health=HEALTH)])
+    settle(sup)
+    assert SESSION in backend.live, sup.records
+
+
+def test_codex_s_folder_prompt_is_answered_once_with_open_restricted(world: Any) -> None:
+    """Interactive Codex stops on its folder prompt for the untrusted clone; "Open restricted"
+    keeps it untrusted (it saves nothing), and nobody else would answer it."""
+    sup, backend, reports, clock, logs = world
+    backend.screen = RESTRICTED
+    started(world)
+    sup.tick()
+    assert backend.submitted == 1
+    assert any('answered Codex\'s folder prompt with "Open restricted"' in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    sup.tick()
+    assert backend.submitted == 1  # once
+    assert states(reports)[-1] == ("running", None, None)
+
+
+def test_codex_s_folder_prompt_that_would_trust_the_folder_is_never_answered(world: Any) -> None:
+    sup, backend, _, clock, logs = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    assert backend.submitted == 0
+    said = [line for line in logs if "waiting on a first-run prompt" in line]
+    assert len(said) == 1 and "not answered" in said[0]
+
+
+@pytest.mark.parametrize(
+    ("harness", "mode", "attach"),
+    [("codex", "interactive", True), ("codex", "interactive", None),
+     ("stub", "interactive", False), ("codex", "supervised", False)],
+)  # fmt: skip
+def test_the_folder_prompt_is_left_alone_with_a_person_there_or_another_harness_or_mode(
+    world: Any, harness: str, mode: str, attach: bool | None
+) -> None:
+    sup, backend, _, _, _ = world
+    backend.screen, backend.attach = RESTRICTED, attach
+    started(world, harness, mode)
+    sup.tick()
+    assert backend.submitted == 0
+
+
+def test_a_folder_prompt_showing_both_choices_is_left_alone(world: Any) -> None:
+    sup, backend, _, _, logs = world
+    backend.screen = RESTRICTED + TRUSTING
+    started(world)
+    sup.tick()
+    assert backend.submitted == 0
+    said = [line for line in logs if "waiting on a first-run prompt" in line]
+    assert len(said) == 1 and "without offering only to open it restricted" in said[0]
+
+
+def test_a_new_start_looks_for_the_folder_prompt_again(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = RESTRICTED
+    started(world)
+    sup.tick()
+    assert backend.submitted == 1
+    backend.exit(SESSION, 0)
+    sup.tick()
+    clock.now += 600
+    settle(sup)
+    sup.tick()
+    assert SESSION in backend.live and backend.submitted == 2
+
+
+def test_a_folder_prompt_left_alone_gets_no_idle_nudge(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    for _ in range(45):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [] and backend.submitted == 0
+
+
+def test_the_idle_check_resumes_once_a_left_prompt_is_answered(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    backend.screen = "> "  # a person attached, answered it and left
+    sup.tick()
+    for _ in range(31):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [(SESSION, supervisor.NUDGE_LINE)]
+
+
+def test_no_idle_line_goes_into_a_prompt_one_look_missed(world: Any) -> None:
+    """A look without the prompt's title (a redraw caught midway) does not open the session
+    to the idle check for good: the prompt back, nothing is typed into it."""
+    sup, backend, _, clock, _ = world
+    backend.screen = TRUSTING
+    started(world)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()
+    backend.screen = "> "  # one look misses it
+    sup.tick()
+    backend.screen = TRUSTING
+    for _ in range(61):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [] and backend.submitted == 0
+
+
+def test_no_idle_line_goes_into_a_prompt_shown_late(world: Any) -> None:
+    """A folder prompt that shows only after `FOLDER_PROMPT_WITHIN` is not answered, and the
+    idle check types nothing into it."""
+    sup, backend, _, clock, _ = world
+    backend.screen = "> "
+    started(world)
+    clock.now += supervisor.FOLDER_PROMPT_WITHIN + 1
+    sup.tick()
+    backend.screen = TRUSTING
+    for _ in range(61):
+        clock.now += supervisor.IDLE_EVERY
+        sup.tick()
+    assert backend.typed == [] and backend.submitted == 0
+
+
+def test_the_folder_prompt_is_looked_for_only_soon_after_the_start(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    backend.screen = "> "
+    started(world)
+    clock.now += supervisor.FOLDER_PROMPT_WITHIN + 1
+    sup.tick()
+    backend.screen = RESTRICTED  # whatever shows later is the agent's own
+    sup.tick()
+    assert backend.submitted == 0
 
 
 def minutes(world: Any, n: int) -> None:
@@ -1886,6 +2380,8 @@ def test_the_idle_reads_are_tmux_and_ps_calls(tmp_path: Path) -> None:
     session = tmux.Session(SESSION, False, None, 7, "plc-0003", 1)
     assert backend.attached(SESSION) is True
     assert backend.pane_digest(SESSION) == hashlib.sha256(b"> hello\n").hexdigest()
+    assert backend.pane_has(SESSION, ("hello", "Open restricted")) == frozenset({"hello"})
+    assert calls[-1][-4:] == ["capture-pane", "-p", "-t", SESSION]
     assert backend.activity(session) == tmux.WAITING
     assert backend.activity(replace(session, pid=None)) is None
     backend.type_line(SESSION, "a line; with -t words")
@@ -2201,12 +2697,166 @@ def test_a_new_generation_does_not_resume_the_hung_session(
     seen: list[bool] = []
     context = sup._context
 
-    def spy(*args: Any) -> Any:
+    def spy(*args: Any, **kwargs: Any) -> Any:
         seen.append(args[-1])
-        return context(*args)
+        return context(*args, **kwargs)
 
     monkeypatch.setattr(sup, "_context", spy)
     sup.update([placement(mode="interactive", health=HEALTH, generation=2)])
     settle(sup)
     assert len(backend.started) == 2 and seen == [False]
     assert sup.records["plc-0003"].hung_exits == []
+
+
+# --- the scratch (§15.5) ---------------------------------------------------------------------
+
+
+def scratch_of(sup: supervisor.Supervisor, pid: str = "plc-0003") -> Path:
+    assert sup.cfg.local is not None
+    return sup.cfg.local.workspaces.resolve() / "maity" / ".scratch" / pid
+
+
+CLOSED = {"id": "plc-0003", "project_id": "maity", "active": False,
+          "closed_reason": "deleted"}  # fmt: skip
+
+
+def test_a_closed_placements_scratch_goes_once_its_session_is_gone(world: Any) -> None:
+    sup, backend, _, _, logs = world
+    recorded(sup.cfg)
+    sup.update([placement()])
+    settle(sup)
+    room = scratch_of(sup)
+    (room / "venv").mkdir()
+    (room / "venv" / "big").write_bytes(b"x" * 5000)
+    sup.closed([CLOSED])
+    sup.tick()
+    assert room.is_dir()  # its session still runs: nothing is taken from under it
+    backend.kill("maity_maity_agent-3")
+    sup.update([])
+    sup.tick()
+    assert not room.exists()
+    (entry,) = scratch.removals(sup.cfg.state_dir, 10)
+    assert entry["placement"] == "plc-0003" and entry["why"] == "closed"
+    assert entry["path"] == str(room) and entry["size_bytes"] >= 5000
+    assert any("plc-0003: scratch removed on local" in line for line in logs)
+    sup.tick()  # removed once, logged once
+    assert len(scratch.removals(sup.cfg.state_dir, 10)) == 1
+
+
+def test_a_target_whose_sessions_were_not_read_keeps_every_scratch(world: Any) -> None:
+    sup, *_ = world
+    room = scratch_of(sup)
+    (room / "tmp").mkdir(parents=True)
+    sup.closed([CLOSED])
+    sup._clear_scratch(set(), set())  # no target's sessions read in this tick: unknown
+    assert room.is_dir() and "plc-0003" not in sup.scratch_cleared
+    assert scratch.removals(sup.cfg.state_dir, 10) == []
+    sup._clear_scratch(set(), set(sup.targets))  # read, and no session of it: removed
+    assert not room.exists() and "plc-0003" in sup.scratch_cleared
+
+
+def test_a_local_tmux_that_cannot_be_read_keeps_every_scratch(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, *_ = world
+    room = scratch_of(sup)
+    (room / "tmp").mkdir(parents=True)
+    sup.closed([CLOSED])
+
+    def unreadable() -> dict[str, tmux.Session]:
+        raise tmux.TmuxError("tmux list-panes failed: lost")
+
+    monkeypatch.setattr(backend, "sessions", unreadable)
+    sup.tick()
+    assert room.is_dir() and "plc-0003" not in sup.scratch_cleared
+
+
+def test_a_closed_placement_without_a_scratch_writes_no_removal(world: Any) -> None:
+    sup, *_ = world
+    sup.closed([CLOSED, {"id": "../x", "project_id": "maity", "active": False},
+                {**CLOSED, "id": "plc-0009", "active": True}])  # fmt: skip
+    sup.tick()
+    assert scratch.removals(sup.cfg.state_dir, 10) == []
+    assert sup.scratch_cleared == {"plc-0003"}  # the others are not read as closed ones
+
+
+@pytest.mark.parametrize("linked", ["scratch", "holder"])
+def test_a_scratch_that_is_a_link_is_neither_made_nor_removed(
+    world: Any, tmp_path: Path, linked: str
+) -> None:
+    sup, backend, _, _, logs = world
+    recorded(sup.cfg)
+    room = scratch_of(sup)
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "plc-0003").mkdir(parents=True)
+    (elsewhere / "plc-0003" / "keep").write_text("not the agents' to lose")
+    if linked == "holder":
+        room.parent.parent.mkdir(parents=True, exist_ok=True)
+        room.parent.symlink_to(elsewhere)
+    else:
+        room.parent.mkdir(parents=True)
+        room.symlink_to(elsewhere / "plc-0003")
+    sup.update([placement()])
+    settle(sup)
+    ((_, _, env),) = backend.started
+    assert "MAITY_SCRATCH" not in env and "TMPDIR" not in env  # started without one
+    assert any("no scratch" in line for line in logs)
+    backend.kill("maity_maity_agent-3")
+    sup.update([])
+    sup.closed([CLOSED])
+    sup.tick()
+    sup.tick()
+    assert (elsewhere / "plc-0003" / "keep").exists()
+    assert scratch.removals(sup.cfg.state_dir, 10) == []
+    assert sum("scratch left on local" in line for line in logs) == 1  # said once
+
+
+def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(world: Any) -> None:
+    sup, *_ = world
+    target = sup.targets["local"]
+    for harness_id in ("antigravity", "opencode"):
+        harness = config.Harness(harness_id, ("supervised",), "supervised")
+        assert sup._scratch(placement(), harness, target) is None
+    assert not scratch_of(sup).exists()
+    sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)  # made with the clone, first
+    made = sup._scratch(placement(), config.Harness("codex", ("supervised",), "supervised"), target)
+    assert made == scratch_of(sup) and (made / "tmp").is_dir()
+
+
+def test_a_scratch_that_cannot_be_made_or_only_through_a_link_is_none(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, _, _, _, logs = world
+    target = sup.targets["local"]
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    project = sup.cfg.local.workspaces.resolve() / "maity"
+    elsewhere = project.parent.parent / "elsewhere"
+    (elsewhere / ".scratch").mkdir(parents=True)
+    project.parent.mkdir(parents=True, exist_ok=True)
+    project.symlink_to(elsewhere)  # the project's directory itself is a link
+    assert sup._scratch(placement(), codex, target) is None
+    assert not (elsewhere / ".scratch" / "plc-0003").exists()
+    assert any("no scratch: a directory on the way" in line for line in logs)
+    project.unlink()
+
+    def fails(path: Path, as_user: Any = None) -> None:
+        raise OSError("usage: maity runner: invalid choice: 'scratchop'")
+
+    monkeypatch.setattr(scratch, "make", fails)  # a host whose maity has no scratchop yet
+    assert sup._scratch(placement(), codex, target) is None
+    assert any("no scratch on local: usage" in line for line in logs)
+
+
+def test_the_clone_and_scratch_sizes_are_measured_for_the_status(world: Any) -> None:
+    sup, _, _, clock, _ = world
+    recorded(sup.cfg)
+    sup.update([placement()])
+    settle(sup)
+    (scratch_of(sup) / "evidence.txt").write_bytes(b"y" * 3000)
+    rec = sup.records["plc-0003"]
+    assert rec.clone_bytes is not None  # the scratch may be made after this first measure
+    clock.now += supervisor.SIZE_EVERY
+    sup.tick()
+    assert rec.scratch_bytes is not None and rec.scratch_bytes >= 3000
+    saved = json.loads((sup.cfg.state_dir / supervisor.ACTUAL_FILE).read_text())
+    assert saved["plc-0003"]["scratch_bytes"] == rec.scratch_bytes

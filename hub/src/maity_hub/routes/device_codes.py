@@ -30,8 +30,8 @@ from maity_hub import (
     shared_counts,
     wakeups,
 )
-from maity_hub.auth import device_codes, second_factor, sessions, sign_in_settings
-from maity_hub.auth.caller import SESSION_COOKIE, Caller, require_secure_transport
+from maity_hub.auth import anonymous, device_codes, second_factor, sessions, sign_in_settings
+from maity_hub.auth.caller import SESSION_COOKIE, Caller
 from maity_hub.deps import AnyCaller, engine_of, origin_of, settings_of, wait_of
 from maity_hub.errors import ApiError, forbidden, humans_only, not_found, rate_limited
 from maity_hub.ratelimit import Limiter
@@ -77,16 +77,6 @@ def _creator(caller: Caller) -> str:
     if caller.human_session is None:
         raise forbidden(message="device codes need a dashboard session")
     return caller.human_session
-
-
-def _anonymous(request: Request) -> None:
-    """The new device's calls: no credential, TLS (§2.5), and no other site may start or
-    finish a sign-in in a visitor's browser (§2.6.5)."""
-    if request.headers.get("authorization"):
-        raise humans_only("a device code signs in a browser, never a credential")
-    require_secure_transport(origin_of(request), settings_of(request).allow_plain_http)
-    if request.headers.get("sec-fetch-site") in ("cross-site", "same-site"):
-        raise forbidden(message="a sign-in from another site")
 
 
 def _require_enabled(request: Request) -> None:
@@ -246,7 +236,7 @@ def _trip_breaker() -> None:
 
 @router.post("/device-login")
 def redeem_code(body: Redeem, request: Request) -> JSONResponse:
-    _anonymous(request)
+    anonymous.entry(request)
     _require_enabled(request)
     origin = origin_of(request)
     tripped = _breaker_shut_for()
@@ -292,7 +282,7 @@ def redeem_code(body: Redeem, request: Request) -> JSONResponse:
 
 @router.get("/device-login")
 async def watch_redemption(request: Request) -> JSONResponse:
-    _anonymous(request)
+    anonymous.entry(request)
     _require_enabled(request)
     wait = wait_of(request)
     pending = request.cookies.get(PENDING_COOKIE)
@@ -311,7 +301,7 @@ async def watch_redemption(request: Request) -> JSONResponse:
 
 @router.post("/device-login/complete")
 def complete_redemption(request: Request) -> JSONResponse:
-    _anonymous(request)
+    anonymous.entry(request)
     _require_enabled(request)
     origin = origin_of(request)
     pending = request.cookies.get(PENDING_COOKIE)

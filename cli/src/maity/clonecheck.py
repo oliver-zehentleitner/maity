@@ -46,6 +46,10 @@ GIT_INODE_ENV = "MAITY_GIT_INODE"
 # `.git/maity` is used. Unset under the runner, maity runs no git.
 GIT_PRIVATE_ENV = "MAITY_GIT_PRIVATE"
 IN_CLONE = "clone"
+# The placement's scratch (§15.5) as the runner made it: a record of the runner's
+# (runner_record), so maity reads a file there only in the directory the runner named, never
+# in one an environment variable of the agent's names. Empty: the session has none.
+SCRATCH_RECORD = "scratch"
 # What git under the runner gets from maity's own environment. PATH is not among them: git
 # gets one of its own (git_path_env), so no variable set for maity
 # (`GIT_SSH_COMMAND=… maity report`, `PATH=…`) picks a program git starts; HOME reaches git
@@ -122,7 +126,7 @@ class Files(Protocol):
 
     def tree(self, path: Path) -> list[tuple[str, str, int]]: ...
 
-    def read(self, path: Path, offset: int = 0) -> bytes: ...
+    def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes: ...
 
 
 def bounded_tree(path: Path, limit: int) -> list[tuple[str, str, int]]:
@@ -160,10 +164,12 @@ class Local:
     def tree(self, path: Path) -> list[tuple[str, str, int]]:
         return bounded_tree(path, TREE_MAX)
 
-    def read(self, path: Path, offset: int = 0) -> bytes:
-        with path.open("rb") as fh:
-            fh.seek(offset)
-            return fh.read()
+    def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
+        """At most `limit` bytes of a regular file, reached from `under` without following a
+        link on the way (limitread)."""
+        from maity.runner import limitread  # the standard library only
+
+        return limitread.take(str(path), offset, limit, under=str(under))
 
 
 LOCAL = Local()
@@ -200,9 +206,14 @@ def _inspect(
         finding = _not_a_plain_git_dir(tree)
         if finding is not None:
             return finding, []
-        data = files.read(dot_git / "config")
+        # Read once more after the listing, which may be stale by now: a regular file only,
+        # reached from the clone without following a link (a `.git` swapped for one since the
+        # listing is refused), never waiting on a FIFO, never more than CONFIG_MAX.
+        data = files.read(dot_git / "config", limit=CONFIG_MAX + 1, under=path)
     except OSError:
         return Finding("its .git/config cannot be read"), []
+    if len(data) > CONFIG_MAX:
+        return Finding(f"its .git/config is larger than {CONFIG_MAX // 1024} KiB"), []
     entries = config_entries(data, git)
     if entries is None:
         return Finding("its .git/config cannot be parsed"), []

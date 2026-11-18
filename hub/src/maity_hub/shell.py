@@ -15,6 +15,7 @@ import json
 import os
 import re
 import stat
+import time
 from dataclasses import dataclass
 from html import escape
 from mimetypes import guess_type
@@ -178,6 +179,51 @@ def asset_versions(web_dir: Path) -> dict[str, str]:
     return found
 
 
+# The dashboard's version (`Maity-Web-Version`, docs/api.md §1.1), kept per directory for a few
+# seconds: every API answer carries it, and the walk over the files is not for every request.
+WEB_VERSION_TTL = 10.0
+_WEB_VERSIONS: dict[str, tuple[float, str | None]] = {}
+# What `kept_web_version` answers when the value must be computed again.
+STALE = object()
+
+
+def _web_version_of(web_dir: Path, versions: dict[str, str] | None = None) -> str | None:
+    """The value from the files as they are now; `versions`, when the caller has just read
+    them (`asset_versions`), is taken as they are. None when the files cannot be read."""
+    try:
+        shell = (web_dir / "index.html").read_bytes()
+        if versions is None:
+            versions = asset_versions(web_dir)
+    except OSError:
+        return None
+    digest = hashlib.sha256(b"index.html\0" + shell)
+    for path, file_version in sorted(versions.items()):
+        digest.update(b"\n" + path.encode() + b"\0" + file_version.encode())
+    return digest.hexdigest()[:16]
+
+
+def kept_web_version(web_dir: Path | None) -> str | None | object:
+    """The value kept for `web_dir` while it is fresh, without touching a file; `STALE` when it
+    must be computed (`web_version`). The middleware asks this first, on the event loop."""
+    if web_dir is None:
+        return None
+    kept = _WEB_VERSIONS.get(str(web_dir))
+    if kept is not None and time.monotonic() - kept[0] < WEB_VERSION_TTL:
+        return kept[1]
+    return STALE
+
+
+def web_version(web_dir: Path | None, versions: dict[str, str] | None = None) -> str | None:
+    """16 hex digits that change when, and only when, a file of the dashboard changes: its
+    `index.html` or a file under `/assets/` it loads (§1.1). None without a dashboard.
+    Computed from the files and kept (`WEB_VERSION_TTL`); `versions` as `_web_version_of`."""
+    if web_dir is None:
+        return None
+    version = _web_version_of(web_dir, versions)
+    _WEB_VERSIONS[str(web_dir)] = (time.monotonic(), version)
+    return version
+
+
 # One range of bytes (`bytes=0-9`, `bytes=5-`, `bytes=-10`); any other `Range` gets the whole body.
 # ASCII digits (RFC 9110 §14.1.2), at most 18, which no file here reaches: a longer number would
 # make `int()` fail (its 4300-digit limit) and the answer a 500, not the whole body.
@@ -310,6 +356,7 @@ _HEAD_END = re.compile(rb"</head>", re.IGNORECASE)
 # brand picture): the shell lists their versions in a data block, `M.assetQuery` reads it.
 LATER = ("brand/", "js/i18n/", "vendor/")
 VERSIONS_ID = "maity-assets"
+WEB_VERSION_NAME = "maity-web-version"  # the shell's copy of `Maity-Web-Version` (§16.11)
 
 
 def versioned(page: bytes, web_dir: Path) -> bytes:
@@ -329,6 +376,11 @@ def versioned(page: bytes, web_dir: Path) -> bytes:
     later = {path: version for path, version in versions.items() if path.startswith(LATER)}
     data = json.dumps(later, sort_keys=True, separators=(",", ":")).replace("<", "\\u003c")
     block = f'<script type="application/json" id="{VERSIONS_ID}">{data}</script>'.encode()
+    # From the same reading of the files as the `?v=` above, never the kept value: a shell
+    # served just after a deploy names the new dashboard, so its page shows no band (§16.11).
+    version = web_version(web_dir, versions)
+    if version is not None:
+        block += f'<meta name="{WEB_VERSION_NAME}" content="{version}">'.encode()
     closed = _HEAD_END.search(page)
     if closed is None:
         return page
@@ -342,6 +394,8 @@ _SHELL_MAIN = re.compile(rb'<main id="main">.*?</main>', re.DOTALL)
 _SHELL_OG_TITLE = re.compile(rb'<meta property="og:title"[^>]*>')
 _SHELL_OG_DESCRIPTION = re.compile(rb'<meta property="og:description"[^>]*>')
 _CONTENT = re.compile(r'content="([^"]*)"')
+# The shell's root element without a class (web/index.html), to be marked as in the frame.
+_SHELL_HTML = re.compile(rb"<html(?![^>]*\sclass=)(?=[\s>])")
 
 
 def page_in_shell(shell: bytes, body: str) -> bytes | None:
@@ -361,8 +415,24 @@ def page_in_shell(shell: bytes, body: str) -> bytes | None:
     words = _CONTENT.search(found["meta"] or "")
     og_text = f'<meta property="og:description" content="{words[1]}">'.encode() if words else b""
     done = _SHELL_OG_DESCRIPTION.sub(lambda _: og_text, done, count=1)
+    # A page in the dashboard's design stands as the dashboard draws it over it, styled by the
+    # frame's stylesheets linked in the head (§16.9, tsk-zhyqdtt5v59c): the first paint is the
+    # final page. Any other is in its own `.hub-page`, which css/app.css keeps invisible until
+    # the dashboard replaces it, or shows after 3 s when no script does (tsk-777vkhtzmq6f). A
+    # crawler reads the text either way.
+    if render.designed(found["main"]):
+        inner = found["main"].encode()
+        # At the head's end, after the dashboard's own sheets, where js/site-chrome.js appends
+        # them: landing.css sets the root's and the body's type as css/app.css does, and the
+        # later one wins, so a page has the same type however the visitor came to it.
+        sheets = render.frame_sheets().encode()
+        done = _HEAD_END.sub(lambda _: sheets + b"</head>", done, count=1)
+        # Marked as the dashboard marks a page in the frame (js/site-chrome.js), so the shell's
+        # own `<main>` has the frame's measures (css/app.css, `.public-frame #main`) at once.
+        done = _SHELL_HTML.sub(lambda _: b'<html class="public-frame"', done, count=1)
+    else:
+        inner = b'<div class="hub-page">' + found["main"].encode() + b"</div>"
     done = _SHELL_TITLE.sub(lambda _: title + head, done, count=1)
-    inner = found["main"].encode()
     return _SHELL_MAIN.sub(
         lambda _: b'<main id="main" data-public-page>' + inner + b"</main>", done, count=1
     )
@@ -393,10 +463,18 @@ class ShellRoute(BaseRoute):
     async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         response: Response | None
         if scope["method"] in ("GET", "HEAD"):
-            # A stored public page first, for a visitor, while the instance serves pages (§16.9).
-            response = await run_in_threadpool(
-                public_pages.answer, Request(scope, receive), self._inside_shell
-            )
+            # Split as sent, an encoded slash in its segment. A server without `raw_path` (uvicorn
+            # always sends it) falls back to the decoded path, where `%2F` would split.
+            raw = scope.get("raw_path")
+            if paths.never_a_page(raw.decode("latin-1") if raw else scope.get("path", "")):
+                # No page has such an address, whatever exists: `404`, the shell as the body, so
+                # that the dashboard still draws its "not found" (§16.11).
+                response = shell_response(self.web_dir, self.public_url, status_code=404)
+            else:
+                # A stored public page first, for a visitor, while the instance serves them (§16.9).
+                response = await run_in_threadpool(
+                    public_pages.answer, Request(scope, receive), self._inside_shell
+                )
             if response is None:
                 response = shell_response(self.web_dir, self.public_url)
             if scope.get("path", "").startswith(INVITE):
@@ -408,10 +486,12 @@ class ShellRoute(BaseRoute):
         await response(scope, receive, send)
 
 
-def shell_response(web_dir: Path, public_url: str) -> Response:
-    """`index.html` as the shell: `200`, `no-cache`, `noindex` (§16.11)."""
+def shell_response(web_dir: Path, public_url: str, status_code: int = 200) -> Response:
+    """`index.html` as the shell: `200` (`404` at an address that can never be a page),
+    `no-cache`, `noindex` (§16.11)."""
     return Response(
         versioned(shell_document((web_dir / "index.html").read_bytes(), public_url), web_dir),
+        status_code=status_code,
         media_type="text/html",
         headers=SHELL_HEADERS,
     )

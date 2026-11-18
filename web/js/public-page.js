@@ -113,17 +113,14 @@ window.Maity = window.Maity || {};
       h("option", { value: "everyone" }, M.t("public_profile.links.everyone")));
     const fieldFor = (key) => key === "public_bio" ? bio : key === "website" ? website : key.startsWith("social.") ? networks[key.slice(7)] : null;
     const link = h("p", { class: "public-profile-link" });
-    const agentsLink = h("p", { class: "public-agents-link" });
     async function showLink() {
       clear(link);
-      clear(agentsLink);
       let person = null;
       try { person = await M.api.get("/people/" + encodeURIComponent(ctx.me.handle)); } catch (err) { person = null; }
-      // page_served: the hub serves it now, with the instance's own switch counted.
+      // page_served: the hub serves it now, with the instance's own switch counted. The agents
+      // stand on the same page (§16.9, "A person's agents"), so it is the one link.
       if (person && person.page_served) {
         append(link, h("a", { class: "button-link", href: "/" + encodeURIComponent(ctx.me.handle) + "?as=public", target: "_blank", rel: "noopener" }, M.t("public_page.view")));
-        // The agents tab is served with the person's page, whatever it lists.
-        append(agentsLink, h("a", { href: "/" + encodeURIComponent(ctx.me.handle) + "/agents?as=public", target: "_blank", rel: "noopener" }, M.t("public_profile.agents.view")));
       }
     }
     function show() {
@@ -191,7 +188,6 @@ window.Maity = window.Maity || {};
     h("p", { class: "hint" }, M.t("public_profile.stats.hint")),
     h("label", { class: "check", for: "public-agents" }, agents, " ", M.t("public_profile.agents")),
     h("p", { class: "hint" }, M.t("public_profile.agents.hint")),
-    agentsLink,
     ...bio.nodes,
     h("h4", null, M.t("public_profile.links")),
     ...website.nodes,

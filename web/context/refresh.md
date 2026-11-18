@@ -420,3 +420,103 @@ tab is visible whether or not anyone uses it, and it writes `last_seen_at` (§2.
 presence must not. `setInterval` like the other refresh rounds: see Reason. A last call kept per
 tab only: see Reason. Sending only while `hold_while_online` is on: the tab would read the
 settings first, and with the switch off the hub holds nothing anyway.
+
+## An open page learns of a new deploy from a header on every answer and offers a reload, never forcing one
+
+**Id:** d499ba75-c622-45da-842b-a897fae5fbd0
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 9d7aee6c-ba64-49e8-96e8-b5fe51521d55
+**Evidence:** confirmed
+**Source:** the card tsk-y19gcsk731aa (from tsk-7jhpzrvsnzm3: a fix already live did not reach a project owner whose tab still ran the old JavaScript); the design proposal on the card and the maintainer's approval of it, 2026-11-16 (req-t44nh4e278ee); docs/api.md §1.1 `Maity-Web-Version` and §16.11
+**See:** refresh.md#a-hidden-tab-reads-nothing-on-its-intervals-me-every-60-seconds-events-every-15 — 6cb02c3d-063d-473b-b86b-8f8324c11f14 — as of 2026-11-16
+**Revisit when:** the dashboard gets a reading that keeps a connection open (a stream), or a reload is reported to have lost a reader's input
+
+The hub sends the dashboard's version on every `/api/v1/` answer as
+`Maity-Web-Version`, and the shell carries the same value as a meta
+element. The value changes only when a file of the dashboard changes,
+so a hub release that leaves the dashboard as it was asks no one to
+reload. `js/api.js` compares the header of each answer with the page's
+own value, in the same place where it reads `Maity-Server-Time`. When
+they differ, the page shows a quiet band offering a reload and a "Later"
+that hides it for that version in this tab. The page never reloads by
+itself, and an input that nothing keeps over a reload asks before the
+page is left.
+
+**Reason:** a tab that stays open after a deploy keeps running the old
+JavaScript until it is reloaded, so a fix that is already live can miss
+the person it was for. The check costs no request: the page reads `/me`
+every 60 seconds while it is shown, and a tab shown again reads within 5
+seconds (6cb02c3d). Tying the value to the dashboard's files and not to
+the hub's version keeps the band away after a release that did not
+touch them. Offering instead of forcing keeps what a reader is typing.
+
+**Rejected alternatives:**
+- A `/version` route read on a timer of its own: requests that the
+  answers the page already reads make unnecessary, and one more interval
+  for a hidden tab to skip.
+- The hub's `version` from `GET /health`: it also changes with a
+  release that leaves the dashboard as it was, and the band would ask
+  for a reload that brings nothing.
+- A service worker that notices the new files: it would need a worker
+  script for the page, and it takes on caching that the hub's
+  `Cache-Control` and `?v=` already settle (§16.11).
+
+## A reload after a deploy asks first by a simple rule: a text field typed into that still holds text, or a chat draft
+
+**Id:** 9d7aee6c-ba64-49e8-96e8-b5fe51521d55
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the card tsk-y19gcsk731aa and its approved design (req-t44nh4e278ee, 2026-11-16); the review of #1900, in which each round of tracking unsent input completely found new gaps across the dashboard; the lead's call to keep the rule simple and its wording, 2026-11-16; docs/api.md §1.1 `Maity-Web-Version` and §16.11
+**See:** refresh.md#a-hidden-tab-reads-nothing-on-its-intervals-me-every-60-seconds-events-every-15 — 6cb02c3d-063d-473b-b86b-8f8324c11f14 — as of 2026-11-16
+**Revisit when:** the dashboard gets a reading that keeps a connection open (a stream), or a reload is reported to have lost input that mattered
+
+The hub sends the dashboard's version on every `/api/v1/` answer as
+`Maity-Web-Version`, and the shell carries the same value as a meta
+element. The value changes only when a file of the dashboard changes.
+`js/api.js` compares the header of each answer with the page's own
+value. When they differ, a quiet band offers a reload, and "Later"
+hides it for each version it was chosen for. The page never reloads by
+itself.
+
+Before the reload the person clicked, the page asks "You have unsent
+input. Reload anyway?" when any text field (an input, a textarea, a
+contenteditable), in a form or not, that the person typed into (a
+trusted `input` event) still holds text, or when a chat draft that is
+not blank is kept (`js/chat.js` names its drafts through `holds`).
+This is a simple rule, not a complete one. It asks in some cases where
+nothing would be lost (a form closed or cancelled with its text still in
+place, a setting saved that stays in its field): an extra question
+costs a click. It misses some cases (a field a redraw replaced with
+the text carried over, a field the page filled in that the person
+cleared, a choice in a select or a box): the reload is still one the
+person chose themselves.
+
+**Reason:** a tab that stays open after a deploy keeps running the old
+JavaScript until it is reloaded, so a fix that is already live can miss
+the person it was for. The check costs no request: the page reads `/me`
+every 60 seconds while it is shown, and a tab shown again reads within 5
+seconds (6cb02c3d). Tying the value to the dashboard's files and not to
+the hub's version keeps the band away after a release that did not
+touch them. Offering instead of forcing keeps what a person is typing,
+and the question before the reload catches the common case, typed text.
+
+**Rejected alternatives:**
+- A `/version` route read on a timer of its own: requests that the
+  answers the page already reads make unnecessary, and one more interval
+  for a hidden tab to skip.
+- The hub's `version` from `GET /health`: it also changes with a
+  release that leaves the dashboard as it was, and the band would ask
+  for a reload that brings nothing.
+- A service worker that notices the new files: it would need a worker
+  script for the page, and it takes on caching that the hub's
+  `Cache-Control` and `?v=` already settle (§16.11).
+- A field's value against its `defaultValue`, or against the one noted
+  at its first focus: values a form sets itself counted as typed, and
+  an asynchronous sending reset or kept the mark at the wrong moment
+  (#1900, review).
+- Complete per-view tracking, every page naming what it keeps
+  (drafts, edits by row, editors drawn anew): rejected, too wide for
+  the benefit; each round of review found more places, and the
+  reload is a click the person makes on purpose.

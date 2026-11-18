@@ -193,7 +193,7 @@ def explore(request: Request, lang: str | None = None) -> Response:
         headers={
             "Cache-Control": public_pages.CACHE,
             "Vary": "Cookie, Accept-Language",
-            "Content-Security-Policy": LEGAL_CSP,
+            "Content-Security-Policy": public_pages.FRAMED_CSP,
             "X-Content-Type-Options": "nosniff",
         },
     )

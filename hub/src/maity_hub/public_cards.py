@@ -15,15 +15,14 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Collection
-from html import escape
 from typing import Any
 
 from sqlalchemy import Connection, or_, select
 
-from maity_hub import clock, moderation, namespace, public_pages, render
+from maity_hub import clock, moderation, namespace, public_design, public_pages, render
 from maity_hub import tables as t
 from maity_hub.config import Settings
-from maity_hub.public_project_views import _holder, _who, members
+from maity_hub.public_project_views import _holder, members
 from maity_hub.public_projects import served
 
 KIND = "card"
@@ -53,27 +52,6 @@ def _notes(conn: Connection, card_id: str) -> list[Any]:
             select(t.card_note).where(n.card_id == card_id).order_by(n.created_at, n.id)
         ).all()
     )
-
-
-def _time(when: str) -> str:
-    return f'<time datetime="{escape(when, quote=True)}">{escape(when[:10])}</time>'
-
-
-def _note_html(note: Any, who: str, editor: str | None) -> str:
-    tags = [who, _time(clock.rfc3339(note.created_at))]
-    if note.state != "open":
-        tags.append(escape(note.state))
-    if editor is not None and note.edited and not note.redacted:
-        mark = f"edited by {editor} {_time(note.edited['at'])}"
-        if note.edited.get("reason"):
-            mark += f": {escape(note.edited['reason'])}"
-        tags.append(mark)
-    text = (
-        '<p class="muted">Removed.</p>'
-        if note.redacted
-        else render.markdown(note.body or "", ugc=True)
-    )
-    return f'<li><p class="muted">{" · ".join(tags)}</p>{text}</li>'
 
 
 def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pages.Page]:
@@ -109,32 +87,7 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
         by = note.edited["by"]
         return people.get(by), by == note.author and note.author_kind == "agent"
 
-    status = card.status.replace("_", " ")
-    tags = [escape(status)]
-    if card.label:
-        tags.append(escape(card.label))
-    if card.claim_holder is not None:
-        tags.append(_who(person, gone))
     body = card.body or ""
-    content = (
-        f'<p class="eyebrow"><a href="/{escape(full, quote=True)}/board">'
-        f"{escape(project.name)}: Board</a></p>"
-        f"<h1>{escape(card.title)}</h1>{render.report_link(f'/{full}/tasks/{card.id}')}"
-        f'<p><span class="tag">{escape(card.id)}</span> '
-        + " ".join(f'<span class="tag">{tag}</span>' for tag in tags)
-        + "</p>"
-        + (render.markdown(body, ugc=True) if body.strip() else "")
-        + (
-            '<h2>Notes</h2><ol class="notes">'
-            + "".join(
-                _note_html(note, _who(*author(note)), _who(*editor(note)) if editor(note) else None)
-                for note in notes
-            )
-            + "</ol>"
-            if notes
-            else ""
-        )
-    )
     path = f"/{full}/tasks/{card.id}"
     data = {
         "id": card.id,
@@ -164,6 +117,8 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
             for note in notes
         ],
     }
+    # The HTML in the dashboard's design, from `data` alone (`public_design.page`).
+    content = public_design.page(KIND, data, path)
     digest = hashlib.sha256("\x00".join((path, project.name, content)).encode())
     return [
         public_pages.Page(
@@ -173,6 +128,7 @@ def render_card(conn: Connection, hub: Settings, card_id: str) -> list[public_pa
                 title=f"{card.title} ({card.id}) · {project.name}",
                 canonical=f"{hub.public_url.rstrip('/')}{path}",
                 content=content,
+                styled=False,
             ),
             inputs=digest.hexdigest(),
             lastmod=clock.now(),

@@ -345,3 +345,50 @@ for it, which is the very gap that caused the flake; the search costs about
   leak is between files, so every file that reaches a limit would need it.
 - A registry of every limiter in `ratelimit`: a change to the hub for the
   tests' sake, where a search from the tests finds the same set.
+
+## A cost test counts only the statements of its own call, marked by a context variable
+
+**Id:** 6063bcb5-a218-452d-9b8d-b7a9faeca1b0
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-dbnh1nhcjrc4 (main's hub-postgresql red with `(51, 53)` on 5abda036); approach agreed by the lead (lotse, seq 135104) and the review lead (a4xv, seq 135111); `hub/tests/statements.py`, `hub/tests/test_statements.py`
+**Revisit when:** the app hands database work to a thread it starts itself (`threading.Thread`) and that work is part of a request's cost, or a test client stops running a request in the sending thread's context
+
+The tests that say a call costs the same statements for more rows count with
+`tests/statements.py`. Its listener hangs on the engines as before, but counts a
+statement only while a context variable holds the marker the counting block set.
+The test thread sets it; a test client's request runs in a copy of that context
+(the portal's task), and so does every thread or task the request hands work to:
+FastAPI's threadpool for a sync route, `run_in_threadpool`, `anyio.to_thread`,
+`asyncio.create_task`, the async engine's greenlet. The app's background workers
+run on threads started before the block, without the marker, so a tick of theirs
+during the call is no longer counted. `test_notifications`, `test_requests` and
+`test_view_batching` had copies that listened on the whole engine; they use the
+helper now, on the sync engine only (`async_engines=False`), as before.
+`test_statements` holds the rule: a call through a sync route and through both
+thread hand-offs counts exactly, a worker thread sending during it counts nothing,
+and an app request counts more than zero.
+
+**Reason:** the background workers wake every 30 or 60 seconds and write their
+claim rows (`worker_run`) and read; one landing in a measured call added two
+statements to one of the two counts (reproduced by making the workers tick every
+0.2 s: the tests failed every run, with the marker they pass). Counting what the
+call itself sends keeps the test exact, so a statement per row the route adds still
+fails it (checked with a read injected per 50 requests: 4 of 4 tests red).
+
+**Rejected alternatives:**
+- Stopping the workers in these tests: a fixture per test that must know every
+  worker, and a new worker would bring the flake back.
+- Counting by thread id: the request's statements run in the threadpool's
+  threads, not the test's, so it counts nothing of the route (the self-test fails
+  with it: on SQLite 2 counted instead of 8).
+- Tolerating a few statements, or retrying: hides a real extra statement.
+- Counting per connection (`conn.info`): a request may open several connections,
+  from the pool, which a worker uses too; the connection does not say whose
+  call it serves.
+
+A thread started with `threading.Thread` begins with an empty context: a test that
+starts its own threads in the call hands each `contextvars.copy_context().run`
+(`test_load.held_statements`). The app starts such threads only for background
+reads that are by design no request's cost (the maintenance frame).

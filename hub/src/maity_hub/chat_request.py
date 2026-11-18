@@ -24,6 +24,12 @@ the projects'. Filing or withdrawing one writes the owner's notification record,
 human's row as every record does (`records.lock_human`), and an answer meets a held message of
 the same pair on the request's row: those orders can still meet, and the database rolls one back
 as a transient deadlock that is run again (`db.TRANSIENT`).
+
+While the agent firewall is off (`chat_gate.ON`, §9.6, "The switch") nothing here files,
+updates or withdraws a request, and no agent counts as waiting: a request still open from a time
+it was on stays as it is until it is switched on again. An answer to it names the agents it was
+filed for from the stored marks (`_stored_waiting`), so an allow or a block writes its entries as
+with the gate on, and sends no agent out of a chat.
 """
 
 from __future__ import annotations
@@ -61,7 +67,21 @@ _DEFERRED = "chat_request.deferred"
 
 
 def _waiting(conn: Connection, owner: str) -> dict[str, dict[str, list[Any]]]:
-    """Per side, per agent of `owner`, the agent's open chats where it waits for that side."""
+    """Per side, per agent of `owner`, the agent's open chats where it waits for that side;
+    none while the gate is off. What the gate acts on: filing (`sync`) and sending agents out
+    of chats (`_decline`)."""
+    from maity_hub import chat_gate
+
+    if not chat_gate.ON:
+        return {}
+    return _stored_waiting(conn, owner)
+
+
+def _stored_waiting(conn: Connection, owner: str) -> dict[str, dict[str, list[Any]]]:
+    """`_waiting` as stored, whether the gate is on or off: the subjects of the owner's
+    requests, which an answer names (`agents_of`, `_their_agents`, `_view`). A request still
+    open while the gate is off was filed from these marks, and its answer writes its entries
+    for them as it would with the gate on (v5vp on #1842); nothing else reads them then."""
     p, m, a, c = (
         t.conversation_participant.c,
         t.membership.c,
@@ -180,7 +200,7 @@ def pruned(conn: Connection, owner: str, proposal: dict[str, Any]) -> dict[str, 
 def agents_of(conn: Connection, request: Any) -> list[str]:
     """The request's agents now: those waiting for its side, then those held for it."""
     side = request.proposal["side"]
-    waiting = list(_waiting(conn, request.to_human).get(side, {}))
+    waiting = list(_stored_waiting(conn, request.to_human).get(side, {}))
     held = _held_agents(pruned(conn, request.to_human, request.proposal))
     return list(dict.fromkeys([*waiting, *held]))
 
@@ -250,10 +270,18 @@ def _summary(conn: Connection, owner: str, side: str, proposal: dict[str, Any]) 
             lines.append(line)
         for h in held:
             if agent in h["agents"]:
-                lines.append(
-                    f"  - held for it: message {h['seq']} ({h['type']}) from {names[h['author']]}"
-                )
+                lines.append(f"  - held for it: {_held_item(h)} from {names[h['author']]}")
     return "\n".join(lines)
+
+
+def _held_item(held: dict[str, Any]) -> str:
+    """A held item as the summary names it (§9.6): a request or a ticker item by its own
+    name, a message with its type; by seq, never its text."""
+    if held["type"] == "request":
+        return f"request {held['seq']}"
+    if held["type"] == "ticker":
+        return f"ticker item {held['seq']}"
+    return f"message {held['seq']} ({held['type']})"
 
 
 def _file(conn: Connection, owner: str, side: str, held: list[dict[str, Any]]) -> Any:
@@ -341,7 +369,12 @@ def deferred(conn: Connection) -> Iterator[None]:
 
 def sync(conn: Connection, owner: str) -> None:
     """File, update or withdraw the owner's requests so that each side the owner's agents wait
-    for or are held for has one open request, and no other is open."""
+    for or are held for has one open request, and no other is open. Nothing while the gate
+    is off."""
+    from maity_hub import chat_gate
+
+    if not chat_gate.ON:
+        return
     pending: set[str] | None = conn.info.get(_DEFERRED)
     if pending is not None:
         pending.add(owner)
@@ -418,6 +451,17 @@ def note_held(
         _hold(conn, owner, side, held)
 
 
+def note_held_by(conn: Connection, mine: Any, seq: int, kind: str, agents: list[str]) -> None:
+    """`note_held` for what the member `mine` wrote: a work message, a request (`kind`
+    `request`) or a ticker item (`ticker`), with its author and side read from `mine`."""
+    from maity_hub import chat_gate
+
+    me = mine.principal_id
+    author = (me, "agent" if mine.row.agent_id else "human")
+    side = chat_gate.owners_of(conn, [me]).get(me, me) if mine.row.agent_id else me
+    note_held(conn, mine.project.id, seq, kind, author, side, agents)
+
+
 def _hold(conn: Connection, owner: str, side: str, held: dict[str, Any]) -> None:
     """Add a held message to the pair's open request, or file one with it (`_ensure`)."""
     row = _ensure(conn, owner, side, [held])
@@ -450,7 +494,12 @@ def _ensure(conn: Connection, owner: str, side: str, held: list[dict[str, Any]])
 
 def sweep_owners(conn: Connection) -> None:
     """The worker's pass: sync the owner of every open request of this kind, for what ended a
-    chat or a project without passing a sync (a project deleted, a round's thread closed)."""
+    chat or a project without passing a sync (a project deleted, a round's thread closed).
+    Nothing while the gate is off."""
+    from maity_hub import chat_gate
+
+    if not chat_gate.ON:
+        return
     r = t.request.c
     owners = conn.execute(
         select(r.to_human, r.proposal).where(
@@ -483,7 +532,7 @@ def _their_agents(conn: Connection, request: Any, agent: str) -> list[str]:
     messages are held for it."""
     side = request.proposal["side"]
     found: list[str] = []
-    for s in _waiting(conn, request.to_human).get(side, {}).get(agent, []):
+    for s in _stored_waiting(conn, request.to_human).get(side, {}).get(agent, []):
         found.extend(_people_in(conn, s.conversation_id, side)[0])
     for h in request.proposal.get("held", []):
         if agent in h["agents"] and h["author_kind"] == "agent":
@@ -525,7 +574,8 @@ def _allow(conn: Connection, request: Any, reply_id: str, body: dict[str, Any]) 
 
 
 def _decline(conn: Connection, request: Any, reason: str) -> None:
-    """The waiting agents leave every chat in which they wait for the request's side."""
+    """The waiting agents leave every chat in which they wait for the request's side; none
+    while the gate is off, where no agent waits."""
     from maity_hub import group_chats
 
     side = request.proposal["side"]
@@ -578,7 +628,7 @@ def _view(conn: Connection, request: Any, proposal: dict[str, Any]) -> dict[str,
     side = proposal["side"]
     open_ = request.status == "open"
     agents = agents_of(conn, request) if open_ else []
-    waiting = _waiting(conn, request.to_human).get(side, {}) if open_ else {}
+    waiting = _stored_waiting(conn, request.to_human).get(side, {}) if open_ else {}
     human_in = any(
         _people_in(conn, s.conversation_id, side)[1] for stays in waiting.values() for s in stays
     )

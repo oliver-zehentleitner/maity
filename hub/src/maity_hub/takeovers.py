@@ -141,6 +141,7 @@ def _receiver(conn: Connection, mine: Membership, to: str | None) -> tuple[Any, 
     caller's own instance; an address names one; a member id is resolved by the team's
     rules, the next one under `round_robin`."""
     if to is None:
+        _refuse_paused(conn, mine.id, mine.instance)  # its own takeover is new work too
         return mine.row, mine.instance
     principal, named = instances.split_address(to)
     from maity_hub.access import member_row
@@ -151,11 +152,46 @@ def _receiver(conn: Connection, mine: Membership, to: str | None) -> tuple[Any, 
         raise invalid({"to": "not_a_member"}) from None
     if target.role == "expert":  # an expert takes no cards (§2.3 "The expert")
         raise invalid({"to": "expert"})
+    if target.trust == "guest":  # a guest holds no cards (§2.3)
+        raise invalid({"to": "guest"})
+    if target.isolated_since is not None:  # an isolated member takes no work (§6.2)
+        raise invalid({"to": "isolated"})
     if named is None and target.agent_id is not None and target.distribution == "round_robin":
         chosen = instances.round_robin(conn, target)
         if chosen is not None:
+            _refuse_paused(conn, target.id, chosen)
             return target, chosen
-    return target, instances.resolve(conn, target, named, "to", past_dormant=True)
+    instance = instances.resolve(conn, target, named, "to", past_dormant=True)
+    _refuse_paused(conn, target.id, instance)
+    return target, instance
+
+
+def _refuse_paused(conn: Connection, membership_id: int, instance: str | None) -> None:
+    """A paused receiver takes no new work, as a claim on its behalf refuses (§5.3)."""
+    from maity_hub.routes.tasks import _refuse_paused as refuse
+
+    refuse(conn, membership_id, instance)
+
+
+def _paused(conn: Connection, membership_id: int, instance: str | None) -> bool:
+    """Whether the receiver takes no new work now: paused by a human, or suspended (§5.3)."""
+    try:
+        _refuse_paused(conn, membership_id, instance)
+    except ApiError:
+        return True
+    return False
+
+
+def _takes_cards(row: Any) -> bool:
+    """Whether a membership may hold a card now (§2.3, §6.2): active, not an expert, not a
+    guest, not isolated."""
+    return bool(
+        row is not None
+        and row.active
+        and row.role != "expert"
+        and row.trust != "guest"
+        and row.isolated_since is None
+    )
 
 
 def open_takeover(
@@ -265,11 +301,10 @@ def transfer(
     # takes too (`members._check_no_cards_for_expert`); `settle` and the routes hold it
     # already, a decision through the requests answer may not.
     lock_project(conn, row.project_id)
-    receiver_role = conn.execute(
-        select(t.membership.c.role).where(t.membership.c.id == row.to_member)
-    ).scalar()
-    if receiver_role == "expert":
-        # An expert takes no cards (§2.3 "The expert"): the takeover ends without a move,
+    receiver = conn.execute(select(t.membership).where(t.membership.c.id == row.to_member)).first()
+    if not _takes_cards(receiver) or _paused(conn, row.to_member, row.to_instance):
+        # An expert, a guest or an isolated member takes no cards (§2.3, §6.2), nor one
+        # removed, and a paused one no new work (§5.3): the takeover ends without a move,
         # as when the card left `from` some other way (below).
         conn.execute(
             update(t.takeover)
@@ -500,7 +535,7 @@ def override(conn: Connection, mine: Membership, caller: Caller, row: Any, reaso
             "only the admin team, not a party, overrides a takeover",
             {"reason": "party_to_takeover" if _party(mine, row) else "admin_team_only"},
         )
-    if caller.kind == "agent" and not _same_owner(conn, mine, row):
+    if caller.kind == "agent" and not _same_owner(conn, mine.principal_id, row):
         raise ApiError(
             403,
             "forbidden",
@@ -528,8 +563,8 @@ def _party(mine: Membership, row: Any) -> bool:
     return mine.id in (row.from_member, row.to_member, row.requested_by)
 
 
-def _same_owner(conn: Connection, mine: Membership, row: Any) -> bool:
-    """Every agent among holder, receiver and requester is owned by the caller's owner."""
+def _same_owner(conn: Connection, agent_id: str, row: Any) -> bool:
+    """Every agent among holder, receiver and requester is owned by `agent_id`'s owner."""
     owners = {
         owner
         for owner, agent in conn.execute(
@@ -544,7 +579,7 @@ def _same_owner(conn: Connection, mine: Membership, row: Any) -> bool:
         if agent is not None
     }
     own = conn.execute(
-        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == mine.principal_id)
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == agent_id)
     ).scalar()
     return owners <= {own}
 
@@ -660,6 +695,11 @@ def _admin_team_answers(conn: Connection, request: Any, mine: Any) -> str | None
         return "party_to_takeover"
     if row is None or not admin_team(mine, row):
         return "admin_team_only"
+    # `mine` is the answerer's `Membership`, or a membership row when a forward asks
+    # whether its target may answer: both carry the agent, one through its row.
+    agent_id = mine.row.agent_id if isinstance(mine, Membership) else mine.agent_id
+    if agent_id is not None and not _same_owner(conn, agent_id, row):
+        return "admin_team_only"  # an agent decides only among its own owner's agents
     if is_cross_owner(conn, row.from_member, row.to_member, row.requested_by):
         return "cross_owner"  # fails closed until the cross-owner rules exist
     return None
@@ -699,7 +739,7 @@ proposals.register(
 # --- the card routes' side ----------------------------------------------------------------
 
 
-def guard_move(conn: Connection, mine: Membership, card: Any) -> None:
+def guard_move(conn: Connection, mine: Membership, card: Any, to: int | None = None) -> None:
     """An agent's `assign`, `release` or `PATCH assigned_to` that would take a card from
     its holder (§6.19): never from a human, not while a takeover is open, and not while
     the holder's lease is active (`takeover_required`). A human's moves keep the rules of
@@ -719,6 +759,10 @@ def guard_move(conn: Connection, mine: Membership, card: Any) -> None:
             "the holder's lease is active: open a takeover instead",
             {"holder": holder.agent_id, "instance": card.claim_instance},
         )
+    # After the lease, the move is a takeover all the same (`record_lease_expired`): one
+    # across owners is refused as `POST …/takeover` refuses it (§6.19).
+    if is_cross_owner(conn, holder.id, to if to is not None else mine.id, mine.id):
+        raise cross_owner()
 
 
 def record_lease_expired(
@@ -784,7 +828,8 @@ def reconcile(conn: Connection, card_id: str, actor: Actor | None, *, decided: b
 
 def membership_removed(conn: Connection, membership_id: int, actor: Actor | None) -> None:
     """A removed member is no party any more: its open takeovers, as holder, receiver
-    or requester, are cancelled (§6.19)."""
+    or requester, are cancelled (§6.19). So are those of a member isolated or dropped to
+    guest, which holds and takes no cards (§2.3, §6.2)."""
     c = t.takeover.c
     rows = conn.execute(
         select(t.takeover).where(

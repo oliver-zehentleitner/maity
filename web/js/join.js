@@ -222,10 +222,15 @@ window.Maity = window.Maity || {};
     const trust = h("select", { id: "join-trust" }, trusts.map((r) => h("option", { value: r }, M.trust.trustWord(r))));
     trust.value = "member";
     const role = h("select", { id: "join-role" });
+    // The project's own roles follow the built-in ones (§2.3): for one's own agent only those on
+    // a base a member join may give (not ops), as the hub's member limits check it.
+    const takeOwn = (list) => (own ? list.filter((x) => M.trust.MEMBER_ROLES.includes(x.base)) : list);
+    let ownRoles = takeOwn(M.trust.projectRoles(ctx, (list) => { ownRoles = takeOwn(list); if (ownRoles.length) fillRoles(); }));
     const fillRoles = () => {
       const wanted = role.value || "coder";
-      const offered = own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"));
-      M.trust.fillRoles(role, offered, wanted, "coder");
+      const offered = (own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")))
+        .concat(ownRoles.map((x) => x.name));
+      M.trust.fillRoles(role, offered, wanted, "coder", ownRoles);
     };
     const roleHelp = M.trust.roleHint(role);
     // The owner's instruction to work in subagents (docs/api.md §3.1): on by default for
@@ -781,8 +786,6 @@ window.Maity = window.Maity || {};
         h("button", { type: "button", class: "icon-button join-close", "aria-label": M.t("join.close"), title: M.t("join.close"), onclick: onClose }, M.icons.close(16))),
       h("p", { class: "join-project" }, M.t("join.project", { name: project.name || ctx.slug || full, full })),
       h("p", { class: "muted" }, M.t("join.intro")),
-      // Until the person confirmed it, once (docs/api.md §5.1, "Experiment notice"); it holds nothing back.
-      M.experimentNotice ? M.experimentNotice.forConnecting(ctx) : null,
     ];
   }
 

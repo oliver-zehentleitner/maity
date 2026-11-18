@@ -17,6 +17,7 @@ from maity_hub import (
     events,
     handles,
     idempotency,
+    join_revocation,
     limits,
     moderation,
     namespace,
@@ -305,6 +306,7 @@ def delete_agent(
             by=caller.principal_id,
             credential_id=caller.credential_id,
             via=caller.via,
+            revoked_by=caller.principal_id,
         )
         handles.retire(conn, agent_id)  # its aliases leave the owner's scope with its handle
         return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
@@ -320,27 +322,28 @@ def delete_profile(
     by: str,
     credential_id: str | None,
     via: str | None,
+    revoked_by: str | None = None,
 ) -> None:
     """Delete a profile as §6.3 does with `cascade`: live joins revoked first, every
     active membership removed (`apply_remove`), the avatar dropped, a tombstone kept.
     `actor_in(project_id)` is the event actor in each project, `by` the human on whose
     authority it happens. The caller has locked the profile row and checked the owner;
-    shared by `DELETE /agents/{id}` and the deletion of the owner's account (§2.9)."""
+    shared by `DELETE /agents/{id}` and the deletion of the owner's account (§2.9).
+    `revoked_by` is who the joins' revocation names (§3.1): the owner on `DELETE`, None
+    for the account's deletion, which is the hub's own."""
     from maity_hub.routes.members import Change, apply_remove
 
     now = clock.now()
     members, _ = _in_use(conn, agent_id)
     # No membership is ever created for a deleted profile: its joins go first.
-    conn.execute(
-        update(t.join_link)
-        .where(
-            t.join_link.c.agent_id == agent_id,
-            t.join_link.c.used_at.is_(None),
-            t.join_link.c.burned_at.is_(None),
-            t.join_link.c.revoked_at.is_(None),
-            t.join_link.c.expires_at > now,
-        )
-        .values(revoked_at=now)
+    join_revocation.revoke(
+        conn,
+        t.join_link.c.agent_id == agent_id,
+        t.join_link.c.used_at.is_(None),
+        t.join_link.c.burned_at.is_(None),
+        t.join_link.c.expires_at > now,
+        by=revoked_by,
+        actor_in=actor_in,
     )
     for member in members:
         events.lock_project(conn, member.project_id)

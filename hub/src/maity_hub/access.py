@@ -32,6 +32,16 @@ class Membership:
     instance: str | None = None  # the calling agent instance (§6.17); None for a human
     bridged: bool = False  # a bridge calls as this agent, with `Maity-For` (§2.3)
     go: proxy_go.ProxyGo | None = None  # a proxy's call: the owner's go for it (§2.3)
+    # A bridge's call: its own membership's hidden windows (§6.2), which the reads hide beside
+    # the served agent's. `row` is then the agent's row with both (`events.carried_row`), also
+    # after a `replace` with a row read again.
+    bridge_windows: tuple[dict[str, int], ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.bridge_windows:
+            from maity_hub.events import carried_row
+
+            object.__setattr__(self, "row", carried_row(self.row, self.bridge_windows))
 
     @property
     def id(self) -> int:
@@ -128,7 +138,25 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
         if row.role_base == "proxy"
         else None
     )
-    return Membership(project, row, caller.kind, caller.instance, caller.bridge is not None, go)
+    bridge_windows: tuple[dict[str, int], ...] = ()
+    if caller.bridge is not None:
+        bridge_windows = tuple(
+            conn.execute(
+                select(t.membership.c.isolation_windows).where(
+                    t.membership.c.id == caller.bridge.membership_id
+                )
+            ).scalar()
+            or ()
+        )
+    return Membership(
+        project,
+        row,
+        caller.kind,
+        caller.instance,
+        caller.bridge is not None,
+        go,
+        bridge_windows,
+    )
 
 
 def member_row_or_removed(conn: Connection, project_id: str, principal_id: str) -> Any:

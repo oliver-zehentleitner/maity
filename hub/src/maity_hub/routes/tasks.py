@@ -24,6 +24,7 @@ from maity_hub import (
     clock,
     contract_text,
     cover,
+    events,
     idempotency,
     instances,
     line,
@@ -44,6 +45,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.board import history
 from maity_hub.board import links as card_links
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -308,8 +310,8 @@ def _new_release(conn: Connection, mine: Membership, body: ReleaseIn | None) -> 
     mine.require("releases:write")
     if body is None:
         raise invalid({"release.version": "required"})
-    if not releases.SEMVER.fullmatch(body.version):
-        raise invalid({"release.version": "not_semver"})
+    if not releases.valid_version(body.version):
+        raise invalid({"release.version": "not_a_version"})
     taken = conn.execute(
         select(t.card.c.id).where(
             t.card.c.project_id == mine.project.id, t.card.c.release_version == body.version
@@ -535,13 +537,15 @@ def _revision(card: Any) -> int | None:
     return revision
 
 
-def _signatures(mine: Membership, card: Any, body: TaskPatch) -> dict[str, Any] | None:
+def _signatures(
+    conn: Connection, mine: Membership, card: Any, body: TaskPatch
+) -> dict[str, Any] | None:
     """The signatures after a `review→done` under `reviewer_and_tester`, else None."""
     if not (card.status == "review" and body.status == "done"):
         return None
     if not cards.two_signatures(mine.project):
         return None
-    return cards.sign(mine, card, body.approve, _revision(card))
+    return cards.sign(conn, mine, card, body.approve, _revision(card))
 
 
 def _check_label(label: str | None) -> None:
@@ -663,7 +667,7 @@ def list_tasks(
     cursor: str | None = None,
 ) -> JSONResponse:
     fg = reader_of(request)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         query = select(t.card).where(t.card.c.project_id == mine.project.id)
@@ -703,12 +707,18 @@ def list_tasks(
             **({"q": q} if q is not None else {}),
         )  # fmt: skip
         matched: dict[str, list[str]] = {}
+        # Notes written in the reader's hidden windows are not searched (§6.2, §6.4).
+        listable = (
+            events.outside_window_times(conn, mine.project.id, mine.row, t.card_note.c.created_at)
+            if q is not None
+            else None
+        )
 
         def matching(rows: Sequence[Any]) -> list[Any]:
             if q is None:
                 return list(rows)
             result = []
-            notes = card_search.note_bodies(conn, (row.id for row in rows))
+            notes = card_search.note_bodies(conn, (row.id for row in rows), listable)
             for row in rows:
                 hit = card_search.matches(row, q, notes[row.id])
                 if hit:
@@ -793,7 +803,7 @@ def _after(
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}")
 def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg, mine))
@@ -1120,7 +1130,7 @@ def patch_task(
             _require_assigner(conn, mine, new_assignee, card.assigned_to, card.claim_holder)
             availability.refuse_coordinator_out(conn, mine, "new assignments")
             if assigns_away and not cards.holds(mine, card):
-                takeovers.guard_move(conn, mine, card)
+                takeovers.guard_move(conn, mine, card, to=new_assignee)
             values["assigned_to"] = new_assignee
             if values["assigned_to"] != card.assigned_to:
                 # The new team's distribution decides, as on every assignment (§6.18).
@@ -1156,7 +1166,7 @@ def patch_task(
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
                 _refuse_unready(conn, card, fg, values.get("release_data"))
-            signed = _signatures(mine, card, body)
+            signed = _signatures(conn, mine, card, body)
             if signed is not None:
                 values["approvals"] = signed
             if card.status == "review" and body.status == "in_progress":
@@ -1745,7 +1755,7 @@ def assign(
         before = card
         if takes:
             # An agent takes a card only through a takeover while the lease runs (§6.19).
-            takeovers.guard_move(conn, mine, card)
+            takeovers.guard_move(conn, mine, card, to=assignee)
             if not _lease_expired(card):
                 raise ApiError(
                     409,
@@ -2008,7 +2018,7 @@ def report(
             closing = False
             if not (mine.may("tasks:review") and mine.may("tasks:test")):
                 empty = SimpleNamespace(approvals=None)
-                signatures = cards.sign(mine, empty, None, revision)
+                signatures = cards.sign(conn, mine, empty, None, revision)
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary")
         now = clock.now()
         stored = {

@@ -335,6 +335,45 @@ def test_a_public_page_counts_a_ticker_merge_only_if_flagged_and_the_repository_
     assert public_prs(migrated, project_id) is None
 
 
+def takeover(
+    engine: Engine, project_id: str, task: str, moved_from: int, to: int, status: str, at: datetime
+) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.takeover).values(
+                id=new_id("takeover"), project_id=project_id, task_id=task,
+                from_member=moved_from, to_member=to, reason="r", status=status,
+                window_minutes=30, window_ends_at=at, created_at=at, closed_at=at,
+            )
+        )  # fmt: skip
+
+
+def test_handovers_count_each_completed_move_away_from_the_member(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
+) -> None:
+    """§6.22: a takeover that moved the card and each card a cover moved, once per move, to
+    the member it moved from; a refused takeover, a cover that moved nothing, and a move
+    before the window are none."""
+    agent = flow.agent(make_client, owner)
+    other = flow.agent(make_client, owner)
+    creator = membership_of(migrated, owner.id)
+    mine, theirs = membership_of(migrated, agent.id), membership_of(migrated, other.id)
+    one = card(migrated, project_id, creator)
+    takeover(migrated, project_id, one, mine, theirs, "transferred", NOW - timedelta(days=1))
+    takeover(migrated, project_id, one, mine, theirs, "refused", NOW - timedelta(days=1))
+    takeover(migrated, project_id, one, mine, theirs, "transferred", NOW - timedelta(days=40))
+    cover = {"substitute_id": other.id, "requests": [], "left": []}
+    event(migrated, project_id, "cover_started", NOW - timedelta(days=2), None,
+          {**cover, "member_id": agent.id, "tasks": ["tsk-a", "tsk-b"]}, "member")  # fmt: skip
+    event(migrated, project_id, "cover_started", NOW, None,
+          {**cover, "member_id": agent.id, "tasks": []}, "member")  # fmt: skip
+    found = page(owner)
+    assert row(found, agent.id)["handovers"] == 3
+    assert row(found, other.id)["handovers"] == 0
+    assert found["totals"]["handovers"] == 3
+    assert page(owner, days=1)["totals"]["handovers"] == 0  # yesterday's move is out of it
+
+
 def test_the_medians_pool_durations_and_need_three_samples(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, project_id: str
 ) -> None:

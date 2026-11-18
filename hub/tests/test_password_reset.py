@@ -13,7 +13,7 @@ from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import clock, middleware
 from maity_hub import tables as t
-from maity_hub.auth import password_resets
+from maity_hub.auth import password_resets, second_factor
 from maity_hub.instance_settings import put
 from maity_hub.notifications import mailer
 from maity_hub.routes import password_reset
@@ -557,3 +557,33 @@ def test_two_completes_of_one_link_have_one_winner(
         assert finished(second) is False
         two.second.commit()
     assert len(records(migrated, human, "password_reset")) == 1
+
+
+def test_a_reset_and_a_wrong_code_elsewhere_take_the_rows_in_one_order(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """A reset by mail with a wrong code and a wrong code at another check of the same human, at
+    once: both take the factor's row before the human's (§2.8.6), so the one waits for the
+    other and both are counted. PostgreSQL and MariaDB; SQLite has one writer."""
+    client, human, _, _ = enrolled_ada(make_client, migrated, moment)
+    token = mailed(client, migrated)
+    hub = client.app.state.settings
+    body = password_reset.ResetComplete(token=token, new=NEW, code="000000")
+    with race(migrated) as r:
+        assert password_reset._live(r.first, hub, token, lock=True) is not None
+        elsewhere = r.run(
+            r.second,
+            lambda: second_factor.check(
+                r.second, hub, human, code="000000", recovery_code=None, seen=(None,) * 3
+            ),
+        )
+        assert waiting(elsewhere)  # on the factor's row the reset holds
+        assert not password_reset._code_right(r.first, hub, human, body, "198.51.100.7", None, None)
+        r.first.commit()
+        assert finished(elsewhere) is None
+        r.second.commit()
+    with migrated.connect() as conn:
+        counted = conn.execute(
+            select(t.second_factor_day.c.wrong_codes).where(t.second_factor_day.c.human_id == human)
+        ).scalar_one()
+    assert counted == 2

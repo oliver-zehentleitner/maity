@@ -18,6 +18,7 @@ from sqlalchemy import Connection, insert, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.board import notes
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
 
@@ -148,7 +149,9 @@ def members(conn: Connection, membership_ids: Iterable[int | None]) -> dict[int,
     }
 
 
-def view(row: Any, actors: dict[int, dict[str, Any]]) -> dict[str, Any]:
+def view(row: Any, actors: dict[int, dict[str, Any]], reader: Any = None) -> dict[str, Any]:
+    """An entry as §6.15 shows it to `reader`: a redaction's reason only to whom §8.5 gives
+    it, as for a note (no reader: hidden)."""
     actor = actors.get(row.actor_membership) if row.actor_membership is not None else None
     shown: dict[str, Any] = {
         "id": row.id,
@@ -165,7 +168,8 @@ def view(row: Any, actors: dict[int, dict[str, Any]]) -> dict[str, Any]:
         "field": row.field,
     }
     if row.redacted:
-        shown.update(before=row.redaction, after=row.redaction, diff=row.redaction)
+        mark = notes.tombstone_for(row.redaction, reader)
+        shown.update(before=mark, after=mark, diff=mark)
         shown["redacted"] = True
     else:
         shown.update(before=row.before, after=row.after, diff=row.diff)
@@ -234,7 +238,10 @@ def link_entry(conn: Connection, card_id: str, link_id: str, removed: bool) -> A
     ).first()
 
 
-def link_shown(row: Any) -> dict[str, Any]:
-    """The link as its entry holds it, or the tombstone once the entry is redacted."""
-    shown: dict[str, Any] = row.redaction if row.redacted else (row.after or row.before)
+def link_shown(row: Any, reader: Any = None) -> dict[str, Any]:
+    """The link as its entry holds it, or the tombstone once the entry is redacted, its
+    reason as `view` shows it to `reader`."""
+    if row.redacted:
+        return notes.tombstone_for(row.redaction, reader)
+    shown: dict[str, Any] = row.after or row.before
     return shown
