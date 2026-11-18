@@ -38,6 +38,7 @@ def test_the_defaults_and_where_they_come_from(admin: flow.Human) -> None:
         "max_aliases": {"value": 3, "source": "default"},
         "names_at_alias_limit": 0,
         "max_attachment_storage_per_project": {"value": 1024**3, "source": "default"},
+        "max_reads_per_minute": {"value": 1000, "source": "default"},
         "max_attachment_storage": {"value": "unlimited", "source": "default"},
         "attachment_storage_used": 0,
     }

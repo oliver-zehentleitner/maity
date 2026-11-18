@@ -323,10 +323,12 @@ unless told otherwise, so the defaults set `proxy-body-size` to `11m`. On
 k3s's Traefik, `deploy/k3s-single/uploads.yaml` gives the upload its own
 route, which buffers the body before it reaches the hub.
 
-The hub has no general request budget. Its own limits are per route,
-among them sign-ins, codes, sign-ups, mail, uploads and the public pages'
-reads. The general limit belongs to the controller: one limit
-per client address for every request. `ingress.requestLimit` sets it for
+The hub has no general request budget per client address. Its own limits
+are per route, among them sign-ins, codes, sign-ups, mail, uploads and the
+public pages' reads, and per credential for a signed-in caller's reads
+(`MAITY_MAX_READS_PER_MINUTE`, default 1000 a minute, counted in each pod;
+past it a read is `429 rate_limited` with `Retry-After`). The general limit
+belongs to the controller: one limit per client address for every request. `ingress.requestLimit` sets it for
 ingress-nginx (`limit-rps`, `limit-burst-multiplier`, `limit-connections`).
 It is off by default. Switch it on only once every agent runs a `maity`
 whose `maity wait` retries a 429. An older one ends its wait on the first

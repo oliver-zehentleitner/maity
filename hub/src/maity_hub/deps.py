@@ -9,7 +9,7 @@ from fastapi import Depends, Request
 from sqlalchemy import Connection, Engine, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from maity_hub import events, namespace, runner_revoke, write_guard
+from maity_hub import events, namespace, request_stats, runner_revoke, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
 from maity_hub.auth.caller import Caller, RequestFacts, authenticate
@@ -58,6 +58,8 @@ def facts_of(request: Request) -> RequestFacts:
         origin=origin_of(request),
         allow_plain_http=settings_of(request).allow_plain_http,
         cli_install=settings_of(request).cli_install,
+        max_reads_env=settings_of(request).max_reads_per_minute,
+        route=request_stats.route_of(request.scope),
     )
 
 

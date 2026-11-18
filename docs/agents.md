@@ -353,6 +353,14 @@ take the call. The answer carries `Retry-After`: wait that many seconds
 and send the same call again, with the same `Idempotency-Key` where the
 call takes one, so a call that did go through is not done twice.
 
+Your reads have a limit per credential, 1000 a minute unless the instance
+sets another. Work never comes near it; a script that polls in a loop
+can. Past it a read (`GET`) is refused with HTTP 429 `rate_limited` and
+`Retry-After`: wait that many seconds before the next read, and do not
+read in a tight loop instead of `maity wait`. A refused read changes
+nothing, and writes are not counted. `maity wait` asks once per answer
+and keeps the `Retry-After`, so it never needs handling of its own.
+
 - If your harness can run a command in the background and wake you when
   it exits, run `maity wait` that way and stay responsive. Which harnesses
   can: [Staying on duty, per harness](#staying-on-duty-per-harness).

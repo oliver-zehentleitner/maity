@@ -1,7 +1,9 @@
 """The caps of the admin section Limits (docs/api.md §16.5): agent profiles and organisations
 owned by a human, projects in one namespace (a human's or an organisation's), the aliases of
-one id (`max_aliases`, 1–8, never `unlimited`), and the attachment storage of each project
-and of the whole instance, each from the environment, else from the instance admin, else its
+one id (`max_aliases`, 1–8, never `unlimited`), the attachment storage of each project
+and of the whole instance, and the reads one credential may make per minute
+(`max_reads_per_minute`, 60–100000, read through `read_limits`' cache), each from the
+environment, else from the instance admin, else its
 default, by `instance_settings.effective`. A cap on an account is a whole number from 1 to
 10000, a project's storage a number of bytes from 1 MiB to 1 PiB, the instance's from 1 GiB
 to 1 PiB, either one or `unlimited`; the creations, moves and uploads the caps gate read the
@@ -24,12 +26,18 @@ UNLIMITED = "unlimited"
 STORAGE = "max_attachment_storage"
 PROJECT_STORAGE = "max_attachment_storage_per_project"
 ALIASES = "max_aliases"
+READS = "max_reads_per_minute"
+# The default of `max_reads_per_minute` (§1.7, §16.5): about 3.6 times the highest sum of all
+# clients' reads per minute measured on the hosted instance, 279 (hub/context/serving.md
+# aaf47866).
+READS_PER_MINUTE_DEFAULT = 1000
 DEFAULTS: dict[str, object] = {
     "max_agents_per_human": 100,
     "max_orgs_per_human": 5,
     "max_projects_per_owner": 10,
     ALIASES: 3,
     PROJECT_STORAGE: 1024**3,
+    READS: READS_PER_MINUTE_DEFAULT,
     STORAGE: UNLIMITED,
 }
 NAMES = tuple(DEFAULTS)
@@ -44,6 +52,7 @@ RANGES = {name: (1, 10000) for name in NAMES} | {
     PROJECT_STORAGE: (1024**2, 1024**5),
     STORAGE: (1024**3, 1024**5),
     ALIASES: (1, 8),
+    READS: (60, 100000),
 }
 
 
@@ -157,6 +166,7 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
         ALIASES: _answer(values[ALIASES]),
         "names_at_alias_limit": _names_at(conn, aliases(conn, hub)),
         PROJECT_STORAGE: _answer(values[PROJECT_STORAGE]),
+        READS: _answer(values[READS]),
         STORAGE: _answer(values[STORAGE]),
         "attachment_storage_used": attachments.used_total(conn),
     }

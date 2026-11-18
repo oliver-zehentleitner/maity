@@ -437,6 +437,9 @@ def _fresh_process_state() -> Iterator[None]:
     # address and a few fixed addresses make all the visitors of the suite.
     for limiter in process_limiters():
         limiter.reset()
+    from maity_hub import read_limits
+
+    read_limits.reset()  # the reads per credential, and the instance's value kept for them
     device_codes._holding.clear()
     device_codes._breaker["until"] = 0.0
     # Tests run the availability sweep themselves; a worker's sweep in the middle of a

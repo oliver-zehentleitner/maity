@@ -191,6 +191,7 @@ ENTRIES: tuple[Entry, ...] = (
         admin=LIMITS,
     ),
     Entry("MAITY_MAX_ATTACHMENT_STORAGE", "limits", _limit(limits.STORAGE), admin=LIMITS),
+    Entry("MAITY_MAX_READS_PER_MINUTE", "limits", _limit(limits.READS), admin=LIMITS),
     Entry("MAITY_ROUTE_LIMITS", "limits"),
     Entry("MAITY_PUBLIC_PAGE_LIMIT", "limits", "60/60"),
     Entry("MAITY_BADGE_LIMIT", "limits", "60/60"),

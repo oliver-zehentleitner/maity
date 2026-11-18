@@ -737,14 +737,14 @@ c6768529 left one revalidation per file: after #1518, a warm load of a signed-in
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's decision on req-t92kvhzpdrpx (option a), 2026-11-14, passed on by lotse#wtwy (seq 132677): "Both become a setting with a generous default", a read limit per credential after sign-in as an instance/project setting, default around 600 reads per minute, and a cap on open claims per caller as a project setting, default none; the contract first, replacing the 2026-11-04 line "no general request budget in the hub"; card tsk-ybc2ma72dzvq, items 6 and 7; docs/api.md §1.7, §6.1, §6.5, §16.5
-**Revisit when:** the hub runs several replicas and a per-process count lets a credential through too often, a deployment's agents meet 600 reads a minute in normal work, or plans set limits per account
+**Source:** the owner's decision on req-t92kvhzpdrpx (option a), 2026-11-14, passed on by lotse#wtwy (seq 132677): "Both become a setting with a generous default", a read limit per credential after sign-in as an instance/project setting, default around 600 reads per minute, and a cap on open claims per caller as a project setting, default none; the contract first, replacing the 2026-11-04 line "no general request budget in the hub"; card tsk-ybc2ma72dzvq, items 6 and 7; docs/api.md §1.7, §6.1, §6.5, §16.5. The instance-level build (slice 6a): the plan the team lead approved with three conditions (seq 160482), the default of 1000 from the lead's final decision (seq 160489) on the operations team's measurement after the deploy; the per-request counting of the long-poll and the order in `_cookie` are tested in hub/tests/test_read_limits.py
+**Revisit when:** the hub runs several replicas and a per-process count lets a credential through too often, a deployment's agents meet the limit in normal work, the refusal log lines give a per-credential peak to lower the default against, or plans set limits per account
 **See:** serving.md#an-emergency-limit-on-single-routes-comes-from-the-environment-and-counts-in-each-process-the-public-read-limits-stay-configurable — f3198c35-b163-4fce-b3ad-683d8b825555 — as of 2026-11-14
 
 The 2026-11-04 decision left the hub without a general request budget:
 the ingress limits per client address, and the hub only single routes.
 That changes for signed-in callers. `max_reads_per_minute` (instance
-setting, §16.5, default 600) limits the `GET` and `HEAD` calls of the API
+setting, §16.5, default 1000, see below) limits the `GET` and `HEAD` calls of the API
 per credential; a project may set a lower value for its agents'
 credentials (`policy.max_reads_per_minute`, §6.1), never a higher one.
 Past it a read is `rate_limited` with `Retry-After`, checked once the
@@ -775,3 +775,84 @@ reason.
   the operator's protection of the whole server.
 - **A fixed limit in code:** the owner chose a setting with a generous
   default.
+
+**How the instance's part is built** (slice 6a; the project's own value,
+`policy.max_reads_per_minute`, needs a migration and follows):
+
+- **The default, 1000.** The operations team measured, after the deploy,
+  only the sum of all clients' reads per minute: median 180, at most 279,
+  about 60 of it a health probe, the events long-poll at most 54. That sum
+  is the one bound measurable now, and it caps what any one credential
+  read. The lead's rule is at least three times the peak; 600 is about
+  2.2 times 279, 1000 about 3.6 times. A lower value is planned with the
+  owner once the refusal log lines (below) show what credentials meet.
+  The number lives in one constant, `limits.READS_PER_MINUTE_DEFAULT`.
+- **Where the check runs.** `auth/caller.py` `_count_read`, once per
+  authentication path: in `_agent` after the signing and isolation
+  refusals and before the last use, presence, the session and the leases;
+  in `_runner` before its last use and presence; in `_cookie` after the
+  session is known live (and after the CSRF check) and before presence.
+  A refused read so writes nothing at all, not even a statement that is
+  rolled back. A bridge authenticates with its own credential before
+  `bridges.carry` makes it the served agent, so its reads count as its own.
+- **`_cookie` checks the session before presence.** Before, the presence
+  updates came first and a dead session matched no row; now the session
+  and its human are read first, and an ended, expired or deleted
+  account's session sends no update. The presence update is sent only when
+  that read says it is due (once a minute), which also drops the update
+  that matched nothing on every other call. When it writes, the session is
+  read again under the row locks the writes took, so the second-factor gate
+  and the pending check still decide on the session as it stands under
+  READ COMMITTED (#1540 review, `test_auth_statements`); that second read
+  costs one statement once a minute per session.
+- **The count: in the process, two fixed windows.** One minute; the
+  estimate is the current minute's count plus the previous one's weighted
+  by what the sliding window still covers, the estimate the shared limits
+  use (`ratelimit.estimate_wait`, factored out of `Limiter._wait` for it).
+  Two numbers per credential instead of a timestamp per read, so 1000 a
+  minute cost no more memory than 60. Keys live in an ordered dict, least
+  recently read first; each call forgets at most eight that no longer
+  reach the estimate, because authentication runs on the event loop
+  (`NonceWindow` does the same). The request object of `RequestFacts`
+  marks what was counted, so a transaction run again (`retrying_async`)
+  does not count its request twice. A float's last digit may round
+  `Retry-After` up a second, never down.
+- **The instance's value is kept 30 seconds per process.** No statement
+  per read: a read finds the value in memory, read again from the settings
+  at most every 30 seconds. The environment's value needs no read at all.
+  `PATCH /admin/settings/limits` drops it after its transaction commits,
+  so the process that takes the change applies it at once, others within
+  30 seconds.
+- **The long-poll counts once per call.** Authentication runs once when
+  the request arrives; the passes of a held wait look at liveness
+  (`gone`) and never authenticate again. `maity wait` asks once per
+  answer, so a quiet loop makes about one read a minute and a busy one at
+  most one per answer, and it keeps a 429's `Retry-After`. `GET
+  /bootstrap` authenticates once for its parts, so it counts once, and its
+  refusal answers the whole request so that the header is kept.
+- **One log line per refusal, with a tag, not an id.** INFO on
+  `maity_hub.read_limits`: method, route pattern, a tag, the limit and the
+  wait; nothing for allowed reads, which would add a line to every read.
+  The tag is the first 12 hex digits of an HMAC-SHA256 of the counted key,
+  under a key derived from `MAITY_SECRET_KEY` (stable across processes and
+  restarts) or else a random key of the process. Someone who reads the log
+  can tell refusals of one credential apart from another's, which is what
+  lowering the default needs, but cannot get the credential id, the
+  member or the session back from it, and a plain hash of an id could be
+  matched against known ids. The ordinary request log carries no tag; that
+  is the owner's privacy decision.
+
+**Rejected alternatives (6a):**
+- **`ratelimit.Limiter(local=True)`:** a deque with a timestamp per read
+  per credential, up to 1000 entries each, and a pass over all keys when
+  it prunes.
+- **Reading the setting on every read:** a statement per read, the cost
+  the limit exists to shed.
+- **Counting each pass of a long-poll:** a quiet `maity wait` would count
+  every few seconds for doing nothing.
+- **Counting in `deps` after authentication:** the presence, last use and
+  leases would already be written for a refused read.
+- **Keeping presence first in `_cookie`:** the count would come after the
+  writes, and a dead session would still send its update.
+- **Counting a session's reads by the cookie, or logging the id:** the
+  key is the session's hash, and the log names neither.

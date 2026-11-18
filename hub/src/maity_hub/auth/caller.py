@@ -6,7 +6,8 @@ effects every authenticated call has (docs/api.md §2.4): presence on the
 human, the membership and the session; for an agent, the renewal of its
 leases (except on the events long-poll) and the move of its claims to the
 live session; for a runner, its own last use and nothing on any membership
-(§15.1).
+(§15.1). Before any of them, a read of the API counts against the credential's read limit
+(§1.7, `read_limits`).
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from typing import Any
 
 from sqlalchemy import Connection, and_, or_, select, update
 
-from maity_hub import availability, clock, timing
+from maity_hub import availability, clock, read_limits, timing
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id_query
 from maity_hub.auth import credentials, nonces, verifiers
@@ -56,6 +57,10 @@ class RequestFacts:
     allow_plain_http: bool
     cli_install: str = DEFAULT_CLI_INSTALL
     request: object = field(default_factory=object)  # one per request, whatever runs again
+    # MAITY_MAX_READS_PER_MINUTE as the environment set it (None: the admin's or the default),
+    # and the route's pattern for the read limit's log line (§1.7 "Reads per credential").
+    max_reads_env: int | str | None = None
+    route: str = "-"
 
 
 @dataclass(frozen=True)
@@ -145,6 +150,22 @@ class Caller:
         )
 
 
+def _count_read(conn: Connection, facts: RequestFacts, key: str) -> None:
+    """The read limit per credential (§1.7 "Reads per credential"): a `GET` or `HEAD` of the
+    API counts against `key`, the credential's id or the session's hash; past the limit it is
+    `rate_limited`. Called once the credential is known and before any side effect (§2.4), so
+    a refused read writes nothing; a write is not counted."""
+    if read_limits.counts(facts.method, facts.raw_path):
+        read_limits.take(
+            conn,
+            key,
+            env_value=facts.max_reads_env,
+            spender=facts.request,
+            method=facts.method.upper(),
+            route=facts.route,
+        )
+
+
 def session_id_hash(session_id: str) -> str:
     return hashlib.sha256(session_id.encode("ascii")).hexdigest()
 
@@ -211,23 +232,19 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = Tru
     _cookie_headers(facts)
     now = clock.now()
     id_hash = session_id_hash(facts.cookies[SESSION_COOKIE])
-    # The presence writes come first, and only on a live session: they take the row locks of
-    # the session and its human, in the order they always did. The one read after them then
-    # sees what the gate's and the pending check's own reads used to see after these writes,
-    # under READ COMMITTED too (#1540 review), and it runs once instead of three times
-    # (tsk-6srccd2r1h62). A refusal below rolls the writes back with the transaction.
-    # They run at most once every `SEEN_EVERY` (§2.4): within it the session's update matches
-    # nothing, writes nothing and takes no lock, and the human's and the memberships' are not
-    # sent; the read below then tells a live session from an ended one.
-    owner = (
-        select(t.human_session.c.human_id)
-        .where(t.human_session.c.id_hash == id_hash)
-        .scalar_subquery()
-    )
-    # A dashboard tab's presence (`seen=False`, §18.4) writes none of it: the read below
-    # alone tells a live session from an ended one, as for a call within `SEEN_EVERY`.
-    touched = 0
-    if seen:
+    # The session is checked before anything is written (§2.4): an ended or expired session,
+    # or one of a deleted account, sends no presence write at all, and neither does a read
+    # past the limit per credential (§1.7), counted once the session is known to be live.
+    row = _live_session(conn, id_hash, now)
+    if facts.method in UNSAFE_METHODS:
+        token = facts.headers.get(CSRF_HEADER, "")
+        if not hmac.compare_digest(token.encode(), row.csrf_token.encode()):
+            raise ApiError(403, "csrf_mismatch", "X-CSRF-Token does not match the session")
+    _count_read(conn, facts, id_hash)
+    # Presence at most once every `SEEN_EVERY` (§2.4), sent only when the read says it is due;
+    # its update checks the session again, so a session ended meanwhile matches nothing. A
+    # dashboard tab's presence (`seen=False`, §18.4) writes none of it.
+    if seen and row.last_seen_at <= now - SEEN_EVERY:
         touched = conn.execute(
             update(t.human_session)
             .where(
@@ -240,36 +257,20 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = Tru
             )
             .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
         ).rowcount
-    if touched == 1:
-        conn.execute(update(t.human).where(t.human.c.id == owner).values(last_seen_at=now))
-        conn.execute(
-            update(t.membership)
-            .where(t.membership.c.human_id == owner, t.membership.c.removed_at.is_(None))
-            .values(last_seen_at=now)
-        )
-    # Whether this is the instance admin, for `Server-Timing` (`timing.admit`): in this same
-    # read rather than one more on every cookie call, as a join that finds the human only
-    # when it is the earliest account.
-    admin = t.human.alias("instance_admin")
-    row = conn.execute(
-        select(
-            t.human_session,
-            t.human.c.deleted_at.label("human_deleted_at"),
-            t.human.c.account_status.label("human_account_status"),
-            admin.c.id.is_not(None).label("human_is_instance_admin"),
-        )
-        .join(t.human, t.human.c.id == t.human_session.c.human_id)
-        .outerjoin(admin, and_(admin.c.id == t.human.c.id, admin.c.id == instance_admin_id_query()))
-        .where(t.human_session.c.id_hash == id_hash)
-    ).first()
-    if row is None or (touched != 1 and (row.ended_at is not None or not session_alive(row, now))):
-        raise unauthenticated("the session has ended or expired")
-    if row.human_deleted_at is not None:  # a deleted account calls nothing (§2.9)
-        raise unauthenticated("the session has ended or expired")
-    if facts.method in UNSAFE_METHODS:
-        token = facts.headers.get(CSRF_HEADER, "")
-        if not hmac.compare_digest(token.encode(), row.csrf_token.encode()):
-            raise ApiError(403, "csrf_mismatch", "X-CSRF-Token does not match the session")
+        if touched == 1:
+            # The session's row is locked now, then its human's, in the order they always
+            # were. The session is read again under those locks, so the gate and the pending
+            # check decide on it as it stands, under READ COMMITTED too (#1540 review); once a
+            # minute per session, on the call that writes its presence.
+            conn.execute(
+                update(t.human).where(t.human.c.id == row.human_id).values(last_seen_at=now)
+            )
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.human_id == row.human_id, t.membership.c.removed_at.is_(None))
+                .values(last_seen_at=now)
+            )
+            row = _live_session(conn, id_hash, now)
     if renew:
         # A human holder works in the dashboard; its calls renew its leases too (§6.5). Only
         # the memberships that hold an open claim have a lease to renew: reading the rest
@@ -301,6 +302,31 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = Tru
         session_row=row,
         account_status=row.human_account_status,
     )
+
+
+def _live_session(conn: Connection, id_hash: str, now: datetime) -> Any:
+    """The session `id_hash` names with its human, read in one statement (tsk-6srccd2r1h62);
+    `unauthenticated` unless it is live and its account not deleted (§2.9)."""
+    # Whether this is the instance admin, for `Server-Timing` (`timing.admit`): in this same
+    # read rather than one more on every cookie call, as a join that finds the human only
+    # when it is the earliest account.
+    admin = t.human.alias("instance_admin")
+    row = conn.execute(
+        select(
+            t.human_session,
+            t.human.c.deleted_at.label("human_deleted_at"),
+            t.human.c.account_status.label("human_account_status"),
+            admin.c.id.is_not(None).label("human_is_instance_admin"),
+        )
+        .join(t.human, t.human.c.id == t.human_session.c.human_id)
+        .outerjoin(admin, and_(admin.c.id == t.human.c.id, admin.c.id == instance_admin_id_query()))
+        .where(t.human_session.c.id_hash == id_hash)
+    ).first()
+    if row is None or row.ended_at is not None or not session_alive(row, now):
+        raise unauthenticated("the session has ended or expired")
+    if row.human_deleted_at is not None:  # a deleted account calls nothing (§2.9)
+        raise unauthenticated("the session has ended or expired")
+    return row
 
 
 def has_live_session(conn: Connection, cookies: Mapping[str, str]) -> bool:
@@ -406,7 +432,7 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
     if not spent_first:
         raise ApiError(401, "nonce_reused", "this nonce was used within the window")
     if is_runner_credential(row.id):
-        return _runner(conn, row)
+        return _runner(conn, row, facts)
     caller = _agent(conn, row, "signed", renew, facts)
     return replace(caller, on_request=_on_request(facts))
 
@@ -567,6 +593,10 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFact
         from maity_hub import isolation
 
         raise isolation.refusal(row)
+    # After the refusals that need no count, before the last use, presence and the leases: a
+    # read past the limit renews nothing (§1.7). A bridge's call with `Maity-For` counts here,
+    # against the bridge's own credential (§2.3).
+    _count_read(conn, facts, row.id)
     if row.isolated_since is not None:
         # The two calls it may make leave no trace: no presence, no lease, no session (§6.2).
         return Caller(
@@ -691,7 +721,8 @@ def _runner_credential(conn: Connection, credential_id: str) -> Any:
     return SimpleNamespace(**row._asdict(), is_latest=newer is None)
 
 
-def _runner(conn: Connection, row: Any) -> Caller:
+def _runner(conn: Connection, row: Any, facts: RequestFacts) -> Caller:
+    _count_read(conn, facts, row.id)  # before its last use and presence, as for an agent (§1.7)
     now = clock.now()
     conn.execute(  # reseal on use, as `_agent` does (§2.2)
         update(t.runner_credential)
