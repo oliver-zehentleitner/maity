@@ -102,6 +102,30 @@ def test_a_new_profile_is_created_at_the_exchange(setup: Setup, make_client: Cli
     assert placement_row(setup, placement["id"]).membership_id is not None
 
 
+def test_an_account_override_does_not_gate_the_exchange(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §16.5 "What it gates": the exchange of a link already issued is never counted, an
+    # override on the creator's account included; its numbers never reach the runner's owner.
+    placement = placed(setup, agent={"handle": "agent-f", "display_name": "Agent F"})
+    picked = pick_up(setup, placement).json()
+    held = len(setup.owner.get("/agents").json()["items"])
+    account = f"/admin/users/{setup.owner.id}/limits"
+    assert setup.owner.patch(account, {"max_agents_per_human": held}).status_code == 200
+    joined = exchange(make_client(), picked)
+    assert joined.status_code == 201, joined.text
+    assert "agent_limit" not in joined.text and "account_override" not in joined.text
+    assert len(setup.owner.get("/agents").json()["items"]) == held + 1
+    refused = setup.owner.post("/agents", {"handle": "another", "display_name": "Another"})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "agent_limit"
+    assert refused.json()["error"]["details"] == {
+        "limit": held,
+        "count": held + 1,
+        "source": "account_override",
+    }
+
+
 def _demote_owner(s: Setup) -> None:
     with s.engine.begin() as conn:
         conn.execute(

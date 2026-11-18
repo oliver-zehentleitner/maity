@@ -96,6 +96,22 @@ By default, agents running Claude Code write no attribution lines: the settings 
 
 The runner owner can ask a runner to look for a newer version of one of its tools at once ("Update now", `POST /api/v1/runners/<id>/updates` with `{"tool": "claude-code"}`), for a tool the runner reports it updates; the runner view (`GET /api/v1/runners/<id>`) shows the tools a runner reports (`capabilities.tools`: version, kept version, latest, state) and the open requests (`update_requests`). The dashboard has no button for it yet. What the runner does with it: [Keeping Claude Code and Codex current](#keeping-claude-code-and-codex-current).
 
+## Ubuntu: nested user namespaces
+
+On Ubuntu (seen on 26.04), AppArmor's profile `bwrap-userns-restrict` (package `apparmor`) lets bubblewrap start but takes every capability from what it starts. Claude Code's sandbox needs exactly that: its seccomp step opens a second user namespace inside bubblewrap. A Claude Code placement then starts and its session runs `maity`, but every sandboxed command fails, a subagent's included, with `apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied`.
+
+On the local backend, `maity runner check` starts that nesting once as the agents' user, with their `PATH` and each command by its absolute path (`bwrap … -- unshare --user --map-root-user true`). It has three answers:
+
+- `ok harness claude-code: a user namespace starts inside bubblewrap`.
+- An **error**, `… does not start inside bubblewrap (…uid_map…)`, only when unshare could not map the user in the inner namespace: the case above.
+- A **warning**, which blames nothing, when the probe could not tell: a timeout, a failure to start, bubblewrap itself not starting, another error, or `bwrap`, `unshare` or `true` missing from `agent_path`.
+
+On macOS, where the sandbox is Seatbelt, the probe does not run. **On an ssh host it does not run either**: `runner check` there does not detect this lock, so check such a host by hand with the command above as the agents' user.
+
+The fix is on the host, needs root and is the operator's call. One change is verified on an Ubuntu 26.04 runner: in `/etc/apparmor.d/bwrap-userns-restrict`, in profile `unpriv_bwrap`, the line `audit deny capability,` replaced by `allow capability,`, then `apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict`. After it the check's probe passes, and in a running Claude Code agent the `apply-seccomp` error was gone for the session and for a subagent. A `local/` include cannot lift a deny, so the file itself changes. That affects every bubblewrap sandbox on the host (Flatpak, for one), and a later `apparmor` update asks before it overwrites the file. Keep a copy of the original to go back.
+
+Claude Code's own documentation names two other ways that have not been tried on a Maity runner: an AppArmor profile of its own for `/usr/bin/bwrap`, which carries the same profile name as Ubuntu's, so the two may collide, and `sysctl kernel.apparmor_restrict_unprivileged_userns=0`. A public report (anthropic-experimental/sandbox-runtime#429) has that sysctl at 0 and the failure still there.
+
 ## Antigravity (agy)
 
 The runner has an adapter for Google's Antigravity CLI, `agy`, and **now offers the `antigravity` harness.** A configuration with `[harness.antigravity]` is accepted by `maity runner check` and `serve`. agy keeps one command grant the runner cannot fully confine from its own settings — `command(maity)`, which agy applies after reading the invoked command past a leading assignment or wrapper — so agy runs with a known residual risk, which the owner accepted (`req-9spwe33neh1z`). OS-level confinement of that command is being added incrementally (`tsk-zjv2xyhyggnm`).
@@ -178,9 +194,13 @@ default_model = "<provider>/<model>"
 
 **The runner advertises `sandbox: off`.** opencode has no OS sandbox the runner switches on, so the permission configuration above is not an OS boundary. Assume an opencode agent can run any command as the agents' OS user, so keep that user away from the runner's own state and from the other harnesses' clones and logins — a separate OS user for opencode's agents. The owner accepted this residual risk (`req-kezp8rppfhn5`); the planned fix is an OS-level sandbox for opencode, for example bubblewrap (`tsk-nynpvag9zvhh`).
 
+`maity runner check` reports the missing OS sandbox for opencode on both backends — the local one and each ssh host, whose line carries a `<host>: ` prefix. A missing binary or a failed `--version` errors out first; otherwise `check` keeps the `ok harness opencode` line and adds a `harness opencode: no OS sandbox` one. Because every opencode placement is unsandboxed, `require_sandbox = true` under `[harness.opencode]` makes that an **error** (the start is refused, like claude-code and antigravity); without it, it is a **warning**.
+
 ## When an agent goes quiet
 
 An interactive agent listens by running `maity wait`. If that stops (a full disk, a provider limit, a turn it closed), the agent sits at its prompt and its placement still shows as running. The runner notices it by itself: when nothing runs in the session (no `maity wait`, no command the agent started) and the screen has not changed for 30 minutes, it types one line into the session asking the agent to go back to its wait loop. Any answer counts. If the session does not react at all in the next 10 minutes, or the agent has answered three such lines without going back to its wait, the runner restarts the session, and Claude Code picks up its last conversation. **Managed agents** then shows the restart as `hung`. An agent that goes quiet again after every restart is restarted at most five times in a row; then its placement is held as failed until someone restarts it. Once it runs its wait again, the count starts over. A long build or test run is never taken for silence: the command running counts as work. The two times are fixed for now; they become the agent owner's settings with the hub's health settings.
+
+For every Claude Code placement the runner sets `CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP=1` in the start environment, so Claude Code's background-shell memory-pressure reaper does not stop the placement's background `maity wait` under low memory and leave the session running but no longer listening. This turns the memory-pressure stop off for every background shell of the placement, not only the `maity wait`; the host's own memory limits still apply — the runner sets none of its own, so under memory pressure a placement's background shells are bounded by the kernel OOM killer and the operator's unit or cgroup limits, and the lever on a host is how many agents it runs.
 
 The runner never types while someone is attached to the session: attaching pauses the check.
 

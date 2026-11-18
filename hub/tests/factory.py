@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any, Protocol
 
 from sqlalchemy import Connection, Engine, delete, insert, inspect, select, update
@@ -227,6 +228,19 @@ SINGLE_ROLE = {
     "member": ("member", "coder"),
     "guest": ("guest", "coder"),
 }
+
+
+def rules_project(**overrides: Any) -> SimpleNamespace:
+    """A stand-in project row for `rules.generate` without a database: every column the
+    rules read, `settings` included, as a project row always has it (§6.1, §6.9)."""
+    fields: dict[str, Any] = {
+        "name": "p", "rules_version": 1, "state": "build", "state_note": None,
+        "released_at": None, "policy_preset": "x", "claim_policy": "x", "done_authority": "x",
+        "tag_authority": "x", "steward_writes": "x", "lease_seconds": 60,
+        "keep_the_why": False, "rules_markdown": None, "roles": None, "settings": None,
+    }  # fmt: skip
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
 
 
 def trust_and_role(role: str, trust: str | None = None) -> tuple[str, str]:
