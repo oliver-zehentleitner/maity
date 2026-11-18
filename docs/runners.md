@@ -229,6 +229,18 @@ Each entry is a plain command; [`maity runner`](../cli/README.md#maity-runner) l
 
 The hub keeps a retention time per placement (`workspace_retention`: `immediate`, `3h`, `24h` by default, `7d`), and the agent's owner or a project admin can ask for a kept clone to be removed (`POST /projects/<owner>/<slug>/placements/<id>/workspace/remove`). Removing clones when their time is up is the runner's part, and it is not built yet: today the runner keeps every clone until you remove it (`maity runner gc --revoked`).
 
+## A placement's scratch
+
+Reviews and tests leave things behind: evidence folders, a clone of another head, a virtual environment, temporary files. So each Claude Code or Codex placement gets a scratch directory beside its clone, `<workspaces>/<project_id>/.scratch/<placement id>`. The session finds it as `MAITY_SCRATCH`, with `TMPDIR` pointing inside it, and its sandbox may write there. agy and opencode placements get none yet, because the runner has not shown their sandbox can write it.
+
+Nothing in a scratch counts as unsaved work. Once the hub reads the placement as closed and no session of it runs, the runner removes the scratch, writes a line to its log and adds the removal (when, which placement, path, size, why) to `removed.jsonl` in its state directory. A restart, a rejoin and an adoption keep it. Removing it after a stop, on the clone's retention clock, comes with the clone's removal (above), which is not built yet. The runner removes a scratch on a machine only after it has read that machine's agent sessions; while it cannot read them, every scratch there stays. It never makes or removes anything through a link: a link anywhere between the workspaces root and the scratch leaves the scratch as it is: no scratch is made through it (each start says why), and a removal it stops is logged once. On an ssh host, give `workspaces` as a path without a link on the way (the real path, for example `/var/home/...` where `/home` is a link): maity reads a file the agent names in its scratch only from `/` down without a link, so on such a path every read from the scratch is refused and the agent keeps its files in the clone.
+
+- `maity runner status` shows the size of each placement's clone and scratch, measured at most every ten minutes. `maity runner status --removed` also shows the last removals.
+- `maity runner gc --scratch` lists every scratch whose placement is no longer active. `--yes` removes them, and holds the service's lock, so stop the service first. gc asks the hub which placements are active: when it cannot ask, or one entry of the answer cannot be read, it removes nothing. It also reads the agents' sessions first and keeps the scratch of every placement that still has one, even a finished pane; when it cannot read them, it removes nothing.
+- A runner whose own credential was revoked or removed cannot ask the hub any more, so gc cannot help there. Delete `<workspaces>/<project_id>/.scratch/` by hand, as you do its clones. After a revoke you can also pair the runner again: its closed placements are then no longer active, and `maity runner gc --scratch` finds their scratch.
+
+Neither the sizes nor the removals go to the hub.
+
 ## Keeping Claude Code and Codex current
 
 The runner can install Claude Code and Codex and keep them current, per tool and only when you say so in its configuration:
