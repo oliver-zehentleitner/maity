@@ -45,6 +45,76 @@ def test_stale_keys_are_forgotten(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(limiter) == 1
 
 
+def test_a_hit_forgets_idle_keys_without_scanning_the_live_ones(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [1000.0]
+
+    class Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    limiter = Limiter(10, 60, name="test")
+    looked: list[int] = []
+    prune = limiter._prune
+
+    def counted(at: float) -> int:
+        looked.append(prune(at))
+        return looked[-1]
+
+    monkeypatch.setattr(limiter, "_prune", counted)
+    for i in range(5000):
+        limiter.hit(f"old-{i}")
+    now[0] += 30
+    for i in range(5000):
+        limiter.hit(f"new-{i}")
+    assert len(limiter) == 10_000  # all inside the window
+    # Each hit looked at one key, the front one, which was still live: no pass over all.
+    assert max(looked) == 1
+    looked.clear()
+    now[0] += 31  # the old keys are idle now, the new ones are not
+    limiter.hit("fresh")
+    assert looked == [5001]  # the 5000 idle keys and the first live one
+    assert len(limiter) == 5001
+    looked.clear()
+    for i in range(100):
+        limiter.hit(f"another-{i}")
+    assert max(looked) == 1
+    # A key hit again, while the others of its batch are still live, moves behind them: once
+    # they are idle the front pass forgets them and stops at the live ones, not at it.
+    now[0] += 20  # 1081: the new-* keys, hit at 1030, are still inside the window
+    limiter.hit("new-0")
+    now[0] += 11  # 1092: those hit only at 1030 are idle now
+    limiter.hit("fresh-2")
+    assert "new-0" in limiter._hits and "new-1" not in limiter._hits
+
+
+def test_release_and_reset_keep_working_with_the_ordered_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = [0.0]
+
+    class Clock:
+        @staticmethod
+        def monotonic() -> float:
+            return now[0]
+
+    monkeypatch.setattr("maity_hub.ratelimit.time", Clock)
+    limiter = Limiter(1, 10, name="test")
+    wait, mark = limiter.place("a")
+    assert wait == 0
+    limiter.hit("b")
+    limiter.release("a", mark)  # "a" holds no attempt now, ahead of "b"
+    assert limiter.hit("a") == 0  # its place is free again
+    now[0] = 11.0
+    limiter.hit("c")
+    assert len(limiter) == 1  # "b" and "a" left the window
+    limiter.reset()
+    assert len(limiter) == 0 and limiter.hit("c") == 0
+
+
 def test_several_at_once_wait_for_room_for_all(monkeypatch: pytest.MonkeyPatch) -> None:
     now = [0.0]
 
@@ -234,6 +304,27 @@ def test_a_small_limit_counts_every_attempt_exactly_across_replicas(
     assert second.hit("ada") == 0  # exactly ten minutes after the first
 
 
+def test_a_large_limit_asked_exact_counts_every_attempt_across_replicas(
+    shared: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bound stated for any window (the mails to one address, §2.6.4) holds across replicas
+    only with a row per attempt: the two-window estimate lets a burst at a window's end pass."""
+    from maity_hub import shared_counts
+
+    now = [datetime(2026, 11, 17, 0, 9, 50, tzinfo=UTC)]  # late in a fixed window
+    monkeypatch.setattr(shared_counts, "_now", lambda: now[0])
+    first = Limiter(30, 600, name="test.exact", exact=True)
+    second = Limiter(30, 600, name="test.exact", exact=True)
+    assert first.exact and not Limiter(30, 600, name="test.estimate").exact
+    for n in range(30):
+        assert (first if n % 2 else second).hit("ada") == 0
+    now[0] += timedelta(seconds=20)  # the next fixed window: the estimate would weigh these
+    assert first.hit("ada") > 0 and second.hit("ada") > 0
+    first.configure(30, 600)  # the settings' configure keeps it exact
+    assert first.exact
+    assert shared_counts.log_read("test.exact", "ada", 600).total == 30
+
+
 def test_an_exact_limit_gives_back_exactly_what_was_taken(shared: None) -> None:
     limiter = Limiter(3, 60, name="test.exact.back")
     wait, one = limiter.place("ada")
@@ -256,3 +347,23 @@ def test_the_suite_finds_the_limiters_one_attribute_down() -> None:
         for limiter in (limits.by_source, limits.pair_quarter, limits.pair_day):
             assert id(limiter) in found, limiter.name
     assert id(mail_settings.test_limiter) in found
+
+
+def test_a_moment_given_to_place_is_refused_but_for_a_limit_of_one() -> None:
+    # `place(at=)` holds only where a later attempt refuses an earlier moment anyway.
+    wide, one = Limiter(3, 60, name="test.at.wide"), Limiter(1, 60, name="test.at.one")
+    _, mark = wide.place("k")
+    with pytest.raises(ValueError, match="limit of 1"):
+        wide.place("j", at=mark)
+    with pytest.raises(ValueError, match="this process recorded"):
+        one.place("k", at=datetime.now(UTC))
+    assert one.place("k", at=mark) == (0, mark)
+    assert one.place("k", at=mark)[0] > 0
+
+
+def test_a_shared_moment_given_to_place_needs_an_exact_limit_and_a_time(shared: None) -> None:
+    one = Limiter(1, 60, name="test.at.shared")
+    with pytest.raises(ValueError, match="exact limit and a recorded moment"):
+        one.place("k", at=1.0)
+    _, mark = Limiter(1, 60, name="test.at.source").place("k")
+    assert one.place("k", at=mark) == (0, mark)

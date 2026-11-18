@@ -465,6 +465,21 @@ async def runner_events(request: Request, caller: RunnerCaller) -> JSONResponse:
 # --- placements and reports (§15.7, §15.8) ---------------------------------------------------
 
 
+class Quota(Strict):
+    """Which limit holds a start with `capacity` (§15.7): the runner's or one target's."""
+
+    scope: Literal["runner", "target"]
+    target: Name | None = None
+    count: int = Field(ge=0, le=10_000)
+    max: int = Field(ge=0, le=10_000)
+
+    @model_validator(mode="after")
+    def _target_with_target(self) -> Quota:
+        if (self.target is not None) != (self.scope == "target"):
+            raise ValueError("target goes with scope target, and only with it")
+        return self
+
+
 class Status(Strict):
     seq: int = Field(ge=1, le=2**31 - 1)
     observed_generation: int = Field(ge=0, le=2**31 - 1)
@@ -480,6 +495,8 @@ class Status(Strict):
     target: Name
     since: AwareDatetime
     session_hint: Text | None = None
+    # With `capacity` only; a runner from before it sends none (§15.7).
+    quota: Quota | None = None
 
 
 def _check_codes(body: Status) -> None:
@@ -492,6 +509,8 @@ def _check_codes(body: Status) -> None:
         errors["reason"] = "unknown"
     elif body.state not in pl.REASONS[body.reason]:
         errors["reason"] = "not_with_state"
+    if body.quota is not None and body.reason != "capacity":
+        errors["quota"] = "only_with_capacity"
     if body.reason == "join_failed" and body.detail is not None:
         # Any hub error code (§15.7), also one that names a detail of another reason.
         if not pl.JOIN_DETAIL_CODE.fullmatch(body.detail):

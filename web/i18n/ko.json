@@ -2305,6 +2305,8 @@
   "mail.day.thu": "목요일",
   "mail.day.tue": "화요일",
   "mail.day.wed": "수요일",
+  "mail.field.verification_max_per_hour": "시간당 주소 확인 메일",
+  "mail.field.invitation_max_per_hour": "시간당 초대 메일",
   "mail.kind.chat": "채팅 메시지",
   "mail.kind.inbox": "나에게 온 요청",
   "mail.kind.invitation": "프로젝트 초대",
@@ -2352,6 +2354,21 @@
   "mail.count.sign_in": {
     "other": "로그인 메일 {count}건"
   },
+  "mail.count.verification": {
+    "other": "확인 메일 {count}통"
+  },
+  "mail.count.invitation": {
+    "other": "초대 메일 {count}통"
+  },
+  "mail.count.second_factor": {
+    "other": "2차 인증 메일 {count}통"
+  },
+  "mail.count.second_factor_dropped": {
+    "other": "버린 2차 인증 메일 {count}통"
+  },
+  "mail.count.waiting": {
+    "other": "대기 중인 확인·초대 메일 {count}통"
+  },
   "mail.enable": "메일 켜기",
   "mail.field.from_address": "발신 주소",
   "mail.field.from_name": "발신자 이름",
@@ -2359,6 +2376,7 @@
   "mail.field.max_per_hour": "시간당 알림 메일 수",
   "mail.field.port": "SMTP 포트",
   "mail.field.reply_to": "회신 주소",
+  "mail.field.second_factor_max_per_hour": "시간당 2단계 인증 메일 수",
   "mail.field.security_max_per_hour": "시간당 보안 메일 수",
   "mail.field.sign_in_max_per_hour": "시간당 로그인 메일 수",
   "mail.field.tls": "연결 보안",
@@ -2366,6 +2384,7 @@
   "mail.incomplete": "메일 설정이 완전하지 않습니다: {missing}.",
   "mail.keys": "서명 키: {signing}. 인스턴스 암호화 키: {secret}. 키는 환경 설정에서 지정합니다.",
   "mail.last_hour": "최근 1시간: {notifications}, {security}, {sign_in}, {failures}, {queued}.",
+  "mail.last_hour_own": "그 밖에 최근 1시간: {verification}, {invitation}, {second_factor}, {dropped}, {waiting}.",
   "mail.not_saved": "저장하지 못했어요: {reason}",
   "mail.not_set": "설정되지 않음",
   "mail.password.both": "새 비밀번호를 정하거나 저장된 비밀번호를 삭제하세요. 둘 다 할 수는 없습니다.",
