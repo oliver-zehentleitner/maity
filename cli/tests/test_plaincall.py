@@ -107,7 +107,7 @@ RUNNER = [
     "(maity runner status)",
     "maity runner status > out.txt",
 ]
-# A word `maity` followed anywhere later by a word `runner`, however the line spells them.
+# A word `maity` followed later by a word `runner`, in the spellings below.
 RUNNER_ANYWHERE = [
     # a quoted or escaped operator is a word, not the end of a command
     "maity --for ';' runner status",
@@ -136,6 +136,7 @@ RUNNER_ANYWHERE = [
     # text: refused all the same, the reason names --body-file
     "maity say lotse runner",
     "maity say --to lotse 'maity runner status'",
+    "maity say lotse 'the runner is up'",
     "maity task create maity --body runner",
     "echo maity; runner status",
     # a quote that never closes, with `maity` and an expanding word
@@ -149,7 +150,6 @@ RUNNER_ANYWHERE = [
 ]
 NOT_RUNNER = [
     "maity runners",
-    "maity say lotse 'the runner is up'",
     "maity task show tsk-x",
     "ls runner/",
     "git log --oneline runner",
@@ -212,6 +212,71 @@ UNREADABLE = [
 
 @pytest.mark.parametrize("command", [COMMENTED, *UNREADABLE])
 def test_a_line_not_read_to_the_end_is_refused_whatever_it_holds(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+# Lines that name `maity` and hold a comment, a heredoc or more than one line.
+NOT_ONE_READ_LINE = [
+    'git status # \'"\nmaity --for="\' " runner status # "',
+    'NODE_ENV=1 maity roles # \'"\nmaity --for="\' " runner status # "',
+    'cat <<EOF >/dev/null\n\'"\nEOF\nmaity --for="\' " runner status # "',
+]
+WITH_A_COMMENT = [
+    "maity status # note",
+    "maity status #",
+    "git status # maity",
+    "true;#maity",
+    "x 'a #b' maity",
+    "# maity",
+    "git status # M\\aity",
+    "git status # m''aity",
+    "git status # MAITY",
+]
+WITH_A_HEREDOC = [
+    "cat <<EOF maity",
+    "cat <<<maity",
+    "cat <<-'EOF' MAITY",
+]
+ON_MORE_THAN_ONE_LINE = [
+    "echo x\nmaity status",
+    "maity status\necho x",
+    'echo x\n\nM""aity',
+]
+# Lines these rules do not refuse.
+READ_TO_THE_END = [
+    "maity say --to lotse#wtwy x",
+    "maity say x a#b",
+    "maity say x 'a#b'",
+    "  maity resume  \n",
+    "git status # no name here",
+    "cat <<EOF x",
+    "echo a\necho b",
+]
+
+
+@pytest.mark.parametrize(
+    "command", [*NOT_ONE_READ_LINE, *WITH_A_COMMENT, *WITH_A_HEREDOC, *ON_MORE_THAN_ONE_LINE]
+)
+def test_a_line_naming_maity_that_is_not_one_read_line_is_refused(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == runner_refusal(command)
+
+
+@pytest.mark.parametrize("command", READ_TO_THE_END)
+def test_a_line_read_to_the_end_is_not_refused_as_unread(command: str) -> None:
+    assert plaincall.refusal(bash(command)) != plaincall.RUNNER_REFUSED
+
+
+# Words in quoted text count in the line's order, with the words around them.
+IN_LINE_ORDER = [
+    "echo 'maity --for=' ' runner status'",
+    "echo 'a maity' 'b' 'runner c'",
+    "echo 'maity' \"x runner\"",
+    "sh -c 'maity x' -- 'sh -c \"runner y\"'",
+]
+
+
+@pytest.mark.parametrize("command", IN_LINE_ORDER)
+def test_quoted_words_count_in_line_order(command: str) -> None:
     assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
 
 

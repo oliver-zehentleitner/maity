@@ -144,9 +144,12 @@ goes in a file in the clone (`--body-file`, `--summary-file`,
 `--last-file`, `--next-file`) or in single quotes.
 `maity runner` is the runner's own command: in a placed Claude Code
 session, a line in which a word `runner` follows a word `maity` is refused,
-also when `runner` is only text, so such text goes in a file
-(`--body-file`). A line with a quote that never closes, or with quoted text
-nested more than four levels deep, is refused as well.
+also when `runner` is only text, quoted or not, so such text goes in a file
+(`--body-file`). A line that names `maity` and holds a comment (`#` at the
+start of a word), a heredoc (`<<`) or more than one line is refused
+whatever it starts with, and so is a line with a quote that never closes or
+with quoted text nested more than four levels deep: run each `maity`
+command on a line of its own, without a comment.
 
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a

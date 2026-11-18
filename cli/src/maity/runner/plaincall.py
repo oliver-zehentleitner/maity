@@ -4,13 +4,14 @@
 starts with `maity` through only when it is one plain call: words of letters, digits and
 `_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
 redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is refused before
-the command runs (cli/context/runner.md). On any line, a word `maity` followed anywhere
-later by a word `runner` is refused as well (`calls_runner`, which says how it reads words):
-those commands are the runner's own, and the runner never starts them through an agent's tool
-call. A line the hook cannot read to the end is refused too. A command the shell builds only
-from expansions or from input is not read; it does not start with a literal `maity` word, so
-the sandbox exclusion does not match it and its `maity` runs inside the sandbox. Any other
-tool call is left to the permission rules: the hook prints nothing and exits 0.
+the command runs (cli/context/runner.md). On any line, a word `maity` followed later by a word
+`runner`, as `calls_runner` splits words, is refused as well: those commands are the runner's
+own, and the runner never starts them through an agent's tool call. A line that names `maity`
+anywhere (`names_maity`) is refused when it holds a comment, a heredoc or more than one line
+(`read_whole`), and any line is refused when its quotes never close or its quoted text is
+nested too deep: the hook does not read such lines to the end. A command the shell builds
+only from expansions or from input is not read. Any other tool call is left to the
+permission rules: the hook prints nothing and exits 0.
 
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
 stderr. Input it cannot read is refused too.
@@ -39,13 +40,18 @@ _SEPARATORS = frozenset("();<>|&\n")
 _EXPANDS = frozenset("$`*?[{")
 # How deep quoted text is read again as a line of its own (`sh -c '...'`).
 _NESTING = 4
+# Characters after which a `#` is inside a word, not the start of a comment: printable ASCII
+# that is neither a space nor one of the shell's operators. After anything else, or at the
+# line's start, a `#` counts as a comment.
+_IN_WORD = frozenset(chr(c) for c in range(0x21, 0x7F)) - frozenset("|&;()<>`")
 
 RUNNER_REFUSED = (
     "`maity runner` is the runner's own command and does not run from a placed session's tool "
     "call: a line where a word `runner` follows a word `maity` is refused, and so is a line "
-    "the hook cannot read to the end (a quote that never closes, quoted text nested too "
-    "deep). Use the other `maity` commands; text that holds both words goes in a file in "
-    "this clone, passed with `--body-file`."
+    "the hook cannot read to the end (one that names `maity` and holds a comment, a heredoc "
+    "or more than one line; a quote that never closes; quoted text nested too deep). Run "
+    "each `maity` command on a line of its own, without a comment; text that holds both "
+    "words goes in a file in this clone, passed with `--body-file`."
 )
 REFUSED = (
     "A `maity` command runs only as one plain call: nothing piped, chained, redirected, sent to "
@@ -108,12 +114,14 @@ class _Unreadable(ValueError):
 
 
 def _words(line: str) -> list[tuple[str, bool]]:
-    """The line's words as the shell splits and unquotes them, each with whether the shell
-    would still expand it (`$`, a backtick, a glob, a brace), so that its final text is not
-    known here; a word that starts with an unquoted `~` and holds no `/` counts as one too.
-    Words end at unquoted spaces, tabs and operators; a backslash-newline joins
-    the lines; nothing is expanded and comments are read like any other text. Raises
-    _Unreadable for a quote that is never closed."""
+    """The line's words, split and unquoted by the rules below, each with whether it holds
+    something the shell would still expand (`$`, a backtick, a glob, a brace), so that its
+    final text is not known here; a word that starts with an unquoted `~` and holds no `/`
+    counts as one too. Words end at unquoted spaces, tabs and operators; single quotes,
+    double quotes, `$'...'` and backslashes are taken off; a backslash-newline joins the
+    lines; nothing is expanded. A `#` and a heredoc are read like any other text, so a line
+    that holds them is not split as the shell splits it: `read_whole` refuses such a line
+    when it names `maity`. Raises _Unreadable for a quote that is never closed."""
     words: list[tuple[str, bool]] = []
     chars: list[str] = []
     started = expands = tilde = False
@@ -179,31 +187,60 @@ def _words(line: str) -> list[tuple[str, bool]]:
     return words
 
 
-def calls_runner(command: str, depth: int = 0) -> bool:
+def names_maity(command: str) -> bool:
+    """Whether `maity` appears anywhere in the line, in any case, also with quotes or
+    backslashes between its letters."""
+    return "maity" in re.sub(r"[\\'\"]", "", command).lower()
+
+
+def read_whole(command: str) -> bool:
+    """Whether the hook reads the line to the end as one line: it holds no newline (once
+    spaces, tabs and newlines at either end are taken off), no `<<` and no `#` that may start
+    a comment, that is, a `#` at the line's start or after anything but printable ASCII other
+    than the shell's operators. Quoting is not looked at: a `#` or `<<` inside quotes counts
+    the same."""
+    text = command.strip(" \t\n")
+    if "\n" in text or "<<" in text:
+        return False
+    return all(c != "#" or (i > 0 and text[i - 1] in _IN_WORD) for i, c in enumerate(text))
+
+
+class _Seen:
+    """What `calls_runner` has seen so far on the line, quoted text read again included."""
+
+    def __init__(self) -> None:
+        self.maity = self.open = False
+
+
+def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> bool:
     """Whether the line may run `maity runner`: a word `maity` (`_is_maity`) is followed
-    anywhere later on the line by a word `runner` (in any case). Neither has to be the
-    command word, and operators between them do not matter. A word the shell would still
-    expand (`_words` says which) counts as `runner` after a `maity` word and as `maity`
-    before a `runner` word.
+    later on the line by a word `runner` (in any case), as `_words` splits them. Neither has
+    to be the command word, and operators between them do not matter. A word that `_words`
+    says the shell would still expand counts as `maity` before a later `runner` word, and as
+    `runner` after a `maity` word in the same text.
     Quoted text that holds spaces or operators is read again the same way, as another shell
-    would read it, up to `_NESTING` levels deep; such text below that counts whatever it
-    holds. A line whose quotes never close counts whatever it holds."""
+    would read it, up to `_NESTING` levels deep; its words continue the line where the text
+    stands, so a `maity` word in it counts before a `runner` word after it and the other way
+    round. Such text below that depth counts whatever it holds. A line whose quotes never
+    close counts whatever it holds."""
     try:
         words = _words(command)
     except _Unreadable:
         return True  # not read to the end: refused, whatever it holds
-    seen_maity = seen_open = False
+    seen = _Seen() if seen is None else seen
+    maity_here = False  # a `maity` word in this text: an expanding word after it counts
     for text, expands in words:
-        if text.lower() == "runner" and (seen_maity or seen_open):
+        if text.lower() == "runner" and (seen.maity or seen.open):
             return True
-        if expands and seen_maity:
+        if expands and maity_here:
             return True
         if any(c in " \t" or c in _SEPARATORS for c in text) and (
-            depth >= _NESTING or calls_runner(text, depth + 1)
+            depth >= _NESTING or calls_runner(text, depth + 1, seen)
         ):
             return True  # past the depth limit, text that could be a command is refused
-        seen_maity = seen_maity or _is_maity(text)
-        seen_open = seen_open or expands
+        maity_here = maity_here or _is_maity(text)
+        seen.maity = seen.maity or maity_here
+        seen.open = seen.open or expands
     return False
 
 
@@ -217,7 +254,7 @@ def refusal(payload: object) -> str | None:
         return None
     if applies(command) and not plain(command):
         return REFUSED  # refused either way; this reason names the way out
-    if calls_runner(command):
+    if calls_runner(command) or (names_maity(command) and not read_whole(command)):
         return RUNNER_REFUSED
     return None
 
