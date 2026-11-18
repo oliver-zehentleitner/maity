@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -345,8 +346,7 @@ def test_other_command_lines_are_left_to_the_permission_rules(command: str) -> N
 
 # Assignments before `maity` to each name that may stand there: one, several, a quoted value.
 ASSIGNMENTS = [
-    "MAITY_STATE_DIR=/tmp/s",
-    "MAITY_X_1=1",
+    "MAITY_WAIT_TIMEOUT=5",
     "NO_COLOR=1",
     "LANG=C.UTF-8",
     "LC_ALL=C",
@@ -355,6 +355,7 @@ ASSIGNMENTS = [
     "TZ=UTC LANG=C",
     "TZ='x y'",
     'TZ="x y"',
+    "MAITY_WAIT_TIMEOUT=5 NO_COLOR=1 LANG=C LC_ALL=C TZ=UTC",
 ]
 # Assignments to any other name, and every `+=`.
 NOT_ALLOWED = [
@@ -373,13 +374,80 @@ NOT_ALLOWED = [
     "_1=x",
     "maity_x=1",
     "MAITY_=1",
+    "MAITY_FOO=1",
+    "MAITY_X_1=1",
+    "MAITY_WAIT_TIMEOUTX=5",
+    "MAITY_WAIT_TIMEOUT=5 MAITY_FOO=1",
     "LANGUAGE=x",
     "TZ=UTC PATH=.",
     "A+=1",
     "_X=1 B+=2",
     "MAITY_X+=1",
+    "MAITY_WAIT_TIMEOUT+=5",
     "TZ+=x",
 ]
+
+# The `MAITY_` names maity's code reads or sets that are not documented for agents: the
+# runner, its supervisor or the placement sets them, and they decide what maity trusts (the
+# placement's rules, the clone's `.git`, git's private repository and the runner's records,
+# the state directory and with it the credential, the session's mode at the hub, the
+# runner's config, the supervisor's error channel, the scratch). None may stand before
+# `maity` (context/runner.md 63492c65).
+RUNNER_TRUSTED = (
+    "MAITY_PLACEMENT",
+    "MAITY_GIT_INODE",
+    "MAITY_GIT_PRIVATE",
+    "MAITY_STATE_DIR",
+    "MAITY_SUPERVISOR",
+    "MAITY_RUNNER_CONFIG",
+    "MAITY_ERROR_LINE",
+    "MAITY_SCRATCH",
+)
+AGENTS_MD = SRC.parent.parent / "docs" / "agents.md"
+
+
+def code_maity_names() -> set[str]:
+    """The `MAITY_` environment names maity's code names: every string literal that starts
+    with `MAITY_` and a letter (`"MAITY_STATE_DIR"`, `f"MAITY_SUPERVISOR is ..."`), in every
+    module but this hook. Python names such as `MAITY_NOT_PLAIN` or `CLAUDE_MAITY_PROMPT` are
+    no string literal, and the bare prefix `"MAITY_"` names no variable."""
+    found: set[str] = set()
+    for path in (SRC / "maity").rglob("*.py"):
+        if path.name != "plaincall.py":
+            found.update(re.findall(r"[\"'](MAITY_[A-Z][A-Z0-9_]*)", path.read_text()))
+    return found
+
+
+def test_the_scan_finds_every_runner_trusted_name_and_no_unclassified_one() -> None:
+    allowed = {n for n in plaincall.ALLOWED_BEFORE_MAITY if n.startswith("MAITY_")}
+    assert code_maity_names() == set(RUNNER_TRUSTED) | allowed
+
+
+def test_no_runner_trusted_name_is_on_the_allow_list() -> None:
+    names = plaincall.ALLOWED_BEFORE_MAITY
+    assert isinstance(names, tuple)
+    assert not set(names) & set(RUNNER_TRUSTED)
+    patterns = [n for n in names if n.startswith("MAITY") and not re.fullmatch(r"MAITY_\w+", n)]
+    assert not patterns  # no `MAITY_*`: a `MAITY_` name stands on the list by its name
+    for name in [*RUNNER_TRUSTED, *code_maity_names() - set(names), "MAITY_FOO", "MAITY_"]:
+        assert plaincall._ASSIGNMENT.match(name + "=1") is None, name
+
+
+def test_every_maity_name_on_the_allow_list_is_read_by_maity_and_documented_for_agents() -> None:
+    docs = AGENTS_MD.read_text()
+    for name in plaincall.ALLOWED_BEFORE_MAITY:
+        if name.startswith("MAITY_"):
+            assert name in code_maity_names(), name
+            assert re.search(rf"`{name}(=[^`]*)?`", docs), name
+
+
+@pytest.mark.parametrize("name", RUNNER_TRUSTED)
+def test_maity_after_a_runner_trusted_name_is_refused_outright(name: str) -> None:
+    assert plaincall.refusal(bash(f"{name}=1 maity status")) == plaincall.PREFIX_REFUSED
+
+
+def test_maity_wait_after_its_timeout_variable_passes() -> None:
+    assert plaincall.refusal(bash("MAITY_WAIT_TIMEOUT=5 maity wait")) is None
 
 
 @pytest.mark.parametrize("prefix", ASSIGNMENTS)

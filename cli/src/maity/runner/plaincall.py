@@ -2,8 +2,8 @@
 
 `maity` runs outside the sandbox (`excludedCommands`). This hook lets a command line whose
 first word is `maity`, or whose words before a word `maity` are only assignments to the names
-`_ASSIGNMENT` allows (`held`), through only when it is one plain call: words of letters, digits
-and `_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
+in `ALLOWED_BEFORE_MAITY` (`held`), through only when it is one plain call: words of letters,
+digits and `_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
 redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is refused before the
 command runs (cli/context/runner.md). Any other line in which `maity` is a word (`prefixed`) is
 refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
@@ -69,7 +69,8 @@ REFUSED = (
 )
 PREFIX_REFUSED = (
     "A line in which `maity` is a word runs only as one plain `maity …` call at the start of "
-    "the line, after nothing but assignments to MAITY_*, NO_COLOR, LANG, LC_* or TZ: no "
+    "the line, after nothing but assignments to MAITY_WAIT_TIMEOUT, NO_COLOR, LANG, LC_* or "
+    "TZ: no "
     "other assignment, command, keyword, `!`, redirection, subshell or group before it, and "
     "`maity` by its name, not by a path. Run "
     "`maity …` at the start of the line; text that mentions `maity` goes in a file in this "
@@ -77,11 +78,23 @@ PREFIX_REFUSED = (
 )
 
 
-# The assignments that may stand before `maity`: an allowed name, unquoted, then `=`. An
-# assignment can pick the program the shell runs or load code into it (`PATH`, `LD_PRELOAD`,
-# `PYTHONPATH`, `BASH_ENV`, ...), so the names are allowed, not refused (context/runner.md);
-# `+=` is refused as well. The value is not judged here: `plain` refuses one that expands.
-_ASSIGNMENT = re.compile(r"(?:MAITY_[A-Z0-9_]+|NO_COLOR|LANG|LC_[A-Z0-9_]+|TZ)=")
+# The names an assignment before `maity` may set, each by its exact name; `LC_*` is the one
+# family. An assignment can pick the program the shell runs or load code into it (`PATH`,
+# `LD_PRELOAD`, `PYTHONPATH`, `BASH_ENV`, ...), and the runner's own `MAITY_` variables decide
+# what maity trusts (the placement, the clone's `.git`, the state directory), so the names are
+# allowed, not refused, and a `MAITY_` name only when docs/agents.md documents it for agents
+# (context/runner.md). `test_plaincall.py` fails when a runner-trusted name is added here.
+ALLOWED_BEFORE_MAITY = ("MAITY_WAIT_TIMEOUT", "NO_COLOR", "LANG", "LC_*", "TZ")
+# An allowed name, unquoted, then `=`; `+=` is refused as well. The value is not judged here:
+# `plain` refuses one that expands.
+_ASSIGNMENT = re.compile(
+    "(?:"
+    + "|".join(
+        re.escape(name[:-1]) + "[A-Z0-9_]+" if name.endswith("*") else re.escape(name)
+        for name in ALLOWED_BEFORE_MAITY
+    )
+    + ")="
+)
 
 
 def _placement(command: str) -> str | None:

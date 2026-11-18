@@ -139,14 +139,16 @@ first: `maity say <to> --type notice - <<'EOF'` with a quoted heredoc, or
 `-m -`/`--last-file` and `--next-file` (`checkpoint`).
 A placed Claude Code agent under the runner's sandbox runs `maity` only as
 one plain call at the start of the line: a line whose first word is
-`maity`, or that starts with assignments to `MAITY_*`, `NO_COLOR`, `LANG`,
-`LC_*` or `TZ` and then `maity` (`TZ=UTC maity status`), and holds a
+`maity`, or that starts with assignments to `MAITY_WAIT_TIMEOUT`,
+`NO_COLOR`, `LANG`, `LC_*` or `TZ` and then `maity`
+(`TZ=UTC maity status`), and holds a
 heredoc, a pipe, a chain, a redirect or a `$` is refused before it runs,
 so its text
 goes in a file in the clone (`--body-file`, `--summary-file`,
 `--last-file`, `--next-file`) or in single quotes.
 Anything else before a word `maity` refuses the line outright: an
-assignment to any other name or with `+=`, another command (`env`,
+assignment to any other name (any other `MAITY_` variable included) or
+with `+=`, another command (`env`,
 `sudo`, `sh -c`, `eval`, any other), a shell keyword, `!`, a redirection,
 a subshell or a group, and `maity` by a path. A word counts as `maity`
 also once the backslashes and quotes in it are taken off. That covers
