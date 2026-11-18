@@ -164,20 +164,27 @@ only the runner's own process may be signalled.
 
 `maity runners` shows a runner's `running`/`max_agents` straight from the
 capabilities the runner advertised; the hub stores and returns that number
-unchanged. The count is kept correct across a reconnect four ways, together:
+unchanged. The count is kept correct across a reconnect, together:
 
 - The supervisor writes each advertised total (and the per-target counts) back
-  into the shared capabilities dict, so serve's next `hello` carries the live
-  count, not the `running: 0` the dict was first built with.
+  into the shared capabilities dict, so serve's next `hello` carries the last
+  counted total, not the `running: 0` the dict was first built with.
 - `serve`'s `hello` reads that dict through the supervisor under the
   supervisor's lock (`advertised_capabilities`), and after each `hello` marks an
   invalidation — it bumps a generation counter — so the next tick re-PATCHes
   whatever the count then is, even 0, an empty counts dict, or a count unchanged
   since the last PATCH.
-- A successful PATCH commits its counts (and the capabilities write-back) only
-  when no invalidation arrived while it was in flight; it records the generation
-  it reflects, so an older in-flight PATCH cannot clear an invalidation it did
-  not send for.
+- What keeps a reconnect pending until a live send answers it is the generation
+  a PATCH commits: it records the generation captured at send-start, which for a
+  PATCH already in flight when the reconnect arrived is older than the reconnect,
+  so `dirty` stays true. A forced *cached* send (`advertise_now`, a reachability
+  change: `running is None`) refreshes the throttle but does not advance the
+  generation at all, so it cannot consume a pending reconnect either.
+- A successful PATCH commits only when no invalidation arrived while it was in
+  flight. This guard does not keep the invalidation alive (the captured
+  generation does); it keeps a stale, in-flight PATCH's counts out of
+  `advertised_counts` / `advertised_running` / the capabilities write-back, so a
+  PATCH that started before the reconnect never overwrites the live state.
 - `capabilities.build` starts every target's `running` at 0, the honest value
   before anything is counted; the supervisor refreshes them.
 

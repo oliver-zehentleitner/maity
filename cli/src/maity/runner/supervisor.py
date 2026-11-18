@@ -1463,15 +1463,20 @@ class Supervisor:
             self.log(f"supervisor: advertising running={total} failed ({exc})")
             return
         with self.lock:
-            # Commit only if no invalidation arrived while this PATCH was in flight; otherwise an
-            # older in-flight PATCH would swallow a reconnect's invalidation (the cache would read
-            # as `sent`) and the next tick would be suppressed. Left uncommitted, it stays dirty
-            # and the next tick sends again.
+            # Commit only if no invalidation arrived while this PATCH was in flight; otherwise a
+            # stale (older) PATCH would write its counts into `advertised_counts`/
+            # `advertised_running`/the capabilities, over the live state. Left uncommitted it stays
+            # dirty (its captured `gen` is older than the reconnect's) and the next tick re-sends.
             if self.invalidation_gen != gen:
                 return
             self.advertised_counts, self.advertised_at = counts, now
             self.advertised_running = total
-            self.advertised_gen = gen
+            # Advance the advertised generation only on a live send (`running` is the tick's
+            # per-target counts). A forced cached send (`running is None`: `advertise_now`, a
+            # reachability change) leaves the generation behind, so a reconnect's invalidation
+            # stays pending and the next live tick re-sends the current count, not the cache.
+            if running is not None:
+                self.advertised_gen = gen
             # The live counts also go back into the shared capabilities, so serve's next `hello`
             # carries this total and these per-target counts, not the 0 the dict was built with.
             # `self.lock` guards these `running` fields -- the one place the tick thread and

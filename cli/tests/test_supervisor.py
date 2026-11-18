@@ -1127,13 +1127,17 @@ def test_a_reconnect_with_a_zero_count_reaches_the_hub(world: Any) -> None:
 
 
 def test_an_inflight_advertise_does_not_swallow_a_reconnect(world: Any) -> None:
-    """P2.2: a reconnect that arrives while a PATCH is in flight must not be lost. The in-flight
-    PATCH(2) must not commit over the invalidation, so the next tick sends again.
+    """P2.2: a reconnect that arrives while a PATCH is in flight must not be committed over. The
+    stale (older) PATCH(2) must not write its counts into the committed advertisement; the next
+    tick re-sends. The invalidation itself survives because the committed generation is the one
+    captured at send-start (older than the reconnect), leaving ``dirty`` true -- the generation
+    guard's job is to keep the stale PATCH's counts out of ``advertised_counts`` /
+    ``advertised_running`` / the capabilities write-back.
 
-    Counter-check (red on 9ca66dba): the in-flight PATCH's write-back set the cache
-    unconditionally, overwriting the reconnect's empty cache, so the next tick (count 2) was
-    suppressed and no second PATCH went out. Mutant killed: the generation guard dropped from the
-    commit."""
+    Counter-check (red on 9ca66dba): the in-flight PATCH's write-back committed unconditionally, so
+    both the re-send and the running count go wrong. Mutant killed: drop the guard
+    ``if self.invalidation_gen != gen: return`` -> the stale PATCH(2) commits
+    ``advertised_running == 2`` and the assert below fails."""
     sup, backend, clock, fake, svc = connected(world, FakeHub(gate_total=2))
     adopt(sup, backend, 3)
     sup.tick()  # PATCH(1), committed
@@ -1153,6 +1157,9 @@ def test_an_inflight_advertise_does_not_swallow_a_reconnect(world: Any) -> None:
     sup.reconnected()  # the reconnect's invalidation arrives during the in-flight PATCH
     fake.patch_release.set()
     worker.join(5)
+
+    # The raced PATCH(2) must not have committed its counts over the live state.
+    assert sup.advertised_running == 1, sup.advertised_running
 
     before = len(fake.patched)
     clock.now += 1  # inside the throttle: only the pending invalidation can make this send
@@ -1179,6 +1186,30 @@ def test_the_run_loop_signals_the_reconnect(world: Any) -> None:
         svc.run()  # one connect cycle: hello, the run loop's reconnect signal, then Stop
 
     clock.now += 1  # inside the advertise throttle
+    sup.tick()
+    assert fake.running == 0, fake.running
+
+
+def test_a_forced_cached_advertise_keeps_the_reconnect_pending(world: Any) -> None:
+    """P3: a forced *cached* advertise (``advertise_now`` for a keeper publish, or a reachability
+    change) must not consume a pending reconnect. It sends the cached count and refreshes the
+    throttle, but leaves the invalidation pending so the next live tick still re-sends.
+
+    Counter-check (red without the fix): the forced cached send advanced the advertised generation,
+    clearing the invalidation; the throttled live tick was then suppressed and the hub stayed at
+    the cached 1. Mutant: dropping the ``running is not None`` guard on ``self.advertised_gen``."""
+    sup, backend, clock, fake, svc = connected(world)
+    adopt(sup, backend, 3)
+    sup.tick()  # PATCH(1), committed; cached count is 1
+    assert fake.running == 1
+
+    backend.live.pop("maity_maity_agent-3", None)
+    sup.update([])  # the live count is now 0
+    sup.reconnected()  # a reconnect is pending
+    sup.advertise_now()  # a forced CACHED send (running is None) re-sends the cached 1
+    assert fake.running == 1
+
+    clock.now += 1  # inside the throttle: only the still-pending invalidation can make this send
     sup.tick()
     assert fake.running == 0, fake.running
 
