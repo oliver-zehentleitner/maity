@@ -2237,6 +2237,28 @@ chat_access_agent = Table(
     **MYSQL_TABLE,
 )
 
+# The history of a human's lists (docs/api.md §9.6, "History"): one row per change of an entry
+# (`kind` `entry`) and per answer to the request to chat with the human's agents (`answer`), in
+# the order written (`n`). `data` is the item as stored: the entry as it was, the cause, the
+# answer's button and ticks. `entry_id` has no foreign key: the entry may be gone. Only that
+# human reads it; deleted with the account, in its export; at most `chat_access_history.KEPT`
+# per human.
+chat_access_history = Table(
+    "chat_access_history",
+    metadata,
+    Column("n", BIG_ID, primary_key=True, autoincrement=True),
+    _id("id", nullable=False, unique=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("kind", String(8), nullable=False),  # entry, answer
+    Column("entry_id", String(ID)),
+    Column("data", JSON_VALUE, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_chat_access_history_human", "human_id", "n"),
+    CheckConstraint("kind IN ('entry', 'answer')", name="kind"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
 # How far a member has read a conversation: `unread` counts the others' messages
 # after `last_seq` (a direct one's human party; a group chat's participants).
 conversation_read = Table(

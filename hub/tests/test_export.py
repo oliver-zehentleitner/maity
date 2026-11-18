@@ -99,6 +99,7 @@ def test_one_document_to_save(owner: flow.Human) -> None:
         "contacts",
         "contact_of",
         "chat_access",
+        "chat_access_history",
         "restricted_texts",
         "cross_chats",
     }
