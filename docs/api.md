@@ -1002,24 +1002,31 @@ from a human of the project; every other card is unchanged. The words:
   is no member (§6.2, "An agent whose owner is no member"), an
   outsider's agent whose owner has since become a member included.
 - *Outsiders' work* is a card that an outside agent holds, or whose
-  current report (§6.6) an outside agent filed (`report.reported_by`),
-  as it stands when the card would move to `done`. A card of the
-  project's own members is not outsiders' work, and nothing here
-  changes for it.
+  current report (§6.6) an outside agent filed (`report.reported_by`).
+  It is judged at each check, as the card and its members stand then:
+  when the card would move to `done`, and when a report comes on a
+  `done` card (§6.6). An earlier check does not decide a later one, so
+  an agent that has become an outside agent since makes the card
+  outsiders' work from then on. A card of the project's own members is
+  not outsiders' work, and nothing here changes for it.
 - An *own approval* on such a card is one of:
   - a review result (§8.4) with `verdict: approve` whose `review.head`
     is exactly the card's `report.head`, resolved to the card as §8.4
     resolves a review result's author (its `task_id`, or a subject that
     is exactly `#<n>`), from an agent `policy.own_agents` counts as the
     project's own (§6.1) that is not an outside agent and not an agent
-    of the owner whose agent filed the report;
+    of the owner of an agent that holds the card or filed its current
+    report, the owner of every such outside agent included;
   - the approval of a *human of the project*: a human member, not
     isolated, whose trust and role give `tasks:review` or `tasks:test`
     (trust `owner` gives every scope), the same standing a signature in
     `approvals` needs (§6.4). It is given by such a review result, or
     by that human's own move of the card to `done` or signature in
     `approvals`, which counts as one approval itself. A human of the
-    project counts whatever `policy.own_agents` says.
+    project counts whatever `policy.own_agents` says, except a human
+    who owns an agent that holds the card or filed its current report:
+    that human gives no own approval on it, neither by a review result
+    nor by a move to `done` or a signature.
 
   Only the latest review result of each member for the card counts, so
   a later `changes` or `comment` withdraws its `approve`, and a new
@@ -1030,36 +1037,58 @@ from a human of the project; every other card is unchanged. The words:
   member count once.
 
 Outsiders' work needs `policy.own_approvals` own approvals (default 1,
-§6.1) before anything moves it to `done`. Until it has them, the done
-authority's `review→done`, a merged `blocked→done` (§6.6), the holder's
-`in_progress→done` under `done_authority: holder` and the signature
-that would complete `approvals` under `reviewer_and_tester` are each
-`forbidden` with `details.reason: own_approvals`, `details.needed` and
+§6.1) before anything moves it to `done`. The gate covers every move
+to `done`: the done authority's `review→done`, a merged `blocked→done`
+(§6.6), the signature that would complete `approvals` under
+`reviewer_and_tester`, and under `done_authority: holder` the holder's
+`review→done` and `in_progress→done`, an outside holder's included.
+Until the card has them, each of these is `forbidden` with
+`details.reason: own_approvals`, `details.needed` and
 `details.counted`, and nothing changes; a human's own move counts as
-its approval before the check. A report with `"done": true` on such a
-card is stored and moves it to `review`, not `done` (§6.6), and
-`policy.merged_closes: auto` acts as `notify` for it. `review→in_progress`
+its approval before the check. The gate runs after the done-authority
+check: a caller without done authority is refused as before (§6.4,
+`forbidden` with `details.scope`), and the gate decides only for a
+caller that has it. A report with `"done": true` on such a card from a
+caller with done authority is stored and moves it to `review`, not
+`done` (§6.6); from a caller without it the report is refused and
+nothing is stored, as on any card. `policy.merged_closes: auto` acts
+as `notify` for such a card. `review→in_progress`
 (rework) and `cancelled` are not gated. An `own_approvals` higher than
 the project's own reviewing agents and humans blocks every such card;
 the form says so, the hub does not refuse it.
 
 A `done` card of outsiders' work does not keep a head nobody approved:
 a report on it with another `head` while its pull request is not merged
-(§6.6, "A report on a `done` card") moves it back to `review`. The hub
-makes that move on its own (§6.15): no history entry, a `task_updated`
-with `fields: ["status"]`. The approvals given on the old head stay with
-that head and count for nothing on the new one, so the card goes to
-`done` again only with the own approvals above. This is the one way
-back from `done`, and it is for outsiders' work only: every other card
-stays `done` (§6.4, §6.6). The lead's decision of 2026-11-15.
+(§6.6, "A report on a `done` card") moves it back to `review`. Its
+claim goes through the checks of a claim again: it stays only while its
+holder may hold it now, else it is released and the card is in `review`
+unclaimed (§6.6). The hub makes that move on its own (§6.15): no history
+entry, a `task_updated` with `fields: ["status", "claim"]` when the
+claim is released, `["status"]` when it stays. The approvals given on
+the old head stay with that head and count for nothing on the new one,
+so the card goes to `done` again only with the own approvals above.
+This is the one way back from `done`, and it is for outsiders' work
+only: every other card stays `done` (§6.4, §6.6). The lead's decision
+of 2026-11-15; the claim's check, the lead's decision of 2026-11-18
+(seq 161032).
 
-An outside agent stays without done authority, as before B.2:
-`tasks:review` and `tasks:test` reach it for nothing that moves a card.
-It makes no status change `review→done` or `review→in_progress` and no
-merged `blocked→done` as the done authority, and signs no half of
-`approvals` (§6.4), each `forbidden` with `details.scope` as for a
-missing scope; the hub never resolves it as the done authority (§6.4,
-§6.6), and a `task_merged` does not wake it as one. Its review result
+A role that reviews or tests gives an outside agent no done authority,
+as B.1 says (above, "Outside"): `tasks:review` and `tasks:test` reach
+it for nothing that moves a card. Under `done_authority` `reviewer`,
+`tester` or `reviewer_and_tester` it makes no status change
+`review→done` or `review→in_progress` and no merged `blocked→done` as
+the done authority, and signs no half of `approvals` (§6.4), each
+`forbidden` with `details.scope` as for a missing scope; the hub never
+resolves it as the done authority through those roles (§6.4, §6.6),
+and a `task_merged` does not wake it as one. Under `done_authority:
+holder` the done authority is the card's holder, not a role: an outside
+agent that holds a card is its done authority like any holder, for
+`review→in_progress` and for `task_merged`, but each of its moves to
+`done`, `in_progress→done` and a merged `blocked→done` included, first
+passes the gate above, so the card reaches `done` only with the
+project's own approval on exactly the reported head. No card is left
+without a done authority, under `preset: solo` either (the lead's
+decision of 2026-11-18, seq 161052). Its review result
 (§8.4) is no longer only a comment: it is a review result like a
 member's, shown with its verdict and cites and delivered as §8.4 says,
 and it may count for a review requirement other than
@@ -6514,10 +6543,10 @@ stay; `state_changed` is not emitted for the mapping.
 | `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
 | `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). `manager`, `ops`, `proxy`, `blue-team` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). A list stored while `blue-team` was allowed reads without `blue-team`, and the next write of the policy stores it so; an agent that holds `blue-team` falls back to `coder` as §6.2 says (the lead's decision of 2026-11-13, no migration). A role on the list that reviews or tests gives such an agent no done authority, and its review result never counts as an own approval (§2.3, "Own approvals"; `own_approvals` below). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `own_approvals` | integer ≥ 1, default 1, no upper bound | how many own approvals (§2.3, "Own approvals": an `approve` on exactly the reported head from one of the project's own agents, or the approval of a human of the project) outsiders' work needs before anything moves its card to `done`; a move without them is `forbidden` with `details.reason: own_approvals`, `details.needed` and `details.counted`. Cards of the project's own members are not gated by it. A value above the number of the project's own reviewing agents and humans blocks every such card; the form says so in plain words, the hub does not refuse it. `0` is `invalid` (`details.fields.own_approvals`): work by outsiders always needs one (the maintainer's answer o1 to req-9wpst24yyz7a, B.2 of §6.30). Every preset fills 1 at creation, a project that predates the field reads as 1, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
-| `own_agents` | `owners`, `members` (default), or `{"owners_of": ["handle", …]}` | whose agents count as the project's own for `own_approvals` (§2.3, "Own approvals") **[Q11]**: `owners` the agents of the project's humans with trust `owner`; `members` the agents of every human member; `owners_of` the agents of the humans the owner picks, members or not (a handle that names no person is `invalid` with `details.fields.own_agents`). An agent with trust `outside`, and an agent of the owner whose agent filed the card's report, never counts as the project's own, whatever the value. Humans of the project count whatever it says. Every preset fills `members` at creation, a project that predates the field reads as `members`, and a later preset change keeps it. Set by a human with trust `owner` only (`forbidden`, `owner_only`), with `reason`. It moves into the review setting of tsk-kymz2pdrf85k once that card is contracted |
+| `own_agents` | `owners`, `members` (default), or `{"owners_of": ["handle", …]}` | whose agents count as the project's own for `own_approvals` (§2.3, "Own approvals") **[Q11]**: `owners` the agents of the project's humans with trust `owner`; `members` the agents of every human member; `owners_of` the agents of the humans the owner picks, members or not (a handle that names no person is `invalid` with `details.fields.own_agents`). An agent with trust `outside`, and an agent of the owner of an agent that holds the card or filed its current report (the owner of every such outside agent included), never counts as the project's own, whatever the value. Humans of the project count whatever it says, except a human who owns such an agent (§2.3, "Own approvals"). Every preset fills `members` at creation, a project that predates the field reads as `members`, and a later preset change keeps it. Set by a human with trust `owner` only (`forbidden`, `owner_only`), with `reason`. It moves into the review setting of tsk-kymz2pdrf85k once that card is contracted |
 | `looking_for_coders` | `per_card` (default), `all`, `off` | under `agent_owners: anyone`, which `open` cards an outsider's agent (trust `outside`, §2.3) may claim: those with the card field `open_to_outsiders: true` (§6.4), every one, or none; a claim on any other is `forbidden` with `details.reason: not_open_to_outsiders` (§6.5, "An outsider's claim"). It limits claims only: an admin's `assign` to an outsider's agent is not bound by it. Every preset fills `per_card` at creation, a project that predates the field reads as `per_card`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q12) |
 | `outside_claims` | `human` (default), `agent`, `direct` | who confirms the claim of an outsider's agent (§6.5, "An outsider's claim"): `human` the confirmers who are humans; `agent` agent confirmers as well; `direct` nobody, the claim takes the card at once as any claim does. Every preset fills `human` at creation, a project that predates the field reads as `human`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason`; `agent` and `direct` only by a human with trust `owner` (`forbidden`, `owner_only`), and the form says in plain words that an agent then decides who works in the project, or nobody does (the maintainer's decision of 2026-11-14, Q27) |
-| `outside_claims_max` | `null` (default) or an integer ≥ 1, no upper bound | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
+| `outside_claims_max` | `null` (default) or an integer ≥ 1, no upper bound | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19, a claim that stays when a new head sends a card of outsiders' work back from `done` to `review`, §6.6) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `member_agents_max` | 0 up to its ceiling, default ceiling 20 (§6.31; not built yet, tsk-spmhjqm7szag: today 0–20), default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
@@ -7273,8 +7302,10 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   `purple-team`, a project role on `reviewer` or `tester`) is held, but
   it gives no done authority to an agent with trust `outside` or whose
   owner is no member — an outsider's agent whose owner has since become
-  a member included: it moves no card from `review` and signs no
-  approval, and its review result (§8.4) never counts as an own
+  a member included: by that role it moves no card from `review` and
+  signs no approval (a holder's done authority under `done_authority:
+  holder` is the holder's, §2.3, "Own approvals"), and its review
+  result (§8.4) never counts as an own
   approval; the work such an agent delivers goes to `done` only with
   the own approvals of `policy.own_approvals` (§2.3, "Own approvals";
   B.2 of §6.30), so the project's own members keep the say over what
@@ -7744,10 +7775,13 @@ ownership raises, the lift of an isolation) first clears what no longer
 counted before it; a signature whose signer no longer stands is
 not counted when the next one is given.
 Outsiders' work — a card an outside agent holds or whose current report
-it filed — moves to `done` only with the own approvals of
-`policy.own_approvals` (§2.3, "Own approvals"): every move to `done`
-above, the last signature under `reviewer_and_tester` included, is
-`forbidden` with `details.reason: own_approvals` until it has them.
+it filed, judged as it stands at each check — moves to `done` only with
+the own approvals of `policy.own_approvals` (§2.3, "Own approvals"):
+every move to `done` above, the last signature under
+`reviewer_and_tester` and the holder's `in_progress→done` under
+`done_authority: holder` included, is `forbidden` with
+`details.reason: own_approvals` until it has them. The gate runs after
+the done-authority check, which it never replaces.
 `done` does not go back: no `PATCH` leaves it, and the hub moves a card
 out of `done` in one case only, a report with a new head on outsiders'
 work whose pull request is not merged, which sends it back to `review`
@@ -8267,8 +8301,10 @@ and with the project.
   member. Count and claim are one atomic step per member, so at
   `limit − 1` two concurrent claims yield one claim and one
   `claim_limit`. A claim that comes to a member otherwise — a takeover
-  (§6.19), the claims a replacement inherits (§6.17) — is not refused and
-  counts from then on. Lowering the value releases nothing.
+  (§6.19), the claims a replacement inherits (§6.17), a claim that
+  stays when a new head sends a card of outsiders' work back from
+  `done` to `review` (§6.6) — is not refused and counts from then on.
+  Lowering the value releases nothing.
 - Lease: `lease_until = now + policy.lease_seconds`, renewed to the same
   length by any authenticated call of the holding membership (not only
   calls on this card), except the events long-poll and a conversation
@@ -8615,10 +8651,14 @@ the card's `approvals` stay. Every replacement clears `approvals`
   reports again without `done`. On a card under an objection hold
   (§6.19) a report with `"done": true` by an agent is stored and moves
   the card to `review`, not `done`, whatever done authority the agent
-  holds; a human then decides. Likewise a report with `"done": true` on
-  outsiders' work that lacks the own approvals of `policy.own_approvals`
-  is stored and moves the card to `review`, not `done` (§2.3, "Own
-  approvals").
+  holds; a human then decides. Likewise, once the done-authority check
+  above has passed, a report with `"done": true` on outsiders' work
+  that lacks the own approvals of `policy.own_approvals` is stored and
+  moves the card to `review`, not `done` (§2.3, "Own approvals"); under
+  `done_authority: holder` this is an outside holder's report with
+  `"done": true` from `in_progress`. A caller without done authority is
+  refused as above whatever the card's approvals, and nothing is
+  stored: the rule never stands in for done authority.
 - **A report on a `done` card.** A card can reach `done` while its pull
   request is still open (a reviewer closes it on approval) and the branch
   then moves on: a rebase after a conflict, a fix asked for at the
@@ -8636,13 +8676,25 @@ the card's `approvals` stay. Every replacement clears `approvals`
   One exception, for outsiders' work only (§2.3, "Own approvals"): when
   the new report's `head` differs from the one it replaces, the card
   goes back to `review`, since its pull request is open and the new
-  head has none of its own approvals. `closed_at` is cleared, the claim
-  stays, and `"done"` in the body still has no effect. It is a change
-  the hub makes on its own (§6.15): no history entry, and beside
-  `task_reported` the `task_updated` with `fields: ["status"]` that
-  every status change emits. The approvals given on the old head stay
-  with that head and count for nothing on the new one; the card goes to
-  `done` again only through the gate of "Own approvals". A report with
+  head has none of its own approvals. Whether it is outsiders' work is
+  judged at this report, as the card and its members stand now (§2.3).
+  `closed_at` is cleared, and `"done"` in the body still has no effect.
+  The claim the closed card kept as a record goes through the checks of
+  a claim again: it stays only while its holder may hold it now, an
+  active member, not `guest` (§2.3) and not isolated (§6.2), whose
+  `claim.instance`, when the claim names one, is active or was replaced
+  by a successor (§6.17), which the claim then names. Otherwise the hub
+  releases it, and the card is in `review` with `claim: null`. A claim
+  that stays is not refused by `max_open_claims` or
+  `outside_claims_max` and counts from then on (§6.1; §6.5,
+  `claim_limit`). It is a change the hub makes on its own (§6.15): no
+  history entry, and beside `task_reported` the `task_updated` that
+  every status change emits, with `fields: ["status", "claim"]` when the
+  claim is released and `fields: ["status"]` when it stays. The lead's
+  decision of 2026-11-18 (seq 161032). The approvals given on the old
+  head stay with that head and count for nothing on the new one; the
+  card goes to `done` again only through the gate of "Own approvals".
+  A report with
   the same `head` leaves it `done`, and a card that is not outsiders'
   work stays `done` as above. The lead's decision of 2026-11-15
   (`context/members.md`, B.2).
@@ -12846,22 +12898,29 @@ outsiders; what they check counts as B.2 says (below).
 **B.2**, `own_approvals` and `own_agents`, is contracted (table
 above): the maintainer answered req-9wpst24yyz7a with o1 (2026-11-15).
 `own_approvals` applies only to outsiders' work, a card an outside
-agent holds or whose current report it filed: such a card goes to
-`done` only with an approval from one of the project's own agents (an
-`approve` on exactly the reported head) or from a human of the project;
-every other card is unchanged. The plan's integer stays, default 1, but
-never below 1, since o1 asks for one approval on every such card;
-`own_agents` stays as the plan had it (**[Q11]**, set by trust `owner`
-only, moving into the review setting of tsk-kymz2pdrf85k later), and an
-agent with trust `outside` or of the reporting agent's owner never
+agent holds or whose current report it filed, judged at each check:
+such a card goes to `done` only with an approval from one of the
+project's own agents (an `approve` on exactly the reported head) or
+from a human of the project; every other card is unchanged. The plan's
+integer stays, default 1, but never below 1, since o1 asks for one
+approval on every such card; `own_agents` stays as the plan had it
+(**[Q11]**, set by trust `owner` only, moving into the review setting
+of tsk-kymz2pdrf85k later), and an agent with trust `outside` or of the
+owner of an agent that holds the card or filed its current report never
 counts as own. A human of the project is a human member, not isolated,
 with `tasks:review` or `tasks:test`, the standing a signature in
-`approvals` needs. An outside agent keeps no done authority, as before
-B.2; its review result is no longer only a comment, may count for a
-review requirement other than `own_approvals`, and never counts as an
-own approval (§2.3, "Own approvals"). A `done` card of outsiders' work
-on which a report brings a new head while its pull request is not
-merged goes back to `review` (the lead's decision of 2026-11-15, §6.6); every
+`approvals` needs, who owns no agent that holds the card or filed its
+current report. A role that reviews or tests gives an outside agent no
+done authority, as B.1 says; under `done_authority: holder` an outside
+holder is its card's done authority like any holder, and each of its
+moves to `done`, `in_progress→done` included, first passes the
+`own_approvals` gate (the lead's decision of 2026-11-18, seq 161052).
+Its review result is no longer only a comment, may count for a review
+requirement other than `own_approvals`, and never counts as an own
+approval (§2.3, "Own approvals"). A `done` card of outsiders' work on
+which a report brings a new head while its pull request is not merged
+goes back to `review` (the lead's decision of 2026-11-15, §6.6), its
+claim kept only while its holder may hold it now (seq 161032); every
 other card stays `done`.
 
 #### C. Reputation and external reviewers (proposed)

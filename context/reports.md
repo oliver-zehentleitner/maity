@@ -43,7 +43,8 @@ report again while that pull request is open and the new report names
 the same pull request. The report and the probe are updated; status,
 `closed_at` and the claim are not. One exception since 2026-11-15:
 on outsiders' work a new head sends the card back to `review`, so the
-project's own approvals cover it (members.md, dab6ae4a).
+project's own approvals cover it, and its claim stays only while its
+holder may hold it now, else it is released (members.md, dab6ae4a).
 
 **Reason:** without it the card keeps showing a head the branch no
 longer has, and the new head travels only in a free-text message, which
