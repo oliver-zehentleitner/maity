@@ -328,3 +328,32 @@ they were.
 
 **Alternatives for the default max-age:** one year was chosen without a
 recorded comparison (unknown).
+
+## An error answer escapes a lone surrogate in a field path, so no client key can make it a 500
+
+**Id:** TODO
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** decided by the project manager in review of card tsk-dks1vknta4kv (pull request #1987); contract `docs/api.md` §1.3; `hub/src/maity_hub/errors.py`
+
+The field paths in an `invalid` answer are made encodable in one place,
+the error envelope (`errors.envelope`): every lone surrogate in a string
+or key of `details` is written as its escape text (`\ud800`, six
+characters). A client's JSON may hold one, Python's parser accepts it,
+and UTF-8 cannot encode it, so a path that echoes such a key made the
+answer itself fail with a 500. Codes and messages the hub writes are not
+touched, and a valid path looks as before.
+
+**Reason:** the hand-written validators of the landing, legal, sign-in
+and sign-up pages echo client keys into their paths (an extra key, a
+variant slug, a language key); a refusal in each validator is something
+every new validator would have to remember, and one missed path is a
+500 again.
+
+**Rejected alternatives:**
+- A refusal or the parent's path in each validator: kept only for the
+  language keys of the landing, legal, sign-in and sign-up pages, where
+  the parent's path is the better answer.
+- Dropping the key from the answer: the client could not find its
+  mistake.

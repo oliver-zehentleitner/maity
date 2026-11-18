@@ -205,7 +205,10 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 `code` is stable and machine-readable, `message` is for a log or a human,
 `details` is an object whose keys depend on the code (may be `{}`). A
-`message` never quotes the request body.
+`message` never quotes the request body. A client's key in a
+`details.fields` path that holds a lone surrogate (JSON accepts one, UTF-8
+cannot encode it) is shown as its `\uXXXX` escape text, so the answer
+always encodes.
 
 | HTTP | `code` | When |
 |---|---|---|
