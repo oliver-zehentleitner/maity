@@ -99,6 +99,7 @@ network = []
 pull_requests = true
 ```
 
+- **`default_model`** is meant for a placement that names no model. In 0.1.0a15 it does not apply to opencode yet: such a placement runs opencode's own default model (tsk-kf2kp09d6qew). Name the model on the placement until the fix is released.
 - **A repository grant** gives agents its `allow` commands and, with `pull_requests = true`, `maity gh` ([Letting agents run a repository's checks](runners.md#letting-agents-run-a-repositorys-checks)). Without a grant for a repository, its agents get neither. A Codex placement gets no pull-request grant while its sandbox is on, and `check` warns about that.
 - **The service.** Either `sudo maity runner install`, or a systemd unit of your own for an existing user (`maity runner unit` prints one). After changing `runner.toml`, restart the service. Running placements are taken over (`running adopted`), not restarted.
 - **Check with the service's `PATH`**, not your shell's: `env -i HOME=$HOME PATH=/usr/bin:/bin maity runner check`. Your login shell may find tools that the service does not.
