@@ -21,7 +21,7 @@ from maity_hub.models import Strict
 router = APIRouter()
 
 # A repeat with the same `Idempotency-Key` answers what the first call answered (§1.5).
-idempotency.LOADERS["chat_access"] = idempotency.plain(chat_access.replayed)
+idempotency.register("chat_access", idempotency.plain(chat_access.replayed), idempotency.own)
 
 CACHE = "private, no-store"
 

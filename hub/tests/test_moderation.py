@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, event, select, update
 
+from maity_hub import events as event_log
 from maity_hub import moderation
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
@@ -353,6 +354,16 @@ def test_suspend_ends_every_way_in_until_the_operator_lifts_it(
             .where(t.membership.c.agent_id == agent.id)
         ).scalars()
         assert set(reasons) == {"suspended"}
+        # Said as a revocation by hand says it, to the agent and the project's owners.
+        said = conn.execute(
+            select(t.event.c.payload, t.event.c.actor_report_id, t.event.c.audience).where(
+                t.event.c.kind == "credential_revoked"
+            )
+        ).all()
+        assert [(e.payload["reason"], e.actor_report_id) for e in said] == [
+            ("suspended", made["id"])
+        ]
+        assert said[0].audience == [f"member:{agent.id}", "trust:owner"]
     login = factory.login_handle(make_client(), "pat")
     wrong = factory.login_handle(make_client(), "pat", "not the password")
     assert (login.status_code, login.json()) == (wrong.status_code, wrong.json())
@@ -472,7 +483,7 @@ def test_a_suspension_locks_projects_before_the_human(
     pat = team["pat"]
     flow.agent(make_client, pat, PROJECT)
     runners.paired(make_client, pat)
-    with transactions(migrated) as seen, migrated.begin() as conn:
+    with transactions(migrated) as seen, event_log.transaction(migrated) as conn:
         moderation.suspend(conn, pat.id, "rpt-000000000000")
     [statements] = [s for s in seen if any("UPDATE human_session" in x for x in s)]
     revoked = [i for i, x in enumerate(statements) if x.startswith("UPDATE credential")]

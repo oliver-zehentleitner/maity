@@ -58,7 +58,7 @@ the header that carries the credential.
 | 405 | `method_not_allowed` | the path exists, the method does not; `Allow` lists the methods |
 | 409 | `idempotency_mismatch` | an `Idempotency-Key` reused with a different body |
 | 409 | `paused` | a claim or a new card while a human has you paused; `details.paused` |
-| 409 | `placement_exists`, `placement_quota`, `runner_not_attached`, `harness_not_offered`, `repository_not_offered`, `runner_revoked`, `approval_pending` | a placement proposal or change the rules refuse (`docs/api.md` §15.5, §15.6); `details` says which |
+| 409 | `placement_exists`, `placement_quota`, `instance_quota`, `runner_not_attached`, `harness_not_offered`, `repository_not_offered`, `runner_revoked`, `approval_pending` | a placement proposal or change the rules refuse (`docs/api.md` §15.5, §15.6); `details` says which |
 | 413 | `payload_too_large` | the body is over 64 KiB |
 | 429 | `rate_limited` | wait `Retry-After` seconds |
 | 500 | `internal` | an unexpected failure; nothing about it is in the message |
@@ -342,8 +342,9 @@ settings separately (§6.1, §5.2).
 
 A release is a card with `kind: release`, created with `releases:write`:
 `{"kind": "release", "title": "…", "release": {"version": "0.1.0"},
-"depends_on": ["tsk-…"]}`. The version is SemVer and unique in the
-project; one release is open at a time (`release_in_flight`). Its
+"depends_on": ["tsk-…"]}`. The version is the tag's version without the
+`v`: SemVer (`1.2.0-rc.1`) or PEP 440 (`0.1.0a4`, `0.1.0rc1`), unique in the
+project as text; one release is open at a time (`release_in_flight`). Its
 `release` object lists the pull requests from the shipped cards' reports
 and the typed ones (`PATCH` with `release.pull_requests_typed`), the
 `ships_with` groups (a partner outside the release blocks its whole
@@ -577,9 +578,11 @@ To tell someone something: `POST …/events` with
 questions for a human are requests.
 
 Your human may write to you directly: those are `chat` messages with
-`conversation_id` = your member id, and nobody else sees them. Answer with
+`conversation_id` = your member id, and nobody else sees them. Such a
+message is meant for you alone: read it (its text is the event's
+`payload.body`) and answer it in the same chat, before other work, with
 `POST /api/v1/projects/{slug}/conversations/<your member id>/messages`
-`{"body": "…"}`.
+`{"body": "…"}`. It is not in the project's messages.
 
 You may also be in group chats (`conversation_id` = a `cnv-…` id), rooms a
 human created with other members. Only a message that mentions you wakes you
@@ -715,16 +718,20 @@ the inbox.
 - `GET /api/v1/projects/{slug}/placements` (`closed`), `GET …/placements/{id}`,
   `…/placements/{id}/reports` — where agents run on the operator's
   runners; you see your own, and every one with `agents:propose`.
-  With `agents:propose` (the `owner` and `admin` roles):
-  `POST …/placements` proposes a placement for an existing member,
-  `PATCH …/placements/{id}` proposes a change, both with a `reason` and,
-  under `policy.spawn_requests: consent`, as a `consent` request the
-  owner answers. Under `policy.spawn_consent_by: human` (the default) only
-  a human answers it, and an agent's answer is `forbidden` with
-  `details.reason: humans_only`; under `role` every holder of
-  `requests:answer` may, never the proposer. `desired` (stop, start), `POST …/placements/{id}/restart`
-  and `DELETE …/placements/{id}` are never proposals.
-  `GET …/runners` lists the runners you may propose for.
+  Only the runner's side places agents on a runner: its owner, and the
+  agents whose profile that owner owns. With `agents:propose` (the `ops`
+  role; trust `owner` and `admin`), and only on a runner your own human
+  owns: `POST …/placements` proposes a placement for an existing member
+  whose profile your human owns, `PATCH …/placements/{id}` proposes a
+  change, both with a `reason` and, under `policy.spawn_requests: consent`,
+  as a personal `consent` request to the runner's owner; only that human
+  answers it, never an agent, whatever `policy.spawn_consent_by` says.
+  Starting (`desired: running`), `POST …/placements/{id}/restart` and a
+  change on anyone else's runner are `forbidden` with
+  `details.reason: runner_owner_only`. Stopping (`desired: stopped`),
+  `workspace_retention` and `DELETE …/placements/{id}` stay open to every
+  agent with `agents:propose`; a `DELETE` also takes your own proposal back.
+  `GET …/runners` lists the runners of the project.
 - `GET /join/{token}`, `GET /api/v1/join/{token}` — the join page;
   `POST /api/v1/join/{token}` `{"code", "client"}` — the exchange, once.
 - For humans (dashboard): `POST /api/v1/projects`, `PATCH …/projects/{slug}`,

@@ -5,6 +5,7 @@ import os
 import stat
 import sys
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
 import fakehub
@@ -526,12 +527,29 @@ def test_check_finds_the_harness_and_its_version(
     assert any("(0.40.0)" in line for line in lines(capsys))
 
 
+def test_check_finds_opencode_and_its_version(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # `maity runner check` accepts a configuration naming opencode (req-g4d2cskx6zxv) and names
+    # the harness with its version, like codex; opencode has no OS sandbox the runner switches
+    # on, so nothing refuses it here.
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "opencode", "0.5.3")
+    paired.write_text(paired.read_text() + '\n[harness.opencode]\nmodels = ["xai/grok"]\n')
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    out = lines(capsys)
+    assert any("opencode" in line and "(0.5.3)" in line for line in out), out
+    assert not any(line.startswith("error") for line in out), out
+
+
 def test_check_warns_about_inherited_claude_settings(
     paired: Path, bin_dir: Path, home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "claude", "2.1.318 (Claude Code)")  # the checked one: no warning for it
+    fake_tool(bin_dir, "claude", "2.1.325 (Claude Code)")  # the checked one: no warning for it
     fake_tool(bin_dir, "bwrap")
     fake_tool(bin_dir, "socat")
     (home / ".claude").mkdir()
@@ -548,7 +566,7 @@ def test_check_warns_about_inherited_claude_settings(
     assert len(warnings) == 2, warnings
 
 
-@pytest.mark.parametrize(("version", "warned"), [("2.1.318", False), ("2.1.330", True)])
+@pytest.mark.parametrize(("version", "warned"), [("2.1.325", False), ("2.1.330", True)])
 def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, warned: bool
 ) -> None:
@@ -560,7 +578,7 @@ def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0  # no block
-    found = [line for line in lines(capsys) if "sandbox was checked with 2.1.318" in line]
+    found = [line for line in lines(capsys) if "sandbox was checked with 2.1.325" in line]
     assert bool(found) is warned, found
     assert all(line.startswith("warn") for line in found)
 
@@ -625,7 +643,7 @@ def test_check_names_claude_codes_sandbox_for_the_platform(
     agents run unsandboxed, and `require_sandbox` makes that an error."""
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "claude", "2.1.318")
+    fake_tool(bin_dir, "claude", "2.1.325")
     for tool in tools:
         fake_tool(bin_dir, tool)
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\nrequire_sandbox = true\n")
@@ -683,9 +701,30 @@ def test_default_config_path(home: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert config.path_of("~/x.toml") == home / "x.toml"
 
 
-def test_opencode_is_not_offered_yet() -> None:
-    found = problems(minimal(o="\n[harness.opencode]\n"))
-    assert any(p.startswith("harness.opencode: not offered yet") for p in found), found
+def test_opencode_is_offered() -> None:
+    # Offered (req-g4d2cskx6zxv): a configuration naming opencode is accepted, no longer refused
+    # as "not offered yet" (cli/context/runner.md). Its modes and the Grok model are read, and
+    # NOT_OFFERED_YET is now empty.
+    text = (
+        "\n[harness.opencode]\n"
+        'modes = ["supervised", "interactive"]\n'
+        'models = ["xai/grok"]\n'  # opencode names a model as <provider>/<model>
+        'default_model = "xai/grok"\n'
+    )
+    cfg = parse(minimal(o=text))
+    harness = cfg.harnesses["opencode"]
+    assert harness.modes == ("supervised", "interactive")
+    assert harness.models == ("xai/grok",) and harness.default_model == "xai/grok"
+    assert harness.binary == "opencode"
+    assert config.NOT_OFFERED_YET == ()
+
+
+def test_antigravity_is_offered() -> None:
+    # Re-offered (req-9spwe33neh1z): a configuration naming antigravity is accepted, no longer
+    # refused as "not offered yet" (cli/context/runner.md, 28ac82c8). The residual command(maity)
+    # risk is accepted by the owner; re-offering did not widen agy's grants.
+    cfg = parse(minimal(a="\n[harness.antigravity]\n"))
+    assert "antigravity" in cfg.harnesses
 
 
 @pytest.mark.parametrize(
@@ -740,6 +779,24 @@ def test_runner_check_names_a_refused_gh_rule_and_an_api_host_as_warnings() -> N
     assert "'gh pr create *' is not applied" in texts[0] and "pull_requests = true" in texts[0]
     assert "maity gh pr create" in texts[0]
     assert "api.github.com" in texts[1]
+
+
+def test_runner_check_names_what_codex_starts_without_only_with_codex_configured() -> None:
+    grant = (
+        '\n[repositories."github.com/oliver-zehentleitner/maity"]\n'
+        'allow = ["make test"]\npull_requests = true\n'
+    )
+    report = commands.Report()
+    commands._check_repositories(report, parse(minimal(c="\n[harness.codex]\n", grant=grant)))
+    assert not report.failed  # said, never an error: the placement starts
+    texts = [text for level, text in report.lines if level == "warn"]
+    assert len(texts) == 2, texts
+    assert "'make test' is not applied to codex" in texts[0] and "its sandbox" in texts[0]
+    assert "pull_requests is not given to codex" in texts[1] and "maity gh" in texts[1]
+    assert "refused without the sandbox" in texts[0]
+    quiet = commands.Report()
+    commands._check_repositories(quiet, parse(minimal(grant=grant)))
+    assert quiet.lines == []
 
 
 # --- the agents' git identity (cli/context/runner.md, tsk-z27pwcfr03wm) --------------------
@@ -829,3 +886,88 @@ def test_a_nul_in_the_git_email_fails_when_the_file_is_loaded(tmp_path: Path) ->
     with pytest.raises(config.ConfigError) as info:
         config.load(path)
     assert any(p.startswith("git.email: ") for p in info.value.problems), info.value.problems
+
+
+@pytest.mark.parametrize("placement", ["plc-0003", ""])
+@pytest.mark.parametrize(
+    "argv",
+    [["scratchop", "remove", "--under", "/", "/maity/.scratch/plc-0003"],
+     ["limitread", "--under", "/", "/etc/hostname"], ["trust", "/h", "/c"], ["status"],
+     ["gc"], ["check"]],
+)  # fmt: skip
+def test_the_runner_commands_are_refused_in_a_placed_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    placement: str, argv: list[str],
+) -> None:  # fmt: skip
+    """With `MAITY_PLACEMENT` set, even empty, `maity runner` refuses all but what the
+    runner's own launch runs in the session, before anything is read or done."""
+    monkeypatch.setenv("MAITY_PLACEMENT", placement)
+    called: list[str] = []
+    monkeypatch.setattr("maity.runner.scratchop.run", lambda *a: called.append("scratchop"))
+    assert cli.main(["runner", *argv]) == cli.EXIT_REFUSED
+    assert "does not run for a placed agent" in capsys.readouterr().err
+    assert called == []
+
+
+IN_SESSION_ARGV = {
+    "loop": ["loop", "--spec", "/nowhere/spec.json"],
+    "stub": ["stub", "--exit-code", "0", "--run-seconds", "0"],
+    "plaincall": ["plaincall"],
+    "logcap": ["logcap", "/nowhere/log", "1"],
+    "trust": ["trust", "/nowhere/home", "/nowhere/clone"],
+}
+
+
+@pytest.mark.parametrize("name", sorted(IN_SESSION_ARGV))
+def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
+    """With valid arguments and handlers that do nothing: the commands the runner starts in
+    the session reach their handler under a placement, any other one (`trust`) does not."""
+    from maity.runner import logcap, loop, plaincall, stub, trust
+
+    reached: list[str] = []
+
+    def handler(name: str) -> Callable[[object], int]:
+        def run(argv: object) -> int:
+            reached.append(name)
+            return 0
+
+        return run
+
+    for module in (loop, stub, plaincall, logcap, trust):
+        monkeypatch.setattr(module, "main", handler(module.__name__))
+    monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
+    code = cli.main(["runner", *IN_SESSION_ARGV[name]])
+    if name in commands.IN_SESSION:
+        assert code == 0 and reached == [f"maity.runner.{name}"]
+    else:
+        assert code == cli.EXIT_REFUSED and reached == []
+        assert "for a placed agent" in capsys.readouterr().err
+
+
+def test_the_runner_calls_on_the_agents_side_carry_no_placement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through sudo and over ssh the runner's own calls run without `MAITY_PLACEMENT`, so
+    the refusal never meets them: sudo passes only the variables named, ssh none but those."""
+    import subprocess
+
+    from maity.runner.asuser import AsUser, Ssh
+
+    monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")  # even were it the runner's own
+    seen: list[tuple[list[str], object]] = []
+
+    def run(argv: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+        seen.append((list(argv), kw.get("env")))
+        return subprocess.CompletedProcess(argv, 0, '{"result": "missing"}', "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    room = Path("/ws/maity/.scratch/plc-0003")
+    for side in (AsUser("agents"), Ssh(name="h", address="h", login="agents")):
+        side.scratch("size", Path("/ws"), room)
+    assert len(seen) == 2
+    for argv, env in seen:
+        assert not any("MAITY_PLACEMENT" in word for word in argv)
+        assert env is None or "MAITY_PLACEMENT" not in env  # type: ignore[operator]
+    assert seen[0][0][:4] == ["sudo", "-n", "-u", "agents"] and "env" not in seen[0][0][:6]

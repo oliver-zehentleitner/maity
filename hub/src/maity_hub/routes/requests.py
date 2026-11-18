@@ -19,6 +19,7 @@ from sqlalchemy import Connection, and_, insert, or_, select, update
 from maity_hub import (
     avatars,
     bridges,
+    chat_gate,
     chat_request,
     clock,
     cover,
@@ -41,6 +42,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth import second_factor
 from maity_hub.auth.caller import Caller
 from maity_hub.cards import CLOSED
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of, settings_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -230,19 +232,7 @@ def _known(conn: Connection, rows: Sequence[Any], members: Iterable[int] = ()) -
     needs = dict(zip([r.id for r in stored], shaped, strict=True))
     pictured = agent_ids | human_ids
     pictured |= {n["member_id"] for n in needs.values() if not n.get("deleted")}
-    sessions = {r.asked_session_id for r in rows if r.asked_session_id is not None}
-    instances: dict[tuple[str, int], str | None] = (
-        {
-            (found.id, found.membership_id): found.instance
-            for found in conn.execute(
-                select(t.agent_session.c.id, t.credential.c.membership_id, t.credential.c.instance)
-                .join(t.credential, t.agent_session.c.credential_id == t.credential.c.id)
-                .where(t.agent_session.c.id.in_(sessions))
-            ).all()
-        }
-        if sessions
-        else {}
-    )
+    instances = _instances(conn, {r.asked_session_id for r in rows})
     task_ids = {r.task_id for r in rows if r.task_id is not None}
     cards = (
         {
@@ -279,6 +269,26 @@ def _known(conn: Connection, rows: Sequence[Any], members: Iterable[int] = ()) -
         reports=reports,
         needs=needs,
     )
+
+
+def _instances(
+    conn: Connection, sessions: Iterable[str | None]
+) -> dict[tuple[str, int], str | None]:
+    """The instance of the credential behind each session, keyed by the session and the
+    credential's membership: a request's asking instance is the entry of its
+    `(asked_session_id, asked_by)`, and a session of another membership (a bridge's, §2.3)
+    has none for it."""
+    wanted = {s for s in sessions if s is not None}
+    if not wanted:
+        return {}
+    return {
+        (found.id, found.membership_id): found.instance
+        for found in conn.execute(
+            select(t.agent_session.c.id, t.credential.c.membership_id, t.credential.c.instance)
+            .join(t.credential, t.agent_session.c.credential_id == t.credential.c.id)
+            .where(t.agent_session.c.id.in_(wanted))
+        ).all()
+    }
 
 
 def _person(known: _Known, membership_id: int | None, session_id: str | None) -> Any:
@@ -441,6 +451,7 @@ def _view(conn: Connection, row: Any, known: _Known) -> dict[str, Any]:
         "humans_only": inbox.humans_only(row),
         "takeover_id": row.takeover_id,  # set by the hub only (§6.19)
         "cover": cover.view(row.cover),  # a substitute answers it as the addressee (§6.12)
+        "held": list(row.held or []),  # the agents `to` reached without their owner's yes
         "action": _action_view(row),
         "report": _report_view(known, row),  # set by the hub only (§16.8)
     }
@@ -453,7 +464,9 @@ def _to(known: _Known, row: Any) -> str:
 
 
 def _holder_of(known: _Known, row: Any) -> str:
-    """`_holder` with the member id from the page's memberships."""
+    """Who holds the request now (§7): `to` until its first forward, then a member id, or
+    `trust:admin` while it is open to the admins and nobody has claimed it; the member id
+    from the page's memberships."""
     if row.holder_member is not None:
         return known.principal(row.holder_member)
     if row.holder_pool:
@@ -483,15 +496,8 @@ def _refuse_a_report_request(row: Any) -> None:
 
 
 def _holder(conn: Connection, row: Any) -> str:
-    """Who holds the request now (§7): `to` until its first forward, then a member id, or
-    `trust:admin` while it is open to the admins and nobody has claimed it."""
-    if row.holder_member is not None:
-        found = principal_id(conn, row.holder_member)
-        assert found is not None
-        return found
-    if row.holder_pool:
-        return "trust:admin"
-    return inbox.addressee_of(row).text(conn)
+    """`_holder_of` for one row: a page of one, as `request_view` is."""
+    return _holder_of(_known(conn, [row]), row)
 
 
 def _is_agent(conn: Connection, membership_id: int | None) -> bool:
@@ -523,8 +529,48 @@ def load_member_patch(conn: Connection, request_id: str) -> dict[str, Any]:
     return view
 
 
-idempotency.LOADERS["request"] = idempotency.plain(load_request)
-idempotency.LOADERS["member_patch"] = idempotency.plain(load_member_patch)
+def may_see(conn: Connection, request_id: str, caller: Caller) -> bool:
+    """Whether the caller reads the request now: as `GET /requests/{id}` lets the human it
+    is personal to, or as `GET …/requests/{request_id}` lets a member (§7). A replayed write
+    of a request answers only them (§1.5)."""
+    row = conn.execute(select(t.request).where(t.request.c.id == request_id)).first()
+    if row is None:
+        return False
+    if row.personal and caller.kind == "human":
+        try:
+            _personal(conn, caller, request_id, asker=True)
+            return True
+        except ApiError:
+            pass
+    if row.project_id is None:
+        return False
+    try:
+        mine = membership(conn, caller, namespace.name_of(conn, row.project_id))
+    except ApiError:
+        return False
+    if _withdrew_the_pair(conn, row, mine):
+        return True
+    if row.personal and (row.filed_by == "hub" or not inbox.is_asker(row, mine)):
+        return False
+    return inbox.may_read(conn, row, mine)
+
+
+def _withdrew_the_pair(conn: Connection, row: Any, mine: Membership) -> bool:
+    """A withdrawn pair's request (a cross-owner `reports_to`, a bridge's consent) to whom
+    `withdraw` lets withdraw it: an owner of either side or an admin need not read it to
+    withdraw it, and its retry finds it as the withdrawal left it, which nothing changes."""
+    if row.status != "withdrawn":
+        return False
+    kind = (row.proposal or {}).get("kind")
+    if kind in bridges.KINDS:
+        return bridges.may_withdraw(conn, row, mine) is True
+    if row.personal and kind == cross_owner.KIND:
+        return cross_owner.may_withdraw(conn, row, mine) is True
+    return False
+
+
+idempotency.register("request", idempotency.plain(load_request), may_see)
+idempotency.register("member_patch", idempotency.plain(load_member_patch), may_see)
 
 
 def _row(conn: Connection, request_id: str) -> Any:
@@ -742,6 +788,11 @@ def create_request(
             ).first()
             if card is None:
                 raise invalid({"task_id": "unknown_task"})
+        # An agent of another owner that `to` reaches without its owner's yes is held (§9.6):
+        # decided now, for good; a later yes admits the next request, not this one.
+        audience, held = chat_gate.gate(
+            conn, mine.project.id, mine, _audience_of(conn, mine.project.id, to)
+        )
         # Links only: a mention in a request pings nobody (§8.6).
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary") + (
             mentions.resolve(conn, mine.project.id, body.tried, "tried")
@@ -773,6 +824,7 @@ def create_request(
                     "ktw_ref": body.ktw_ref,
                     "humans_only": body.humans_only,
                     "action": _action_stored(body.action),
+                    "held": held or None,
                     "status": "open",
                     "changed_by_credential": caller.credential_id,
                     "changed_via": caller.via,
@@ -802,15 +854,17 @@ def create_request(
             )
             blocked = card.id
         view = request_view(conn, _row(conn, request_id))
-        emit(
+        seq = emit(
             conn,
             mine.project.id,
             "request_created",
-            _addressee_audience(conn, mine, to),
+            audience,
             view,
             actor=caller.actor(mine.id),
             subject=("request", request_id),
         )
+        if held:  # the owner of each agent it was held for is asked (§9.6, "The request")
+            chat_request.note_held_by(conn, mine, seq, "request", held)
         _status_moved(conn, blocked, caller.actor(mine.id))
         return idempotency.Outcome(201, "request", request_id, view)
 
@@ -829,7 +883,8 @@ def _is_addressee(conn: Connection, mine: Membership, to: inbox.Addressee, membe
 def _locked(conn: Connection, mine: Membership) -> Membership:
     """The caller's membership with the project row and its own row as read under the
     project lock, as `tasks._locked`: a role change takes the same lock, so a scope checked
-    on what this returns holds until the write commits (§2.3 "The expert")."""
+    on what this returns holds until the write commits (§2.3 "The expert"), and a demotion
+    or a removal that commits first is never overtaken (as #271 and #283)."""
     project = lock_project(conn, mine.project.id)
     row = conn.execute(
         select(t.membership).where(t.membership.c.id == mine.id, t.membership.c.active.is_(True))
@@ -839,19 +894,8 @@ def _locked(conn: Connection, mine: Membership) -> Membership:
     return replace(mine, project=project, row=row)
 
 
-def _locked_member(conn: Connection, caller: Caller, slug: str) -> Membership:
-    """The caller's membership read again after the project lock: a demotion or a removal
-    that commits first is never overtaken (as #271 and #283)."""
-    lock_project(conn, membership(conn, caller, slug).project.id)
-    return membership(conn, caller, slug)
-
-
-def _addressee_audience(conn: Connection, mine: Membership, to: inbox.Addressee) -> list[str]:
-    """`to` resolved to `member:` or `role:` (§8.2); `owner` is the owner's member id."""
-    return _audience_of(conn, mine.project.id, to)
-
-
 def _audience_of(conn: Connection, project_id: str, to: inbox.Addressee) -> list[str]:
+    """`to` resolved to `member:` or `role:` (§8.2); `owner` is the owner's member id."""
     if to.kind == "role":
         return [str(to.role)]
     if to.kind == "owner":
@@ -870,15 +914,7 @@ def _asking_instance(conn: Connection, row: Any) -> str | None:
     filed for the asker, whose session is the bridge's own membership's (§2.3)."""
     if row.asked_session_id is None:
         return None
-    instance: str | None = conn.execute(
-        select(t.credential.c.instance)
-        .join(t.agent_session, t.agent_session.c.credential_id == t.credential.c.id)
-        .where(
-            t.agent_session.c.id == row.asked_session_id,
-            t.credential.c.membership_id == row.asked_by,
-        )
-    ).scalar()
-    return instance
+    return _instances(conn, [row.asked_session_id]).get((row.asked_session_id, row.asked_by))
 
 
 def _asker_audience(conn: Connection, row: Any) -> list[str]:
@@ -947,11 +983,9 @@ def _filtered(
     query = select(t.request).where(
         t.request.c.project_id == mine.project.id, t.request.c.personal.is_(False)
     )
+    _check_status(status)
     if status != "all":
-        wanted = [s for s in status.split(",") if s]
-        if any(s not in inbox.STATUSES for s in wanted):
-            raise invalid({"status": "unknown"})
-        query = query.where(t.request.c.status.in_(wanted))
+        query = query.where(t.request.c.status.in_([s for s in status.split(",") if s]))
     if class_ is not None:
         query = query.where(t.request.c["class"] == class_)
     if asked_by is not None:
@@ -1130,8 +1164,9 @@ def _render(conn: Connection) -> Callable[[list[dict[str, Any]]], list[dict[str,
 
 
 def _check_status(status: str) -> None:
-    """Checked before any project is read: a caller without memberships gets the same
-    answer for a bad filter as a member does."""
+    """The `status` filter (`_filtered`); `GET /requests` checks it before any project is
+    read, so a caller without memberships gets the same answer for a bad filter as a member
+    does."""
     if status != "all" and any(s not in inbox.STATUSES for s in status.split(",") if s):
         raise invalid({"status": "unknown"})
 
@@ -1155,7 +1190,7 @@ def list_requests(
     cursor: str | None = None,
 ) -> JSONResponse:
     _check_sort(sort)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         rows = _filtered(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
@@ -1179,7 +1214,7 @@ def list_all_requests(
     """The cross-project inbox (§7): every membership of the human, `project` inline."""
     _check_sort(sort)
     _check_status(status)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         projects = conn.execute(
             select(t.project)
             .join(t.membership, t.membership.c.project_id == t.project.c.id)
@@ -1213,7 +1248,7 @@ def list_all_requests(
 
 @router.get("/projects/{owner}/{slug}/requests/{request_id}")
 def get_request(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         row = _project_request(conn, mine, request_id)
         if row.personal and (row.filed_by == "hub" or not inbox.is_asker(row, mine)):
@@ -1381,8 +1416,7 @@ def answer(
         if row.filed_by == "hub":
             raise not_found()  # no asker reads a hub notice through the project (§7)
         if row.personal:  # answered by its human through POST /requests/{id}/answer (§7)
-            # TODO(§6.17): the asking instance, once instances exist; same-team instances
-            # share the member id until then.
+            # `self_answer` is the membership's: every instance of the asking agent asked it.
             if inbox.is_asker(row, mine):
                 raise _self_answer()
             raise not_found()
@@ -1399,6 +1433,13 @@ def answer(
         refusal = inbox.needs_a_human(row, mine)
         if refusal is not None:
             raise humans_only(refusal)
+        if inbox.not_the_runner_owner(conn, row, mine):
+            raise ApiError(
+                403,
+                "forbidden",
+                "only the runner's owner answers a placement's consent request",
+                {"reason": "runner_owner_only"},
+            )
         if inbox.forwarded(row) and row.holder_member != mine.id:
             raise _not_holder()  # once forwarded, only its holder answers (§7)
         _refuse_by_kind(conn, row, mine)
@@ -1529,7 +1570,22 @@ def _holder_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
             )
         ).scalars()
         return [f"member:{h}" for h in humans]
-    return _addressee_audience(conn, mine, inbox.addressee_of(row))
+    return _filed_audience(conn, mine, row)
+
+
+def _filed_audience(conn: Connection, mine: Membership, row: Any) -> list[str]:
+    """`to` as filed, as an audience, with each agent it was held for (§9.6) named
+    `held:<id>` in place of its own tokens, as the request's first event named it."""
+    audience = _audience_of(conn, mine.project.id, inbox.addressee_of(row))
+    held = list(row.held or [])
+    if not held:
+        return audience
+    kept = [
+        x
+        for x in audience
+        if not any(x == f"member:{a}" or x.startswith(f"instance:{a}#") for a in held)
+    ]
+    return [*kept, *(f"held:{a}" for a in held)]
 
 
 def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after: Any) -> list[str]:
@@ -1540,7 +1596,7 @@ def _forwarding_audience(conn: Connection, mine: Membership, before: Any, after:
                 *_asker_audience(conn, before),
                 *_holder_audience(conn, mine, before),
                 *_holder_audience(conn, mine, after),
-                *_addressee_audience(conn, mine, inbox.addressee_of(before)),
+                *_filed_audience(conn, mine, before),
             ]
         )
     )
@@ -1601,12 +1657,51 @@ def _open_decision(conn: Connection, mine: Membership, request_id: str) -> Any:
     return row
 
 
+def _refuse_held(
+    conn: Connection, mine: Membership, row: Any, target: Any, then: str = "forward"
+) -> None:
+    """`forbidden` (`held_by_gate`) for a forward to an agent the request is held for, or
+    that the gate of §9.6 would hold it for were the asker to file it to that agent now: the
+    text is the asker's, so the asker's side is judged, whoever forwards it. The forward would
+    otherwise hand the request to a holder that may not read it. A claim from the pool is
+    judged the same way, with the claiming agent as the target (`then`: `claim`)."""
+    if target.agent_id is None:
+        return
+    if target.agent_id in (row.held or []):
+        raise ApiError(
+            403,
+            "forbidden",
+            "the gate of §9.6 held this request for that agent when it was filed, and a later yes"
+            " does not release it. Its owner can allow the asker's side, and the asker then asks"
+            " again",
+            {"reason": "held_by_gate"},
+        )
+    if row.asked_by is None:
+        return
+    asker = conn.execute(select(t.membership).where(t.membership.c.id == row.asked_by)).one()
+    kind = "agent" if asker.agent_id is not None else "human"
+    _, held_now = chat_gate.gate(
+        conn,
+        mine.project.id,
+        Membership(mine.project, asker, kind),
+        [f"member:{target.agent_id}"],
+    )
+    if target.agent_id in held_now:
+        raise ApiError(
+            403,
+            "forbidden",
+            "the gate of §9.6 holds this request for that agent: its owner has not said yes"
+            f" to the asker's side. The owner can allow the asker's side and then {then}",
+            {"reason": "held_by_gate"},
+        )
+
+
 @router.post("/projects/{owner}/{slug}/requests/{request_id}/forward")
 def forward(
     slug: str, request_id: str, body: ForwardIn, request: Request, caller: AnyCaller
 ) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked_member(conn, caller, slug)
+        mine = _locked(conn, membership(conn, caller, slug))
         row = _open_decision(conn, mine, request_id)
         if not _holds(conn, row, mine):
             raise _not_holder()
@@ -1645,6 +1740,8 @@ def forward(
                 raise invalid({"to": "owners_round"}, "this goes to one human, the owner's choice")
             # Nor to someone the proposal's kind would not let answer it (§6.19).
             _refuse_by_kind(conn, row, target)
+            # Nor to an agent the gate holds the request for (§9.6): refused, never dropped.
+            _refuse_held(conn, mine, row, target)
             target_id = target.id
             values = {"holder_member": target.id, "holder_pool": None}
         action_name = "opened" if target_id is None else "forwarded"
@@ -1678,7 +1775,7 @@ def forward(
 @router.post("/projects/{owner}/{slug}/requests/{request_id}/claim")
 def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     def action(conn: Connection) -> idempotency.Outcome:
-        mine = _locked_member(conn, caller, slug)
+        mine = _locked(conn, membership(conn, caller, slug))
         row = _open_decision(conn, mine, request_id)
         if "trust:admin" not in tokens_of(mine.trust, mine.role, mine.role_base):
             raise ApiError(
@@ -1689,6 +1786,8 @@ def claim(slug: str, request_id: str, request: Request, caller: AnyCaller) -> JS
         _refuse_by_kind(conn, row, mine)  # a holder that may not answer would strand it
         if inbox.is_asker(row, mine):
             raise invalid({"to": "self"}, "nobody holds a request it asked")
+        # Nor an agent the gate holds the request for (§9.6), as for a forward to it.
+        _refuse_held(conn, mine, row, mine.row, then="claim")
         won = conn.execute(
             update(t.request)
             .where(t.request.c.id == row.id, _pool_open())
@@ -1781,21 +1880,27 @@ def withdraw(
         _refuse_unless_open(row)
         proposals.require_known(row)
         now = clock.now()
-        conn.execute(
+        done = conn.execute(
             update(t.request)
-            .where(t.request.c.id == row.id)
+            .where(t.request.c.id == row.id, t.request.c.status == "open")
             .values(
                 status="withdrawn",
                 withdrawn_at=now,
                 withdraw_reason=body.reason,
                 changed_by_credential=caller.credential_id,
                 changed_via=caller.via,
+                **_snapshot(conn, row),
             )
-        )
+        ).rowcount
+        if done != 1:
+            _refuse_unless_open(_row(conn, row.id))
         moved = _unblock(conn, row)
         placements.settle(conn, row, "withdrawn", caller.actor(mine.id), mine.principal_id)
         proposals.settle(conn, row, "withdrawn", None, caller.actor(mine.id))
-        view = request_view(conn, _row(conn, row.id))
+        closed = _row(conn, row.id)
+        # One record per state change of a personal request, on this route too (§18.1).
+        records.personal_request(conn, closed)
+        view = request_view(conn, closed)
         emit(
             conn,
             mine.project.id,
@@ -2035,7 +2140,7 @@ def file_consent(
         conn,
         mine.project.id,
         "request_created",
-        _addressee_audience(conn, mine, to),
+        _audience_of(conn, mine.project.id, to),
         request_view(conn, _row(conn, request_id)),
         actor=caller.actor(mine.id),
         subject=("request", request_id),
@@ -2174,6 +2279,33 @@ def file_to_human(
     )
 
 
+def file_to_runner_owner(
+    conn: Connection,
+    mine: Membership,
+    caller: Caller,
+    human_id: str,
+    title_text: str,
+    summary: str,
+    *,
+    placement_id: str,
+) -> str:
+    """The consent request of an agent's placement proposal, to the runner's owner in
+    person (`to: human:<id>`, §15.6): only that human gives the go, member of the project
+    or not. Answered or withdrawn, it settles the placement as the project's request did."""
+    return _file_personal(
+        conn,
+        mine,
+        caller,
+        "consent",
+        title_text,
+        summary,
+        to_kind="human",
+        to_profile=None,
+        to_human=human_id,
+        placement_id=placement_id,
+    )
+
+
 def file_to_human_outside(
     conn: Connection,
     project_id: str,
@@ -2194,7 +2326,7 @@ def file_to_human_outside(
                 "id": request_id,
                 "project_id": project_id,
                 "class": "consent",
-                "title": title_text,
+                "title": title_text[: t.TITLE],  # a project name alone may fill it
                 "summary": summary,
                 "options": [],
                 "priority": "normal",
@@ -2270,6 +2402,7 @@ def _file_personal(
     task_id: str | None = None,
     proposal: dict[str, Any] | None = None,
     org_id: str | None = None,
+    placement_id: str | None = None,
 ) -> str:
     request_id = new_id("request")
     conn.execute(
@@ -2278,8 +2411,9 @@ def _file_personal(
                 "id": request_id,
                 "project_id": mine.project.id,
                 "org_id": org_id,
+                "placement_id": placement_id,
                 "class": class_,
-                "title": title_text,
+                "title": title_text[: t.TITLE],  # a project name alone may fill it
                 "summary": summary,
                 "options": options or [],
                 "priority": "normal",
@@ -2502,6 +2636,8 @@ def answer_personal(
             not_listening_digest.record_seen(conn, row, caller.human_id)
         actor = caller.actor(member.id) if member is not None else None
         outcome = "go" if body.reply_id == "go" else "no"
+        # A placement's consent (§15.6): `go` approves, any other answer refuses.
+        placements.settle(conn, row, outcome, actor, caller.human_id)
         proposals.settle(
             conn,
             _row(conn, row.id),
@@ -2572,6 +2708,8 @@ def withdraw_personal(
         if done != 1:
             _refuse_unless_open(_row(conn, row.id))
         moved = _unblock(conn, row)
+        actor = caller.actor(member.id) if member is not None else None
+        placements.settle(conn, row, "withdrawn", actor, caller.human_id)
         # A proposal is settled wherever its request closes (`proposals`): the invited
         # human's own withdrawal of an organisation's invitation counts as their no.
         if row.proposal is not None:

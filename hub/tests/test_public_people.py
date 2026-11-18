@@ -14,6 +14,7 @@ from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_account_deletion import admin_first, ask_deletion, person, press, token_of
 from tests.test_moderation import resolve
+from tests.test_public_pages import only_the_frames_script
 from tests.test_reports import report  # noqa: F401  (the fixture)
 from tests.test_reports import team as team
 from tests.test_two_factor import Clock
@@ -59,7 +60,7 @@ def test_a_profile_turned_off_keeps_handle_and_name_out_of_search(
     assert text is not None
     assert "<h1>" in text and "I build agents." in text and "maintainer" in text
     assert '<link rel="canonical" href="https://hub.example/maintainer">' in text
-    assert "<title>" in text and "<script" not in text
+    assert "<title>" in text and only_the_frames_script(text)
     assert "<loc>https://hub.example/maintainer</loc>" in anyone.get("/sitemap.xml").text
     # off: in the same call the page keeps handle and name only, and leaves search
     assert who.patch("/me", {"public_profile": False}).status_code == 200
@@ -187,8 +188,8 @@ def test_a_deleted_person_has_no_page(
     assert press(pat, token_of(migrated)).status_code == 200
     assert shown(anyone, "pat") is None
     with migrated.connect() as conn:
-        both = select(t.public_page).where(t.public_page.c.path.in_(["/pat", "/pat/agents"]))
-        assert conn.execute(both).all() == []
+        stored = select(t.public_page).where(t.public_page.c.path.like("/pat%"))
+        assert conn.execute(stored).all() == []
         row = conn.execute(select(t.human).where(t.human.c.id == pat.id)).one()
         # the text and the switches of the numbers and the agents go with the person
         assert (row.public_profile, row.public_bio, row.public_stats) == (False, None, False)

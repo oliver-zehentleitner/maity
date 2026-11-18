@@ -22,7 +22,7 @@ import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
-from maity import clonecheck, gitfacts, inclone
+from maity import clonecheck, gitfacts, inclone, onboarding
 
 # What the runner writes for a clone whose repository's grant has `pull_requests = true`:
 # the repository (`host/owner/name`) and the gh it found, one per line. Empty: not granted.
@@ -59,8 +59,8 @@ ENV_SET = {"GH_PROMPT_DISABLED": "1", "GH_NO_UPDATE_NOTIFIER": "1", "NO_COLOR": 
 WALKS = inclone.WALKS
 
 ALLOWED = (
-    "maity gh pr create --title <title> (--body <text> | --body-file <file in this clone>)"
-    " [--base <branch>] [--head <branch>] [--draft]; "
+    "maity gh pr create --title <title> (--body <text> | --body-file <file in this clone or"
+    " the scratch>) [--base <branch>] [--head <branch>] [--draft]; "
     "maity gh pr view [<number> | <branch>] [--json <fields>] [--comments]"
 )
 
@@ -87,7 +87,9 @@ def parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:  # type:
     create.add_argument("--title", required=True, help="the pull request's title")
     body = create.add_mutually_exclusive_group(required=True)
     body.add_argument("--body", help="the body as text")
-    body.add_argument("--body-file", help="a file in this clone, read by maity, not by gh")
+    body.add_argument(
+        "--body-file", help="a file in this clone or the scratch, read by maity, not by gh"
+    )
     create.add_argument("--base", help="the branch to merge into (the default branch if left out)")
     create.add_argument("--head", help="the branch with the changes (the current one if left out)")
     create.add_argument("--draft", action="store_true", help="open it as a draft")
@@ -131,10 +133,11 @@ def body_file(root: Path, given: str, opened: clonecheck.Opened | None = None) -
     """The file's content, read through descriptors only (`inclone.read`): maity runs
     outside the sandbox, and any name it looked up twice could point elsewhere the second
     time. A regular file in the clone whose root and `.git` `clonecheck.opened_clone`
-    checked (`opened`), outside that `.git`, with no other hard link, of at most BODY_MAX
-    bytes (cli/context/runner.md 9f43804d)."""
-    try:
-        inclone.names(root, given, "--body-file")  # a path out of the clone says so everywhere
+    checked (`opened`), outside that `.git`, or in the placement's scratch (783e476c), with
+    no other hard link, of at most BODY_MAX bytes (cli/context/runner.md 9f43804d)."""
+    scratch = inclone.recorded_scratch(root, opened.git if opened else None)
+    try:  # a path out of the clone and its scratch says so everywhere, with both named
+        inclone.located(root, given, "--body-file", scratch)
     except inclone.Refused as exc:
         raise Refused(str(exc)) from None
     if not WALKS:  # Windows
@@ -143,7 +146,7 @@ def body_file(root: Path, given: str, opened: clonecheck.Opened | None = None) -
             " give the text with --body"
         )
     try:
-        return inclone.read(root, given, "--body-file", BODY_MAX, opened)
+        return inclone.read(root, given, "--body-file", BODY_MAX, opened, scratch)
     except inclone.Refused as exc:
         raise Refused(str(exc)) from None
 
@@ -215,23 +218,27 @@ def as_text(args: argparse.Namespace) -> bool:
 
 def _readable(answer: bytes) -> str:
     """A `pr view` answer (VIEW_FIELDS, comments with `--comments`) as text; what is not
-    the JSON gh gives is printed as it came."""
+    the JSON gh gives is printed as it came. Either way the text is someone's: every field is
+    cleaned (`onboarding`), one-line fields kept on their line, so no escape reaches the
+    terminal and no title or name starts a line of its own."""
+    one = onboarding.inline
     try:
         pr = json.loads(answer)
         author = (pr.get("author") or {}).get("login") or "?"
         state = pr["state"] + (" (draft)" if pr.get("isDraft") else "")
         lines = [
-            f"#{pr['number']} {pr['title']}",
-            f"{state}  {pr['headRefName']} -> {pr['baseRefName']}  by {author}",
-            pr["url"],
+            f"#{one(pr['number'])} {one(pr['title'])}",
+            f"{one(state)}  {one(pr['headRefName'])} -> {one(pr['baseRefName'])}  by {one(author)}",
+            one(pr["url"]),
             "",
-            (pr.get("body") or "").rstrip() or "(no description)",
+            onboarding.clean((pr.get("body") or "").rstrip()) or "(no description)",
         ]
         for comment in pr.get("comments") or []:
-            who = (comment.get("author") or {}).get("login") or "?"
-            lines += ["", f"--- {who}, {comment.get('createdAt', '')}", comment["body"].rstrip()]
+            who = one((comment.get("author") or {}).get("login") or "?")
+            when = one(comment.get("createdAt", ""))
+            lines += ["", f"--- {who}, {when}", onboarding.clean(comment["body"].rstrip())]
     except (ValueError, KeyError, TypeError, AttributeError):
-        return answer.decode("utf-8", "replace")
+        return onboarding.clean(answer.decode("utf-8", "replace"))
     return "\n".join(lines) + "\n"
 
 

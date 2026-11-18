@@ -44,6 +44,7 @@ from maity_hub import (
     public_agents,
     public_pages,
     public_people,
+    public_projects,
     ranks,
     restricted,
     rules,
@@ -202,19 +203,15 @@ class MePatch(Strict):
     avatar_motif: Any = None  # an agent's own motif or null (§6.10)
 
 
+# A human's own fields of `PATCH /me`. The switch and its parts are given when not null
+# (`null` changes nothing); every other field is given when present.
+MEAT_PROXY = ("meat_proxy", "meat_proxy_lead", "meat_proxy_hands")
+PUBLIC = ("public_profile", "public_presence", "public_stats", "public_agents", "public_bio")
 LINKS = ("website", "social", "links_visible")
 HUMAN_FIELDS = (
-    "meat_proxy",
-    "meat_proxy_lead",
-    "meat_proxy_hands",
-    "public_profile",
-    "public_presence",
-    "public_stats",
-    "public_agents",
-    "public_bio",
-    "website",
-    "social",
-    "links_visible",
+    *MEAT_PROXY,
+    *PUBLIC,
+    *LINKS,
     "interface_language",
     "start_tabs",
     "experiment_notice_understood",
@@ -296,6 +293,14 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         # `harness`, so that a switch across such a resume is still seen.
         model = body.model if body.model is not None or previous is None else previous.model
         harness = body.harness if body.harness is not None or previous is None else previous.harness
+        # The harness the agent's public pages show before this session (§16.9): a project's page
+        # names it too, and is rendered again only when this session changes it.
+        pages_of = (
+            public_agents.memberships(conn, caller.agent_id)
+            if mine.project.public_page == "on" and caller.agent_id is not None
+            else []
+        )
+        shown_harness = public_agents.latest_session(conn, pages_of)[1] if pages_of else None
         session_id = new_id("session")
         conn.execute(
             insert(t.agent_session).values(
@@ -321,6 +326,13 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         if mine.project.public_page == "on" and caller.agent_id is not None:
             # The agent's page shows its latest session's model and harness (§16.9).
             public_pages.touch(conn, public_agents.KIND, caller.agent_id, dependents=False)
+            if pages_of and (harness or None) != shown_harness:
+                # Its project pages name the harness as well; not on every start, since agents
+                # resume often and each render costs (hub/context/public-pages.md 0e401fc9).
+                for project, _ in pages_of:
+                    public_pages.touch(
+                        conn, public_projects.KIND, project.id, removal=False, dependents=False
+                    )
         commitment.start(conn, mine.project, caller.credential_id or "", session_id, now)
         conn.execute(
             update(t.card)
@@ -346,13 +358,19 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         )
         if previous is not None:
             _announce_model_change(conn, mine, caller, previous, harness, model, session_id)
-        # The member's next resume clears its limit (§6.12); a returning agent is
-        # announced before its packet is built.
-        if mine.row.limit_until is not None:
+        # The member's next resume clears its limit (§6.12), but not a runner's: the
+        # instance resuming may not be the limited one, and the runner's next report
+        # decides. A returning agent is announced before its packet is built. The end of
+        # its own limit recomputes the runner's, which may take over now; after a live
+        # own limit without a gap, so it is no new start (no second holder_stalled).
+        if mine.row.limit_until is not None and mine.row.limit_source != "runner":
             conn.execute(
                 update(t.membership)
                 .where(t.membership.c.id == mine.id)
                 .values(**availability.NO_LIMIT)
+            )
+            availability.recompute_runner_limit(
+                conn, mine.id, actor, continues=mine.row.limit_until > clock.now()
             )
         availability.reconcile_ids(conn, [mine.id], actor)
         mine = _own_membership(conn, caller)  # with the pause cleared
@@ -659,7 +677,7 @@ def _packet(
             "covering": own_view["covering"],  # whom it covers (§6.12)
             # Who stands below it, as the member answers count it (§6.2): what a lead resumes to.
             "manages": instance_counts.manages(members, views, [mine.row.id])[mine.row.id],
-            "placement": _placement_block(conn, mine.id),
+            "placement": _placement_block(conn, mine.id, caller.credential_id),
         },
         "team": siblings,
         "project": {
@@ -720,12 +738,21 @@ def _packet(
     }
 
 
-def _placement_block(conn: Connection, membership_id: int) -> dict[str, Any] | None:
-    """`membership.placement` (§15.11): the active placement running this membership."""
+def _placement_block(
+    conn: Connection, membership_id: int, credential_id: str | None
+) -> dict[str, Any] | None:
+    """`membership.placement` (§15.11): the active placement that runs this instance, the
+    one naming its credential; never another instance's placement of the membership."""
+    if credential_id is None:
+        return None
     row = conn.execute(
         select(t.placement, t.runner.c.name.label("runner_name"))
         .join(t.runner, t.runner.c.id == t.placement.c.runner_id)
-        .where(t.placement.c.membership_id == membership_id, t.placement.c.active.is_(True))
+        .where(
+            t.placement.c.membership_id == membership_id,
+            t.placement.c.credential_id == credential_id,
+            t.placement.c.active.is_(True),
+        )
     ).first()
     if row is None:
         return None
@@ -868,7 +895,7 @@ def load_human_profile(conn: Connection, human_id: str) -> dict[str, Any]:
     return {**human_body(conn, human_id), "server_time": clock.rfc3339(clock.now())}
 
 
-idempotency.LOADERS["human_profile"] = idempotency.plain(load_human_profile)
+idempotency.register("human_profile", idempotency.plain(load_human_profile), idempotency.is_caller)
 
 
 @router.patch("/me")
@@ -880,22 +907,10 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             if field in given:
                 raise invalid({field: "agents_only"})
         parts = {"meat_proxy_lead": body.meat_proxy_lead, "meat_proxy_hands": body.meat_proxy_hands}
-        public = {
-            "public_profile",
-            "public_presence",
-            "public_stats",
-            "public_agents",
-            "public_bio",
-        } & given
-        links = {"website", "social", "links_visible"} & given
-        if (
-            body.meat_proxy is None
-            and all(v is None for v in parts.values())
-            and not (public or links)
-            and body.handle is None
-            and "interface_language" not in given
-            and "start_tabs" not in given
-            and "experiment_notice_understood" not in given
+        public = set(PUBLIC) & given
+        links = set(LINKS) & given
+        if all(getattr(body, field) is None for field in (*MEAT_PROXY, "handle")) and not any(
+            field in given for field in HUMAN_FIELDS if field not in MEAT_PROXY
         ):
             raise invalid({"handle": "required", "meat_proxy": "required"}, "nothing to change")
         if body.meat_proxy is False and any(parts.values()):
@@ -966,9 +981,8 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
                 )
                 .values(experiment_notice_understood_at=clock.now())
             )
-        links_given = {"website", "social", "links_visible"} & given
         changed = False
-        if links_given:
+        if links:
             current = conn.execute(select(t.human).where(t.human.c.id == caller.human_id)).one()
             # `social: null` clears every network; `links_visible: null` is no value (`unknown`).
             social_in = (
@@ -996,7 +1010,7 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             conn.execute(update(t.human).where(t.human.c.id == caller.human_id).values(**values))
         if changed:  # an edit that stores what was there is no news to the projects
             person_links.announce(conn, caller.human_id)
-        if public or links_given:
+        if public or links:
             # Turning the page off or editing its text takes something off it: at once (§16.9).
             # Turning the page or the online name on alone adds something: under `interval`
             # it waits for the run.

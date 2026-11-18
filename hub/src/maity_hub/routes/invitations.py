@@ -110,7 +110,14 @@ def _invitee_view(conn: Connection, human_id: str) -> dict[str, Any]:
     return {"handle": person.handle, "display_name": person.display_name}
 
 
-idempotency.LOADERS["invitation"] = idempotency.plain(_load)
+idempotency.register(
+    "invitation",
+    idempotency.plain(_load),
+    # the invitations list is the member admins' (§3.2)
+    idempotency.in_project(
+        idempotency.column_of(t.invitation), lambda _conn, mine, _id: mine.may("members:admin")
+    ),
+)
 
 
 @router.post("/projects/{owner}/{slug}/invitations", status_code=201)
@@ -302,7 +309,7 @@ def _logo_url(conn: Connection, request: Request, project: Any) -> str | None:
 @router.get("/invitations/{token}")
 async def invitation_page(token: str, request: Request) -> JSONResponse:
     """What the dashboard's `/invite/<token>` shows (§3.4), the same for every reader."""
-    wait = EXCHANGE_BY_ADDRESS.hit(origin_of(request).address)
+    wait = await run_in_threadpool(EXCHANGE_BY_ADDRESS.hit, origin_of(request).address)
     if wait:
         raise rate_limited(wait)
     engine = engine_of(request)
@@ -353,7 +360,7 @@ def _registration(conn: Connection, row: Any, project: Any, resolved: Any) -> st
 async def accept_invitation(token: str, request: Request, caller: HumanCaller) -> JSONResponse:
     """§3.4: one transaction, under the project's lock. A refusal that changes the
     invitation (used up, voided) is committed before it is answered."""
-    wait = EXCHANGE_BY_ADDRESS.hit(origin_of(request).address)
+    wait = await run_in_threadpool(EXCHANGE_BY_ADDRESS.hit, origin_of(request).address)
     if wait:
         raise rate_limited(wait)
     engine = engine_of(request)

@@ -395,8 +395,10 @@ caller holds a thread and a connection.
 
 The engine opens PostgreSQL and MySQL/MariaDB connections at isolation
 level `READ COMMITTED`. SQLite has one writer; every SQLite transaction
-starts with `BEGIN IMMEDIATE` and so holds the write lock before its first
-read, which is what `lock_project` gives the server engines. A MySQL
+that may write starts with `BEGIN IMMEDIATE` and so holds the write lock
+before its first read, which is what `lock_project` gives the server
+engines (a transaction that only reads does not, see "A transaction that
+only reads takes no write lock on SQLite" below). A MySQL
 server with `binlog_format=STATEMENT` refuses writes at `READ COMMITTED`;
 `ROW` (the default) and `MIXED` are fine.
 
@@ -423,6 +425,53 @@ a read before it.
   the first write, so the reads before it ran unlocked: two crossing
   `depends_on` changes stored a cycle, and a claim racing a cancel
   answered 500.
+
+## A transaction that only reads takes no write lock on SQLite
+
+**Id:** 465ebcb0-2264-41e3-9370-ac9ff49fc9c6
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** a load review of the hub's read paths and the plan the team lead approved, 2026-11-14 (card tsk-ybc2ma72dzvq, PR 1 of its split); the timings in that pull request
+**Revisit when:** a route opened with `read_transaction` has to write, the authentication's presence writes move out of their own transaction, or SQLite stops being a supported engine
+**See:** persistence.md#read-committed-on-every-server-engine — 87b08f1e-c12c-48a6-adaf-f7bd93d5c32b — as of 2026-11-14
+
+A route that only reads opens its transaction with `db.read_transaction`
+instead of `engine.begin()`. On SQLite that is a plain `BEGIN` under
+`PRAGMA query_only`: the transaction reads a WAL snapshot without the
+write lock, and any write inside it fails at once with "readonly". Every
+other transaction keeps `BEGIN IMMEDIATE`. On the server engines the helper
+is `engine.begin()`. Since `query_only` belongs to the connection, the
+begin hook sets it to what each transaction needs, and only when the
+pooled connection has the other value.
+
+**Reason:** with `BEGIN IMMEDIATE` on every transaction, each read of the
+board, the overview, the swarm or a request list held the instance's single
+writer for as long as it read. Reads waited for each other and for every
+write, and a write waited behind a slow read for up to the busy timeout.
+Under WAL a reader needs no lock, and a transaction that never writes
+cannot hit the upgrade failure that made every transaction immediate.
+
+**Consequences:** the authentication of a call still runs in a transaction
+of its own that writes presence and leases, so on SQLite each call still
+takes the write lock briefly before its route runs. Only the route's own
+read is freed. A route moved to `read_transaction` must not write in it,
+and `query_only` turns a mistake there into an error in the tests.
+
+**Rejected alternatives:**
+- A plain `BEGIN` for every transaction, with the write lock taken by
+  `lock_project`. Several write paths read before they lock or never call
+  it, and a deferred transaction that read first cannot upgrade once
+  another has committed. That is the failure that made every transaction
+  immediate.
+- Marking the writes instead of the reads (`BEGIN IMMEDIATE` only when
+  asked for). Nearly three hundred `engine.begin()` sites would each have
+  to be right, and one forgotten writer brings the race back. A forgotten
+  read only stays as slow as before.
+- A deferred read without `query_only`. A hidden write in a read route
+  would try to upgrade the transaction and fail only under contention,
+  rarely and in production. With `query_only` it fails every time, in the
+  tests.
 
 ## `maity-hub quickstart` migrates only a new, empty SQLite database
 
@@ -1230,3 +1279,43 @@ aiosqlite keeps SQLite on the same code path as the servers.
   out on the runner, and it would still see such a stall only from 150 ms over its own lag, which
   no run has measured. The CPU time per callback catches it from 50 ms, with the reference in the
   process.
+
+## An `async def` runs no sync transaction on the event loop
+
+**Id:** 09716491-b10a-4c73-bf6e-cfe0eabba8ba
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pzex5cpkv6tx, 2026-11-15: web-e2e on #1843 (CI run 43712574171) got 503 from
+`POST /api/v1/admin/reports/{id}/resolve` after `total_ms=5014`, `loop_late_max_ms=4925`; the
+review of #1845 (A637: the helper the guard did not follow)
+**See:** persistence.md — 66f0bcf9-cb6f-4993-81de-541d13f0c942 — as of 2026-11-15
+
+A sync engine's transaction (`with engine.begin()` / `.connect()`, `events.transaction`,
+`idempotency.run`, `retrying`) never starts on the loop's thread: an `async def` route hands it to
+`run_in_threadpool`, as `routes/auth.py` does, or the route stays a plain `def`.
+That holds for a call of a sync helper that opens one, too (`device_codes._require_enabled`),
+and for a rate limiter's `hit`, `take`, `place` and `release`: on PostgreSQL they count in
+`shared_counts`, a sync transaction with an advisory lock (`ratelimit.Limiter`, replicas.md).
+`hub/tests/test_no_sync_db_on_loop.py` scans every `async def` in the package for those calls
+outside a nested function, and for unawaited calls of the package's sync functions and of
+methods of its objects (module-level objects, `self` and `self.<attr>`) that open one,
+transitively, and names file, line and function. A limiter made with `local=True` counts in the
+process and is left out. Startup and shutdown (`app.lifespan`) are exempt: no request holds the
+lock then. `routes/reports.py` (`file_report`, `resolve_report`), `routes/email_sign_in.py`
+(`complete_link`), `routes/device_codes.py` (`get_code`, `watch_redemption`) and the limiter
+calls of `routes/auth.py` (`login`), `routes/invitations.py` (`invitation_page`,
+`accept_invitation`), `routes/joins.py` (`exchange`), `routes/register_page.py`
+(`register_complete`), `routes/registration.py` (`register`), `routes/runners.py` (`pair`) and
+`forge_webhook.handle` broke the rule and were moved.
+
+**Reason:** on SQLite every transaction begins IMMEDIATE, and every request's authentication
+(`deps.authenticated`) is an async-engine transaction that holds the write lock across awaits. A
+sync transaction on the loop waits for that lock and blocks the loop its holder needs to commit,
+so it waits the whole busy timeout (5 s) and answers 503. On the server databases it costs the
+loop the statement's time, which the loop-lag guard watches only for the hot families.
+
+**Rejected alternatives:**
+- A timing test of the deadlock (an async holder and a sync write on the loop): it needs the 5 s
+  busy timeout per run and shows only the families it calls; the scan covers every route at no
+  cost.

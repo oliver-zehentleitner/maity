@@ -197,6 +197,11 @@ def test_a_worker_serves_with_the_hubs_server(monkeypatch: pytest.MonkeyPatch) -
 # --- one hub, two processes, PostgreSQL -------------------------------------------------------
 
 
+def _pods(engine: Engine) -> list[str]:
+    with engine.connect() as conn:
+        return list(conn.execute(select(t.hub_pod.c.pod)).scalars())
+
+
 @pytest.fixture
 def hub(database_url: str, migrated: Engine, tmp_path: Path) -> Iterator[Hub]:
     if not database_url.startswith("postgresql"):
@@ -226,6 +231,19 @@ def hub(database_url: str, migrated: Engine, tmp_path: Path) -> Iterator[Hub]:
             time.sleep(0.1)
         else:
             pytest.fail(f"the two workers' listeners did not connect:\n{log.read_text()[-2000:]}")
+        # The lifespan starts the listener before `listening.start` writes the worker's
+        # `hub_pod` row: a LISTEN seen is no row yet on a loaded runner (tsk-wcgg40xgrhcr).
+        pods: list[str] = []
+        while time.monotonic() < deadline:  # both workers' rows written
+            pods = _pods(migrated)
+            if len(set(pods)) >= 2:
+                break
+            time.sleep(0.1)
+        else:
+            pytest.fail(
+                f"the two workers' hub_pod rows were not written, saw {pods}:\n"
+                f"{log.read_text()[-2000:]}"
+            )
         yield served
     finally:
         if process.poll() is None:
@@ -253,8 +271,7 @@ def agents(team: tuple[flow.Human, flow.Agent, flow.Agent]) -> tuple[flow.Agent,
 
 
 def test_two_workers_are_two_processes_of_one_hub(hub: Hub, migrated: Engine) -> None:
-    with migrated.connect() as conn:
-        pods = conn.execute(select(t.hub_pod.c.pod)).scalars().all()
+    pods = _pods(migrated)
     assert len(set(pods)) == 2, pods
     assert "maity-hub: 2 workers" in hub.log.read_text()
 

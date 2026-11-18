@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, Engine, select, update
 
-from maity_hub import account_deletion, catalog, clock
+from maity_hub import account_deletion, catalog, clock, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import email_links, passwords, second_factor, sessions, sign_in_settings
 from maity_hub.auth import password_resets as resets
@@ -138,6 +138,10 @@ def deliver(
         ).scalar()
         if human_id is None:
             return
+        # The account's lock first, shared, as the link's `POST` takes it (`_live`): the mail
+        # has no session to take it, and a deletion of the account takes it exclusively before
+        # anything else, so the two run one after the other.
+        write_guard.share(conn, human_id)
         email_links.lock_human(conn, human_id)
         found = _eligible(conn, hub, human_id)
         # The address may have changed after the lookup without a lock.
@@ -186,6 +190,14 @@ def _live(conn: Connection, hub: Settings, token: str, *, lock: bool) -> tuple[A
     if payload is None:
         return None
     if lock:
+        # The account's lock first, shared, as every write of the human takes it: the
+        # deletion's confirmation takes it exclusively before any other (`write_guard`), so
+        # the two run one after the other. Then the factor's row before the human's, the
+        # order every second-factor check takes (`second_factor.check`, which `_code_right`
+        # calls later): without it a reset and a wrong code elsewhere could each hold the row
+        # the other waits for.
+        write_guard.share(conn, payload["h"])
+        second_factor.factor_of(conn, payload["h"], lock=True)
         email_links.lock_human(conn, payload["h"])  # issue, guesses and use, one at a time
     row = resets.live(conn, payload)
     human = conn.execute(select(t.human).where(t.human.c.id == payload["h"])).first()
@@ -300,7 +312,12 @@ def _code_right(
     if body.code is None and body.recovery_code is None:
         return False  # no guess: refused, neither compared nor counted
     used = second_factor.check(
-        conn, hub, human_id, code=body.code, recovery_code=body.recovery_code
+        conn,
+        hub,
+        human_id,
+        code=body.code,
+        recovery_code=body.recovery_code,
+        seen=(ip, browser, system),
     )
     if used is not None:
         return True

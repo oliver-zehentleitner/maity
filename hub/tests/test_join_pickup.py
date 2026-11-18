@@ -10,10 +10,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import CLI_VERSION, clock, cross_owner, events
+from maity_hub import CLI_VERSION, clock, cross_owner, events, moderation
 from maity_hub import tables as t
 from maity_hub.routes import agents, joins
 from tests import factory, flow
+from tests import test_runners as runners
 from tests.conftest import ClientFactory
 from tests.test_placements import REPOSITORY, Setup, events_of, placed
 from tests.test_runner_stream import attach, hello, send
@@ -101,6 +102,34 @@ def test_a_new_profile_is_created_at_the_exchange(setup: Setup, make_client: Cli
     assert placement_row(setup, placement["id"]).membership_id is not None
 
 
+def _demote_owner(s: Setup) -> None:
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == s.owner.id).values(trust="admin")
+        )
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+def test_a_new_profile_follows_its_creators_current_standing(
+    setup: Setup, make_client: ClientFactory, when: str
+) -> None:
+    # §3.4, §15.9: a new profile with trust admin, placed by an owner. Once that owner is
+    # only an admin, it is what the creator may no longer give: the runner's pickup is
+    # refused, and a code picked up before the change no longer exchanges.
+    placement = placed(setup, agent={"handle": "agent-f", "display_name": "Agent F"}, trust="admin")
+    if when == "pickup":
+        _demote_owner(setup)
+        refused = pick_up(setup, placement)
+        assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+        assert refused.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+        return
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    _demote_owner(setup)
+    gone = exchange(make_client(), picked.json())
+    assert gone.status_code == 404, gone.text
+
+
 @pytest.mark.parametrize("late", ["invalid", "unique"])
 def test_a_handle_taken_during_the_exchange_is_not_found(
     setup: Setup, make_client: ClientFactory, monkeypatch: pytest.MonkeyPatch, late: str
@@ -129,6 +158,13 @@ def test_a_lost_answer_is_recovered_and_three_pickups_is_all(
     second = pick_up(setup, placement).json()
     assert second["pickup"] == 2
     assert exchange(make_client(), first).status_code == 404  # revoked by the second
+    with setup.engine.connect() as conn:  # the hub's own revocation: nobody named or told
+        revoked = conn.execute(
+            select(t.join_link.c.revoked_by).where(t.join_link.c.revoked_at.is_not(None))
+        ).all()
+        assert len(revoked) == 1 and revoked[0].revoked_by is None
+        told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
+        assert told == []
     assert pick_up(setup, placement).json()["pickup"] == 3
     fourth = pick_up(setup, placement)
     assert (fourth.status_code, error(fourth)) == (409, "pickup_used")
@@ -203,8 +239,9 @@ def test_a_pickup_never_takes_over_a_live_instance(
 
 
 def test_a_pickup_respects_the_teams_instances(setup: Setup) -> None:
-    _allow_instances(setup.engine, setup.agent.id, 1)  # the joined clone has the one
     placement = placed(setup)
+    # Lowered after the creation, which checked it too (§15.5): the pickup checks again.
+    _allow_instances(setup.engine, setup.agent.id, 1)  # the joined clone has the one
     refused = pick_up(setup, placement)
     assert (refused.status_code, error(refused)) == (409, "instance_quota")
 
@@ -243,10 +280,45 @@ def _members(s: Setup) -> int:
         return len(conn.execute(select(t.membership.c.id)).all())
 
 
-@pytest.mark.parametrize("gone", ["deleted", "stopped", "runner_revoked", "runner_removed"])
+def _suspend_owner(s: Setup) -> Any:
+    with events.transaction(s.engine) as conn:
+        moderation.suspend(conn, s.owner.id, "rpt-000000000000")
+    return SimpleNamespace(status_code=200, text="")
+
+
+def _leak(s: Setup) -> Any:
+    leaked = s.owner.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": s.runner.value},
+    )
+    assert error(leaked) == "credential_in_payload"  # refused, and the credential revoked
+    return SimpleNamespace(status_code=200, text="")
+
+
+def _re_pair(s: Setup, make_client: ClientFactory) -> Any:
+    answer = runners.exchange(
+        make_client(), runners.enroll(s.owner, name=None, runner_id=s.runner.id)
+    )
+    assert answer.status_code == 201, answer.text
+    return SimpleNamespace(status_code=200, text="")
+
+
+@pytest.mark.parametrize(
+    "gone",
+    [
+        "deleted",
+        "stopped",
+        "runner_revoked",
+        "runner_leaked",
+        "runner_removed",
+        "re_paired",
+        "owner_suspended",
+    ],
+)
 def test_an_unused_pickup_dies_with_its_placement_or_runner(
     setup: Setup, make_client: ClientFactory, gone: str
 ) -> None:
+    """A re-pair and the owner's suspension revoke the credential that fetched it, too."""
     placement = placed(setup)
     picked = pick_up(setup, placement).json()
     path = f"/projects/maintainer/maity/placements/{placement['id']}"
@@ -255,6 +327,9 @@ def test_an_unused_pickup_dies_with_its_placement_or_runner(
         "stopped": lambda: setup.owner.patch(path, {"desired": "stopped"}),
         "runner_revoked": lambda: setup.owner.post(f"/runners/{setup.runner.id}/revoke", {}),
         "runner_removed": lambda: setup.owner.delete(f"/runners/{setup.runner.id}"),
+        "runner_leaked": lambda: _leak(setup),
+        "re_paired": lambda: _re_pair(setup, make_client),
+        "owner_suspended": lambda: _suspend_owner(setup),
     }[gone]()
     assert answer.status_code == 200, answer.text
     with setup.engine.connect() as conn:
@@ -262,10 +337,12 @@ def test_an_unused_pickup_dies_with_its_placement_or_runner(
             select(t.join_link.c.revoked_at).where(t.join_link.c.placement_id.is_not(None))
         ).all()
     assert joins and all(j.revoked_at is not None for j in joins)
-    _unrevoke_joins(setup)
+    if gone != "re_paired":  # a re-pair leaves a live credential: the revocation refuses
+        _unrevoke_joins(setup)
     members = _members(setup)
     refused = exchange(make_client(), picked)
-    assert refused.status_code == 404, refused.text
+    # A suspended creator's join is refused before anything else is read (§16.8).
+    assert refused.status_code == (403 if gone == "owner_suspended" else 404), refused.text
     assert _members(setup) == members
     assert placement_row(setup, placement["id"]).credential_id is None
 
@@ -461,8 +538,20 @@ def test_a_new_profile_under_another_owners_boss_waits_for_the_boss_side(
 # --- supervised sessions (§15.11) ----------------------------------------------------------
 
 
+def runs(s: Setup, placement: dict[str, Any], agent: Any) -> None:
+    """The placement runs `agent`'s own instance, as after its pickup: the packet shows an
+    instance the placement that names its credential, never a sibling's (§15.11)."""
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == placement["id"])
+            .values(credential_id=agent.credential_id)
+        )
+
+
 def test_a_supervised_resume_says_so(setup: Setup) -> None:
     placement = placed(setup)
+    runs(setup, placement, setup.agent)
     supervised = setup.agent.resume(supervisor="maity-runner/0.1.0").json()
     assert supervised["hints"] == {"duty": "supervised", "cli_version": CLI_VERSION}
     assert "## Supervised" in supervised["rules"]["markdown"]
@@ -513,8 +602,43 @@ def test_each_agent_sees_its_own_placement(setup: Setup, make_client: ClientFact
     _allow_instances(setup.engine, other.id, 2)
     theirs = placed(setup, agent={"id": other.id})
     mine = placed(setup)
+    # Before its pickup a placement runs no instance yet: nobody's packet shows it.
+    assert setup.agent.resume().json()["membership"]["placement"] is None
+    runs(setup, theirs, other)
+    runs(setup, mine, setup.agent)
     assert setup.agent.resume().json()["membership"]["placement"]["id"] == mine["id"]
     assert other.resume().json()["membership"]["placement"]["id"] == theirs["id"]
+
+
+def test_each_instance_sees_its_own_placement(setup: Setup, make_client: ClientFactory) -> None:
+    """§15.11: each instance's packet names the placement that runs it, and an instance
+    joined by hand, which no placement runs, gets none, never a sibling's."""
+    _allow_instances(setup.engine, setup.agent.id, 4)
+    first, second = placed(setup), placed(setup)
+    client = make_client()
+    joined = exchange(client, pick_up(setup, second).json())
+    assert joined.status_code == 201, joined.text
+    runs(setup, first, setup.agent)  # the joined clone runs the first
+    assert setup.agent.resume().json()["membership"]["placement"]["id"] == first["id"]
+    with setup.engine.connect() as conn:
+        bound = conn.execute(
+            select(t.placement.c.credential_id).where(t.placement.c.id == second["id"])
+        ).scalar_one()
+    assert bound != setup.agent.credential_id  # the second runs an instance of its own
+    picked_up = flow.Agent(
+        client,
+        joined.text,
+        joined.headers["Maity-Credential-Id"],
+        joined.headers["Maity-Member-Id"],
+        joined.headers["Maity-Instance"],
+    )
+    assert picked_up.credential_id == bound
+    resumed = picked_up.resume()
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["membership"]["placement"]["id"] == second["id"]
+    by_hand = flow.agent(make_client, setup.owner, agent={"id": setup.agent.id}, new_instance=True)
+    assert by_hand.id == setup.agent.id and by_hand.instance not in ("", picked_up.instance)
+    assert by_hand.resume().json()["membership"]["placement"] is None
 
 
 def test_a_supervisor_is_a_runners_name(setup: Setup) -> None:
@@ -546,3 +670,22 @@ def test_a_supervised_session_wakes_on_less() -> None:
         row = _row(kind, audience)
         assert events.wakes(row, me, "agt-b") is plain, kind
         assert events.wakes(row, me, "agt-b", supervised=True) is supervised, (kind, audience)
+
+
+def test_the_hub_revoking_an_unused_pickup_names_nobody_and_tells_nobody(
+    setup: Setup,
+) -> None:
+    """`revoke_unused_joins` is the hub's own revocation, whoever moved the placement (§3.1)."""
+    placement = placed(setup)
+    pick_up(setup, placement)
+    path = f"/projects/maintainer/maity/placements/{placement['id']}"
+    assert setup.owner.delete(path).status_code == 200
+    with setup.engine.connect() as conn:
+        joins = conn.execute(
+            select(t.join_link.c.revoked_at, t.join_link.c.revoked_by).where(
+                t.join_link.c.placement_id.is_not(None)
+            )
+        ).all()
+        told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
+    assert joins and all(j.revoked_at is not None and j.revoked_by is None for j in joins)
+    assert told == []

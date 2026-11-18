@@ -8,8 +8,8 @@ from maity import pointer
 def test_block_is_appended_once(tmp_path: Path) -> None:
     agents = tmp_path / "AGENTS.md"
     agents.write_text("# AGENTS.md\n\nRules.")
-    assert pointer.write(tmp_path) == [agents]
-    assert pointer.write(tmp_path) == []
+    assert pointer.write(tmp_path) == ([agents], [])
+    assert pointer.write(tmp_path) == ([], [])
     text = agents.read_text()
     assert text.startswith("# AGENTS.md\n\nRules.\n\n" + pointer.BEGIN)
     assert text.count(pointer.BEGIN) == 1
@@ -29,9 +29,9 @@ def test_agents_md_is_created_when_missing(tmp_path: Path) -> None:
 
 def test_claude_md_only_when_it_does_not_import_agents_md(tmp_path: Path) -> None:
     (tmp_path / "CLAUDE.md").write_text("@AGENTS.md\n")
-    assert pointer.write(tmp_path) == [tmp_path / "AGENTS.md"]
+    assert pointer.write(tmp_path) == ([tmp_path / "AGENTS.md"], [])
     (tmp_path / "CLAUDE.md").write_text("# Own rules\n")
-    assert pointer.write(tmp_path) == [tmp_path / "CLAUDE.md"]
+    assert pointer.write(tmp_path) == ([tmp_path / "CLAUDE.md"], [])
 
 
 def test_block_has_no_url_and_no_fetch() -> None:

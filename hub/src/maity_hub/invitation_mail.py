@@ -65,13 +65,15 @@ def text(
 ) -> tuple[str, str]:
     """Subject and body of the invitation's mail. What the hub did not write (the inviter's
     name, the project's name, the `note`) is defanged, so that no mail client makes a link of
-    it: the only links are the hub's own (§18.5)."""
-    from maity_hub.notifications.mailer import defang, quoted
+    it: the only links are the hub's own (§18.5). The subject is one line, whatever the names
+    hold, and cut as every subject is."""
+    from maity_hub.notifications.mailer import defang, quoted, subject_line
 
+    title = subject_line(f"[Maity] {inviter} invites you to {project_name}")
     inviter, project_name = defang(inviter), defang(project_name)
     said = f"{inviter} wrote: {quoted(note)}\n\n" if note else ""
     return (
-        f"[Maity] {inviter} invites you to {project_name}",
+        title,
         f"{inviter} invites you to the Maity project {project_name} ({full_name}) on "
         f"{public_url}, with trust {trust} and the role {role}.\n\n"
         f"{said}"

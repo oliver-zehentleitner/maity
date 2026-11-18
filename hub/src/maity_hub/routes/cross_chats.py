@@ -201,8 +201,39 @@ def _load_participation(conn: Any, stay_id: str, _request: Request) -> dict[str,
     return cross_chats.participation(row)
 
 
-idempotency.LOADERS["cross_chat"] = _load_chat
-idempotency.LOADERS["cross_participation"] = _load_participation
+def _sees_chat(conn: Any, chat_id: str, caller: Caller) -> bool:
+    """As the chat's GET (§9.5): a chat the caller reads now."""
+    if caller.kind not in ("human", "agent"):
+        return False
+    chat = cross_chats.find(conn, chat_id)
+    return chat is not None and cross_chats.view(conn, chat, _reader_id(caller)) is not None
+
+
+def _sees_stay(conn: Any, stay_id: str, caller: Caller) -> bool:
+    """One's own stay, the one a leave ended included, or a stay in a chat the caller reads."""
+    from maity_hub import tables as t
+
+    row = conn.execute(
+        select(t.cross_chat_participant).where(t.cross_chat_participant.c.id == int(stay_id))
+    ).first()
+    if row is None or caller.kind not in ("human", "agent"):
+        return False
+    return row.member_id == _reader_id(caller) or _sees_chat(conn, row.conversation_id, caller)
+
+
+def _sees_message(conn: Any, message_id: str, caller: Caller) -> bool:
+    from maity_hub import tables as t
+
+    chat_id = conn.execute(
+        select(t.cross_chat_message.c.conversation_id).where(
+            t.cross_chat_message.c.id == message_id
+        )
+    ).scalar()
+    return chat_id is not None and _sees_chat(conn, chat_id, caller)
+
+
+idempotency.register("cross_chat", _load_chat, _sees_chat)
+idempotency.register("cross_participation", _load_participation, _sees_stay)
 
 
 @router.get("/me/cross-chats/{chat_id}/messages")
@@ -251,7 +282,7 @@ def _load_message(conn: Any, message_id: str, request: Request) -> dict[str, Any
     return cross_chats.message_view(row, show_reason=reader == chat.owner_id)
 
 
-idempotency.LOADERS["cross_message"] = _load_message
+idempotency.register("cross_message", _load_message, _sees_message)
 
 
 @router.post("/me/cross-chats/{chat_id}/messages/{message_id}/redact")

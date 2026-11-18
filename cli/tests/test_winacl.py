@@ -251,7 +251,8 @@ def test_a_pipe_on_windows_speaks_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_maity_files_is_private(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from maity import cli
 
-    monkeypatch.chdir(tmp_path)
+    (tmp_path / "state").mkdir()
+    monkeypatch.setenv(state.STATE_DIR_ENV, str(tmp_path / "state"))
     assert_private(cli._files_dir())
 
 
@@ -294,7 +295,8 @@ def test_a_maity_files_folder_others_can_reach_is_refused(
     """Someone else made it, or the list of a new one failed: nothing lands in it."""
     from maity import cli
 
-    monkeypatch.chdir(tmp_path)
+    (tmp_path / "state").mkdir()
+    monkeypatch.setenv(state.STATE_DIR_ENV, str(tmp_path / "state"))
     folder = cli._files_dir()
     _grant_users(folder)
     with pytest.raises(state.StateError, match="icacls"):

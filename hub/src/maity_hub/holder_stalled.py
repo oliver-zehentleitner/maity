@@ -7,7 +7,7 @@ the holding instance through its `instance:` token, which these two kinds never 
 
 `holder_stalled` comes from three places: a limit that starts (`availability.set_agent_limit`),
 a revocation that is neither a replacement nor a member's removal, which move or release the
-claims themselves and say so to `auth.leaks.revoke` (`holder_moves`), and the start of a
+claims themselves and say so to `auth.revocation.revoke` (`holder_moves`), and the start of a
 not-listening episode (`not_listening.check`). `claim_expired` comes from the minute worker: one
 event per holder and pass for the claims whose `lease_until` passed since it last looked
 (`card.lease_expiry_reported` holds the `lease_until` it named).
@@ -151,7 +151,7 @@ def limit_started(conn: Connection, membership_id: int) -> None:
 def revoked(conn: Connection, credential_id: str) -> None:
     """The instance's session ended by a revocation (§6.5). A replacement moves the claims to
     the new instance and a removal releases them in the same transaction: both say so to
-    `auth.leaks.revoke` (`holder_moves`), which then does not call this."""
+    `auth.revocation.revoke` (`holder_moves`), which then does not call this."""
     row = conn.execute(
         select(t.credential.c.membership_id, t.credential.c.instance).where(
             t.credential.c.id == credential_id

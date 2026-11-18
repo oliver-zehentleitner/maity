@@ -13,20 +13,20 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, Engine, select
+from starlette.concurrency import run_in_threadpool
 
-from maity_hub import catalog, clock, landing, link_frame, paths, render
+from maity_hub import catalog, clock, landing, link_frame, paths, render, write_guard
 from maity_hub import tables as t
+from maity_hub.auth import anonymous, second_factor, sessions, sign_in_settings
 from maity_hub.auth import email_links as links
-from maity_hub.auth import second_factor, sessions, sign_in_settings
 from maity_hub.auth.caller import (
     SESSION_COOKIE,
-    require_secure_transport,
     session_alive,
     session_id_hash,
 )
 from maity_hub.config import Settings
 from maity_hub.deps import engine_of, origin_of, settings_of
-from maity_hub.errors import ApiError, forbidden, humans_only, rate_limited
+from maity_hub.errors import ApiError, forbidden, rate_limited
 from maity_hub.mail import address, outbox
 from maity_hub.notifications import preferences, tokens
 from maity_hub.routes import auth, device_codes
@@ -57,7 +57,7 @@ def _enabled(conn: Connection, hub: Settings) -> None:
 
 
 def _anonymous(request: Request) -> None:
-    device_codes._anonymous(request)
+    anonymous.entry(request)
     presented = request.cookies.get(SESSION_COOKIE)
     if not presented:
         return
@@ -133,6 +133,15 @@ def _eligible(conn: Connection, hub: Settings, human_id: str, epoch: int | None 
     return row
 
 
+def _lock(conn: Connection, human_id: str) -> None:
+    """The account's lock, shared, then the human's row, before any other lock: a link's mail,
+    its code and its `POST` have no session to take the account lock (`write_guard`), and a
+    deletion of the account takes it exclusively before anything else, so the two run one
+    after the other; after the deletion `_eligible` finds no address to use."""
+    write_guard.share(conn, human_id)
+    links.lock_human(conn, human_id)
+
+
 def deliver(
     engine: Engine,
     hub: Settings,
@@ -154,7 +163,7 @@ def deliver(
         ).scalar()
         if human_id is None:
             return
-        links.lock_human(conn, human_id)
+        _lock(conn, human_id)
         row = _eligible(conn, hub, human_id)
         # The address may have changed after the non-locking lookup.
         if row is None or row.address_normalized != address.normalized(given):
@@ -252,7 +261,7 @@ def redeem_code(body: CodeRequest, request: Request) -> JSONResponse:
         _enabled(conn, hub)
         row = links.live(conn, pending=request.cookies.get(device_codes.PENDING_COOKIE))
         if row is not None:
-            links.lock_human(conn, row.human_id)
+            _lock(conn, row.human_id)
             if (
                 _eligible(conn, hub, row.human_id, row.address_epoch) is not None
                 and hub.mail.signing_key is not None
@@ -298,9 +307,7 @@ def _dead(conn: Connection, request: Request) -> HTMLResponse:
 
 @page_router.get("/mail/sign-in/{token}")
 def link_page(token: str, request: Request) -> HTMLResponse:
-    if request.headers.get("authorization"):
-        raise humans_only("a sign-in link is for a browser, never a credential")
-    require_secure_transport(origin_of(request), settings_of(request).allow_plain_http)
+    anonymous.no_credential(request)
     hub = settings_of(request)
     payload = _token(hub, token)
     with engine_of(request).begin() as conn:
@@ -344,12 +351,18 @@ def link_page(token: str, request: Request) -> HTMLResponse:
 
 @page_router.post("/mail/sign-in/{token}")
 async def complete_link(token: str, request: Request) -> Response:
-    device_codes._anonymous(request)
+    anonymous.entry(request)
     if request.headers.get("sec-fetch-site") != "same-origin":
         raise forbidden(message="a sign-in needs a same-origin form")
     if request.headers.get("content-type", "").split(";")[0] != "application/x-www-form-urlencoded":
         raise forbidden(message="a sign-in needs a form")
     fields = parse_qs((await request.body()).decode("utf-8", errors="replace"))
+    # Off the event loop, as every sync transaction in an `async def` (hub/context/persistence.md,
+    # tests/test_no_sync_db_on_loop.py).
+    return await run_in_threadpool(_complete_link, token, request, fields)
+
+
+def _complete_link(token: str, request: Request, fields: dict[str, list[str]]) -> Response:
     given = fields.get("form", [])
     cookie = request.cookies.get(FORM_COOKIE)
     if not cookie or len(given) != 1 or not hmac.compare_digest(given[0].encode(), cookie.encode()):
@@ -363,7 +376,7 @@ async def complete_link(token: str, request: Request) -> Response:
         row = links.live(conn, nonce_hash=links.digest(payload["n"]))
         if row is None or row.human_id != payload["h"]:
             return _dead(conn, request)
-        links.lock_human(conn, row.human_id)
+        _lock(conn, row.human_id)
         if _eligible(conn, hub, row.human_id, row.address_epoch) is None or not links.use(
             conn, row
         ):

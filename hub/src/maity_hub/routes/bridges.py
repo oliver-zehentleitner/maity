@@ -7,10 +7,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import StringConstraints
+from pydantic import BeforeValidator, StringConstraints
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, select
 
-from maity_hub import bridges, idempotency, namespace
+from maity_hub import bridges, idempotency, namespace, plain_text
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.cross_owner import owner_of
@@ -24,8 +25,21 @@ from maity_hub.views import principal_id
 
 router = APIRouter(route_class=ProjectRoute)
 
+
+def _plain(purpose: Any) -> Any:
+    """The purpose is one plain line (§2.3): it stands quoted in the consent request, where a
+    line break or a control could make it read as the request's own text. Checked on the
+    input as sent, before the trimming: a line break or tab at either end is refused, not
+    trimmed away; spaces at the ends are trimmed."""
+    if isinstance(purpose, str) and not plain_text.is_plain_line(purpose):
+        raise PydanticCustomError("plain_line", "the purpose is one line of plain text")
+    return purpose
+
+
 Purpose = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=BRIDGE_PURPOSE)
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=BRIDGE_PURPOSE),
+    BeforeValidator(_plain),
 ]
 
 
@@ -189,4 +203,21 @@ def _load(conn: Connection, bridge_id: str) -> dict[str, Any]:
     return bridges.view(conn, row)
 
 
-idempotency.LOADERS["bridge"] = idempotency.plain(_load)
+_IN_BRIDGES_PROJECT = idempotency.in_project(idempotency.column_of(t.bridge))
+
+
+def _sees_bridge(conn: Connection, bridge_id: str, caller: Any) -> bool:
+    """A member who reads the project, or the human owning the bridge agent from outside it,
+    whom `DELETE` lets end the connection: their retry finds the ended row (§2.3)."""
+    if _IN_BRIDGES_PROJECT(conn, bridge_id, caller):
+        return True
+    if caller.kind != "human":
+        return False
+    row = conn.execute(select(t.bridge.c.bridge).where(t.bridge.c.id == bridge_id)).first()
+    if row is None:
+        return False
+    bridge = conn.execute(select(t.membership).where(t.membership.c.id == row.bridge)).one()
+    return bool(owner_of(conn, bridge) == caller.human_id)
+
+
+idempotency.register("bridge", idempotency.plain(_load), _sees_bridge)

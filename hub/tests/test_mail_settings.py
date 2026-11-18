@@ -692,7 +692,7 @@ def test_not_one_address(value: object) -> None:
     assert not address.valid(value)
 
 
-def test_header_values_lose_control_characters_and_are_encoded() -> None:
+def test_header_values_fold_control_characters_and_are_encoded() -> None:
     mail = headers.message(
         sender="maity@example.org",
         sender_name="Mäity\r\nBcc: x@example.org",
@@ -704,5 +704,6 @@ def test_header_values_lose_control_characters_and_are_encoded() -> None:
     assert b"\nBcc:" not in raw
     assert b"=?utf-8?" in raw
     parsed = message_from_bytes(raw, policy=default)
-    assert parsed["Subject"] == "HälloBcc: y@example.org"
+    # A run of control characters becomes one space (§18.5): one line, no word glued on.
+    assert parsed["Subject"] == "Hällo Bcc: y@example.org"
     assert parsed["Bcc"] is None

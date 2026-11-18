@@ -9,7 +9,13 @@ from fastapi.responses import JSONResponse, Response
 from maity_hub import clock, forge, ktw, ktw_reads
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, engine_of, reader_of
-from maity_hub.errors import ApiError, not_found, probe_not_configured
+from maity_hub.errors import (
+    ApiError,
+    ktw_not_configured,
+    ktw_unavailable,
+    not_found,
+    probe_not_configured,
+)
 from maity_hub.namespace import ProjectRoute
 
 router = APIRouter(route_class=ProjectRoute)
@@ -32,24 +38,17 @@ def read_keep_the_why(
             reader_of(request), project.id, project.repository_url, max_age
         )
     except ktw.Busy:
-        raise ApiError(
-            503,
-            "ktw_unavailable",
-            "the Keep the Why family is being read; try again shortly",
-            {"reason": "forge_unavailable"},
+        raise ktw_unavailable(
+            "forge_unavailable", "the Keep the Why family is being read; try again shortly"
         ) from None
     snapshot = entry.snapshot
     if snapshot is None:
-        raise ApiError(
-            409,
-            "ktw_not_configured",
-            "the repository names no Keep the Why export (.keep-the-why, dashboard-state)",
-        )
+        raise ktw_not_configured()
     if snapshot.error is not None:
-        details: dict[str, object] = {"reason": snapshot.error["reason"]}
-        if snapshot.members:
-            details["last"] = snapshot.answer(fresh=False)
-        raise ApiError(503, "ktw_unavailable", "the root .keep-the-why could not be read", details)
+        last = {"last": snapshot.answer(fresh=False)} if snapshot.members else {}
+        raise ktw_unavailable(
+            snapshot.error["reason"], "the root .keep-the-why could not be read", **last
+        )
     if member is not None and all(m.path != member for m in snapshot.members):
         raise not_found()
     return JSONResponse(snapshot.answer(member, fresh))
@@ -82,25 +81,24 @@ def _views_read(
         mine.require("project:read")
     project = mine.project
     if not project.repository_url:
-        raise ApiError(
-            409,
-            "ktw_not_configured",
-            "the repository names no Keep the Why export (.keep-the-why, dashboard-state)",
-        )
+        raise ktw_not_configured()
     base = reader_of(request)
     fg = base.for_project(project.id)
     admin = mine.may("project:admin")
     read = ktw_reads.export if which == "state" else ktw_reads.bodies
     try:
         if not fg.configured_for(project.repository_url):
-            raise forge.NotCoveredError(fg.refused or "no_grant")
+            raise forge.NotCoveredError(forge.unread_reason(fg, project.repository_url))
         spent = fg.retry_at()  # read once: on PostgreSQL each read is a query
         if spent is not None:
             raise forge.ForgeUnavailableError(
                 "the forge's rate limit is spent", rate_limited=True, retry_at=spent
             )
-        # every call: no export held in memory outlives the grant or the visibility (§11.5)
-        ktw_reads.require_covered(fg, forge.repository_of(project.repository_url))
+        # Every call, not only when the cache is refreshed: no export held in memory outlives
+        # the grant or the visibility (§11.5). With the instance token this is §11.4's
+        # visibility check (kept for 10 minutes); an owner's grant is re-chosen by
+        # `for_project` itself.
+        fg.require_covered(forge.repository_of(project.repository_url))
         served = read(
             fg,
             ktw_reads.named_reader(base, fg),
@@ -114,21 +112,12 @@ def _views_read(
         raise probe_not_configured(error.reason if admin else None) from None
     except forge.ForgeUnavailableError as error:
         if error.retry_at is None:
-            raise ApiError(
-                503,
-                "ktw_unavailable",
-                "the Keep the Why export could not be read",
-                {"reason": "forge_unavailable"},
-            ) from None
+            raise ktw_unavailable("forge_unavailable") from None
         raise ApiError(
             503,
             "probe_unavailable",
             "the forge's rate limit is spent",
             {"retry_at": clock.rfc3339(error.retry_at)},
-        ) from None
-    except ktw_reads.Refused as refused:
-        raise ApiError(
-            refused.status, refused.code, refused.message, refused.details or None
         ) from None
     headers = {"ETag": served.etag, "Cache-Control": "private, no-cache"}
     if _matches(request.headers.get("If-None-Match"), served.etag):

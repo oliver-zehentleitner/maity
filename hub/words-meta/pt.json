@@ -175,6 +175,22 @@
     "en": "9d1a4d7e2b6e1f5d",
     "text": "5161773d13e2997c"
   },
+  "mail.address_changed_body": {
+    "en": "219a6f021ae9f584",
+    "text": "ab342e86871fa7d0"
+  },
+  "mail.address_from": {
+    "en": "047165494d34f84b",
+    "text": "ce491b9bb5a0505f"
+  },
+  "mail.address_removed_body": {
+    "en": "032acd3da7bab9bb",
+    "text": "edc70104c960ecaa"
+  },
+  "mail.address_subject": {
+    "en": "db411d71ce3e92da",
+    "text": "425ee7a160ec90d3"
+  },
   "mail.more": {
     "en": "a1cd32796e7e9005",
     "text": "a3ccdd980e6b8551"
@@ -211,9 +227,21 @@
     "en": "dfaef747e184ddf6",
     "text": "415b81b10eb96b1e"
   },
+  "mail.unknown_ip": {
+    "en": "e56c65d7188c79cc",
+    "text": "ef4b167de1d19e83"
+  },
   "mail.updates": {
     "en": "ee72d97604a9a40d",
     "text": "ca856573c0db1f45"
+  },
+  "mail.verify_body": {
+    "en": "dbf48469793468cf",
+    "text": "2a25a112f4d657fc"
+  },
+  "mail.verify_subject": {
+    "en": "749bdc78cabbe4a2",
+    "text": "41b35e6bedad55c5"
   },
   "mail.wrote": {
     "en": "3cff4d92714ec5c4",
@@ -459,6 +487,10 @@
     "en": "191903c61492ea38",
     "text": "4acedb879a51d21f"
   },
+  "product.discord": {
+    "en": "eda6e32290d46f17",
+    "text": "7e376566fb6cbff6"
+  },
   "product.love": {
     "en": "96fa5228627bef6a",
     "text": "81f8f93867ca1ded"
@@ -470,6 +502,18 @@
   "product.security": {
     "en": "32548671ddc1415a",
     "text": "f27d63ca68bb8477"
+  },
+  "register_page.again": {
+    "en": "e3eb981a5111d261",
+    "text": "c647abd49ffd0332"
+  },
+  "register_page.again_dead": {
+    "en": "ce628d661377887c",
+    "text": "9895b60c291dea81"
+  },
+  "register_page.again_password": {
+    "en": "01c90acff032ebd4",
+    "text": "8ba2a9428b593a54"
   },
   "register_page.button": {
     "en": "e63588a861737d67",
@@ -518,6 +562,14 @@
   "register_page.handle": {
     "en": "41483b645efc0c65",
     "text": "54e0ac86feb7f833"
+  },
+  "register_page.handle_lower": {
+    "en": "1418319d65caffe0",
+    "text": "46ca0d8c8a400a4f"
+  },
+  "register_page.handle_rule": {
+    "en": "91068c8308ff7d7d",
+    "text": "fbd620d6cf3b3c9a"
   },
   "register_page.intro": {
     "en": "3af54dd923e1059b",

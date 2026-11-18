@@ -202,6 +202,28 @@ def test_a_body_file_outside_the_clone_is_refused(
     assert "not a file in this clone" in err and ran(placed) is None
 
 
+@runs_gh
+@walks
+def test_a_body_file_in_the_recorded_scratch_is_sent_and_one_outside_both_names_both(
+    placed: dict[str, Any], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"  # beside the clone (§15.5)
+    room.mkdir(parents=True)
+    private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{room}\n")
+    (room / "body.md").write_text("Card tsk-x, from the scratch\n")
+    create = ["gh", "pr", "create", "--title", "t", "--body-file"]
+    assert cli.main([*create, str(room / "body.md")]) == 0
+    call = ran(placed)
+    assert call is not None and call["stdin"] == "Card tsk-x, from the scratch\n"
+    placed["log"].unlink()
+    err = refused([*create, str(login_file(tmp_path))], capsys)
+    assert ran(placed) is None
+    assert f"not a file in this clone ({placed['clone']})" in err
+    assert f"or in the placement's scratch ({room})" in err
+    assert f"this clone ({room})" not in err  # the scratch is never called the clone
+
+
 @walks
 def test_a_link_in_the_clone_to_a_file_outside_is_refused(
     placed: dict[str, Any], tmp_path: Path, capsys: pytest.CaptureFixture[str]

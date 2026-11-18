@@ -9,23 +9,22 @@ the account only after the approval. The code and the pending cookie are stored 
 
 from __future__ import annotations
 
-import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Connection, insert, select, update
 
-from maity_hub import avatars, clock, ids, wakeups
+from maity_hub import avatars, clock, codes, ids, wakeups
 from maity_hub import tables as t
 from maity_hub.auth import sessions
+from maity_hub.codes import digest as digest  # routes/device_codes.py reads it from here
 from maity_hub.config import Settings
 from maity_hub.errors import ApiError
 from maity_hub.views import ts
 
 LIFETIME = timedelta(minutes=5)
 COMPLETE_WITHIN = timedelta(seconds=60)  # after the approval
-ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford's base32
 LENGTH = 12  # three groups of four as shown (§2.6.2)
 USER_AGENT_MAX = 300
 OPEN = ("waiting", "redeemed", "approved")
@@ -37,20 +36,12 @@ def code_invalid() -> ApiError:
 
 
 def new_code() -> str:
-    return "".join(secrets.choice(ALPHABET) for _ in range(LENGTH))
+    return codes.random_code(LENGTH)
 
 
 def normalise(text: str) -> str | None:
     """Case-insensitive, hyphens and spaces dropped, I and L read as 1, O as 0."""
-    code = text.upper().replace("-", "").replace(" ", "")
-    code = code.replace("I", "1").replace("L", "1").replace("O", "0")
-    if len(code) != LENGTH or any(c not in ALPHABET for c in code):
-        return None
-    return code
-
-
-def digest(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()
+    return codes.normalise(text, LENGTH)
 
 
 def status(row: Any, now: datetime) -> str:

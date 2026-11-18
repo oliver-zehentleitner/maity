@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, and_, case, or_, select
+from starlette.concurrency import run_in_threadpool
 
 from maity_hub import attachment_store, idempotency, paging, reports
 from maity_hub import tables as t
@@ -28,7 +29,8 @@ def _load(conn: Connection, report_id: str) -> dict[str, Any]:
     return {"id": row.id, "created_at": ts(row.created_at)}
 
 
-idempotency.LOADERS["abuse_report"] = idempotency.plain(_load)
+# A report is its reporter's alone, and its replay shows only its id and time (§12).
+idempotency.register("abuse_report", idempotency.plain(_load), idempotency.own)
 
 
 @router.post("/reports")
@@ -46,7 +48,11 @@ async def file_report(request: Request, caller: AnyCaller) -> JSONResponse:
         made = reports.create(conn, caller, body, settings_of(request).public_pages)
         return idempotency.Outcome(201, "abuse_report", made["id"], made)
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    # Off the event loop: on SQLite every transaction begins IMMEDIATE, and another request's
+    # authentication (an async-engine transaction, deps.authenticated) can hold the write lock
+    # across an await; a sync wait for it on the loop keeps that holder from committing until
+    # the busy timeout (503). See tests/test_no_sync_db_on_loop.py.
+    return await run_in_threadpool(idempotency.run, engine_of(request), request, caller, action)
 
 
 @router.get("/me/reports")
@@ -176,4 +182,5 @@ async def resolve_report(report_id: str, request: Request, caller: HumanCaller) 
         )
         return idempotency.Outcome(200, None, None, shown)
 
-    return idempotency.run(engine_of(request), request, caller, action)
+    # Off the event loop, as in file_report.
+    return await run_in_threadpool(idempotency.run, engine_of(request), request, caller, action)
