@@ -611,6 +611,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "bridges.refused.outside_role": "该桥接的所有者不是这里的成员，而此智能体的角色不是项目允许对外部开放的角色。",
   "bridges.refused.proxy": "proxy 既不出借也不借用双手。",
   "bridges.refused.purpose": "请用 1 到 200 个字符说明桥接的用途。",
+  "bridges.refused.purpose_plain_line": "请用一行纯文本说明桥接的用途，不含换行、制表符或不可见字符。",
   "bridges.refused.security_team": "安全团队的智能体不能使用其他所有者的桥接。",
   "bridges.refused.too_many": "此智能体已有五个桥接，或已有五个待处理的桥接请求。",
   "bridges.serves_other": "向 {member} 出借双手：{purpose}",
