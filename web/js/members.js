@@ -590,11 +590,6 @@ window.Maity = window.Maity || {};
     // now (trust member, member_agents on, the membership within the member
     // limits), to a role a member join could give, a project role on such a base
     // included. Otherwise, and for its areas always, the line says who sets them.
-    const projectRoles = [];
-    let rolesAsked = false;
-    let rolesKnown = false;
-    // Every picker drawn before the roles arrive takes them in when they do.
-    const roleFills = new Set();
     function rolePart(m, memberPath) {
       if (!ownAgent(m) || m.removed_at || ctx.canAdmin) return null;
       const id = "owner-role-" + m.id;
@@ -608,24 +603,16 @@ window.Maity = window.Maity || {};
           h("p", { class: "muted owner-role-fixed" }, M.t("members.owner_role.fixed", { role: M.trust.roleLabel(m.role) })), areas);
       }
       const pick = keyed("owner-role:" + m.id, h("select", { id }));
+      // The project's own roles on a base a member join may give (§2.3), read once per view.
+      const memberBase = (list) => list.filter((x) => M.trust.MEMBER_ROLES.includes(x.base));
+      let own = memberBase(M.trust.projectRoles(ctx, (list) => { own = memberBase(list); if (own.length) fill(); }));
       const fill = () => {
-        const offered = M.trust.MEMBER_ROLES.concat(projectRoles.filter((r) => !M.trust.MEMBER_ROLES.includes(r)));
+        const offered = M.trust.MEMBER_ROLES.concat(own.map((x) => x.name));
         if (!offered.includes(m.role)) offered.push(m.role);
-        M.trust.fillRoles(pick, offered, pick.value || m.role, m.role);
+        M.trust.fillRoles(pick, offered, pick.value || m.role, m.role, own);
       };
       const help = M.trust.roleHint(pick);
       fill();
-      // The project's own roles on a base a member join may give (§2.3), read once.
-      if (!rolesKnown) roleFills.add(fill);
-      if (!rolesAsked) {
-        rolesAsked = true;
-        const settle = () => { rolesKnown = true; const waiting = [...roleFills]; roleFills.clear(); return waiting; };
-        M.api.get(ctx.base + "/roles").then((r) => {
-          ((r && r.custom) || []).filter((x) => M.trust.MEMBER_ROLES.includes(x.base)).forEach((x) => projectRoles.push(x.name));
-          const waiting = settle();
-          if (projectRoles.length) waiting.forEach((f) => f());
-        }).catch(settle);
-      }
       const save = h("button", { type: "submit", class: "small" }, M.t("members.owner_role.save"));
       return h("form", {
         class: "inline-form owner-role",
@@ -852,12 +839,14 @@ window.Maity = window.Maity || {};
       const role = keyed("role:" + m.id, h("select", { id: id("role") }));
       // The role proxy goes with trust admin only (proxy_needs_admin): with any
       // other trust it is not offered, and a proxy whose trust changes becomes a coder.
+      // The project's own roles follow the built-in ones, on any base (§2.3).
+      let own = M.trust.projectRoles(ctx, (list) => { own = list; fillRoles(); });
       const fillRoles = () => {
         const wanted = role.value || (draft.role !== undefined ? draft.role : m.role);
         const proxyOk = trust.value === "admin" && (ctx.isOwner || m.role === "proxy");
-        const offered = M.trust.ROLES.filter((r) => r !== "proxy" || proxyOk);
+        const offered = M.trust.ROLES.filter((r) => r !== "proxy" || proxyOk).concat(own.map((x) => x.name));
         if (m.role && m.role !== "proxy" && !offered.includes(m.role)) offered.push(m.role);
-        M.trust.fillRoles(role, offered, wanted, offered.includes(m.role) ? m.role : "coder");
+        M.trust.fillRoles(role, offered, wanted, offered.includes(m.role) ? m.role : "coder", own);
       };
       const roleHelp = M.trust.roleHint(role);
       fillRoles();
