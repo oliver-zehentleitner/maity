@@ -83,9 +83,7 @@ def test_the_last_page_ends_exactly_at_the_limit(owner: flow.Human) -> None:
 
 
 @pytest.mark.parametrize("order", ["board", "updated"])
-def test_a_search_with_far_apart_hits_pages_over_its_batches(
-    owner: flow.Human, order: str
-) -> None:
+def test_a_search_with_far_apart_hits_pages_over_its_batches(owner: flow.Human, order: str) -> None:
     """With `limit=2` a batch reads 3, 6, 12 … cards: hits every seventh card, and one found
     only by a note, lie in different batches and on different pages."""
     hits = []
