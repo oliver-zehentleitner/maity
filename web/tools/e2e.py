@@ -417,6 +417,8 @@ def start_hub(
         MAITY_WEB_DIR=str(WEB),
         MAITY_ATTACHMENT_DIR=str(attachments),
         MAITY_PUBLIC_PAGES="on",
+        # A test browser session reads far faster than a person: no read limit per credential.
+        MAITY_MAX_READS_PER_MINUTE="unlimited",
         **(extra or {}),
     )
     HUB_ENV[base] = env
