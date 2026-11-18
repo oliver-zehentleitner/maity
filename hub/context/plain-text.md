@@ -40,7 +40,12 @@ inviter in an invitation's request and mail, an organisation's name in the title
 invitation's request; a project's name, a notification's title and a writer's display name in
 a notification mail, subject and body), `plain_line` folds each run of refused characters into
 one space first, before `subject_line`, which cleans only Cc, Zl and Zp;
-the JSON answers carry the value unchanged. The invitation's request and mail name the inviter
+the JSON answers carry the value unchanged. A notification's title is folded where it is built:
+every title in `notifications/items.py` passes `_cut`, which folds the whole title (the
+catalog's words hold no refused character, so only the stored parts change), and so the
+notification list carries it folded too; the mail folds it again in the subject and the body,
+for a title built elsewhere. The fold turns U+200D into a space, so an emoji sequence in a
+display name shows as its parts in a title. The invitation's request and mail name the inviter
 as "display name (@handle)", as the invitation page does: a display name alone can be anyone's.
 The mail's subject keeps the display name alone, since the handle would push the project's name
 toward the subject's cut and the body names it.

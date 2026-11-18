@@ -459,7 +459,7 @@ def compose(
         lines.append(quoted(projects.get(project_id or "", "Maity")))
         for item in (i for i in shown if i.project_id == project_id):
             stamp = item.at.astimezone(zone).strftime("%Y-%m-%d %H:%M")
-            lines.append(f"- {quoted(item.title or '')}")
+            lines.append(f"- {quoted(plain_line(item.title or ''))}")
             lines.append(f"  {stamp} {item.url}")
             content = (prefs["kinds"].get(item.kind) or {}).get("content")
             text = _message_text(conn, item) if content else None
