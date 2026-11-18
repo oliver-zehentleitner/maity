@@ -19,6 +19,7 @@ from sqlalchemy import ColumnElement, Connection, select
 
 from maity_hub import (
     allowed_projects,
+    ceilings,
     events,
     handles,
     idempotency,
@@ -303,6 +304,25 @@ def placement_reports(
         return JSONResponse({"items": event_views(conn, rows, mine), "next_cursor": None})
 
 
+def _refuse_over_placements(conn: Connection, mine: Membership, project: Any, full: str) -> None:
+    """`placement_quota` with the quota details (§6.31) when the project holds as many
+    active placements as `max_placements` in effect allows."""
+    limit = ceilings.resolve(conn, "max_placements", project, project.max_placements)
+    count = pl.active_count(conn, project.id)
+    if count >= limit.limit:
+        raise ApiError(
+            409,
+            "placement_quota",
+            "the project's placements are at its limit",
+            ceilings.details(
+                limit,
+                count,
+                full,
+                sees_ceiling=mine.kind == "human" and mine.may("project:admin"),
+            ),
+        )
+
+
 # --- creating -------------------------------------------------------------------------------
 
 
@@ -330,13 +350,7 @@ def create_placement(
         # close, and one on a revoked runner never run (§15.5, §15.6).
         _require_open(project)
         _require_live(conn, runner)
-        if pl.active_count(conn, project.id) >= project.max_placements:
-            raise ApiError(
-                409,
-                "placement_quota",
-                "the project's placements are at its limit",
-                {"max": project.max_placements},
-            )
+        _refuse_over_placements(conn, mine, project, slug)
         agent_values, handle = _agent_values(conn, mine, body, right)
         clone = body.workspace.clone or handle
         _exists(

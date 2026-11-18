@@ -46,9 +46,9 @@ CHOICES = {
     "agent_owners": ("members", "anyone"),
 }
 LEASE_MIN, LEASE_MAX, LEASE_DEFAULT = 600, 86400, 7200
-MAX_PLACEMENTS_DEFAULT, MAX_PLACEMENTS_MAX = 8, 1000
+MAX_PLACEMENTS_DEFAULT = 8  # within the ceiling of §6.31 (ceilings.py)
 WINDOW_MIN, WINDOW_MAX, WINDOW_DEFAULT = 5, 1440, 60  # takeover_window_minutes (§6.19)
-MEMBER_AGENTS_MAX_MAX, MEMBER_AGENTS_MAX_DEFAULT = 20, 3  # member_agents_max (§3.1)
+MEMBER_AGENTS_MAX_DEFAULT = 3  # member_agents_max (§3.1), within its ceiling (ceilings.py)
 FIELDS = (
     "preset",
     *CHOICES,

@@ -100,6 +100,8 @@ def create_profile(
     carried it (§1.7)."""
     if not one_line(display_name):
         raise invalid({"display_name": "control_character"})
+    # `limit` is the instance's value; an override on the owner's account comes first.
+    limit, source = limits.for_account(conn, "max_agents_per_human", owner_id, limit)
     if limit is not None:
         conn.execute(select(t.human.c.id).where(t.human.c.id == owner_id).with_for_update())
         count = int(
@@ -113,7 +115,7 @@ def create_profile(
             ).scalar_one()
         )
         if count >= limit:
-            raise limits.agent_limit(limit, count)
+            raise limits.agent_limit(limit, count, source)
     handles.ensure_free(conn, owner_id, handle, exclude="placement" if placement else None)
     agent_id = new_id("agent")
     conn.execute(
