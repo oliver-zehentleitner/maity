@@ -34,6 +34,5 @@
 
 ### Fixed
 
-- hub: an invitation's note holding a lone surrogate (a JSON `\ud800`
-  escape) is refused with `control_character` (400) instead of failing
-  with a server error.
+- hub: an invitation's note holding a lone surrogate is refused with
+  `control_character` (400) instead of failing with a server error.
