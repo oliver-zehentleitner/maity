@@ -1,6 +1,6 @@
 """Files maity reads or writes for an agent under a runner placement: only inside the clone,
-outside its `.git` (an attachment saved without `-o`: in `.git/maity-files/`), never
-through a link.
+outside its `.git` (an attachment saved without `-o`: in `.git/maity-files/`), or, for a
+read, in the placement's scratch when it has one; never through a link.
 
 Under a placement maity runs outside the harness's sandbox (cli/context/runner.md), so a
 path the agent names must not take maity where the sandbox keeps the agent out. Every name
@@ -45,6 +45,25 @@ class Refused(Exception):
     """The path is not one maity reads or writes under the placement; the text says why."""
 
 
+def recorded_scratch(root: Path, dot_git: int | None) -> Path | None:
+    """The placement's scratch the runner recorded (`clonecheck.SCRATCH_RECORD`), or None:
+    no record (a runner from before it), an empty one (no scratch for this harness), or one
+    that is not an absolute path outside the clone."""
+    try:
+        text = clonecheck.runner_record(root, dot_git, clonecheck.SCRATCH_RECORD, 4096)
+        line = text.decode("utf-8").strip()
+    except (OSError, UnicodeDecodeError, clonecheck.Refused):
+        return None
+    if not line or "\n" in line or not os.path.isabs(line):
+        return None
+    where = Path(os.path.normpath(line))
+    try:
+        where.relative_to(root)
+    except ValueError:
+        return where
+    return None
+
+
 def names(root: Path, given: str, what: str) -> list[str]:
     """The names from the clone's root down to the file `given` names (relative to the
     current directory, as the agent wrote it), worked out on the text alone: no name is
@@ -87,13 +106,16 @@ def _walk(
     given: str,
     what: str,
     make: str | None,
+    from_top: bool = False,
 ) -> Iterator[int]:
     """The descriptor of the directory `path` names below the clone's root, each step opened
     from the one before without following a link and refused when it is the clone's `.git`.
     The walk starts at `opened.top`, the root `clonecheck.opened_clone` checked with `.git`;
     without it (a caller that holds no check) the root is opened here, without following a
-    link, and `.git` is read from it. A missing last directory named `make` is created 0700
-    first."""
+    link, and `.git` is read from it. With `from_top` (the placement's scratch, which no
+    checked clone holds) the root itself is reached from `/`, every directory on the way
+    opened from the one before without following a link. A missing last directory named
+    `make` is created 0700 first."""
     if not WALKS:  # Windows
         raise Refused(
             f"{what} {given}: this system cannot open a file without following links,"
@@ -106,8 +128,29 @@ def _walk(
         if _same(os.fstat(fd), git):  # never true for a checked clone; kept as a second guard
             os.close(fd)
             raise Refused(f"{what} {given}: the clone's root is its .git; maity writes no file")
+    elif from_top:
+        fd = os.open(os.sep, FOLDER)
+        try:
+            for name in root.parts[1:]:
+                inner = _open_at(fd, name, FOLDER, given, what)
+                os.close(fd)
+                fd = inner
+        except Refused:
+            os.close(fd)
+            raise Refused(
+                f"{what} {given}: the way to the placement's scratch ({root}) is not plain"
+                " directories; maity takes no path through it"
+            ) from None
+        git = None
     else:
-        fd = os.open(root, FOLDER | os.O_NOFOLLOW)
+        try:
+            fd = os.open(root, FOLDER | os.O_NOFOLLOW)
+        except OSError as exc:
+            if exc.errno in (errno.ELOOP, errno.ENOTDIR) and os.path.islink(root):
+                raise Refused(
+                    f"{what} {given}: {root} is a link; maity takes no path through it"
+                ) from None
+            raise Refused(f"{what} {given}: {root} cannot be opened ({exc.strerror})") from None
         try:
             git = os.stat(".git", dir_fd=fd, follow_symlinks=False)
         except OSError:
@@ -130,14 +173,42 @@ def _walk(
         os.close(fd)
 
 
+def located(root: Path, given: str, what: str, scratch: Path | None) -> tuple[list[str], bool]:
+    """The names down to the file `given` names, and whether they start at the placement's
+    `scratch` (recorded_scratch) rather than the clone's root: on the text alone, as
+    `names`. Refused, naming both, when the path leads out of the clone and the scratch."""
+    try:
+        return names(root, given, what), False
+    except Refused:
+        if scratch is None:
+            raise
+    try:
+        return names(scratch, given, what), True
+    except Refused:
+        raise Refused(
+            f"{what} {given}: not a file in this clone ({root}) or in the placement's"
+            f" scratch ({scratch})"
+        ) from None
+
+
 def read(
-    root: Path, given: str, what: str, limit: int, opened: clonecheck.Opened | None = None
+    root: Path,
+    given: str,
+    what: str,
+    limit: int,
+    opened: clonecheck.Opened | None = None,
+    scratch: Path | None = None,
 ) -> bytes:
     """The content of the file `given` names: a regular file in the clone, outside `.git`,
     with no other hard link, opened without following a link or blocking (a FIFO), at most
-    `limit` bytes. `opened` is the clone as `clonecheck.opened_clone` checked it."""
-    path = names(root, given, what)
-    with _walk(root, path[:-1], opened, given, what, None) as directory:
+    `limit` bytes. `opened` is the clone as `clonecheck.opened_clone` checked it. With
+    `scratch` (recorded_scratch) a file under the placement's scratch is read the same way,
+    the walk starting at `/`: no directory on the way to the scratch or below it is a
+    link."""
+    path, in_scratch = located(root, given, what, scratch)
+    if in_scratch and scratch is not None:
+        root, opened = scratch, None
+    with _walk(root, path[:-1], opened, given, what, None, in_scratch) as directory:
         fd = _open_at(directory, path[-1], os.O_RDONLY | os.O_NONBLOCK, given, what)
     try:
         found = os.fstat(fd)

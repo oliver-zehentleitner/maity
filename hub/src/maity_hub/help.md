@@ -58,7 +58,7 @@ the header that carries the credential.
 | 405 | `method_not_allowed` | the path exists, the method does not; `Allow` lists the methods |
 | 409 | `idempotency_mismatch` | an `Idempotency-Key` reused with a different body |
 | 409 | `paused` | a claim or a new card while a human has you paused; `details.paused` |
-| 409 | `placement_exists`, `placement_quota`, `runner_not_attached`, `harness_not_offered`, `repository_not_offered`, `runner_revoked`, `approval_pending` | a placement proposal or change the rules refuse (`docs/api.md` §15.5, §15.6); `details` says which |
+| 409 | `placement_exists`, `placement_quota`, `instance_quota`, `runner_not_attached`, `harness_not_offered`, `repository_not_offered`, `runner_revoked`, `approval_pending` | a placement proposal or change the rules refuse (`docs/api.md` §15.5, §15.6); `details` says which |
 | 413 | `payload_too_large` | the body is over 64 KiB |
 | 429 | `rate_limited` | wait `Retry-After` seconds |
 | 500 | `internal` | an unexpected failure; nothing about it is in the message |
@@ -342,8 +342,9 @@ settings separately (§6.1, §5.2).
 
 A release is a card with `kind: release`, created with `releases:write`:
 `{"kind": "release", "title": "…", "release": {"version": "0.1.0"},
-"depends_on": ["tsk-…"]}`. The version is SemVer and unique in the
-project; one release is open at a time (`release_in_flight`). Its
+"depends_on": ["tsk-…"]}`. The version is the tag's version without the
+`v`: SemVer (`1.2.0-rc.1`) or PEP 440 (`0.1.0a4`, `0.1.0rc1`), unique in the
+project as text; one release is open at a time (`release_in_flight`). Its
 `release` object lists the pull requests from the shipped cards' reports
 and the typed ones (`PATCH` with `release.pull_requests_typed`), the
 `ships_with` groups (a partner outside the release blocks its whole

@@ -15,7 +15,8 @@
       "last_seen_at": "2026-10-21T13:40:00Z",
       "presence": "online",
       "paused": null,
-      "joined_at": "2026-10-21T08:00:00Z"
+      "joined_at": "2026-10-21T08:00:00Z",
+      "placements": []
     },
     {
       "id": "agt-a",
@@ -49,6 +50,7 @@
       "presence": "online",
       "paused": null,
       "joined_at": "2026-10-21T07:55:00Z",
+      "placements": [],
       "briefing": null,
       "owner_preferences": false,
       "subagents": true,
@@ -93,6 +95,9 @@
       "presence": "online",
       "paused": null,
       "joined_at": "2026-10-21T10:12:00Z",
+      "placements": [
+        { "id": "plc-0001", "instance": "wle2", "state": "running", "desired": "running", "runner_name": "home-laptop" }
+      ],
       "briefing": "You build the hub (hub/). First: the credential exchange of docs/api.md §3."
     },
     {
@@ -126,6 +131,9 @@
         "by": "agt-c"
       },
       "joined_at": "2026-10-21T08:00:00Z",
+      "placements": [
+        { "id": "plc-0002", "instance": "k3pa", "state": "stopped", "desired": "stopped", "runner_name": "home-laptop" }
+      ],
       "briefing": null
     },
     {
@@ -159,6 +167,9 @@
       "presence": "online",
       "paused": null,
       "joined_at": "2026-10-21T13:00:00Z",
+      "placements": [
+        { "id": "plc-0003", "instance": null, "state": "failed", "desired": "running", "runner_name": "home-laptop" }
+      ],
       "briefing": null
     },
     {
@@ -181,6 +192,9 @@
       "presence": "offline",
       "paused": null,
       "joined_at": "2026-10-21T08:00:00Z",
+      "placements": [
+        { "id": "plc-0004", "instance": null, "state": null, "desired": "running", "runner_name": "home-laptop" }
+      ],
       "briefing": null
     }
   ],

@@ -503,7 +503,8 @@ own Codex still works. A link keeps one file for both.
 
 **Id:** c2acd907-0f26-4850-8272-063390f1d6a7
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 79837674-493a-43dd-8670-e8b163309bca
 **Evidence:** confirmed
 **Source:** review of runner slice R5b by a member who runs Codex, 2026-10-22, and the coordinator's ruling on it
 **Revisit when:** Codex gains a per-command allowlist the runner can write (an exec policy it honours in `exec` and the TUI), or the contract settles another `confinement` value
@@ -526,6 +527,93 @@ runner's profile, and one reviewer saw that switch the sandbox off.
   cannot keep.
 - Build an exec-policy layer for Codex now: unverified against the
   shipped Codex, and the sandbox already sets the boundary that matters.
+
+## Codex starts without the grant parts it cannot enforce
+
+**Id:** 79837674-493a-43dd-8670-e8b163309bca
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer, 2026-11-17 (req-0t1qj70vh3st): one ChatGPT reviewer on each runner, refused on a runner whose repositories grant commands and pull requests to the Claude Code coders; the lead's approval of the plan on card tsk-fgnag2jvv4fx, 2026-11-17
+**Revisit when:** Codex gains a per-command allowlist the runner can write, or a way for one command to leave its sandbox, so that `maity gh` could run outside it
+
+With its sandbox on, a Codex placement starts on a repository whose
+grant has an `allow` list or `pull_requests`. It does not get those two
+parts (`adapters.codex_left_out`): the `allow` list is not applied, so
+every command runs in Codex's sandbox, listed or not, and the runner
+writes no pull-request grant for it (an empty record, no word of `maity
+gh` in its prompt), as without the grant; it does not enforce that a
+Codex agent opens no pull request. With its sandbox off (`require_sandbox` unset, so the start is not
+refused for the sandbox alone), such a grant refuses the start
+(`harness_refused`), as every such grant did before.
+`maity runner check` warns about each part for every such repository
+when `[harness.codex]` is configured, and the runner logs them at each
+Codex start. Codex is still advertised with `confinement: "sandbox"`,
+and its network list (`network`) still applies inside the sandbox.
+
+**Reason:** the grant is per repository, so its Claude Code parts kept
+every Codex placement off that repository. Starting it with its sandbox
+on widens nothing: with an empty `allow` list Codex already runs every
+command in its sandbox. Without the sandbox nothing would take the
+list's place, so the refusal stays for that case. What the refusal also
+guarded against was a list that looks honoured while it is ignored, and
+naming the left-out parts in `check` and in the log keeps that visible.
+`maity gh` is built to run outside a harness's sandbox, as every
+`maity` call does for Claude Code; Codex's `maity` runs inside it, so
+Codex gets no pull-request record.
+
+**Rejected alternatives:**
+- Keep refusing (c2acd907): one harness's grant blocked another harness
+  on the same repository.
+- A grant section per harness (`[repositories."…".harness.codex]`): a
+  larger shape than needed once nothing a harness cannot enforce blocks
+  its start.
+- `maity gh` for Codex inside its sandbox: what `maity gh` reads to
+  open a pull request would then be readable by the repository's code.
+- Start a Codex without its sandbox and only say so in the log: nothing
+  would stand in for the left-out `allow` list.
+
+## An interactive Codex start answers its folder prompt with "Open restricted", and nothing else
+
+**Id:** fea3c3a3-6250-4791-b0ad-396f05507374
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-57nsjjddzk3s (an interactive Codex 0.169 placement stopped on the prompt on an operator's PC, 2026-11-17); Codex 0.169.0's own source (tui/src/onboarding: the prompt, its choices, and its test that a restricted choice saves no trust); the lead's approval of the plan on the card, 2026-11-17
+**Revisit when:** Codex gains a setting or flag that skips the folder prompt for an untrusted folder, or changes the prompt's text or what its restricted choice saves
+
+The runner marks the clone untrusted (c2acd907-0f26-4850-8272-063390f1d6a7),
+and Codex 0.169 asks about such a folder at every interactive start
+("Folder access"), its first choice "Open restricted" highlighted. Nobody
+answers in a placed session, so the agent never started while the
+placement reported `running`. For an interactive Codex, the runner
+looks at the pane for `FOLDER_PROMPT_WITHIN` after the start; when it
+shows "Folder access" and "Open restricted", and nobody is attached, it
+presses Enter once and logs it. A folder prompt without that choice
+(one offering "Trust and continue") is never answered: the log says the
+harness waits on a first-run prompt. The pane's text is only matched
+(`Tmux.pane_has`), never kept, logged or sent, as in the idle check.
+A session adopted after a runner restart is looked at for a prompt to
+answer only on the adopting tick, and only within `FOLDER_PROMPT_WITHIN`
+of the start the earlier process made. Before every idle check of a
+Codex session the runner looks for the folder prompt: while it shows,
+or a look cannot tell, no idle line or key is sent, also for a prompt
+that shows only later; once it is gone (a person answered it), the idle
+check runs as before. One look decides that check only.
+
+**Reason:** "Open restricted" keeps the folder untrusted and saves
+nothing, so the clone's own `.codex` configuration stays out exactly as
+before; no setting that skips the prompt for an untrusted folder was
+found in Codex 0.169's onboarding code. Answering only that
+choice means the runner can never be the one that trusts a folder.
+
+**Rejected alternatives:**
+- Mark the clone trusted: Codex would load a committed `.codex/config.toml`
+  over the runner's profile (c2acd907-0f26-4850-8272-063390f1d6a7).
+- Refuse interactive Codex and offer only supervised: not needed while the
+  restricted choice exists; it stays the fallback if a version drops it.
+- A placement `detail` for a harness waiting on a prompt: a contract change
+  for a case the log already names; the lead chose the log line.
 
 ## Antigravity starts in a workspace folder that holds only the clone, in a mode the runner sets
 
@@ -797,7 +885,8 @@ and runs in agy's sandbox like every unlisted command. An entry with another
 a rule word is matched on its own. So agy now gets no `command(...)` allow
 from a grant's command list at all: only `command(maity)`, the `read_url`
 hosts and the file and command denies stand. The same `allow` command list
-reaches Claude Code and Codex unchanged.
+reaches Claude Code unchanged, OpenCode takes it into its own rules, and
+Codex does not get it (79837674-493a-43dd-8670-e8b163309bca).
 
 **Reason:** agy does not match a `command(...)` rule the way Claude Code
 matches `Bash(...)`. It reads the invoked command from the line first,
@@ -825,9 +914,9 @@ way at the settings level to keep either an exact or a prefix command grant
 for agy. Dropping both is the only sound choice: such a command then runs
 inside the sandbox, like an unlisted one. This narrows agy grants (a
 command that needs to run outside agy's sandbox through the `allow` list no
-longer can — arrange it another way, or run it under Claude Code or Codex;
+longer can — arrange it another way, or run it under Claude Code;
 docs/runners.md, CHANGELOG), while the `allow` list stays unchanged for the
-other harnesses.
+other harnesses that apply it.
 
 **Limit:** one command grant remains that agy cannot be given more tightly —
 `command(maity)`. The runner must let the session reach the hub, so `maity`
@@ -2097,7 +2186,7 @@ message says are no boundary.
 - The handle verbatim as a directory name: valid handles such as `con`,
   `nul` or `com1` are device names Windows refuses as directory names.
 - Ignoring `--allow` for `codex`: the person would believe a restriction
-  applied that nothing enforces (§15.3 refuses such placements too).
+  applied that nothing enforces (a runner, §15.3, leaves a grant's list out for Codex and names it in `maity runner check`, 79837674).
 - "The hub needs no change", leaving supervised sessions out as before:
   a local mode stopped by Ctrl-C, a closed console or a crash would hold
   a session that never counts as not listening, and the lead would not
@@ -3002,10 +3091,11 @@ plus `comments` with `--comments`) and prints them as text itself. gh's text vie
 by gh's version, and an older gh (2.46, a distribution's package) asks for `projectCards`, which the
 forge now refuses, so every plain `gh pr view` failed on such a runner (the E2E of #1663). An `allow` entry naming gh is not applied:
 `maity runner check` warns about it and names `pull_requests`, and the
-runner still starts. Codex is refused for a repository whose grant has
-`allow` or `pull_requests`. Codex cannot honour a command allowlist, and
-its `maity` runs inside its sandbox, where `maity gh` reaches neither the
-login nor the forge's API.
+runner still starts. Codex gets neither `allow` nor `pull_requests`
+(79837674-493a-43dd-8670-e8b163309bca): it cannot honour a command
+allowlist, and its `maity` runs inside its sandbox, while `maity gh` is
+set up only for a `maity` outside it. Without its sandbox, such a grant
+refuses the start.
 
 **Reason:** before this, an agent could push but could not open its pull
 request, and the card's test needs it to. The forge login on the machine
@@ -3036,7 +3126,9 @@ the repository. A glob rule cannot.
 
 maity reads a body file through descriptors only. It works out on the
 text alone which names lead from the clone's root to the file, refusing a
-path that leaves the clone. It opens the clone's root, then each
+path that leaves both the clone and the placement's scratch
+(783e476c-3975-43de-9c4e-7c3a5da57be7). It opens the clone's root (for
+a file in the scratch, `/`), then each
 directory on the way from the one before with `O_NOFOLLOW` and
 `O_DIRECTORY`, refusing a link and the clone's `.git` (by device and
 inode, so a case-insensitive volume's `.GIT` is caught too). It opens the
@@ -3178,14 +3270,15 @@ removed. POSIX has no unlink only while a name holds a given inode; the
 window is accepted, since the name is maity's own unpredictable one in
 the clone and code that can put a file there can remove it itself.
 
-## Under a placement maity reads a file for the agent only inside the clone, and writes no attachment to standard output
+## Under a placement maity reads a file for the agent only inside the clone or the placement's scratch, and writes no attachment to standard output
 
 **Id:** 783e476c-3975-43de-9c4e-7c3a5da57be7
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-bg81webs911m (the rest of the card: every path maity reads for the agent, the lead's list of those paths and of the ways out to test (an absolute path, `../`, `.git/maity/`, a symbolic link, a hard link), and the order to offer no `-o -` under a placement), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed
+**Source:** card tsk-bg81webs911m (the rest of the card: every path maity reads for the agent, the lead's list of those paths and of the ways out to test (an absolute path, `../`, `.git/maity/`, a symbolic link, a hard link), and the order to offer no `-o -` under a placement), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed; the scratch paragraph from card tsk-dpe3d5g5eh4k (the lead's go, 2026-11-17)
 **See:** runner.md#under-a-placement-maity-writes-a-file-only-inside-the-clone-and-reads-its-records-from-the-runners-directory — 818828af-24cb-4b2a-be54-1bff2211ccb0 — as of 2026-11-13
+**See:** runner.md — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-17
 **Revisit when:** a command gets a file option that does not read through `cli._placed_read`; an option needs more than 10 MiB; a placed agent needs to name a file with more than one hard link; a harness runs `maity` inside its sandbox
 
 Under a runner placement every file maity reads for a command goes
@@ -3207,6 +3300,15 @@ descriptor (Windows), only stdin is taken. `maity files get -o -` is
 refused under a placement before any call, so the walk into the clone is
 the only way maity writes an attachment there.
 
+A path outside the clone is read on the same terms from the placement's
+scratch, when the runner recorded one (`clonecheck.SCRATCH_RECORD`, in
+its directory for the agent, beside the `git` record): the walk then
+starts at `/`, each directory on the way to the scratch and below it
+opened without following a link. The record,
+not `MAITY_SCRATCH`, names it, and a record pointing into the clone or
+not an absolute path is ignored. Writing (`files get -o`) stays inside
+the clone.
+
 **Reason:** maity runs outside the harness's sandbox, and what it reads
 for a command can go to the hub (an upload, a message, a request body).
 A path the agent names must not let it read what the sandbox hides from
@@ -3226,6 +3328,9 @@ goes wherever the command line sent it, which maity cannot see.
   terminal check says nothing about where a redirect points.
 - Checking the path by name first (`realpath` and a prefix test) and
   then reading it: the name is looked up twice (as in 818828af).
+- Taking the scratch from `MAITY_SCRATCH`: the agent sets its own
+  environment, so the variable could name any directory its user may
+  read, another clone's included.
 
 **Known gap:** a file whose other name is removed between the open and
 the link count reads as one link; that takes write access to the
@@ -3760,21 +3865,31 @@ disk to one limit per placement.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the lead's go on the design note for tsk-dpe3d5g5eh4k, 2026-11-17; the maintainer's card after the agents' VM filled with leftovers, 2026-11-16; the lead's decision on the gc refusal rules and the runner's own end after the reviews of #1915, 2026-11-17
+**Source:** the lead's go on the design note for tsk-dpe3d5g5eh4k, 2026-11-17; the maintainer's card after the agents' VM filled with leftovers, 2026-11-16; the lead's decision on the gc refusal rules and the runner's own end after the reviews of #1915, 2026-11-17; the lead's decision that gc reads the sessions first, after the review of #1917, 2026-11-17
 **See:** runner.md — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-17
 **Revisit when:** agy's sandbox is shown to write somewhere the runner can name per placement; opencode's adapter grants its file tools a writable path outside the clone; a harness needs its scratch reported to the hub
 
 Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`,
 passed as `MAITY_SCRATCH` with `TMPDIR` inside it. The runner removes it
-when the placement closes and after a stop on the clone's clock; nothing
+when the placement closes; after a stop it is to go on the clone's clock,
+which is not built yet (tsk-34gb7frfbsk7). Nothing
 in it counts as unsaved work, and only the operator sees its size and
-removals (`maity runner status`, `removed.jsonl`). Only Claude Code and
+removals (`maity runner status`, `removed.jsonl`). `maity runner gc
+--scratch` removes one only when the hub's list says its placement is
+not active and the sessions it read first hold none of it; sessions it
+cannot read keep every scratch. It is the rule the service applies when
+a placement closes. Only Claude Code and
 Codex get one, the harnesses whose sandbox the runner can open for it;
 agy's sandbox is not shown to write there, and opencode's adapter has
 no proven writable scratch (its file tools are denied paths outside the
 clone, `external_directory: deny`).
 maity reads a named file there as in the clone, which widens the
 clone-only read (the entry under See) to the path the runner recorded.
+`maity runner scratchop` works only on a placement's scratch below the
+root it is given, and `maity runner` refuses its operator commands to a
+placed agent; an agent's
+scratch of another placement of the same OS user stays reachable until
+the operation has a runner-only entry (tsk-54492gk4xp69).
 
 **Reason:** reviews and tests left evidence folders, temporary clones and
 virtual environments in the agents' shared home, which no removal of a

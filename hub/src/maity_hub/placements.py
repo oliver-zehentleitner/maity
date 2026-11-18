@@ -235,6 +235,17 @@ def _continues(conn: Connection, placement: Any) -> bool:
     )
 
 
+def instance_of(conn: Connection, credential_id: str | None) -> str | None:
+    """The instance a placement runs (§15.5): its credential's id, `null` before the first
+    pickup's exchange."""
+    if credential_id is None:
+        return None
+    found: str | None = conn.execute(
+        select(t.credential.c.instance).where(t.credential.c.id == credential_id)
+    ).scalar_one_or_none()
+    return found
+
+
 def _principal(conn: Connection, membership_id: int | None) -> str | None:
     return None if membership_id is None else principal_id(conn, membership_id)
 
@@ -273,6 +284,7 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
             "pending_change": placement.pending_change,
         },
         "credential_id": placement.credential_id,
+        "instance": instance_of(conn, placement.credential_id),
         "reported_current": is_current(placement),
         "active": placement.active is True,
         "closed_at": ts(placement.closed_at),
@@ -303,6 +315,7 @@ def owner_line(conn: Connection, placement: Any) -> dict[str, Any]:
         "id": placement.id,
         "project": namespace.name_of(conn, placement.project_id),
         "agent": {"handle": _agent(conn, placement)["handle"]},
+        "instance": instance_of(conn, placement.credential_id),
         "desired": placement.desired,
         "state": (placement.reported or {}).get("state"),
         "foreign": profile_owner(conn, placement) != runner.owner_id,
@@ -367,6 +380,7 @@ def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
             "member": placement.membership_id is not None,
             "credential_expected": placement.credential_id is not None,
         },
+        "instance": instance_of(conn, placement.credential_id),  # §15.5
         "harness": placement.harness,
         "mode": placement.mode,
         "model": placement.model,
@@ -674,7 +688,82 @@ def carried_credential(
     revoked = conn.execute(
         select(t.credential.c.revoked_at).where(t.credential.c.id == latest)
     ).scalar()
-    return None if revoked is not None else latest
+    if revoked is not None:
+        return None
+    # One placement per instance (§15.5): a credential another active placement runs stays
+    # with it, and this one joins as an instance of its own.
+    named = conn.execute(
+        select(t.placement.c.id).where(
+            t.placement.c.credential_id == latest, t.placement.c.active.is_(True)
+        )
+    ).first()
+    return None if named is not None else latest
+
+
+def free_clone(
+    conn: Connection, project_id: str, runner_id: str, membership_id: int | None, handle: str
+) -> str:
+    """The clone a placement gets when it names none (§15.5): the first of `<handle>`,
+    `<handle>-2`, `<handle>-3`, … on that runner that no active placement of the project
+    names, and that no closed placement of another membership names whose clone the runner
+    has not reported removed. A clone this membership left there is taken up again."""
+    rows = conn.execute(
+        select(
+            t.placement.c.clone,
+            t.placement.c.membership_id,
+            t.placement.c.active,
+            t.placement.c.workspace_state,
+        ).where(
+            t.placement.c.project_id == project_id,
+            t.placement.c.runner_id == runner_id,
+            or_(t.placement.c.clone == handle, t.placement.c.clone.like(f"{handle}-%")),
+        )
+    ).all()
+    taken = {
+        r.clone
+        for r in rows
+        if r.active is True
+        or (
+            (membership_id is None or r.membership_id != membership_id)
+            and r.workspace_state != "removed"
+        )
+    }
+    n = 1
+    while True:
+        clone = handle if n == 1 else f"{handle}-{n}"
+        if clone not in taken:
+            return clone
+        n += 1
+
+
+def refuse_over_instances(conn: Connection, member: Any, *, adding: int) -> None:
+    """`instance_quota` when a placement would bring the membership past `max_instances`
+    (§15.5): its active instances, joined by hand or by a pickup, plus its active
+    placements that hold no live credential yet and will each start one, plus `adding`."""
+    live = select(t.credential.c.id).where(
+        t.credential.c.membership_id == member.id, t.credential.c.revoked_at.is_(None)
+    )
+    instances = conn.execute(
+        select(func.count())
+        .select_from(t.credential)
+        .where(t.credential.c.membership_id == member.id, t.credential.c.revoked_at.is_(None))
+    ).scalar_one()
+    waiting = conn.execute(
+        select(func.count())
+        .select_from(t.placement)
+        .where(
+            t.placement.c.membership_id == member.id,
+            t.placement.c.active.is_(True),
+            or_(t.placement.c.credential_id.is_(None), t.placement.c.credential_id.not_in(live)),
+        )
+    ).scalar_one()
+    if int(instances) + int(waiting) + adding > member.max_instances:
+        raise ApiError(
+            409,
+            "instance_quota",
+            "the agent runs as many instances as its rulebook allows",
+            {"max": member.max_instances},
+        )
 
 
 def set_desired(
@@ -697,6 +786,7 @@ def set_desired(
     if desired == "stopped" and tell_agent:
         _stop_requested(conn, changed, actor, by)
     announce(conn, placement.id, "placement_updated", actor)
+    availability.recompute_runner_limit(conn, placement.membership_id, actor)  # §6.12
     return changed
 
 
@@ -739,6 +829,8 @@ def restart(
         **OUTCOME_CLEARED,
     )
     announce(conn, placement.id, "placement_updated", actor)
+    if placement.desired != "running":
+        availability.recompute_runner_limit(conn, placement.membership_id, actor)  # §6.12
     return changed
 
 
@@ -796,6 +888,8 @@ def close_uniform(
     if stopping:
         _stop_requested(conn, changed, actor, by)
     announce(conn, placement.id, "placement_updated", actor)
+    if stopping:
+        availability.recompute_runner_limit(conn, placement.membership_id, actor)  # §6.12
     return changed
 
 
@@ -1248,7 +1342,11 @@ def _removed(conn: Connection, placement: Any, epoch: int, now: datetime, actor:
     credential whose file was in it is revoked, unless another running placement names it;
     an active placement rejoins at its next start, in a new clone of the next epoch, and so
     does every other active placement that names the revoked credential (a stopped
-    successor that took it over would otherwise start on a dead credential)."""
+    successor that took it over would otherwise start on a dead credential). After a
+    revocation only the profile's owner may undo, a running placement is also stopped: its
+    rejoin waits for a start that `routes/placements._check_rejoin` lets through (§15.5).
+    The others never run here (`_named_elsewhere`)."""
+    waits = owner_only_revocation(conn, placement)
     values: dict[str, Any] = {
         **OUTCOME_CLEARED,
         "workspace_state": "removed",
@@ -1262,10 +1360,49 @@ def _removed(conn: Connection, placement: Any, epoch: int, now: datetime, actor:
     conn.execute(update(t.placement).where(t.placement.c.id == placement.id).values(**values))
     if placement.credential_id is not None and not _named_elsewhere(conn, placement):
         _revoke_removed(conn, placement, actor)
-        for other in _rejoin_the_others(conn, placement):
+        for other in _rejoin_the_others(conn, placement):  # none of them runs
             announce(conn, other, "placement_updated", actor)
+    current = row(conn, placement.id)
+    if waits and current.active is True and current.desired == "running":
+        # The stop says it (`placement_updated`); the agent cannot read a stop any more.
+        return set_desired(conn, current, "stopped", actor, None, tell_agent=False)
     announce(conn, placement.id, "placement_updated", actor)
-    return row(conn, placement.id)
+    return current
+
+
+def owner_only_revocation(conn: Connection, placement: Any) -> bool:
+    """The credential the placement names is revoked, and only the agent profile's owner
+    may undo that revocation (`undone_by_anyone`)."""
+    if placement.credential_id is None:
+        return False
+    revoked = conn.execute(
+        select(
+            t.credential.c.revoked_at, t.credential.c.revoked_by, t.credential.c.revoked_reason
+        ).where(t.credential.c.id == placement.credential_id)
+    ).first()
+    if revoked is None or revoked.revoked_at is None:
+        return False
+    runner = conn.execute(
+        select(t.runner.c.owner_id).where(t.runner.c.id == placement.runner_id)
+    ).first()
+    return not undone_by_anyone(revoked, runner)
+
+
+def undone_by_anyone(revoked: Any, runner: Any) -> bool:
+    """Whether a revoked credential may be replaced by a rejoin of someone other than the
+    agent's owner (§15.6): only where no person chose to end that agent. The runner removed
+    the clone (`workspace_removed`, revoked by the hub itself), or the runner's owner revoked
+    the runner and its agents' credentials with it (`runner_revoked`, by that owner). A
+    revocation by a person through the member routes, a leak's or a suspension's is the
+    owner's to undo alone. The reason alone decides nothing: a person revoking writes it
+    freely (`auth.revocation.revoke`), so who revoked is checked with it."""
+    from maity_hub import runner_revoke  # it imports this module
+
+    if revoked.revoked_reason == "workspace_removed":
+        return revoked.revoked_by is None
+    if revoked.revoked_reason == runner_revoke.REASON:
+        return runner is not None and revoked.revoked_by == runner.owner_id
+    return False
 
 
 def _rejoin_the_others(conn: Connection, placement: Any) -> list[str]:
@@ -1289,7 +1426,12 @@ def _rejoin_the_others(conn: Connection, placement: Any) -> list[str]:
 
 
 def _named_elsewhere(conn: Connection, placement: Any) -> bool:
-    """Another running placement names the credential: its clone still holds the file."""
+    """Another running placement names the credential: its clone still holds the file.
+
+    One active placement per credential (`uq_placement_credential_id_active`, one placement
+    per instance) means it cannot find a match while the reported placement is itself
+    active; it stays as a defensive check there. It does find one for a closed placement
+    whose successor took the credential over and runs on it."""
     p = t.placement.c
     found = conn.execute(
         select(p.id).where(

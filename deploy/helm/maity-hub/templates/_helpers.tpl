@@ -118,6 +118,9 @@ the cluster.
 {{- if and .Values.secretKey.sealVerifiers (not .Values.secretKey.existingSecret) -}}
 {{- fail "secretKey.sealVerifiers needs secretKey.existingSecret: the verifiers are sealed with the instance key" -}}
 {{- end -}}
+{{- if and .Values.secretKey.sealedVerifiersOnly (not .Values.secretKey.sealVerifiers) -}}
+{{- fail "secretKey.sealedVerifiersOnly needs secretKey.sealVerifiers: without sealing every new verifier is plain and refused" -}}
+{{- end -}}
 {{- if and .Values.config.allowPlainHttp (or .Values.ingress.enabled (ne .Values.service.type "ClusterIP")) -}}
 {{- fail "config.allowPlainHttp is only for a hub nothing outside the cluster reaches: not with the Ingress enabled or a NodePort/LoadBalancer Service" -}}
 {{- end -}}
@@ -154,6 +157,10 @@ the chart.
 {{- end }}
 {{- if .Values.secretKey.sealVerifiers }}
 - name: MAITY_SEAL_VERIFIERS
+  value: "1"
+{{- end }}
+{{- if .Values.secretKey.sealedVerifiersOnly }}
+- name: MAITY_SEALED_VERIFIERS_ONLY
   value: "1"
 {{- end }}
 {{- with .Values.mail.signingKeySecret.existingSecret }}

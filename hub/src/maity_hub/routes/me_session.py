@@ -358,13 +358,19 @@ def _resume(body: ResumeIn, request: Request, caller: Caller) -> dict[str, Any]:
         )
         if previous is not None:
             _announce_model_change(conn, mine, caller, previous, harness, model, session_id)
-        # The member's next resume clears its limit (§6.12); a returning agent is
-        # announced before its packet is built.
-        if mine.row.limit_until is not None:
+        # The member's next resume clears its limit (§6.12), but not a runner's: the
+        # instance resuming may not be the limited one, and the runner's next report
+        # decides. A returning agent is announced before its packet is built. The end of
+        # its own limit recomputes the runner's, which may take over now; after a live
+        # own limit without a gap, so it is no new start (no second holder_stalled).
+        if mine.row.limit_until is not None and mine.row.limit_source != "runner":
             conn.execute(
                 update(t.membership)
                 .where(t.membership.c.id == mine.id)
                 .values(**availability.NO_LIMIT)
+            )
+            availability.recompute_runner_limit(
+                conn, mine.id, actor, continues=mine.row.limit_until > clock.now()
             )
         availability.reconcile_ids(conn, [mine.id], actor)
         mine = _own_membership(conn, caller)  # with the pause cleared
@@ -671,7 +677,7 @@ def _packet(
             "covering": own_view["covering"],  # whom it covers (§6.12)
             # Who stands below it, as the member answers count it (§6.2): what a lead resumes to.
             "manages": instance_counts.manages(members, views, [mine.row.id])[mine.row.id],
-            "placement": _placement_block(conn, mine.id),
+            "placement": _placement_block(conn, mine.id, caller.credential_id),
         },
         "team": siblings,
         "project": {
@@ -732,12 +738,21 @@ def _packet(
     }
 
 
-def _placement_block(conn: Connection, membership_id: int) -> dict[str, Any] | None:
-    """`membership.placement` (§15.11): the active placement running this membership."""
+def _placement_block(
+    conn: Connection, membership_id: int, credential_id: str | None
+) -> dict[str, Any] | None:
+    """`membership.placement` (§15.11): the active placement that runs this instance, the
+    one naming its credential; never another instance's placement of the membership."""
+    if credential_id is None:
+        return None
     row = conn.execute(
         select(t.placement, t.runner.c.name.label("runner_name"))
         .join(t.runner, t.runner.c.id == t.placement.c.runner_id)
-        .where(t.placement.c.membership_id == membership_id, t.placement.c.active.is_(True))
+        .where(
+            t.placement.c.membership_id == membership_id,
+            t.placement.c.credential_id == credential_id,
+            t.placement.c.active.is_(True),
+        )
     ).first()
     if row is None:
         return None

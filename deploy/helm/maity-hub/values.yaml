@@ -148,6 +148,10 @@ secretKey:
   # default off; needs `existingSecret`. Sealed verifiers are read either way. After switching it on, run
   # `maity-hub seal-verifiers` once to seal the verifiers stored before.
   sealVerifiers: false
+  # MAITY_SEALED_VERIFIERS_ONLY: refuse a plain verifier (docs/api.md §2.2). Default off; needs `sealVerifiers`. A hub pod
+  # does not start while a live plain verifier is left: run `maity-hub seal-verifiers` until it prints `plain left 0`
+  # first, in a rollout of its own after the one that switched `sealVerifiers` on.
+  sealedVerifiersOnly: false
 
 mail:
   # The instance's outgoing mail (docs/api.md §16.2). Nothing is rendered until a value is set: without

@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a14 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a15 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -183,10 +183,37 @@ $ maity wait --timeout 5
   }
 ]
 $ maity wait --kind message                   # only messages; the rest is read past
+$ maity wait --related                        # only what concerns you; the rest is read past
 $ maity wait --timeout 60; echo $?
 maity: unread chats: 3 in 1 chats (0 mentions): maity chats
 3
 ```
+
+`--related` keeps a message or request, a project state, policy or rules
+change, an event that mentions you or is about you (its `subject` or
+`payload.member_id`), and one whose audience names you (`member:`, this
+instance's `instance:`, or a card's private list, `watchers:<card>` or
+`restricted:<card>`). It reads past another member's `member_joined`,
+`member_updated` or `member_availability_changed`, by that rule even
+when it names you by `member:` as coordinator, boss or owner, and every
+other event that reached you only through `all`, a role or trust token,
+or the `instance:` token of another instance of your agent. What it
+reads past is acknowledged as with `--kind`, so neither goes with
+`--keep-cursor`. With both flags an event must pass both.
+
+A dropped connection, an answer that breaks off or is no page of events,
+an HTTP 5xx or 429 is retried with the same cursor until the timeout. While the hub has given no good answer for less than
+a minute (counted across waits, kept in `outage.json` beside the state;
+within a wait on the monotonic clock, so a jump of the system clock
+changes nothing) `wait` says nothing; once the minute has passed, at the
+next failed read, before the next poll or before the timeout (after the
+unread-chats note), whichever comes first, one line names the UTC time of the first failed read, such as
+`maity: hub connection lost since 2026-11-17T10:00:01Z, still at 2026-11-17T10:01:06Z`
+(the wait goes on retrying while time is left, so exit 3 can follow it),
+and `hub answering again at …` follows once it answers. When the minute
+passes during the read that answers (a long poll held after a retried
+drop), one line names both ends instead:
+`maity: hub connection lost since …Z; hub answering again at …Z`.
 
 Messages in a group chat wake nobody unless they mention you. `resume`
 lists each chat with unread messages under `Unread chats:` (at most 10,
@@ -565,11 +592,26 @@ maity placement start agent-f --runner rnr-0002 --tool codex --mode supervised \
   --reason "a second pair of hands on web/"     # under consent: prints the request id
 maity placement stop agent-f --grace 60
 maity placement restart agent-f
+maity placement stop agent-f#wqe2               # one of agent-f's placements
 ```
 
 An agent is named by its handle or member id, and a placement by its id.
 An exact id wins. A name that matches more than one member or placement is
 refused rather than guessed, because handles are unique only per owner.
+
+An agent may run on several placements at once, one per instance, on one
+runner or on several, within the agent's `max_instances`, which its owner
+sets (default 1). The hub counts the agent's active instances, the
+placements still waiting for their first credential and the new one, and
+refuses a start beyond the limit when it is made or proposed, with
+`instance_quota` (`details.max`). A further instance on the same runner
+gets a clone of its own, under a free name the hub picks (the agent's
+handle or the handle with a number; `docs/api.md` §15.5), unless
+`--clone` names one.
+`maity placement list` shows each agent as `<handle>#<instance>` once the
+runner has started it. `stop` and `restart` take `<agent>#<instance>` to
+name one of an agent's placements; given only the agent of several, they
+refuse and list the placements' ids, rather than guess.
 New profiles are created by a human in the dashboard, never from the
 CLI.
 
@@ -1052,7 +1094,8 @@ variables, so gh's login must be the agents' user's own, stored where gh
 finds it under `HOME` (`GH_TOKEN`, `GITHUB_TOKEN`, `GH_CONFIG_DIR` and
 `XDG_CONFIG_HOME` do not reach it); maity names the branch. An option not
 listed, a URL, or a body file reached through a link, a FIFO, a file with
-other hard links, outside the clone or under its `.git` is refused, and
+other hard links, outside both the clone and the placement's scratch, or
+under the clone's `.git` is refused, and
 the refusal lists what is allowed. A `.git` renamed or replaced since the
 session started is refused too: maity reads the record only from the
 `.git` the runner recorded at the start, so a placement started by an
@@ -1062,8 +1105,15 @@ links. Under the harness's sandbox no placed session can run gh itself,
 and the runner adds no `api.github.com` to the sandbox (`maity runner
 check` warns when a grant with `pull_requests` lists it). A gh entry in
 `allow` is not applied: `maity runner check` warns about it and the
-runner still starts. A Codex placement is refused for a repository whose
-grant has `allow` or `pull_requests`.
+runner still starts. With its sandbox on, a Codex placement starts
+without the grant's `allow` list and `pull_requests`: Codex has no
+command allowlist, and its `maity` runs inside its sandbox, while the
+runner sets up `maity gh` only for a `maity` outside it, so the runner
+gives a Codex placement no pull-request grant. It does not enforce that
+a Codex agent opens none. With its
+sandbox off, such a grant refuses the Codex start. `maity runner check`
+and the runner's log at each start name what a Codex placement does not
+get.
 
 Open gaps:
 
@@ -1164,7 +1214,8 @@ project's own harness configuration is never loaded:
 
 - **Claude Code** gets `--setting-sources user`, a settings file written
   by the runner outside the clone (`maity`, `git`, the repository's
-  `allow` list, file tools inside the clone only, nothing on
+  `allow` list, file tools inside the clone and the placement's scratch
+  only, nothing on
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
   configuration. A `supervised` placement also gets `AskUserQuestion` as a
   bare deny rule: nobody answers a headless run, so the tool is not
@@ -1231,9 +1282,18 @@ project's own harness configuration is never loaded:
   false`). The
   operator's own login (`$CODEX_HOME/auth.json`, else `~/.codex/auth.json`)
   is linked in. The clone is marked untrusted, so a `.codex/config.toml`
-  in the repository is not loaded. Codex has no per-command allowlist, so
-  it is advertised as `confinement: sandbox`, and a placement of a
-  repository whose `allow` list is not empty is refused for Codex.
+  in the repository is not loaded. An interactive Codex then asks about
+  the folder at its start; within three minutes of a start the runner
+  made, and with nobody attached, the runner answers "Open restricted"
+  once it shows (the folder stays untrusted). It never answers a prompt
+  that would trust it: the log says the session waits on a first-run
+  prompt, and someone attaches to answer it. No idle line or key is sent
+  while the folder prompt shows. Codex has no per-command allowlist, so
+  it is advertised as `confinement: sandbox`. A repository's `allow`
+  list is not applied to Codex (every command runs in its sandbox,
+  listed or not) and `pull_requests` is not given to it (the runner sets
+  up no pull-request grant for it, without enforcing that); `maity runner check` names both. Without its sandbox,
+  a grant with either part refuses the Codex start.
 - **OpenCode (Grok)** (`opencode`) is offered: a configuration naming
   `[harness.opencode]` is accepted. It runs **Grok** (name the Grok model as
   `<provider>/<model>` under `models`, with a `default_model`), installed and

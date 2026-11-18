@@ -681,6 +681,74 @@ def test_codex_hides_other_clones_the_runner_state_and_home_secrets(tmp_path: Pa
     assert f'{json.dumps(str(ctx.clone / ".git" / "maity"))}' not in text  # its maity reads it
 
 
+def test_codex_hides_no_path_inside_one_it_hides_already(tmp_path: Path) -> None:
+    """Layout `single`: the runner's configuration file lies in `.config/maity-runner`, a
+    home secret. Hiding it again inside the hidden directory broke Codex's bwrap ("Can't
+    create file … Read-only file system"), and every command of a supervised run failed."""
+    home = tmp_path / "home"
+    runner_dir = home / ".config" / "maity-runner"
+    others = tmp_path / "ws" / "p" / "agent-4" / ".git" / "maity"
+    secrets = (tmp_path / "st", runner_dir, home / ".claude.json", runner_dir / "runner.toml",
+               others, tmp_path / "st")  # fmt: skip
+    ctx = context(tmp_path, "codex", private=secrets, workspaces=tmp_path / "ws")
+    hidden = [path for path, level in tomllib.loads(adapters.codex_config(ctx))["permissions"]
+              ["maity"]["filesystem"].items() if level == "none"]  # fmt: skip
+    assert hidden == [str(tmp_path / "ws"), str(tmp_path / "st"), str(runner_dir),
+                      str(home / ".claude.json")]  # fmt: skip
+    assert adapters.outermost((Path("/a/b"), Path("/a"), Path("/ab"))) == (Path("/a"), Path("/ab"))
+
+
+def test_codex_keeps_a_hidden_path_inside_its_own_clone_hidden(tmp_path: Path) -> None:
+    """The clone is opened inside the hidden workspaces root, so a hidden path inside the
+    clone is not hidden by the root and stays listed."""
+    inner = tmp_path / "ws" / "maity" / "agent-3" / "sub" / ".git" / "maity"  # in its clone
+    ctx = context(
+        tmp_path,
+        "codex",
+        workspaces=tmp_path / "ws",
+        private=(inner, tmp_path / "ws" / "maity" / "agent-4" / ".git" / "maity"),
+    )
+    assert inner.is_relative_to(ctx.clone)
+    hidden = [path for path, level in tomllib.loads(adapters.codex_config(ctx))["permissions"]
+              ["maity"]["filesystem"].items() if level == "none"]  # fmt: skip
+    assert hidden == [str(tmp_path / "ws"), str(inner)]
+    assert adapters.outermost((Path("/w"), Path("/w/c/x"), Path("/w/c/x/y"), Path("/w/d")),
+                              opened=(Path("/w/c"),)) == (Path("/w"), Path("/w/c/x"))  # fmt: skip
+
+
+@pytest.mark.parametrize("root", ["clone", "scratch"])
+def test_a_hidden_path_inside_every_reopened_directory_stays_listed(
+    tmp_path: Path, root: str
+) -> None:
+    """The clone and the scratch are both opened again inside the hidden workspaces root: a
+    hidden path inside either is not hidden by the root and stays listed."""
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+    clone = tmp_path / "ws" / "maity" / "agent-3"  # context()'s clone
+    inner = (clone if root == "clone" else room) / "sub" / ".git" / "maity"
+    ctx = context(tmp_path, "codex", sandbox=True, scratch=room, workspaces=tmp_path / "ws",
+                  private=(inner,))  # fmt: skip
+    assert ctx.clone == clone
+    hidden = [path for path, level in tomllib.loads(adapters.codex_config(ctx))["permissions"]
+              ["maity"]["filesystem"].items() if level == "none"]  # fmt: skip
+    assert hidden == [str(tmp_path / "ws"), str(inner)]
+
+
+def test_the_home_secrets_are_listed_under_the_home_resolved(tmp_path: Path) -> None:
+    """A home reached through a link: its secrets and the runner's configuration (resolved)
+    must be seen as one inside the other, or Codex's profile would list both."""
+    real = tmp_path / "real-home"
+    (real / ".config" / "maity-runner").mkdir(parents=True)
+    (real / ".config" / "maity-runner" / "runner.toml").write_text("")
+    (tmp_path / "home").symlink_to(real)
+    clone = tmp_path / "ws" / "p" / "agent-3"
+    found = supervisor.private_paths(
+        None, tmp_path / "home", clone,
+        extra=(tmp_path / "home" / ".config" / "maity-runner" / "runner.toml",),
+    )  # fmt: skip
+    assert real / ".config" / "maity-runner" in found
+    assert adapters.outermost(found).count(real / ".config" / "maity-runner" / "runner.toml") == 0
+
+
 def test_claude_code_denies_reading_the_runner_state_and_home_secrets(tmp_path: Path) -> None:
     secrets = (tmp_path / "st", tmp_path / "home" / ".ssh")
     ctx = context(tmp_path, private=secrets, workspaces=tmp_path / "ws", sandbox=True)
@@ -818,6 +886,26 @@ def test_without_pull_requests_the_record_is_empty_and_the_prompt_silent(
     assert launch.argv[-1] == adapters.START_PROMPT + SANDBOXED
 
 
+def test_codex_gets_no_pull_requests_record_and_no_word_of_maity_gh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex's `maity` runs inside its sandbox; `maity gh` is set up only outside one: the
+    grant's pull requests are left out for it (adapters.codex_left_out)."""
+    fake_gh(tmp_path, monkeypatch)
+    placed = {**PLACEMENT, "workspace": {"repository": REPOSITORY}}
+    assert adapters.pull_requests_record(context(tmp_path / "c", grant=PULLS, placement=placed))
+    ctx = context(tmp_path, "codex", grant=PULLS, placement=placed)
+    assert adapters.pull_requests_record(ctx) == ""
+    assert "maity gh" not in adapters._sandbox_prompt(ctx)
+    assert adapters.codex_left_out(PULLS) == [
+        "allow 'make test' is not applied to codex: Codex has no command allowlist, so every"
+        " command runs in its sandbox, listed or not (refused without the sandbox)",
+        "pull_requests is not given to codex: its `maity` runs inside its sandbox, and the"
+        " runner sets up `maity gh` only for a `maity` outside it",
+    ]
+    assert adapters.codex_left_out(config.RepositoryGrant(network=("pypi.org",))) == []
+
+
 def test_pull_requests_without_gh_on_the_path_record_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -934,3 +1022,29 @@ def test_a_version_is_a_token_of_its_own(printed: str, version: str | None) -> N
 
     found = capabilities.VERSION.search(printed)
     assert (found.group(0) if found else None) == version
+
+
+def test_the_scratch_is_told_to_the_session_and_opened_in_both_sandboxes(tmp_path: Path) -> None:
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+    claude = context(tmp_path / "c", sandbox=True, scratch=room)
+    settings = adapters.claude_settings(claude)
+    assert settings["sandbox"]["filesystem"]["allowWrite"] == [str(room)]
+    assert {f"{tool}(/{room}/**)" for tool in ("Read", "Edit", "Write")} <= set(
+        settings["permissions"]["allow"]
+    )
+    codex = context(tmp_path / "x", "codex", sandbox=True, scratch=room,
+                    workspaces=tmp_path / "ws")  # fmt: skip
+    toml = adapters.codex_config(codex)
+    hidden, opened = f'"{tmp_path / "ws"}" = "none"', f'"{room}" = "write"'
+    assert hidden in toml and opened in toml  # the root stays hidden, its scratch opened again
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=room))
+    assert launched.env["MAITY_SCRATCH"] == str(room)
+    assert launched.env["TMPDIR"] == str(room / "tmp")
+
+
+def test_without_a_scratch_nothing_names_one(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    assert "allowWrite" not in adapters.claude_settings(ctx)["sandbox"]["filesystem"]
+    assert ".scratch" not in adapters.codex_config(context(tmp_path / "x", "codex", sandbox=True))
+    launched = adapters.launch(context(tmp_path / "s", "stub"))
+    assert "MAITY_SCRATCH" not in launched.env and "TMPDIR" not in launched.env

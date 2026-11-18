@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import re
@@ -290,8 +291,8 @@ def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
         code = error.get("code", code)
         message = error.get("message", message)
         details = error.get("details") or {}
-    except (ValueError, OSError):
-        pass
+    except (ValueError, OSError, http.client.HTTPException):
+        pass  # a body cut short (IncompleteRead) leaves the status to speak for itself
     details = details if isinstance(details, dict) else {}
     # The hub's words reach a terminal: one line each, every escape shown, never acted on.
     if isinstance(code, str):
@@ -418,6 +419,15 @@ def get_text(url: str, timeout: float = 30.0) -> str:
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         reason = getattr(exc, "reason", exc)
         raise HubError(f"cannot reach {safe_url(url)}: {reason}") from exc
+    except http.client.HTTPException as exc:
+        raise broke_off(safe_url(url), exc) from exc
+
+
+def broke_off(where: str, exc: http.client.HTTPException) -> HubError:
+    """An answer that broke off (a status line, headers or a body cut short: BadStatusLine,
+    IncompleteRead, RemoteDisconnected): a lost connection like any other, with no status
+    and no code, so `wait` retries it and every other command fails once with this line."""
+    return HubError(f"{where} broke off its answer ({onboarding.inline(type(exc).__name__)})")
 
 
 @dataclass(frozen=True)
@@ -448,6 +458,8 @@ def _exchange(
         raise _error_from(exc, what) from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise HubError(f"cannot reach {safe_url(url)}: {getattr(exc, 'reason', exc)}") from exc
+    except http.client.HTTPException as exc:
+        raise broke_off(safe_url(url), exc) from exc
     value = raw.decode("utf-8", errors="replace").strip()
     if not sign.is_credential(value):
         raise HubError(f"the {what} exchange answered with something that is not a credential")
@@ -679,6 +691,8 @@ class Client:
                 raise err from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise HubError(f"cannot reach {self.base}: {getattr(exc, 'reason', exc)}") from exc
+            except http.client.HTTPException as exc:
+                raise broke_off(self.base, exc) from exc
         raise AssertionError("unreachable")
 
 
