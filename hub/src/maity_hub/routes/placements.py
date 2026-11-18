@@ -304,9 +304,10 @@ def placement_reports(
         return JSONResponse({"items": event_views(conn, rows, mine), "next_cursor": None})
 
 
-def _refuse_over_placements(conn: Connection, mine: Membership, project: Any, full: str) -> None:
+def _refuse_over_placements(conn: Connection, mine: Membership, project: Any) -> None:
     """`placement_quota` with the quota details (§6.31) when the project holds as many
-    active placements as `max_placements` in effect allows."""
+    active placements as `max_placements` in effect allows. The details name the project
+    by its current full name, never the alias the request came by (§6.25)."""
     limit = ceilings.resolve(conn, "max_placements", project, project.max_placements)
     count = pl.active_count(conn, project.id)
     if count >= limit.limit:
@@ -317,7 +318,7 @@ def _refuse_over_placements(conn: Connection, mine: Membership, project: Any, fu
             ceilings.details(
                 limit,
                 count,
-                full,
+                namespace.full_name(conn, project),
                 sees_ceiling=mine.kind == "human" and mine.may("project:admin"),
             ),
         )
@@ -350,7 +351,7 @@ def create_placement(
         # close, and one on a revoked runner never run (§15.5, §15.6).
         _require_open(project)
         _require_live(conn, runner)
-        _refuse_over_placements(conn, mine, project, slug)
+        _refuse_over_placements(conn, mine, project)
         agent_values, handle = _agent_values(conn, mine, body, right)
         member_id = agent_values.get("membership_id")
         clone = body.workspace.clone or pl.free_clone(

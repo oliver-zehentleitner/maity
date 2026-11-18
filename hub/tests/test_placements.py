@@ -703,6 +703,29 @@ def test_a_lowered_ceiling_refuses_the_next_placement(
     assert setup.owner.get("/projects/maintainer/maity").json()["policy"]["max_placements"] == 8
 
 
+def test_the_placement_quota_names_the_project_by_its_current_name(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """§6.25, §6.31: a placement created through an old name of a renamed project meets
+    `placement_quota` with the project's current full name, never the alias it came by."""
+    setup.owner.patch(
+        "/projects/maintainer/maity", {"policy": {"max_placements": 1}, "reason": "one"}
+    )
+    placed(setup)
+    renamed = setup.owner.patch("/projects/maintainer/maity", {"slug": "maity-hub"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["aliases"] == ["maintainer/maity"]
+    other = flow.agent(make_client, setup.owner)
+    over = setup.owner.post(
+        "/projects/maintainer/maity/placements",
+        {"agent": {"id": other.id}, "runner": setup.runner.id, "harness": "claude-code"},
+    )
+    assert (over.status_code, over.json()["error"]["code"]) == (409, "placement_quota")
+    details = over.json()["error"]["details"]
+    assert details["project"] == "maintainer/maity-hub"
+    assert details["raise"]["path"] == "/api/v1/projects/maintainer/maity-hub"
+
+
 def test_delete_closes_on_the_runners_terminal_report(setup: Setup) -> None:
     body = placed(setup)
     report(setup, body, 1)
