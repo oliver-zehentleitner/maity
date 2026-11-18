@@ -8,10 +8,12 @@ import base64
 import hashlib
 import json
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
+from maity_hub import cards
 from maity_hub.errors import invalid
+from maity_hub.tables import ID
 
 SEQ_MAX = 2**63 - 1  # BIGINT
 
@@ -100,16 +102,28 @@ def unclosed(text: str, bound: str) -> tuple[int, datetime | None, str]:
             raise ValueError
         if not isinstance(position, int) or isinstance(position, bool):
             raise ValueError
+        if not 0 <= position < len(cards.STATUSES):  # a column of the board, not any int
+            raise ValueError
         if iso is not None and not isinstance(iso, str):
             raise ValueError
-        if not isinstance(row_id, str):
+        if not isinstance(row_id, str) or not _id_shaped(row_id):
             raise ValueError
         at = datetime.fromisoformat(iso) if iso is not None else None
         if at is not None and at.tzinfo is None:
             raise ValueError  # the hub stores UTC only: a naive time is no cursor it gave
-        return position, at, row_id
-    except (ValueError, TypeError):
+        # In UTC here, as the column stores it: a zone that moves the time out of the
+        # datetime range (year 1 at +14:00) is refused, not left to the query's binding.
+        utc = at.astimezone(UTC) if at is not None else None
+        return position, utc, row_id
+    except (ValueError, TypeError, OverflowError):
         raise invalid({"cursor": "invalid"}) from None
+
+
+def _id_shaped(row_id: str) -> bool:
+    """Whether `row_id` could be a card's id: no longer than the id column, no NUL
+    (PostgreSQL refuses one in text). The hub's ids are not parsed (ids.py), so this is
+    no pattern: a longer or NUL-bearing id would only reach the database as an error."""
+    return 0 < len(row_id) <= ID and "\x00" not in row_id
 
 
 def tag_of(text: str) -> str | None:

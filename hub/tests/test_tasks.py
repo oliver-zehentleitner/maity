@@ -375,27 +375,45 @@ def test_a_key_cursor_from_before_still_pages_the_closed_columns(
 def test_a_closed_cursor_the_hub_did_not_give_is_refused(
     owner: flow.Human, migrated: Engine
 ) -> None:
-    """A naive time, another list's scope, or a cursor of another kind: 400, never a 500."""
+    """A naive time, another list's scope, a cursor of another kind, a position out of the
+    board's columns or of 64 bits, a time whose UTC value is out of range, an id with a
+    NUL: 400, never a 500, on the closed columns' SQL path and on the whole board's."""
     _closed_cards(owner, migrated, 3)
-    path = "/projects/maintainer/maity/tasks?status=done,cancelled&limit=1"
-    bound = paging.scope(
-        status="done,cancelled", kind=None, label=None, needs=None, holder=None,
-        assigned_to=None, area=None, parent=None, closed_after=None, order="board",
-    )  # fmt: skip
-    naive = paging._encode(["closed", 5, "2026-11-01T12:00:00", "tsk-x", bound])
-    other_scope = paging.closed_cursor(5, CLOSED_BASE, "tsk-x", "0" * 16)
-    for given in (naive, other_scope, paging.seq_cursor(3, bound)):
-        response = owner.get(f"{path}&cursor={given}")
-        assert response.status_code == 400, response.text
-        assert response.headers["Maity-Error"] == "invalid"
+    at = CLOSED_BASE.isoformat()
+    for status in ("done,cancelled", "all"):
+        path = f"/projects/maintainer/maity/tasks?status={status}&limit=1"
+        bound = paging.scope(
+            status=status, kind=None, label=None, needs=None, holder=None,
+            assigned_to=None, area=None, parent=None, closed_after=None, order="board",
+        )  # fmt: skip
+        forged: list[list[Any]] = [
+            [5, "2026-11-01T12:00:00", "tsk-x"],  # naive
+            *([p, at, "tsk-x"] for p in (2**63, 2**70, -(2**70), -1, len(cards.STATUSES))),
+            [5, "0001-01-01T00:00:00+14:00", "tsk-x"],
+            [5, "9999-12-31T23:59:59-14:00", "tsk-x"],
+            [5, at, "tsk-\x00x"],
+            [5, at, "tsk-" + "x" * 40],
+        ]
+        refused = [paging._encode(["closed", *f, bound]) for f in forged]
+        refused += [
+            paging.closed_cursor(5, CLOSED_BASE, "tsk-x", "0" * 16),
+            paging.seq_cursor(3, bound),
+        ]
+        for given in refused:
+            response = owner.get(f"{path}&cursor={given}")
+            assert response.status_code == 400, (status, paging._decode(given), response.text)
+            assert response.headers["Maity-Error"] == "invalid"
 
 
-def test_a_closed_page_reads_no_more_cards_than_it_shows(
+def test_a_closed_page_is_one_card_select_with_a_limit(
     owner: flow.Human, migrated: Engine
 ) -> None:
     """The database sorts the closed columns and hands back one card more than the page,
     not the whole column: the card list's statement (the one ordered by the column's
-    `CASE`) carries the `LIMIT`. Before, it read all 30 cards for a page of 2."""
+    `CASE`) carries the `LIMIT`. Before, all 30 cards were sent to Python for a page of 2.
+    This proves one SELECT with a LIMIT, not bounded work in the database: no index
+    carries the order, so the database still sorts the project's closed cards for each
+    page (persistence.md, 7bad4e04)."""
     _closed_cards(owner, migrated, 30)
     statements: list[str] = []
 
