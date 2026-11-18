@@ -3629,16 +3629,27 @@ def _placement(session: Session, which: str) -> dict[str, Any]:
     """The active placement with id `which`, or the one of the member `which` names. The name
     is resolved against the whole member list first, aliases and the ambiguity rule included
     (§6.24, §8.6): the placements alone would pick one of two members sharing a name, or a
-    current handle over another member's alias, for a call that stops an agent."""
+    current handle over another member's alias, for a call that stops an agent. An agent may
+    run several placements, one per instance (§15.5): `<agent>#<instance>` names one, and an
+    agent with several is refused with their ids rather than guessed."""
     placements = [p for p in _placements(session) if isinstance(p.get("id"), str)]
     exact = [p for p in placements if p["id"] == which]
     if len(exact) == 1:
         return exact[0]
-    member = resolve_member(_members(session), which, strict=False)
-    if member != which or any(_obj(p.get("agent")).get("id") == which for p in placements):
+    name, _, instance = which.partition("#")
+    member = resolve_member(_members(session), name, strict=False)
+    if member != name or any(_obj(p.get("agent")).get("id") == name for p in placements):
         found = [p for p in placements if _obj(p.get("agent")).get("id") == member]
+        if instance:
+            found = [p for p in found if p.get("instance") == instance]
+        if len(found) > 1:
+            ids = ", ".join(onboarding.inline(p["id"]) for p in found)
+            raise CommandError(
+                f"{onboarding.inline(which)} runs on more than one placement ({ids}); "
+                "name the placement id or <agent>#<instance>"
+            )
         if len(found) != 1:
-            named = onboarding.inline(which) + (f" ({member})" if member != which else "")
+            named = onboarding.inline(which) + (f" ({member})" if member != name else "")
             raise CommandError(f"no single active placement for {named} in this project")
         return found[0]
     # No member has that name: the placements' own handles, still refusing two matches.
@@ -3757,8 +3768,10 @@ def _placement_line(p: dict[str, Any]) -> str:
     if reported.get("reason"):
         state_ += f"/{reported['reason']}"
     pending = "" if p.get("reported_current", True) else " (pending)"
+    # `<handle>#<instance>` once the pickup made the instance (§15.5).
+    instance = f"#{show(p['instance'])}" if isinstance(p.get("instance"), str) else ""
     return (
-        f"{show(p.get('id'))}  {onboarding.label(agent)} on "
+        f"{show(p.get('id'))}  {onboarding.label(agent)}{instance} on "
         f"{show(runner.get('name') or runner.get('id'))}  {show(p.get('harness'))} "
         f"{show(p.get('mode'))}  desired {show(p.get('desired'))}, {show(state_)}{pending}"
     )
@@ -5939,10 +5952,16 @@ def build_parser() -> argparse.ArgumentParser:
         "start, list, stop or restart agents on runners (agents:propose)",
         "Placements say which agent runs on which runner (§15.6). With agents:propose an agent "
         "may propose a start for an existing member (under consent the owner gives the go) and "
-        "stop, start, restart and list placements. An agent is named by its handle or id.",
+        "stop, start, restart and list placements. An agent is named by its handle or id. An "
+        "agent may run on several placements, one per instance, within its max_instances "
+        "(instance_quota beyond it): name one as <agent>#<instance> or by its placement id.",
     )
     psub = p.add_subparsers(dest="placement_command", metavar="<action>", required=True)
-    r = psub.add_parser("list", help="the project's active placements", formatter_class=fmt)
+    r = psub.add_parser(
+        "list",
+        help="the project's active placements, each agent as <handle>#<instance>",
+        formatter_class=fmt,
+    )
     _json_flag(r)
     r.set_defaults(handler=cmd_placement_list)
     r = psub.add_parser(
@@ -5958,20 +5977,32 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--mode", choices=("interactive", "supervised"), help="default: the tool's")
     r.add_argument("--model", help="one of the runner's models for the tool")
     r.add_argument("--target", help="a target the runner advertises")
-    r.add_argument("--clone", help="the clone name (default: the agent's handle)")
+    r.add_argument(
+        "--clone",
+        help="the clone name (default: a free name the hub picks, the agent's handle or "
+        "the handle with a number; docs/api.md §15.5)",
+    )
     r.add_argument("--branch", help="a starting branch")
     r.add_argument("--reason", required=True, help="why this agent should run there")
     _json_flag(r)
     _on_request_flag(r)
     r.set_defaults(handler=cmd_placement_start)
     r = psub.add_parser("stop", help="stop an agent's placement", formatter_class=fmt)
-    r.add_argument("which", help="the placement id, or the agent's handle or id")
+    r.add_argument(
+        "which",
+        help="the placement id, or the agent's handle or id, or <agent>#<instance> for one "
+        "of several (an agent with several placements is refused, with their ids)",
+    )
     r.add_argument("--grace", type=_grace, metavar="N", help="seconds to park the work (0-900)")
     _json_flag(r)
     _on_request_flag(r)
     r.set_defaults(handler=cmd_placement_stop)
     r = psub.add_parser("restart", help="restart an agent's placement", formatter_class=fmt)
-    r.add_argument("which", help="the placement id, or the agent's handle or id")
+    r.add_argument(
+        "which",
+        help="the placement id, or the agent's handle or id, or <agent>#<instance> for one "
+        "of several (an agent with several placements is refused, with their ids)",
+    )
     r.add_argument(
         "--rejoin",
         action="store_true",

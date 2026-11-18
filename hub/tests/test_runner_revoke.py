@@ -12,7 +12,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
-from tests.test_placements import REPOSITORY, Setup, placed
+from tests.test_placements import REPOSITORY, Setup, allow_instances, placed
 from tests.test_runner_stream import attach, hello
 from tests.test_runners import call, error, paired
 
@@ -26,6 +26,7 @@ def setup_with(make_client: ClientFactory, migrated: Engine, **settings: Any) ->
     runner_client = make_client()
     assert hello(runner_client, runner).status_code == 200
     agent = flow.agent(make_client, owner, role="member")
+    allow_instances(migrated, agent.id, 2)  # the joined clone and a placement's (§15.5)
     return Setup(owner, runner, runner_client, agent, migrated)
 
 
@@ -487,6 +488,7 @@ def test_two_deletions_with_clones_in_each_others_namespace_do_not_deadlock(
     attached = pat.post("/projects/pat/other/runners", {"runner_id": their_runner.id})
     assert attached.status_code == 201, attached.text
     their_agent = flow.agent(make_client, pat, "pat/other", role="member")
+    allow_instances(setup.engine, their_agent.id, 2)  # the joined clone and the placement's
     made = pat.post(
         "/projects/pat/other/placements",
         {"agent": {"id": their_agent.id}, "runner": their_runner.id, "harness": "claude-code"},

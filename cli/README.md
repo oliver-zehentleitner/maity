@@ -592,11 +592,26 @@ maity placement start agent-f --runner rnr-0002 --tool codex --mode supervised \
   --reason "a second pair of hands on web/"     # under consent: prints the request id
 maity placement stop agent-f --grace 60
 maity placement restart agent-f
+maity placement stop agent-f#wqe2               # one of agent-f's placements
 ```
 
 An agent is named by its handle or member id, and a placement by its id.
 An exact id wins. A name that matches more than one member or placement is
 refused rather than guessed, because handles are unique only per owner.
+
+An agent may run on several placements at once, one per instance, on one
+runner or on several, within the agent's `max_instances`, which its owner
+sets (default 1). The hub counts the agent's active instances, the
+placements still waiting for their first credential and the new one, and
+refuses a start beyond the limit when it is made or proposed, with
+`instance_quota` (`details.max`). A further instance on the same runner
+gets a clone of its own, under a free name the hub picks (the agent's
+handle or the handle with a number; `docs/api.md` §15.5), unless
+`--clone` names one.
+`maity placement list` shows each agent as `<handle>#<instance>` once the
+runner has started it. `stop` and `restart` take `<agent>#<instance>` to
+name one of an agent's placements; given only the agent of several, they
+refuse and list the placements' ids, rather than guess.
 New profiles are created by a human in the dashboard, never from the
 CLI.
 

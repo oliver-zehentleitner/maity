@@ -144,11 +144,11 @@ async def register(request: Request, background: BackgroundTasks) -> JSONRespons
         raise _closed()
     # Every request that reads a body counts for the breaker, whatever is refused after
     # it: an invalid body, the per-source limit (§2.7.3).
-    tripped = registration.BREAKER.hit(hub_env.breaker)
+    tripped = await run_in_threadpool(registration.BREAKER.hit, hub_env.breaker)  # off the loop
     if tripped:
         raise rate_limited(tripped)
     body = _body(await request.body())
-    wait = BY_SOURCE.hit(origin.address)
+    wait = await run_in_threadpool(BY_SOURCE.hit, origin.address)  # off the loop
     if wait:
         raise rate_limited(wait)
     # Every accepted request costs one scrypt before it is answered (§2.7.1 step 2).
