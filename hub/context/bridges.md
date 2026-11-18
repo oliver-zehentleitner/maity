@@ -199,7 +199,9 @@ own check, which costs a few reads under a lock it already holds.
 
 The standing is read with plain `SELECT`s, no lock of its own. A suspension takes the
 account's `account_lock` exclusively before the organisation's and the project's lock (and
-takes no project lock where the owner holds no live credential in the project), so a suspension
+locks only the projects of the account's live credentials and its runners' attachments and
+placements that are active or whose clone is not reported removed, so it can leave the
+project unlocked), so a suspension
 that commits after the write took the project's lock is not waited for: the write commits as
 one carried before it would.
 
