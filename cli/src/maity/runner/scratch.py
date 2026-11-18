@@ -65,6 +65,35 @@ def write_codex_home(
     as_user.codex(_under(home.parent), home, config_text, auth_target)
 
 
+def tmp_make(path: Path, as_user: AsUser = RUNNER) -> None:
+    """The agy scratch at `path` under `/tmp`, with `tmp` in it, owned 0700 by the user the
+    agents run as (scratchop.tmp_make). scratchop.OnTheWay when a level is a link, a
+    foreign-owned directory, or a leaf that already exists; OSError otherwise."""
+    as_user.tmp_scratch("make", path)
+
+
+def tmp_measure(path: Path, as_user: AsUser = RUNNER) -> int | None:
+    """The bytes under the agy scratch at `path`; None when it is missing, reached through a
+    link or a foreign-owned parent, or cannot be measured in time."""
+    try:
+        answer = as_user.tmp_scratch("size", path)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = answer.get("bytes")
+    return found if isinstance(found, int) and not isinstance(found, bool) else None
+
+
+def tmp_remove(path: Path, as_user: AsUser = RUNNER) -> int | None:
+    """Remove the agy scratch at `path` under `/tmp` and return its size before; None when
+    there was none (scratchop.tmp_remove). scratchop.OnTheWay when the parent is a link or
+    foreign-owned; OSError when it cannot be removed."""
+    answer = as_user.tmp_scratch("remove", path)
+    if answer.get("result") == "missing":
+        return None
+    found = answer.get("bytes")
+    return found if isinstance(found, int) and not isinstance(found, bool) else 0
+
+
 def measure(path: Path, as_user: AsUser = RUNNER) -> int | None:
     """The bytes under the scratch at `path`; None when it is missing, reached through a link
     or cannot be measured in time."""

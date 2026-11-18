@@ -496,10 +496,15 @@ class Supervisor:
                     done = False  # its sessions are unknown: unknown means kept
                     continue
                 try:
-                    path = workspace.scratch_of(
-                        target.workspaces, p["project_id"], p["id"], target.host
+                    located = self._scratch_location(p, target)
+                    if located is None:
+                        continue  # no /tmp scratch on this target (an ssh host): none to remove
+                    path, in_tmp = located
+                    removed = (
+                        scratch.tmp_remove(path, target.as_user)
+                        if in_tmp
+                        else scratch.remove(path, target.as_user)
                     )
-                    removed = scratch.remove(path, target.as_user)
                 except workspace.Refused:
                     break
                 except scratchop.OnTheWay:  # never followed; logged once
@@ -535,12 +540,16 @@ class Supervisor:
                     target.workspaces, p["project_id"], p["workspace"]["clone"], target.host,
                     folder=workspace.uses_folder(harness.id if harness else ""),
                 )  # fmt: skip
-                path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"],
-                                            target.host)  # fmt: skip
+                located = self._scratch_location(p, target)
             except workspace.Refused:
                 continue
             clone = scratch.size(place.path, target.as_user)
-            room = scratch.measure(path, target.as_user)
+            if located is None:
+                room = None
+            elif located[1]:
+                room = scratch.tmp_measure(located[0], target.as_user)
+            else:
+                room = scratch.measure(located[0], target.as_user)
             with self.lock:
                 rec.clone_bytes, rec.scratch_bytes, rec.sized_at = clone, room, now
 
@@ -1318,9 +1327,13 @@ class Supervisor:
         for a harness that gets none (workspace.SCRATCH_HARNESSES). A restart or an adoption
         finds it as it was. Through a link the agents made the runner makes nothing, and a
         scratch it cannot make (a host whose `maity` has no `scratchop` yet) is none either:
-        the session then starts without one, and the log says why."""
+        the session then starts without one, and the log says why. agy's scratch goes under
+        `/tmp` instead of beside the clone (`_tmp_scratch`), its sandbox being unable to write
+        there."""
         if harness.id not in workspace.SCRATCH_HARNESSES:
             return None
+        if workspace.scratch_in_tmp(harness.id):
+            return self._tmp_scratch(p, target)
         path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host)
         try:
             scratch.make(path, target.as_user)
@@ -1331,6 +1344,47 @@ class Supervisor:
             self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
         return path
+
+    def _tmp_scratch(self, p: dict[str, Any], target: Target) -> Path | None:
+        """agy's scratch under `/tmp` (workspace.tmp_scratch_of), owned 0700 by the uid agy
+        runs as: its sandbox makes the beside-clone `.scratch` read-only, so the scratch goes
+        to the host-shared writable `/tmp` instead. It is removed and remade fresh at each
+        start, so nothing carries across a restart; None when the uid is unknown (an ssh host)
+        or a level is a link or a foreign-owned directory, the session then starting without
+        one."""
+        try:
+            uid = target.as_user.uid()
+        except OSError as exc:
+            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
+            return None
+        try:
+            path = workspace.tmp_scratch_of(uid, p["id"])
+        except workspace.Refused:
+            return None
+        try:
+            scratch.tmp_remove(path, target.as_user)  # a prior run's: made fresh per placement
+            scratch.tmp_make(path, target.as_user)
+        except scratchop.OnTheWay:
+            self.log(f"{p['id']}: no scratch: {path} is a link, foreign-owned, or already there")
+            return None
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
+            return None
+        return path
+
+    def _scratch_location(self, p: dict[str, Any], target: Target) -> tuple[Path, bool] | None:
+        """Where a placement's scratch is on `target` and whether it is the `/tmp` one (agy):
+        beside the clone, or under `/tmp` for a harness whose sandbox cannot write there. None
+        when the `/tmp` one cannot be worked out (an ssh host has no uid for it).
+        workspace.Refused for a bad token."""
+        harness = self.cfg.harnesses.get(p.get("harness") or "")
+        if harness is not None and workspace.scratch_in_tmp(harness.id):
+            try:
+                uid = target.as_user.uid()
+            except OSError:
+                return None
+            return workspace.tmp_scratch_of(uid, p["id"]), True
+        return workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host), False
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
         """What the agent's sandbox may not read, as the agents' side of `target` sees it: its

@@ -49,9 +49,16 @@ FOLDER_HARNESSES = ("antigravity",)
 REPO = "repo"
 FOLDER, CLONE = "folder", "clone"  # the layouts, as the record names them
 # The harnesses whose session is told its scratch and whose sandbox the runner opens for it
-# (adapters). agy's sandbox is not shown to write there yet; opencode keeps its file tools
-# inside the clone.
-SCRATCH_HARNESSES = ("stub", "claude-code", "codex")
+# (adapters). opencode keeps its file tools inside the clone, so it gets none.
+SCRATCH_HARNESSES = ("stub", "claude-code", "codex", "antigravity")
+# agy's sandbox makes the workspace (and the beside-clone `.scratch`) read-only, so its scratch
+# cannot sit beside the clone as the others' do; it goes under `/tmp`, the host-shared writable
+# location, in a per-uid parent `maity-scratch-<uid>` owned 0700 by the user agy runs as
+# (scratchop.tmp_make, context/instances.md).
+TMP_SCRATCH_HARNESSES = ("antigravity",)
+# Deliberate: the host-shared writable location is where agy can write. The hijack risk `/tmp`
+# carries is met in scratchop.tmp_make (per-uid parent, 0700, owner-checked, no-follow).
+TMP_SCRATCH_ROOT = Path("/tmp")  # noqa: S108
 _lock = threading.Lock()
 
 
@@ -126,6 +133,23 @@ def scratch_of(root: Path, project: str, placement_id: str, host: str = "") -> P
 def uses_folder(harness_id: str) -> bool:
     """Whether a placement of the harness gets a workspace folder with the clone in it."""
     return harness_id in FOLDER_HARNESSES
+
+
+def scratch_in_tmp(harness_id: str) -> bool:
+    """Whether a placement's scratch sits under `/tmp` (agy), not beside the clone: its sandbox
+    makes the beside-clone `.scratch` read-only, so the scratch goes to `/tmp` instead."""
+    return harness_id in TMP_SCRATCH_HARNESSES
+
+
+def tmp_scratch_of(uid: int, placement_id: str) -> Path:
+    """The placement's scratch under `/tmp` for a harness whose sandbox cannot write the
+    beside-clone `.scratch` (agy): `<TMP_SCRATCH_ROOT>/maity-scratch-<uid>/<placement id>`,
+    owned 0700 by `uid`, the user the agents run as. The per-uid parent keeps every host user's
+    scratches apart; the leaf is made fresh per placement and checked owned by `uid` at every
+    level (scratchop.tmp_make). Not resolved: the runner reaches it only from the root down."""
+    if not SCRATCH_ID.match(placement_id):
+        raise Refused("workspace_in_use", "workspace_unrecorded")
+    return TMP_SCRATCH_ROOT / f"maity-scratch-{uid}" / placement_id
 
 
 def locate(root: Path, project: str, clone: str, host: str = "", folder: bool = False) -> Workspace:

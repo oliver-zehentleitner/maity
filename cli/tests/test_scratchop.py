@@ -359,3 +359,120 @@ def test_through_ssh_a_host_maity_too_old_for_the_codex_op_is_its_own_answer(
         Remote(1, "boom").codex(tmp_path / "ws", home, "CONFIG", None)
     assert not isinstance(failed.value, (scratchop.OnTheWay, scratchop.Unsupported))
     Remote(0).codex(tmp_path / "ws", home, "CONFIG", None)  # 0: written, no raise
+
+
+# --- agy's scratch under `/tmp` (workspace.tmp_scratch_of) ------------------------------------
+
+
+def _tmp_room(base: Path, uid: int, pid: str = "plc-0003") -> Path:
+    """A `/tmp`-shaped agy scratch under `base`: `<base>/maity-scratch-<uid>/<placement id>`."""
+    return base / f"maity-scratch-{uid}" / pid
+
+
+def test_a_tmp_scratch_is_made_measured_and_removed(tmp_path: Path) -> None:
+    uid = os.getuid()
+    room = _tmp_room(tmp_path, uid)
+    assert scratchop.tmp_make(str(room)) == {"result": "made"}
+    assert stat.S_IMODE(room.parent.stat().st_mode) == 0o700  # the per-uid parent
+    assert stat.S_IMODE(room.stat().st_mode) == 0o700  # the per-placement leaf
+    assert stat.S_IMODE((room / "tmp").stat().st_mode) == 0o700
+    (room / "tmp" / "review.json").write_bytes(b"z" * 4000)
+    found = scratchop.tmp_size(str(room))
+    assert found["result"] == "size" and isinstance(found["bytes"], int)
+    assert 4000 <= found["bytes"] < 64 * 1024
+    removed = scratchop.tmp_remove(str(room))
+    assert removed["result"] == "removed" and removed["bytes"] == found["bytes"]
+    assert not room.exists() and room.parent.is_dir()  # only the leaf goes; the parent stays
+    assert scratchop.tmp_remove(str(room)) == {"result": "missing"}
+    assert scratchop.tmp_size(str(room)) == {"result": "missing"}
+
+
+def test_the_per_uid_parent_is_shared_across_placements(tmp_path: Path) -> None:
+    uid = os.getuid()
+    first, second = _tmp_room(tmp_path, uid, "plc-0003"), _tmp_room(tmp_path, uid, "plc-0009")
+    scratchop.tmp_make(str(first))
+    scratchop.tmp_make(str(second))
+    assert first.is_dir() and second.is_dir() and first.parent == second.parent
+
+
+@pytest.mark.parametrize("planted", ["dir", "symlink"])
+def test_a_pre_existing_leaf_is_refused_and_left_alone(tmp_path: Path, planted: str) -> None:
+    """A leaf already there when the scratch is made — a directory, or a link out of it —
+    is refused: a placement's scratch is made fresh, never reused or written through."""
+    uid = os.getuid()
+    room = _tmp_room(tmp_path, uid)
+    room.parent.mkdir(mode=0o700)  # a sound per-uid parent (0700, this uid's own)
+    outside = tmp_path / "outside"
+    (outside).mkdir()
+    (outside / "keep").write_text("k")
+    if planted == "symlink":
+        room.symlink_to(outside)
+    else:
+        room.mkdir()
+        (room / "keep").write_text("k")
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.tmp_make(str(room))
+    assert (outside / "keep").read_text() == "k"  # nothing written through it
+
+
+def test_a_foreign_owned_parent_is_refused(tmp_path: Path) -> None:
+    """The per-uid parent must be owned by the uid the agents run as; one owned by another is
+    refused. Driven by passing a uid the directory is not owned by (a test cannot chown)."""
+    uid = os.getuid()
+    foreign = uid + 1  # a uid the parent this test makes is not owned by
+    room = _tmp_room(tmp_path, foreign)
+    room.parent.mkdir(mode=0o700)  # owned by this test's uid, not `foreign`
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.tmp_make(str(room), uid=foreign)
+    assert not room.exists()
+
+
+def test_a_wrong_mode_parent_is_refused(tmp_path: Path) -> None:
+    uid = os.getuid()
+    room = _tmp_room(tmp_path, uid)
+    room.parent.mkdir(mode=0o755)  # group- and world-readable: not this placement's alone
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.tmp_make(str(room))
+    assert not room.exists()
+
+
+def test_a_symlinked_parent_is_refused_and_leads_nowhere(tmp_path: Path) -> None:
+    uid = os.getuid()
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "keep").write_text("k")
+    parent = tmp_path / f"maity-scratch-{uid}"
+    parent.symlink_to(real)
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.tmp_make(str(parent / "plc-0003"))
+    assert not (real / "plc-0003").exists()  # nothing written through the link
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["maity-scratch-x/plc-0003", "maity-scratch-{other}/plc-0003", "maity-scratch-{uid}/agent-3"],
+)  # fmt: skip
+def test_a_badly_shaped_tmp_path_is_refused(tmp_path: Path, path: str) -> None:
+    """A non-numeric or mismatched uid parent, or a leaf that is not a placement id: an
+    ordinary OSError (not OnTheWay), before anything is made."""
+    uid = os.getuid()
+    given = tmp_path / path.format(uid=uid, other=uid + 1)
+    with pytest.raises(OSError) as refused:
+        scratchop.tmp_make(str(given))
+    assert not isinstance(refused.value, scratchop.OnTheWay)
+    assert not given.exists()
+
+
+def test_the_tmp_module_answers_in_one_line_and_says_link_by_its_exit_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    uid = os.getuid()
+    room = _tmp_room(tmp_path, uid)
+    assert scratchop.main(["tmpmake", str(room)]) == 0
+    assert capsys.readouterr().out.strip() == '{"result": "made"}'
+    (room / "tmp").rmdir()
+    room.rmdir()
+    room.symlink_to(tmp_path)  # a link where the fresh leaf must be
+    assert scratchop.main(["tmpmake", str(room)]) == scratchop.LINK
+    assert '"result": "link"' in capsys.readouterr().out
+    assert scratchop.main(["tmpmake"]) == 2  # no path

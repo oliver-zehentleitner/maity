@@ -273,3 +273,24 @@ def test_only_the_recorded_scratch_is_read_and_never_through_a_link(
         way, "not a file in this clone"
     )  # fmt: skip
     assert reason in err, (way, err)
+
+
+@posix
+@walks
+def test_a_review_file_under_the_agy_scratch_is_accepted_and_one_outside_is_refused(
+    placed: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An agy reviewer's scratch is recorded under `/tmp` (maity-scratch-<uid>/<placement>),
+    not beside the clone; `--review-file $MAITY_SCRATCH/review.json` is read through the same
+    inclone path as any recorded scratch, and a path outside it is still refused."""
+    room = tmp_path / f"maity-scratch-{os.getuid()}" / "plc-0003"
+    room.mkdir(parents=True)
+    private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{room}\n")
+    (room / "review.json").write_bytes(b'{"verdict": "approve"}')
+    accepted = cli._read_text_file(str(room / "review.json"), "--review-file")
+    assert accepted == '{"verdict": "approve"}'
+    outside = secret(tmp_path)  # a file beside the scratch, not in it (nor in the clone)
+    with pytest.raises(cli.UsageError, match="not a file in this clone"):
+        cli._read_text_file(str(outside), "--review-file")
+    assert SECRET not in capsys.readouterr().out.encode()  # nothing of it was read out

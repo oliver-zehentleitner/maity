@@ -26,11 +26,16 @@ import json
 import os
 import re
 import secrets
+import stat
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import PurePath
 
 OPS = ("make", "size", "remove")
+# agy's scratch under `/tmp` (workspace.tmp_scratch_of): a per-uid parent `maity-scratch-<uid>`
+# and a per-placement leaf, each owned 0700 by that uid.
+TMP_PARENT = re.compile(r"^maity-scratch-([0-9]+)$")
+TMP_OPS = ("make", "size", "remove")
 # A clone's or project's name as the runner takes it (workspace.locate).
 TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 # A placement's scratch (§15.5): `<workspaces>/<project_id>/.scratch/<placement id>`. A clone's
@@ -242,6 +247,164 @@ def _link_leaf(dir_fd: int, name: str, target: str) -> None:
     os.symlink(target, name, dir_fd=dir_fd)
 
 
+# --- agy's scratch under `/tmp` (workspace.tmp_scratch_of) ------------------------------------
+#
+# `/tmp` is shared with every user on the host, so a scratch there is made and read with the
+# anti-hijack discipline the beside-clone scratch does not need: the per-uid parent and the
+# per-placement leaf are each opened without following a link and checked to be a plain
+# directory owned 0700 by the uid the agents run as (os.getuid where the op runs). A link, a
+# foreign-owned directory, or a leaf that already exists is refused (OnTheWay), never written
+# through. Inside a 0700 directory of that uid nothing foreign can sit, so once the parent is
+# checked the leaf and all below it are this placement's to measure or remove.
+
+
+def _uid(uid: int | None) -> int:
+    """The uid the agents run as: the caller's own where the op runs (os.getuid), which under
+    the runner is agy's user. `uid` is passed only by a test, to drive the owner check."""
+    if uid is not None:
+        return uid
+    getuid = getattr(os, "getuid", None)
+    if getuid is None:
+        raise OSError("this system has no uid; no per-uid scratch here")
+    return int(getuid())
+
+
+def _tmp_parts(path: str, uid: int) -> tuple[str, str, str]:
+    """`<root>/maity-scratch-<uid>/<placement id>` split into (root, parent, leaf), checked:
+    the parent names this uid and the leaf is a placement id."""
+    pure = PurePath(path)
+    parent, leaf = pure.parent.name, pure.name
+    match = TMP_PARENT.fullmatch(parent)
+    if match is None or int(match.group(1)) != uid:
+        raise OSError(f"{path} is not a /tmp scratch parent for uid {uid}")
+    if not SCRATCH_ID.fullmatch(leaf):
+        raise OSError(f"{path} does not end in a placement's scratch")
+    return str(pure.parent.parent), parent, leaf
+
+
+def _open_nofollow(dir_fd: int, name: str) -> int:
+    """`name` in `dir_fd` opened as a directory without following a link; OnTheWay for a link
+    or a non-directory, FileNotFoundError when it is missing."""
+    try:
+        return os.open(name, _FOLDER | os.O_NOFOLLOW, dir_fd=dir_fd)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR, errno.EMLINK):
+            raise OnTheWay(f"{name} is a link or not a directory; nothing done") from None
+        raise
+
+
+def _verify_owned(fd: int, name: str, uid: int) -> None:
+    """OnTheWay unless the open directory `fd` is a plain directory owned 0700 by `uid`."""
+    found = os.fstat(fd)
+    if (not stat.S_ISDIR(found.st_mode) or found.st_uid != uid
+            or stat.S_IMODE(found.st_mode) != 0o700):  # fmt: skip
+        raise OnTheWay(f"{name} is not a directory owned only by uid {uid}; not used")
+
+
+def _tmp_dir(dir_fd: int, name: str, uid: int, *, fresh: bool) -> int:
+    """The directory `name` in `dir_fd`, made 0700 when missing, opened without following a
+    link and checked owned 0700 by `uid`. `fresh`: it must not already exist (a per-placement
+    leaf is never reused, so a planted or left-over one is refused)."""
+    try:
+        os.mkdir(name, 0o700, dir_fd=dir_fd)
+    except FileExistsError:
+        if fresh:
+            raise OnTheWay(f"{name} already exists; a scratch is made fresh, not reused") from None
+    fd = _open_nofollow(dir_fd, name)
+    try:
+        _verify_owned(fd, name, uid)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+@contextlib.contextmanager
+def _tmp_parent(root: str, parent: str, uid: int) -> Iterator[int | None]:
+    """The per-uid scratch parent `parent` under `root`, opened without following a link and
+    checked owned 0700 by `uid`; None when it is not there. Never created here: size and
+    remove make no parent."""
+    base_fd = os.open(root, _FOLDER)
+    try:
+        try:
+            fd = _open_nofollow(base_fd, parent)
+        except FileNotFoundError:
+            yield None
+            return
+    finally:
+        os.close(base_fd)
+    try:
+        _verify_owned(fd, parent, uid)
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def tmp_make(path: str, uid: int | None = None) -> dict[str, object]:
+    """The agy scratch at `path` under `/tmp` with `tmp` in it: a per-uid parent, created or
+    adopted when already this uid's own 0700 directory, and a per-placement leaf made fresh.
+    A link, a foreign-owned directory, or a leaf that already exists is refused (OnTheWay)."""
+    if not supported():
+        raise OSError("this system cannot open a directory without following links")
+    uid = _uid(uid)
+    root, parent, leaf = _tmp_parts(path, uid)
+    base_fd = os.open(root, _FOLDER)
+    try:
+        parent_fd = _tmp_dir(base_fd, parent, uid, fresh=False)
+    finally:
+        os.close(base_fd)
+    try:
+        leaf_fd = _tmp_dir(parent_fd, leaf, uid, fresh=True)
+        try:
+            with contextlib.suppress(FileExistsError):
+                os.mkdir("tmp", 0o700, dir_fd=leaf_fd)
+        finally:
+            os.close(leaf_fd)
+    finally:
+        os.close(parent_fd)
+    return {"result": "made"}
+
+
+def tmp_size(path: str, uid: int | None = None) -> dict[str, object]:
+    """The bytes under the agy scratch at `path`; `missing` when the parent or the leaf is not
+    there. The parent is checked owned 0700 by `uid` before the leaf is measured."""
+    if not supported():
+        raise OSError("this system cannot open a directory without following links")
+    uid = _uid(uid)
+    root, parent, leaf = _tmp_parts(path, uid)
+    with _tmp_parent(root, parent, uid) as parent_fd:
+        if parent_fd is None:
+            return {"result": "missing"}
+        try:
+            fd = _open_nofollow(parent_fd, leaf)
+        except FileNotFoundError:
+            return {"result": "missing"}
+        try:
+            return {"result": "size", "bytes": _size(fd)}
+        finally:
+            os.close(fd)
+
+
+def tmp_remove(path: str, uid: int | None = None) -> dict[str, object]:
+    """The agy scratch at `path` removed, with its size before; `missing` when there is none.
+    The parent is checked owned 0700 by `uid`; the leaf and all below it are then removed from
+    the parent's descriptor as `remove` does (`_remove_in`)."""
+    if not supported():
+        raise OSError("this system cannot open a directory without following links")
+    uid = _uid(uid)
+    root, parent, leaf = _tmp_parts(path, uid)
+    with _tmp_parent(root, parent, uid) as parent_fd:
+        if parent_fd is None:
+            return {"result": "missing"}
+        return _remove_in(parent_fd, leaf)
+
+
+def tmp_run(op: str, path: str) -> dict[str, object]:
+    if op not in TMP_OPS:
+        raise OSError(f"unknown operation {op}")
+    return {"make": tmp_make, "size": tmp_size, "remove": tmp_remove}[op](path)
+
+
 def run(op: str, under: str, path: str) -> dict[str, object]:
     if op not in OPS:
         raise OSError(f"unknown operation {op}")
@@ -293,6 +456,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "codex":
         return _main_codex(args[1:])
+    if args and args[0] in ("tmpmake", "tmpsize", "tmpremove"):
+        if len(args) != 2:
+            print("usage: scratchop tmpmake|tmpsize|tmpremove PATH", file=sys.stderr)
+            return 2
+        op = args[0].removeprefix("tmp")
+        return _emit(lambda: tmp_run(op, args[1]))
     if len(args) != 4 or args[1] != "--under" or args[0] not in OPS:
         print("usage: scratchop make|size|remove --under DIR PATH", file=sys.stderr)
         return 2

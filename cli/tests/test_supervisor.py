@@ -3164,16 +3164,73 @@ def test_a_scratch_that_is_a_link_is_neither_made_nor_removed(
     assert sum("scratch left on local" in line for line in logs) == 1  # said once
 
 
-def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(world: Any) -> None:
+def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sup, *_ = world
     target = sup.targets["local"]
-    for harness_id in ("antigravity", "opencode"):
-        harness = config.Harness(harness_id, ("supervised",), "supervised")
-        assert sup._scratch(placement(), harness, target) is None
+    opencode = config.Harness("opencode", ("supervised",), "supervised")
+    assert sup._scratch(placement(), opencode, target) is None  # none the runner opens for it
     assert not scratch_of(sup).exists()
     sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)  # made with the clone, first
     made = sup._scratch(placement(), config.Harness("codex", ("supervised",), "supervised"), target)
-    assert made == scratch_of(sup) and (made / "tmp").is_dir()
+    assert made == scratch_of(sup) and (made / "tmp").is_dir()  # codex: beside the clone
+    # agy's scratch is under `/tmp` instead, its sandbox being unable to write beside the clone.
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()  # the host-shared writable location ('/tmp') exists already
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    room = sup._scratch(placement(), agy, target)
+    assert room == workspace.tmp_scratch_of(target.as_user.uid(), "plc-0003")
+    assert room.parent == tmp_path / "shared-tmp" / f"maity-scratch-{target.as_user.uid()}"
+    import stat as _stat
+
+    assert room is not None and (room / "tmp").is_dir()
+    assert _stat.S_IMODE(room.stat().st_mode) == 0o700
+    assert _stat.S_IMODE(room.parent.stat().st_mode) == 0o700
+
+
+def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, _, _, _, logs = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    sup.cfg.harnesses["antigravity"] = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+    agy = sup.cfg.harnesses["antigravity"]
+    room = sup._scratch(placement(harness="antigravity"), agy, target)
+    assert room is not None
+    (room / "tmp" / "review.json").write_bytes(b"x" * 2000)  # a prior run's leftovers
+    again = sup._scratch(placement(harness="antigravity"), agy, target)  # a restart
+    assert again == room and (room / "tmp").is_dir()
+    assert not (room / "tmp" / "review.json").exists()  # made fresh, nothing carried across
+    # The per-uid parent is outside the workspaces root, so the closed-placement sweep removes
+    # the `/tmp` scratch by its own path, not beside the clone.
+    sup.closed([{"id": "plc-0003", "project_id": "maity", "active": False,
+                 "closed_reason": "deleted", "harness": "antigravity"}])  # fmt: skip
+    sup._clear_scratch(set(), set(sup.targets))
+    assert not room.exists() and "plc-0003" in sup.scratch_cleared
+    (entry,) = scratch.removals(sup.cfg.state_dir, 10)
+    assert entry["path"] == str(room) and entry["why"] == "closed"
+
+
+def test_the_agy_scratch_is_none_where_the_uid_is_unknown(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, _, _, _, logs = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+
+    def no_uid(self: Any) -> int:
+        raise OSError("a /tmp scratch is not made on an ssh host")
+
+    monkeypatch.setattr(type(sup.targets["local"].as_user), "uid", no_uid)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    assert sup._scratch(placement(harness="antigravity"), agy, sup.targets["local"]) is None
+    assert any("no scratch on local" in line for line in logs)
 
 
 def test_a_scratch_that_cannot_be_made_or_only_through_a_link_is_none(
