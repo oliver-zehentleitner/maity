@@ -396,6 +396,7 @@ def _check_harness(
     agent_path: str,
     as_user: AsUser = RUNNER,
     tools_dir: Path | None = None,
+    layout: str | None = None,
 ) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
@@ -428,6 +429,8 @@ def _check_harness(
         _check_claude_code(report, harness, as_user, agent_path, found.version)
     if harness.id == "antigravity":
         _check_antigravity(report, harness, as_user, agent_path)
+    if harness.id == "opencode":
+        _check_opencode(report, harness, layout)
     if harness.id == "codex":
         # The login of whoever runs the agents, as the adapter links it.
         own = None if as_user.user else os.environ.get("CODEX_HOME")
@@ -435,6 +438,35 @@ def _check_harness(
         login = Path(own or home / ".codex") / "auth.json"
         if not as_user.exists(login, "-f"):
             report.warn(f"harness codex: no login at {login}; agents would start without one")
+
+
+def _check_opencode(
+    report: Report, harness: config.Harness, layout: str | None = None, where: str = "",
+) -> None:  # fmt: skip
+    """opencode has no OS sandbox the runner switches on, so the deny/allow rules it writes
+    are model-steering, not a boundary: an opencode agent runs any command as the agents' OS
+    user. Under layout = "single" that user is the runner's own, so the agent can read the
+    runner's state, the other clones and logins. Every opencode placement is therefore
+    unsandboxed, so `require_sandbox = true` refuses it — an error, the way claude-code and
+    antigravity call `capabilities.sandbox_refused` when their sandbox is off; without it the
+    residual risk is a warning as before. Both fire on either backend (local through
+    `_check_harness`, each ssh host through `_check_host`) whenever the opencode check reaches
+    it — a missing binary or a failed `--version` errors out before this. Unlike agy's `sandbox
+    reported off`, this is not a diagnostic the runner might later clear: opencode never has a
+    runner-switched OS sandbox to report. An ssh host has no local layout, so it takes the
+    generic wording (docs/runners.md#opencode-grok, tsk-nynpvag9zvhh)."""
+    risk = (
+        "under layout single an agent can run any command as the runner's own user, including "
+        "reading the runner's state, the other clones and logins"
+        if layout == "single"
+        else "an agent can run any command as the agents' user"
+    )
+    line = f"{where}harness opencode: no OS sandbox; {risk}"
+    cite = " (docs/runners.md#opencode-grok, tsk-nynpvag9zvhh)"
+    if capabilities.sandbox_refused(harness, False, False):
+        report.error(line + ", and require_sandbox = true refuses them" + cite)
+    else:
+        report.warn(line + cite)
 
 
 def _check_antigravity(
@@ -725,6 +757,8 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                 _check_claude_hooks(report, as_user, f"{name}: ")
             if harness.id == "antigravity":
                 _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
+            if harness.id == "opencode":
+                _check_opencode(report, harness, where=f"{name}: ")
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
@@ -795,7 +829,10 @@ def cmd_check(args: argparse.Namespace) -> int:
         else:
             report.ok("maity found on agent_path")
         for harness in cfg.harnesses.values():
-            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir)
+            _check_harness(
+                report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir,
+                cfg.local.layout,
+            )  # fmt: skip
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
         if "codex" in cfg.harnesses:
