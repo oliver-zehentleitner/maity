@@ -146,13 +146,14 @@ def address(network: str, name: str) -> str | None:
     return None
 
 
+def _names(social: dict[str, str] | None) -> dict[str, str]:
+    """The stored names of the networks the hub knows, by network."""
+    return {network: name for network, name in (social or {}).items() if network in NETWORKS}
+
+
 def built(social: dict[str, str] | None) -> dict[str, str]:
     """Each network's link, and for Discord the name as text."""
-    return {
-        network: address(network, name) or name
-        for network, name in (social or {}).items()
-        if network in NETWORKS
-    }
+    return {network: address(network, name) or name for network, name in _names(social).items()}
 
 
 @dataclass(frozen=True)
@@ -234,3 +235,13 @@ def announce(conn: Connection, human_id: str) -> None:
 def shown(human: Any) -> dict[str, Any]:
     """`website` and `social` as a reader sees them."""
     return {"website": human.website, "social": built(human.social)}
+
+
+def public(conn: Connection, human: Any) -> dict[str, Any] | None:
+    """`website` and `social` as a visitor with no account sees them (the person's page,
+    §16.9): `admitted` for the anonymous reader decides, and `social` keeps the names, from
+    which the page builds each link with `address`. None while the value does not admit that
+    reader."""
+    if human.id not in admitted(conn, {human.id: human.links_visible}, Reader(None)):
+        return None
+    return {"website": human.website, "social": _names(human.social)}
