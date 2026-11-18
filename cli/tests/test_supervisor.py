@@ -2222,7 +2222,7 @@ def test_a_codex_host_too_old_for_the_launch_write_op_refuses_rather_than_crash_
     placement with a clear reason instead of crash-looping it: the no-scratch fall-back would
     return CODEX_HOME to the hidden state directory, the original incident. A generic failure
     in the same place is still a crash loop, so the two stay distinct."""
-    sup, backend, _, _, logs = world
+    sup, backend, reports, _, logs = world
     recorded(sup.cfg)
     sup.targets["local"].sandbox["codex"] = True
 
@@ -2233,11 +2233,15 @@ def test_a_codex_host_too_old_for_the_launch_write_op_refuses_rather_than_crash_
     sup.update([placement(harness="codex")])
     settle(sup)
     rec = sup.records["plc-0003"]
+    # The report carries NO detail: `harness_refused`'s detail is a closed contract list
+    # (docs/api.md §15.7) with no code for this, and an unknown one would be rejected and
+    # re-sent every tick (see the refusal path in supervisor.py). The reason lives in the log.
     assert (rec.state, rec.reason, rec.detail, rec.retry_at) == (
-        "failed", "harness_refused", "codex_host_too_old", None
+        "failed", "harness_refused", None, None
     )  # fmt: skip
     assert rec.reason != "crash_loop" and not rec.crashes and backend.started == []
-    assert any("codex placement refused" in line for line in logs)
+    assert any("too old for the codex launch-write op" in line for line in logs)
+    assert all(b["detail"] is None for _, b in reports.sent)
 
     # A genuine failure in the same place is still counted and ends in a crash loop, so the
     # refusal is not swallowing ordinary errors.
@@ -2249,6 +2253,65 @@ def test_a_codex_host_too_old_for_the_launch_write_op_refuses_rather_than_crash_
     settle(sup)
     rec = sup.records["plc-0003"]
     assert rec.reason != "harness_refused" and (rec.state, rec.crashes) != ("failed", 0)
+
+
+def _hub_detail_rule() -> Any:
+    """The hub's REAL acceptance rule for a status report's `detail`, or None when the hub
+    package cannot be imported from the cli test environment. The monorepo keeps `hub/` beside
+    `cli/`, and `maity_hub` is not installed in the cli venv, so this puts `hub/src` on the path
+    and imports the authoritative closed list (`placements.DETAILS`) rather than copying it. The
+    returned predicate `ok(reason, detail)` applies §15.7: a `null` detail is always fine,
+    `join_failed` takes any hub error code, and every other reason takes a detail only when
+    `DETAILS` lists it for that reason -- the same check the hub's `_check_codes` runs."""
+    import importlib
+    import sys
+
+    hub_src = str(Path(__file__).resolve().parents[2] / "hub" / "src")
+    if hub_src not in sys.path:
+        sys.path.insert(0, hub_src)
+    try:
+        pl = importlib.import_module("maity_hub.placements")
+    except Exception:  # noqa: BLE001 - hub deps/metadata absent in the cli venv: use the fallback
+        return None
+
+    def ok(reason: str | None, detail: str | None) -> bool:
+        if detail is None:
+            return True
+        if reason == "join_failed":
+            return bool(pl.JOIN_DETAIL_CODE.fullmatch(detail))
+        rule = pl.DETAILS.get(detail)
+        return rule is not None and rule[0] == "reason" and rule[1] == reason
+
+    return ok
+
+
+def test_the_older_host_refusal_report_satisfies_the_hub_detail_contract(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The actual status body the supervisor POSTs for the too-old-host refusal must satisfy
+    the hub's closed detail-code contract (docs/api.md §15.7). An out-of-contract detail would
+    make the hub answer `invalid`, and the runner would then re-send the rejected report every
+    tick (the refusal never recorded) -- so this guards that path, not a copied list. Where the
+    hub package is importable, the body's `detail` is run through the hub's REAL closed list;
+    where it is not, the body must still carry no detail at all."""
+    sup, _, reports, _, _ = world
+    recorded(sup.cfg)
+    sup.targets["local"].sandbox["codex"] = True
+
+    def too_old(*a: Any, **k: Any) -> None:
+        raise scratchop.Unsupported("host maity too old for codex placements: invalid choice")
+
+    monkeypatch.setattr(scratch, "write_codex_home", too_old)
+    sup.update([placement(harness="codex")])
+    settle(sup)
+    body = next(b for _, b in reports.sent if b["reason"] == "harness_refused")
+
+    ok = _hub_detail_rule()
+    if ok is not None:  # run the real body through the hub's real closed list
+        assert ok(body["reason"], body["detail"])  # the no-detail refusal is accepted
+        assert not ok(body["reason"], "codex_host_too_old")  # an out-of-list detail is rejected
+    else:  # hub not importable here: the body must still carry no detail (§15.7)
+        assert body["detail"] is None
 
 
 def test_claude_code_is_not_told_what_codex_starts_without(world: Any) -> None:

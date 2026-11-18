@@ -549,10 +549,10 @@ would read as a boundary when it is not one.
 **Status:** active
 **Evidence:** inferred
 **Verification:** corroborated — the placement, launch-write and sandbox-profile boundaries are read from `adapters.py`, `scratchop.py` and `commands.py` and covered by unit tests (`tests/test_adapters.py`, `tests/test_scratchop.py`, the launch-write op through the `maity runner scratchop` CLI in `tests/test_commands.py`, and the too-old-host refusal in `tests/test_supervisor.py`); a live Codex placement running with the read-only home is not yet observed and is still needed
-**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`
+**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`; the reporting of the too-old-host refusal settled in the review of PR #1979
 **See:** runner.md — 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7 — as of 2026-11-18
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-18
-**Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, or a placement is given a home with no scratch to carry it
+**Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, a placement is given a home with no scratch to carry it, or the follow-up card adds a contract detail-code for the too-old-host refusal
 
 Each Codex placement's `CODEX_HOME` lies inside that placement's scratch
 (`adapters.codex_home`), under the workspaces root, rather than under the
@@ -588,6 +588,16 @@ predates that op cannot anchor the home; the placement is then refused with
 a clear reason (the host's `maity` is too old for Codex placements) so the
 operator upgrades the host, rather than crash-looping the start or quietly
 falling back to the hidden state directory where no command would run.
+
+That refusal is reported as `harness_refused` with no detail, and the
+specific reason — the host's `maity` is too old for the codex launch-write
+op — goes to the runner's log only. `harness_refused`'s detail is a closed
+contract list (docs/api.md §15.7) with no code for this host-too-old case;
+an unknown detail makes the hub answer `invalid`, so the runner would
+re-send the rejected report every tick and the refusal would never be
+recorded. A contract detail-code for it is deferred to a follow-up card.
+`retry_at` stays unset, so the start still does not crash-loop and only a
+new generation retries.
 
 **Reason:** the codex sandbox hides the runner's state directory, and it
 hides a directory by mounting over it, so a path inside it (the old
