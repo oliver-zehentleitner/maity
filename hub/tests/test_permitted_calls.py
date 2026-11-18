@@ -21,7 +21,7 @@ import pytest
 from fastapi.routing import iter_route_contexts
 from sqlalchemy import Engine, update
 
-from maity_hub import deps
+from maity_hub import deps, limits
 from maity_hub import tables as t
 from maity_hub.app import create_app
 from maity_hub.auth import caller as caller_module
@@ -99,6 +99,9 @@ def _facts(method: str, raw_path: bytes) -> RequestFacts:
         body=b"",
         origin=Origin("127.0.0.1", "https"),
         allow_plain_http=False,
+        # As the environment sets it: a read counts (§1.7) before the isolation gate, and with
+        # the value given it reads no instance setting, so the gate runs without a connection.
+        max_reads_env=limits.READS_PER_MINUTE_DEFAULT,
     )
 
 
