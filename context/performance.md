@@ -9,7 +9,7 @@ measures kept for later.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's answers to two inbox requests, 2026-11-08 (the goal of about 1 s per page; a kept list of every measure, worked from the biggest expected gain); umbrella card tsk-a5pxwgkgr73e and its step-1 notes, built from the hub's request log and local statement counts
+**Source:** the owner's answers to two inbox requests, 2026-11-08 (the goal of about 1 s per page; a kept list of every measure, worked from the biggest expected gain); umbrella card tsk-a5pxwgkgr73e and its step-1 notes, built from the hub's request log and local statement counts; the step-2 plan on that card, approved by the lead on 2026-11-18 (measure again before the later items become cards); notes nte-ksp8m8crdtkc and nte-d1jaydnt671c on tsk-ym4a7c9rvsn2 (2026-11-09, why item 2 was stopped)
 **Revisit when:** a page meets the goal on a cold load, or a measure on the list turns out to cost more than it gains
 
 Every dashboard view (inbox, board, card panel, chat, members, settings, public pages)
@@ -22,7 +22,12 @@ Measured on 2026-11-08 from the hub's request log and local statement counts:
 
 - **Cold load, every page:** 100–106 script and style files, all fetched again (never a
   304) in 4 waves as the browser finds each ES module's imports. The last file arrives
-  3.2–5.1 s after the HTML.
+  3.2–5.1 s after the HTML. **Contradicted, open:** a later local measurement
+  (nte-ksp8m8crdtkc, 2026-11-09) found no ES modules: `web/index.html` loads classic
+  `<script src=… defer>` tags, the requests the HTML names all start within 76–85 ms, and
+  the last script's arrival was transfer time, not discovery. The two measurements were
+  taken differently (the hub's request log against a local browser run), and which one
+  explains the 2026-11-08 waves is not settled.
 - **Inbox:** 3 request pages one after another, 1.1–1.9 s each. About 6 statements per
   request: 1,219 for a page of 200.
 - **Board:** all cards (1,135) in 6 pages of 200, one after another, 1.4–2.8 s.
@@ -42,7 +47,7 @@ The list, in the order agreed (gain is the expected share of a page's time):
 |---|---|---|---|---|
 | 1 | Caching: content-hashed files `immutable`, ETag/304 on avatars and reads | warm load without ~100 requests and their waves | M | done, tsk-pcw785rhymyg (revalidation) and tsk-0pp41wxp6f75 (content-hashed URLs) |
 | 1a | Avatars cached for good: every `avatar_url` already names its version (`?v=…`), so its answer can be `immutable` | board and card −1.5–2 s warm | S | done, tsk-vvyqmk9vwg8e |
-| 2 | One load wave: `modulepreload` for every module in the HTML | cold load −2–4 s | M | cancelled, tsk-ym4a7c9rvsn2 (reason not recorded, below) |
+| 2 | One load wave: `modulepreload` for every module in the HTML | cold load −2–4 s | M | cancelled, tsk-ym4a7c9rvsn2: does not apply, the dashboard has no ES modules (below) |
 | 3 | A page of requests in one batch | inbox −~4 s | S | done, tsk-fxjtwmkc4md5 (#1515) |
 | 4 | The inbox reads open requests first, the history on demand | inbox −1–2 s | S | done, tsk-y8gkq1kvt63c |
 | 5 | The board without serial paging (open cards first, closed window later) | board −1 s | S–M | done for the column groups, tsk-d61rvjm6gteh; the done column's follow-up pages still serial, tsk-d4anfsk1e94j |
@@ -55,13 +60,17 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later |
 | 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | later |
 | 14 | Render cost in the browser, from a performance trace of the board and a chat | unknown | S to measure | later |
-| 15 | A statement test per list route, and a check on the number and size of the files the HTML loads, in CI | keeps the gains | S | proposed, tsk-xdn21ph67js9 |
+| 15 | A statement test per list route, and a check on the number and size of the files the HTML loads, in CI | keeps the gains | S | open, tsk-xdn21ph67js9 |
 
 Statuses as of 2026-11-18, read from the board. Items 11 to 14 wait for a new measurement
 against the 2026-11-08 baseline, and each becomes a card only where that run shows a page
-still missing the goal. Why item 2 was cancelled is **unknown**: the card's text gives no
-reason, and nobody now on the team knows. Whoever knows adds it here with
-tsk-ym4a7c9rvsn2 as the source.
+still missing the goal (the step-2 plan). Item 2 was stopped by the lead on 2026-11-09,
+after a measurement before any code (nte-ksp8m8crdtkc): the dashboard loads classic
+deferred scripts, not ES modules, and `modulepreload` applies to module scripts only; on a
+classic script it would fetch the file a second time. After the compression and
+revalidation of item 1 went live, the script phase measured about 0.5–0.6 s cold and
+0.25 s warm (nte-d1jaydnt671c), no longer over the budget, and that note saw no case for
+the build-step question (item 11) then.
 
 **Reason:** the owner set the goal and the order. Working by expected gain puts the shared
 cold-load cost first, since every page pays it. A kept list lets a measure that is not done
@@ -70,7 +79,8 @@ now be picked up later without measuring again from scratch.
 **Rejected alternatives:**
 - Bundling the scripts first: the owner's order puts the one load wave first and keeps
   bundling for later, if it is still needed. A `modulepreload` list needs no build step,
-  which the project does not have.
+  which the project does not have. (That `modulepreload` list turned out not to apply,
+  item 2 above; the owner's order of bundling after it stands, and bundling stays item 11.)
 
 ## `Server-Timing` for the instance admin only, with counts and durations only
 
