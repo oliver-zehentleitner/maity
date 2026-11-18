@@ -852,8 +852,10 @@ stored as given and announced, but moves no version: the rules text is
 the same. A `PATCH` that changes the lines together with another rules
 input bumps once and writes one `rules_changed`, whose `reason` is the
 `PATCH`'s own when it gives one, else `settings.role_rules` (`docs/api.md`
-§6.1). The hub cannot see a subagent or a ticked item; these are
-rules like the others.
+§6.1). When the same `PATCH` changes the state or the policy, its
+`state_changed` or `policy_changed` marks the new version and no
+`rules_changed` is written (§6.1). The hub cannot see a subagent or a
+ticked item; these are rules like the others.
 
 **Reason** (inferred: the decision and the alternatives are confirmed, the
 card names no reason for the two rules themselves): working a card in the main agent's context carries one
