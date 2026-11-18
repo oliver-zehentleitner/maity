@@ -281,9 +281,12 @@ def _supervise(s: Setup) -> None:
 def _place(s: Setup, make_client: ClientFactory) -> str:
     """An active placement on a paired runner that names the agent's credential, as the
     pickup sets it (§15.9)."""
+    from tests.test_placements import allow_instances
     from tests.test_runner_stream import attach, hello
     from tests.test_runners import paired
 
+    # Room for the placement at its creation (§15.5); it then runs the joined instance.
+    allow_instances(s.engine, s.agent.id, 2)
     repository = {"url": "https://github.com/oliver-zehentleitner/maity"}
     patched = s.owner.patch(BASE, {"repository": repository})
     assert patched.status_code == 200, patched.text

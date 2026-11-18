@@ -199,3 +199,21 @@ def test_placement_resolves_the_member_list_before_the_placements(
     assert cli.main(["placement", "restart", "builder"]) == cli.EXIT_ERROR
     assert [s.method for s in fake.signed()].count("POST") == 0
     assert [s.method for s in fake.signed()].count("PATCH") == 0
+
+
+def test_an_agent_with_several_placements_is_named_with_its_instance(
+    joined: Path, fake: fakehub.FakeHub, members: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # One placement per instance (§15.5): the agent alone names neither, `#<instance>` one.
+    two = [
+        {"id": "plc-1", "instance": "wqe2", "agent": {"id": "agt-y", "handle": "anna-bot"}},
+        {"id": "plc-2", "instance": "k7mq", "agent": {"id": "agt-y", "handle": "anna-bot"}},
+    ]
+    fake.routes[("GET", f"{P}/placements")] = lambda s: (200, {"items": two})
+    assert cli.main(["placement", "stop", "agt-y"]) == cli.EXIT_ERROR
+    err = capsys.readouterr().err
+    assert "runs on more than one placement" in err and "plc-1" in err and "plc-2" in err
+    assert [s.method for s in fake.signed()].count("PATCH") == 0
+    fake.routes[("PATCH", f"{P}/placements/plc-2")] = lambda s: (200, two[1])
+    assert cli.main(["placement", "stop", "agt-y#k7mq"]) == cli.EXIT_OK
+    assert fake.signed()[-1].method == "PATCH" and fake.signed()[-1].path.endswith("plc-2")

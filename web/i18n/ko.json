@@ -4076,6 +4076,8 @@
   "role.manager.help": "멤버 한 계열을 이끌고, 사람과의 접점 역할을 해요",
   "role.ops": "Ops",
   "role.ops.help": "병합과 배포: 배치, 러너 변경, 릴리스, 티커의 배포를 맡아요",
+  "role.project": "{role} ({base} 권한)",
+  "role.project.help": "이 프로젝트의 자체 역할로, {base}의 권한을 가져요",
   "role.proxy": "Proxy",
   "role.proxy.help": "소유자의 접점: 소유자의 결정을 전달하며, 스스로는 아무것도 결정하지 않아요",
   "role.purple_team": "Purple team",
