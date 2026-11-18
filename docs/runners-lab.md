@@ -21,25 +21,25 @@ Status as of **2026-11-18**, maity **0.1.0a15**. Environments are named by OS an
 
 ### Ubuntu 26.04 (with the AppArmor host fix)
 
-| Harness, mode | Start | `resume` / `wait` | Commands and tests | Subagent with Bash | PR via `maity gh` | Restart, session taken over | Stop | Sandbox |
-|---|---|---|---|---|---|---|---|---|
-| claude-code, interactive | ✓ | ✓ | ✓ main session | ✗ permission layer (tsk-66zyvc4xnhtv, #1962) | ✓ `pr view` | ✓ | – | on (bubblewrap) |
-| codex, interactive | ✓ session | ✗ | ✗ every exec denied (tsk-hv7jbgy75zjt) | n/a | n/a: not granted to codex | ✓ | ✓ | on, but blocks itself |
-| antigravity, supervised | ✓ | ✓ | ✓, unsandboxed | n/a | – | ✓ | – | off (`sandbox_unavailable`) |
-| opencode | – | – | – | n/a | – | – | – | none |
+| Harness, mode | Start | `resume` / `wait` | Commands | Project tests | Subagent with Bash | PR via `maity gh` | Restart, session taken over | Stop | Sandbox |
+|---|---|---|---|---|---|---|---|---|---|
+| claude-code, interactive | ✓ | ✓ | ✓ simple commands | ✗ pytest exit 4, no hub venv (tsk-kshmb8vc92rr) | partly: simple commands run, workflow commands refused (tsk-66zyvc4xnhtv, #1962) | ✓ `pr view` | ✓ | – | on (bubblewrap) |
+| codex, interactive | ✓ session | ✗ | ✗ every exec denied (tsk-hv7jbgy75zjt) | ✗ | n/a | n/a: not granted to codex | ✓ | ✓ | on, but blocks itself |
+| antigravity, supervised | ✓ | ✓ | ✓, unsandboxed | – | n/a | – | ✓ | – | off (`sandbox_unavailable`) |
+| opencode | – | – | – | – | n/a | – | – | – | none |
 
 Without the host fix, every sandboxed Claude Code command fails on the seccomp step (tsk-5b5x3k5zvg7x). `maity runner check` reports that as an error.
 
 ### Debian 13
 
-| Harness, mode | Start | `resume` / `wait` | Commands and tests | Subagent with Bash | PR via `maity gh` | Restart, session taken over | Stop | Sandbox |
-|---|---|---|---|---|---|---|---|---|
-| claude-code, interactive | ✓ | ✓ | ✓ | – | – | – | – | on (bubblewrap); the nested namespace starts |
-| codex, interactive | – | – | ✗ every exec denied (tsk-hv7jbgy75zjt) | n/a | n/a: not granted to codex | – | – | on, but blocks itself |
-| antigravity, supervised | ✓ | – | – | n/a | – | – | – | off; its namespaces start |
-| opencode | ✓ on opencode's own default model until tsk-kf2kp09d6qew | – | – | n/a | – | – | – | none |
+| Harness, mode | Start | `resume` / `wait` | Commands | Project tests | Subagent with Bash | PR via `maity gh` | Restart, session taken over | Stop | Sandbox |
+|---|---|---|---|---|---|---|---|---|---|
+| claude-code, interactive | ✓ | – | – | – | – | – | – | – | on (bubblewrap); the nested namespace starts |
+| codex, interactive | – | – | ✗ expected, not run: same cause as on Ubuntu (tsk-hv7jbgy75zjt) | – | n/a | n/a: not granted to codex | – | – | on |
+| antigravity, supervised | ✓ | – | – | – | n/a | – | – | – | off; its namespaces start |
+| opencode | ✓ on opencode's own default model until tsk-kf2kp09d6qew | – | – | – | n/a | – | – | – | none |
 
-The Debian cells not marked are still to be filled from the lab's notes.
+On Debian, Start for claude-code and antigravity is the hub's placement state after a runner upgrade; the nested namespace is from the lab's note on tsk-5b5x3k5zvg7x; opencode's start is from its model card. Everything else there is not tested yet, and the codex cell is an expectation, marked so.
 
 The test cycle after each CLI release: start · `maity resume` · `maity wait` · a subagent with Bash · read and open a PR with `maity gh` · stop · a runner restart that takes the session over · `maity runner check` without false greens. Results go on the lab card (tsk-gw1e87ev707f) and into this page.
 
@@ -102,7 +102,7 @@ pull_requests = true
 - **`default_model`** is meant for a placement that names no model. In 0.1.0a15 it does not apply to opencode yet: such a placement runs opencode's own default model (tsk-kf2kp09d6qew). Name the model on the placement until the fix is released.
 - **A repository grant** gives agents its `allow` commands and, with `pull_requests = true`, `maity gh` ([Letting agents run a repository's checks](runners.md#letting-agents-run-a-repositorys-checks)). Without a grant for a repository, its agents get neither. A Codex placement gets no pull-request grant while its sandbox is on, and `check` warns about that.
 - **The service.** Either `sudo maity runner install`, or a systemd unit of your own for an existing user (`maity runner unit` prints one). After changing `runner.toml`, restart the service. Running placements are taken over (`running adopted`), not restarted.
-- **Check with the service's `PATH`**, not your shell's: `env -i HOME=$HOME PATH=/usr/bin:/bin maity runner check`. Your login shell may find tools that the service does not.
+- **Check with the service's `PATH`**, not your shell's. Read the `PATH` the running service actually has: `tr '\0' '\n' < /proc/$(systemctl show maity-runner -p MainPID --value)/environ | grep ^PATH=` (as the service's user). Then start `maity` by its absolute path, since pipx puts it in `~/.local/bin`, which that `PATH` usually lacks: `env -i HOME=$HOME PATH=<the service's PATH> ~/.local/bin/maity runner check`. Your login shell may find tools that the service does not.
 
 ### What `maity runner check` warnings mean
 
@@ -127,7 +127,7 @@ pull_requests = true
 | Gap | Where | Card |
 |---|---|---|
 | Codex's exec helper lives in its `CODEX_HOME`, which the runner puts inside the state directory that the sandbox profile hides, so every command is denied | Ubuntu 26.04, Codex 0.169 and 0.170 | tsk-hv7jbgy75zjt |
-| Claude Code subagents get no Bash in a placement (permission layer) | both | tsk-66zyvc4xnhtv, #1962 |
+| Claude Code in a placement: several workflow commands (pytest, make, black, ruff, mypy, uuidgen, `git -C`, `cd … &&`) are refused under dontAsk, by the allow list's content and command form; the main session and subagents can differ | Ubuntu 26.04 (Debian not tested) | tsk-66zyvc4xnhtv, #1962 |
 | An OpenCode placement without a model runs OpenCode's own default model | both | tsk-kf2kp09d6qew |
 | Coders cannot build the project's dev venv or run its full checks in a placement | both | tsk-kshmb8vc92rr |
 | The clone check refuses the empty read-only `.git/config.lock` the Claude sandbox leaves behind | both | tsk-estwtzbae972, #1954 |
