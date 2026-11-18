@@ -33,6 +33,41 @@ def test_the_address_lifecycle_never_imports_the_settings() -> None:
     assert "maity_hub.notifications.preferences" not in found
 
 
+# The modules that import `notifications.address` inside a function rather than at their top,
+# as they imported `notifications.preferences` before the address moved there (item 16b of
+# tsk-xx108ajy287x). Known and kept for now; a new one is a cycle workaround to look at, not
+# to add here unasked (hub/context/notifications.md 5829e0a1).
+LOCAL_ADDRESS_IMPORTS = {
+    "maintenance.py",
+    "notifications/retention.py",
+    "registration_accounts.py",
+    "routes/registration.py",
+}
+
+
+def _imports_address(node: ast.AST) -> bool:
+    if not isinstance(node, ast.ImportFrom):
+        return False
+    if node.module == "maity_hub.notifications.address":
+        return True
+    return node.module == "maity_hub.notifications" and any(
+        alias.name == "address" for alias in node.names
+    )
+
+
+def test_only_the_known_modules_import_the_address_inside_a_function() -> None:
+    package = Path(str(address.__file__)).parents[1]  # src/maity_hub
+    local: set[str] = set()
+    for path in package.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for function in ast.walk(tree):
+            if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            if any(_imports_address(node) for node in ast.walk(function)):
+                local.add(path.relative_to(package).as_posix())
+    assert local == LOCAL_ADDRESS_IMPORTS
+
+
 def test_the_text_language_imports_only_the_tables_and_the_languages() -> None:
     hub = {name for name in imported(text_language) if name.startswith("maity_hub")}
     assert hub <= {"maity_hub", "maity_hub.languages", "maity_hub.tables"}, hub
