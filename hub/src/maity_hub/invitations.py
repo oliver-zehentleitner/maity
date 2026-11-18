@@ -92,11 +92,11 @@ def view(
         "created_by": row.created_by,
         "created_at": clock.rfc3339(row.created_at),
         "expires_at": clock.rfc3339(row.expires_at),
-        "used_at": _ts(row.used_at),
+        "used_at": clock.rfc3339_or_none(row.used_at),
         "used_by": row.used_by,
-        "revoked_at": _ts(row.revoked_at),
-        "voided_at": _ts(row.voided_at),
-        "declined_at": _ts(row.declined_at),
+        "revoked_at": clock.rfc3339_or_none(row.revoked_at),
+        "voided_at": clock.rfc3339_or_none(row.voided_at),
+        "declined_at": clock.rfc3339_or_none(row.declined_at),
         "via": row.via,
     }
     if url is not None:
@@ -113,10 +113,6 @@ def handles_now(conn: Connection, rows: Sequence[Any]) -> dict[str, str]:
         conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(invitees))).all()
     )
     return {row.id: current[row.invitee_id] for row in rows if row.invitee_id in current}
-
-
-def _ts(value: datetime | None) -> str | None:
-    return clock.rfc3339(value) if value is not None else None
 
 
 def may_issue(trust: str, role: str, issuer_trust: str, issuer_base: str) -> bool:

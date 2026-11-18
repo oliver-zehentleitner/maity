@@ -267,8 +267,7 @@ def test_who_is_online_is_counted_and_named_as_the_board_names_them(world: World
 
 
 def test_an_away_or_paused_member_is_not_counted_online(world: World, hub: Any) -> None:
-    from maity_hub.seen import SEEN_EVERY
-    from maity_hub.views import ONLINE
+    from maity_hub.seen import ONLINE, SEEN_EVERY
 
     worker = public_snapshot.Worker(world.migrated, hub)
     seen(world, world.anna_member, clock.now())
