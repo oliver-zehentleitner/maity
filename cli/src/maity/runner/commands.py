@@ -35,6 +35,7 @@ from . import (
     targets,
     tools,
     trust,
+    workspace,
 )
 from .asuser import RUNNER, AsUser
 
@@ -527,6 +528,37 @@ def _check_agy_workspaces(report: Report, root: Path, as_user: AsUser, where: st
             return
 
 
+def _check_codex_home(report: Report, cfg: config.Config, as_user: AsUser = RUNNER) -> None:
+    """Codex's per-placement CODEX_HOME must lie under the workspaces root, which the codex
+    sandbox re-opens for the placement, not under a path it hides (the state directory): under
+    a hidden path Codex's own sandbox cannot create or run its per-command helper, so no
+    command runs and `maity resume` never starts (card tsk-hv7jbgy75zjt). The home sits inside
+    the placement scratch (adapters.codex_home), so codex must be a harness that gets one and
+    the workspaces root must not be inside the state directory; `check` reports either before a
+    placement starts."""
+    if "codex" not in cfg.harnesses or cfg.local is None:
+        return
+    if "codex" not in workspace.SCRATCH_HARNESSES:  # a regression guard: no scratch, no home
+        report.error(
+            "harness codex: no scratch is carved for codex placements, so CODEX_HOME would fall "
+            "under the hidden state directory and Codex could run no command"
+        )
+        return
+    workspaces = cfg.local.workspaces.resolve() if as_user.here else cfg.local.workspaces
+    state_dir = cfg.state_dir.resolve() if as_user.here else cfg.state_dir
+    if workspaces == state_dir or state_dir in workspaces.parents:
+        report.error(
+            f"harness codex: the workspaces root {workspaces} is inside the state directory "
+            f"{state_dir}, which the codex sandbox hides; Codex's CODEX_HOME would be hidden and "
+            "no command could run. Move the workspaces out of the state directory"
+        )
+    else:
+        report.ok(
+            f"harness codex: CODEX_HOME lies in each placement's scratch under {workspaces}, "
+            "which the codex sandbox re-opens"
+        )
+
+
 def _check_claude_code(
     report: Report,
     harness: config.Harness,
@@ -765,6 +797,8 @@ def cmd_check(args: argparse.Namespace) -> int:
             _check_harness(report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir)
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
+        if "codex" in cfg.harnesses:
+            _check_codex_home(report, cfg, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()

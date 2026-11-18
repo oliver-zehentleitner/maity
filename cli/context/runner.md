@@ -542,11 +542,68 @@ operator's account. The operator docs say so.
 route. git's surface keeps growing, and a list that looks complete
 would read as a boundary when it is not one.
 
+## Codex's CODEX_HOME lives inside the placement scratch, not the runner's state directory
+
+**Id:** 9084b0ed-985d-41ea-906d-cd9cc6e18879
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Verification:** corroborated — the root cause is read from `adapters.py` and the codex sandbox profile (`codex_config`); the post-fix live Codex run is not yet observed, so a red test on the invariant stands in for it (`tests/test_adapters.py`)
+**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the traced cause in `cli/src/maity/runner/adapters.py`
+**See:** runner.md — 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7 — as of 2026-11-18
+**See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-18
+**Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, or a placement is given a home with no scratch to carry it
+
+Each Codex placement's `CODEX_HOME` lies inside that placement's scratch
+(`adapters.codex_home`), under the workspaces root, rather than under the
+runner's state directory. The runner still writes `config.toml` there and
+links the operator's `~/.codex/auth.json` into it, not copied (carried from
+49caa654). The codex sandbox re-opens the placement's scratch, so the home
+inside it is reachable and writable; every other placement hides the whole
+workspaces root, so this home — its login link and its session state — is
+hidden from them, exactly as the scratch is. Where there is no scratch to
+carry it (no workspaces root to carve), the home stays in the runner's
+directory as before; `maity runner check` reports that case before a
+placement starts, since the sandbox would hide it there.
+
+**Reason:** the codex sandbox hides the runner's state directory, and it
+hides a directory by mounting over it, so a path inside it (the old
+`CODEX_HOME`) has nowhere to be reached and Codex cannot create or run its
+per-command helper (`CODEX_HOME/tmp/arg0-linux`): every command failed and
+`maity resume` never started (the incident on this card). The placement's
+scratch already solves the same problem for a different directory — it sits
+under the hidden workspaces root and is re-opened for this placement while
+staying hidden from the others — so the home follows that precedent and
+inherits it. Under the workspaces root the home exposes no more than the
+scratch already does, and nothing of the runner's state or another
+placement's.
+
+**Rejected alternatives:**
+- Re-open the home in place under the state directory: impossible. A path
+  under a directory hidden with `none` cannot be re-opened, because the
+  sandbox mounts over the parent and leaves nothing inside to open again;
+  this is the same case the profile's `outermost` logic drops.
+- A sibling per-placement directory under the workspaces root beside
+  `.scratch` (the card's wording). It would need its own secure
+  make-and-remove path run as the agents' user, and its own re-open rule in
+  the profile — each a new place the boundary could be gotten wrong — and it
+  would be left behind on every closed placement unless a second cleanup
+  matched the scratch's. Inside the scratch the home inherits the scratch's
+  already-reviewed re-open and its removal, and adds no new boundary surface.
+  The cost: a placement without a scratch (a host whose `maity` cannot carve
+  one) gets no re-opened home and falls back to the runner's directory,
+  where the sandbox hides it; `check` names that case.
+- Keep Codex's home in the clone or its `.git`: the work tree is the agent's
+  to commit, and `.git/maity` is the denied credential directory; a home in
+  either would be committed by accident or refused by the sandbox.
+
 ## Codex reaches the operator's login through a link in its per-placement home
 
 **Id:** 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 9084b0ed-985d-41ea-906d-cd9cc6e18879
 **Evidence:** inferred
 **Source:** runner design v2 §6.1 and §6.2 (a `CODEX_HOME` per placement); implementation of runner slice R5b, 2026-10-22; whether Codex rewrites `auth.json` on a token refresh is unverified (the design marks it *verify*)
 **Revisit when:** a real Codex run shows the link replaced by a file, or the operator's login going stale while an agent's stays fresh

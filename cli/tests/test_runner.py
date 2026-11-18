@@ -920,6 +920,28 @@ def test_runner_check_names_what_codex_starts_without_only_with_codex_configured
     assert quiet.lines == []
 
 
+def test_runner_check_passes_when_codex_home_lies_under_the_workspaces_root() -> None:
+    cfg = parse(minimal(c="\n[harness.codex]\n",
+                        ws='\n[backend.local]\nworkspaces = "/srv/ws"\n'))  # fmt: skip
+    report = commands.Report()
+    commands._check_codex_home(report, cfg)
+    assert not report.failed
+    assert any("CODEX_HOME lies in each placement's scratch under /srv/ws" in text
+               for level, text in report.lines if level == "ok")  # fmt: skip
+
+
+def test_runner_check_errors_when_codex_home_would_be_hidden_under_the_state_dir() -> None:
+    # state_dir is /srv/state; a workspaces root under it would hide every codex-home (the
+    # misconfiguration card tsk-hv7jbgy75zjt fixes).
+    cfg = parse(minimal(c="\n[harness.codex]\n",
+                        ws='\n[backend.local]\nworkspaces = "/srv/state/ws"\n'))  # fmt: skip
+    report = commands.Report()
+    commands._check_codex_home(report, cfg)
+    assert report.failed
+    assert any("inside the state directory" in text
+               for level, text in report.lines if level == "error")  # fmt: skip
+
+
 # --- the agents' git identity (cli/context/runner.md, tsk-z27pwcfr03wm) --------------------
 
 

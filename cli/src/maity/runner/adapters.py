@@ -580,6 +580,20 @@ def outermost(paths: Sequence[Path], opened: Sequence[Path] = ()) -> tuple[Path,
     return tuple(p for p in unique if not any(hidden_by(p, q) for q in unique))
 
 
+def codex_home(ctx: Context) -> Path:
+    """Codex's per-placement CODEX_HOME. Inside the placement scratch (§15.5) when it has one,
+    so it lies under the workspaces root the codex sandbox re-opens for this placement (and
+    hides from every other placement): there Codex's own sandbox can create and run its
+    per-command helper (`CODEX_HOME/tmp/arg0-linux`). Under the runner's state directory the
+    sandbox hides it (bwrap mounts over it), and then Codex runs no command at all, so
+    `maity resume` never starts (card tsk-hv7jbgy75zjt). Without a scratch (no workspaces root
+    to carve, or one that could not be made) it stays in the runner's directory as before;
+    `maity runner check` reports that case, since the sandbox would hide it there."""
+    if ctx.scratch is not None:
+        return ctx.scratch / "codex-home"
+    return ctx.agent_dir / "codex-home"
+
+
 def codex_config(ctx: Context) -> str:
     """`config.toml` in the placement's own CODEX_HOME (§6.1): Codex's sandbox with the
     workspace profile, the clone's `.git` writable (commits need it), no approvals asked,
@@ -612,7 +626,14 @@ def codex_config(ctx: Context) -> str:
         f"{json.dumps(str(ctx.clone / '.git' / 'hooks'))} = \"read\"\n"
         f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n"
         # The placement's scratch (§15.5), under the hidden workspaces root, opened again.
-        + (f'{json.dumps(str(ctx.scratch))} = "write"\n' if ctx.scratch is not None else "") + "\n"
+        + (f'{json.dumps(str(ctx.scratch))} = "write"\n' if ctx.scratch is not None else "")
+        # Codex's own CODEX_HOME lives inside that scratch (codex_home): named here so the
+        # profile shows Codex may create and run its per-command helper there. The same single
+        # source builds the launch env's CODEX_HOME, so the two never drift. Omitted when there
+        # is no scratch to carve: CODEX_HOME then stays in the runner's directory, which this
+        # profile hides, and `maity runner check` reports it before a placement starts.
+        + (f'{json.dumps(str(codex_home(ctx)))} = "write"\n' if ctx.scratch is not None else "")
+        + "\n"
         "[permissions.maity.network]\nenabled = true\n\n"
         "[permissions.maity.network.domains]\n" + domains
         # Nobody answers a headless run: the question tool is not offered (cli/context/runner.md).
@@ -622,7 +643,7 @@ def codex_config(ctx: Context) -> str:
 
 def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
-    home = ctx.agent_dir / "codex-home"
+    home = codex_home(ctx)
     ctx.as_user.write(home / "config.toml", codex_config(ctx))
     # The login of whoever runs the agents (the operator, or the agents' user), linked so
     # that a token refresh lands in the original; a link left from an earlier launch that
