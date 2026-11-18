@@ -550,6 +550,13 @@ def _check_claude_code(
         (report.error if refused else report.warn)(line)
     else:
         report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
+        if capabilities.claude_nested_userns(agent_path, as_user) is False:
+            report.error(
+                "harness claude-code: a user namespace does not start inside bubblewrap, so "
+                "every sandboxed command fails (subagents included) while the session itself "
+                "starts; on Ubuntu 23.10+ this is AppArmor's bwrap-userns-restrict profile: see "
+                'docs/runners.md, "Ubuntu: nested user namespaces"'
+            )
         _check_claude_hooks(report, as_user, "")
     _check_claude_settings(report, as_user, "")
 

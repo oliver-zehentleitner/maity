@@ -3907,3 +3907,32 @@ placement ends without asking what in it matters.
   end is the placement's.
 - Its size in `workspace_outcome`: a new field for something the
   operator alone acts on; the lead kept the hub out of it.
+
+## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
+
+**Id:** 0f216e9d-1661-4887-a035-094efa301dfa
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's card tsk-5b5x3k5zvg7x after the Claude Code smoke test on an Ubuntu runner, 2026-11-18; reproduced on that host the same day
+**Revisit when:** Claude Code's Linux sandbox stops opening a second user namespace; the runner sets up the host's AppArmor itself (runner init); Ubuntu changes `bwrap-userns-restrict`
+
+On Linux, beside finding bwrap and socat, `check` runs `bwrap … -- unshare
+--user --map-root-user true` once as the agents' user and on their PATH.
+Where that fails it reports an error, not a warning.
+
+**Reason:** Ubuntu 23.10+'s AppArmor profile `bwrap-userns-restrict` lets
+bubblewrap start and takes every capability from what it starts. Claude
+Code's session then runs, and so does `maity`, which runs outside the
+sandbox, so the placement looks healthy. But every sandboxed command fails
+on the seccomp step's nested user namespace, a subagent's included. On
+that host no card work is possible, so a warning would understate it.
+
+**Rejected alternatives:**
+- Read `kernel.apparmor_restrict_unprivileged_userns` or look for the
+  profile file: what decides is the loaded profile's rules, and hosts
+  differ in both. Starting the same nesting is the only answer that does
+  not need to know why.
+- Start Claude Code itself in the check: it costs a model call and needs
+  the login, as with agy's sandbox.

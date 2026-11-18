@@ -332,6 +332,35 @@ def agy_namespaces(path: str, as_user: AsUser = RUNNER) -> bool:
     return done.returncode == 0
 
 
+# Claude Code's Linux sandbox runs each command under bubblewrap in a user namespace, and its
+# seccomp step (`apply-seccomp`) opens a second user namespace inside that one and maps the user
+# there. Ubuntu 23.10 and later ship the AppArmor profile `bwrap-userns-restrict`, which denies
+# every capability to what bwrap starts: the nested step then fails ("write /proc/self/setgroups
+# ... caller must provide CAP_SYS_ADMIN") and so does every sandboxed command, a subagent's
+# included, while the session itself starts. Checking bwrap and socat alone says nothing about
+# it, so `maity runner check` starts the same nesting once (cli/context/runner.md).
+CLAUDE_NESTED_USERNS = ("--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
+                        "--unshare-user", "--unshare-pid", "--")  # fmt: skip
+
+
+def claude_nested_userns(path: str, as_user: AsUser = RUNNER) -> bool | None:
+    """A diagnostic for `maity runner check`: whether a user namespace with the user mapped
+    starts inside bubblewrap, as the agents' user and on their PATH. None where bwrap or
+    `unshare` is missing (the sandbox check names that); it never changes a capability."""
+    bwrap, unshare = which("bwrap", path, as_user), which("unshare", path, as_user)
+    if bwrap is None or unshare is None:
+        return None
+    argv = [bwrap, *CLAUDE_NESTED_USERNS, unshare, "--user", "--map-root-user", "true"]
+    try:
+        if as_user.direct:
+            done = proc.run(argv, cwd=Path.home(), timeout=30)
+        else:
+            done = as_user.run(argv, env={"PATH": path}, timeout=30)
+    except (proc.ToolError, subprocess.TimeoutExpired, OSError):
+        return False
+    return done.returncode == 0
+
+
 def agy_login(as_user: AsUser = RUNNER) -> Path:
     """Where agy keeps its sign-in for the agents' user without a keyring (never read)."""
     return as_user.home() / ".gemini" / "antigravity-cli" / "antigravity-oauth-token"

@@ -92,6 +92,15 @@ By default, agents running Claude Code write no attribution lines: the settings 
 
 The runner owner can ask a runner to look for a newer version of one of its tools at once ("Update now", `POST /api/v1/runners/<id>/updates` with `{"tool": "claude-code"}`), for a tool the runner reports it updates; the runner view (`GET /api/v1/runners/<id>`) shows the tools a runner reports (`capabilities.tools`: version, kept version, latest, state) and the open requests (`update_requests`). The dashboard has no button for it yet. What the runner does with it: [Keeping Claude Code and Codex current](#keeping-claude-code-and-codex-current).
 
+## Ubuntu: nested user namespaces
+
+On Ubuntu 23.10 and later, AppArmor's profile `bwrap-userns-restrict` (package `apparmor`, with `kernel.apparmor_restrict_unprivileged_userns = 1`) lets bubblewrap start but takes every capability from what it starts. Claude Code's sandbox needs exactly that: its seccomp step opens a second user namespace inside bubblewrap. A Claude Code placement then starts and its session runs `maity`, but every sandboxed command fails, a subagent's included, with `apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied`. `maity runner check` starts that nesting once as the agents' user (`bwrap … -- unshare --user --map-root-user true`) and reports it as an error: `harness claude-code: a user namespace does not start inside bubblewrap`.
+
+Until the runner sets this up itself, run Claude Code placements on a host where the check passes. On such a host the error is not shown. Two ways to lift the restriction on the host are known, and both need root and change it for every program, so they are the operator's call. Neither has been tried on a Maity runner yet:
+
+- Let what bubblewrap starts keep its capabilities: in `/etc/apparmor.d/bwrap-userns-restrict`, profile `unpriv_bwrap`, the rule `audit deny capability,` is what refuses it. A `local/` include cannot lift a deny. Changing that file affects every bubblewrap sandbox on the host (Flatpak, for one), and a later `apparmor` update asks before it overwrites it.
+- Switch the restriction off: `sysctl kernel.apparmor_restrict_unprivileged_userns=0`. That gives every program unprivileged user namespaces again, which is the protection Ubuntu turned on by default.
+
 ## Antigravity (agy)
 
 The runner has an adapter for Google's Antigravity CLI, `agy`, and **now offers the `antigravity` harness.** A configuration with `[harness.antigravity]` is accepted by `maity runner check` and `serve`. agy keeps one command grant the runner cannot fully confine from its own settings — `command(maity)`, which agy applies after reading the invoked command past a leading assignment or wrapper — so agy runs with a known residual risk, which the owner accepted (`req-9spwe33neh1z`). OS-level confinement of that command is being added incrementally (`tsk-zjv2xyhyggnm`).

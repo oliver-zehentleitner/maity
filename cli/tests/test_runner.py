@@ -654,6 +654,53 @@ def test_check_names_claude_codes_sandbox_for_the_platform(
     assert found == [said], found
 
 
+@pytest.mark.parametrize(("nested", "code"), [(0, 0), (1, 1)])
+def test_check_starts_a_nested_user_namespace_inside_bubblewrap(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], nested: int, code: int
+) -> None:
+    """Ubuntu's bwrap-userns-restrict lets bwrap start but takes every capability from what it
+    starts: Claude Code's seccomp step opens a second user namespace and fails, so every
+    sandboxed command does. `check` starts that nesting once and says so as an error."""
+    if not sys.platform.startswith("linux"):
+        pytest.skip("Claude Code's bubblewrap sandbox is Linux only")
+    for tool in ("tmux", "maity", "socat", "unshare"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    bwrap = bin_dir / "bwrap"  # records its arguments, then answers as the host would
+    bwrap.write_text(f'#!/bin/sh\necho "$@" > "{bin_dir}/bwrap.args"\nexit {nested}\n')
+    bwrap.chmod(0o755)
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
+    said = [line for line in lines(capsys) if "inside bubblewrap" in line]
+    assert [line.split()[0] for line in said] == (["error"] if nested else [])
+    args = (bin_dir / "bwrap.args").read_text().split()
+    assert args[-4:] == [str(bin_dir / "unshare"), "--user", "--map-root-user", "true"]
+    assert "--unshare-user" in args
+
+
+def test_the_nested_namespace_probe_needs_bwrap_and_unshare(
+    bin_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without either tool there is nothing to start: None, and the sandbox line names the
+    missing one; a failure to run the probe counts as refused."""
+    from maity import proc
+    from maity.runner import capabilities
+
+    path = str(bin_dir)
+    assert capabilities.claude_nested_userns(path) is None
+    fake_tool(bin_dir, "unshare")
+    assert capabilities.claude_nested_userns(path) is None
+    fake_tool(bin_dir, "bwrap")
+    assert capabilities.claude_nested_userns(path) is True
+
+    def broken(*args: object, **kwargs: object) -> None:
+        raise OSError("exec format error")
+
+    monkeypatch.setattr(proc, "run", broken)
+    assert capabilities.claude_nested_userns(path) is False
+
+
 def test_check_refuses_a_loose_state_dir(
     paired: Path, bin_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
