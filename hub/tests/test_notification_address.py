@@ -21,7 +21,7 @@ from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import preferences, tokens
 from maity_hub.ratelimit import Attempt
-from tests import factory, flow
+from tests import factory, flow, stored_keys
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script
 
@@ -677,6 +677,25 @@ def test_one_address_gets_three_verification_mails_an_hour_from_all_accounts(
         assert answer.status_code == 200, answer.text  # the same answer, sent or not
     rows = _verifications(migrated)
     assert len(rows) == 3
+
+
+def test_the_verification_s_counts_keep_the_address_only_as_its_keyed_fingerprint(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    counted = (
+        preferences.VERIFY_BY_RECIPIENT_HOUR,
+        preferences.VERIFY_BY_RECIPIENT_DAY,
+        preferences.VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS,
+        preferences.VERIFY_BY_RECIPIENT_DAY_ACCOUNTS,
+        preferences.VERIFY_BY_RECIPIENT_MAILS_HOUR,
+        preferences.VERIFY_BY_RECIPIENT_MAILS_DAY,
+    )
+    for limiter in counted:
+        limiter.reset()
+    owner = with_mail(make_client, migrated)
+    assert owner.patch(S, {"email": {"address": "Target@Example.org"}}).status_code == 200
+    assert len(_verifications(migrated)) == 1
+    stored_keys.assert_keyed(migrated, counted, "target@example.org")
 
 
 def test_two_accounts_asking_again_and_again_leave_the_owner_a_verification_mail(

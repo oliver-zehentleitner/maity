@@ -19,10 +19,10 @@ from maity_hub.config import Settings
 from maity_hub.mail import address as addresses
 from maity_hub.notifications import preferences
 from maity_hub.routes import email_sign_in
-from tests import factory, flow
+from tests import factory, flow, stored_keys
 from tests.conftest import ClientFactory
 
-KEY = base64.b64encode(b"s" * 32).decode()
+KEY =base64.b64encode(b"s" * 32).decode()
 
 
 @pytest.fixture(autouse=True)
@@ -333,6 +333,18 @@ def test_many_sources_get_an_address_few_sign_in_mails_and_every_answer_alike(
             select(t.mail_outbox.c.id).where(t.mail_outbox.c.kind == "sign_in")
         ).all()
     assert len(sent) == email_links.RECIPIENT_PER_HOUR
+
+
+def test_the_link_s_counts_keep_the_address_only_as_its_keyed_fingerprint(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated)
+    limits = email_sign_in.LIMITS
+    counted = (limits.pair_quarter, limits.pair_day, *limits.recipient())
+    for limiter in counted:
+        limiter.reset()
+    assert ask(client, "  ADA@example.com  ").status_code == 202
+    stored_keys.assert_keyed(migrated, counted, "ada@example.com")
 
 
 def test_mail_factor_does_not_bypass_totp(make_client: ClientFactory, migrated: Engine) -> None:

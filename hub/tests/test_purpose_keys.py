@@ -78,6 +78,16 @@ def test_the_fallback_key_is_gone_once_an_instance_key_is_set(
             assert found is not None and found.account == 3
 
 
+def test_the_counts_key_an_address_apart_from_the_known_sources(migrated: Engine) -> None:
+    """One base, two purposes: a count's key of an address is not the fingerprint a known
+    source of the same text would have (hub/context/auth.md 7d3f0a52)."""
+    addresses.prepare(migrated, None)
+    with migrated.connect() as conn:
+        keyed = known_sources.address_key(conn, "ada@example.com")
+        assert len(keyed) == 64 and "@" not in keyed
+        assert keyed != known_sources.fingerprint(conn, "ada@example.com")
+
+
 def test_a_stored_value_of_the_wrong_length_is_no_key(migrated: Engine) -> None:
     with migrated.begin() as conn:
         store.add_sealed(conn, positions.KEY_NAME, b"short")

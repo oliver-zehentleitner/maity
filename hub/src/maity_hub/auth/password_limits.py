@@ -33,12 +33,13 @@ ADDRESS_CHANGE = Limiter(WRONG, WINDOW, name="auth.password_limits.ADDRESS_CHANG
 
 
 def account_key(conn: Connection, human_id: str | None, normalized_address: str) -> str:
-    """The login's bucket: the account's id, or for an address of no account its keyed
-    fingerprint (`known_sources.fingerprint`), so that the count's rows never hold an address
-    nor a plain hash a guess could be checked against. Without a key, one bucket for them all."""
+    """The login's bucket: the account's id, or for an address of no account its key as every
+    limit keyed by an address has it (`known_sources.address_key`), so that the count's rows
+    never hold an address nor a plain hash a guess could be checked against. The login runs
+    `addresses.prepare` before its transaction."""
     if human_id is not None:
         return human_id
-    return "address:" + (known_sources.fingerprint(conn, normalized_address) or "unkeyed")
+    return "address:" + known_sources.address_key(conn, normalized_address)
 
 
 def paused(conn: Connection, hub: Settings, wait: int) -> ApiError:

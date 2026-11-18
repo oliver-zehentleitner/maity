@@ -18,7 +18,14 @@ from sqlalchemy import Connection, Engine, select, update
 
 from maity_hub import account_deletion, catalog, clock, write_guard
 from maity_hub import tables as t
-from maity_hub.auth import email_links, passwords, second_factor, sessions, sign_in_settings
+from maity_hub.auth import (
+    email_links,
+    known_sources,
+    passwords,
+    second_factor,
+    sessions,
+    sign_in_settings,
+)
 from maity_hub.auth import password_resets as resets
 from maity_hub.config import Settings
 from maity_hub.deps import engine_of, origin_of, settings_of
@@ -71,10 +78,12 @@ def request_reset(
 ) -> JSONResponse:
     _anonymous(request)
     hub, engine = settings_of(request), engine_of(request)
+    address.prepare(engine, hub.secret_key)  # the key of the address's counts, before reading it
     with engine.begin() as conn:
         _enabled(conn, hub)
+        keyed = known_sources.address_key(conn, body.address.strip().casefold())
     origin = origin_of(request)
-    wait, allowed = LIMITS.take(body.address, origin.limit_key)
+    wait, allowed = LIMITS.take(keyed, origin.limit_key)
     if wait:
         raise rate_limited(wait)
     if allowed:
