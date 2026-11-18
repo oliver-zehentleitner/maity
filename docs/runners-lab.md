@@ -28,6 +28,8 @@ Status as of **2026-11-18**, maity **0.1.0a15**. Environments are named by OS an
 | antigravity, supervised | ✓ | ✓ | ✓, unsandboxed | – | n/a | – | ✓ | – | off (`sandbox_unavailable`) |
 | opencode | – | – | – | – | n/a | – | – | – | none |
 
+Sources for the Ubuntu cells: the lab's notes on tsk-gw1e87ev707f, tsk-5b5x3k5zvg7x, tsk-66zyvc4xnhtv and tsk-hv7jbgy75zjt. "PR via `maity gh`" ✓ is the lab's report (message 162561) that two Claude Code coders on that runner used `maity gh pr view` successfully after the repository grant was added; `pr create` is not covered by it.
+
 Without the host fix, every sandboxed Claude Code command fails on the seccomp step (tsk-5b5x3k5zvg7x). `maity runner check` reports that as an error.
 
 ### Debian 13
@@ -39,7 +41,7 @@ Without the host fix, every sandboxed Claude Code command fails on the seccomp s
 | antigravity, supervised | ✓ | – | – | – | n/a | – | – | – | off; its namespaces start |
 | opencode | ✓ on opencode's own default model until tsk-kf2kp09d6qew | – | – | – | n/a | – | – | – | none |
 
-On Debian, Start for claude-code and antigravity is the hub's placement state after a runner upgrade; the nested namespace is from the lab's note on tsk-5b5x3k5zvg7x; opencode's start is from its model card. Everything else there is not tested yet, and the codex cell is an expectation, marked so.
+On Debian, Start for claude-code and antigravity is the hub's placement state after a runner upgrade; antigravity's "namespaces start" is that runner's `maity runner check` output after the same upgrade (`ok harness antigravity: the namespaces agy's terminal sandbox needs start`); the nested namespace is from the lab's note on tsk-5b5x3k5zvg7x; opencode's start is from its model card. Everything else there is not tested yet, and the codex cell is an expectation, marked so.
 
 The test cycle after each CLI release: start · `maity resume` · `maity wait` · a subagent with Bash · read and open a PR with `maity gh` · stop · a runner restart that takes the session over · `maity runner check` without false greens. Results go on the lab card (tsk-gw1e87ev707f) and into this page.
 
@@ -59,7 +61,7 @@ Everything runs as the agents' user (in the `single` layout, the runner's own us
 
 ## Configure the runner
 
-`~/.config/maity-runner/runner.toml`, besides the `[hub]` and state directory `pair` writes:
+`~/.config/maity-runner/runner.toml` (or, after `sudo maity runner install`, the configuration file that command names), besides the `[hub]` and state directory `pair` writes. Replace `<agents-home>` with the home of the user the agents run as:
 
 ```toml
 [limits]
@@ -73,7 +75,7 @@ email = "agents@example.org"
 [backend.local]
 layout = "single"
 # systemd starts the service without ~/.local/bin: name it, or agy, opencode and maity are not found
-agent_path = "/home/maity-runner/.local/bin:/usr/local/bin:/usr/bin:/bin"
+agent_path = "<agents-home>/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 [harness.claude-code]
 modes = ["interactive", "supervised"]
@@ -108,7 +110,8 @@ pull_requests = true
 
 | Warning | Meaning |
 |---|---|
-| `its sandbox was checked with 2.1.x, this is 2.1.y` | Claude Code is newer than the version whose sandbox behaviour was verified. Informational. |
+| `its sandbox was checked with 2.1.x, this is 2.1.y` | Claude Code is another version than the one whose sandbox behaviour was verified: whether a call with something in front of `maity` stays in the sandbox is not checked for it. Security-relevant; until the checked version is raised, it is a known, accepted gap. |
+| `harness opencode: no OS sandbox; …` | opencode has no sandbox the runner switches on; under layout single an agent can do what the runner's user can. With `require_sandbox = true` under `[harness.opencode]` this is an error and opencode placements are refused. |
 | `pull_requests is not given to codex` | Codex runs `maity` inside its sandbox, so it gets no `maity gh`. |
 | `allow '…' is left out for antigravity` | agy does not match command grants the way Claude Code does; such commands run in agy's sandbox like any other. |
 | `the namespaces agy's terminal sandbox needs do not start` | On this host agy runs commands unsandboxed. |

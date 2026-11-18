@@ -2779,5 +2779,11 @@ heads. Someone setting up a runner, or a coder changing it, could not see
 which OS and harness combinations work today, or which host change a
 fix depends on.
 
-**Alternatives:** unknown beyond the card notes alone, which do not reach
-readers of the repository and go stale without anyone noticing.
+**Rejected alternatives:**
+- The card notes alone: they do not reach readers of the repository and
+  go stale without anyone noticing.
+- The matrix inside `maity runner check`: it can only report the host it
+  runs on, not what was seen on another OS or harness; it is the long-term
+  aim (see Revisit when), not a replacement for a cross-host record today.
+- CI per OS and harness: it needs signed-in harnesses and real hosts that
+  CI does not have yet.
