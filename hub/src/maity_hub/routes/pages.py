@@ -172,7 +172,7 @@ def explore(request: Request, lang: str | None = None) -> Response:
     settings = settings_of(request)
     if not settings.public_pages:
         return _shell(settings)
-    wait = public_pages.BY_ADDRESS.hit(origin_of(request).address)
+    wait = public_pages.BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     window = maintenance.window_now(engine_of(request))

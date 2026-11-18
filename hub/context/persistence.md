@@ -604,6 +604,57 @@ board is a few hundred cards; the board asks for 200 at a time.
 - Integer positions renumbered on every move. They are simple to compare,
   but a move rewrites every card after it, and each of those is an event.
 
+## The closed columns alone are paged by the database, with a cursor of one card's key
+
+**Id:** 7bad4e04-7132-4825-94c5-825301c20800
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-d4anfsk1e94j and its plan, approved by the lead, 2026-11-18 (PR 1, seq 161546); the board run measured by ops on 2026-11-12 (done column about 790 cards, 4 pages one after another, 546 kB, about 830 ms after the first page); the owner's choice of 50 cards on the first page, req-aa0jka1xsfsy (PR 2)
+**See:** persistence.md#the-boards-card-order-is-sorted-in-python-not-by-the-database — 4e61c371-33b4-4ae4-8bb1-cb8fa974acb3 — as of 2026-11-18
+**Revisit when:** the open columns get the same paging, or a closed card's place can change without its `closed_at` changing, or a project's closed cards grow far beyond the about 790 of 2026-11 (each page sorts them all in the database: an index for the order is the step then)
+
+A board read (`order=board`) whose `status` names closed statuses only, and that
+searches nothing (`q`), is sorted and paged by the database: the column's position
+in the contract's status order, a card without `closed_at` last, `closed_at` newest
+first, then the id, with `LIMIT`. The id compares bytewise as in Python:
+`COLLATE "C"` on PostgreSQL, while MySQL's tables are binary (`utf8mb4_bin`) and SQLite
+compares bytes. Its cursor (`paging.closed_cursor`) holds only the last card's column
+position, `closed_at` and id, bound to the list's filters: at most about 120 characters
+by its encoding, whatever the page size. A malformed cursor is refused as `invalid`: a
+time without a zone or out of range in UTC, a position that is no column of the board,
+an id longer than the id column or with a NUL. The cursor is not signed, so an edited one
+that is well formed is taken; it shows only cards the caller may read anyway, since the
+read rights are checked before the cursor. A page of the whole board that ends on a
+closed card hands out the same cursor, and the Python-sorted path then goes on after that
+card's key (`_after_closed`). Open columns keep the cursor with the ids the page showed.
+A `key` cursor given out before this change still pages through the Python path.
+The card first said the cursor grew with the column. Measured, it did not (5551, 5551
+and 5550 characters on pages 2 to 4): it held the ids the page showed in its last column,
+up to the page size, not every id sent. Its size per request was the issue, not its growth.
+
+**Reason:** a closed card's place follows from its status, `closed_at` and id. No move
+re-ranks it, so the reason the board's cursor carries the ids a page showed (moves change
+keys of cards that did not move) does not hold there, and a keyset on the key alone is
+exact. Sorting in the database stops every page of the done column from reading and
+sorting all of the column's cards in Python: about 790 rows read four times for one board.
+No index carries this order: sorting by the `CASE` position and `closed_at IS NULL` is no
+plain btree's order, so each page is a top-N sort over the project's closed cards in the
+database. What it removes is the sort in Python and the rows sent to Python, not the
+database's work per page.
+The earlier entry rejected SQL keyset paging for the whole board because of collations and
+a `CASE` per state on three dialects. For the closed columns alone it is one `CASE` over
+two statuses and one collation on one dialect.
+
+**Rejected alternatives:**
+- Fetching the done column's follow-up pages in parallel: a keyset page depends on the
+  one before it, and the board's first page of 50 plus "Show more" on demand (PR 2)
+  removes the serial chain instead.
+- Only shrinking the cursor and keeping the Python sort: it fixes the request size
+  (5.5 kB per follow-up page), not the rows read per page.
+- Offset paging (`LIMIT … OFFSET …`): a card that closes or reopens between two pages
+  moves every card after it by one, so the next page skips or repeats a card.
+
 
 ## Admin-set instance settings in one table with a registry in code, admin-set secrets sealed in a table of their own
 
@@ -1279,3 +1330,43 @@ aiosqlite keeps SQLite on the same code path as the servers.
   out on the runner, and it would still see such a stall only from 150 ms over its own lag, which
   no run has measured. The CPU time per callback catches it from 50 ms, with the reference in the
   process.
+
+## An `async def` runs no sync transaction on the event loop
+
+**Id:** 09716491-b10a-4c73-bf6e-cfe0eabba8ba
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pzex5cpkv6tx, 2026-11-15: web-e2e on #1843 (CI run 43712574171) got 503 from
+`POST /api/v1/admin/reports/{id}/resolve` after `total_ms=5014`, `loop_late_max_ms=4925`; the
+review of #1845 (A637: the helper the guard did not follow)
+**See:** persistence.md — 66f0bcf9-cb6f-4993-81de-541d13f0c942 — as of 2026-11-15
+
+A sync engine's transaction (`with engine.begin()` / `.connect()`, `events.transaction`,
+`idempotency.run`, `retrying`) never starts on the loop's thread: an `async def` route hands it to
+`run_in_threadpool`, as `routes/auth.py` does, or the route stays a plain `def`.
+That holds for a call of a sync helper that opens one, too (`device_codes._require_enabled`),
+and for a rate limiter's `hit`, `take`, `place` and `release`: on PostgreSQL they count in
+`shared_counts`, a sync transaction with an advisory lock (`ratelimit.Limiter`, replicas.md).
+`hub/tests/test_no_sync_db_on_loop.py` scans every `async def` in the package for those calls
+outside a nested function, and for unawaited calls of the package's sync functions and of
+methods of its objects (module-level objects, `self` and `self.<attr>`) that open one,
+transitively, and names file, line and function. A limiter made with `local=True` counts in the
+process and is left out. Startup and shutdown (`app.lifespan`) are exempt: no request holds the
+lock then. `routes/reports.py` (`file_report`, `resolve_report`), `routes/email_sign_in.py`
+(`complete_link`), `routes/device_codes.py` (`get_code`, `watch_redemption`) and the limiter
+calls of `routes/auth.py` (`login`), `routes/invitations.py` (`invitation_page`,
+`accept_invitation`), `routes/joins.py` (`exchange`), `routes/register_page.py`
+(`register_complete`), `routes/registration.py` (`register`), `routes/runners.py` (`pair`) and
+`forge_webhook.handle` broke the rule and were moved.
+
+**Reason:** on SQLite every transaction begins IMMEDIATE, and every request's authentication
+(`deps.authenticated`) is an async-engine transaction that holds the write lock across awaits. A
+sync transaction on the loop waits for that lock and blocks the loop its holder needs to commit,
+so it waits the whole busy timeout (5 s) and answers 503. On the server databases it costs the
+loop the statement's time, which the loop-lag guard watches only for the hot families.
+
+**Rejected alternatives:**
+- A timing test of the deadlock (an async holder and a sync write on the loop): it needs the 5 s
+  busy timeout per run and shows only the families it calls; the scan covers every route at no
+  cost.

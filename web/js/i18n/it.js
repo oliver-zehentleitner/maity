@@ -204,7 +204,6 @@ window.MAITY_I18N["it"] = {
     "other": "{active} di {count} istanze attive"
   },
   "agents.intro": "I tuoi profili di agente in tutti i progetti: ognuno è un'identità, con la sua immagine, il suo handle e le appartenenze che detiene. Aggiungine uno a un progetto per creare lì una riga di adesione.",
-  "agents.join.any": "Aggiungi un agente qualsiasi",
   "agents.join.failed": "Impossibile preparare l'adesione: {reason}",
   "agents.join.none": "Non fai parte di nessun progetto in cui potresti portare un agente.",
   "agents.join.open": "Fai unire un agente",
@@ -2367,6 +2366,10 @@ window.MAITY_I18N["it"] = {
     "one": "{count} errore",
     "other": "{count} errori"
   },
+  "mail.count.invitation": {
+    "one": "{count} e-mail di invito",
+    "other": "{count} e-mail di invito"
+  },
   "mail.count.notifications": {
     "one": "{count} email di notifica",
     "other": "{count} email di notifica"
@@ -2375,6 +2378,14 @@ window.MAITY_I18N["it"] = {
     "one": "{count} email di sicurezza in coda",
     "other": "{count} email di sicurezza in coda"
   },
+  "mail.count.second_factor": {
+    "one": "{count} e-mail del secondo fattore",
+    "other": "{count} e-mail del secondo fattore"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} e-mail del secondo fattore scartata",
+    "other": "{count} e-mail del secondo fattore scartate"
+  },
   "mail.count.security": {
     "one": "{count} email di sicurezza",
     "other": "{count} email di sicurezza"
@@ -2382,6 +2393,14 @@ window.MAITY_I18N["it"] = {
   "mail.count.sign_in": {
     "one": "{count} email di accesso",
     "other": "{count} email di accesso"
+  },
+  "mail.count.verification": {
+    "one": "{count} e-mail di verifica",
+    "other": "{count} e-mail di verifica"
+  },
+  "mail.count.waiting": {
+    "one": "{count} e-mail di verifica o di invito in attesa",
+    "other": "{count} e-mail di verifica o di invito in attesa"
   },
   "mail.daily_at": "Riepiloghi giornalieri e settimanali alle",
   "mail.day.fri": "venerdì",
@@ -2395,13 +2414,16 @@ window.MAITY_I18N["it"] = {
   "mail.field.from_address": "Indirizzo del mittente",
   "mail.field.from_name": "Nome del mittente",
   "mail.field.host": "Host SMTP",
+  "mail.field.invitation_max_per_hour": "Email di invito all'ora",
   "mail.field.max_per_hour": "Email di notifica all'ora",
   "mail.field.port": "Porta SMTP",
   "mail.field.reply_to": "Indirizzo di risposta",
+  "mail.field.second_factor_max_per_hour": "Email del secondo fattore all'ora",
   "mail.field.security_max_per_hour": "Email di sicurezza all'ora",
   "mail.field.sign_in_max_per_hour": "Email di accesso all'ora",
   "mail.field.tls": "Sicurezza della connessione",
   "mail.field.username": "Nome utente SMTP",
+  "mail.field.verification_max_per_hour": "Email di conferma dell'indirizzo all'ora",
   "mail.hold_while_online": "Nessuna email mentre sono online nell'app web",
   "mail.hold_while_online.hint": "Le email di ciò che parte «Subito» aspettano mentre usi la dashboard. Pochi minuti dopo che l'hai lasciata, viene inviato solo ciò che non hai letto.",
   "mail.incomplete": "La configurazione email è incompleta: {missing}.",
@@ -2414,6 +2436,7 @@ window.MAITY_I18N["it"] = {
   "mail.kinds.hint": "Un riepilogo contiene tutto ciò che è ancora non letto quando parte. Un secondo fattore cambiato, un indirizzo cambiato e l'eliminazione di un account vengono sempre inviati subito.",
   "mail.kinds.legend": "Quando viene inviato ogni tipo",
   "mail.last_hour": "Ultima ora: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Inoltre, nell’ultima ora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Riepilogo giornaliero",
   "mail.mode.hourly": "Riepilogo orario",
   "mail.mode.immediate": "Subito",
@@ -3518,9 +3541,7 @@ window.MAITY_I18N["it"] = {
   "placements.logs": "Log",
   "placements.logs.copy": "Copia il comando dei log",
   "placements.logs.region": "Comando dei log",
-  "placements.new.agent_new": "Un nuovo agente",
   "placements.new.branch": "Branch iniziale (facoltativo)",
-  "placements.new.briefing": "Briefing (facoltativo, Markdown)",
   "placements.new.busy": "Collocazione dell'agente…",
   "placements.new.clone": "Clone",
   "placements.new.clone_hint": "Il nome del clone dell'agente sul runner: lettere minuscole, cifre e trattini. Vuoto: lo handle dell'agente.",
@@ -3529,6 +3550,7 @@ window.MAITY_I18N["it"] = {
   "placements.new.failed": "Non collocato sul runner: {reason}",
   "placements.new.field": "{field}: {why}",
   "placements.new.hint": "Il runner avvia l'agente in un clone del repository di questo progetto, con lo strumento, la modalità e il modello scelti qui. Sono offerti solo i tuoi runner abbinati, consentiti in questo progetto e che ne offrono il repository.",
+  "placements.new.legend": "Su un runner",
   "placements.new.mode": "Modalità",
   "placements.new.model": "Modello",
   "placements.new.model_default": "Quello predefinito del runner",
@@ -3537,8 +3559,10 @@ window.MAITY_I18N["it"] = {
   "placements.new.no_tool": "Il runner non offre lì alcuno strumento installato.",
   "placements.new.none": "Nessuno dei tuoi runner abbinati è ancora consentito in questo progetto. Consentine uno in {link}.",
   "placements.new.none_link": "Runner di questo progetto",
-  "placements.new.open": "Avvia un agente su un runner",
-  "placements.new.profile": "Il profilo del nuovo agente e il suo posto nel team",
+  "placements.new.not_member": "Su un runner si avvia solo un agente già in questo progetto, o uno nuovo. Scegli un nuovo agente, oppure fai prima aderire questo con una riga.",
+  "placements.new.not_ready": "Non c'è ancora un runner con uno strumento per avviarlo: la parte del runner dice perché.",
+  "placements.new.offer": "Avvialo su uno dei miei runner invece che con una riga di adesione",
+  "placements.new.placed": "Questo agente è già in esecuzione su un runner qui: un posizionamento per agente. La sua riga è in Agenti gestiti.",
   "placements.new.quota": "il limite del progetto di {max} collocazioni attive sui runner è stato raggiunto.",
   "placements.new.quota_link": "Impostazioni, Membri e agenti",
   "placements.new.quota_raise": "Alza il limite in {link}.",
@@ -3551,7 +3575,6 @@ window.MAITY_I18N["it"] = {
   "placements.new.submit": "Avvia sul runner",
   "placements.new.target": "Dove",
   "placements.new.target_any": "Dove sceglie il runner",
-  "placements.new.title": "Avvia un agente su un runner",
   "placements.new.tool": "Strumento",
   "placements.not_removed": "Non rimosso: {reason}",
   "placements.not_restarted": "Non riavviata: {reason}",

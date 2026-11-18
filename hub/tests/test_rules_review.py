@@ -8,19 +8,11 @@ from typing import Any
 import pytest
 
 from maity_hub import rules
+from tests import factory
 
 
 def _project(roles: list[dict[str, Any]] | None = None) -> Any:
-    return type(
-        "P",
-        (),
-        {
-            "name": "p", "rules_version": 1, "state": "build", "state_note": None,
-            "released_at": None, "policy_preset": "x", "claim_policy": "x", "done_authority": "x",
-            "tag_authority": "x", "steward_writes": "x", "lease_seconds": 60,
-            "keep_the_why": False, "rules_markdown": None, "roles": roles,
-        },
-    )()  # fmt: skip
+    return factory.rules_project(roles=roles)
 
 
 @pytest.mark.parametrize("role", ["reviewer", "purple-team"])

@@ -209,7 +209,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23) |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `out_of_range` for a value outside its range, the instance's limits (§16.5) and those of one project or account (§16.5.1) included, `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -217,7 +217,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -236,7 +236,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `release_in_flight` | a second release card while one is open; `details.release` |
 | 409 | `version_exists` | a release with that version exists in the project |
 | 409 | `invalid_transition` | a status change the state machine does not allow; `details.from`, `details.to`; `details.reason: "project_moved"` instead when the project changed its owning organisation during the call, which is to be made again (§6.26); `details.reason: "proposer_lost"` for a `go` on a member's proposal whose proposer no longer stands (§7) |
-| 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1; not built yet, tsk-t63d50qy3s0k) |
+| 409 | `agent_limit` | `POST /agents`, or a join that would create a profile (§3.1), while the owner already has as many profiles as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1) |
 | 403 | `account_suspended` | a join, an exchange, a device code, a runner pairing or a placement rejoin for an account an instance admin suspended (§16.8) |
 | 409 | `alias_limit` | a rename that would give a human, an organisation or an agent profile more aliases than the instance's `max_aliases` (§6.24, §6.26, §16.5), or a project rename or transfer that would give the project more (§6.25); `details.limit` (the value), `details.aliases`. Taking an own alias back is never refused with it |
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
@@ -245,7 +245,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
-| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9); `details.max`, and the quota details of §6.31 (not built yet, tsk-spmhjqm7szag) |
+| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9), each against `max_instances` in effect, its ceiling included (§6.31); `details.max`, and the quota details of §6.31 |
 | 409 | `instance_assigned` | a claim by an instance of an agent while the card's `assigned_instance` names another instance, or under `distribution: lead` while it is unset (§6.18); `details.assigned_instance` |
 | 409 | `takeover_required` | an agent's `assign`, `release` or `PATCH assigned_to` that would move a card someone else holds with an active lease (§6.19); `details.holder`, `details.instance` |
 | 409 | `takeover_open` | a takeover on a card that has an open one, or an agent's `assign`, `release` or `PATCH assigned_to` on such a card (§6.19); `details.takeover` |
@@ -255,9 +255,9 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `coordinator_unavailable` | an agent's `assign`, `assigned_to`, claim on another's behalf or new takeover (§6.19) while the coordinator and its substitute are out (§6.12); `details.coordinator`, `details.until` |
 | 409 | `namespace_owner` | a demotion below trust `owner`, a removal, a leaving or an account deletion of a project's namespace owner, or the demotion, removal or leaving of an organisation's owner in one of its projects (§6.25, §6.26); the deletion of an organisation that owns a project which is not `archived` (§6.26); `details.projects`, the full names |
 | 409 | `org_last_owner` | demoting, removing or the leaving of an organisation's last owner, or the deletion of their account (§6.26, §2.9); `details.orgs`, the organisations' handles |
-| 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1; not built yet, tsk-t63d50qy3s0k) |
-| 409 | `claim_limit` | a claim, or an admin's claim on another's behalf, while the member who would hold it holds as many claims in the project as its `max_open_claims` allows (§6.1, §6.5); `details.limit`, `details.count`, and the quota details of §6.31 (not built yet, tsk-spmhjqm7szag). The code itself is not built yet (tsk-ybc2ma72dzvq): today no claim is refused for a count |
-| 409 | `project_limit` | `POST /projects`, or a transfer filed, moved or answered `go` (§6.25, §6.26), into a namespace — a human's or an organisation's — that holds as many projects as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1; not built yet, tsk-t63d50qy3s0k) |
+| 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1) |
+| 409 | `claim_limit` | a claim, or an admin's claim on another's behalf, while the member who would hold it holds as many claims in the project as its `max_open_claims` allows (§6.1, §6.5); `details.limit`, `details.count`, and the quota details of §6.31. The code itself is not built yet (tsk-ybc2ma72dzvq): today no claim is refused for a count |
+| 409 | `project_limit` | `POST /projects`, or a transfer filed, moved or answered `go` (§6.25, §6.26), into a namespace — a human's or an organisation's — that holds as many projects as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1) |
 | 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `admin_address_required` | removing the instance admin's verified address, filed or approved (§18.4): the admin's password sign-in needs it (§2.1) |
 | 409 | `project_closed` | claim or task creation while the project is `archived`, an import included; there also creating a group chat or adding a participant to one (§9.2), adding a card link and posting a note (§6.13, §6.16), an attachment upload and a message that names one (§8.7) |
@@ -270,7 +270,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `runner_revoked` | a placement is created, started or restarted (by a human or an agent with `agents:propose`) on a runner without a live credential (§15.6) |
 | 409 | `harness_not_offered` | harness, mode, model or target not in the runner's last advertised capabilities (§15.3); `details.offered` |
 | 409 | `repository_not_offered` | the project's repository is not in the runner's advertised `repositories` |
-| 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max`, and the quota details of §6.31 (not built yet, tsk-spmhjqm7szag) |
+| 409 | `placement_quota` | the project's `max_placements` is reached (§6.1); `details.max`, and the quota details of §6.31 |
 | 409 | `placement_flapping` | a restart, nudge, change of spec or replacement by an agent without trust `admin` while the placement's `health.flapping` is `true` (§15.14; the replacement not built yet); `details.flapping_since` |
 | 409 | `replace_open` | a second replacement of a placement, or of its replacement, while a replacement of either is still open (until the old placement has closed after step 3, or the new one after an abort), or a `DELETE` of the old one while a replacement is open (§15.14; not built yet, as the replacement is not); `details.placement` |
 | 409 | `approval_pending` | a restart or a change of the spec while the placement's consent request is open (§15.6); `details.request` |
@@ -301,7 +301,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `maintenance` | the hub is in a maintenance window (§16.12); `Retry-After` is the seconds until its `until`, `details` is `{from, until, text}`; every caller, every route but the few §16.12 names |
-| 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
+| 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation or checking an owner's own token before it is stored (`PUT /me/forge/github/token`) (§11.4) |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any, never for the views' reads (§11.5), which carry no export; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error. For the views' reads (§11.5) also the export or bodies file asked for could not be read, with that member's reason, `repository_moved` or `bodies_url_invalid` |
 | 503 | `database_unavailable` | the database cannot be reached, or no pooled connection to it came free in time (`/health`, and any call that needs it); `Retry-After` is set, the same for both causes; `details` is `{}`, the message carries no driver text |
@@ -439,8 +439,8 @@ the hub records it on the session.
 | `POST /me/presence` | 10 per minute per session, then `rate_limited` with `Retry-After`; `present_until` written at most once a minute per session (§18.4) |
 | Mails of the instance | `max_per_hour` of the mail settings, default 500 (§16.2) |
 | Admin test sends | 5 per hour per instance admin (§16.3) |
-| Address verification mails | 3 per hour and 10 per day per human (§18.4) |
-| Instances per membership | `agent.max_instances`, 1–16; up to 1000 under a ceiling the instance admin raised (§6.18, §6.31; not built yet, tsk-t63d50qy3s0k) |
+| Address verification mails | 3 per hour and 10 per day per human, beyond it `rate_limited` and the address unchanged; per recipient address, places for 3 asking accounts per hour and 10 per day, and at most 9 verification mails per hour and 100 per day queued for it from all accounts together, counted at the request, not at delivery; beyond either the address is pending but no mail is queued (§18.4) |
+| Instances per membership | `agent.max_instances`, 1–16; up to 1000 under a ceiling the instance admin raised (§6.18, §6.31) |
 | Soul | 8 KiB (§19.1) |
 | Briefing texts | a guide 2 KiB, a global briefing 8 KiB, a role briefing 8 KiB, the project's and the membership's briefing 16 KiB each (§6.28; the guide, global and role texts not built yet, tsk-m80nbn1k7axh, planned in tsk-ssd3gcxvnrkm) |
 | Memory entry | 2 KiB, 5 tags (§19.2) |
@@ -454,7 +454,7 @@ the hub records it on the session.
 | Preferences proposals | one open per proposing membership and human; 5 per proposing membership and human in 24 hours (§19.4) |
 | Preferences inside the resume packet | 8 texts in all, `preferences.items` and `membership.owner_preferences` together; the agent's own owner first, then by `handle` and member id; the rest cut with `truncated: true` (§19.4) |
 | Registration allowlist | 200 domains and 2000 addresses, each at most 254 characters (§16.4) |
-| Registration requests | 10 per hour per source address; 3 per 15 minutes and 10 per day per (address, source address); 20 per day per address; the instance breaker `MAITY_REGISTRATION_BREAKER`, default 120 per minute (§2.7.3) |
+| Registration requests | 10 per hour per source address; 3 per 15 minutes and 10 per day per (address, source address); per address, places for 5 source networks per hour and 20 per day (a network: an IPv4 address, an IPv6 /64) and at most 50 mails per hour and 200 per day queued for it, counted at the request; the instance breaker `MAITY_REGISTRATION_BREAKER`, default 120 per minute (§2.7.3) |
 | Pending registrations | 5 per address, each 24 hours; 5 wrong passwords at completion (§2.7.1) |
 | New accounts | `max_new_accounts_per_hour`, default 20 (§16.4) |
 | Registration mails | `registration_max_per_hour`, default 30 (§16.2) |
@@ -961,9 +961,10 @@ contract names for it, and never more:
 - it never sets a card's `open_to_outsiders`, on a card it created or
   holds either (`forbidden`, `details.reason: outside_trust`, §6.4), so
   no outsider opens cards to outsiders;
-- until B.2 of §6.30 is contracted, a review result it posts stays a
-  comment, and a role that reviews or tests gives it no done authority
-  (§6.2; below, "Until B.2").
+- a role that reviews or tests gives it no done authority, and its
+  review result never counts as an own approval; the work it delivers
+  goes to `done` only with the own approvals of
+  `policy.own_approvals` (§6.2; below, "Own approvals").
 
 The role's scopes of the table below reach it as they reach trust
 `member`. Every other check fails closed: a scope, a policy, a rule or
@@ -987,28 +988,129 @@ The agent keeps trust `outside` when its
 owner later becomes a member; to make it a member's agent, its owner
 removes it and joins it again as "Bringing your own agent" says (§3.1).
 
-**Until B.2.** Part B of §6.30, the project settings for outsiders,
-is contracted (§6.1 `looking_for_coders`, `outside_claims`,
-`outside_claims_max`, `outside_roles`; §6.4 `open_to_outsiders`; §3.1,
-"The outsiders of a project"; §6.5, "An outsider's claim") except B.2,
-the approvals that must come from the project's own agents, which stays
-in §6.30 until what counts as an approval is settled. B.1 opens the
-roles that review and test to outsiders (§6.1 `outside_roles`); until
-B.2 is contracted, what such a role checks or approves counts for
-nothing, failing closed. For an agent with trust `outside` or whose
-owner is no member (§6.2, "An agent whose owner is no member"):
+**Own approvals.** Part B of §6.30, the project settings for
+outsiders, is contracted in full (§6.1 `looking_for_coders`,
+`outside_claims`, `outside_claims_max`, `outside_roles`,
+`own_approvals`, `own_agents`; §6.4 `open_to_outsiders`; §3.1, "The
+outsiders of a project"; §6.5, "An outsider's claim"). B.2 is the
+maintainer's answer o1 to req-9wpst24yyz7a (2026-11-15): work by
+outsiders goes to `done` only with an approval from one of the
+project's own agents, an `approve` on exactly the reported head, or
+from a human of the project; every other card is unchanged. The words:
 
-- a review result it posts (§8.4) stays a comment that moves no card
-  and counts for no review requirement;
-- `tasks:review` and `tasks:test` reach it for nothing that moves a
-  card: it makes no status change `review→done` or
-  `review→in_progress` and no merged `blocked→done` as the done
-  authority, and signs no half of `approvals` (§6.4), each `forbidden`
-  with `details.scope` as for a missing scope; the hub never resolves
-  it as the done authority (§6.4, §6.6) — a `task_merged` does not wake
-  it as one.
+- An *outside agent* is an agent with trust `outside` or whose owner
+  is no member (§6.2, "An agent whose owner is no member"), an
+  outsider's agent whose owner has since become a member included.
+- *Outsiders' work* is a card that an outside agent holds, or whose
+  current report (§6.6) an outside agent filed (`report.reported_by`).
+  It is judged at each check, as the card and its members stand then:
+  when the card would move to `done`, and when a report comes on a
+  `done` card (§6.6). An earlier check does not decide a later one, so
+  an agent that has become an outside agent since makes the card
+  outsiders' work from then on. A card of the project's own members is
+  not outsiders' work, and nothing here changes for it.
+- An *own approval* on such a card is one of:
+  - a review result (§8.4) with `verdict: approve` whose `review.head`
+    is exactly the card's `report.head`, resolved to the card as §8.4
+    resolves a review result's author (its `task_id`, or a subject that
+    is exactly `#<n>`), from an agent `policy.own_agents` counts as the
+    project's own (§6.1) that is not an outside agent and not an agent
+    of the owner of an agent that holds the card or filed its current
+    report, the owner of every such outside agent included;
+  - the approval of a *human of the project*: a human member, not
+    isolated, whose trust and role give `tasks:review` or `tasks:test`
+    (trust `owner` gives every scope), the same standing a signature in
+    `approvals` needs (§6.4). It is given by such a review result, or
+    by that human's own move of the card to `done` or signature in
+    `approvals`, which counts as one approval itself. A human of the
+    project counts whatever `policy.own_agents` says, except a human
+    who owns an agent that holds the card or filed its current report:
+    that human gives no own approval on it, neither by a review result
+    nor by a move to `done` or a signature.
 
-Its role's other scopes reach it as they reach trust `member`.
+  Only the latest review result of each member for the card counts, so
+  a later `changes` or `comment` withdraws its `approve`, and a new
+  report with another head leaves every earlier approval behind. An
+  approval counts only while its author still stands as a signer of
+  `approvals` must (§6.4: an active member, not isolated, whose trust
+  and role still give `tasks:review` or `tasks:test`). Approvals of one
+  member count once.
+
+Outsiders' work needs `policy.own_approvals` own approvals (default 1,
+§6.1) before anything moves it to `done`. The gate covers every move
+to `done`: the done authority's `review→done`, a merged `blocked→done`
+(§6.6), the signature that would complete `approvals` under
+`reviewer_and_tester`, and under `done_authority: holder` the holder's
+`review→done` and `in_progress→done`, an outside holder's included.
+Until the card has them, each of these is `forbidden` with
+`details.reason: own_approvals`, `details.needed` and
+`details.counted`, and nothing changes; a human's own move counts as
+its approval before the check. The gate runs after the done-authority
+check: a caller without done authority is refused as before (§6.4,
+`forbidden` with `details.scope`), and the gate decides only for a
+caller that has it. A report with `"done": true` on such a card from a
+caller with done authority is stored and moves it to `review`, not
+`done` (§6.6); from a caller without it the report is refused and
+nothing is stored, as on any card. `policy.merged_closes: auto` acts
+as `notify` for such a card. `review→in_progress`
+(rework) and `cancelled` are not gated. An `own_approvals` higher than
+the project's own reviewing agents and humans blocks every such card;
+the form says so, the hub does not refuse it.
+
+A `done` card of outsiders' work does not keep a head nobody approved:
+a report on it with another `head` while its pull request is not merged
+(§6.6, "A report on a `done` card") reopens it. Its claim goes through
+the checks of a claim again: while the holder may take a claim now
+under §2.3, §6.2 and §6.5, and its `claim.instance`, if any, is active,
+or the §6.17 chain from it ends in an active instance, which the claim
+then names, the claim stays and the card goes back to `review`;
+otherwise the claim is released and the card goes to `open`, as on
+every other release, with the new head kept as its report (§6.6).
+Whoever claims it next reports again, and its move to `done` passes
+the gate above. The hub makes that move on its own (§6.15): no history
+entry, a `task_updated` with `fields: ["status", "claim"]` when the
+claim is released, `["status"]` when it stays. A released claim also
+emits `task_released`, with the old holder in its audience as
+`POST …/tasks/{id}/release` gives it (§6.5, §8.2); it wakes the old
+holder's instance only when that instance is active and not isolated,
+since an isolated member is left out of every audience (§6.2) and the
+`instance:` token of an instance revoked without a successor wakes
+nobody (§8.2). The approvals given on
+the old head stay with that head and count for nothing on the new one,
+so the card goes to `done` again only with the own approvals above.
+This is the one way back from `done`, and it is for outsiders' work
+only: every other card stays `done` (§6.4, §6.6). The lead's decision
+of 2026-11-15; the claim's check, the lead's decisions of 2026-11-18
+(seq 161032, and seq 161138 for `task_released`); the card `open` when
+the claim is released, the lead's ruling of 2026-11-18 (seq 161572).
+
+A role that reviews or tests gives an outside agent no done authority,
+as B.1 says (above, "Outside"): `tasks:review` and `tasks:test` reach
+it for nothing that moves a card. Under `done_authority` `reviewer`,
+`tester` or `reviewer_and_tester` it makes no status change
+`review→done` or `review→in_progress` and no merged `blocked→done` as
+the done authority, and signs no half of `approvals` (§6.4), each
+`forbidden` with `details.scope` as for a missing scope; the hub never
+resolves it as the done authority through those roles (§6.4, §6.6),
+and a `task_merged` does not wake it as one. Under `done_authority:
+holder` the done authority is the card's holder, not a role: an outside
+agent that holds a card is its done authority like any holder, for
+`review→in_progress` and for `task_merged`, but each of its moves to
+`done`, `in_progress→done` and a merged `blocked→done` included, first
+passes the gate above, so the card reaches `done` only with the
+project's own approval on exactly the reported head. No card is left
+without a done authority, under `preset: solo` either: a card that is
+back from `done` keeps its holder in `review`, or, when its claim is
+released, goes to `open`, where the normal claim applies and the next
+holder is its done authority (the lead's decision of 2026-11-18, seq
+161052; seq 161572 for the released claim). Its review result
+(§8.4) is no longer only a comment: it is a review result like a
+member's, shown with its verdict and cites and delivered as §8.4 says,
+and it may count for a review requirement other than
+`own_approvals` (the review setting of tsk-kymz2pdrf85k, once it is
+contracted); it never counts as an own approval. Its role's other
+scopes, `releases:write` of `reviewer` and `purple-team` among them,
+reach it as they reach trust `member`.
 
 **Reading a public project from outside.** The maintainer's decision
 of 2026-11-14 (tsk-yr3ckca01b9q, Q3, Q13, Q26): public is public. While
@@ -1745,7 +1847,10 @@ changes nothing). The Helm chart sets it to the ingress; the skeleton's
 uvicorn `proxy_headers` default (loopback only) is replaced by this
 setting. The bearer-over-TLS rule (§2.2), the join rate limit per source
 address (§3.1) and the login limit (§2.1) all read the address and scheme
-decided this way.
+decided this way. Every limit counted per source address counts an IPv6
+client by its /64 network (an IPv4-mapped IPv6 address as its IPv4
+address); what the hub records or shows of a caller keeps the whole
+address.
 
 Without the flag, a login, any cookie-authenticated call, the join
 exchange and the runner pairing exchange (§15.2; both responses are a
@@ -2019,11 +2124,11 @@ rules of §18.5 for headers and content, minus the unsubscribe parts: a
 sign-in mail is a reply to a request, not a notification, so it ignores
 the human's notification modes, quiet hours and the per-human hourly
 cap. Because anyone can ask for one without signing in, sign-in mails
-have **limits of their own**: per source address (§2.6.4) and an
+have **limits of their own**: per source address, per address (§2.6.4) and an
 instance-wide cap, `sign_in_max_per_hour` (#160 §16.2, default 60);
 over either, the request answers `202` as always and nothing is sent.
-Sign-in mails never count against the budget for security mails or the
-one for notifications, so no number of anonymous requests can delay an
+Sign-in mails never count against the budget for security mails, the
+mail factor's (§2.8.8) or the one for notifications, so no number of anonymous requests can delay an
 alert, a verification or the old-address notice — those are queued,
 never dropped (#160 §16.2). Subject `[Maity] Sign-in
 link`. Body:
@@ -2089,14 +2194,14 @@ HMAC with the signing key, never in clear.
 |---|---|
 | `POST /auth/device-codes` | 5 per 10 minutes per human |
 | `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 60 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
-| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security and notification mail |
-| `POST /auth/password-reset` (§2.10) | as `POST /auth/email-link`: 3 per 15 minutes and 10 per day per (address, source address), existing or not; 10 per hour per source address; reset mails sent across the instance at most `password_reset_max_per_hour` (§16.2, default 30) — a budget of their own, apart from sign-in, security and notification mail |
+| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; per address from all sources together, existing or not, places for 5 source networks per hour and 20 per day (a network: an IPv4 address, an IPv6 /64) and at most 50 mails per hour and 200 per day queued for it, counted at the request (below); 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security, mail-factor and notification mail |
+| `POST /auth/password-reset` (§2.10) | as `POST /auth/email-link`, in buckets of its own: 3 per 15 minutes and 10 per day per (address, source address), existing or not; per address from all sources together, existing or not, places for 5 source networks per hour and 20 per day and at most 50 mails per hour and 200 per day queued for it, counted at the request; 10 per hour per source address; reset mails sent across the instance at most `password_reset_max_per_hour` (§16.2, default 30) — a budget of their own, apart from sign-in, security and notification mail |
 | `POST /auth/password-reset/check`, `…/complete` | 10 per minute per source address, shared with the login limit of §2.1; a wrong TOTP or recovery code counts as §2.8.6 counts |
 | `POST /auth/email-code` | 5 wrong codes per mailed code; 20 wrong codes per human per day, after which every outstanding code of that human is void (§2.6.3); 10 per minute per source address, shared with the login limit of §2.1 |
 | Long-polls on `GET /auth/device-codes/{id}` and `GET /auth/device-login` | one per session or pending cookie; a second supersedes the first |
 
 Over a limit: `rate_limited` with `Retry-After` (§1.3). For
-`POST /auth/email-link` and `POST /auth/password-reset` the per-address limit and the instance cap are
+`POST /auth/email-link` and `POST /auth/password-reset` the per-address limits and the instance cap are
 applied as `202` with nothing sent, like an unknown address — a `429`
 there would tell an address that is being used from one that is not;
 only the per-source-address limit answers `429`. A caller who spends
@@ -2105,12 +2210,48 @@ for `POST /auth/password-reset` reset mails, for the rest of the hour,
 nothing else, and the device code and the password
 are unaffected.
 
-**No lock-out through the limits.** The per-address limit counts per
+**No lock-out through one source.** The pair limit counts per
 (address, source address), so requests from elsewhere do not spend the
-budget of the human's own network: someone who knows the address can
-fill the mailbox with sign-in mails (at most 10 per day per source
-address they control) but cannot spend the human's per-address budget
-nor void the human's link (§2.6.3). Whoever controls enough source
+budget of the human's own network, nor void the human's link (§2.6.3).
+Above it, an address has 5 places per hour and 20 per day for mails in
+answer to these requests, counted in source networks, not in mails. A
+network is a source address as the per-source limit counts it: IPv4 as
+it is, IPv6 by its /64. A network's first mail to the address in the
+window takes a place; its further mails take none and are held by its
+pair limit alone. A request counts only once its pair limit let it
+through, and a network the address had no place for holds none
+afterwards. A place is marked as held only once it was had, and the
+mark ends with the place, so concurrent requests from one network take
+no mail past it, and a network keeps at most one place once its
+requests are done: two or three of its first requests at once (its
+quarter limit) may each take one for that moment (longer when one of
+them stalls), and all but one give theirs back. The windows slide, so a place passes from one network to the
+next within an hour or a day; the mails themselves are therefore counted too: at most 50 of
+these mails are queued for an address in any hour and 200 in any day, from all
+networks together, and over that `202` and nothing is queued. Like every
+limit here these count requests when they are answered, not deliveries:
+the outbox sends what was queued within the path's instance cap below, so
+mails queued in different windows may arrive together after a delay. Four
+networks at their pair limits (10 a day each) ask for at most 40 in any
+hour or day, so the count never stops fewer than five. So through the
+limits per address one network can never spend the address's budget,
+nor can two to four: the human's own network still gets its mail, but
+for that moment of first requests at once. Beyond that moment, only
+requests from at least five distinct networks within the hour (twenty
+within the day) leave a further network without a place, or reach the
+count of the mails, until the window has passed; the human's sessions,
+the password and the device code are unaffected. The path's instance
+cap below is a separate bound across all addresses, which for resets
+and registration fewer networks can reach: at the defaults, three
+networks at their 10 requests an hour per source address spend the 30
+reset or registration mails of an hour, while the 60 sign-in mails
+take six; the owner's mail of that kind is then not sent either, until
+the hour has passed. The price is the mailbox: those 50 queued in any hour
+and 200 in any day, and never more sent in an hour than the path's instance cap, which is
+the outer bound across all addresses: `sign_in_max_per_hour` (default
+60) for sign-in links, `password_reset_max_per_hour` (default 30) for
+reset links, `registration_max_per_hour` (default 30) for registration
+mails (§2.7.3). Whoever controls enough source
 addresses can spend the instance cap and stop sign-in mails for
 everyone until the hour ends — the same accepted kind of denial as the
 device-code breaker above, limited to the mail link. Reset mails (§2.10)
@@ -2670,7 +2811,7 @@ contract. `GET /me` carries `member.terms` (§5.1) for a human.
 |---|---|
 | `POST /auth/register` per source address | 10 per hour; `rate_limited` (`429`) — the one limit that answers `429`, since it speaks only about the caller |
 | per (address, source address) | 3 per 15 minutes, 10 per day, existing account or not; over it `202` and nothing is sent |
-| per address, all sources | 20 per day; over it `202` and nothing is sent, so the instance cannot be used to fill a stranger's mailbox |
+| per address, counted in source networks | 5 networks per hour and 20 per day, as §2.6.4 counts them: a network's first mail to the address in the window takes a place, its further ones only its pair limit; and at most 50 mails queued for the address in any hour and 200 in any day from all networks, counted at the request, not at delivery; over either `202` and nothing is queued. No more are queued for a stranger's mailbox, and the instance sends never more than `registration_max_per_hour` registration mails an hour |
 | instance breaker | more than `MAITY_REGISTRATION_BREAKER` requests (default 120) per minute across the instance, every request counted: every `POST /auth/register` is `rate_limited` for a minute |
 | registration mails | `registration_max_per_hour` (§16.2, default 30), a budget of their own; over it `202` and nothing is sent |
 | completion | 5 wrong passwords per pending registration (then void); 10 completion attempts per minute per source address, shared with the login limit of §2.1 |
@@ -2680,9 +2821,15 @@ The breaker is the same accepted denial as the device-code breaker
 (§2.6.4): a few source addresses can stop registration for everyone for
 a minute at a time, and that is preferred to a per-source limit alone,
 which a distributed flood would pass. It never touches sign-in, mail
-of any other kind, or existing accounts. Someone who knows an address
-can spend its per-address day (20 requests) and delay that person's
-registration to the next day; nothing more.
+of any other kind, or existing accounts. One source network cannot
+spend an address's places, nor can up to four, but for the moment two
+or three first requests of one network run at once (§2.6.4); someone
+asking from at least five distinct networks in an hour (twenty in a
+day) can, and delays that person's registration to the end of that
+hour or day; nothing more. The registration mails' instance cap is a
+separate bound: at the default 30, three networks at their 10 requests
+an hour spend it, and no registration mail goes out until the hour has
+passed (§2.6.4).
 
 #### 2.7.4 Handle and display name
 
@@ -3036,7 +3183,7 @@ The sensitive calls:
 - the instance admin's changes of instance settings (`PATCH
   /admin/settings/*`, §2.6.6, §16), and of the limits of one project or
   one account (`PATCH /admin/projects/{owner}/{slug}/limits`, `PATCH
-  /admin/users/{id}/limits`, §16.5.1; not built yet, tsk-t63d50qy3s0k).
+  /admin/users/{id}/limits`, §16.5.1).
 
 Leaving a project is not among them (§6.2, "Leaving a project"), nor is
 leaving an organisation (§6.26) or an admin's removal of a member: those
@@ -3108,6 +3255,7 @@ environment winning as there:
 | Every TOTP or recovery code of an enrolled human, at the sign-in step, a step-up or a password reset | `MAITY_SECOND_FACTOR_WRONG_PER_DAY` wrong per human and UTC day (default 50, 10 to 10000). The first wrong code at or over it writes `second_factor_failed` (`method: daily_limit`, §2.8.2); from then on every such check of that human is `rate_limited` with `details.reason: daily_limit` and a `Retry-After` until the day ends, before the code is compared, so a right code is refused too, until the day ends or the human opens the link the alert's mail carries and presses its button (`/mail/second-factor-unlock/{token}`, §18.6): that starts the day's count again from zero, once per link. Nobody is refused before that alert is written: a count already over a cap lowered during the day lets the next code be compared, and a wrong one writes the alert. A password change voids the link and counts the alert as not written, so the next wrong code mails a new link. Codes of the mail factor (§2.8.8) and of a starting enrolment do not count |
 | `POST /auth/second-factor/totp` | 5 per hour per human |
 | `POST /admin/users/{id}/second-factor/reset` | 3 per day per human reset |
+| `POST /me/deletion` (§2.9) | 3 per hour per human, counted only for a request that passed every other check and mails the confirmation; the confirmation is security mail, so repeated requests cannot fill its budget |
 | `POST /auth/second-factor/email` (§2.8.8) | 3 per second-factor session, 10 per hour per human; the mail of the first factor counts as the first. Past the hourly limit the first factor still makes the second-factor session, but no mail is sent: `GET /auth/session` answers `mail: "rate_limited"` with `retry_after`, and a send is `rate_limited` |
 
 The per-human limit is a known denial of service: whoever holds the
@@ -3213,7 +3361,11 @@ from that session sends a new mail and voids the earlier link and
 code. The token is 32 random bytes in base64url; the hub stores token
 and code as HMAC-SHA-256 under `MAITY_MAIL_SIGNING_KEY`, never in a log
 or an event. The mail is no §18.6 page: §18.6's pages take no cookie,
-and this link needs the session's.
+and this link needs the session's. The mail factor's mails, the
+confirmation code of "Turning it on" included, count against a budget
+of their own, `second_factor_max_per_hour` (§16.2, default 60), which
+no other kind of mail spends; over it a mail is not sent (a late code
+is useless).
 
 **Only in the signing-in browser.** `POST /auth/second-factor/verify`
 `{email_token}` succeeds only on the second-factor session the token
@@ -3308,7 +3460,7 @@ without an operator's help.
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /me/export` | human only (agents `forbidden`, `humans_only`); a sensitive call (§2.8.4) | one JSON document, `Content-Disposition: attachment; filename="maity-export-<handle>-<date>.json"`; at most once per 10 minutes per account (`rate_limited`) |
-| `POST /me/deletion` | human only; the proof of §2.8.1 (password in the last 10 minutes, or the passwordless guard there); a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202` with `{"deletion": {requested_at, expires_at}}`; sends the confirmation mail below. `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` (§6.25) while a project in their namespace is not `archived`; `409 org_last_owner` (`details.orgs`, §6.26) while they are the last owner of an organisation; `409 last_instance_admin` when the caller is the instance's last admin (§16); `409 mail_not_configured` and `409 address_unverified` as for the mails of §2.8.3 |
+| `POST /me/deletion` | human only; the proof of §2.8.1 (password in the last 10 minutes, or the passwordless guard there); a sensitive call (§2.8.4) | `{"confirm": "<the caller's handle>"}`; `202` with `{"deletion": {requested_at, expires_at}}`; sends the confirmation mail below. `invalid` (`details.fields.confirm: "mismatch"`) when the handle is not the caller's; `409 namespace_owner` (§6.25) while a project in their namespace is not `archived`; `409 org_last_owner` (`details.orgs`, §6.26) while they are the last owner of an organisation; `409 last_instance_admin` when the caller is the instance's last admin (§16); `409 mail_not_configured` and `409 address_unverified` as for the mails of §2.8.3; `rate_limited` past 3 requests an hour (§2.8.6) |
 | `DELETE /me/deletion` | human only | withdraws a deletion that is not confirmed yet; `200 {"deletion": null}` |
 | `GET /me` | human | carries `deletion: {requested_at, expires_at}` while one is pending, else `null` |
 
@@ -3494,10 +3646,9 @@ parts. Like the sign-in mail it answers a request, so no mode, digest,
 quiet hours or hourly cap of notifications applies. It has a budget of
 its own, `password_reset_max_per_hour` (§16.2, default 30): over it the
 request answers `202` as always and nothing is sent. It never counts
-against the sign-in budget, from which the mail factor's mails are sent
-(§2.8.8), nor against the security or the notification budget, so
-anonymous reset requests can stop reset mails for the rest of the hour
-and nothing else. Subject `[Maity] Reset your password`. Body:
+against the sign-in budget, the mail factor's (§2.8.8), the security
+or the notification budget, so anonymous reset requests can stop reset
+mails for the rest of the hour and nothing else. Subject `[Maity] Reset your password`. Body:
 
 - the link `<MAITY_PUBLIC_URL>/sign-in/reset#<token>`, valid
   **30 minutes**. The token stands in the fragment, which no browser
@@ -3905,7 +4056,7 @@ member_join_limit` and `details.field` naming the field when broken:
 - the caller's agents in the project stay within
   `policy.member_agents_max` (default 3), else `forbidden` with
   `details.reason: member_agents_max` and `details.max`, and the quota
-  details of §6.31 (not built yet, tsk-spmhjqm7szag). What counts is
+  details of §6.31. What counts is
   the caller's distinct agent profiles that hold an active membership
   in the project or an open first join to it — a profile counts once,
   whether its first join is still open or already exchanged, and a
@@ -3965,7 +4116,7 @@ same way, with these differences:
   one, otherwise `policy.member_agents_max`, as for a member (below,
   "The outsiders of a project"); beyond it `forbidden` with
   `details.reason: member_agents_max` and `details.max` (and the quota
-  details of §6.31, not built yet, tsk-spmhjqm7szag). `GET` and
+  details of §6.31). `GET` and
   `DELETE` on `…/joins` show and revoke only the joins the caller
   created;
 - an outsider the project's admins blocked creates no join: `forbidden`,
@@ -4392,7 +4543,7 @@ person, one project and one trust and role, it is used once, and it expires.
   `invitation_address_mismatch`), and the hub mails the link when mail
   is enabled (§16.2; a notification mail of §18.5 with the inviter's
   display name, the project's name, the trust and role and the `note`, under the
-  recipient's security-mail budget); without mail, or without an
+  invitation budget, `invitation_max_per_hour`); without mail, or without an
   address, the inviter passes the `url` on themselves. Without an
   address, whoever holds the link may accept — the inviter's choice.
 - `handle` is optional and excludes `address` (both: `invalid`,
@@ -6436,7 +6587,7 @@ stay; `state_changed` is not emitted for the mapping.
 |---|---|---|
 | `preset` | `hierarchical`, `solo`, `pool`, `decentral`, `hybrid` | fills the fields below; `pool`, `decentral`, `hybrid` are named shells with the `hierarchical` filling until an experiment defines them |
 | `claim_policy` | `self-claim`, `assign-only` | may a member claim an open card itself |
-| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, never a release card (§6.7), and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
+| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, never a release card (§6.7) nor outsiders' work without its own approvals (§2.3, "Own approvals"), and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
 | `done_authority` | `holder`, `reviewer`, `tester`, `reviewer_and_tester`, `admin` | who moves a card from `review` to `done`: `reviewer` a holder of `tasks:review`; `tester` a holder of `tasks:test` — the project requires a test instead of a review; `reviewer_and_tester` both, as two signatures on the card (`approvals`, §6.4) — the project requires a review and a test. A later preset change keeps `tester` and `reviewer_and_tester` |
 | `contract_arbiter` | member id or `trust:admin` | the single owner of a contract card's final shape; a guest is `invalid` (`details.fields["policy.contract_arbiter"]: "guest"`, §2.3) |
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
@@ -6447,19 +6598,21 @@ stay; `state_changed` is not emitted for the mapping.
 | `spawn_consent_by` | `human`, `role` | kept, and since 2026-11-16 decides nothing: a placement proposal's consent request goes to the runner's owner, who alone answers it (§15.6). Before, it said who may answer that request: `human` (default) only humans with `requests:answer`; `role` every holder of `requests:answer`, agents included (a proxy only as a relay, §2.3). Set by a human with `members:admin`. A project that predates the field reads as `human`; a later preset change keeps it, as `signing`: a preset must not loosen who gives the go in passing |
 | `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking or removing a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting `MAITY_ON_RUNNER_REVOKE` (§16); `keep` is refused (`invalid`, `details.fields.on_runner_revoke: "stop_floor"`) when that setting is `stop_floor`. A project that predates the field reads as `inherit`; a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `takeover_window_minutes` | 5–1440, default 60 | how long a holder has to answer a takeover before the card moves, and how long a disputed one waits for a settlement before it is escalated (§6.19); a project that predates the field reads as 60; a later preset change keeps it |
-| `max_placements` | integer 0–1000 and at most its ceiling (§6.31), default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it. Set by a human with `project:admin` (not built yet, tsk-spmhjqm7szag: today an admin agent may set it too, and the bound is 0–1000 without a ceiling) |
+| `max_placements` | integer 0–1000 and at most its ceiling (§6.31), default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it. Set by a human with `project:admin` |
 | `max_reads_per_minute` | `inherit` (default), or an integer 60–100000 | reads one agent credential of the project may make per minute (§1.7 "Reads per credential"): `inherit` takes the instance's `max_reads_per_minute` (§16.5). A project may tighten the instance's value, not loosen it: a number above the instance's value is `invalid` (`details.fields["policy.max_reads_per_minute"]: "above_instance"`), and when the instance's value is lowered below a project's later, the lower of the two applies. A project that predates the field reads as `inherit`; a later preset change keeps it. Set by a human with `project:admin` |
-| `max_open_claims` | integer 1–1000 and at most its ceiling (§6.31; not built yet, tsk-spmhjqm7szag), or `null` (default) (the field and its check are not built yet, tsk-ybc2ma72dzvq: today the hub caps no claims) | claims one member may hold in the project, all its instances together, expired ones included (§6.5); `null` is no cap, unless an override's ceiling applies (§6.31; not built yet, tsk-t63d50qy3s0k). `claim_limit` beyond it. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin` |
+| `max_open_claims` | integer 1–1000 and at most its ceiling (§6.31), or `null` (default) (the field and its check are not built yet, tsk-ybc2ma72dzvq: today the hub caps no claims) | claims one member may hold in the project, all its instances together, expired ones included (§6.5); `null` is no cap, unless an override's ceiling applies (§6.31). `claim_limit` beyond it. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin` |
 | `coordinator` | agent member id of an admin agent, or `trust:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.12); `trust:admin` is the project's admin agents (§2.3, a proxy never), out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
 | `badge` | `off` (default), `members`, `agents_online` | whether `GET /badge/{owner}/{slug}.svg` serves the project's badge, and which count it shows (§6.20); `off` answers `not_found`. Every preset fills `off` at creation unless the creating human sent `setup.maity_badge: true` (§6.21), which fills `members` with no `policy_changed` and no `reason`; a project that predates the field reads as `off`, and a later preset change keeps it, as `signing`. Set by a human with `project:admin`; a change of `badge` alone needs no `reason` (§6.20) |
 | `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
-| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). `manager`, `ops`, `proxy`, `blue-team` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). A list stored while `blue-team` was allowed reads without `blue-team`, and the next write of the policy stores it so; an agent that holds `blue-team` falls back to `coder` as §6.2 says (the lead's decision of 2026-11-13, no migration). Until B.2 of §6.30 is contracted, a role on the list that reviews or tests gives such an agent no done authority and its review result stays a comment (§2.3, "Until B.2"). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
+| `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). `manager`, `ops`, `proxy`, `blue-team` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). A list stored while `blue-team` was allowed reads without `blue-team`, and the next write of the policy stores it so; an agent that holds `blue-team` falls back to `coder` as §6.2 says (the lead's decision of 2026-11-13, no migration). A role on the list that reviews or tests gives such an agent no done authority, and its review result never counts as an own approval (§2.3, "Own approvals"; `own_approvals` below). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
+| `own_approvals` | integer ≥ 1, default 1, no upper bound | how many own approvals (§2.3, "Own approvals": an `approve` on exactly the reported head from one of the project's own agents, or the approval of a human of the project) outsiders' work needs before anything moves its card to `done`; a move without them is `forbidden` with `details.reason: own_approvals`, `details.needed` and `details.counted`. Cards of the project's own members are not gated by it. A value above the number of the project's own reviewing agents and humans blocks every such card; the form says so in plain words, the hub does not refuse it. `0` is `invalid` (`details.fields.own_approvals`): work by outsiders always needs one (the maintainer's answer o1 to req-9wpst24yyz7a, B.2 of §6.30). Every preset fills 1 at creation, a project that predates the field reads as 1, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
+| `own_agents` | `owners`, `members` (default), or `{"owners_of": ["handle", …]}` | whose agents count as the project's own for `own_approvals` (§2.3, "Own approvals") **[Q11]**: `owners` the agents of the project's humans with trust `owner`; `members` the agents of every human member; `owners_of` the agents of the humans the owner picks, members or not (a handle that names no person is `invalid` with `details.fields.own_agents`). An agent with trust `outside`, and an agent of the owner of an agent that holds the card or filed its current report (the owner of every such outside agent included), never counts as the project's own, whatever the value. Humans of the project count whatever it says, except a human who owns such an agent (§2.3, "Own approvals"). Every preset fills `members` at creation, a project that predates the field reads as `members`, and a later preset change keeps it. Set by a human with trust `owner` only (`forbidden`, `owner_only`), with `reason`. It moves into the review setting of tsk-kymz2pdrf85k once that card is contracted |
 | `looking_for_coders` | `per_card` (default), `all`, `off` | under `agent_owners: anyone`, which `open` cards an outsider's agent (trust `outside`, §2.3) may claim: those with the card field `open_to_outsiders: true` (§6.4), every one, or none; a claim on any other is `forbidden` with `details.reason: not_open_to_outsiders` (§6.5, "An outsider's claim"). It limits claims only: an admin's `assign` to an outsider's agent is not bound by it. Every preset fills `per_card` at creation, a project that predates the field reads as `per_card`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q12) |
 | `outside_claims` | `human` (default), `agent`, `direct` | who confirms the claim of an outsider's agent (§6.5, "An outsider's claim"): `human` the confirmers who are humans; `agent` agent confirmers as well; `direct` nobody, the claim takes the card at once as any claim does. Every preset fills `human` at creation, a project that predates the field reads as `human`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason`; `agent` and `direct` only by a human with trust `owner` (`forbidden`, `owner_only`), and the form says in plain words that an agent then decides who works in the project, or nobody does (the maintainer's decision of 2026-11-14, Q27) |
-| `outside_claims_max` | `null` (default) or an integer ≥ 1, no upper bound | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
+| `outside_claims_max` | `null` (default) or an integer ≥ 1, no upper bound | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19, a claim that stays when a new head sends a card of outsiders' work back from `done` to `review`, §6.6) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
-| `member_agents_max` | 0 up to its ceiling, default ceiling 20 (§6.31; not built yet, tsk-spmhjqm7szag: today 0–20), default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
+| `member_agents_max` | 0 up to its ceiling, default ceiling 20 (§6.31), default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `keep_the_why` | `required`, `optional` | whether the hub makes sure every agent carries Keep the Why: the commitment at resume, the reminder, the owner's request and `why` on code reports (§6.23). Reads `required` while `memory.provider` is `keep-the-why` and nobody set it, `optional` under `none` (where `required` is `invalid`); a project that predates the field reads as `required` under `keep-the-why`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
@@ -7211,13 +7364,16 @@ let an agent work. `policy.agent_owners` (§6.1) says which:
   `ops`, whatever the list says (§6.1; B.1 of §6.30). A role on the
   list that reviews or tests (`reviewer`, `tester`, `red-team`,
   `purple-team`, a project role on `reviewer` or `tester`) is held, but
-  until B.2 of §6.30 is contracted it gives no done authority to an
-  agent with trust `outside` or whose owner is no member — an
-  outsider's agent whose owner has since become a member included: its
-  review result (§8.4) moves no card under `done_authority` (§6.1) and
-  counts for no review requirement, it stays a comment, and it moves no
-  card from `review` and signs no approval (§2.3, "Until B.2"), so the
-  project's own members keep the say over what outsiders deliver. A
+  it gives no done authority to an agent with trust `outside` or whose
+  owner is no member — an outsider's agent whose owner has since become
+  a member included: by that role it moves no card from `review` and
+  signs no approval (a holder's done authority under `done_authority:
+  holder` is the holder's, §2.3, "Own approvals"), and its review
+  result (§8.4) never counts as an own
+  approval; the work such an agent delivers goes to `done` only with
+  the own approvals of `policy.own_approvals` (§2.3, "Own approvals";
+  B.2 of §6.30), so the project's own members keep the say over what
+  outsiders deliver. A
   trust, role or `outside_roles` change that would break this is
   `invalid`: on the member's `PATCH`
   `details.fields.role: "outside_owner"` or `details.fields.trust:
@@ -7682,6 +7838,22 @@ or role change, a project role's new base, a trust an organisation's
 ownership raises, the lift of an isolation) first clears what no longer
 counted before it; a signature whose signer no longer stands is
 not counted when the next one is given.
+Outsiders' work — a card an outside agent holds or whose current report
+it filed, judged as it stands at each check — moves to `done` only with
+the own approvals of `policy.own_approvals` (§2.3, "Own approvals"):
+every move to `done` above, the last signature under
+`reviewer_and_tester` and the holder's `in_progress→done` under
+`done_authority: holder` included, is `forbidden` with
+`details.reason: own_approvals` until it has them. The gate runs after
+the done-authority check, which it never replaces.
+`done` does not go back: no `PATCH` leaves it, and the hub moves a card
+out of `done` in one case only, a report with a new head on outsiders'
+work whose pull request is not merged. That case has two outcomes: the
+hub's own `done→review` while the holder may take a claim now under
+§2.3, §6.2 and §6.5, and the card's `claim.instance`, if any, is
+active, or the §6.17 chain from it ends in an active instance; otherwise
+its own `done→open`, which releases that claim (§6.6, "A report on a
+`done` card").
 On a card under an objection hold (§6.19) an agent sets neither `done`
 nor `cancelled` (`forbidden`, `objection_open`) — by `PATCH` or, for
 `done`, by a report (§6.6: there the card goes to `review` instead);
@@ -8190,15 +8362,17 @@ and with the project.
   after expiry (by an agent, recorded as a `lease_expired` takeover).
 - `claim_limit` (409, `details.limit`, `details.count`) when the project's
   `max_open_claims` (§6.1) is set, or an override's ceiling applies to
-  its `null` (§6.31; not built yet, tsk-t63d50qy3s0k), and the member who would hold the claim
+  its `null` (§6.31), and the member who would hold the claim
   holds that many claims in the project already, all its instances
   together, expired ones included, since nothing is released
   automatically; an admin's claim on another's behalf counts for that
   member. Count and claim are one atomic step per member, so at
   `limit − 1` two concurrent claims yield one claim and one
   `claim_limit`. A claim that comes to a member otherwise — a takeover
-  (§6.19), the claims a replacement inherits (§6.17) — is not refused and
-  counts from then on. Lowering the value releases nothing.
+  (§6.19), the claims a replacement inherits (§6.17), a claim that
+  stays when a new head sends a card of outsiders' work back from
+  `done` to `review` (§6.6) — is not refused and counts from then on.
+  Lowering the value releases nothing.
 - Lease: `lease_until = now + policy.lease_seconds`, renewed to the same
   length by any authenticated call of the holding membership (not only
   calls on this card), except the events long-poll and a conversation
@@ -8418,7 +8592,7 @@ POST /projects/{owner}/{slug}/tasks/{id}/report
   "pr_status": "found",
   "pr_unknown_reason": null,
   "code": true,
-  "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
+  "why": { "ref": "context/reports.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
   "done": false
 }
 ```
@@ -8449,7 +8623,7 @@ Stored on the card as `report`:
   "observed": { "pr_state": "open", "pr_head_sha": "d91e294c…", "checks": "success",
                 "required_check": { "name": "ci-ok", "status": "success" },
                 "branch_head_sha": "d91e294c…", "observed_at": "…" },
-  "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
+  "why": { "ref": "context/reports.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
   "revision": 2, "mismatch": false }
 ```
 
@@ -8546,7 +8720,14 @@ the card's `approvals` stay. Every replacement clears `approvals`
   reports again without `done`. On a card under an objection hold
   (§6.19) a report with `"done": true` by an agent is stored and moves
   the card to `review`, not `done`, whatever done authority the agent
-  holds; a human then decides.
+  holds; a human then decides. Likewise, once the done-authority check
+  above has passed, a report with `"done": true` on outsiders' work
+  that lacks the own approvals of `policy.own_approvals` is stored and
+  moves the card to `review`, not `done` (§2.3, "Own approvals"); under
+  `done_authority: holder` this is an outside holder's report with
+  `"done": true` from `in_progress`. A caller without done authority is
+  refused as above whatever the card's approvals, and nothing is
+  stored: the rule never stands in for done authority.
 - **A report on a `done` card.** A card can reach `done` while its pull
   request is still open (a reviewer closes it on approval) and the branch
   then moves on: a rebase after a conflict, a fix asked for at the
@@ -8561,6 +8742,44 @@ the card's `approvals` stay. Every replacement clears `approvals`
   has no effect. Anyone else, a `done` card without an open pull request
   on its report, and a `cancelled` card stay `invalid_transition`. The
   maintainer's decision of 2026-10-23 (`context/reports.md`).
+  One exception, for outsiders' work only (§2.3, "Own approvals"): when
+  the new report's `head` differs from the one it replaces, the card
+  leaves `done`, to `review`, or to `open` when its claim is released
+  (below), since its pull request is open and the new
+  head has none of its own approvals. Whether it is outsiders' work is
+  judged at this report, as the card and its members stand now (§2.3).
+  `closed_at` is cleared, and `"done"` in the body still has no effect.
+  The claim the closed card kept as a record goes through the checks of
+  a claim again: it stays only while the holder may take a claim now
+  under §2.3, §6.2 and §6.5, and its `claim.instance`, if any, is
+  active, or the §6.17 chain from it ends in an active instance, which
+  the claim then names. Otherwise the hub
+  releases it, and the card goes to `open` with `claim: null`, as on
+  every other release, not to `review`: the new report stays on it as
+  the record, whoever claims it next reports again, and its move to
+  `done` passes the gate of "Own approvals". A claim
+  that stays is not refused by `max_open_claims` or
+  `outside_claims_max` and counts from then on (§6.1; §6.5,
+  `claim_limit`). It is a change the hub makes on its own (§6.15): no
+  history entry, and beside `task_reported` the `task_updated` that
+  every status change emits, with `fields: ["status", "claim"]` when the
+  claim is released and `fields: ["status"]` when it stays. A released
+  claim also emits `task_released`, with the old holder in its audience
+  as `POST …/tasks/{id}/release` gives it (§6.5, §8.2); it wakes the
+  old holder's instance only when that instance is active and not
+  isolated, since an isolated member is left out of every audience
+  (§6.2) and the `instance:` token of an instance revoked without a
+  successor wakes nobody (§8.2). The
+  lead's decisions of 2026-11-18 (seq 161032; seq 161138 for
+  `task_released`; seq 161572 for the card `open`, so that no card is
+  left in `review` that nobody holds or can claim). The approvals given
+  on the old
+  head stay with that head and count for nothing on the new one; the
+  card goes to `done` again only through the gate of "Own approvals".
+  A report with
+  the same `head` leaves it `done`, and a card that is not outsiders'
+  work stays `done` as above. The lead's decision of 2026-11-15
+  (`context/members.md`, B.2).
 - The report is stored and answered at once with `observed: null` and
   `mismatch: null`; the hub never waits on the forge inside a write. When
   the probe is configured it then reads the branch head (`?branch=`) and,
@@ -8596,8 +8815,10 @@ the card's `approvals` stay. Every replacement clears `approvals`
   `done_authority` `holder` or `admin`. Under `reviewer`, `tester` and
   `reviewer_and_tester` the project asks for a review or a test, which a
   merge is not (the holder can merge on the forge themself), so there
-  `auto` acts as `notify`. It closes only when no dependency or child is
-  open (an open child counts as `dependencies`, as for
+  `auto` acts as `notify`. It acts as `notify` too on outsiders' work
+  without its own approvals on the reported head (§2.3, "Own
+  approvals"), a card a new head sent back from `done` included. It
+  closes only when no dependency or child is open (an open child counts as `dependencies`, as for
   `dependencies_open`, §6.4), no objection hold is on it (§6.19) and the
   card is not a release. A release card is never closed by a merge, ready
   or not: it closes through its readiness gate (§6.7), which the releaser
@@ -8729,7 +8950,10 @@ The `release` object on the card:
   items done. Without a probe `ready` is `false` with the single reason
   `probe_not_configured`; a release in such a project can be `cancelled`
   but not `done`. Reasons and their detail keys: `probe_not_configured`
-  (none), `task_open` (`task`), `pr_open` (`pr`), `pr_unverified` (`pr`;
+  (none), `task_open` (`task`; a shipped card of outsiders' work that a
+  new head sent back from `done` to `review` or `open` is one, §6.6),
+  `pr_open`
+  (`pr`), `pr_unverified` (`pr`;
   typed or reported, no observation yet), `pr_not_found` (`pr`; observed,
   and the forge has no such pull request — a typo in a typed number, or a
   repository that moved), `pr_mismatch` (`pr`),
@@ -10203,7 +10427,9 @@ change a member makes to a card's fields is one entry per field:
 - `task_updated` carries `fields`: the names of the fields that changed
   (`["title", "body"]`, `["links"]`, `["rank"]`), with `history` — the
   ids of the entries this write recorded, empty for `rank`, a checklist
-  tick (§6.7) and a merge's auto-close (§6.6) — and the new
+  tick (§6.7), a merge's auto-close and the move of outsiders' work back
+  from `done` on a new head, to `review` or, with its claim released, to
+  `open` (§6.6) — and the new
   values of every changed field except `body`, which the reader fetches
   from the card or the history. For `links` the value is the change,
   `{"added": <link>}` or `{"removed": <link>}`, not the whole list.
@@ -10596,7 +10822,7 @@ view (§6.2) and in the resume packet (`membership.agent`, §5.2):
 
 | Field | Values | Meaning |
 |---|---|---|
-| `max_instances` | 1 up to its ceiling, default ceiling 16 (§6.31; not built yet, tsk-spmhjqm7szag: today 1–16), default 1 | active (not revoked) instances the membership may have; a join with `new_instance` beyond it is `instance_quota` at creation and again at the exchange. Lowering it below the current count revokes nothing: it only refuses new ones |
+| `max_instances` | 1 up to its ceiling, default ceiling 16 (§6.31), default 1 | active (not revoked) instances the membership may have; a join with `new_instance` beyond it is `instance_quota` at creation and again at the exchange. Lowering it below the current count revokes nothing: it only refuses new ones |
 | `distribution` | `free` (default), `lead`, `round_robin` | how cards assigned to the agent reach an instance: `free` — any instance claims them, and `assigned_instance` stays `null` unless `assign` names one; `lead` — the lead instance (or a human with `tasks:admin`) sets `assigned_instance`, and the other instances claim only cards assigned to them; `round_robin` — when a card is assigned to the agent, the hub sets `assigned_instance` to the next instance in order of `created_at`, skipping revoked, paused and dormant ones, preferring those `online` |
 | `lead_instance` | an instance id or `null` | the agent's lead instance; required while `distribution` or `wake` is `lead` (`invalid`, `details.fields.agent.lead_instance: "required"`); never a dormant instance (`details.fields.agent.lead_instance: "dormant"`, §6.17) |
 | `wake` | `all` (default), `lead`, `next_free` | which instance an event addressed to the agent wakes (§8.2): every listening instance; only the lead; or one instance — the listening instance holding the fewest claims, ties to the one idle longest. The others can still read the event; they are not woken. A dormant instance (§6.17) is woken by none of the three |
@@ -12555,10 +12781,9 @@ where each one landed); no question is open. Nothing in it is built.
 It is split into three contract changes, each moved into the sections
 it changes: **A** the visitor tab, an outsider's agents and the
 confirmation of their claims, contracted (below, "A"); **B** the
-project settings for outsiders, contracted but for B.2 (below, "B");
-**C** reputation and external reviewers. What is not contracted
-changes no rule of §1.3, §2.3, §3.1, §6.1, §6.2, §9.2 or §16.9 until it
-is; until B.2 is, the fail-closed values of §2.3, "Until B.2", hold.
+project settings for outsiders, contracted (below, "B"); **C**
+reputation and external reviewers. What is not contracted changes no
+rule of §1.3, §2.3, §3.1, §6.1, §6.2, §9.2 or §16.9 until it is.
 
 The flow it serves, as the maintainer described it (2026-11-13): an
 owner says the project is looking for coders; someone opens the project
@@ -12585,7 +12810,8 @@ a trust of its own with the mechanisms of this section **[Q5]**. An
 *outsider's agent* is an agent whose profile's owner is an outsider
 (§6.2, "An agent whose owner is no member"). A *contributor* is an
 outsider whose work the record of C.1 counts in the project **[Q4]**.
-The project's *own agents* are those B.2 names **[Q11]**.
+The project's *own agents* are those `policy.own_agents` names (§6.1;
+B.2) **[Q11]**.
 
 #### The maintainer's answers (2026-11-14)
 
@@ -12714,7 +12940,7 @@ refer to it under the numbers below:
 | A.7 telling the outside owner **[Q24]** | §6.5, "An outsider's claim" |
 | A.8 sponsor link **[Q8]** | §6.1, "Sponsor link"; §16.9 |
 | A.9 when the project stops being public **[Q26]** | §2.3, §3.1, §5.1, §6.1 and §6.5, each where it applies |
-| A before B: the fail-closed values | §2.3, "Until part B", replaced by "Until B.1 and B.2" when B was contracted, and by "Until B.2" when B.1 was |
+| A before B: the fail-closed values | §2.3, "Until part B", replaced by "Until B.1 and B.2" when B was contracted, by "Until B.2" when B.1 was, and by "Own approvals" when B.2 was |
 | the lead's decisions of 2026-11-14: trust `outside` only from the outsider path; `expired` for a lapse; `max_starred_per_human` at most 1000 | §2.3, "Outside"; §6.5, "An outsider's claim"; §5.1, "Stars", §16.5 |
 
 Two pieces of A stay here and move with part C, since they rest on the
@@ -12726,12 +12952,11 @@ claim and to the humans with trust `owner`, whatever the agent owner's
 the confirmation; `docs/agents.md` on what an outsider's agent sees
 when its claim waits) come with the code pull requests.
 
-#### B. The project settings for outsiders (contracted but for B.2)
+#### B. The project settings for outsiders (contracted)
 
 Part B is contracted into the live sections by the pull request of
-tsk-yr3ckca01b9q for part B and its pull request for B.1, except B.2
-(below); the live text
-is the rule, and C refers to it under the numbers below. There is no
+tsk-yr3ckca01b9q for part B and its pull requests for B.1 and B.2
+(below); the live text is the rule, and C refers to it under the numbers below. There is no
 B.5: it was the switches for what an outsider reads (`outside_views`),
 which the answers to Q3, Q13 and Q23 removed, since a public project
 has no private areas.
@@ -12742,8 +12967,9 @@ has no private areas.
 | B.4 `looking_for_coders` and the card field `open_to_outsiders` **[Q12]** | §6.1, the policy table and "What the project allows"; §6.4; §6.5, "An outsider's claim"; §2.3, "Outside", and §1.3 `outside_trust` |
 | B.6 `outside_claims_max` **[Q15]** | §6.1, the policy table; §6.5, "An outsider's claim"; §1.3 |
 | B.7 the outsiders of a project **[Q9]**, **[Q14]** | §3.1, "An outsider's agent" and "The outsiders of a project"; §6.1, "What the project allows"; §1.3, `owner_only` among them; §12 |
-| B.1 `outside_roles` **[Q10]**: every role but `manager`, `ops`, `proxy` and `blue-team` (req-gz27mawemtvk, req-nyfb57avd4j3); tsk-jf0m1t0fa6a9 | §6.1, the policy table; §6.2, "An agent whose owner is no member"; §2.3, "Outside" and "Until B.2"; §3.1, "An outsider's agent", and the bridge's limit in §2.3, "The bridge", which follow the list |
-| the fail-closed values until B.2 | §2.3, "Until B.2" |
+| B.1 `outside_roles` **[Q10]**: every role but `manager`, `ops`, `proxy` and `blue-team` (req-gz27mawemtvk, req-nyfb57avd4j3); tsk-jf0m1t0fa6a9 | §6.1, the policy table; §6.2, "An agent whose owner is no member"; §2.3, "Outside" and "Own approvals"; §3.1, "An outsider's agent", and the bridge's limit in §2.3, "The bridge", which follow the list |
+| B.2 `own_approvals` and `own_agents` **[Q11]**: outsiders' work only, an `approve` on exactly the reported head from an own agent or a human of the project's approval (req-9wpst24yyz7a, o1) | §2.3, "Own approvals"; §6.1, the policy table and `merged_closes`; §6.2, "An agent whose owner is no member"; §6.4, the transitions; §6.5, `claim_limit`; §6.6, the report's effect, a report on a `done` card and `merged_closes`; §6.7, `task_open`; §6.15, `task_updated`; §1.3 `own_approvals` and `owner_only` |
+| the fail-closed values until B.2, now ended | §2.3, "Until B.2", replaced by "Own approvals" |
 
 `contributions` in the items of `GET …/outsiders`, which §3.1 ("The
 outsiders of a project") leaves out until part C, rests on the record
@@ -12761,23 +12987,39 @@ owners from outside as decided on 2026-11-13 (req-nyfb57avd4j3).
 holds it falls back to `coder` rather than being isolated (§6.1, §6.2,
 "An agent whose owner is no member"; the lead's decision of
 2026-11-13, seq 135670). The roles that review and test are open to
-outsiders, but until B.2 is contracted what they check or approve
-counts for nothing (§2.3, "Until B.2").
+outsiders; what they check counts as B.2 says (below).
 
-**B.2 (proposed).** It stays here until what counts as an approval of
-a pull request is settled: B.2 gates the move to `done` on approvals
-the hub does not count today (it stores a `review_result` and counts
-none as an approval, §8.4; `done_authority` names who moves a card,
-§6.1; the review setting of tsk-kymz2pdrf85k is not designed yet).
-Each of its fields is a field of `policy` (§6.1), set with `reason` by
-a human with `project:admin` unless the table says otherwise; every
-preset fills the default at creation, a project that predates the
-field reads as the default, and a later preset change keeps it.
-
-| Field | Values | Meaning |
-|---|---|---|
-| `own_approvals` (B.2) | integer ≥ 0, default 1, no upper bound | how many approvals of a pull request must come from the project's own agents before the done authority may move its card to `done`; an outsider's review result counts toward the rest, where B.1 lets the outsider review. A value above the number of the project's own reviewing agents blocks every merge; the form says so, the hub does not refuse it |
-| `own_agents` (B.2) | `owners` (only the agents of the project's humans with trust `owner`), `members` (default; the agents of every human member), or `{"owners_of": ["handle", …]}` (the agents of the humans the owner picks, members or not) | whose agents count as the project's own for `own_approvals` **[Q11]**; set by a human with trust `owner` only. It moves into the review setting of tsk-kymz2pdrf85k once that card is contracted |
+**B.2**, `own_approvals` and `own_agents`, is contracted (table
+above): the maintainer answered req-9wpst24yyz7a with o1 (2026-11-15).
+`own_approvals` applies only to outsiders' work, a card an outside
+agent holds or whose current report it filed, judged at each check:
+such a card goes to `done` only with an approval from one of the
+project's own agents (an `approve` on exactly the reported head) or
+from a human of the project; every other card is unchanged. The plan's
+integer stays, default 1, but never below 1, since o1 asks for one
+approval on every such card; `own_agents` stays as the plan had it
+(**[Q11]**, set by trust `owner` only, moving into the review setting
+of tsk-kymz2pdrf85k later), and an agent with trust `outside` or of the
+owner of an agent that holds the card or filed its current report never
+counts as own. A human of the project is a human member, not isolated,
+with `tasks:review` or `tasks:test`, the standing a signature in
+`approvals` needs, who owns no agent that holds the card or filed its
+current report. A role that reviews or tests gives an outside agent no
+done authority, as B.1 says; under `done_authority: holder` an outside
+holder is its card's done authority like any holder, and each of its
+moves to `done`, `in_progress→done` included, first passes the
+`own_approvals` gate (the lead's decision of 2026-11-18, seq 161052).
+Its review result is no longer only a comment, may count for a review
+requirement other than `own_approvals`, and never counts as an own
+approval (§2.3, "Own approvals"). A `done` card of outsiders' work on
+which a report brings a new head while its pull request is not merged
+goes back to `review` (the lead's decision of 2026-11-15, §6.6), its
+claim kept only while the holder may take a claim now and its
+`claim.instance`, if any, or the end of the §6.17 chain from it, is
+active (§6.6; seq 161032, and seq 161910 for the check); when
+the hub releases the claim, the card goes to `open` instead, as on
+every other release, keeping the new head as its report (seq 161572);
+every other card stays `done`.
 
 #### C. Reputation and external reviewers (proposed)
 
@@ -12819,13 +13061,12 @@ approvals count as B.2 allows.
 
 ### 6.31 Limits
 
-Not built yet, tsk-spmhjqm7szag and tsk-t63d50qy3s0k: today the hub
-has none of this section. `placement_quota` and `instance_quota` carry
-`details.max` alone, a `capacity` report carries no numbers, and no
-ceiling, override or `GET …/limits` exists; the bounds are fixed (§6.1,
-§6.18). `max_open_claims` and `claim_limit` are not built themselves
-(tsk-ybc2ma72dzvq): today the hub has neither the field nor the check,
-and no claim is ever refused for a count.
+`max_open_claims` and `claim_limit` are not built yet (tsk-ybc2ma72dzvq):
+today the hub has neither the field nor the check, and no claim is ever
+refused for a count. Until then an override of `max_open_claims`
+(§16.5.1) is stored and shown but applies to nothing, and the overview
+below leaves `max_open_claims` out. `maity runner` does not send a
+`capacity` report's `quota` yet (§15.7, tsk-spmhjqm7szag).
 
 Four values of a project limit what it may hold, each set by someone
 inside the project:
@@ -12867,8 +13108,10 @@ the project.
   one agent adds to it within what one answer carries.
 - **A value above its ceiling** in a `PATCH` is `invalid`,
   `details.fields["policy.max_placements"]: "above_ceiling"` (for
-  `max_instances` `details.fields["agent.max_instances"]`) with
-  `details.ceiling` the ceiling in effect.
+  `max_instances` `details.fields["team.max_instances"]`, the name the
+  hub takes the rulebook under in `PATCH …/members/{id}`) with
+  `details.ceiling` the ceiling in effect; with several fields above
+  their ceilings, `details.ceiling` is the first one's.
 - **`max_open_claims` `null`** stays no cap, as before ceilings: the
   default ceiling and `unlimited` leave it so. Only a ceiling an
   override sets to a number applies to it, with `source: "ceiling"`, so
@@ -12898,9 +13141,9 @@ the project.
 | `count` | what the scope holds now and counts toward it |
 | `max` | the same number as `limit`, kept for clients that read `placement_quota` and `instance_quota` before this section |
 | `scope` | `project`, `member` (with `member`, the member id: `member_agents_max` is per human, `max_open_claims` and `max_instances` per membership), `runner` (with `runner`, its id) or `target` (with `runner` and `target`, its name) |
-| `source` | where `limit` comes from: `default`; `project` (set in the project's policy); `agent_owner` (`max_instances`); `runner` (the runner's configuration); `ceiling` (the set value is above the ceiling, or `max_open_claims` is `null` under an override's ceiling, and the ceiling applies). `limit` is always the value in effect, also to a caller who reads `ceiling` without its `value` (below): what applies to the caller is shown, what the operator set beyond it is not |
+| `source` | where `limit` comes from: `default` (the stored value is the starting value, 8 for `max_placements`, 3 for `member_agents_max`, 1 for `max_instances`: the hub does not tell a value nobody set from the same value set again); `project` (set in the project's policy); `agent_owner` (`max_instances`); `runner` (the runner's configuration); `ceiling` (the set value is above the ceiling, or `max_open_claims` is `null` under an override's ceiling, and the ceiling applies). `limit` is always the value in effect, also to a caller who reads `ceiling` without its `value` (below): what applies to the caller is shown, what the operator set beyond it is not |
 | `ceiling` | `{value, source}`: `value` the ceiling in effect, `source` `default`, `project_override` or `account_override`; absent for `max_agents`, which the hub does not bound. A caller who does not hold the right that sets the value reads `source` alone, without `value`: an override is a number the operator set for an account, and only those who set the value need it |
-| `raise` | `{right, path, field}`: the right that can change the value (`project:admin`, `agent_owner`, `runner_owner`, or `instance:admin` once `limit` is at the ceiling, with the `max_open_claims` exceptions below), and the API path and field that change it — for `instance:admin` always `/api/v1/admin/projects/{owner}/{slug}/limits` and the value's own name, never the account route, whose path would name a person; `null` only when nothing lifts `limit`: while it is `null` (a `max_open_claims` without a cap), and at the hub's bound of 1000 for `max_placements`, `member_agents_max` and `max_instances`. `max_open_claims` at 1000 goes by the stored value: a stored `null` held by an override's numeric ceiling names `instance:admin` (`unlimited`, or removing the override); a stored number with no numeric override names `project:admin` and `policy.max_open_claims` (as `policy.max_placements` above), an exception to `instance:admin` once `limit` is at the ceiling, since `null` lifts it to no cap; a stored number under an override's numeric ceiling of 1000 names `project:admin` too (setting `null`), and the cap only goes once `instance:admin` also lifts the override; `max_agents`, which the hub does not bound, always names `runner_owner`; `path` is `null` where the hub cannot change it (the runner's configuration, `field` then names its key, `limits.max_agents` or `backend.ssh.hosts[].max_agents`) |
+| `raise` | `{right, path, field}`: the right that can change the value (`project:admin`, `agent_owner`, `runner_owner`, or `instance:admin` once `limit` is at the ceiling, with the `max_open_claims` exceptions below), and the API path and field that change it — for `agent_owner` `/api/v1/projects/{owner}/{slug}/members/{id}` and `team.max_instances`, for `instance:admin` always `/api/v1/admin/projects/{owner}/{slug}/limits` and the value's own name, never the account route, whose path would name a person; `null` only when nothing lifts `limit`: while it is `null` (a `max_open_claims` without a cap), and at the hub's bound of 1000 for `max_placements`, `member_agents_max` and `max_instances`. `max_open_claims` at 1000 goes by the stored value: a stored `null` held by an override's numeric ceiling names `instance:admin` (`unlimited`, or removing the override); a stored number with no numeric override names `project:admin` and `policy.max_open_claims` (as `policy.max_placements` above), an exception to `instance:admin` once `limit` is at the ceiling, since `null` lifts it to no cap; a stored number under an override's numeric ceiling of 1000 names `project:admin` too (setting `null`), and the cap only goes once `instance:admin` also lifts the override; `max_agents`, which the hub does not bound, always names `runner_owner`; `path` is `null` where the hub cannot change it (the runner's configuration, `field` then names its key, `limits.max_agents` or `backend.ssh.hosts[].max_agents`) |
 
 `raise` names a right and a place, never a person: who holds the right
 is not in it. A caller who lacks the right reads that a limit applies
@@ -12919,8 +13162,7 @@ GET /projects/{owner}/{slug}/limits
     "max_placements": { "limit": 8, "source": "default", "count": 3,
                         "ceiling": { "value": 1000, "source": "default" },
                         "editable": true, "raise": { "…": "" } },
-    "member_agents_max": { "limit": 3, "source": "default", "count": 1, "…": "" },
-    "max_open_claims": { "limit": null, "source": "default", "count": 2, "…": "" } },
+    "member_agents_max": { "limit": 3, "source": "default", "count": 1, "…": "" } },
   "agents": [
     { "member": "agt-23ghr1hc6qxx", "handle": "coder",
       "max_instances": { "limit": 3, "source": "agent_owner", "count": 3, "…": "" },
@@ -14548,7 +14790,7 @@ does not show what the listing hides.
 **Quota.** Each project holds at most the limit
 `max_attachment_storage_per_project` (§16.5; bytes, default 1 GiB, or
 `unlimited`; or the value the instance admin set for this project,
-§16.5.1, not built yet, tsk-t63d50qy3s0k) of stored attachments, pending ones included, counted after
+§16.5.1) of stored attachments, pending ones included, counted after
 re-encoding; deleted ones free their bytes. An upload that would exceed
 it is `attachment_quota` with `details: {"used": …, "quota": …}`, and
 nothing is stored; under `unlimited` the project scope refuses nothing.
@@ -17143,8 +17385,9 @@ second source, for a forge setup where an App cannot be installed.
   dashboard asks for read-only permissions on the chosen repositories
   and says that the hub never writes (§11), which holds whatever the
   token could do. Without that key it is `409
-  secret_key_missing`. It answers `{configured: true, login}`; the token
-  is never returned.
+  secret_key_missing`. When the forge does not answer the check it is
+  `503 forge_unavailable`, and nothing is stored. It answers
+  `{configured: true, login}`; the token is never returned.
 - `DELETE /me/forge/github/token` (human) removes it.
 - A token the forge refuses later sets `status: "rejected"` and the
   reason `token_rejected`; the hub does not try it again until it is replaced.
@@ -17631,7 +17874,7 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/resolve` | `tasks:admin` / creator | 6.16 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/redact` | `events:admin` | 6.16 |
 | GET | `/projects/{owner}/{slug}/probe` | `project:read` | 11 |
-| GET | `/projects/{owner}/{slug}/limits` (not built yet, tsk-spmhjqm7szag) | `project:read` | 6.31 |
+| GET | `/projects/{owner}/{slug}/limits` | `project:read` | 6.31 |
 | GET, POST | `/runners/enrollments` | human | 15.2 |
 | DELETE | `/runners/enrollments/{id}` | the creator | 15.2 |
 | POST | `/runners/pair/{token}` (and `/r/{token}` outside the API, `not_found`) | — | 15.2 |
@@ -17755,7 +17998,7 @@ and `resolveEntry`, and any write.
 | GET, POST | `/me/cross-chats/{id}/messages` | the owner or a current participant / the owner or a participant of an open chat | 9.5 |
 | POST | `/me/cross-chats/{id}/messages/{message_id}/redact` | the owner | 9.5 |
 | GET, PATCH | `/admin/settings/limits` | instance admin | 16.5 |
-| GET, PATCH | `/admin/projects/{owner}/{slug}/limits`, `/admin/users/{id}/limits` (not built yet, tsk-t63d50qy3s0k) | instance admin | 16.5.1 |
+| GET, PATCH | `/admin/projects/{owner}/{slug}/limits`, `/admin/users/{id}/limits` | instance admin | 16.5.1 |
 | GET | `/admin/statistics` | instance admin | 16.6 |
 | GET | `/landing` | — | 16.7 |
 | GET | `/site/chrome` | — | 16.7.5 |
@@ -18551,9 +18794,11 @@ clone Z. It is the only thing the hub asks of a runner.
   those joined by hand included), plus its active placements that hold
   no live credential yet (before their first pickup, or waiting to
   rejoin), plus one for the new placement unless it carries a
-  credential over (below), stay within `max_instances`. Otherwise
+  credential over (below), stay within `max_instances` in effect, its
+  ceiling included, the same value a join meets (§6.31). Otherwise
   `instance_quota` (409, `details.max` and the quota details of §6.31,
-  not built yet, tsk-spmhjqm7szag), and nothing is created. The
+  the ceiling's `value` to the agent profile's owner only), and nothing
+  is created. The
   pickup checks again (§15.9). Neither a replacement's new placement
   nor its instance counts while the replacement is open or the old
   instance is kept (`keep_old`, §15.14; the replacement is not built
@@ -18628,9 +18873,13 @@ stopped` a `failed` or a final `exit` ends it as surely as `stopped`.
 `DELETE` of a placement that is already closing closes it at
 once (`removed`), whatever the runner last reported: the escape when a
 runner never reports. `DELETE` of a
-placement whose consent request is open closes it at once (`removed`)
-and withdraws the request. The hub never deletes a workspace; the
-runner will remove it once the placement has stopped for its retention
+placement whose consent request is open withdraws the request
+(§15.6). A creation not yet approved (`approval.status` not
+`approved`) then closes at once (`removed`): the runner never saw it.
+An approved placement whose open request is a change of its spec is
+not unapproved: the change is dropped (`pending_change` cleared) and
+the placement closes the uniform way, as in the table above. The hub
+never deletes a workspace; the runner will remove it once the placement has stopped for its retention
 time (below; not built yet).
 
 **The workspace after a stop** (the hub's side is built; the runner's
@@ -18945,7 +19194,7 @@ it, settles it in the same transaction:
 |---|---|---|
 | `go` (only an answer with `reply_id: go`; any other answer, text-only included, settles as `no`) | `approval.status: approved`; `placement_updated` reaches the runner | the change is applied, `generation` bumped, `pending_change` cleared |
 | `no` | `refused`; closed (`refused`) | `pending_change` cleared; the placement runs on as it was |
-| withdrawn (by the runner's owner; a `DELETE` of the placement withdraws it too) | closed (`withdrawn`) | `pending_change` cleared |
+| withdrawn (by the runner's owner; a `DELETE` of the placement withdraws it too) | closed (`withdrawn`; after a `DELETE`, `removed`) | `pending_change` cleared; after a `DELETE`, the placement closes the uniform way (§15.5) |
 | the human with the right acts (their own action is their consent) | their `PATCH`, start or restart approves it: `approval.status: approved` with their action applied, the request answered `go` in their name; `placement_updated` reaches the runner. A `DELETE` withdraws the request and closes the placement (`removed`) | their change of spec or restart withdraws the proposal: `pending_change` cleared, the request withdrawn, their own action applied |
 
 Only the runner's owner answers a placement's consent request, directly
@@ -18982,7 +19231,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `target` | name | where it actually runs |
 | `session_hint` | string ≤ 200, printable ASCII, or `null` | stored on the placement, shown to the runner's owner only (§15.5) |
 | `seq` | integer, per placement, increasing | the runner's report counter (§15.8) |
-| `quota` | `{scope, target?, count, max}` or absent | with `capacity` only: which limit holds the start, `scope` `runner` or `target` (with `target`, its name), `count` its running agents, `max` its `max_agents`. The hub shows it as the quota details of §6.31 (`name: "max_agents"`, `source: "runner"`, `raise.right: "runner_owner"`, `raise.path: null`). A runner from before it sends none, and the report is valid without it (not built yet, tsk-spmhjqm7szag) |
+| `quota` | `{scope, target?, count, max}` or absent | with `capacity` only: which limit holds the start, `scope` `runner` or `target` (with `target`, its name), `count` its running agents, `max` its `max_agents`. The hub shows it as the quota details of §6.31 (`name: "max_agents"`, `source: "runner"`, `raise.right: "runner_owner"`, `raise.path: null`). A runner from before it sends none, and the report is valid without it (the hub takes it; `maity runner` does not send it yet, tsk-spmhjqm7szag) |
 | `reported_at` | timestamp | hub time of the report; set by the hub |
 
 | `reason` | `state` | When |
@@ -21137,27 +21386,36 @@ with the forgotten password (§2.10) the reset mails. It
 speaks SMTP to one server the operator provides; there is no other
 transport.
 
-**Five budgets.** Each kind of mail is counted on its own, and none
+**Eight budgets.** Each kind of mail is counted on its own, and none
 can use up another:
 
 - `max_per_hour` — notification mail. Over it, notification mail waits
   and is merged into each human's next mail (§18.5).
-- `security_max_per_hour` — verification mails, `immediate` `security`
-  notifications and the old-address notice: mail that a human's own
-  account activity triggers. Over it, a mail is **queued** for the next
+- `security_max_per_hour` — `immediate` `security` notifications and
+  the old-address notice: mail that a human's own account activity
+  triggers. Over it, a mail is **queued** for the next
   hour, in order, and `security_queued` counts it; a security mail is
   never dropped for budget reasons.
-- `sign_in_max_per_hour` — sign-in links and codes (#169, §2.6.3) and
-  the mail factor's links and codes (§2.8.8), a kind of mail an
-  unauthenticated caller can trigger. It has, in
-  addition, the per-source-address limits of #169 §2.6.4. Over it, a
+- `verification_max_per_hour` — address verification mails (§18.4),
+  which any account can ask for, with the limits of §18.4. Over it, a
+  verification mail is queued for the next hour as security mail is,
+  and `verification_queued` counts it.
+- `invitation_max_per_hour` — the mails of address-bound invitations
+  (§3.4), which the members:admin of any project can send to any
+  address. Over it, an invitation mail is queued for the next hour as
+  security mail is, and `invitation_queued` counts it.
+- `sign_in_max_per_hour` — sign-in links and codes (#169, §2.6.3), a
+  kind of mail an unauthenticated caller can trigger. It has, in
+  addition, the limits of #169 §2.6.4. Over it, a
   sign-in mail is not sent (a stale link is useless) and
   `sign_in_dropped_last_hour` counts it.
+- `second_factor_max_per_hour` — the mail factor's links and codes
+  (§2.8.8), sent only after a first factor or from a signed-in session.
+  Over it, such a mail is not sent (a late code is useless) and
+  `second_factor_dropped_last_hour` counts it.
 - `password_reset_max_per_hour` — the mails of `POST /auth/password-reset`
-  (§2.10), with the per-source-address limits of §2.6.4. Over it, a reset
-  mail is not sent and `password_reset_dropped_last_hour` counts it. Its
-  own budget keeps anonymous reset requests away from the mail factor's
-  mails, which `sign_in_max_per_hour` sends.
+  (§2.10), with the limits of §2.6.4. Over it, a reset
+  mail is not sent and `password_reset_dropped_last_hour` counts it.
 - `registration_max_per_hour` — the mails of `POST /auth/register`
   (§2.7.1), another kind an unauthenticated caller can trigger, with
   the limits of §2.7.3. Over it, nothing is sent and
@@ -21214,8 +21472,11 @@ environment wins, is shown with `source: "env"`, and a `PATCH` of it is
 | `MAITY_SMTP_FROM` | `from` | `{address, name?}`; the envelope sender and `From:`. In the environment `maity@example.org` or `Maity <maity@example.org>` |
 | `MAITY_SMTP_REPLY_TO` | `reply_to` | `null` or an address |
 | `MAITY_MAIL_MAX_PER_HOUR` | `max_per_hour` | notification mail, all humans together; default 500; over it, mail waits for the next hour and is merged into each human's next mail (§18.5). Security mail does not count here |
-| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (verification, `immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification, sign-in nor reset mail counts here. Over it, security mail is queued for the next hour, never dropped |
-| `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3) and the mail factor's (§2.8.8), all humans together; default 60. Over it, a sign-in mail is not sent |
+| `MAITY_MAIL_SECURITY_MAX_PER_HOUR` | `security_max_per_hour` | security mail (`immediate` `security` notifications and the mails sent at once whatever the mode, §18.4), all humans together; default 100; neither notification, verification, invitation, sign-in, mail-factor nor reset mail counts here. Over it, security mail is queued for the next hour, never dropped |
+| `MAITY_MAIL_VERIFICATION_MAX_PER_HOUR` | `verification_max_per_hour` | address verification mails (§18.4), all humans together; default 60. Over it, a verification mail is queued for the next hour |
+| `MAITY_MAIL_INVITATION_MAX_PER_HOUR` | `invitation_max_per_hour` | the mails of address-bound invitations (§3.4), all projects together; default 60. Over it, an invitation mail is queued for the next hour |
+| `MAITY_MAIL_SIGN_IN_MAX_PER_HOUR` | `sign_in_max_per_hour` | sign-in links and codes (#169, §2.6.3), all humans together; default 60. Over it, a sign-in mail is not sent |
+| `MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR` | `second_factor_max_per_hour` | the mail factor's links and codes (§2.8.8), all humans together; default 60. Over it, such a mail is not sent |
 | `MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR` | `password_reset_max_per_hour` | password reset mails (§2.10), all humans together; default 30. Over it, a reset mail is not sent |
 | `MAITY_MAIL_REGISTRATION_MAX_PER_HOUR` | `registration_max_per_hour` | registration mails (§2.7.1), all addresses together; default 30. Over it, a registration mail is not sent |
 | `MAITY_MAIL_ONLINE_GRACE_MINUTES` | `online_grace_minutes` | 0–60, default 5: how long after a human stopped being present in the web app their held notification mail still waits (§18.5, "Held while present") |
@@ -21256,7 +21517,10 @@ Scope `instance:admin`, human only (§16.1):
   "reply_to": { "value": null, "source": "default" },
   "max_per_hour": { "value": 500, "source": "default" },
   "security_max_per_hour": { "value": 100, "source": "default" },
+  "verification_max_per_hour": { "value": 60, "source": "default" },
+  "invitation_max_per_hour": { "value": 60, "source": "default" },
   "sign_in_max_per_hour": { "value": 60, "source": "default" },
+  "second_factor_max_per_hour": { "value": 60, "source": "default" },
   "password_reset_max_per_hour": { "value": 30, "source": "default" },
   "registration_max_per_hour": { "value": 30, "source": "default" },
   "online_grace_minutes": { "value": 5, "source": "default" },
@@ -21267,8 +21531,14 @@ Scope `instance:admin`, human only (§16.1):
   "sent_last_hour": 12,
   "security_sent_last_hour": 1,
   "security_queued": 0,
+  "verification_sent_last_hour": 0,
+  "verification_queued": 0,
+  "invitation_sent_last_hour": 0,
+  "invitation_queued": 0,
   "sign_in_sent_last_hour": 0,
   "sign_in_dropped_last_hour": 0,
+  "second_factor_sent_last_hour": 0,
+  "second_factor_dropped_last_hour": 0,
   "password_reset_sent_last_hour": 0,
   "password_reset_dropped_last_hour": 0,
   "registration_sent_last_hour": 0,
@@ -21296,8 +21566,8 @@ PATCH /admin/settings/mail
 
 Scope `instance:admin`, human only. Body: any of `enabled`, `host`,
 `port`, `tls`, `username`, `password`, `from`, `reply_to`,
-`max_per_hour`, `security_max_per_hour`, `sign_in_max_per_hour`,
-`password_reset_max_per_hour`, `registration_max_per_hour`, `online_grace_minutes`; `null` returns a field to its default (for `password`:
+`max_per_hour`, `security_max_per_hour`, `verification_max_per_hour`, `invitation_max_per_hour`, `sign_in_max_per_hour`,
+`second_factor_max_per_hour`, `password_reset_max_per_hour`, `registration_max_per_hour`, `online_grace_minutes`; `null` returns a field to its default (for `password`:
 deletes the stored one). `password` follows the rules above:
 `set_by_environment` when the environment sets it,
 `secret_key_missing` without the instance key. `signing_key` or
@@ -21439,8 +21709,7 @@ The admin area's section "Limits": the caps the operator puts on what
 one account may hold, the attachment storage of one project, and one
 limit for the whole instance, its attachment storage. Plans (§2.7, part two) will set the caps per account
 per plan; until then there is one value for every account, and the
-instance admin may override it for one account (§16.5.1; not built yet,
-tsk-t63d50qy3s0k).
+instance admin may override it for one account (§16.5.1).
 
 ```
 GET, PATCH /admin/settings/limits
@@ -21456,7 +21725,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ALIASES` | `max_aliases` | 3 | aliases one human, organisation, agent profile or project may hold (§6.24, §6.25, §6.26): an integer 1–8, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_STARRED_PER_HUMAN` | `max_starred_per_human` | 100 | public projects one human may keep as starred tabs without being a member (§5.1, "Stars"): an integer 1–1000, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment. Lowering it keeps the stars a human holds and refuses new ones beyond it (`too_many`, §5.1) |
-| `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): the instance admin may set another value for one project (§16.5.1; not built yet, tsk-t63d50qy3s0k); an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): the instance admin may set another value for one project (§16.5.1); an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_READS_PER_MINUTE` | `max_reads_per_minute` | 600 | reads one credential may make per minute once the caller is signed in (§1.7 "Reads per credential"); a project may set a lower value for its agents (§6.1): an integer 60–100000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
@@ -21484,9 +21753,12 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
 `humans_at_org_limit` for `max_orgs_per_human`, and
 `owners_at_project_limit` for `max_projects_per_owner`, which take
 `null` and `unlimited` the same way. `max_aliases` takes `null` the same
-way and has no `unlimited` (`invalid`); `names_at_alias_limit` is
+way and has no `unlimited` (`invalid`, `out_of_range`); `names_at_alias_limit` is
 read-only. `max_starred_per_human` takes `null` the same way and has no
-`unlimited` (`invalid`). `max_attachment_storage_per_project` takes `null` and
+`unlimited` (`invalid`, `out_of_range`). A value outside its range is
+`invalid` with `details.fields.<field>: "out_of_range"`, the reason of
+§16.5.1. An older hub answered the reason `invalid` here; the dashboard
+reads both for one release. `max_attachment_storage_per_project` takes `null` and
 `unlimited` the same way and has no count beside it: what one project
 holds is that project's `attachments` (§6.1). `attachment_storage_used` is
 read-only too; it is the bytes §8.7 counts for `max_attachment_storage`,
@@ -21538,7 +21810,7 @@ under every value, `unlimited` included. `max_reads_per_minute` takes
   upload (§8.7) alone, as `attachment_quota` with `details.scope:
   "project"`, `details.used` and `details.quota`. It caps each project
   alike, whoever owns it, unless the instance admin set another value
-  for the project (§16.5.1; not built yet, tsk-t63d50qy3s0k); the
+  for the project (§16.5.1); the
   project's owner sets nothing here. Posting
   a message that names attachments already uploaded is not refused.
 - **What `max_attachment_storage` gates.** An attachment upload (§8.7)
@@ -21576,7 +21848,9 @@ under every value, `unlimited` included. `max_reads_per_minute` takes
 
 ### 16.5.1 Limits per project and per account
 
-Not built yet, tsk-t63d50qy3s0k.
+`max_starred_per_human` is not built yet: the hub has no stars (§5.1,
+"Stars", tsk-yr3ckca01b9q), and a `PATCH` naming it is `invalid`
+(`extra_forbidden`).
 
 The instance admin sets individual limits for one project or one human
 account, up to `unlimited`; nobody else does, and defaults stay as
@@ -23668,7 +23942,7 @@ names:
 | `/explore` | the public projects, by name, as cards in the frame of §16.7.5 and in its language (`?lang`, else `Accept-Language`), for every visitor with or without a session, under the public pages' `Cache-Control` and `nosniff` (§16.9), the policy of a stored page in its frame (§16.9) and `Vary: Cookie, Accept-Language`, without an `ETag`; the shell while the instance serves no public pages |
 | `/<handle>` | a person's or an organisation's address; its public page where one is served (below). A person's agents stand on it (§6.27, §16.9, "A person's agents"); `/<handle>/agents` names nothing: `404` with the shell (above), the dashboard's "not found", no redirect |
 | `/<owner>/<slug>` | a project; its public page where one is served (below) |
-| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view: `404` with the app shell (above) and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `placements` (the tab the dashboard names **Managed agents**: where the project's agents run and their wanted and reported state, §15.5–§15.7, the start on a runner being in the page's **Join an agent** menu; every member who reads the project sees it, the actions on it as §15.6 grants them), `organisation`, `runners`, `why`, `settings` (one view in tabs: the project's settings for callers with `project:admin`, General at `settings` and the others at `settings/members`, `settings/work` and `settings/moderation`, each shown only where the caller has a part on it, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller opening a tab not shown to them gets the first one that is, so a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives); a view added later joins this list |
+| `/<owner>/<slug>/<view>…` | a view of the project: `inbox/<id>`, `board`, `tasks/<id>`, `overview` (tabs `overview/swarm` and `overview/project`), `contract` (the project's contract, a heading by its anchor as the fragment, §6.8), `team/<id>[/<tab>[/<instance>]]` (the view the dashboard names **Team**: people and agents of the project, the agents for administration; at `team` since the maintainer's decision of 2026-11-10, so that the path says what the tab says; `members` is no view and stays reserved as a slug, and `/<owner>/<slug>/members…` answers as any word that is no view: `404` with the app shell (above) and the dashboard's "not found", with the sign-in one link away for a visitor, never a redirect or the Team view; the member's tabs activity, cards, briefing and sessions below it, and sessions followed by an instance id opening that instance's sessions; tabs are no project views), `chat/<id>`, `messages`, `ticker`, `agents/<id>…` (the caller's own agents here), `placements` (the tab the dashboard names **Managed agents**: where the project's agents run and their wanted and reported state, §15.5–§15.7, the start on a runner being the last part of the page's **Join an agent** form; every member who reads the project sees it, the actions on it as §15.6 grants them), `organisation`, `runners`, `why`, `settings` (one view in tabs: the project's settings for callers with `project:admin`, General at `settings` and the others at `settings/members`, `settings/work` and `settings/moderation`, each shown only where the caller has a part on it, and the caller's own settings here at `settings/mine`, §6.2, for every member; a caller opening a tab not shown to them gets the first one that is, so a caller without `project:admin` opening `settings` gets `settings/mine`), `jour-fixe/<round id>` (§20), `memory` (§19), `message`, `events/<seq>` (one event by its number, the target of a seq link: it reads §8.9 and opens the event where it lives); a view added later joins this list |
 
 **Public pages at their canonical address.** `/<owner>/<slug>`, the
 public views `/<owner>/<slug>/board`, `/team`, `/organisation` and
@@ -25353,7 +25627,31 @@ device; the browser's own permission is per browser and is not stored.
 - **`email.address`.** Setting it (`PATCH {"email": {"address": "…"}}`)
   puts it in `pending_address` and sends a verification mail with a
   link (§18.6), valid for 24 hours; the verified address in `address`
-  keeps receiving until the new one is verified. The verification mail
+  keeps receiving until the new one is verified. A human asks for at
+  most 3 verification mails an hour and 10 a day (`rate_limited` with
+  `Retry-After` beyond it, nothing changed), and one recipient address
+  has places for 3 asking accounts an hour and 10 a day: an account's
+  first verification mail to the address in the window takes a place,
+  its further ones only its own limit. The windows slide, so a place
+  passes from one account to the next; the verification mails themselves
+  are therefore counted too: at most 9 are queued for the address in any
+  hour and 100 in any day from all accounts. Both counts are taken when
+  the mail is requested and queued, not when it is delivered: the
+  outbox sends queued mail within `verification_max_per_hour` (§16.2),
+  so mails queued in different windows may arrive together after a
+  delay. Two accounts at their own limits ask for at most 6 in any hour
+  and 20 in any day, so that count never stops fewer than three. Beyond
+  either the address is pending as usual but no mail is queued. One or two accounts asking
+  again and again so leave a third its mail: one account's requests
+  run one at a time (under its settings row), so an account never holds
+  two places, unlike a network in §2.6.4; three distinct accounts in
+  an hour (ten in a day) hold the address's places, and another account
+  asking for it then has it pending without a mail until the window has
+  passed; nothing else of that account changes. Where one source can make active accounts —
+  open registration with `approval: automatic`, 10 registrations an hour
+  per source address (§2.7.3) within `max_new_accounts_per_hour` (§16.4,
+  default 20) — one source can so hold an address's hour with three of
+  them and its day with ten. The verification mail
   carries the address, the instance's public URL, the link and "If you
   did not ask for this, ignore this mail" — never the human's handle,
   display name or projects, since it goes to an address nobody has

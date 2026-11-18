@@ -152,6 +152,78 @@ only the runner's own process may be signalled.
   `ReadWritePaths`: tools that hardcode `/tmp` would fail, and in the
   `agent_user` layout the agents' user cannot write there.
 
+## The runner's advertised `running` count survives a reconnect
+
+**Id:** d0270526-fca9-4a6c-8e5e-50eea8f2feac
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-yfc9n6kmvs52; round-2 review tqgb A1256; the reconnect-count reproduction tests in `cli/tests/test_supervisor.py`
+**See:** runner.md#serve-ends-with-78-on-anything-retrying-cannot-fix-and-never-takes-the-agents-with-it — e210a162-44c7-4efd-9176-c3c3f66b3e63 — as of 2026-11-18
+**Revisit when:** the capabilities shape, the advertise throttle, or how `serve` and the supervisor share the capabilities dict changes
+
+`maity runners` shows a runner's `running`/`max_agents` straight from the
+capabilities the runner advertised; the hub stores and returns that number
+unchanged. The count is kept correct across a reconnect, together:
+
+- The supervisor writes each advertised total (and the per-target counts) back
+  into the shared capabilities dict, so serve's next `hello` carries the last
+  counted total, not the `running: 0` the dict was first built with.
+- `serve`'s `hello` reads that dict through the supervisor under the
+  supervisor's lock (`advertised_capabilities`), and after each `hello` marks an
+  invalidation — it bumps a generation counter — so the next tick re-PATCHes
+  whatever the count then is, even 0, an empty counts dict, or a count unchanged
+  since the last PATCH.
+- What keeps a reconnect pending until a live send answers it is the generation
+  a PATCH commits: it records the generation captured at send-start, which for a
+  PATCH already in flight when the reconnect arrived is older than the reconnect,
+  so `dirty` stays true. A forced *cached* send (`advertise_now`, a reachability
+  change: `running is None`) refreshes the throttle but does not advance the
+  generation at all, so it cannot consume a pending reconnect either.
+- A successful PATCH commits only when no invalidation arrived while it was in
+  flight. This guard does not keep the invalidation alive (the captured
+  generation does); it keeps a stale, in-flight PATCH's counts out of
+  `advertised_counts` / `advertised_running` / the capabilities write-back, so a
+  PATCH that started before the reconnect never overwrites the live state.
+- `capabilities.build` starts every target's `running` at 0, the honest value
+  before anything is counted; the supervisor refreshes them.
+
+Only the `running` fields of the capabilities dict are coordinated by the lock;
+the keeper writes the harness/tools parts of the same dict on its own, outside
+this lock.
+
+**Reason:** the capabilities dict is shared between serve's connection thread
+(`hello`) and the supervisor's tick thread (`_advertise`). Without the
+write-back a reconnect re-asserted the build-time `0`, and the advertise
+throttle (one `PATCH /runner` per changed count, at most every 60 s) then
+suppressed the correction while the count stayed steady — so the hub read `0/N`
+while the placements ran on. The invalidation is a generation rather than an
+emptied cache, because an empty cache reads as "nothing to send" (a 0 count
+never leaves) and an in-flight PATCH would overwrite it. This was a latent gap
+the capabilities shape had from the start; reconnects during a routine CLI
+upgrade exposed it, so it is a design gap, not a regression a single change
+introduced.
+
+**Rejected alternative:** have `hello` read only the scalar `advertised_running`
+int (atomic under the GIL) instead of locking the dict. Rejected because
+`hello` sends the whole capabilities object — backend, targets, per-target
+running, harnesses — so a coherent snapshot of the dict is needed regardless;
+one lock over the running fields covers the top-level and per-target counts in
+one place.
+
+**Rejected alternative:** represent the invalidation by emptying the advertise
+cache (`advertised_counts = {}`). Rejected because `_advertise` drops zero
+entries, so an empty cache equals the empty counts of a runner with nothing
+running — it reads as "already sent", and a count that fell to 0 never reaches
+the hub — and an in-flight PATCH's commit overwrites the empty cache and
+swallows the invalidation.
+
+**Rejected alternative:** force an immediate re-advertise (`advertise_now`) from
+the reconnect instead of marking it for the next tick. Rejected because the
+authoritative count is the next tick's live session snapshot, not the cached
+one; marking the generation lets that tick send the true total and avoids
+re-asserting a possibly one-tick-stale cached count at the reconnect moment.
+
 ## Capabilities say `sandbox: off` until an adapter switches a sandbox on
 
 **Id:** 0e700858-b898-4d5d-b230-b5d9ce3e0941
@@ -1003,7 +1075,7 @@ than block every antigravity placement until that work lands.
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's acceptance on decision request req-kezp8rppfhn5 ("ship now, harden next"), 2026-11-17, after an independent review found opencode's command rules do not bound what an agent can run; the original offer decision req-g4d2cskx6zxv and the 2026-11-15 spike (opencode 5/5 green, the limit run passed, Grok reviews ran); maintainer order tsk-sn90s6wzp9s7
+**Source:** the owner's acceptance on decision request req-kezp8rppfhn5 ("ship now, harden next"), 2026-11-17, after an independent review found opencode's command rules do not bound what an agent can run; the original offer decision req-g4d2cskx6zxv and the 2026-11-15 spike (opencode 5/5 green, the limit run passed, Grok reviews ran); maintainer order tsk-sn90s6wzp9s7; #1963 review round 3 then made `runner check` refuse opencode under `require_sandbox`, like claude-code and antigravity
 **Revisit when:** the OS-level sandbox for opencode (tsk-nynpvag9zvhh) lands, so the harness runs confined, or the owner withdraws the accepted risk
 
 `opencode` is dropped from `config.NOT_OFFERED_YET`, which is now empty
@@ -1019,7 +1091,22 @@ read, write or reach. The mitigation is operational, not in the settings: run
 opencode's agents as a **separate OS user**, isolated from the runner and from
 the other harnesses, so the blast radius is that user's own files. This is
 stated plainly in docs/runners.md and the CLI README, without any bypass
-detail.
+detail. `maity runner check` also surfaces the residual risk, on both
+backends: the local one through `_check_harness`, each ssh host through
+`_check_host`. It keeps the `ok harness opencode` line and adds a
+`harness opencode: no OS sandbox` one whenever the opencode check reaches it
+— a missing binary or a failed `--version` errors out before it, so it is
+not literally unconditional. Because every opencode placement is unsandboxed,
+that line is an **error** under `require_sandbox = true` (the start is
+refused, the way claude-code and antigravity call
+`capabilities.sandbox_refused` when their sandbox is off) and a **warning**
+without it. Unlike agy's `sandbox reported off`, this is not a diagnostic the
+runner might later clear but a permanent property (opencode never has a
+runner-switched OS sandbox to report). Under `layout = "single"`, where the
+agents' user is the runner's own, the line spells out the concrete reach —
+any command as the runner's own user, including reading the runner's state,
+the other clones and logins; an ssh host has no local layout, so it takes the
+generic wording (an agent can run any command as the agents' user).
 
 **Reason:** the owner decided (req-kezp8rppfhn5, "ship now, harden next") that
 opencode should run now carrying this known residual risk rather than stay
@@ -3907,3 +3994,39 @@ placement ends without asking what in it matters.
   end is the placement's.
 - Its size in `workspace_outcome`: a new field for something the
   operator alone acts on; the lead kept the hub out of it.
+
+## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
+
+**Id:** 0f216e9d-1661-4887-a035-094efa301dfa
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's card tsk-5b5x3k5zvg7x after the Claude Code smoke test on an Ubuntu runner, 2026-11-18; reproduced on that host the same day
+**Revisit when:** Claude Code's Linux sandbox stops opening a second user namespace; the runner sets up the host's AppArmor itself (runner init); Ubuntu changes `bwrap-userns-restrict`
+
+On Linux and the local backend only, beside finding bwrap and socat, `check` runs `bwrap … -- unshare
+--user --map-root-user true` once as the agents' user and on their PATH, every command by its absolute
+path. Only a refused mapping (unshare's write to `/proc/self/uid_map`,
+`gid_map` or `setgroups` fails, read under `LC_ALL=C`) is an error. A probe
+that times out, does not start or fails otherwise is a warning that
+blames nothing, and so is a missing tool. Seatbelt (macOS) is not probed,
+and neither is an ssh host yet: there the lock goes undetected.
+
+**Reason:** Ubuntu's AppArmor profile `bwrap-userns-restrict` (seen on 26.04) lets
+bubblewrap start and takes every capability from what it starts. Claude
+Code's session then runs, and so does `maity`, which runs outside the
+sandbox, so the placement looks healthy. But every sandboxed command fails
+on the seccomp step's nested user namespace, a subagent's included. On
+that host no card work is possible, so a warning would understate it.
+
+**Rejected alternatives:**
+- Read `kernel.apparmor_restrict_unprivileged_userns` or look for the
+  profile file: what decides is the loaded profile's rules, and hosts
+  differ in both. Starting the same nesting is the only answer that does
+  not need to know why.
+- Start Claude Code itself in the check: it costs a model call and needs
+  the login, as with agy's sandbox.
+- Every failure of the probe as a refusal: a timeout, a launch error or a
+  tool missing on the agents' PATH then claimed that sandboxed commands
+  fail and blamed AppArmor on a host without the lock (review of #1949).

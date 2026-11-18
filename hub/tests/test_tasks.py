@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
-from maity_hub import cards
+from maity_hub import cards, paging, ranks
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.statements import listening
 
 TASK_KEYS = {
     "id",
@@ -268,6 +270,160 @@ def test_the_board_filters_orders_and_pages(owner: flow.Human) -> None:
         owner.get("/projects/maintainer/maity/tasks?status=lost").headers["Maity-Error"]
         == "invalid"
     )
+
+
+def _closed_cards(owner: flow.Human, migrated: Engine, n: int) -> list[str]:
+    """n cards closed: every third cancelled, the rest done, with `closed_at` values that
+    repeat (two cards per instant) and one done card without any. Set in the database: the
+    list is what is tested here, not the transitions."""
+    ids = [task(owner)["id"] for _ in range(n)]
+    with migrated.begin() as conn:
+        for i, card_id in enumerate(ids):
+            status = "cancelled" if i % 3 == 0 else "done"
+            at = None if i == 1 else CLOSED_BASE + timedelta(seconds=i // 2)
+            conn.execute(
+                update(t.card).where(t.card.c.id == card_id).values(status=status, closed_at=at)
+            )
+    return ids
+
+
+CLOSED_BASE = datetime(2026, 11, 1, 12, 0, 0, 123456, tzinfo=UTC)
+
+
+def _board_order(migrated: Engine, ids: list[str]) -> list[str]:
+    """`ids` in §6.4's board order as ranks.board_key gives it."""
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.card).where(t.card.c.id.in_(ids))).all()
+    return [r.id for r in sorted(rows, key=lambda r: ranks.board_key(cards.STATUSES, r))]
+
+
+def _pages(owner: flow.Human, query: str, limit: int) -> tuple[list[str], list[str]]:
+    """Every page of `query`: the ids in order, and the cursors handed out."""
+    seen: list[str] = []
+    cursors: list[str] = []
+    cursor = None
+    while True:
+        path = f"/projects/maintainer/maity/tasks?{query}&limit={limit}"
+        response = owner.get(path + (f"&cursor={cursor}" if cursor else ""))
+        assert response.status_code == 200, response.text
+        page = response.json()
+        seen += [c["id"] for c in page["items"]]
+        cursor = page["next_cursor"]
+        if not cursor:
+            return seen, cursors
+        cursors.append(cursor)
+
+
+def test_the_closed_columns_page_in_the_board_order_with_a_short_cursor(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """tsk-d4anfsk1e94j: the closed group (`status=done,cancelled`) is sorted and paged by
+    the database, in the same order as the board's key, equal `closed_at` values and a card
+    without one included, and its cursor no longer lists the ids a page showed."""
+    ids = _closed_cards(owner, migrated, 13)
+    seen, cursors = _pages(owner, "status=done,cancelled", 3)
+    assert seen == _board_order(migrated, ids)
+    assert len(seen) == len(set(seen)) == 13
+    assert cursors and all(paging.tag_of(c) == "closed" for c in cursors)
+    assert max(len(c) for c in cursors) < 200  # a key cursor of 3 ids is longer already
+    # A cutoff keeps working on this path: strictly after it (ids[6] and ids[7] sit on it),
+    # and the card without `closed_at` stays in, as before.
+    cutoff = (CLOSED_BASE + timedelta(seconds=3)).isoformat().replace("+", "%2B")
+    recent, _ = _pages(owner, "status=done,cancelled&closed_after=" + cutoff, 2)
+    assert recent == [i for i in _board_order(migrated, ids) if i in set(ids[8:]) | {ids[1]}]
+
+
+def test_a_board_page_ending_on_a_closed_card_hands_out_the_short_cursor(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """The whole board (`status=all`) is still sorted in Python; a page whose last card is
+    closed goes on from that card's key, and the pages add up to the board once."""
+    open_ids = [task(owner)["id"] for _ in range(4)]
+    ids = _closed_cards(owner, migrated, 7)
+    seen, cursors = _pages(owner, "status=all", 3)
+    assert seen == _board_order(migrated, open_ids + ids)
+    assert len(seen) == len(set(seen)) == 11
+    assert paging.tag_of(cursors[0]) == "key"  # the first page ends in the open column
+    assert all(paging.tag_of(c) == "closed" for c in cursors[1:])
+
+
+def test_a_key_cursor_from_before_still_pages_the_closed_columns(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """A board read under way during a deploy holds a `key` cursor for the closed group;
+    the next page still comes, from the Python-sorted path."""
+    ids = _closed_cards(owner, migrated, 6)
+    order = _board_order(migrated, ids)
+    with migrated.connect() as conn:
+        rows = {r.id: r for r in conn.execute(select(t.card).where(t.card.c.id.in_(ids)))}
+
+    def key(card_id: str) -> tuple[Any, ...]:
+        return ranks.board_key(cards.STATUSES, rows[card_id])
+
+    bound = paging.scope(
+        status="done,cancelled", kind=None, label=None, needs=None, holder=None,
+        assigned_to=None, area=None, parent=None, closed_after=None, order="board",
+    )  # fmt: skip
+    old = paging.key_cursor((order[1], key(order[1])), (order[2], key(order[2])), order[:2], bound)
+    response = owner.get(
+        f"/projects/maintainer/maity/tasks?status=done,cancelled&limit=10&cursor={old}"
+    )
+    assert response.status_code == 200, response.text
+    assert [c["id"] for c in response.json()["items"]] == order[2:]
+
+
+def test_a_closed_cursor_the_hub_did_not_give_is_refused(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """A naive time, another list's scope, a cursor of another kind, a position out of the
+    board's columns or of 64 bits, a time whose UTC value is out of range, an id with a
+    NUL: 400, never a 500, on the closed columns' SQL path and on the whole board's."""
+    _closed_cards(owner, migrated, 3)
+    at = CLOSED_BASE.isoformat()
+    for status in ("done,cancelled", "all"):
+        path = f"/projects/maintainer/maity/tasks?status={status}&limit=1"
+        bound = paging.scope(
+            status=status, kind=None, label=None, needs=None, holder=None,
+            assigned_to=None, area=None, parent=None, closed_after=None, order="board",
+        )  # fmt: skip
+        forged: list[list[Any]] = [
+            [5, "2026-11-01T12:00:00", "tsk-x"],  # naive
+            *([p, at, "tsk-x"] for p in (2**63, 2**70, -(2**70), -1, len(cards.STATUSES))),
+            [5, "0001-01-01T00:00:00+14:00", "tsk-x"],
+            [5, "9999-12-31T23:59:59-14:00", "tsk-x"],
+            [5, at, "tsk-\x00x"],
+            [5, at, "tsk-" + "x" * 40],
+        ]
+        refused = [paging._encode(["closed", *f, bound]) for f in forged]
+        refused += [
+            paging.closed_cursor(5, CLOSED_BASE, "tsk-x", "0" * 16),
+            paging.seq_cursor(3, bound),
+        ]
+        for given in refused:
+            response = owner.get(f"{path}&cursor={given}")
+            assert response.status_code == 400, (status, paging._decode(given), response.text)
+            assert response.headers["Maity-Error"] == "invalid"
+
+
+def test_a_closed_page_is_one_card_select_with_a_limit(owner: flow.Human, migrated: Engine) -> None:
+    """The database sorts the closed columns and hands back one card more than the page,
+    not the whole column: the card list's statement (the one ordered by the column's
+    `CASE`) carries the `LIMIT`. Before, all 30 cards were sent to Python for a page of 2.
+    This proves one SELECT with a LIMIT, not bounded work in the database: no index
+    carries the order, so the database still sorts the project's closed cards for each
+    page (persistence.md, 7bad4e04)."""
+    _closed_cards(owner, migrated, 30)
+    statements: list[str] = []
+
+    def heard(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
+        statements.append(statement)
+
+    with listening(migrated, heard, async_engines=False):
+        response = owner.get("/projects/maintainer/maity/tasks?status=done,cancelled&limit=2")
+    assert response.status_code == 200, response.text
+    assert len(response.json()["items"]) == 2
+    card_lists = [s for s in statements if "CASE card.status WHEN" in s]
+    assert len(card_lists) == 1 and "LIMIT" in card_lists[0], statements
 
 
 def _report(**overrides: Any) -> dict[str, Any]:

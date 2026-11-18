@@ -24,15 +24,14 @@ HEADING = "## Set by the project for your role"
 
 
 def _project(**overrides: object) -> SimpleNamespace:
-    fields = {
-        "name": "p", "rules_version": 1, "state": "build", "state_note": None,
-        "released_at": None, "policy_preset": "x", "claim_policy": "x", "done_authority": "x",
-        "tag_authority": "x", "steward_writes": "x", "lease_seconds": 60,
-        "keep_the_why": True, "rules_markdown": "owner text", "roles": None,
-        "settings": {"role_rules": SET},
-    }  # fmt: skip
-    fields.update(overrides)
-    return SimpleNamespace(**fields)
+    return factory.rules_project(
+        **{
+            "keep_the_why": True,
+            "rules_markdown": "owner text",
+            "settings": {"role_rules": SET},
+            **overrides,
+        }
+    )
 
 
 def _section(text: str) -> str:

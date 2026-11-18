@@ -376,17 +376,24 @@ def take_machine_lock(path: Path = LOCK_PATH, say=print, every: float = 60, paus
 HUB_ENV: dict[str, dict[str, str]] = {}
 
 
+def _hub_cli(env: dict[str, str], args: list[str], stdin: str | None, log) -> int:
+    """`maity-hub <args>` with `env`, `stdin` on its input; the command line and every output
+    are appended to the open file `log`. Its exit code, for the caller to judge."""
+    log.write(f"$ maity-hub {' '.join(args)}\n")
+    log.flush()
+    done = subprocess.run(
+        ["maity-hub", *args], env=env, input=stdin, text=True,
+        stdout=log, stderr=subprocess.STDOUT, check=False,
+    )  # fmt: skip
+    return done.returncode
+
+
 def hub_command(run: Run, args: list[str], stdin: str | None = None) -> None:
     """`maity-hub <args>` against the hub at run.base, with the environment it was started with;
-    the output goes to that hub's log directory as hub-command.log."""
+    the output goes to the run's artifacts directory as hub-command.log."""
     with open(run.artifacts / "hub-command.log", "a") as log:
-        log.write(f"$ maity-hub {' '.join(args)}\n")
-        log.flush()
-        done = subprocess.run(
-            ["maity-hub", *args], env=HUB_ENV[run.base], input=stdin, text=True,
-            stdout=log, stderr=subprocess.STDOUT, check=False,
-        )  # fmt: skip
-    if done.returncode != 0:
+        code = _hub_cli(HUB_ENV[run.base], args, stdin, log)
+    if code != 0:
         raise AssertionError(f"maity-hub {args[0]} failed: see hub-command.log")
 
 
@@ -425,18 +432,7 @@ def start_hub(
                 OWNER_PASSWORD + "\n",
             ),
         ):
-            log.write(f"$ maity-hub {' '.join(args)}\n")
-            log.flush()
-            done = subprocess.run(
-                ["maity-hub", *args],
-                env=env,
-                input=stdin,
-                text=True,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
-            if done.returncode != 0:
+            if _hub_cli(env, args, stdin, log) != 0:
                 raise SystemExit(f"e2e: maity-hub {args[0]} failed:\n" + log_path.read_text())
         log.write("$ maity-hub serve\n")
         log.flush()
@@ -772,10 +768,9 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
 
 
 def join_any(page: Page) -> None:
-    """Join an agent at the head of a project's Agents or Team page is a menu (tsk-vkyp71qp95n9):
-    Add any agent opens the join panel."""
+    """Join an agent at the head of a project's Agents or Team page is one button (tsk-hdczmsq2r431;
+    once a menu, tsk-vkyp71qp95n9): it opens the join panel."""
     page.locator("main .page-head").get_by_role("button", name="Join an agent", exact=True).click()
-    page.get_by_role("menuitem", name="Add any agent", exact=True).click()
 
 
 def join_line(
@@ -905,11 +900,8 @@ def main() -> int:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=not args.headed)
             try:
-                context = browser.new_context(viewport={"width": 1280, "height": 900})
-                context.set_default_timeout(TIMEOUT_MS)
                 expect.set_options(timeout=TIMEOUT_MS)  # expect() has its own 5-s default
-                page = context.new_page()
-                watch_page(run, page)
+                context, page = new_page(run, browser)
                 try:
                     scenario(run, page)
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
@@ -982,9 +974,7 @@ def scenario(run: Run, page: Page) -> None:
     # frame's other two: on in the frame, off in the signed-in dashboard (review of #1820).
     sections = "() => [...document.styleSheets].some((s) => (s.href || '').split('/').pop().split('?')[0] === 'public-sections.css' && !s.disabled)"
     assert page.evaluate(sections), "the sections' stylesheet is not on in the frame"
-    page.locator("#login-email").fill(OWNER_EMAIL)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    fill_sign_in(page, OWNER_EMAIL, OWNER_PASSWORD)
     expect(page.get_by_role("heading", name="No projects yet", exact=True)).to_be_visible()
     expect(page.locator("header .me")).to_contain_text("Owner")
     # Signed in, the frame is gone and its stylesheets off: landing.css would restyle the whole app.
@@ -2635,16 +2625,27 @@ def security_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         run.base = first_base
 
 
-def signed_in_page(run: Run, browser):
-    """The first factor only: what comes next is the hub's to say."""
+def new_page(run: Run, browser):
+    """A fresh context at 1280 x 900 with the run's timeout, and its one page, watched."""
     context = browser.new_context(viewport={"width": 1280, "height": 900})
     context.set_default_timeout(TIMEOUT_MS)
     page = context.new_page()
     watch_page(run, page)
-    page.goto(run.base + "/")
-    page.locator("#login-email").fill(OWNER_EMAIL)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
+    return context, page
+
+
+def fill_sign_in(page: Page, email: str, password: str) -> None:
+    """Fill the sign-in form and press Sign in; what comes next is the caller's to check."""
+    page.locator("#login-email").fill(email)
+    page.locator("#login-password").fill(password)
     page.get_by_role("button", name="Sign in", exact=True).click()
+
+
+def signed_in_page(run: Run, browser, email: str = OWNER_EMAIL, password: str = OWNER_PASSWORD):
+    """The first factor only: what comes next is the hub's to say."""
+    context, page = new_page(run, browser)
+    page.goto(run.base + "/")
+    fill_sign_in(page, email, password)
     return context, page
 
 
@@ -2863,14 +2864,7 @@ def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
     """The second step of a sign-in (§2.8.2, tsk-73kkzr3x6exy): after the password the page
     asks for the app's code and nothing else, then the dashboard."""
     run.step("second hub: a sign-in asks for the app's code before anything else")
-    context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.set_default_timeout(TIMEOUT_MS)
-    page = context.new_page()
-    watch_page(run, page)
-    page.goto(run.base + "/")
-    page.locator("#login-email").fill(OWNER_EMAIL)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    context, page = signed_in_page(run, browser)
     step = page.locator("form.second-factor")
     expect(step).to_contain_text("Enter the code from your authenticator app")
     # Nobody is shown as signed in yet (the header keeps only the brand and the theme).
@@ -2934,10 +2928,7 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     run.step("second hub: an admin resets a person's two-factor sign-in, which that person confirms by mail")
     address, handle, password = "ada@e2e.example", "ada", "ada-e2e-password-1"
     owner.evaluate("""() => window.Maity.api.patch("/admin/settings/registration", { mode: "open", approval: "automatic" })""")
-    context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.set_default_timeout(TIMEOUT_MS)
-    page = context.new_page()
-    watch_page(run, page)
+    context, page = new_page(run, browser)
     page.goto(run.base + "/")
     page.evaluate(
         """([address, password]) => window.Maity.api.post("/auth/register", { address, password })""",
@@ -3009,9 +3000,7 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     other.close()
 
     page.goto(run.base + "/")
-    page.locator("#login-email").fill(address)
-    page.locator("#login-password").fill(password)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    fill_sign_in(page, address, password)
     expect(page.get_by_role("heading", name="Set up two-factor sign-in", exact=True)).to_be_visible()
     # The page's own 401 once the sessions ended is what the reset does, not a problem here.
     run.problems = [p for p in run.problems if "answered 401" not in p]
@@ -3036,15 +3025,10 @@ def newest_mail(catcher: MailCatcher, to: str, seen: int, timeout: float = 20) -
 def password_sign_in(run: Run, browser, offers_link: bool):
     """A fresh context at the login page after the password, and its page: what follows is the
     hub's (a second step, or the dashboard). The page offers the mail's sign-in link, or not."""
-    context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.set_default_timeout(TIMEOUT_MS)
-    page = context.new_page()
-    watch_page(run, page)
+    context, page = new_page(run, browser)
     page.goto(run.base + "/")
     expect(page.get_by_role("button", name="Email me a sign-in link", exact=True)).to_have_count(1 if offers_link else 0)
-    page.locator("#login-email").fill(OWNER_EMAIL)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    fill_sign_in(page, OWNER_EMAIL, OWNER_PASSWORD)
     return context, page
 
 
@@ -3363,11 +3347,8 @@ def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None
         context.close()
 
         run.step("password reset: the link's page sets a new password, ends every session and signs nobody in")
-        context = browser.new_context(viewport={"width": 1280, "height": 900})
-        context.set_default_timeout(TIMEOUT_MS)
+        context, page = new_page(run, browser)
         contexts.append(context)
-        page = context.new_page()
-        watch_page(run, page)
         page.goto(link.group(1))
         form = page.locator("form.reset-form")
         expect(page.locator("article.reset-page h1")).to_have_text("Set a new password for Owner (owner)")
@@ -3399,9 +3380,7 @@ def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None
         signed.goto(run.base + "/account/notifications")
         expect(signed.locator("#login-email")).to_be_visible()
         # The new password signs in.
-        signed.locator("#login-email").fill(OWNER_EMAIL)
-        signed.locator("#login-password").fill(new_password)
-        signed.get_by_role("button", name="Sign in", exact=True).click()
+        fill_sign_in(signed, OWNER_EMAIL, new_password)
         expect(signed.locator("header .me")).to_contain_text("Owner")
         no_problems(run, "password reset: by mail")
 
@@ -5011,10 +4990,7 @@ def public_first_paint_round(run: Run, browser) -> None:
         ("/owner/agents/e2e-agent", "agent", "section.uhero"),
     )
     for path, kind, hero in pages:
-        context = browser.new_context(viewport={"width": 1280, "height": 900})
-        context.set_default_timeout(TIMEOUT_MS)
-        page = context.new_page()
-        watch_page(run, page)
+        context, page = new_page(run, browser)
         held: list = []
 
         def hold(route) -> None:
@@ -5086,15 +5062,8 @@ def report_pages_round(run: Run, browser) -> None:
     handle, name, address, password = REPORTER
     hub_command(run, ["owner", "create", "--handle", handle, "--display-name", name, "--email", address], password + "\n")
 
-    def fresh() -> tuple:
-        context = browser.new_context(viewport={"width": 1280, "height": 900})
-        context.set_default_timeout(TIMEOUT_MS)
-        page = context.new_page()
-        watch_page(run, page)
-        return context, page
-
     # A card with a page: the first one the public board links to.
-    context, page = fresh()
+    context, page = new_page(run, browser)
     page.goto(f"{run.base}/owner/e2e-alpha/board")
     card = page.locator("a[href*='/owner/e2e-alpha/tasks/tsk-']").first.get_attribute("href")
     card = "/" + card.split("://", 1)[-1].split("/", 1)[-1] if "://" in card else card
@@ -5116,7 +5085,7 @@ def report_pages_round(run: Run, browser) -> None:
         (card, "Report this card to the instance's admins"),
     )
     for path, button in pages:
-        context, page = fresh()
+        context, page = new_page(run, browser)
         page.goto(run.base + path)
         # The hub's stored page says **Report**; the dashboard's copy, where it stands in, its own words.
         link = page.locator("a[href^='/login?next='][href*='%3Freport']")
@@ -5125,9 +5094,7 @@ def report_pages_round(run: Run, browser) -> None:
         expected = "/login?next=" + urllib.parse.quote(path + "?report", safe="")
         assert href == expected or href.startswith(expected + "&"), f"{path}: Report links to {href!r}, not {expected!r}"
         link.click()
-        page.locator("#login-email").fill(address)
-        page.locator("#login-password").fill(password)
-        page.get_by_role("button", name="Sign in", exact=True).click()
+        fill_sign_in(page, address, password)
         expect(page).to_have_url(re.compile(re.escape(run.base + path + "?report") + "$"))
         # The form is open, named for what this page shows; its button hides while it is.
         expect(page.get_by_role("form", name=button, exact=True)).to_be_visible()
@@ -5137,11 +5104,9 @@ def report_pages_round(run: Run, browser) -> None:
 
     # Signed in: a person's view lists their agents under the projects, no tabs (§6.27, §16.9,
     # tsk-2t7efzj1p8zt), each linked to its page, which carries Report (#1719).
-    context, page = fresh()
+    context, page = new_page(run, browser)
     page.goto(run.base + "/login")
-    page.locator("#login-email").fill(address)
-    page.locator("#login-password").fill(password)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    fill_sign_in(page, address, password)
     expect(page.locator("header .me")).to_contain_text(name)
     page.goto(run.base + "/owner")
     expect(page.locator("nav.person-tabs")).to_have_count(0)
@@ -6022,9 +5987,9 @@ def project_runners_step(run: Run, page: Page, name: str) -> None:
 
 
 def start_on_runner_form(run: Run, page: Page, name: str) -> None:
-    """Agents → Start an agent on a runner (docs/api.md §15.6, tsk-dsp6htj4c686) against the hub:
-    E2E Alpha has no repository, so no runner can start an agent in it and no form is offered
-    (tsk-wn6qp27090qy). For the form itself the project's read is answered with a repository and
+    """Agents → Join an agent → On a runner (docs/api.md §15.6, tsk-dsp6htj4c686, tsk-hdczmsq2r431)
+    against the hub: E2E Alpha has no repository, so no runner can start an agent in it and no
+    runner fields are offered (tsk-wn6qp27090qy). For the form itself the project's read is answered with a repository and
     the runner's with it among its repositories: the paired runner allowed here is offered; it has
     not reported what it can do, so there is no tool to choose and nothing to send."""
     run.step("placements: the Agents page's tab Managed agents (§16.11), at /<owner>/<slug>/placements")
@@ -6042,15 +6007,15 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     expect(page.get_by_role("heading", name="Managed agents", exact=True, level=3)).to_be_visible()
     expect(page.locator("main section.placements button.placement-new-open")).to_have_count(0)
     agents_page_tabs(run, page)
-    run.step("placements: Join an agent → Start an agent on a runner: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
+    run.step("placements: Join an agent → On a runner: without a repository no runner fields; with one the paired runner allowed here is offered, no tool yet")
     page.goto(f"{run.base}/owner/e2e-alpha/placements")
-    section = page.locator("main .join-menu-slot")
+    section = page.locator("main .join-slot")
     open_form = page.locator("main .page-head").get_by_role("button", name="Join an agent", exact=True)
     open_form.click()
-    page.get_by_role("menuitem", name="Start an agent on a runner", exact=True).click()
+    section.get_by_label("Start it on one of my runners instead of a join line", exact=True).check()
     expect(section.locator(".placement-new-none")).to_have_text(
         "A runner starts an agent in a clone of the project's repository, and this project has none.")
-    expect(section.locator("form.placement-new")).to_have_count(0)
+    expect(section.locator(".join-runner-fields")).to_have_count(0)
     project_read = re.compile(r"/api/v1/projects/owner/e2e-alpha(\?|$)")
     runners_read = re.compile(r"/api/v1/projects/owner/e2e-alpha/runners(\?|$)")
 
@@ -6146,37 +6111,39 @@ def agents_chat_access(run: Run, page: Page, tabs) -> None:
 
 
 def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) -> None:
-    """The form opened over the answers start_on_runner_form gives the project's and runners' reads."""
+    """The join form's part on a runner over the answers start_on_runner_form gives the project's
+    and runners' reads: the runner offered, no tool to start with, and a start says why."""
     page.reload()
     expect(open_form).to_be_visible()
     open_form.click()
-    page.get_by_role("menuitem", name="Start an agent on a runner", exact=True).click()
-    form = section.locator("form.placement-new")
-    expect(form).to_be_visible()
-    runner_options = form.locator("#placement-new-runner option")
+    panel = section.locator(".join-panel")
+    form = panel.locator("form.join-form")
+    form.get_by_label("Start it on one of my runners instead of a join line", exact=True).check()
+    fields = form.locator(".join-runner-fields")
+    expect(fields).to_be_visible()
+    runner_options = fields.locator("#placement-new-runner option")
     expect(runner_options).to_have_count(1)
     expect(runner_options.first).to_contain_text(name + " · offline")
-    expect(form.locator("#placement-new-tool option")).to_have_count(0)
+    expect(fields.locator("#placement-new-tool option")).to_have_count(0)
     expect(form).to_contain_text("The runner offers no tool there that is installed.")
-    expect(form.get_by_role("button", name="Start on the runner", exact=True)).to_be_disabled()
+    # What a placement does not take is hidden; the button says what it does.
+    expect(form.locator("#join-ttl")).to_be_hidden()
+    start = form.get_by_role("button", name="Start on the runner", exact=True)
+    expect(start).to_be_visible()
     run.shot(page, "placements-start-form")
     run.a11y(page, "placements, start on a runner")
-    # The browser's own constraint validation (review of #1558): a handle the pattern refuses,
-    # typed for a new profile, stops counting once one of one's agents here is chosen instead.
-    form.locator("#placement-new-handle").fill("INVALID")
-    assert not page.evaluate("document.querySelector('form.placement-new').checkValidity()"), "an invalid new handle passes validation"
-    agents = form.locator("#placement-new-agent option")
-    assert agents.count() >= 2, f"no agent of one's own offered: {agents.all_text_contents()}"
-    form.locator("#placement-new-agent").select_option(index=1)
-    expect(form.locator("fieldset.placement-new-profile")).to_be_hidden()
-    assert page.evaluate("document.querySelector('form.placement-new').checkValidity()"), "a hidden new-profile handle still blocks the form"
+    form.locator("#join-agent").select_option("")
+    form.locator("#join-handle").fill("e2e-runner-new")
+    start.click()
+    expect(form.locator(".send-status")).to_have_text(
+        "Not placed on the runner: There is no runner and tool to start it with yet: the part on a runner says why.")
     # On a phone the open form stays within the page's width (review of #1558: 451 px at 390).
     page.set_viewport_size({"width": 390, "height": 844})
     widths = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
     assert widths[0] <= widths[1], f"the form widens the page on a phone: {widths}"
     page.set_viewport_size({"width": 1280, "height": 900})
     form.get_by_role("button", name="Cancel", exact=True).click()
-    expect(form).to_have_count(0)
+    expect(panel).to_be_hidden()
     expect(open_form).to_be_focused()
 
 
@@ -6353,8 +6320,8 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
 
 def page_heads_step(run: Run, page: Page) -> None:
     """The heads of a project's Agents and Team pages (tsk-vkyp71qp95n9): the heading, the buttons at
-    the right end, the tabs under them, each the page's full width; Join an agent a menu of its two
-    ways, Add any agent and Start an agent on a runner, the same on both pages."""
+    the right end, the tabs under them, each the page's full width; Join an agent one button that
+    opens the join panel, the same on both pages (tsk-hdczmsq2r431; once a menu)."""
     run.step("page heads: Agents and Team carry the heading, the buttons at the right end, the tabs under them")
     for path, title, buttons, tab_names in (
         ("agents", "Agents", ["New agent profile", "Join an agent"], ["Agents", "Managed agents", "Organisation"]),
@@ -6383,19 +6350,26 @@ def page_heads_step(run: Run, page: Page) -> None:
             assert abs(box["tabs"][1] - box["head"][1]) <= 1 and abs(box["tabs"][0] - box["head"][0]) <= 1, f"{path} tabs not the full width at {width} px: {box}"
             assert abs(box["last"][0] - box["bar"][1]) <= 1, f"{path} buttons not at the right end at {width} px: {box}"
             assert box["last"][1] <= box["tabs"][2] + 1, f"{path} tabs not under the buttons at {width} px: {box}"
-            head.get_by_role("button", name="Join an agent", exact=True).click()
-            items = page.locator(".page-head .menu [role=menuitem]")
-            expect(items).to_have_text(["Add any agent", "Start an agent on a runner"])
+            opener = head.get_by_role("button", name="Join an agent", exact=True)
+            expect(opener).not_to_have_attribute("aria-haspopup", re.compile(".*"))
+            opener.click()
+            # The Agents tab has the panel wired to its own lists (.join-panel-slot); Team mounts one in .join-slot.
+            panel = page.locator("main .join-panel")
+            expect(panel).to_be_visible()
             run.shot(page, f"page-head-{path}-{width}")
-            page.keyboard.press("Escape")
+            panel.get_by_role("button", name="Cancel", exact=True).click()
+            expect(panel).to_be_hidden()
+            expect(opener).to_be_focused()
             run.a11y(page, f"{path} page head, {width} px")
     page.set_viewport_size({"width": 1280, "height": 900})
-    run.step("page heads: Add any agent on Team opens the join panel there")
+    run.step("page heads: Join an agent on Team opens the join panel there")
     page.goto(f"{run.base}/owner/e2e-alpha/team")
     join_any(page)
-    expect(page.locator("main .join-menu-slot .join-panel")).to_be_visible()
+    panel = page.locator("main .join-slot .join-panel")
+    expect(panel).to_be_visible()
     expect(page.locator("#join-agent")).to_be_visible()
-    page.keyboard.press("Escape")
+    panel.get_by_role("button", name="Cancel", exact=True).click()
+    expect(panel).to_be_hidden()
     no_problems(run, "page heads")
 
 
@@ -7377,9 +7351,7 @@ def start_page_step(run: Run, page: Page) -> None:
         leaving = page.context.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-US")
         out = leaving.new_page()
         out.goto(f"{run.base}/login")
-        out.locator("#login-email").fill(OWNER_EMAIL)
-        out.locator("#login-password").fill(OWNER_PASSWORD)
-        out.get_by_role("button", name="Sign in", exact=True).click()
+        fill_sign_in(out, OWNER_EMAIL, OWNER_PASSWORD)
         expect(out.locator("header .me")).to_contain_text("Owner")
         out.goto(f"{run.base}/all")
         out.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
@@ -8383,9 +8355,7 @@ def change_password(run: Run, page: Page) -> None:
     other = page.context.browser.new_context()
     second = other.new_page()
     second.goto(run.base + "/")
-    second.locator("#login-email").fill(OWNER_EMAIL)
-    second.locator("#login-password").fill(OWNER_PASSWORD)
-    second.get_by_role("button", name="Sign in", exact=True).click()
+    fill_sign_in(second, OWNER_EMAIL, OWNER_PASSWORD)
     expect(second.locator("header .me")).to_contain_text("Owner")
 
     page.set_viewport_size({"width": 1280, "height": 900})
@@ -8423,9 +8393,8 @@ def change_password(run: Run, page: Page) -> None:
 
     page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
     page.get_by_role("menuitem", name="Sign out", exact=True).click()
-    page.locator("#login-email").fill(OWNER_EMAIL)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    # The old password, refused below.
+    fill_sign_in(page, OWNER_EMAIL, OWNER_PASSWORD)
     expect(page.locator("main")).to_contain_text("wrong")
     # The refused old password is the point of this step.
     run.problems = [p for p in run.problems if "/api/v1/auth/login answered 401" not in p]
