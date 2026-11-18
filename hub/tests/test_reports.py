@@ -137,6 +137,21 @@ def test_a_lone_surrogate_in_the_text_is_not_text_and_an_emoji_is(team: dict[str
     assert sent(b"\\ud83d\\ude42").status_code == 201
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        b'{"type": "card", "id": "tsk-\\ud800", "project": "%s"}' % PROJECT.encode(),
+        b'{"type": "profile", "id": "hum-\\ud800"}',
+    ],
+    ids=["card", "profile"],
+)
+def test_a_lone_surrogate_in_a_target_id_is_not_found(team: dict[str, Any], target: bytes) -> None:
+    body = b'{"target": %s, "reason": "spam"}' % target
+    refused = team["pat"].raw("POST", "/reports", body)
+    assert refused.status_code == 404, refused.text
+    assert refused.json()["error"]["code"] == "not_found"
+
+
 def test_three_per_target_and_twenty_a_day(team: dict[str, Any], migrated: Engine) -> None:
     pat = team["pat"]
     card = {"type": "card", "id": a_card(team, migrated), "project": PROJECT}

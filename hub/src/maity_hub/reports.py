@@ -444,6 +444,8 @@ def create(
     given = body.get("target")
     if not isinstance(given, dict):
         raise invalid({"target": "required"})
+    if any(jcs.has_lone_surrogate(value) for value in given.values()):
+        raise not_found()  # no id or name holds one, and the SQL bind cannot encode it
     kind, target_id, project_id, snapshot = target(conn, caller, given, pages)
     account = account_of(conn, caller)
     now = clock.now()
