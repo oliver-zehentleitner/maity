@@ -62,8 +62,8 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
   runner across projects, and `foreign` in the placement view (§15.3, §15.5).
 - contract: `GET /runners/{id}/placements`, the owner's list of the active placements on
   their runner across projects, and `foreign` in the placement view, true where the
-  agent profile's owner is not the runner's owner (§15.3, §15.5). The hub (above) and
-  the dashboard build it in this release.
+  agent profile's owner is not the runner's owner (§15.3, §15.5). The hub builds it in
+  this release (above).
 - web: Project settings, Members and agents, set the project's limit of
   agents on runners (`max_placements`, §6.1) with a reason, shown as the
   placements on runners now of the limit; a human admin only. A start
@@ -166,8 +166,8 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
   `policy.spawn_consent_by` stays and decides nothing for placements. Stopping and
   removing stay open as before; the agent profile's owner now removes its placement too,
   and the runner's owner may stop and remove every placement on their runner, member of
-  its project or not. The hub (above) and the dashboard build it in this release,
-  except the replacement and the nudge, which are not built yet (tsk-j9e0yapj21wj).
+  its project or not. The hub builds it in this release (above), except moving by a
+  replacement and the nudge, which are not built yet (tsk-j9e0yapj21wj).
 - cli: an internal clean-up of `maity resume` and the review text check; their
   output stays the same. Only a negative number from the hub reads differently:
   another instance's claims count is left out, a ticker count reads 0, and a
