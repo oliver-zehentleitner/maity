@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import replace
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -670,7 +670,9 @@ def list_tasks(
     with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        query = select(t.card).where(t.card.c.project_id == mine.project.id)
+        # Keys first: the order's columns of every card the filters let through, the full
+        # rows only for the page (tsk-ybc2ma72dzvq, hub/context/persistence.md).
+        query = select(*KEYS).where(t.card.c.project_id == mine.project.id)
         if status != "all":
             wanted = [s for s in status.split(",") if s]
             if any(s not in cards.STATUSES for s in wanted):
@@ -706,55 +708,47 @@ def list_tasks(
             order=order,
             **({"q": q} if q is not None else {}),
         )  # fmt: skip
-        matched: dict[str, list[str]] = {}
         # Notes written in the reader's hidden windows are not searched (§6.2, §6.4).
-        listable = (
-            events.outside_window_times(conn, mine.project.id, mine.row, t.card_note.c.created_at)
+        search = (
+            card_search.Search(
+                conn,
+                q,
+                events.outside_window_times(
+                    conn, mine.project.id, mine.row, t.card_note.c.created_at
+                ),
+            )
             if q is not None
             else None
         )
 
-        def matching(rows: Sequence[Any]) -> list[Any]:
-            if q is None:
-                return list(rows)
-            result = []
-            notes = card_search.note_bodies(conn, (row.id for row in rows), listable)
-            for row in rows:
-                hit = card_search.matches(row, q, notes[row.id])
-                if hit:
-                    matched[row.id] = hit
-                    result.append(row)
-            return result
-
-        def views(rows: Sequence[Any]) -> list[dict[str, Any]]:
-            shown = task_views(conn, rows, fg, mine)
-            if q is not None:
-                for item in shown:
-                    item["match"] = matched[item["id"]]
-            return shown
+        def listed(card_id: str) -> bool:
+            return search is None or bool(search.keep([card_id]))
 
         if order == "board":
-            # The board's order (§6.4) is not one the database keeps: sorted here, a
-            # project's cards at a time, and paged after the last item shown.
+            # The board's order (§6.4) is not one the database keeps: the keys are sorted
+            # here, a project's cards at a time, and paged after the last item shown.
             def key(row: Any) -> tuple[Any, ...]:
                 return ranks.board_key(cards.STATUSES, row)
 
-            ordered = sorted(matching(conn.execute(query).all()), key=key)
+            ordered = sorted(conn.execute(query).all(), key=key)
             if cursor is not None:
-                ordered = _after(ordered, *paging.unkey(cursor, bound), key)
-            shown = ordered[:limit]
+                ordered = _after(ordered, *paging.unkey(cursor, bound), key, listed)
+            taken = _take(_batches(ordered, limit), limit + 1, search)
+            shown = taken[:limit]
             following = None
-            if len(ordered) > limit:
+            if len(taken) > limit:
                 last, column = shown[-1], key(shown[-1])[0]
                 in_column = [r.id for r in shown if key(r)[0] == column]
-                first_not_shown = ordered[limit]
+                first_not_shown = taken[limit]
                 following = paging.key_cursor(
                     (last.id, key(last)),
                     (first_not_shown.id, key(first_not_shown)),
                     in_column,
                     bound,
                 )
-            return JSONResponse({"items": views(shown), "next_cursor": following})
+            return JSONResponse(
+                {"items": _views(conn, shown, search, fg, mine), "next_cursor": following}
+            )
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor, bound)
             query = query.where(
@@ -764,14 +758,106 @@ def list_tasks(
                 )
             )
         query = query.order_by(t.card.c.updated_at.desc(), t.card.c.id.desc())
-        if q is None:
-            query = query.limit(limit + 1)
-        rows = matching(conn.execute(query).all())
-        page = rows[:limit]
+        if search is None:
+            taken = conn.execute(query.limit(limit + 1)).all()
+        else:
+            taken = _take(_updated_batches(conn, query, limit), limit + 1, search)
+        page = taken[:limit]
         next_cursor = (
-            paging.cursor(page[-1].updated_at, page[-1].id, bound) if len(rows) > limit else None
+            paging.cursor(page[-1].updated_at, page[-1].id, bound) if len(taken) > limit else None
         )
-        return JSONResponse({"items": views(page), "next_cursor": next_cursor})
+        return JSONResponse(
+            {"items": _views(conn, page, search, fg, mine), "next_cursor": next_cursor}
+        )
+
+
+# The columns the card list orders and pages by (§6.4): read for every card the filters let
+# through, while the full rows are read only for the page.
+KEYS = (
+    t.card.c.id,
+    t.card.c.status,
+    t.card.c.rank,
+    t.card.c.created_at,
+    t.card.c.closed_at,
+    t.card.c.updated_at,
+)
+# A search reads its cards' text this many at most per batch; the first batch is the page.
+SEARCH_BATCH_MAX = 1000
+
+
+def _batch_sizes(limit: int) -> Iterator[int]:
+    """The page first, so a search that matches often reads no more than it shows; then
+    doubling, so one that matches rarely reads the list in few statements."""
+    size = limit + 1
+    while True:
+        yield size
+        size = min(size * 2, SEARCH_BATCH_MAX)
+
+
+def _batches(ordered: Sequence[Any], limit: int) -> Iterator[Sequence[Any]]:
+    start = 0
+    for size in _batch_sizes(limit):
+        if start >= len(ordered):
+            return
+        yield ordered[start : start + size]
+        start += size
+
+
+def _updated_batches(conn: Connection, query: Any, limit: int) -> Iterator[Sequence[Any]]:
+    """`order=updated` a batch of keys at a time, each after the last one read."""
+    last = None
+    for size in _batch_sizes(limit):
+        batch = query
+        if last is not None:
+            batch = batch.where(
+                or_(
+                    t.card.c.updated_at < last.updated_at,
+                    and_(t.card.c.updated_at == last.updated_at, t.card.c.id < last.id),
+                )
+            )
+        rows = conn.execute(batch.limit(size)).all()
+        if rows:
+            yield rows
+        if len(rows) < size:
+            return
+        last = rows[-1]
+
+
+def _take(
+    batches: Iterable[Sequence[Any]], wanted: int, search: card_search.Search | None
+) -> list[Any]:
+    """The first `wanted` keys, in order, of the cards that match the search."""
+    taken: list[Any] = []
+    for batch in batches:
+        kept = None if search is None else search.keep([row.id for row in batch])
+        for row in batch:
+            if kept is None or row.id in kept:
+                taken.append(row)
+                if len(taken) == wanted:
+                    return taken
+    return taken
+
+
+def _views(
+    conn: Connection,
+    keys: Sequence[Any],
+    search: card_search.Search | None,
+    fg: Forge,
+    mine: Membership,
+) -> list[dict[str, Any]]:
+    """The page's cards in full, in the order of their keys. A card gone since its key was
+    read is left out."""
+    if not keys:
+        return []
+    ids = [row.id for row in keys]
+    found = {row.id: row for row in conn.execute(select(t.card).where(t.card.c.id.in_(ids)))}
+    rows = [found[card_id] for card_id in ids if card_id in found]
+    shown = task_views(conn, rows, fg, mine)
+    if search is not None:
+        places = search.places([row.id for row in rows])
+        for item in shown:
+            item["match"] = places[item["id"]]
+    return shown
 
 
 def _after(
@@ -780,20 +866,24 @@ def _after(
     following: tuple[str, tuple[Any, ...]],
     shown: frozenset[str],
     key: Callable[[Any], tuple[Any, ...]],
+    listed: Callable[[str], bool],
 ) -> list[Any]:
     """The cards after the ones a page showed, never ending early while a card that did
     not move is still unshown. A move ranks unranked cards on the way and spreads a column
     out, which changes their keys but never the order of the cards that did not move. So
     the page goes on after the last card shown where it still sits in its column; else
     from the first card not shown, if it has not moved at all (same key); else from the
-    top of the last card's column again, without the cards this page showed."""
+    top of the last card's column again, without the cards this page showed. `ordered`
+    holds every card of the filters; `listed` says whether a search still finds one."""
     places = {row.id: i for i, row in enumerate(ordered)}
     anchor_id, was = anchor
-    if anchor_id in places and key(ordered[places[anchor_id]])[0] == was[0]:
-        return ordered[places[anchor_id] + 1 :]
+    at = places.get(anchor_id)
+    if at is not None and key(ordered[at])[0] == was[0] and listed(anchor_id):
+        return ordered[at + 1 :]
     following_id, next_was = following
-    if following_id in places and key(ordered[places[following_id]]) == next_was:
-        return ordered[places[following_id] :]
+    at = places.get(following_id)
+    if at is not None and key(ordered[at]) == next_was and listed(following_id):
+        return ordered[at:]
     try:
         return [r for r in ordered if key(r)[0] >= was[0] and r.id not in shown]
     except TypeError:  # a key of another shape: not a cursor this list gave
