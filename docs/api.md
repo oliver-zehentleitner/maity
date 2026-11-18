@@ -439,7 +439,7 @@ the hub records it on the session.
 | `POST /me/presence` | 10 per minute per session, then `rate_limited` with `Retry-After`; `present_until` written at most once a minute per session (§18.4) |
 | Mails of the instance | `max_per_hour` of the mail settings, default 500 (§16.2) |
 | Admin test sends | 5 per hour per instance admin (§16.3) |
-| Address verification mails | 3 per hour and 10 per day per human, beyond it `rate_limited` and the address unchanged; 3 per hour and 10 per day per recipient address from all accounts together, beyond it the address is pending but no mail is sent (§18.4) |
+| Address verification mails | 3 per hour and 10 per day per human, beyond it `rate_limited` and the address unchanged; per recipient address, places for 3 asking accounts per hour and 10 per day, and at most 9 verification mails per hour and 100 per day queued for it from all accounts together, counted at the request, not at delivery; beyond either the address is pending but no mail is queued (§18.4) |
 | Instances per membership | `agent.max_instances`, 1–16 (§6.18) |
 | Soul | 8 KiB (§19.1) |
 | Briefing texts | a guide 2 KiB, a global briefing 8 KiB, a role briefing 8 KiB, the project's and the membership's briefing 16 KiB each (§6.28) |
@@ -454,7 +454,7 @@ the hub records it on the session.
 | Preferences proposals | one open per proposing membership and human; 5 per proposing membership and human in 24 hours (§19.4) |
 | Preferences inside the resume packet | 8 texts in all, `preferences.items` and `membership.owner_preferences` together; the agent's own owner first, then by `handle` and member id; the rest cut with `truncated: true` (§19.4) |
 | Registration allowlist | 200 domains and 2000 addresses, each at most 254 characters (§16.4) |
-| Registration requests | 10 per hour per source address; 3 per 15 minutes and 10 per day per (address, source address); 5 per hour and 20 per day per address; the instance breaker `MAITY_REGISTRATION_BREAKER`, default 120 per minute (§2.7.3) |
+| Registration requests | 10 per hour per source address; 3 per 15 minutes and 10 per day per (address, source address); per address, places for 5 source networks per hour and 20 per day (a network: an IPv4 address, an IPv6 /64) and at most 50 mails per hour and 200 per day queued for it, counted at the request; the instance breaker `MAITY_REGISTRATION_BREAKER`, default 120 per minute (§2.7.3) |
 | Pending registrations | 5 per address, each 24 hours; 5 wrong passwords at completion (§2.7.1) |
 | New accounts | `max_new_accounts_per_hour`, default 20 (§16.4) |
 | Registration mails | `registration_max_per_hour`, default 30 (§16.2) |
@@ -2037,8 +2037,8 @@ HMAC with the signing key, never in clear.
 |---|---|
 | `POST /auth/device-codes` | 5 per 10 minutes per human |
 | `POST /auth/device-login` | 10 per minute per source address, every attempt; and 60 wrong codes per minute across the instance — past that, every redemption is `rate_limited` for a minute (a distributed guess at 60 bits cannot get far; the password still works). This breaker is a known denial of service: a few source addresses can keep device-code sign-in off for the whole instance. It is accepted on purpose — a per-source limit alone would let a distributed guess run — and must not be "fixed" into one |
-| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; 5 per hour and 20 per day per address from all sources together, existing or not; 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security, mail-factor and notification mail |
-| `POST /auth/password-reset` (§2.10) | as `POST /auth/email-link`, in buckets of its own: 3 per 15 minutes and 10 per day per (address, source address), existing or not; 5 per hour and 20 per day per address from all sources together, existing or not; 10 per hour per source address; reset mails sent across the instance at most `password_reset_max_per_hour` (§16.2, default 30) — a budget of their own, apart from sign-in, security and notification mail |
+| `POST /auth/email-link` | 3 per 15 minutes and 10 per day per (address, source address), existing or not; per address from all sources together, existing or not, places for 5 source networks per hour and 20 per day (a network: an IPv4 address, an IPv6 /64) and at most 50 mails per hour and 200 per day queued for it, counted at the request (below); 10 per hour per source address; sign-in mails sent across the instance at most `sign_in_max_per_hour` (#160 §16.2, default 60) — a budget of their own, apart from security, mail-factor and notification mail |
+| `POST /auth/password-reset` (§2.10) | as `POST /auth/email-link`, in buckets of its own: 3 per 15 minutes and 10 per day per (address, source address), existing or not; per address from all sources together, existing or not, places for 5 source networks per hour and 20 per day and at most 50 mails per hour and 200 per day queued for it, counted at the request; 10 per hour per source address; reset mails sent across the instance at most `password_reset_max_per_hour` (§16.2, default 30) — a budget of their own, apart from sign-in, security and notification mail |
 | `POST /auth/password-reset/check`, `…/complete` | 10 per minute per source address, shared with the login limit of §2.1; a wrong TOTP or recovery code counts as §2.8.6 counts |
 | `POST /auth/email-code` | 5 wrong codes per mailed code; 20 wrong codes per human per day, after which every outstanding code of that human is void (§2.6.3); 10 per minute per source address, shared with the login limit of §2.1 |
 | Long-polls on `GET /auth/device-codes/{id}` and `GET /auth/device-login` | one per session or pending cookie; a second supersedes the first |
@@ -2069,10 +2069,13 @@ no mail past it, and a network keeps at most one place once its
 requests are done: two or three of its first requests at once (its
 quarter limit) may each take one for that moment (longer when one of
 them stalls), and all but one give theirs back. The windows slide, so a place passes from one network to the
-next within an hour or a day; the mails themselves are therefore counted too: an address is sent
-at most 50 of these mails in any hour and 200 in any day, from all
-networks together, and over that `202` and nothing is sent. Four
-networks at their pair limits (10 a day each) send at most 40 in any
+next within an hour or a day; the mails themselves are therefore counted too: at most 50 of
+these mails are queued for an address in any hour and 200 in any day, from all
+networks together, and over that `202` and nothing is queued. Like every
+limit here these count requests when they are answered, not deliveries:
+the outbox sends what was queued within the path's instance cap below, so
+mails queued in different windows may arrive together after a delay. Four
+networks at their pair limits (10 a day each) ask for at most 40 in any
 hour or day, so the count never stops fewer than five. So through the
 limits per address one network can never spend the address's budget,
 nor can two to four: the human's own network still gets its mail, but
@@ -2086,8 +2089,8 @@ and registration fewer networks can reach: at the defaults, three
 networks at their 10 requests an hour per source address spend the 30
 reset or registration mails of an hour, while the 60 sign-in mails
 take six; the owner's mail of that kind is then not sent either, until
-the hour has passed. The price is the mailbox: those 50 in any hour
-and 200 in any day, and never more than the path's instance cap, which is
+the hour has passed. The price is the mailbox: those 50 queued in any hour
+and 200 in any day, and never more sent in an hour than the path's instance cap, which is
 the outer bound across all addresses: `sign_in_max_per_hour` (default
 60) for sign-in links, `password_reset_max_per_hour` (default 30) for
 reset links, `registration_max_per_hour` (default 30) for registration
@@ -2651,7 +2654,7 @@ contract. `GET /me` carries `member.terms` (§5.1) for a human.
 |---|---|
 | `POST /auth/register` per source address | 10 per hour; `rate_limited` (`429`) — the one limit that answers `429`, since it speaks only about the caller |
 | per (address, source address) | 3 per 15 minutes, 10 per day, existing account or not; over it `202` and nothing is sent |
-| per address, counted in source networks | 5 networks per hour and 20 per day, as §2.6.4 counts them: a network's first mail to the address in the window takes a place, its further ones only its pair limit; and at most 50 mails in any hour and 200 in any day from all networks; over either `202` and nothing is sent. A stranger's mailbox gets no more, and never more than `registration_max_per_hour` |
+| per address, counted in source networks | 5 networks per hour and 20 per day, as §2.6.4 counts them: a network's first mail to the address in the window takes a place, its further ones only its pair limit; and at most 50 mails queued for the address in any hour and 200 in any day from all networks, counted at the request, not at delivery; over either `202` and nothing is queued. No more are queued for a stranger's mailbox, and the instance sends never more than `registration_max_per_hour` registration mails an hour |
 | instance breaker | more than `MAITY_REGISTRATION_BREAKER` requests (default 120) per minute across the instance, every request counted: every `POST /auth/register` is `rate_limited` for a minute |
 | registration mails | `registration_max_per_hour` (§16.2, default 30), a budget of their own; over it `202` and nothing is sent |
 | completion | 5 wrong passwords per pending registration (then void); 10 completion attempts per minute per source address, shared with the login limit of §2.1 |
@@ -24819,12 +24822,15 @@ device; the browser's own permission is per browser and is not stored.
   has places for 3 asking accounts an hour and 10 a day: an account's
   first verification mail to the address in the window takes a place,
   its further ones only its own limit. The windows slide, so a place
-  passes from one account to the next; the address is therefore sent at
-  most 9 verification mails in any hour and 100 in any day from all
-  accounts, within `verification_max_per_hour` (§16.2). Two accounts at
-  their own limits send at most 6 in any hour and 20 in any day, so that
-  count never stops fewer than three. Beyond either the address is
-  pending as usual but no mail goes out. One or two accounts asking
+  passes from one account to the next; the verification mails themselves
+  are therefore counted too: at most 9 are queued for the address in any
+  hour and 100 in any day from all accounts. Both counts are taken when
+  the mail is requested and queued, not when it is delivered: the
+  outbox sends queued mail within `verification_max_per_hour` (§16.2),
+  so mails queued in different windows may arrive together after a
+  delay. Two accounts at their own limits ask for at most 6 in any hour
+  and 20 in any day, so that count never stops fewer than three. Beyond
+  either the address is pending as usual but no mail is queued. One or two accounts asking
   again and again so leave a third its mail: one account's requests
   run one at a time (under its settings row), so an account never holds
   two places, unlike a network in §2.6.4; three distinct accounts in

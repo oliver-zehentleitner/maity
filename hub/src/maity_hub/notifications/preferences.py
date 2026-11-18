@@ -44,9 +44,9 @@ VERIFY_FOR = timedelta(hours=24)
 # Verification mails (§18.4): 3 an hour and 10 a day per human, refused beyond; and per
 # recipient address, counted in asking accounts: an account's first mail to the address in a
 # window takes one of 3 places an hour and 10 a day, its further ones none (they are held by
-# its own limit); and at most 9 mails in any hour and 100 in any day from all accounts, which
-# two accounts at their own limits (6 an hour, 20 a day) never reach. Not sent beyond,
-# silently (`email_links.recipient_over`).
+# its own limit); and at most 9 mails queued in any hour and 100 in any day from all accounts,
+# counted at the request, not at delivery, which two accounts at their own limits (6 an hour,
+# 20 a day) never reach. Not queued beyond, silently (`email_links.recipient_over`).
 VERIFY_BY_HUMAN_HOUR = Limiter(3, 3600, name="notifications.verify.human_hour")
 VERIFY_BY_HUMAN_DAY = Limiter(10, 86400, name="notifications.verify.human_day")
 VERIFY_BY_RECIPIENT_HOUR = Limiter(3, 3600, name="notifications.verify.recipient_hour")

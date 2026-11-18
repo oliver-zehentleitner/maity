@@ -335,13 +335,17 @@ from elsewhere, and no script runs before there is an account.
 **Evidence:** inferred
 **Source:** `docs/api.md` §2.7.5, §3.4, §16.2, §18.5; implementation of the `TODO(#280)` mails (tsk-pb3vs6d65800) and its review (#776), 2026-10-30
 **Revisit when:** the registration keeps the person's language past the confirmation, or the security budget is counted per recipient
+**See:** mail.md#mails-anyone-can-send-to-an-address-have-budgets-of-their-own-and-wait-over-them-verification-and-invitation — d3113259-e9eb-4321-8a8a-70080feaf52b — as of 2026-11-18
 
 The approval, rejection and expiry mails of registration (`registration_accounts._mail`) and the
 invitation's mail (`invitation_mail.send`) are queued only when mail is complete and enabled
 (`registration.mail_ready`), as the security mail of the outbox otherwise is not: without mail a
-decision queues nothing. Each is queued in the deciding transaction on the `security` budget, which
-is counted per instance and kind (`mail_budget`), not per recipient; "the recipient's security
-budget" of §3.4 is that budget. A rejection's or an expiry's mail has no `human_id`: the account and
+decision queues nothing. Each is queued in the deciding transaction. The registration's account
+mails go on the `security` budget, which is counted per instance and kind (`mail_budget`), not per
+recipient. The invitation's mail went there too, and "the recipient's security budget" of §3.4 was
+that budget, until it got a budget of its own, kind `invitation` (`invitation_max_per_hour`, §3.4
+now names it), counted the same way (d3113259), which replaces this entry's budget for the invitation's mail;
+the rest of this entry stands. A rejection's or an expiry's mail has no `human_id`: the account and
 everything it made are deleted in the same transaction, and the address was read before. The
 invitation's mail is tied to an account only where one holds the address as verified (or disabled),
 so a disabled address stops it as it stops that account's other mail (§18.7); most often nobody

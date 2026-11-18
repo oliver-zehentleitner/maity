@@ -237,10 +237,11 @@ def mail_body(
 # default 30; sign-in's 60 takes six.
 RECIPIENT_PER_HOUR = 5
 RECIPIENT_PER_DAY = 20
-# And the mails themselves, from all networks together, in any hour and any day: the windows
-# slide, so a place passes from one network to the next within them, and the places alone do
-# not bound the mails. Four networks at their pair limits (10 a day each) send at most 40 in
-# any hour or day, so these never stop fewer than five.
+# And the mails themselves, from all networks together, queued in any hour and any day: the
+# windows slide, so a place passes from one network to the next within them, and the places
+# alone do not bound the mails. Counted at the request, not at delivery (§2.6.4). Four networks
+# at their pair limits (10 a day each) ask for at most 40 in any hour or day, so these never
+# stop fewer than five.
 RECIPIENT_MAILS_PER_HOUR = 50
 RECIPIENT_MAILS_PER_DAY = 200
 
