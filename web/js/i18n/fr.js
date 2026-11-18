@@ -2366,6 +2366,10 @@ window.MAITY_I18N["fr"] = {
     "one": "{count} échec",
     "other": "{count} échecs"
   },
+  "mail.count.invitation": {
+    "one": "{count} e-mail d’invitation",
+    "other": "{count} e-mails d’invitation"
+  },
   "mail.count.notifications": {
     "one": "{count} e-mail de notification",
     "other": "{count} e-mails de notification"
@@ -2374,6 +2378,14 @@ window.MAITY_I18N["fr"] = {
     "one": "{count} e-mail de sécurité en attente",
     "other": "{count} e-mails de sécurité en attente"
   },
+  "mail.count.second_factor": {
+    "one": "{count} e-mail du second facteur",
+    "other": "{count} e-mails du second facteur"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} e-mail du second facteur abandonné",
+    "other": "{count} e-mails du second facteur abandonnés"
+  },
   "mail.count.security": {
     "one": "{count} e-mail de sécurité",
     "other": "{count} e-mails de sécurité"
@@ -2381,6 +2393,14 @@ window.MAITY_I18N["fr"] = {
   "mail.count.sign_in": {
     "one": "{count} e-mail de connexion",
     "other": "{count} e-mails de connexion"
+  },
+  "mail.count.verification": {
+    "one": "{count} e-mail de vérification",
+    "other": "{count} e-mails de vérification"
+  },
+  "mail.count.waiting": {
+    "one": "{count} e-mail de vérification ou d’invitation en attente",
+    "other": "{count} e-mails de vérification ou d’invitation en attente"
   },
   "mail.daily_at": "Résumés quotidiens et hebdomadaires à",
   "mail.day.fri": "vendredi",
@@ -2394,13 +2414,16 @@ window.MAITY_I18N["fr"] = {
   "mail.field.from_address": "Adresse de l'expéditeur",
   "mail.field.from_name": "Nom de l'expéditeur",
   "mail.field.host": "Hôte SMTP",
+  "mail.field.invitation_max_per_hour": "E-mails d'invitation par heure",
   "mail.field.max_per_hour": "E-mails de notification par heure",
   "mail.field.port": "Port SMTP",
   "mail.field.reply_to": "Adresse de réponse",
+  "mail.field.second_factor_max_per_hour": "E-mails de second facteur par heure",
   "mail.field.security_max_per_hour": "E-mails de sécurité par heure",
   "mail.field.sign_in_max_per_hour": "E-mails de connexion par heure",
   "mail.field.tls": "Sécurité de la connexion",
   "mail.field.username": "Nom d'utilisateur SMTP",
+  "mail.field.verification_max_per_hour": "E-mails de confirmation d'adresse par heure",
   "mail.hold_while_online": "Pas d'e-mail tant que je suis en ligne dans l'application web",
   "mail.hold_while_online.hint": "Les e-mails envoyés « Immédiatement » attendent tant que vous utilisez le tableau de bord. Quelques minutes après l'avoir quitté, seul ce que vous n'avez pas lu est envoyé.",
   "mail.incomplete": "La configuration e-mail est incomplète : {missing}.",
@@ -2413,6 +2436,7 @@ window.MAITY_I18N["fr"] = {
   "mail.kinds.hint": "Un résumé contient tout ce qui est encore non lu au moment de son envoi. Un second facteur modifié, une adresse modifiée et une suppression de compte sont toujours envoyés immédiatement.",
   "mail.kinds.legend": "Quand chaque type est envoyé",
   "mail.last_hour": "Dernière heure : {notifications}, {security}, {sign_in}, {failures} ; {queued}.",
+  "mail.last_hour_own": "Aussi dans la dernière heure : {verification}, {invitation}, {second_factor}, {dropped} ; {waiting}.",
   "mail.mode.daily": "Résumé quotidien",
   "mail.mode.hourly": "Résumé toutes les heures",
   "mail.mode.immediate": "Immédiatement",

@@ -28,11 +28,12 @@ from sqlalchemy.exc import IntegrityError
 from maity_hub import admin, catalog, clock, languages
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
-from maity_hub.errors import ApiError, invalid
+from maity_hub.auth.email_links import recipient_over
+from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
-from maity_hub.ratelimit import Attempt
+from maity_hub.ratelimit import Attempt, Limiter
 
 KINDS = ("inbox", "chat", "mention", "security", "invitation")
 MODES = ("immediate", "hourly", "daily", "weekly", "off")
@@ -40,6 +41,28 @@ DIGESTS = ("hourly", "daily", "weekly")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 CONTENT_KINDS = ("chat", "mention")
 VERIFY_FOR = timedelta(hours=24)
+# Verification mails (§18.4): 3 an hour and 10 a day per human, refused beyond; and per
+# recipient address, counted in asking accounts: an account's first mail to the address in a
+# window takes one of 3 places an hour and 10 a day, its further ones none (they are held by
+# its own limit); and at most 9 mails queued in any hour and 100 in any day from all accounts,
+# counted at the request, not at delivery, which two accounts at their own limits (6 an hour,
+# 20 a day) never reach. Not queued beyond, silently (`email_links.recipient_over`).
+VERIFY_BY_HUMAN_HOUR = Limiter(3, 3600, name="notifications.verify.human_hour")
+VERIFY_BY_HUMAN_DAY = Limiter(10, 86400, name="notifications.verify.human_day")
+VERIFY_BY_RECIPIENT_HOUR = Limiter(3, 3600, name="notifications.verify.recipient_hour")
+VERIFY_BY_RECIPIENT_DAY = Limiter(10, 86400, name="notifications.verify.recipient_day")
+VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS = Limiter(
+    1, 3600, name="notifications.verify.recipient_hour_accounts"
+)
+VERIFY_BY_RECIPIENT_DAY_ACCOUNTS = Limiter(
+    1, 86400, name="notifications.verify.recipient_day_accounts"
+)
+VERIFY_BY_RECIPIENT_MAILS_HOUR = Limiter(
+    9, 3600, name="notifications.verify.recipient_mails_hour", exact=True
+)
+VERIFY_BY_RECIPIENT_MAILS_DAY = Limiter(
+    100, 86400, name="notifications.verify.recipient_mails_day", exact=True
+)
 APPROVER_AGE = timedelta(hours=24)
 HELD_FOR = timedelta(days=7)
 # The requesting session's data kept with a pending address, cleared with it.
@@ -631,6 +654,12 @@ def apply_address(
         if row.address is not None and row.address_status in ("verified", "disabled"):
             _tell_old_address(conn, human_id, row.address, None, session, public_url)
         return
+    # The human's own limits are told (`rate_limited`); nothing is changed then.
+    wait = VERIFY_BY_HUMAN_HOUR.blocked(human_id) or VERIFY_BY_HUMAN_DAY.blocked(human_id)
+    if wait:
+        raise rate_limited(wait)
+    VERIFY_BY_HUMAN_HOUR.hit(human_id)
+    VERIFY_BY_HUMAN_DAY.hit(human_id)
     nonce = secrets.token_hex(8)
     conn.execute(
         update(t.notification_settings)
@@ -662,18 +691,34 @@ def apply_address(
         },
     )
     link = f"{public_url}/mail/verify/{token}"
+    if _recipient_over(wanted, human_id):
+        return  # the address had its share: the link stays pending, no mail is sent
     # Never the handle, the name or projects: nobody confirmed this address yet (§18.4).
     # The language is the human's own (§6.2); it names nobody.
     words = catalog.section("mail", text_language(conn, human_id))
     outbox.enqueue(
         conn,
-        kind="security",
+        kind="verification",  # a budget of its own: security mail never waits behind it
         human_id=human_id,
         to=wanted,
         extra_headers={"_purpose": "verify"},
         subject=f"[Maity] {words['verify_subject']}",
         body=words["verify_body"].format(url=public_url, address=wanted, link=link),
     )
+
+
+def _recipient_over(address: str, human_id: str) -> bool:
+    """Count one verification mail to `address`, asked by `human_id`, against the address's
+    hour and day in asking accounts; True when the address has no place left for it."""
+    limiters = (
+        VERIFY_BY_RECIPIENT_HOUR,
+        VERIFY_BY_RECIPIENT_DAY,
+        VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS,
+        VERIFY_BY_RECIPIENT_DAY_ACCOUNTS,
+        VERIFY_BY_RECIPIENT_MAILS_HOUR,
+        VERIFY_BY_RECIPIENT_MAILS_DAY,
+    )
+    return recipient_over(limiters, f"verify\0{addresses.normalized(address)}", human_id)
 
 
 def verify(

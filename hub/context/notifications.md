@@ -1378,6 +1378,26 @@ module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
   key, beside the one that parses and uses it.
 - `instance_settings`: it stores the fallback, but knows nothing of keys.
 
+## A verification mail is limited per human and per recipient address, the latter in asking accounts
+
+**Id:** aedbf93a-563a-4753-9cdf-8a9bae72e43b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §18.4; tsk-q4zynccy5t0b and its review, counting in asking accounts decided by the maintainer on 2026-11-17, counting at request time on 2026-11-18; `hub/src/maity_hub/notifications/preferences.py` `apply_address`, `_recipient_over`; `hub/src/maity_hub/auth/email_links.py` `recipient_over`; `hub/tests/test_notification_address.py`, red when every mail counts
+**See:** mail.md#mails-anyone-can-send-to-an-address-have-budgets-of-their-own-and-wait-over-them-verification-and-invitation — d3113259-e9eb-4321-8a8a-70080feaf52b — as of 2026-11-14
+**See:** auth.md#anonymous-mail-requests-are-capped-per-recipient-in-source-networks-and-limits-per-source-address-count-an-ipv6-client-by-its-64 — ad4dc104-7b44-4049-a9e4-ebcf7aef9dd2 — as of 2026-11-17
+
+Setting a pending address takes, per human, at most 3 verification mails an hour and 10 a day; past that the `PATCH` answers `rate_limited` and nothing changes. Per recipient (a digest of the normalised address) there are places for 3 asking accounts an hour and 10 a day: an account's first verification mail to the address in a window takes one, its further ones none; and at most 9 verification mails queued for the address in any hour and 100 in any day from all accounts together, counted as the sign-in link's (ad4dc104): when the mail is requested and queued, not when the outbox delivers it within `verification_max_per_hour`, so mails queued in different windows can arrive together after a delay. Past either the change is stored but no mail is queued, and the answer is the same.
+
+**Reason:** the budget of its own (d3113259) keeps verification mail from holding up security mail, but alone it lets one account fill it, or many accounts flood one stranger's inbox. Counted in mails, the per-recipient limit equalled the per-human one, so one account asking three times spent the address's hour and the owner's own verification waited; counted in accounts, one or two cannot: one account's requests run one at a time under its settings row (taken for update; its first write waits on the row's primary key on PostgreSQL, and SQLite's `BEGIN IMMEDIATE` serialises every write), so an account never holds two places, unlike a network (ad4dc104). Three distinct accounts in an hour (ten in a day) still hold the address's places; where one source can make active accounts (open registration with automatic approval: 10 registrations an hour per source address, within the instance's new accounts per hour), one source can so hold them — an accepted limit for now, a further cap per address is a separate decision. The windows slide, so places alone let 15 mails through in one hour and 186 in one day (measured in review); the count of the mails bounds what is queued at 9 and 100, and two accounts at their own limits (at most 6 requested in any hour, 20 in any day) never reach it. The per-human limit tells the caller, who is signed in and owns the attempts; the per-recipient one stays silent so that it reveals nothing about what other accounts asked for that address.
+
+**Rejected alternatives:**
+- Counting mails per recipient from all accounts together (the first design): one account spends the address's hour.
+- Refuse over the per-recipient limit too: it would tell one account that others are trying the same address.
+- Only the per-human limit: many accounts could still each send a stranger three mails an hour.
+- A per-recipient check at delivery too, in the outbox: decided against by the maintainer on 2026-11-18 (review of PR #1797); these limits apply at request time, as for the anonymous paths (ad4dc104).
+
 ## A notification mail's subject is defanged and cut like its body; a waiting mail is dropped once a membership it relies on ended
 
 **Id:** 64c0fbdf-0e1d-443e-af22-6bbc9c95df04
