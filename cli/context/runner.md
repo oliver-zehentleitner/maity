@@ -3198,7 +3198,9 @@ the repository. A glob rule cannot.
 
 maity reads a body file through descriptors only. It works out on the
 text alone which names lead from the clone's root to the file, refusing a
-path that leaves the clone. It opens the clone's root, then each
+path that leaves both the clone and the placement's scratch
+(783e476c-3975-43de-9c4e-7c3a5da57be7). It opens the clone's root (for
+a file in the scratch, `/`), then each
 directory on the way from the one before with `O_NOFOLLOW` and
 `O_DIRECTORY`, refusing a link and the clone's `.git` (by device and
 inode, so a case-insensitive volume's `.GIT` is caught too). It opens the
@@ -3340,14 +3342,15 @@ removed. POSIX has no unlink only while a name holds a given inode; the
 window is accepted, since the name is maity's own unpredictable one in
 the clone and code that can put a file there can remove it itself.
 
-## Under a placement maity reads a file for the agent only inside the clone, and writes no attachment to standard output
+## Under a placement maity reads a file for the agent only inside the clone or the placement's scratch, and writes no attachment to standard output
 
 **Id:** 783e476c-3975-43de-9c4e-7c3a5da57be7
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-bg81webs911m (the rest of the card: every path maity reads for the agent, the lead's list of those paths and of the ways out to test (an absolute path, `../`, `.git/maity/`, a symbolic link, a hard link), and the order to offer no `-o -` under a placement), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed
+**Source:** card tsk-bg81webs911m (the rest of the card: every path maity reads for the agent, the lead's list of those paths and of the ways out to test (an absolute path, `../`, `.git/maity/`, a symbolic link, a hard link), and the order to offer no `-o -` under a placement), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed; the scratch paragraph from card tsk-dpe3d5g5eh4k (the lead's go, 2026-11-17)
 **See:** runner.md#under-a-placement-maity-writes-a-file-only-inside-the-clone-and-reads-its-records-from-the-runners-directory — 818828af-24cb-4b2a-be54-1bff2211ccb0 — as of 2026-11-13
+**See:** runner.md — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-17
 **Revisit when:** a command gets a file option that does not read through `cli._placed_read`; an option needs more than 10 MiB; a placed agent needs to name a file with more than one hard link; a harness runs `maity` inside its sandbox
 
 Under a runner placement every file maity reads for a command goes
@@ -3369,6 +3372,15 @@ descriptor (Windows), only stdin is taken. `maity files get -o -` is
 refused under a placement before any call, so the walk into the clone is
 the only way maity writes an attachment there.
 
+A path outside the clone is read on the same terms from the placement's
+scratch, when the runner recorded one (`clonecheck.SCRATCH_RECORD`, in
+its directory for the agent, beside the `git` record): the walk then
+starts at `/`, each directory on the way to the scratch and below it
+opened without following a link. The record,
+not `MAITY_SCRATCH`, names it, and a record pointing into the clone or
+not an absolute path is ignored. Writing (`files get -o`) stays inside
+the clone.
+
 **Reason:** maity runs outside the harness's sandbox, and what it reads
 for a command can go to the hub (an upload, a message, a request body).
 A path the agent names must not let it read what the sandbox hides from
@@ -3388,6 +3400,9 @@ goes wherever the command line sent it, which maity cannot see.
   terminal check says nothing about where a redirect points.
 - Checking the path by name first (`realpath` and a prefix test) and
   then reading it: the name is looked up twice (as in 818828af).
+- Taking the scratch from `MAITY_SCRATCH`: the agent sets its own
+  environment, so the variable could name any directory its user may
+  read, another clone's included.
 
 **Known gap:** a file whose other name is removed between the open and
 the link count reads as one link; that takes write access to the
@@ -3922,21 +3937,31 @@ disk to one limit per placement.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the lead's go on the design note for tsk-dpe3d5g5eh4k, 2026-11-17; the maintainer's card after the agents' VM filled with leftovers, 2026-11-16; the lead's decision on the gc refusal rules and the runner's own end after the reviews of #1915, 2026-11-17
+**Source:** the lead's go on the design note for tsk-dpe3d5g5eh4k, 2026-11-17; the maintainer's card after the agents' VM filled with leftovers, 2026-11-16; the lead's decision on the gc refusal rules and the runner's own end after the reviews of #1915, 2026-11-17; the lead's decision that gc reads the sessions first, after the review of #1917, 2026-11-17
 **See:** runner.md — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-17
 **Revisit when:** agy's sandbox is shown to write somewhere the runner can name per placement; opencode's adapter grants its file tools a writable path outside the clone; a harness needs its scratch reported to the hub
 
 Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`,
 passed as `MAITY_SCRATCH` with `TMPDIR` inside it. The runner removes it
-when the placement closes and after a stop on the clone's clock; nothing
+when the placement closes; after a stop it is to go on the clone's clock,
+which is not built yet (tsk-34gb7frfbsk7). Nothing
 in it counts as unsaved work, and only the operator sees its size and
-removals (`maity runner status`, `removed.jsonl`). Only Claude Code and
+removals (`maity runner status`, `removed.jsonl`). `maity runner gc
+--scratch` removes one only when the hub's list says its placement is
+not active and the sessions it read first hold none of it; sessions it
+cannot read keep every scratch. It is the rule the service applies when
+a placement closes. Only Claude Code and
 Codex get one, the harnesses whose sandbox the runner can open for it;
 agy's sandbox is not shown to write there, and opencode's adapter has
 no proven writable scratch (its file tools are denied paths outside the
 clone, `external_directory: deny`).
 maity reads a named file there as in the clone, which widens the
 clone-only read (the entry under See) to the path the runner recorded.
+`maity runner scratchop` works only on a placement's scratch below the
+root it is given, and `maity runner` refuses its operator commands to a
+placed agent; an agent's
+scratch of another placement of the same OS user stays reachable until
+the operation has a runner-only entry (tsk-54492gk4xp69).
 
 **Reason:** reviews and tests left evidence folders, temporary clones and
 virtual environments in the agents' shared home, which no removal of a
