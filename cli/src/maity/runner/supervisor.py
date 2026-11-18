@@ -336,6 +336,11 @@ class Supervisor:
     advertised_running: int = 0
     advertised_at: float = 0.0
     advertised_counts: dict[str, int] = field(default_factory=dict)
+    # A reconnect bumps `invalidation_gen`; a successful advertise records the generation it sent
+    # for in `advertised_gen`. They differ exactly while a reconnect's resend is still owed, which
+    # forces `_advertise` to send whatever the count is and gates the commit against a race.
+    invalidation_gen: int = 0
+    advertised_gen: int = 0
     targets: dict[str, Target] = field(default_factory=dict)
     target_errors: dict[str, str] = field(default_factory=dict)  # the last one logged
     # The placements the hub reads as closed (`GET /runner/placements?closed=true`), and those
@@ -1391,37 +1396,94 @@ class Supervisor:
         """`PATCH /runner` at once: the capabilities themselves changed (a tool, §15.16)."""
         self._advertise(None, self.now(), force=True)
 
+    def advertised_capabilities(self) -> dict[str, Any]:
+        """A copy of the capabilities for serve's `hello`, with the live `running` counts in it.
+
+        `hello` runs on serve's connection thread while `_advertise` runs on this tick thread,
+        and both reach the one shared capabilities dict. The copy is read under `self.lock` -- the
+        lock `_advertise`'s write-back also takes -- so the two coordinate over the `running`
+        fields and a reconnect carries the count last counted here, never the `running: 0` the
+        dict was first built with (the reconnect that leaves the hub reading 0/N while agents run,
+        tsk-yfc9n6kmvs52)."""
+        with self.lock:
+            if not isinstance(self.capabilities, dict):
+                return self.capabilities  # type: ignore[return-value]
+            caps = {**self.capabilities}
+            caps["targets"] = [
+                dict(t) if isinstance(t, dict) else t for t in self.capabilities.get("targets", [])
+            ]
+            return caps
+
+    def reconnected(self) -> None:
+        """Serve calls this after each `hello`. The hub's stored `running` is then whatever that
+        hello carried, which may be stale, so mark an invalidation: bump the generation so the
+        next `_advertise` sends even when the count is 0, the counts dict is empty, or the count
+        is unchanged. The invalidation is a generation, not an emptied cache -- an empty cache
+        reads as `nothing to send` (a 0 count never reaches the hub, tsk-yfc9n6kmvs52)."""
+        with self.lock:
+            self.invalidation_gen += 1
+
     def _advertise(self, running: dict[str, int] | None, now: float, force: bool = False) -> None:
         """`PATCH /runner` with the targets' `running` and reachability: at most every
-        ADVERTISE_EVERY seconds for a changed count, at once (`force`) for reachability."""
+        ADVERTISE_EVERY seconds for a changed count, at once (`force`) for reachability, and
+        always once an invalidation (a reconnect) is pending, whatever the count."""
         if self.client is None or self.capabilities is None:
             return
-        # Zero counts are left out, so a runner with nothing running matches its hello.
-        counts = {
-            k: v for k, v in (self.advertised_counts if running is None else running).items() if v
-        }
-        total = sum(counts.values())
-        if not force and (
-            counts == self.advertised_counts or now - self.advertised_at < ADVERTISE_EVERY
-        ):
-            return
-        caps = {**self.capabilities, "running": total}
-        entries = []
-        for entry in caps.get("targets", []):
-            target = self.targets.get(entry.get("name"))
-            entry = {**entry, "running": counts.get(entry.get("name"), 0)}
-            if target is not None:
-                entry["reachable"] = target.reachable
-                entry["unreachable_since"] = stamp(target.unreachable_since)
-            entries.append(entry)
-        caps["targets"] = entries
+        with self.lock:
+            # Zero counts are left out, so a runner with nothing running matches its hello.
+            counts = {
+                k: v
+                for k, v in (self.advertised_counts if running is None else running).items()
+                if v
+            }
+            gen = self.invalidation_gen
+            dirty = gen != self.advertised_gen  # a reconnect is pending
+            # A pending invalidation sends regardless of the count being unchanged or throttled.
+            if (
+                not force
+                and not dirty
+                and (counts == self.advertised_counts or now - self.advertised_at < ADVERTISE_EVERY)
+            ):
+                return
+            total = sum(counts.values())
+            caps = {**self.capabilities, "running": total}
+            entries = []
+            for entry in caps.get("targets", []):
+                target = self.targets.get(entry.get("name"))
+                entry = {**entry, "running": counts.get(entry.get("name"), 0)}
+                if target is not None:
+                    entry["reachable"] = target.reachable
+                    entry["unreachable_since"] = stamp(target.unreachable_since)
+                entries.append(entry)
+            caps["targets"] = entries
+        # The network call is made without the lock held.
         try:
             self.client.call("PATCH", "/runner", body={"capabilities": caps})
         except hub.HubError as exc:
             self.log(f"supervisor: advertising running={total} failed ({exc})")
             return
-        self.advertised_counts, self.advertised_at = counts, now
-        self.advertised_running = total
+        with self.lock:
+            # Commit only if no invalidation arrived while this PATCH was in flight; otherwise a
+            # stale (older) PATCH would write its counts into `advertised_counts`/
+            # `advertised_running`/the capabilities, over the live state. Left uncommitted it stays
+            # dirty (its captured `gen` is older than the reconnect's) and the next tick re-sends.
+            if self.invalidation_gen != gen:
+                return
+            self.advertised_counts, self.advertised_at = counts, now
+            self.advertised_running = total
+            # Advance the advertised generation only on a live send (`running` is the tick's
+            # per-target counts). A forced cached send (`running is None`: `advertise_now`, a
+            # reachability change) leaves the generation behind, so a reconnect's invalidation
+            # stays pending and the next live tick re-sends the current count, not the cache.
+            if running is not None:
+                self.advertised_gen = gen
+            # The live counts also go back into the shared capabilities, so serve's next `hello`
+            # carries this total and these per-target counts, not the 0 the dict was built with.
+            # `self.lock` guards these `running` fields -- the one place the tick thread and
+            # serve's hello thread coordinate over the shared dict (see `advertised_capabilities`).
+            self.capabilities["running"] = total
+            for entry in self.capabilities.get("targets", []):
+                entry["running"] = counts.get(entry.get("name"), 0)
 
     # --- reports ---------------------------------------------------------------------------
 
