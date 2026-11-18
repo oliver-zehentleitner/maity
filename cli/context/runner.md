@@ -4030,3 +4030,50 @@ that host no card work is possible, so a warning would understate it.
 - Every failure of the probe as a refusal: a timeout, a launch error or a
   tool missing on the agents' PATH then claimed that sandboxed commands
   fail and blamed AppArmor on a host without the lock (review of #1949).
+
+## Claude Code's background-shell pressure reaper is disabled per placement
+
+**Id:** b1e8643a-320b-481c-9fea-97303c6d3177
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** incident card tsk-g28jgwgxab70 on the lab host; the Claude Code changelog entry for 2.1.193 (the reaper and its opt-out variable)
+**Revisit when:** Claude Code renames or drops `CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP`, or the interactive placement stops listening by running a background `maity wait`
+
+For every Claude Code placement the runner sets
+`CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP=1` in the start environment, so
+Claude Code's background-shell memory-pressure reaper does not kill the
+placement's background `maity wait`. It is set on the base environment both
+the interactive and the supervised launch inherit.
+
+The variable turns Claude Code's memory-pressure stop off for every idle
+background shell of the placement, not only that `maity wait` — the accepted
+trade-off of the fix. The runner sets no memory bound of its own:
+`backend.local.memory_max` is refused as not enforced yet, and the shipped
+service unit sets no `MemoryMax` or ulimit, so under host memory pressure a
+placement's background shells are bounded only by the kernel OOM killer and
+the operator's own unit or cgroup limits. The reaper only ever stopped idle
+background shells, never the Claude Code process, so keeping the placement
+reachable is worth more than that stop; the lever against host memory
+pressure is the agent count per host. A memory-pressure warning or capacity
+guidance in the runner (incident candidate 3) is deferred, tracked with
+candidates 2/3 of the incident card.
+
+**Reason:** on the lab host a low-memory event (not a kernel OOM) had Claude
+Code's own reaper — automatic memory-pressure reaping of idle background
+shell commands, added in Claude Code 2.1.193 — kill the `maity wait` of two
+interactive Claude Code placements. The sessions stayed `running` but stopped
+listening, and their leases expired. The variable is the documented opt-out.
+It is set unconditionally: older Claude Code ignores an unknown environment
+variable, so no version gate is needed. It is harmless in a headless
+(supervised) placement, where background tasks are already disabled
+(`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`) and there is no background shell to
+reap, so it is set uniformly for every placement rather than only the
+interactive one.
+
+**Rejected alternative:** detect that an interactive session is no longer
+listening and restart it (incident candidate 2). Deferred — the runner
+already restarts a session that goes quiet, and keeping the `maity wait`
+alive is the narrower fix; the detection-and-restart path is tracked as a
+separate item of the incident card.
