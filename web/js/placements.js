@@ -441,14 +441,19 @@ window.Maity = window.Maity || {};
       runner.value = runners[0].runner.id;
       const target = select("target");
       const tool = select("tool");
-      tool.setAttribute("aria-describedby", id("tool") + "-none");
       const mode = select("mode");
       const model = select("model");
       const noTool = h("p", { class: "hint", id: id("tool") + "-none", hidden: true }, M.t("placements.new.no_tool"));
       // A tool left out because its runner names no model for it (MODEL_NAMED, above).
-      const noModel = h("p", { class: "hint placement-new-no-model", hidden: true });
+      const noModel = h("p", { class: "hint placement-new-no-model", id: id("tool") + "-no-model", hidden: true });
       const modelHint = h("p", { class: "hint", id: id("model") + "-hint", hidden: true }, M.t("placements.new.model_named"));
-      model.setAttribute("aria-describedby", id("model") + "-hint");
+      // A control is described only by the hints shown now: a screen reader reads a hidden
+      // element named in aria-describedby too, so a hint that does not apply is not named.
+      const describe = (control, hints) => {
+        const shown = hints.filter((x) => !x.hidden).map((x) => x.id).join(" ");
+        if (shown) control.setAttribute("aria-describedby", shown);
+        else control.removeAttribute("aria-describedby");
+      };
       const caps = () => (runners.find((a) => a.runner.id === runner.value).runner.capabilities || {});
       const installed = () => (caps().harnesses || []).filter((x) => x.available !== false && (!target.value || (x.targets || []).includes(target.value)));
       const tools = () => installed().filter((x) => !MODEL_NAMED.has(x.id) || (x.models || []).length);
@@ -465,6 +470,7 @@ window.Maity = window.Maity || {};
           (x ? x.models || [] : []).map((m) => h("option", { value: m }, m)));
         model.required = named;
         modelHint.hidden = !named;
+        describe(model, [modelHint]);
       };
       const fillTools = () => {
         const kept = tool.value;
@@ -476,6 +482,7 @@ window.Maity = window.Maity || {};
         const left = installed().filter((x) => !list.includes(x)).map((x) => words.toolName(x.id));
         noModel.hidden = !left.length;
         noModel.textContent = left.length ? M.t("placements.new.no_model", { tools: M.fmt.list(left) }) : "";
+        describe(tool, [noTool, noModel]);
         fillModes();
       };
       const fillTargets = () => {

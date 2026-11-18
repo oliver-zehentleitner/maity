@@ -2246,31 +2246,41 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       ocSent.push(b);
       return Promise.reject(new win.Maity.api.ApiError("held", 409, p, "conflict", {}));
     };
+    // What each select is described by: only the hints shown, so a screen reader is not read the
+    // model hint for another tool, nor a hidden line under the tools (review A1397).
+    const ocDesc = () => [byId("placement-new-tool").getAttribute("aria-describedby") || null,
+      byId("placement-new-model").getAttribute("aria-describedby") || null];
     await srOpen();
+    const ocFirst = ocDesc();
+    expect(JSON.stringify(ocFirst) === JSON.stringify([null, null]),
+      "placements: with Claude Code first and OpenCode offered, neither select names a hint " + JSON.stringify(ocFirst));
     byId("join-handle").value = "agent-oc"; byId("join-handle").dispatch("input"); byId("join-display").value = "Agent OC";
     byId("placement-new-tool").value = "opencode"; byId("placement-new-tool").dispatch("change");
     const ocOffer = [srOpts("placement-new-tool"), srOpts("placement-new-model"), byId("placement-new-model").required,
-      !byId("placement-new-model-hint").hidden, srPanel().querySelector(".placement-new-no-model").hidden];
+      !byId("placement-new-model-hint").hidden, srPanel().querySelector(".placement-new-no-model").hidden, ocDesc()];
     await srSubmit();
     const ocRefused = [ocSent.length, srSaid()];
     byId("placement-new-model").value = "xai/grok-4";
     await srSubmit();
-    expect(JSON.stringify(ocOffer) === JSON.stringify([["Claude Code 2.1.308", "Codex 0.156.1", "OpenCode 1.2.3"], ["Choose a model", "xai/grok-4"], true, true, true])
+    expect(JSON.stringify(ocOffer) === JSON.stringify([["Claude Code 2.1.308", "Codex 0.156.1", "OpenCode 1.2.3"], ["Choose a model", "xai/grok-4"], true, true, true,
+      [null, "placement-new-model-hint"]])
       && ocRefused[0] === 0 && ocRefused[1] === "Not placed on the runner: OpenCode starts only on a model chosen here. Choose one of the runner's models."
       && ocSent.length === 1 && ocSent[0].harness === "opencode" && ocSent[0].model === "xai/grok-4",
       "placements: OpenCode is offered with the runner's models only, no runner's default, and is not sent until one is chosen "
       + JSON.stringify([ocOffer, ocRefused, ocSent]));
     byId("placement-new-tool").value = "claude-code"; byId("placement-new-tool").dispatch("change");
-    const ocBack = [srOpts("placement-new-model")[0], byId("placement-new-model").required, byId("placement-new-model-hint").hidden];
-    expect(JSON.stringify(ocBack) === JSON.stringify(["The runner's default", false, true]),
-      "placements: another tool keeps the runner's default and needs no model " + JSON.stringify(ocBack));
+    const ocBack = [srOpts("placement-new-model")[0], byId("placement-new-model").required, byId("placement-new-model-hint").hidden, ocDesc()];
+    expect(JSON.stringify(ocBack) === JSON.stringify(["The runner's default", false, true, [null, null]]),
+      "placements: another tool keeps the runner's default, needs no model and is not described by the model hint " + JSON.stringify(ocBack));
     srCancel().click(); await tick();
     ocModels = [];
     await srOpen();
-    const ocNone = [srOpts("placement-new-tool"), text(srPanel().querySelector(".placement-new-no-model")), srPanel().querySelector(".placement-new-no-model").hidden];
+    const ocNone = [srOpts("placement-new-tool"), text(srPanel().querySelector(".placement-new-no-model")), srPanel().querySelector(".placement-new-no-model").hidden,
+      srPanel().querySelector(".placement-new-no-model").id, ocDesc()];
     expect(JSON.stringify(ocNone) === JSON.stringify([["Claude Code 2.1.308", "Codex 0.156.1"],
-      "Not offered here: OpenCode. The runner names no model for it, and it starts only on a named one.", false]),
-      "placements: OpenCode is left out, and said so, where its runner names no model " + JSON.stringify(ocNone));
+      "Not offered here, since the runner names no model and each of these starts only on a named one: OpenCode.", false,
+      "placement-new-tool-no-model", ["placement-new-tool-no-model", null]]),
+      "placements: OpenCode is left out, and said so at the tool select, where its runner names no model " + JSON.stringify(ocNone));
     srCancel().click(); await tick();
     win.Maity.api.getAll = ocAll; win.Maity.api.post = ocPost;
   }

@@ -4,8 +4,11 @@
   in the start form, as the landing page names it.
 - docs: `docs/api.md` §15.3 describes `opencode` like the other harnesses:
   what it runs (Grok), its confinement and sandbox, its modes, its models
-  and that it has no installer, so no `login_needed`; §15.5 and §15.13 say
-  what a placement or a local start without a model means for it.
+  and that it has no installer, so no `login_needed`; §15.5 says what a
+  placement without a model means for it, and §15.13 that local mode
+  refuses `opencode` without `--model` (exit 2) before anything reaches
+  the hub, so the join link stays unspent (not built yet, as local mode
+  is not).
 
 ### Security
 

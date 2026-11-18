@@ -3678,7 +3678,7 @@
   "placements.new.model_choose": "Choose a model",
   "placements.new.model_named": "This tool starts only on a model chosen here: without one, it would run its own default, a model hosted by its maker, and the clone's conversation would go there.",
   "placements.new.model_missing": "{tool} starts only on a model chosen here. Choose one of the runner's models.",
-  "placements.new.no_model": "Not offered here: {tools}. The runner names no model for it, and it starts only on a named one.",
+  "placements.new.no_model": "Not offered here, since the runner names no model and each of these starts only on a named one: {tools}.",
   "placements.new.clone": "Clone",
   "placements.new.clone_hint": "The name of the agent's clone on the runner: lowercase letters, digits and hyphens. Empty: the agent's handle.",
   "placements.new.clone_placeholder": "the agent's handle",

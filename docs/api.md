@@ -19835,7 +19835,10 @@ maity runner <harness> [--workspace DIR] [--model MODEL] [--allow COMMAND]...
   on a runner (§15.3); without it the harness uses its own default. It
   is not stored. `opencode` has no default of its own that local mode
   takes: its own would be a model opencode hosts (§15.3), so local mode
-  starts it only with `--model`.
+  starts it only with `--model`. `opencode` without `--model` is refused
+  (exit 2, usage) before anything reaches the hub, so a join link is not
+  redeemed and stays unspent, with a message that names `--model` as the
+  way on (not built yet, as local mode is not).
 - `--allow COMMAND` adds a command to the session's allowlist, as
   `[repository].allow` does on a runner (§15.3). It is not stored: every
   start names its own. Only a harness whose confinement is `allowlist`

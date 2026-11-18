@@ -3709,7 +3709,7 @@ window.MAITY_I18N["de"] = {
   "placements.new.model_default": "Der Standard des Runners",
   "placements.new.model_missing": "{tool} startet nur mit einem hier gewählten Modell. Wähle eines der Modelle des Runners.",
   "placements.new.model_named": "Dieses Werkzeug startet nur mit einem hier gewählten Modell: Ohne eines liefe sein eigener Standard, ein Modell beim Hersteller des Werkzeugs, und das Gespräch des Klons ginge dorthin.",
-  "placements.new.no_model": "Hier nicht angeboten: {tools}. Der Runner nennt kein Modell dafür, und es startet nur mit einem genannten.",
+  "placements.new.no_model": "Hier nicht angeboten, da der Runner kein Modell nennt und jedes davon nur mit einem genannten startet: {tools}.",
   "placements.new.no_repository": "Ein Runner startet einen Agenten in einem Klon des Repositorys des Projekts, und dieses Projekt hat keines.",
   "placements.new.no_runner_offers": "Keiner deiner in diesem Projekt zugelassenen Runner bietet sein Repository {repository} an. Ein Runner bietet die Repositorys an, die seine Konfiguration nennt.",
   "placements.new.no_tool": "Der Runner bietet dort kein installiertes Werkzeug an.",
