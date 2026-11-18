@@ -31,7 +31,18 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, hub, onboarding, state
-from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
+from . import (
+    adapters,
+    capabilities,
+    config,
+    limitread,
+    loop,
+    restart,
+    scratch,
+    scratchop,
+    targets,
+    workspace,
+)
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
@@ -131,6 +142,7 @@ LOGS = "logs"
 # The agent-side state the runner reads after a join (its member id): far below this.
 STATE_MAX = 64 * 1024
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
+SIZE_EVERY = 600.0  # a placement's clone and scratch are measured at most this often
 LIVE = ("starting", "running", "stopping")
 # The idle check of an interactive session (§15.14): a pane is read at most once per IDLE_EVERY;
 # the minutes come from the placement's `health.settings`, these are the contract's defaults.
@@ -256,6 +268,11 @@ class Record:
     nudges: int = 0  # nudges answered since a `maity wait` was last seen
     unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
     left_typed: bool = False  # a dropped nudge's line may still sit in the input: not again
+    # The sizes of its clone and its scratch as last measured (§15.5), for `maity runner
+    # status`; None until measured or where there is none.
+    clone_bytes: int | None = None
+    scratch_bytes: int | None = None
+    sized_at: float | None = None
     # Codex's folder prompt at an interactive start: None while looked for, else `answered`,
     # `left` (a prompt the runner does not answer, until it is gone) or `none` (not seen in
     # time, or gone).
@@ -321,6 +338,10 @@ class Supervisor:
     advertised_counts: dict[str, int] = field(default_factory=dict)
     targets: dict[str, Target] = field(default_factory=dict)
     target_errors: dict[str, str] = field(default_factory=dict)  # the last one logged
+    # The placements the hub reads as closed (`GET /runner/placements?closed=true`), and those
+    # whose scratch is gone since this service started (§15.5).
+    closed_placements: list[dict[str, Any]] = field(default_factory=list)
+    scratch_cleared: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -340,6 +361,18 @@ class Supervisor:
         with self.lock:
             self.desired = good
             self.synced = True
+
+    def closed(self, placements: list[dict[str, Any]]) -> None:
+        """The hub's closed placements of this runner: their scratch goes at the next tick."""
+        good = [
+            p for p in placements
+            if isinstance(p, dict) and isinstance(p.get("id"), str)
+            and PLACEMENT_ID.match(p["id"]) is not None and p.get("active") is False
+            and isinstance(p.get("project_id"), str)
+            and workspace.TOKEN.match(p["project_id"]) is not None
+        ]  # fmt: skip
+        with self.lock:
+            self.closed_placements = good
 
     def actual(self) -> list[dict[str, Any]]:
         """`actual` for `hello`."""
@@ -436,7 +469,75 @@ class Supervisor:
             }
         self._report(desired)
         self._advertise(running, now)
+        self._clear_scratch(set(labelled), set(snapshots))
+        self._measure(desired, now)
         self.save()
+
+    # --- the scratch (§15.5) ---------------------------------------------------------------
+
+    def _clear_scratch(self, live: set[str], seen: set[str]) -> None:
+        """Remove the scratch of each placement the hub reads as closed, on every target whose
+        sessions this tick read (`seen`), unless a session of it still runs; a target whose
+        sessions could not be read keeps every scratch until they can. Each removal is logged
+        and written to `removed.jsonl`. A placement whose scratch could not be removed
+        everywhere is tried again."""
+        with self.lock:
+            closed = [p for p in self.closed_placements
+                      if p["id"] not in self.scratch_cleared and p["id"] not in live]  # fmt: skip
+        for p in closed:
+            done = True
+            for target in self.targets.values():
+                if target.name not in seen or (target.remote and target.agent_files is None):
+                    done = False  # its sessions are unknown: unknown means kept
+                    continue
+                try:
+                    path = workspace.scratch_of(
+                        target.workspaces, p["project_id"], p["id"], target.host
+                    )
+                    removed = scratch.remove(path, target.as_user)
+                except workspace.Refused:
+                    break
+                except scratchop.OnTheWay:  # never followed; logged once
+                    self.log(f"{p['id']}: scratch left on {target.name}: a directory on the "
+                             "way to it is a link")  # fmt: skip
+                    continue
+                except (OSError, subprocess.SubprocessError) as exc:
+                    self.log(f"{p['id']}: scratch not removed on {target.name}: {exc}")
+                    done = False
+                    continue
+                if removed is not None:
+                    scratch.log_removal(self.cfg.state_dir, p["id"], path, removed, "closed")
+                    self.log(f"{p['id']}: scratch removed on {target.name} ({removed} bytes): "
+                             "the placement is closed")  # fmt: skip
+            if done:
+                with self.lock:
+                    self.scratch_cleared.add(p["id"])
+
+    def _measure(self, desired: list[dict[str, Any]], now: float) -> None:
+        """The sizes of each placement's clone and scratch on its target, at most every
+        SIZE_EVERY, for `maity runner status` (§15.5); never sent to the hub."""
+        for p in desired:
+            with self.lock:
+                rec = self.records.get(p["id"])
+                where = rec.target if rec is not None else None
+                due = rec is not None and (rec.sized_at is None or now - rec.sized_at >= SIZE_EVERY)
+            target = self.targets.get(where or self._default_target())
+            if rec is None or not due or target is None or not target.reachable:
+                continue
+            try:
+                harness = self.cfg.harnesses.get(p.get("harness") or "")
+                place = workspace.locate(
+                    target.workspaces, p["project_id"], p["workspace"]["clone"], target.host,
+                    folder=workspace.uses_folder(harness.id if harness else ""),
+                )  # fmt: skip
+                path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"],
+                                            target.host)  # fmt: skip
+            except workspace.Refused:
+                continue
+            clone = scratch.size(place.path, target.as_user)
+            room = scratch.measure(path, target.as_user)
+            with self.lock:
+                rec.clone_bytes, rec.scratch_bytes, rec.sized_at = clone, room, now
 
     def _place(
         self,
@@ -1034,7 +1135,9 @@ class Supervisor:
                 with self.lock:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
-            context = self._context(p, harness, place, target, rec.resume, view=view)
+            scratch = self._scratch(p, harness, target)
+            context = self._context(p, harness, place, target, rec.resume, view=view,
+                                    scratch=scratch)  # fmt: skip
             launch = adapters.launch(context)
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
             target.backend.start(
@@ -1138,6 +1241,7 @@ class Supervisor:
         target: Target | None = None,
         resume: bool = False,
         view: GateView | None = None,
+        scratch: Path | None = None,
     ) -> adapters.Context:
         target = target or self.targets[self._default_target()]
         view = view or GateView.of(target, harness.id)
@@ -1171,7 +1275,27 @@ class Supervisor:
             agent_path=target.agent_path,
             resume=resume,
             git=self.cfg.git,
+            scratch=scratch,
         )
+
+    def _scratch(self, p: dict[str, Any], harness: config.Harness, target: Target) -> Path | None:
+        """The placement's scratch, made as the agents' user with `tmp` in it (§15.5); None
+        for a harness that gets none (workspace.SCRATCH_HARNESSES). A restart or an adoption
+        finds it as it was. Through a link the agents made the runner makes nothing, and a
+        scratch it cannot make (a host whose `maity` has no `scratchop` yet) is none either:
+        the session then starts without one, and the log says why."""
+        if harness.id not in workspace.SCRATCH_HARNESSES:
+            return None
+        path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host)
+        try:
+            scratch.make(path, target.as_user)
+        except scratchop.OnTheWay:
+            self.log(f"{p['id']}: no scratch: a directory on the way to {path} is a link")
+            return None
+        except (OSError, subprocess.SubprocessError) as exc:  # a host's maity without it, too
+            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
+            return None
+        return path
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
         """What the agent's sandbox may not read, as the agents' side of `target` sees it: its
