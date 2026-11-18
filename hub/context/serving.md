@@ -792,8 +792,9 @@ reason.
   refusals and before the last use, presence, the session and the leases;
   in `_runner` before its last use and presence; in `_cookie` after the
   session is known live (and after the CSRF check) and before presence.
-  A refused read so writes nothing at all, not even a statement that is
-  rolled back. A bridge authenticates with its own credential before
+  A refused read so writes nothing that stays: a signed call's nonce,
+  spent before the count, is rolled back with the refusal; no other write
+  is even sent. A bridge authenticates with its own credential before
   `bridges.carry` makes it the served agent, so its reads count as its own.
 - **What is a read is decided on the routed path.** `read_limits.counts`
   takes `RequestFacts.path`, the decoded `scope["path"]` the router
