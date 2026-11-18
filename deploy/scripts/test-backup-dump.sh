@@ -38,11 +38,12 @@ failures=0
 fail() { echo "FAIL $1"; [ -n "${2:-}" ] && sed 's/^/     /' "$2"; failures=$((failures + 1)); }
 
 run() { # name, DUMP_URL or none; sets W and rc (0, init or dump)
-  W="$work/run-$1"; mkdir -p "$W/backups" "$W/attachments" "$W/ts" "$W/key"
+  # signing stays empty: the dump's connection is the same signed or not (test-backup-signing.sh has the signatures)
+  W="$work/run-$1"; mkdir -p "$W/backups" "$W/attachments" "$W/ts" "$W/key" "$W/signing"
   echo file > "$W/attachments/f"
   cp "$work/backup.pub" "$W/key/backup.pub"
   for f in init dump; do
-    sed -E "s#([ =])/(backups|attachments|ts|key)([/ ]|\$)#\\1$W/\\2\\3#g" "$work/$f.sh" > "$W/$f.sh"
+    sed -E "s#([ =])/(backups|attachments|ts|key|signing)([/ ]|\$)#\\1$W/\\2\\3#g" "$work/$f.sh" > "$W/$f.sh"
   done
   rc=0
   ( PATH="$work/bin:$PATH" sh -ec "$(cat "$W/init.sh")" ) > "$W/init.out" 2>&1 || rc=init
