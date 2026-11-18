@@ -611,7 +611,8 @@ re-authentication, the address change and the second-factor check do it through
 account and source, use `place` and `release` directly in `LoginAttempt`, because a refusal there
 depends on the source. `LoginAttempt` places in both login buckets and refuses with `email_link` or `password_paused` when the account's bucket is full and the
 source is not a known one or has spent its own five. An address of no account counts in a bucket
-keyed by its fingerprint, never the address or a plain hash.
+keyed by its fingerprint, never the address or a plain hash; since tsk-2y0qbc1zm7r1 that is the
+key every limit keyed by an address takes (7d3f0a52).
 
 `known_source` holds an HMAC-SHA-256 of the source address per human. Its key is derived by HKDF
 (purpose `sign_in.known_source`) from `MAITY_SECRET_KEY`, or without one from the per-address
@@ -1095,3 +1096,45 @@ test instead.
   second-factor gate require the prefix: no route tells them apart
   today, but either is a change of an access gate, left to a card of
   its own.
+
+## Every limit keyed by a mail address counts it by one keyed fingerprint, `known_sources.address_key`
+
+**Id:** 7d3f0a52-1c4e-4b8a-9f6d-2e5b8c1a9d47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-2y0qbc1zm7r1 (clean-up audit, limits and abuse), the follow-up agreed in tsk-q4zynccy5t0b (#1797) and named in notifications.md dc952df1; `hub/src/maity_hub/auth/known_sources.py` `address_key`; tests `test_*_counts_keep_the_address_only_as_its_keyed_fingerprint` in `test_email_sign_in.py`, `test_password_reset.py`, `test_registration.py`, `test_notification_address.py`, and `test_a_login_counts_an_address_of_no_account_only_by_its_keyed_fingerprint` in `test_auth_human.py`, all through `tests/stored_keys.py`
+**See:** auth.md#a-password-attempt-takes-its-place-in-the-count-before-the-compare-the-known-sources-fingerprints-are-keyed-from-the-locks-first-use-pepper — d12ec062-8d9e-4357-916a-a2f1a1bc3bd1 — as of 2026-11-18
+
+The login's bucket for an address of no account (`password_limits.account_key`), the pair and
+per-recipient limits of `POST /auth/email-link` and `POST /auth/password-reset`
+(`RequestLimits.take`, `email_links.recipient_over`), those of `POST /auth/register` and the
+per-recipient limits of a verification mail (`preferences._recipient_over`) all count the
+address by `known_sources.address_key`: an HMAC-SHA-256 of the address as each path normalises
+it, under a key derived by HKDF (purpose `rate_count.address`) from `MAITY_SECRET_KEY`, else from
+the per-address lock's pepper. A pair is that key, a space and the source network or the asking
+account. The limits take the key, not the address; the route makes it, after `addresses.prepare`
+before its transaction, and without the pepper `address_key` raises instead of counting every
+address in one bucket. `shared_counts._key` is a guard of length (and of a NUL) only. On deploy
+the counts of these limits start again once, as their keys changed.
+
+**Reason:** `rate_count` keeps a key for up to two days, and a plain SHA-256 of an address (the
+pairs of the link and the reset) or the address itself (the registration's pair, hashed only
+for its NUL, and the address in process memory) lets a copy of the table confirm a guessed
+address, which the login's bucket already ruled out (d12ec062). One helper makes the rule one
+place to keep. A purpose of its own keeps the counts' keys apart from the known sources'
+fingerprints, as every keyed value of the hub has one (notifications.md dc952df1). One bucket
+for all when no key exists, as the login's bucket had, would let five networks stop the mails
+to every address; a loud failure shows a path that forgot `prepare`.
+
+**Rejected alternatives:**
+- `shared_counts._key` refusing a key that holds an `@`: it runs only where the counts are
+  shared, on PostgreSQL, so a regression would pass every SQLite test and turn into a `500` in
+  production; and a plain hash has no `@`, so the guard misses the very case this entry is
+  about. A test per limit that reads the stored keys, on both counting paths, catches both.
+- The same check in `Limiter` for every key, also in the process: it would catch a raw address
+  in a test on SQLite, but not a plain hash either, and it puts a rule about addresses into a
+  generic limiter whose other keys are ids and source networks.
+- `RequestLimits.take` and `recipient_over` taking a connection and the address: every unit test
+  of the limits would need a database and a pepper, for a key they treat as an opaque string.
+- Reusing `known_sources.fingerprint` (purpose `sign_in.known_source`): one key for two uses.
