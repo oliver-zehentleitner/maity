@@ -961,6 +961,65 @@ def test_records_survive_a_restart(world: Any) -> None:
     ]
 
 
+# --- the running count the hub shows (tsk-yfc9n6kmvs52) --------------------------------------
+
+
+class CountingHub:
+    """A stand-in hub that keeps a runner's ``running`` count the way the real one does.
+
+    Both ``PATCH /runner`` (the supervisor's advertisement) and a reconnect ``hello`` overwrite
+    the stored capabilities, so whichever spoke last wins. ``serve.Service.hello`` sends
+    ``self.advertised`` -- the very dict the supervisor holds as ``self.capabilities`` and never
+    updates -- so a reconnect re-asserts whatever ``running`` that dict was built with (0)."""
+
+    def __init__(self, advertised: dict[str, Any]) -> None:
+        self.advertised = advertised
+        self.running: int | None = None
+
+    def call(self, method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
+        if method == "PATCH" and path == "/runner":
+            self.running = body["capabilities"]["running"]
+        return {}
+
+    def hello(self) -> None:
+        # serve.Service.hello re-sends the advertised capabilities on every (re)connect.
+        self.running = self.advertised["running"]
+
+
+def test_the_hub_count_survives_a_reconnect_while_placements_run(world: Any) -> None:
+    """A reconnect must not blank the hub's running count while placements keep running.
+
+    Reproduces tsk-yfc9n6kmvs52: after a dropped connection the runner says ``hello`` again,
+    which re-advertises a stale ``running: 0``; the supervisor then suppresses the correction
+    because the live count has not changed since its last ``PATCH``. The hub is left at 0/10
+    while two placements run."""
+    sup, backend, _, clock, _ = world
+    sup.capabilities = capabilities.build(sup.cfg, sup.probes)  # running = 0, as serve builds it
+    hub_view = CountingHub(sup.capabilities)
+    sup.client = hub_view  # type: ignore[assignment]
+
+    # Two agents are live and adopted: the runner is running two placements.
+    for n in (3, 4):
+        recorded(sup.cfg, n)
+        backend.live[f"maity_maity_agent-{n}"] = tmux.Session(
+            f"maity_maity_agent-{n}", False, None, 90 + n, f"plc-000{n}", 1
+        )
+    sup.update([placement(3), placement(4)])
+    sup.tick()
+    assert hub_view.running == 2  # the supervisor advertised the true count
+
+    # A dropped connection makes serve say `hello` again (same process, agents untouched).
+    hub_view.hello()
+    assert hub_view.running == 0  # hello carried the stale advertised dict
+
+    # The two placements keep running; the next tick must restore the hub's count to 2.
+    clock.now += supervisor.ADVERTISE_EVERY + 1
+    sup.tick()
+    assert hub_view.running == 2, (
+        "after a reconnect the hub still counts 0 running while two placements run"
+    )
+
+
 # --- workspaces: clone, records, no git in an existing clone ---------------------------------
 
 
