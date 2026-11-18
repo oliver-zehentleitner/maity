@@ -434,7 +434,10 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
     for_id, this_cover = _principal(row), clock.rfc3339(since)
     now = clock.now()
-    # Read once: the moves below change cards and requests, never a membership.
+    # Read once. The moves below insert or delete no membership, so the ids and principals
+    # read here stay right. They can write one membership column: an assignment returned
+    # to a round_robin team sets `round_robin_last` (`_assigned_instance`). Nothing below
+    # reads that from this map, and `covering` is read again after the moves.
     members = {
         _principal(m): m
         for m in conn.execute(select(t.membership).where(t.membership.c.project_id == project.id))
