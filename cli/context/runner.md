@@ -517,7 +517,7 @@ with free arguments.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-66zyvc4xnhtv (a placed coder's field report that its Task subagent was refused most Bash commands); a controlled reproduction with headless Claude Code 2.1.327 over a copy of a placement's settings; #1962 round-2 review
+**Source:** card tsk-66zyvc4xnhtv (a placed coder's field report that its Task subagent was refused most Bash commands); a controlled reproduction with headless Claude Code 2.1.327 over a copy of a placement's settings; #1962 round-2 review; #1962 round-3 review (the raw config-parse check did not cover a root whose resolved path carries a wildcard)
 **Verification:** corroborated — on Claude Code 2.1.327 each verdict below was observed directly, including that a Task subagent resolves permissions identically to the main session
 **See:** runner.md — 0a639f39-f76c-4a77-ac43-ae8ce1d42434 — as of 2026-11-18
 **Revisit when:** Claude Code changes how it matches a Bash allowlist, stops routing `cat <path>` through the Read tool, or gains a grant with a deny list that could express the `-C` escapes
@@ -549,11 +549,18 @@ matched verbatim.
    gates commands in every one — the git-config notice and the
    `maity`-alone hint stay sandbox-only.
 
-4. The configured workspaces root is refused when it holds a glob-special
-   character (`*`, `?`, `[]`). The clone path is built under that root and
-   embedded literally in the `git -C <clone>` rule, where Claude Code treats
-   those as wildcards, so a root carrying one would widen the rule; refusing
-   it (fail-closed) keeps the rule matching the clone and nothing else.
+4. A placement is refused when the path that reaches its rules carries a
+   character Claude Code treats as a wildcard (`*`, `?`, `[]`). The clone path
+   is built under the workspaces root and embedded literally in the `git -C
+   <clone>` rule, so a wildcard in it would widen the rule past the clone. Two
+   layers: the configured root's raw string is checked at config parse as an
+   early, friendly error, but the string that actually reaches a rule is the
+   *resolved* path, and a root symlinked to a wildcard path (or a relative or
+   `~` root) carries no wildcard raw yet resolves to one. So the resolved path
+   is checked fail-closed at the placement choke point every harness passes
+   through — `workspace.locate` for the clone, `workspace.scratch_of` for the
+   scratch — the last point before it reaches a rule. The raw check alone does
+   not prevent the wildcard; it stays only as the friendlier early error.
 
 **Reason:** `git -C` must be fixed code, not a grant entry: the grant has no
 deny field, so an allow-only `git -C *` there would let `git -C <dir> -c
@@ -579,10 +586,20 @@ is the whole lever; nothing subagent-specific is needed.
 - `autoAllowBashIfSandboxed: true` to reach subagents: rejected as
   unnecessary and a widening — subagents already apply the allowlist, and it
   would pass every command whenever a sandbox stands (tsk-yp2bprwv9whv).
-- Validating the glob character in `workspace.locate` instead of config
-  parse: the realistic source is the configured workspaces root, and the
-  project and clone tokens are already confined by `TOKEN`, so the root is
-  refused where it is read (`config.parse`).
+- Validating only the raw workspaces-root string at config parse, not the
+  resolved path (the first form of this fix, #1962 round 2): adopted, then
+  found insufficient in round 3 and extended rather than replaced. The
+  original reasoning was that the realistic source is the configured root and
+  that `TOKEN` already confines the project and clone tokens, so the root
+  could be refused where it is read (`config.parse`). But `TOKEN` confines
+  only those tokens, not the root, and a root symlinked to a wildcard path (or
+  a relative or `~` root) passes the raw check yet resolves to a wildcard. So
+  the resolved path — exactly the string that reaches the rule — is now also
+  validated at the placement choke point (`workspace.locate`,
+  `workspace.scratch_of`), with the raw parse check kept as the friendlier
+  early error. `config.parse` alone was rejected; `workspace.locate` alone was
+  not chosen either — the raw check gives the operator a clearer message before
+  a placement is ever attempted.
 
 ## The command allowlists are not a boundary until agents run as their own user
 

@@ -613,16 +613,29 @@ def _absolute(value: Any) -> str | None:
     return None if Path(value).expanduser().is_absolute() else "expected an absolute path"
 
 
-# Characters Claude Code's permission matcher treats as wildcards. The clone path, built under
-# the workspaces root, is embedded literally in a `Bash(git -C <clone> …)` allow rule
-# (adapters.claude_settings); one of these in the root would make that rule match more than the
-# clone, so a root carrying one is refused here (fail-closed). The ssh host's workspaces path is
-# already confined by REMOTE_PATH, and the project and clone tokens by TOKEN (workspace.locate).
+# Characters Claude Code's permission matcher treats as wildcards (observed on 2.1.327; the set
+# the project's rules use throughout). The clone path, built under the workspaces root, is
+# embedded literally in a `Bash(git -C <clone> …)` allow rule (adapters.claude_settings); one of
+# these in the root would make that rule match more than the clone. The raw root string is
+# checked here as an early, friendly error, but the string that actually reaches a rule is the
+# resolved path: a root that is a symlink to a wildcard path, or a relative or `~` root, carries
+# no wildcard in its raw form yet resolves to one, so the resolved path is checked fail-closed at
+# the placement choke point (workspace.locate, workspace.scratch_of) through `rule_glob_chars`.
+# The ssh host's workspaces path is already confined by REMOTE_PATH, and the project and clone
+# tokens by TOKEN.
 _GLOB_CHARS = "*?[]"
 
 
+def rule_glob_chars(value: str) -> str:
+    """The characters of `value` that Claude Code's Bash permission matcher treats as
+    wildcards (`*`, `?`, `[`, `]`), sorted and space-separated; "" when there are none. The
+    raw workspaces-root check here and the resolved-path check at the placement choke point
+    share this one set, so the early error and the final fail-closed refusal cannot diverge."""
+    return " ".join(sorted({c for c in str(value) if c in _GLOB_CHARS}))
+
+
 def _no_glob(value: Any) -> str | None:
-    bad = " ".join(sorted({c for c in str(value) if c in _GLOB_CHARS}))
+    bad = rule_glob_chars(str(value))
     return f"must not contain the character(s) {bad}" if bad else None
 
 

@@ -8,7 +8,8 @@
   also has a Read rule and `cat /proc/sys/kernel/random/uuid` is no longer refused. Every
   Claude Code placement's start briefing — sandboxed or not — tells the agent to run one
   command per Bash call, to use `make -C <pkg>` and path arguments instead of `cd <pkg> &&
-  …`, and not to prefix a command with a variable. A workspaces root containing a
-  glob-special character (`*`, `?`, `[]`) is refused, so a `git -C <clone>` rule cannot
-  become a wildcard. Virtualenv creation and `pip install` stay out, pending the
+  …`, and not to prefix a command with a variable. The runner refuses to start a Claude Code
+  placement whose resolved clone path contains a character its permission matcher treats as a
+  wildcard (`*`, `?`, `[]`), so the `git -C <clone>` allow cannot widen past the placement's
+  own clone to other repositories. Virtualenv creation and `pip install` stay out, pending the
   runner-built venvs of tsk-kshm.
