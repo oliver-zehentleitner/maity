@@ -31,5 +31,8 @@
   the reason `out_of_range` instead of `invalid` (`details.fields.<field>`; the code stays
   `invalid`), as the limits of one project or account do (§16.5). A client that matched the
   reason `invalid` reads `out_of_range` now; the dashboard reads both for one release.
+- hub: `limits` is a reserved route word, so no project slug or alias may be `limits`
+  (`reserved`, §6.25); `maity-hub migrate` names a project that already holds it, to be
+  renamed first.
 - docs: an agent's troubleshooting table says how to read a quota refusal's `details` and
   `details.raise` (docs/agents.md).
