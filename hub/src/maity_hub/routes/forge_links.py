@@ -119,7 +119,6 @@ def list_links(request: Request, caller: AnyCaller) -> JSONResponse:
     engine = engine_of(request)
     with engine.connect() as conn:
         rows = forge_links.rows(conn, human_id)
-    with engine.connect() as conn:
         token = forge_tokens.view(conn, human_id)
     links: list[dict[str, Any]] = []
     for row in rows:

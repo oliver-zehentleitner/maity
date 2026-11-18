@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 
 import pytest
@@ -112,6 +112,29 @@ def test_a_report_that_closes_a_card_counts_as_done(
     assert closed.status_code == 200, closed.text
     today = owner.get(PATH).json()["days"][0]
     assert (today["cards_done"], today["reviews"]) == (1, 0)
+
+
+def test_an_instance_counts_from_the_windows_first_midnight_and_a_deleted_profile_not_at_all(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    flow.agent(make_client, owner)
+    now = clock.now()
+    clock.set_source(lambda: now)
+    first = datetime.combine(now.date() - timedelta(days=6), time(), tzinfo=UTC)
+    for created, counted in ((first - timedelta(seconds=1), 0), (first, 1), (now, 0)):
+        with migrated.begin() as conn:
+            conn.execute(update(t.credential).values(created_at=created))
+        with migrated.connect() as conn:
+            answer = statistics.compute(conn, 7)
+        assert row(answer, 6)["new_instances"] == counted
+    assert row(answer, 0)["new_instances"] == 1
+    totals = answer["totals"]
+    assert (totals["agents"], totals["humans_with_an_agent"]) == (1, 1)
+    with migrated.begin() as conn:
+        conn.execute(update(t.agent_profile).values(deleted_at=now))
+    with migrated.connect() as conn:
+        totals = statistics.compute(conn, 7)["totals"]
+    assert (totals["agents"], totals["humans_with_an_agent"]) == (0, 0)
 
 
 def test_the_query_count_does_not_grow_with_the_window(owner: flow.Human, migrated: Engine) -> None:

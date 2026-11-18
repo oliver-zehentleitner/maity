@@ -525,6 +525,13 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
     if managed(ctx):  # the runner swaps versions (§15.16); the tool never updates itself
         env = {**env, "DISABLE_UPDATES": "1"}
+    # Claude Code's background-shell memory-pressure reaper would otherwise kill the interactive
+    # placement's background `maity wait` under low memory, leaving the session running but no
+    # longer listening until its lease expired (KtW b1e8643a-320b-481c-9fea-97303c6d3177). Set
+    # on the base env so it reaches both the interactive and the supervised launch; older Claude
+    # Code ignores the unknown variable, so it is unconditional. Harmless in headless, where
+    # background tasks are already disabled (below) and there is no background shell to reap.
+    env = {**env, "CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP": "1"}
     if ctx.sandbox:
         hide_placeholders(ctx)
     settings = _write(ctx, ctx.agent_dir / "claude-settings.json", claude_settings(ctx))
