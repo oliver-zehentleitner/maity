@@ -49,6 +49,7 @@ window.Maity = window.Maity || {};
     "bridge:role": () => M.t("bridges.refused.proxy"),
     "bridge:already": () => M.t("bridges.refused.already"),
     "purpose:invalid": () => M.t("bridges.refused.purpose"),
+    "purpose:plain_line": () => M.t("bridges.refused.purpose_plain_line"),
     // §6.2 "An expert's fields".
     "expert_for:expert_only": () => M.t("members.expert.refused.expert_only"),
     "expert_sources:expert_only": () => M.t("members.expert.refused.expert_only"),

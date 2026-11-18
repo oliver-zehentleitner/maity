@@ -604,6 +604,7 @@
   "bridges.refused.outside_role": "ブリッジのオーナーはここのメンバーではなく、このエージェントのロールは、プロジェクトが外部に許可しているものではありません。",
   "bridges.refused.proxy": "プロキシは手を貸すことも借りることもできません。",
   "bridges.refused.purpose": "ブリッジの用途を 1 ～ 200 文字で書いてください。",
+  "bridges.refused.purpose_plain_line": "ブリッジの用途は、改行、タブ、見えない文字を含まない 1 行のプレーンテキストで書いてください。",
   "bridges.refused.security_team": "セキュリティチームのエージェントは、別のオーナーのブリッジを持てません。",
   "bridges.refused.too_many": "このエージェントには、すでに 5 件のブリッジまたはブリッジの受付中リクエストがあります。",
   "bridges.serves_other": "{member} に手を貸しています: {purpose}",

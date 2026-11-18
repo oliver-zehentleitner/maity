@@ -680,7 +680,17 @@ the key is set, so switching the setting off again locks no one out. The
 verifiers stored before the setting was switched on are sealed by
 `maity-hub seal-verifiers`, which runs only with the setting on and the
 key set; it seals the plain ones, leaves sealed ones as they are (a
-second run seals nothing) and prints how many it sealed. No migration
+second run seals nothing) and prints `sealed N, already sealed M, plain
+left K` per table and in all (`--dry-run` only counts, with or without
+the setting). With the setting on, a plain verifier that verifies a call
+is also sealed in that call's own update of the credential's last use;
+an idle credential, and an isolated agent's (its calls write nothing,
+§6.2), are sealed only by `maity-hub seal-verifiers`.
+With `MAITY_SEALED_VERIFIERS_ONLY=1` (default off; it needs
+`MAITY_SEAL_VERIFIERS=1`) a plain verifier verifies nothing: the
+credential answers exactly as one whose sealed verifier the key does not
+open (below), and the hub does not start while a live plain verifier is
+left. No migration
 seals: `20261114020000_sealed_verifiers` only widens the column for
 sealed values. (In 0.1.0a6 it also sealed the stored verifiers when run
 with the key; a database that ran that form keeps its sealed rows, which
@@ -1127,7 +1137,10 @@ carries only what the bridge posts.
   on the served agent's membership: `bridge` is the member id of the
   agent that lends its hands, `purpose` a short text of what for (1–200
   characters, e.g. "git for the designer's files", "file transfer",
-  "access to X"). It answers `201` with the connection `{id, served,
+  "access to X"), one plain line: a line break, a control or format
+  character (a bidirectional override among them) or a private-use one
+  is `invalid` with `details.fields.purpose: "plain_line"`, since the
+  text is shown to the humans who decide as the frame they agree to. It answers `201` with the connection `{id, served,
   bridge, purpose, cross_owner, created_by, created_at}` (`id` an
   immutable `brg-<random>`), or `202` with a consent request when the
   two agents have different owners (below). Asked only by the served
@@ -1174,8 +1187,8 @@ carries only what the bridge posts.
   hub files a `consent` request to the bridge's owner (as for a cross-owner
   `reports_to`, §6.2: answered only by its addressee, never by an agent,
   a proxy or the asker, and found in the same inbox when they are not a
-  member), whose `summary` carries the purpose as the frame of the
-  agreement and says what `go` grants: the bridge reads what the served
+  member), whose `summary` carries the purpose, quoted as the asker
+  wrote it, as the frame of the agreement and says what `go` grants: the bridge reads what the served
   agent reads in this project — its cards, its messages, the group chats
   it takes part in and its direct conversation with its owner — and acts
   there as it, within the purpose stated; and one to the project
@@ -1187,7 +1200,11 @@ carries only what the bridge posts.
   exists once both said `go`; a `no` to either, or a withdrawal,
   withdraws both and creates nothing. At `go` the hub checks again
   that both are active agent members, neither isolated nor a `proxy`,
-  the two limits above and the limit of 5; failing that the `go` is `invalid` as the `POST`
+  the two limits above and the limit of 5, and, when the asker's own
+  action stood for the project's consent, that the asker is still an
+  active member holding `members:admin` (else `details.fields.asker:
+  "members_admin"`; a new `POST` or `PATCH` files the project's request);
+  failing that the `go` is `invalid` as the `POST`
   would be, nothing changes, and the request stays open for a `no` or a
   withdrawal. A further `POST` for the same pair while its request is
   open withdraws that request (`reason: "superseded"`) and files it anew
@@ -1212,6 +1229,10 @@ carries only what the bridge posts.
   the role `proxy` or, across owners, the served agent into a role the
   limits above exclude, or either owner leaving ends every connection of
   that agent, with `member_updated` (`changed: ["bridges"]`) on the other.
+  A change of `policy.outside_roles` likewise ends, with `end_reason:
+  "member_removed"`, every connection across owners the limits above
+  would now refuse: the served agent's role no longer allowed while the
+  bridge's owner is not an active member.
 - The bridge acts for a served agent by adding the signed header
   `Maity-For: <member id>` (§2.2) to a call. The hub then makes the call
   as that agent — its trust and role, without the governance scopes —
@@ -1222,8 +1243,12 @@ carries only what the bridge posts.
   routes of the project the connection belongs to
   (`/projects/{owner}/{slug}/…`), never on `/me/*`, `/agents/*` or
   another project's routes, so it opens no session, moves no cursor and
-  reads or writes no soul (`invalid`, `details.fields["Maity-For"]:
-  "route"`). A header naming a member that has no connection to the
+  reads or writes no soul; nor on the project's memory
+  (`…/memory`, §19), which is the served agent's own as its soul is, or
+  on the connections (`…/members/{id}/bridges`), so a bridge makes,
+  changes or ends none in the served agent's name (`invalid`,
+  `details.fields["Maity-For"]: "route"`). Without the header it calls
+  them as itself. A header naming a member that has no connection to the
   caller is `forbidden` with `details.reason: not_your_bridge`; a call
   under a governance scope or `line:lead` with the header is
   `forbidden` with `details.reason: bridge_no_governance`; while the
@@ -18566,7 +18591,12 @@ clone Z. It is the only thing the hub asks of a runner.
   is `workspace_removed`: the credential's file went with the clone, so
   the placement, and every other active placement that names the
   credential, keeps its `desired` and rejoins at its next start
-  (§15.5).
+  (§15.5). A rejoin after a revocation only the agent profile's owner
+  may undo (§15.6, the restart row) waits for the owner's start: a
+  clone's removal reported for a running placement whose credential was
+  revoked that way stores the `rejoin` and sets `desired: stopped`, and
+  every start of a placement whose credential was revoked, with a
+  `rejoin` stored or not yet, follows the owner rule of the restart row.
 
 **Closing.** A placement closes in one of two ways, by cause:
 
@@ -18752,7 +18782,7 @@ agents' shared home, which no removal of a clone reaches:
 | `GET /projects/{owner}/{slug}/placements/{id}` | as the list | |
 | `GET /projects/{owner}/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
 | `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` and `workspace_retention` alone also by the agent profile's owner; `desired: stopped` alone also by the runner's owner, member of the project or not; `desired: stopped` and `workspace_retention` alone also by every agent with `agents:propose`; a change of spec and `desired: running` only on the runner's side (below, `runner_owner_only`) | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`, `workspace_retention`; a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
-| `POST /projects/{owner}/{slug}/placements/{id}/restart` | the runner's side (below): its owner with `members:admin` or as the agent profile's owner, or an agent with `agents:propose` whose own human owns the runner; anyone else `forbidden` (`runner_owner_only`) | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal sets it, §15.5): a `restart` with `{}` or a `PATCH desired: running` that would carry it out answers `forbidden` (`owner_only`) for anyone but the agent profile's owner after such a revocation. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
+| `POST /projects/{owner}/{slug}/placements/{id}/restart` | the runner's side (below): its owner with `members:admin` or as the agent profile's owner, or an agent with `agents:propose` whose own human owns the runner; anyone else `forbidden` (`runner_owner_only`) | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal sets it, §15.5), and for one the clone's removal may store later: after such a revocation, a `restart` with `{}` or a `PATCH desired: running` of a placement whose credential it revoked answers `forbidden` (`owner_only`) for anyone but the agent profile's owner, whether a `rejoin` is stored yet or not. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove` | humans only: the agent profile's owner, or `members:admin`; an agent credential is `forbidden` | `{}`; `202` with the placement: asks the runner to remove the clone of a stopped or closed placement whose `workspace_outcome` is `retained` or `kept`, unsaved work included (§15.5); sets `remove_requested` and `remove_requested_at`, emits `placement_updated`. Any other placement or outcome is `conflict` (`details.reason: "workspace_not_held"`). Works on a closed placement too, however long ago it closed |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
 | `POST /projects/{owner}/{slug}/placements/{id}/replace` (not built yet, §15.14) | `members:admin` and ownership of both runners, the old placement's and the new one's; or `agents:propose` under `spawn_requests`, for an agent whose own human owns both runners (`runner_owner_only` otherwise) | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open: until its old placement has closed after step 3, or its new one after an abort (§15.14) |
@@ -19135,7 +19165,7 @@ Runner credential, signed (§15.1).
 | GET | `/runner/placements` | `closed` | `{items}`: every active, approved placement of this runner, the full desired spec as below, with `workspace_epoch`; one under `desired: stopped` also carries its `workspace_outcome` (with `remove_requested` and `remove_requested_at`, §15.5). `closed=true` lists instead the placements of this runner, closed at any time, whose clone it has not reported removed (`workspace_outcome` `null`, `retained` or `kept`), but none closed with the runner's own end (`runner_revoked`, `runner_removed`: those clones are the operator's, §15.5), each with `active: false`, its `closed_reason`, `workspace_retention`, `workspace_epoch` and `workspace_outcome` (§15.5) |
 | POST | `/runner/placements/{id}/status` | `{seq, observed_generation, state, reason?, detail?, exit_code?, restarts, retry_at?, crash_count?, crash_window_seconds?, deadline_at?, target, since, session_hint?, sessions?, last_activity_at?, run?, nudge?, handover?}` (`handover` not built yet, as the replacement is not, §15.14) | `200`, the placement as the runner reads it with `reported`. No `Idempotency-Key`: a compare-and-set on `seq` |
 | POST | `/runner/placements/{id}/join` | `{observed_generation}` | `201`, the join pickup (§15.9). No `Idempotency-Key`: one-time by its own guard |
-| POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement, and on every other active placement that names the revoked credential, and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
+| POST | `/runner/placements/{id}/workspace` | `{epoch, state, reason?, unsaved?, size_bytes?, removes_at?, remove_requested_at?}` | `200`, the placement as the runner reads it with `workspace_outcome` (§15.5). `retained` and `kept` only for a placement of this runner that is closed or under `desired: stopped` (a running one is `conflict`); `removed` in any state. Each report replaces the outcome; `retained` needs `removes_at`. `remove_requested` is cleared only by a report whose `remove_requested_at` equals the stored one, or by `removed`, whatever it names: nothing is left to remove. `epoch` names the clone (`workspace_epoch` as the runner read it when the placement started in that clone, or from the answer that took the previous clone's `removed`, §15.5): a report about an earlier epoch answers `200` as it is and changes nothing; a later one than the hub's is `invalid`. `removed` is final for its epoch: it revokes the credential the placement named, unless another running placement names it (`credential_revoked`, `reason: workspace_removed`, §15.10), sets `rejoin` on an active placement, and on every other active placement that names the revoked credential, and raises `workspace_epoch`, so a repeat or a late retry answers `200` as it is and changes nothing, while the next clone reports under the new epoch. When the placement's credential was revoked before, by a revocation only the agent profile's owner may undo (§15.6, the restart row), `removed` also sets `desired: stopped` on the placement if it runs, without a new `generation`: its rejoin waits for the owner's start (§15.5). Emits `placement_updated`. No `Idempotency-Key`: a report states the clone as it is |
 | PUT | `/runner/placements/{id}/handover` (not built yet, §15.14) | the sealed transcript, `application/octet-stream`, at most 64 MiB | `204`; `{id}` is the old placement; only its runner, during an open `full` replacement between two runners, once (`conflict` after); emits `placement_updated` to the new placement's runner; §15.14 |
 | GET | `/runner/placements/{id}/handover` (not built yet, §15.14) | — | `200`, the sealed transcript; `{id}` is the new placement; only its runner, `not_found` until uploaded or after deletion |
 | DELETE | `/runner/placements/{id}/handover` (not built yet, §15.14) | — | `204`; `{id}` is the new placement; its runner confirms it has opened the transcript, and the hub deletes it |
