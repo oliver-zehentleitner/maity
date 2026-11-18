@@ -439,21 +439,24 @@ def _check_harness(
             report.warn(f"harness codex: no login at {login}; agents would start without one")
 
 
-def _check_opencode(report: Report, layout: str | None = None) -> None:
+def _check_opencode(report: Report, layout: str | None = None, where: str = "") -> None:
     """opencode has no OS sandbox the runner switches on, so the deny/allow rules it writes
     are model-steering, not a boundary: an opencode agent runs any command as the agents' OS
     user. Under layout = "single" that user is the operator's own, so the agent can read the
-    runner's state and the other harnesses' clones. Unlike agy's `sandbox reported off`, this
-    is not a diagnostic the runner might later clear: opencode never has a runner-switched OS
-    sandbox, so the warning fires whenever opencode is configured (docs/runners.md#opencode-grok,
-    tsk-nynpvag9zvhh)."""
+    runner's state, the other clones and logins. The warning fires on both backends (local
+    through `_check_harness`, each ssh host through `_check_host`) whenever the opencode check
+    reaches it — a missing binary or a failed `--version` errors out before this. Unlike agy's
+    `sandbox reported off`, this is not a diagnostic the runner might later clear: opencode
+    never has a runner-switched OS sandbox to report. An ssh host has no local layout, so it
+    takes the generic wording (docs/runners.md#opencode-grok, tsk-nynpvag9zvhh)."""
     risk = (
-        "under layout single an agent can read the runner's state and other clones"
+        "under layout single an agent can run any command as your own user, including reading "
+        "the runner's state, the other clones and logins"
         if layout == "single"
         else "an agent can run any command as the agents' user"
     )
     report.warn(
-        f"harness opencode: no OS sandbox; {risk} "
+        f"{where}harness opencode: no OS sandbox; {risk} "
         "(docs/runners.md#opencode-grok, tsk-nynpvag9zvhh)"
     )
 
@@ -686,6 +689,8 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                 _check_claude_hooks(report, as_user, f"{name}: ")
             if harness.id == "antigravity":
                 _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
+            if harness.id == "opencode":
+                _check_opencode(report, where=f"{name}: ")
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:

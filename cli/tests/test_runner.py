@@ -548,9 +548,10 @@ def test_check_warns_opencode_is_unsandboxed_under_single_layout(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # opencode never has a runner-switched OS sandbox, so under the single layout an opencode
-    # agent runs as the operator's own user and can read the runner's state and the other
-    # harnesses' clones (docs/runners.md#opencode-grok, tsk-nynpvag9zvhh). `check` keeps the
-    # ok line and adds the warning; `paired` leaves backend.local.layout at its "single" default.
+    # agent runs as the operator's own user and can run any command as it, including reading the
+    # runner's state, the other clones and logins (docs/runners.md#opencode-grok,
+    # tsk-nynpvag9zvhh). `check` keeps the ok line and adds the warning; `paired` leaves
+    # backend.local.layout at its "single" default.
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
     fake_tool(bin_dir, "opencode", "0.5.3")
@@ -565,7 +566,8 @@ def test_check_warns_opencode_is_unsandboxed_under_single_layout(
     assert len(warning) == 1, out
     assert "no OS sandbox" in warning[0]
     assert "under layout single" in warning[0]
-    assert "read the runner's state and other clones" in warning[0]
+    assert "run any command as your own user" in warning[0]
+    assert "the runner's state, the other clones and logins" in warning[0]
     assert "tsk-nynpvag9zvhh" in warning[0]
 
 

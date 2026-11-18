@@ -1019,14 +1019,19 @@ read, write or reach. The mitigation is operational, not in the settings: run
 opencode's agents as a **separate OS user**, isolated from the runner and from
 the other harnesses, so the blast radius is that user's own files. This is
 stated plainly in docs/runners.md and the CLI README, without any bypass
-detail. `maity runner check` also surfaces the residual risk as a warning
-whenever `[harness.opencode]` is configured, keeping the `ok harness
-opencode` line and adding a `warn harness opencode: no OS sandbox` one;
-unlike agy's `sandbox reported off`, this is not a diagnostic the runner
-might later clear but a permanent property (opencode never has a
-runner-switched OS sandbox), so it fires unconditionally, with the concrete
-reach — the runner's state and the other harnesses' clones — named under
-`layout = "single"`, where the agents' user is the operator's own.
+detail. `maity runner check` also surfaces the residual risk as a warning,
+on both backends: the local one through `_check_harness`, each ssh host
+through `_check_host`. It keeps the `ok harness opencode` line and adds a
+`warn harness opencode: no OS sandbox` one whenever the opencode check
+reaches it — a missing binary or a failed `--version` errors out before it,
+so it is not literally unconditional. Unlike agy's `sandbox reported off`,
+this is not a diagnostic the runner might later clear but a permanent
+property (opencode never has a runner-switched OS sandbox to report). Under
+`layout = "single"`, where the agents' user is the operator's own, the
+warning spells out the concrete reach — any command as your own user,
+including reading the runner's state, the other clones and logins; an ssh
+host has no local layout, so it takes the generic wording (an agent can run
+any command as the agents' user).
 
 **Reason:** the owner decided (req-kezp8rppfhn5, "ship now, harden next") that
 opencode should run now carrying this known residual risk rather than stay
