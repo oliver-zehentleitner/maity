@@ -345,6 +345,7 @@ class HubMiddleware:
         facts = caller.RequestFacts(
             method=scope.get("method", ""),
             raw_path=scope.get("raw_path") or scope.get("path", "").encode(),
+            path=scope.get("path", ""),
             raw_query=scope.get("query_string", b""),
             headers={k.lower(): v for k, v in request.headers.items()},
             cookies=dict(request.cookies),

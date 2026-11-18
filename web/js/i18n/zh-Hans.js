@@ -436,9 +436,16 @@ window.MAITY_I18N["zh-Hans"] = {
   "board.claim.unclaimed": "未认领",
   "board.closed.failed": "无法读取已关闭的卡片： {reason}",
   "board.closed.loading": "正在读取已关闭的卡片…",
+  "board.closed.more_failed": "无法读取更多已关闭的卡片：{reason}",
+  "board.closed.more_loaded": {
+    "other": "已加载 {count} 张已关闭的卡片"
+  },
   "board.closed.recheck_failed": "无法检查已关闭的卡片在读取期间是否有更改：{reason}",
   "board.closed.show_more": {
     "other": "再显示 {count} 张已关闭的卡片"
+  },
+  "board.closed.show_more_loaded": {
+    "other": "显示更多（已加载 {count} 张）"
   },
   "board.column.other": "其他",
   "board.column.unknown": "未知状态",
