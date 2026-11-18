@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, handles, site_values
+from maity_hub import clock, handles, jcs, site_values
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.views import ts
@@ -674,8 +674,8 @@ def check(body: object, current: dict[str, Any]) -> dict[str, Any]:
                 continue
             pages: dict[str, Any] = {}
             for tag, page in value.items():
-                if tag not in LANGUAGES:
-                    found.add(f"pages.{tag}", "invalid")
+                if tag not in LANGUAGES:  # a lone surrogate's path is its parent's: no encoding
+                    found.add("pages" if jcs.has_lone_surrogate(tag) else f"pages.{tag}", "invalid")
                     continue
                 checked = _page(page, f"pages.{tag}", found)
                 if checked is not None:

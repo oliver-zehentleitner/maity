@@ -11,7 +11,7 @@ from typing import Any, cast
 from sqlalchemy import Connection, select
 
 from maity_hub import instance_settings as store
-from maity_hub import render, site_values
+from maity_hub import jcs, render, site_values
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.landing import CONTROL, LANGUAGES, Problems, markdown_problem
@@ -60,7 +60,8 @@ def _page(value: Any, path: str, found: Problems) -> dict[str, dict[str, str]]:
     for language, texts in value.items():
         at = f"{path}.{language}"
         if language not in LANGUAGES or not isinstance(texts, dict):
-            found.add(at, "invalid")
+            # a lone surrogate's path is its parent's: no encoding
+            found.add(path if jcs.has_lone_surrogate(language) else at, "invalid")
             continue
         kept: dict[str, str] = {}
         for key, text in texts.items():

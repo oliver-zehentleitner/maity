@@ -247,6 +247,16 @@ def test_an_emoji_is_text(owner: flow.Human) -> None:
     assert saved.json()["pages"]["en"]["sections"][0]["markdown"] == "🙂 fine"
 
 
+def test_a_lone_surrogate_in_a_language_key_is_invalid_under_its_parent(owner: flow.Human) -> None:
+    sent = json.dumps({"pages": {"e\ud800": page(text(GOOD))}}).encode()
+    assert b"\\ud800" in sent
+    refused = owner.raw("PATCH", ADMIN_PATH, sent)
+    assert refused.status_code == 400, refused.text
+    assert field(refused) == {"pages": "invalid"}
+    saved = owner.raw("PATCH", ADMIN_PATH, sent.replace(b"e\\ud800", b"en"))
+    assert saved.status_code == 200, saved.text
+
+
 def test_tab_newline_and_carriage_return_are_text(owner: flow.Human) -> None:
     saved = owner.patch(ADMIN_PATH, body(text("# Head\r\n\n\tindented\n")))
     assert saved.status_code == 200, saved.text
