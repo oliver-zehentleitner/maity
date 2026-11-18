@@ -24,7 +24,6 @@ NOT_ROUTED = {
     ("GET", "/agents/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
     ("GET", "/me/briefings/versions"),  # no route yet: tsk-k0k3jzrkpza2, briefings
-    ("GET", "/me/chat-access/history"),  # no route yet: tsk-v34cv43wvec3, firewall history
     ("GET", "/me/soul/versions"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
     ("GET", "/openapi.json"),  # the machine form describes the routes, not itself
     ("GET", "/projects/{}/{}/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
