@@ -1123,6 +1123,38 @@ real boundary. Rejected because the owner chose to accept the residual risk
 and offer the harness now, with the separate-OS-user mitigation, rather than
 block every opencode placement until that work lands.
 
+## The opencode adapter fails closed on the model
+
+**Id:** 7c23704d-d02f-4cbf-80ca-494119f8fa5c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-kf2kp09d6qew after the first live opencode test found a model-less placement running opencode's own free default (provider `opencode`, `hy4-flash-free`) instead of the configured `xai/grok-4.7`
+**See:** runner.md#opencode-grok-is-offered-its-command-rules-are-not-a-security-boundary — a94f2e01-c227-4d4f-baeb-d88c5f0d3c86 — as of 2026-11-18
+**Revisit when:** opencode routes a placement's model somewhere other than `--model`, or a provider other than the configured one becomes acceptable
+
+`_opencode` takes the effective model from the placement, or the harness
+`default_model` when the placement names none, and passes it as `--model`. A
+model that is empty or not among the harness `models` refuses the start
+(`NotYet`, surfaced as `harness_refused`) instead of launching.
+
+**Reason:** a provider-`opencode` model is opencode-hosted (the command-rules
+constraint above), so running one sends the clone's conversation — the
+repository's content — to opencode's servers rather than to the configured
+provider (the operator's xAI access). With no `--model`, opencode picks its
+own free default, a provider-`opencode` model, so a model-less placement
+leaked data silently. The effective model must therefore be one the operator
+configured, and `default_model` (validated to be one of `models`) is the
+fallback when a placement names none. Fail closed because the leak is silent:
+a wrong model still runs and still answers, so a warning-and-continue would
+let the data leave before anyone read the warning.
+
+**Rejected alternative:** fall back to `default_model` but let an unknown or
+missing model through with a warning (what opencode does on its own, minus the
+log). Rejected because the harm — repository content reaching opencode's
+servers — happens on the start itself, not later, so only refusing the start
+prevents it.
+
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
 **Id:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908
