@@ -93,6 +93,8 @@ class Service:
     client: hub.Client
     advertised: dict[str, Any]
     reconcile: Callable[[list[dict[str, Any]]], None] = lambda placements: None
+    # The hub's closed placements of this runner (§15.8 `closed=true`), for their scratch.
+    closed: Callable[[list[dict[str, Any]]], None] = lambda placements: None
     actual: Callable[[], list[dict[str, Any]]] = lambda: []
     sleep: Callable[[float], None] = time.sleep
     monotonic: Callable[[], float] = time.monotonic
@@ -145,6 +147,20 @@ class Service:
     def read_placements(self) -> None:
         answer = self.client.call("GET", "/runner/placements")
         self._take(answer.get("items") if isinstance(answer, dict) else None)
+        self.read_closed()
+
+    def read_closed(self) -> None:
+        """The closed placements whose scratch the supervisor removes (§15.5). A hub that
+        refuses the read leaves them for the next one; it never ends the service."""
+        try:
+            answer = self.client.call("GET", "/runner/placements", query=[("closed", "true")])
+        except hub.HubError as exc:
+            if exc.status is None or exc.status >= 500 or exc.status == 429:
+                raise
+            log(f"closed placements not read: {onboarding.inline(str(exc))}")
+            return
+        items = answer.get("items") if isinstance(answer, dict) else None
+        self.closed([p for p in items or [] if isinstance(p, dict)])
 
     def _take(self, placements: Any) -> None:
         self.placements = [p for p in placements or [] if isinstance(p, dict)]
@@ -335,7 +351,7 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
     sup = supervisor.build(
         cfg, hub.Client(base, key), log, probes, service.advertised, found_targets
     )
-    service.reconcile, service.actual = sup.update, sup.actual
+    service.reconcile, service.actual, service.closed = sup.update, sup.actual, sup.closed
     service.supervisor = sup
     if found_targets is None and any(keeper.managed(h) for h in cfg.harnesses.values()):
         # Only a runner that manages a tool advertises `tools` (§15.16): a hub from before

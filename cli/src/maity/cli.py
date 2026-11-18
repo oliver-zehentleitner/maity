@@ -1811,7 +1811,7 @@ ACTION_BODY_MAX = 48 * 1024  # §7
 
 def _read_bytes(source: str, flag: str) -> bytes:
     """A file's bytes as they are, or standard input's with `-`. Under a placement only a
-    file in the clone (_placed_read)."""
+    file in the clone or the placement's scratch (_placed_read)."""
     if source == "-":
         return sys.stdin.buffer.read()
     placed = _placed_read(source, flag)
@@ -2065,7 +2065,7 @@ def file_name(name: Any) -> str:
 
 def _read_upload(path: str, what: str = "files put") -> bytes | None:
     """The file's bytes, or None after saying why it is refused (larger than 10 MiB). Under
-    a placement only a file in the clone (_placed_read)."""
+    a placement only a file in the clone or the placement's scratch (_placed_read)."""
     placed = _placed_read(path, what, ATTACHMENT_MAX)
     if placed is not None:
         return placed
@@ -2304,8 +2304,8 @@ def _placement_clone() -> Path | None:
 # command takes, an attachment.
 PLACED_READ_MAX = ATTACHMENT_MAX
 QUIET_REFUSAL = (
-    "under a runner placement maity reads only a plain file in this clone, outside its .git,"
-    " not through a link and with no other hard link"
+    "under a runner placement maity reads only a plain file in this clone (outside its .git)"
+    " or in the placement's scratch, not through a link and with no other hard link"
 )
 
 
@@ -2313,15 +2313,17 @@ def _placed_read(
     given: str, flag: str, limit: int = PLACED_READ_MAX, *, quiet: bool = False
 ) -> bytes | None:
     """Under a placement: the bytes of the file `given` names, read only inside the clone,
-    outside its `.git`, never through a link or a file with another hard link (inclone.read,
-    cli/context/runner.md). None outside a placement, where the caller reads as before.
+    outside its `.git`, or in the placement's scratch when it has one, never through a link
+    or a file with another hard link (inclone.read, cli/context/runner.md). None outside a
+    placement, where the caller reads as before.
     `quiet` leaves the path out of a refusal (a restricted text given there by mistake)."""
     root = _placement_clone()
     if root is None:
         return None
     try:
         with clonecheck.opened_clone(root) as opened:  # the root and .git, checked once
-            return inclone.read(root, given, flag, limit, opened)
+            scratch = inclone.recorded_scratch(root, opened.git if opened else None)
+            return inclone.read(root, given, flag, limit, opened, scratch)
     except (clonecheck.Refused, inclone.Refused) as exc:
         if quiet:  # nothing of the path, not even one of its names
             raise UsageError(f"{flag}: {QUIET_REFUSAL}") from None
@@ -6155,7 +6157,7 @@ _BOM = "\ufeff"
 
 def _read_text_file(path: str, flag: str) -> str:
     """The file's text, less a leading byte order mark. Under a placement only a file in the
-    clone (_placed_read)."""
+    clone or the placement's scratch (_placed_read)."""
     try:
         placed = _placed_text(path, flag)
         if placed is not None:
@@ -6315,6 +6317,13 @@ def _main(argv: Sequence[str] | None = None) -> int:
             "the runner does not run on Windows: it needs tmux and POSIX OS users. "
             "Run it inside WSL; every other maity command works here"
         )
+        return EXIT_REFUSED
+    if (
+        args.command == "runner"
+        and clonecheck.PLACEMENT_ENV in os.environ  # set, even empty: a placed session
+        and args.runner_command not in runner_commands.IN_SESSION
+    ):
+        _err("`maity runner` is the operator's: it does not run for a placed agent")
         return EXIT_REFUSED
     try:
         _load_texts(args)
