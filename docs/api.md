@@ -486,12 +486,19 @@ first row below) also keeps an emoji sequence: U+200D (zero-width
 joiner) only between two emoji characters, U+FE0F (variation selector
 16) only right after one, so `U+1F469 U+200D U+1F4BB` (a technologist) and `❤️` are a name's, and a joiner
 between letters, at either end of a sequence or a selector after a
-letter are not. An emoji character is one of category So at U+1F000 or
-above (pictographs, the regional indicators of a flag) or in
-U+2600–U+27BF (miscellaneous symbols, dingbats), or a skin-tone modifier
-U+1F3FB–U+1F3FF; a symbol of category So elsewhere (U+00A9, U+2B50, the
-braille patterns) takes no joiner and no selector in a name. Every other
-field refuses U+200D. A name that is not empty but holds only spaces
+letter are not. An emoji character, the only one a joiner stands
+between, is one of category So at U+1F000 or above (pictographs, the
+regional indicators of a flag), in U+2600–U+27BF (miscellaneous
+symbols, dingbats) or in U+2B00–U+2BFF (miscellaneous symbols and
+arrows: `⭐`, `⬛`), or a skin-tone modifier U+1F3FB–U+1F3FF. U+FE0F asks
+for a character's emoji presentation, so it also stands after a symbol
+that has a text and an emoji form: an emoji character, any character of
+category So in U+2000–U+2BFF except the braille patterns U+2800–U+28FF
+(`™️`, `⌚️`), and U+00A9 and U+00AE (`©️`, `®️`). Such a pair may be
+followed by a joiner and an emoji character. A symbol of category So
+elsewhere, a braille pattern included, takes neither, so `U+2800 U+FE0F`
+and `U+00A9 U+200D U+00A9` are refused in a name. Every other field
+refuses U+200D. A name that is not empty but holds only spaces
 (Zs) and the characters that show as nothing though they are letters or
 symbols (U+115F, U+1160, U+3164, U+FFA0, U+2800) is refused with the
 field's reason; inside a name with something to read they pass.

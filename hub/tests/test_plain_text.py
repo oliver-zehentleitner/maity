@@ -77,22 +77,32 @@ def test_plain_line_folds_each_run_into_one_space() -> None:
 
 # --- names ------------------------------------------------------------------------------------
 
-# A name keeps an emoji sequence: U+200D only between two emoji, U+FE0F only right after one.
-# An emoji: So from U+1F000 (U+1F469, the regional indicators of a flag), So in U+2600–U+27BF
-# (U+2764, U+2600), a skin tone (U+1F3FD).
+# A name keeps an emoji sequence: U+200D only between two emoji, U+FE0F only right after an
+# emoji or a symbol with an emoji form. An emoji: So from U+1F000 (U+1F469, the regional
+# indicators of a flag), So in U+2600–U+27BF (U+2764, U+2600) or U+2B00–U+2BFF, a skin tone
+# (U+1F3FD).
 EMOJI_NAMES = [
-    "☀️",
-    "\U0001f3f3️‍\U0001f308",
+    "\U00002600\U0000fe0f",
+    "\U0001f3f3\U0000fe0f\U0000200d\U0001f308",
     "Ann 👩\u200d💻",
     "❤\ufe0f",
     "❤\ufe0f\u200d🔥",
     "👩🏽\u200d💻",
     "🇦🇹",
+    # U+2B00–U+2BFF is an emoji block too: ⭐ and ⬛ plain, ⭐ with U+FE0F.
+    "\U00002b50",
+    "\U00002b50\U0000fe0f",
+    "\U00002b1b",
+    # U+FE0F asks for the emoji form of a symbol that has one: ©, ®, ™, ⌚.
+    "\U000000a9\U0000fe0f",
+    "\U000000ae\U0000fe0f",
+    "\U00002122\U0000fe0f",
+    "\U0000231a\U0000fe0f",
 ]
 NOT_EMOJI = {
-    "zwj-between-braille-blanks": "⠀‍⠀",
-    "zwj-between-symbols-below-the-emoji-blocks": "©‍©",
-    "vs16-after-a-braille-blank": "⠀️",
+    "zwj-between-braille-blanks": "\U00002800\U0000200d\U00002800",
+    "zwj-between-symbols-below-the-emoji-blocks": "\U000000a9\U0000200d\U000000a9",
+    "vs16-after-a-braille-blank": "\U00002800\U0000fe0f",
     "zwj-between-letters": "Ann\u200dBob",
     "vs16-after-a-letter": "Ann\ufe0f",
     "zwj-at-start": "\u200d👩",
@@ -134,12 +144,12 @@ def test_a_name_refuses_a_joiner_or_selector_outside_an_emoji_sequence(
 
 
 BLANK_NAMES = {
-    "hangul-filler": "ㅤㅤ",
-    "hangul-choseong-filler": "ᅟ",
-    "hangul-jungseong-filler": "ᅠ",
-    "halfwidth-hangul-filler": "ﾠ",
-    "braille-blank": "⠀",
-    "fillers-and-spaces": "ㅤ ⠀　",
+    "hangul-filler": "\U00003164\U00003164",
+    "hangul-choseong-filler": "\U0000115f",
+    "hangul-jungseong-filler": "\U00001160",
+    "halfwidth-hangul-filler": "\U0000ffa0",
+    "braille-blank": "\U00002800",
+    "fillers-and-spaces": "\U00003164 \U00002800\U00003000",
 }
 
 
@@ -163,7 +173,7 @@ def test_a_name_of_fillers_and_spaces_alone_is_refused(
 
 def test_a_filler_or_a_space_inside_a_name_with_something_to_read_passes() -> None:
     assert not plain_name("   ")
-    for name in ("AnnㅤLee", "Ann ⠀", "ㅤAnn", "Ann Lee"):
+    for name in ("Ann\U00003164Lee", "Ann \U00002800", "\U00003164Ann", "Ann Lee"):
         assert plain_name(name) and orgs.display_name_ok(name), name
 
 

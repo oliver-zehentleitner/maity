@@ -7,7 +7,7 @@
 **Status:** active
 **Evidence:** inferred
 **Source:** card tsk-zadkerpebgd5 (one plain-text rule for names, notes, URLs and subjects), 2026-11-14; `plain_text.py` `NOT_PLAIN`, `plain`, `plain_line`, which tsk-kpaye5hmyz39 started for a bridge's purpose
-**Revisit when:** Python's `unicodedata` gains Extended_Pictographic, an emoji sequence people use is refused in a name (one outside the emoji blocks, such as U+2B50 with U+FE0F, or one newer than the Python's Unicode data, whose code points are Cn there), or a field needs a character of the set (a name that must keep U+200D, a note that must keep a carriage return), or a migration touches the tables that hold these values anyway; also when names that look alike become a problem: the rule does not compare names, so a name of letters and spaces that reads as blank in some font, or one of Cyrillic letters that look Latin, passes
+**Revisit when:** Python's `unicodedata` gains Extended_Pictographic, an emoji sequence people use is refused in a name (one whose joiner stands after a symbol outside the emoji blocks, or one newer than the Python's Unicode data, whose code points are Cn there), or a field needs a character of the set (a name that must keep U+200D, a note that must keep a carriage return), or a migration touches the tables that hold these values anyway; also when names that look alike become a problem: the rule does not compare names, so a name of letters and spaces that reads as blank in some font, or one of Cyrillic letters that look Latin, passes
 **See:** mail.md#one-row-never-stops-the-outbox-a-mail-that-cannot-be-built-is-failed-before-it-is-admitted-and-rows-left-in-sending-need-no-migration — 34e5cd71-12cb-4484-b03c-2c4309665605 — as of 2026-11-14
 
 One function in one module, `plain_text.py`, decides what plain text is (docs/api.md §1.7.1): no
@@ -45,15 +45,21 @@ toward the subject's cut and the body names it.
 
 Names (`plain_name`, what `models.Name`, `display_name_ok`, `check_names`, `create_profile` and
 `owner create` call) take one exception: U+200D only between two emoji characters and U+FE0F only
-right after one. An emoji character is category So at U+1F000 or above (pictographs, the
-regional indicators) or in U+2600–U+27BF (miscellaneous symbols, dingbats), or a skin-tone
-modifier (U+1F3FB–U+1F3FF, category Sk). Python's `unicodedata` has no Extended_Pictographic
-property, and a dependency (the `regex` package) for one property was not worth it. So alone,
-as the first version had it, also holds symbols that are no emoji (U+00A9, the braille
-patterns, U+2800 among them, which shows as nothing); the blocks narrow it to where the emoji
-are, at the price of the few emoji outside them (U+2B50, U+00A9 with U+FE0F), which keep their
-plain form in a name but not U+FE0F. Every other field, a bridge's purpose and notes included,
-refuses U+200D as before.
+right after one (`takes_vs16`, below). An emoji character (`is_emoji`), the only one a joiner
+stands between, is category So at U+1F000 or above (pictographs, the regional indicators), in
+U+2600–U+27BF (miscellaneous symbols, dingbats) or in U+2B00–U+2BFF (miscellaneous symbols
+and arrows, for U+2B50 and U+2B1B, common in names), or a skin-tone modifier (U+1F3FB–U+1F3FF,
+category Sk). Python's `unicodedata` has no Extended_Pictographic property, and a dependency
+(the `regex` package) for one property was not worth it. So alone, as the first version had
+it, also holds symbols that are no emoji (U+00A9, the braille patterns, U+2800 among them,
+which shows as nothing); the blocks narrow the joiner to where the emoji are. U+FE0F is looser
+(`takes_vs16`): it asks for a character's emoji presentation, so it may follow an emoji
+character, any So character in U+2000–U+2BFF but the braille patterns U+2800–U+28FF (U+2122,
+U+231A), and U+00A9 and U+00AE, the symbols whose text form is the default. A joiner right after
+such a pair, before an emoji character, passes too: the loop checks the character before the
+selector with `takes_vs16`. Braille is excluded by name because it is So inside that range and
+U+2800 shows as nothing. Every other field, a bridge's purpose and notes included, refuses
+U+200D as before.
 
 A name that is not empty but holds only spaces (Zs) and the characters that show as nothing
 though they are letters or symbols (the Hangul fillers U+115F, U+1160, U+3164, U+FFA0 and the

@@ -23,15 +23,23 @@ def plain(value: str, keep: str = "") -> bool:
 
 ZWJ = "‍"  # zero-width joiner: joins emoji into one picture (👩‍💻)
 VS16 = "️"  # variation selector 16: an emoji's picture form (❤️)
-# An emoji character, for the two exceptions of a name. Python's `unicodedata` has no
+# An emoji character, which a joiner of a name stands between. Python's `unicodedata` has no
 # Extended_Pictographic property, so: category So in the blocks that hold the emoji, U+1F000
-# and above (pictographs, the regional indicators U+1F1E6–U+1F1FF of a flag) and the
-# miscellaneous symbols and dingbats U+2600–U+27BF, and the skin-tone modifiers
-# U+1F3FB–U+1F3FF, which are Sk (§1.7.1). A symbol of category So elsewhere (U+00A9, U+2122,
-# U+2B50, the braille patterns U+2800–U+28FF) takes no joiner and no selector in a name.
+# and above (pictographs, the regional indicators U+1F1E6–U+1F1FF of a flag), the
+# miscellaneous symbols and dingbats U+2600–U+27BF and the miscellaneous symbols and arrows
+# U+2B00–U+2BFF (U+2B50, U+2B1B), and the skin-tone modifiers U+1F3FB–U+1F3FF, which are Sk
+# (§1.7.1). A symbol of category So elsewhere (U+00A9, U+2122, the braille patterns
+# U+2800–U+28FF) takes no joiner.
 EMOJI_FROM = 0x1F000
 SYMBOLS_AND_DINGBATS = range(0x2600, 0x27C0)
+SYMBOLS_AND_ARROWS = range(0x2B00, 0x2C00)
 SKIN_TONES = range(0x1F3FB, 0x1F400)
+# U+FE0F asks for a character's emoji presentation, so it may also follow a symbol that has a
+# text and an emoji form: category So in U+2000–U+2BFF (U+2122, U+231A) but the braille
+# patterns, and U+00A9, U+00AE (§1.7.1).
+VS16_SYMBOLS = range(0x2000, 0x2C00)
+BRAILLE = range(0x2800, 0x2900)
+TEXT_DEFAULT = frozenset(chr(code) for code in (0x00A9, 0x00AE))
 # Characters that show as nothing but are letters (Lo) or symbols (So): the Hangul fillers
 # U+115F, U+1160, U+3164, U+FFA0 and the blank braille pattern U+2800. A name of these and
 # spaces (Zs) alone is refused; inside a name with something to read they pass (§1.7.1).
@@ -42,8 +50,18 @@ def is_emoji(ch: str) -> bool:
     code = ord(ch)
     if code in SKIN_TONES:
         return True
-    in_block = code >= EMOJI_FROM or code in SYMBOLS_AND_DINGBATS
+    in_block = code >= EMOJI_FROM or code in SYMBOLS_AND_DINGBATS or code in SYMBOLS_AND_ARROWS
     return in_block and unicodedata.category(ch) == "So"
+
+
+def takes_vs16(ch: str) -> bool:
+    """Whether U+FE0F may stand right after `ch` in a name: an emoji character, or a symbol
+    with an emoji form (`VS16_SYMBOLS` but braille, `TEXT_DEFAULT`)."""
+    if is_emoji(ch) or ch in TEXT_DEFAULT:
+        return True
+    code = ord(ch)
+    symbol = code in VS16_SYMBOLS and code not in BRAILLE
+    return symbol and unicodedata.category(ch) == "So"
 
 
 def _blank(value: str) -> bool:
@@ -52,8 +70,9 @@ def _blank(value: str) -> bool:
 
 
 def plain_name(value: str) -> bool:
-    """A name (§1.7.1): `plain`, except that U+200D stands only between two emoji characters and
-    U+FE0F only right after one, so an emoji sequence (👩‍💻, ❤️) is a name's and a joiner
+    """A name (§1.7.1): `plain`, except that U+200D stands only between two emoji characters
+    (or after a symbol with U+FE0F, before an emoji character) and U+FE0F only right after a
+    character that `takes_vs16`, so an emoji sequence (👩‍💻, ❤️, ©️) is a name's and a joiner
     between letters, at either end or after a selector of a letter is not. A name that is not
     empty but blank (`_blank`) is refused too; an empty one is left to the field's length."""
     if value and _blank(value):
@@ -62,11 +81,11 @@ def plain_name(value: str) -> bool:
         before = value[at - 1] if at > 0 else ""
         after = value[at + 1] if at + 1 < len(value) else ""
         if ch == VS16:
-            if not before or not is_emoji(before):
+            if not before or not takes_vs16(before):
                 return False
         elif ch == ZWJ:
             emoji_before = bool(before) and (
-                is_emoji(before) or (before == VS16 and at > 1 and is_emoji(value[at - 2]))
+                is_emoji(before) or (before == VS16 and at > 1 and takes_vs16(value[at - 2]))
             )
             if not emoji_before or not after or not is_emoji(after):
                 return False

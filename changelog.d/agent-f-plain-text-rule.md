@@ -8,8 +8,9 @@
   line-separator characters; a note and the
   preferences keep the line feed and the tab, and a name keeps an emoji
   sequence (a zero-width joiner between two emoji, a variation selector
-  right after one; an emoji is a symbol of the emoji, miscellaneous-symbol
-  and dingbat blocks). A name of spaces and blank filler characters alone
+  right after one or after a symbol with an emoji form such as ©, ™ or ⌚;
+  an emoji is a symbol of the emoji, miscellaneous-symbol, dingbat and
+  symbols-and-arrows blocks). A name of spaces and blank filler characters alone
   is refused. Each field answers with the
   reason it already had (`control_character`, `not_a_url`, `format`); an
   invitation note's refused character is now `control_character` rather
