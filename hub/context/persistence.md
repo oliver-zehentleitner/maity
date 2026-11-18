@@ -556,7 +556,7 @@ off.
 the filters other than `q`, and sorts them
 in Python by `ranks.board_key`; the full rows are read only for the
 page's cards, and a search is applied to the sorted keys a batch at a
-time (the entry below). The order: the columns in board order, then within
+time ([the card list reads keys first](#the-card-list-reads-keys-first-and-a-search-reads-card-text-and-notes-a-batch-at-a-time), b7d3e9a2). The order: the columns in board order, then within
 one by rank, then by `created_at`, then by `id`, and closed cards by
 `closed_at` newest first, then by `id`. A page's cursor names the last
 card it showed and the first card it did not show, each with its sort
