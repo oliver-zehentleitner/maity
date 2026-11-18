@@ -18906,6 +18906,54 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     win.Maity.api.post = caPost; win.Maity.api.patch = caPatch; win.Maity.api.del = caDel; win.confirm = caConfirm;
   }
 
+  // The history of one's own lists (§9.6, "History") under them: the seeded answer and its entry,
+  // the entry shown from its item, a deleted account without a handle, the writes of the case above,
+  // and further pages through Show more.
+  {
+    await go("#/agents/chat-access"); await mtSettle();
+    const chBox = () => main.querySelector("section.chat-access-history");
+    const chRows = () => chBox().querySelectorAll("li.chat-access-event");
+    const chText = text(chBox());
+    expect(chBox() && byId("chat-access-history-heading").tagName === "H3"
+      && chText.includes("You answered @anna's request: allow always") && chText.includes("Your agents: @agent-a · the person not ticked")
+      && chText.includes("It made one entry.") && chText.includes("Allow entry created by your answer to a request."),
+      "chat access history: the answer names the side, the button, the ticks and the entries it made " + chText.slice(0, 500));
+    const chGone = chRows().find((li) => li.attrs["data-history"] === "chh-0001");
+    expect(chGone && text(chGone).includes("Deny entry removed because an agent or account it named was deleted.")
+      && text(chGone).includes("a deleted account alone · for all your agents") && !text(chBox()).includes("hum-gone")
+      && text(chGone).includes("The entry is no longer in your lists."),
+      "chat access history: a deleted account reads as deleted, never by its id or an old handle " + (chGone ? text(chGone) : ""));
+    const chAnswer = chRows().find((li) => li.attrs["data-history"] === "chh-0003");
+    const chLink = chAnswer && chAnswer.querySelector("a.chat-access-request");
+    expect(chLink && /(^|#)\/all$/.test(chLink.getAttribute("href")) && text(chLink) === "Request req-0chatanna1 in your inbox",
+      "chat access history: the request is linked to the inbox by its id " + (chLink ? chLink.getAttribute("href") + " " + text(chLink) : chAnswer ? text(chAnswer) : "no answer row"));
+    expect(text(chRows()[0]).includes("Allow entry changed by you, on this page or through the API.") && text(chRows()[0]).includes("What changed: your agents"),
+      "chat access history: the case above's last write is the newest item " + text(chRows()[0]));
+    const chProto = Object.getPrototypeOf(main);
+    const chFocus0 = chProto.focus;
+    chProto.focus = function () { document.activeElement = this; };
+    const chCreated = chRows().find((li) => li.attrs["data-history"] === "chh-0002");
+    const chShow = chCreated && chCreated.querySelectorAll("button").find((b) => text(b) === "Show the entry");
+    if (chShow) chShow.dispatch("click");
+    expect(chShow && document.activeElement && document.activeElement.getAttribute("id") === "chat-access-entry-cha-0001",
+      "chat access history: Show the entry focuses the entry's row in the lists " + (chShow ? String(document.activeElement && document.activeElement.getAttribute("id")) : chCreated ? text(chCreated) : "no row"));
+    chProto.focus = chFocus0; document.activeElement = undefined;
+    const chPage = await win.Maity.api.get("/me/chat-access/history?limit=2");
+    const chNext = await win.Maity.api.get("/me/chat-access/history?limit=2&cursor=" + encodeURIComponent(chPage.next_cursor));
+    expect(chPage.items.length === 2 && chPage.next_cursor && chNext.items[0].seq < chPage.items[1].seq,
+      "chat access history: the fixture hub pages newest first by seq");
+    const chMade = [];
+    for (let i = 0; i < 50; i++) chMade.push((await win.Maity.api.post("/me/chat-access/allow", { agents: ["agt-a"], owner_id: "hum-anna" })).id);
+    await go("#/agents/chat-access"); await mtSettle();
+    const chMore = chBox().querySelector("button.chat-access-history-more");
+    const chFirst = chRows().length;
+    if (chMore) chMore.dispatch("click");
+    await mtSettle();
+    expect(chFirst === 50 && chMore && chRows().length > 50 && !chBox().querySelector("button.chat-access-history-more"),
+      "chat access history: 50 items a page, the next ones under Show more " + chFirst + " " + chRows().length);
+    for (const id of chMade) await win.Maity.api.del("/me/chat-access/allow/" + id);
+  }
+
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
   win.location.protocol = "http:";
   const F = JSON.parse(JSON.stringify(ctx.window.MAITY_FIXTURES));
