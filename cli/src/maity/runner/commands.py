@@ -566,7 +566,7 @@ def _check_claude_nesting(report: Report, agent_path: str, as_user: AsUser) -> N
         report.error(
             "harness claude-code: a user namespace does not start inside bubblewrap "
             f"({found.detail}), so every sandboxed command fails (subagents included) while "
-            "the session itself starts; on Ubuntu 23.10+ this is AppArmor's "
+            "the session itself starts; on Ubuntu this is AppArmor's "
             'bwrap-userns-restrict profile: see docs/runners.md, "Ubuntu: nested user '
             'namespaces"'
         )

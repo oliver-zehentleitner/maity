@@ -3918,14 +3918,15 @@ placement ends without asking what in it matters.
 **Source:** the lead's card tsk-5b5x3k5zvg7x after the Claude Code smoke test on an Ubuntu runner, 2026-11-18; reproduced on that host the same day
 **Revisit when:** Claude Code's Linux sandbox stops opening a second user namespace; the runner sets up the host's AppArmor itself (runner init); Ubuntu changes `bwrap-userns-restrict`
 
-On Linux, beside finding bwrap and socat, `check` runs `bwrap … -- unshare
+On Linux and the local backend only, beside finding bwrap and socat, `check` runs `bwrap … -- unshare
 --user --map-root-user true` once as the agents' user and on their PATH, every command by its absolute
 path. Only a refused mapping (unshare's write to `/proc/self/uid_map`,
 `gid_map` or `setgroups` fails, read under `LC_ALL=C`) is an error. A probe
 that times out, does not start or fails otherwise is a warning that
-blames nothing, and so is a missing tool. Seatbelt (macOS) is not probed.
+blames nothing, and so is a missing tool. Seatbelt (macOS) is not probed,
+and neither is an ssh host yet: there the lock goes undetected.
 
-**Reason:** Ubuntu 23.10+'s AppArmor profile `bwrap-userns-restrict` lets
+**Reason:** Ubuntu's AppArmor profile `bwrap-userns-restrict` (seen on 26.04) lets
 bubblewrap start and takes every capability from what it starts. Claude
 Code's session then runs, and so does `maity`, which runs outside the
 sandbox, so the placement looks healthy. But every sandboxed command fails

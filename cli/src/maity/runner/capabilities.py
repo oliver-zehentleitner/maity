@@ -334,7 +334,7 @@ def agy_namespaces(path: str, as_user: AsUser = RUNNER) -> bool:
 
 # Claude Code's Linux sandbox runs each command under bubblewrap in a user namespace, and its
 # seccomp step (`apply-seccomp`) opens a second user namespace inside that one and maps the user
-# there. Ubuntu 23.10 and later ship the AppArmor profile `bwrap-userns-restrict`, which denies
+# there. Ubuntu (seen on 26.04) ships the AppArmor profile `bwrap-userns-restrict`, which denies
 # every capability to what bwrap starts: the nested step then fails ("write /proc/self/setgroups
 # ... caller must provide CAP_SYS_ADMIN") and so does every sandboxed command, a subagent's
 # included, while the session itself starts. Checking bwrap and socat alone says nothing about
