@@ -534,8 +534,9 @@ def _check_codex_home(report: Report, cfg: config.Config, as_user: AsUser = RUNN
     a hidden path Codex's own sandbox cannot create or run its per-command helper, so no
     command runs and `maity resume` never starts (card tsk-hv7jbgy75zjt). The home sits inside
     the placement scratch (adapters.codex_home), so codex must be a harness that gets one and
-    the workspaces root must not be inside the state directory; `check` reports either before a
-    placement starts."""
+    the workspaces root must not be inside the state directory; `check` reports either from the
+    local configuration before a placement starts, and does not confirm that the scratch is
+    created when a placement actually runs (a runtime fall-back to no scratch is beyond it)."""
     if "codex" not in cfg.harnesses or cfg.local is None:
         return
     if "codex" not in workspace.SCRATCH_HARNESSES:  # a regression guard: no scratch, no home

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, clonecheck, ghpr, proc
-from . import config, stub, trust
+from . import config, scratch, stub, trust
 from .asuser import AsUser
 
 START_PROMPT = (
@@ -270,8 +270,8 @@ def launch(ctx: Context) -> Launch:
     # (an empty record also clears one a former grant left).
     ctx.as_user.write(records / ghpr.PULL_REQUESTS, pull_requests_record(ctx))
     # Where maity also reads a file the agent names (inclone): its scratch, or nowhere.
-    scratch = f"{ctx.scratch}\n" if ctx.scratch is not None else ""
-    ctx.as_user.write(records / clonecheck.SCRATCH_RECORD, scratch)
+    scratch_record = f"{ctx.scratch}\n" if ctx.scratch is not None else ""
+    ctx.as_user.write(records / clonecheck.SCRATCH_RECORD, scratch_record)
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
@@ -627,12 +627,17 @@ def codex_config(ctx: Context) -> str:
         f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n"
         # The placement's scratch (§15.5), under the hidden workspaces root, opened again.
         + (f'{json.dumps(str(ctx.scratch))} = "write"\n' if ctx.scratch is not None else "")
-        # Codex's own CODEX_HOME lives inside that scratch (codex_home): named here so the
-        # profile shows Codex may create and run its per-command helper there. The same single
-        # source builds the launch env's CODEX_HOME, so the two never drift. Omitted when there
-        # is no scratch to carve: CODEX_HOME then stays in the runner's directory, which this
-        # profile hides, and `maity runner check` reports it before a placement starts.
-        + (f'{json.dumps(str(codex_home(ctx)))} = "write"\n' if ctx.scratch is not None else "")
+        # Codex's own CODEX_HOME sits inside that writable scratch (codex_home), so the profile
+        # names it read, not write: a sandboxed command may read the home — its config.toml,
+        # any rules file, the auth.json link, and the per-command helper under tmp, which it
+        # also runs — but may write nothing there. The runner writes those control files once
+        # before the session starts; the session cannot rewrite the configuration a later
+        # restart reads. Read also keeps the home reachable (not hidden), so the helper stays
+        # readable and runnable. The same single source builds the launch env's CODEX_HOME, so
+        # the two never drift. Omitted when there is no scratch to carve: CODEX_HOME then stays
+        # in the runner's directory, which this profile hides, and `maity runner check` reports
+        # it before a placement starts.
+        + (f'{json.dumps(str(codex_home(ctx)))} = "read"\n' if ctx.scratch is not None else "")
         + "\n"
         "[permissions.maity.network]\nenabled = true\n\n"
         "[permissions.maity.network.domains]\n" + domains
@@ -644,14 +649,24 @@ def codex_config(ctx: Context) -> str:
 def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
     home = codex_home(ctx)
-    ctx.as_user.write(home / "config.toml", codex_config(ctx))
+    config_text = codex_config(ctx)
     # The login of whoever runs the agents (the operator, or the agents' user), linked so
     # that a token refresh lands in the original; a link left from an earlier launch that
-    # points elsewhere, or nowhere, is replaced (AsUser.link).
+    # points elsewhere, or nowhere, is replaced. Linked only when there is a login to link.
     own = None if not ctx.as_user.direct else os.environ.get("CODEX_HOME")
     login = Path(own or ctx.as_user.home() / ".codex") / "auth.json"
-    if ctx.as_user.exists(login, "-f"):
-        ctx.as_user.link(login, home / "auth.json")
+    auth = login if ctx.as_user.exists(login, "-f") else None
+    if ctx.scratch is not None:
+        # The home sits in the agent-writable scratch: its control files are written to a
+        # descriptor opened without following a link from the workspaces root, so a codex-home
+        # swapped for a link is refused, never written through, out of the scratch.
+        scratch.write_codex_home(home, config_text, auth, ctx.as_user)
+    else:
+        # No scratch to carve: the home stays in the runner's own directory, below no
+        # agent-writable parent, so the plain writes are safe there.
+        ctx.as_user.write(home / "config.toml", config_text)
+        if auth is not None:
+            ctx.as_user.link(auth, home / "auth.json")
     ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     env = {**env, "CODEX_HOME": str(home)}
     model = ctx.placement.get("model")

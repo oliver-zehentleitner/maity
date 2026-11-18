@@ -25,8 +25,9 @@ import errno
 import json
 import os
 import re
+import secrets
 import sys
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import PurePath
 
 OPS = ("make", "size", "remove")
@@ -45,11 +46,14 @@ class OnTheWay(OSError):
 
 
 def supported() -> bool:
-    """Whether this system opens a directory from another without following a link and
-    removes a tree from a descriptor (not Windows)."""
+    """Whether this system opens a directory from another without following a link, removes a
+    tree from a descriptor, and writes and links a name relative to one (not Windows)."""
     return (
         hasattr(os, "O_NOFOLLOW") and os.open in os.supports_dir_fd
         and os.rmdir in os.supports_dir_fd and hasattr(os, "fwalk")
+        # os.replace shares renameat with os.rename, which is the member listed for it.
+        and os.rename in os.supports_dir_fd and os.symlink in os.supports_dir_fd
+        and os.unlink in os.supports_dir_fd
     )  # fmt: skip
 
 
@@ -178,6 +182,57 @@ def _empty(fd: int) -> None:
                 pass
 
 
+def codex(under: str, home: str, config_text: str, auth_target: str | None) -> dict[str, object]:
+    """Codex's control files written inside the per-placement `home` (`<scratch>/codex-home`),
+    each reached from the workspaces root `under` without following a link. The scratch is
+    descended as make/size/remove descend it; the `codex-home` leaf is made 0700 and opened
+    without following a link, so one swapped for a link (a directory link leading out of the
+    scratch) fails the open and the whole operation is refused (OnTheWay), never written
+    through. Holding that descriptor: `config.toml` is a temporary file renamed over the name
+    (0600), and `auth.json`, when `auth_target` is given, is replaced by a fresh link to it.
+    Both leaf names are acted on without following a link, so a link planted at either is
+    replaced, not followed."""
+    if not supported():
+        raise OSError("this system cannot open a directory without following links")
+    leaf = PurePath(home).name
+    names = _below(str(PurePath(home).parent), under)  # the scratch, anchored as the others are
+    with _opened(under, names, make=False) as scratch_fd:
+        home_fd = _step(scratch_fd, leaf, 0o700)  # made if missing, then opened no-follow
+        try:
+            _write_leaf(home_fd, "config.toml", config_text)
+            if auth_target is not None:
+                _link_leaf(home_fd, "auth.json", auth_target)
+        finally:
+            os.close(home_fd)
+    return {"result": "written"}
+
+
+def _write_leaf(dir_fd: int, name: str, text: str) -> None:
+    """`text` in `name` under the open `dir_fd`, 0600: a temporary file made there without
+    following a link, its mode set, then renamed over the name, so a reader never sees a part
+    of it and a link planted at the name is replaced, not followed."""
+    temporary = f".{name}.{secrets.token_hex(6)}"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    try:
+        with os.fdopen(os.open(temporary, flags, 0o600, dir_fd=dir_fd), "w") as handle:
+            os.fchmod(handle.fileno(), 0o600)
+            handle.write(text)
+        os.replace(temporary, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary, dir_fd=dir_fd)
+        raise
+
+
+def _link_leaf(dir_fd: int, name: str, target: str) -> None:
+    """A symlink `name` -> `target` under the open `dir_fd`, replacing whatever `name` is now
+    (a stale link, a file). The name is removed and remade, each acting on the name itself,
+    never on what a link there points to."""
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(name, dir_fd=dir_fd)
+    os.symlink(target, name, dir_fd=dir_fd)
+
+
 def run(op: str, under: str, path: str) -> dict[str, object]:
     if op not in OPS:
         raise OSError(f"unknown operation {op}")
@@ -186,14 +241,11 @@ def run(op: str, under: str, path: str) -> dict[str, object]:
     return {"make": make, "size": size, "remove": remove}[op](under, path)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) != 4 or args[1] != "--under" or args[0] not in OPS:
-        print("usage: scratchop make|size|remove --under DIR PATH", file=sys.stderr)
-        return 2
-    op, _flag, under, path = args
+def _emit(call: Callable[[], dict[str, object]]) -> int:
+    """Print one JSON line for `call`'s answer, or say `link` by the exit code; a failure goes
+    to stderr with exit 1. `call` is a zero-argument callable returning the answer dict."""
     try:
-        answer = run(op, under, path)
+        answer = call()
     except OnTheWay as exc:
         print(json.dumps({"result": "link", "why": str(exc)}))
         return LINK
@@ -202,6 +254,41 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     print(json.dumps(answer))
     return 0
+
+
+def _main_codex(args: Sequence[str]) -> int:
+    """`codex --under DIR [--auth TARGET] HOME`, the config.toml text on stdin."""
+    under: str | None = None
+    auth: str | None = None
+    positional: list[str] = []
+    rest = list(args)
+    index = 0
+    while index < len(rest):
+        word = rest[index]
+        if word == "--under" and index + 1 < len(rest):
+            under, index = rest[index + 1], index + 2
+        elif word == "--auth" and index + 1 < len(rest):
+            auth, index = rest[index + 1], index + 2
+        else:
+            positional.append(word)
+            index += 1
+    if under is None or len(positional) != 1:
+        print("usage: scratchop codex --under DIR [--auth TARGET] HOME", file=sys.stderr)
+        return 2
+    home = positional[0]
+    config_text = sys.stdin.read()
+    return _emit(lambda: codex(under, home, config_text, auth))
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "codex":
+        return _main_codex(args[1:])
+    if len(args) != 4 or args[1] != "--under" or args[0] not in OPS:
+        print("usage: scratchop make|size|remove --under DIR PATH", file=sys.stderr)
+        return 2
+    op, _flag, under, path = args
+    return _emit(lambda: run(op, under, path))
 
 
 if __name__ == "__main__":

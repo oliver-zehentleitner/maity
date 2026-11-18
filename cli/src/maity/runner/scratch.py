@@ -53,6 +53,18 @@ def make(path: Path, as_user: AsUser = RUNNER) -> None:
     as_user.scratch("make", _under(path), path)
 
 
+def write_codex_home(
+    home: Path, config_text: str, auth_target: Path | None, as_user: AsUser = RUNNER
+) -> None:
+    """Codex's control files inside `home` (`<scratch>/codex-home`): config.toml and, when the
+    operator has a login, the auth.json link. Each is written to a descriptor opened without
+    following a link from the workspaces root the scratch lies under, the same anchor
+    make/measure/remove use, so a codex-home swapped for a link is refused, never followed out
+    of the scratch. scratchop.OnTheWay when codex-home is a link; OSError when it fails
+    otherwise."""
+    as_user.codex(_under(home.parent), home, config_text, auth_target)
+
+
 def measure(path: Path, as_user: AsUser = RUNNER) -> int | None:
     """The bytes under the scratch at `path`; None when it is missing, reached through a link
     or cannot be measured in time."""

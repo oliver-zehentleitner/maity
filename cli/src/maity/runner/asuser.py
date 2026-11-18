@@ -257,6 +257,26 @@ class AsUser:
             raise OSError(f"scratch {op} {path}: no answer")
         return answer
 
+    def codex(self, under: Path, home: Path, config_text: str, auth_target: Path | None) -> None:
+        """Codex's control files written inside the per-placement codex-home on the agents'
+        side (scratchop.codex): config.toml and, when `auth_target` is given, the auth.json
+        link. Every directory from `under` (the workspaces root) down to codex-home is opened
+        without following a link, and codex-home itself is opened without following one, so a
+        codex-home swapped for a link is refused rather than followed out of the scratch.
+        scratchop.OnTheWay when it is a link; OSError when it fails otherwise."""
+        target = str(auth_target) if auth_target is not None else None
+        if self.direct:
+            scratchop.codex(str(under), str(home), config_text, target)
+            return
+        argv = [*self.runner_module("scratchop"), "codex", "--under", str(under)]
+        if target is not None:
+            argv += ["--auth", target]
+        done = self.run([*argv, str(home)], input=config_text)
+        if done.returncode == scratchop.LINK:
+            raise scratchop.OnTheWay(f"{home}: a link where codex-home must be; nothing written")
+        if done.returncode != 0:
+            raise OSError(f"codex home {home} failed: {done.stderr.strip()[:200]}")
+
     def terminate(self, pid: int) -> None:
         """SIGTERM to a process group of the agents' side."""
         if self.direct:

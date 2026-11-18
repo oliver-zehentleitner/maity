@@ -546,11 +546,10 @@ would read as a boundary when it is not one.
 
 **Id:** 9084b0ed-985d-41ea-906d-cd9cc6e18879
 **Type:** decision
-**Type:** incident
 **Status:** active
 **Evidence:** inferred
-**Verification:** corroborated — the root cause is read from `adapters.py` and the codex sandbox profile (`codex_config`); the post-fix live Codex run is not yet observed, so a red test on the invariant stands in for it (`tests/test_adapters.py`)
-**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the traced cause in `cli/src/maity/runner/adapters.py`
+**Verification:** corroborated — the placement, launch-write and sandbox-profile boundaries are read from `adapters.py` and `scratchop.py` and covered by unit tests (`tests/test_adapters.py`, `tests/test_scratchop.py`); a live Codex placement running with the read-only home is not yet observed and is still needed
+**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`
 **See:** runner.md — 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7 — as of 2026-11-18
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-18
 **Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, or a placement is given a home with no scratch to carry it
@@ -560,12 +559,26 @@ Each Codex placement's `CODEX_HOME` lies inside that placement's scratch
 runner's state directory. The runner still writes `config.toml` there and
 links the operator's `~/.codex/auth.json` into it, not copied (carried from
 49caa654). The codex sandbox re-opens the placement's scratch, so the home
-inside it is reachable and writable; every other placement hides the whole
-workspaces root, so this home — its login link and its session state — is
-hidden from them, exactly as the scratch is. Where there is no scratch to
-carry it (no workspaces root to carve), the home stays in the runner's
-directory as before; `maity runner check` reports that case before a
-placement starts, since the sandbox would hide it there.
+inside it is reachable; every other placement hides the whole workspaces
+root, so this home — its login link and its session state — is hidden from
+them, exactly as the scratch is. Where there is no scratch to carry it (no
+workspaces root to carve), the home stays in the runner's directory, where
+the sandbox hides it. `maity runner check` verifies from the local
+configuration the parts it can see before a placement starts — that Codex is
+given a scratch and that the workspaces root is not inside the state
+directory — but it does not confirm that the scratch is created when a
+placement actually runs, nor read an ssh target's own paths, so a runtime
+fall-back to no scratch is beyond what it catches.
+
+Because the home sits in the agent-writable scratch, two boundaries are
+drawn explicitly. The sandboxed commands may read the home — its control
+files and the per-command helper they run — but may write nothing in it
+(`read`, not `write`): the runner writes those control files once before the
+session starts, and a session cannot rewrite the configuration a later
+restart reads. And the runner's own writes of those files go only to a
+descriptor opened without following a link from the workspaces root, the
+same anchor the scratch's make and removal use, so a `codex-home` swapped
+for a link is refused rather than followed out of the scratch.
 
 **Reason:** the codex sandbox hides the runner's state directory, and it
 hides a directory by mounting over it, so a path inside it (the old
@@ -575,23 +588,32 @@ per-command helper (`CODEX_HOME/tmp/arg0-linux`): every command failed and
 scratch already solves the same problem for a different directory — it sits
 under the hidden workspaces root and is re-opened for this placement while
 staying hidden from the others — so the home follows that precedent and
-inherits it. Under the workspaces root the home exposes no more than the
-scratch already does, and nothing of the runner's state or another
-placement's.
+inherits it. Under the workspaces root the home is reachable like the
+scratch and holds nothing of the runner's state or another placement's; its
+control files are written by the runner and read-only to the session, and
+the runner writes them without following a link, so the home adds no
+writable surface and no write that leaves the scratch.
 
 **Rejected alternatives:**
-- Re-open the home in place under the state directory: impossible. A path
-  under a directory hidden with `none` cannot be re-opened, because the
-  sandbox mounts over the parent and leaves nothing inside to open again;
-  this is the same case the profile's `outermost` logic drops.
+- Re-open a home in place under the state directory. A subpath can be
+  re-opened under a hidden root — the clone and the scratch are, under the
+  workspaces root the profile keeps `none` while it names them back. The
+  state directory is different not because the re-open cannot be written but
+  because it holds the runner's secrets — the credential, the records, every
+  other placement's — and is kept wholly hidden: a readable hole into the
+  secret store for one home weighs worse than a home in the agent-facing
+  scratch, which holds no secret. So the home goes to the scratch.
 - A sibling per-placement directory under the workspaces root beside
   `.scratch` (the card's wording). It would need its own secure
   make-and-remove path run as the agents' user, and its own re-open rule in
   the profile — each a new place the boundary could be gotten wrong — and it
   would be left behind on every closed placement unless a second cleanup
   matched the scratch's. Inside the scratch the home inherits the scratch's
-  already-reviewed re-open and its removal, and adds no new boundary surface.
-  The cost: a placement without a scratch (a host whose `maity` cannot carve
+  already-reviewed re-open and its removal; its own launch writes are
+  anchored to the scratch root and its control files are read-only to the
+  session (above), so the surface it adds is the one named here, not a new
+  unreviewed boundary. The cost: a placement without a scratch (a host whose
+  `maity` cannot carve
   one) gets no re-opened home and falls back to the runner's directory,
   where the sandbox hides it; `check` names that case.
 - Keep Codex's home in the clone or its `.git`: the work tree is the agent's
@@ -1627,8 +1649,10 @@ With `layout = "agent_user"`, every command for the agents runs as
 explicitly. That covers the tmux server and its sessions, the clone, the
 join, the supervised loop, `gc`'s git and its revocation check, and stopping
 a process group. Everything the agents' side needs (tmux socket and
-configuration, logs, the harness settings and Codex's home) lives under
-`~<agent_user>/.maity-runner/` and is written as that user. The runner's
+configuration, logs and the harness settings) lives under
+`~<agent_user>/.maity-runner/` and is written as that user; Codex's own
+`CODEX_HOME` is the exception — it lives in the placement scratch under the
+workspaces root, not here (9084b0ed). The runner's
 state directory, its credential and its records stay the runner user's
 alone. Commands for the agents never get the runner's terminal (stdin is
 `/dev/null`), and the clone runs without any login prompt. Harness
