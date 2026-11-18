@@ -20,7 +20,7 @@ from maity.runner.asuser import AsUser, Ssh
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
 # Under the sandbox: the git commands that fail, and `maity` alone.
-SANDBOXED = adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT
+SANDBOXED = adapters.GIT_PROMPT + adapters.CLAUDE_MAITY_PROMPT + adapters.CLAUDE_COMMAND_PROMPT
 
 
 def context(tmp_path: Path, harness_id: str = "claude-code", **overrides: Any) -> adapters.Context:
@@ -219,6 +219,77 @@ def test_claude_code_grant(tmp_path: Path) -> None:
         "allowedDomains": ["github.com", "maity.team"],
         "strictAllowlist": True,
     }
+
+
+def _bash_allowed(allow: list[str], command: str) -> bool:
+    """Whether Claude Code's Bash allowlist lets `command` run, as a single-command line is
+    matched in dont-ask mode (verified against Claude Code 2.1.327, tsk-66zyvc4xnhtv): a rule
+    `Bash(P *)` matches a command that starts with `P ` (a trailing argument after a space); a
+    rule `Bash(P)` matches only the exact command `P`. A `cat <path>` line is NOT covered by a
+    `Bash(cat …)` rule at all — Claude Code routes it to the Read tool's file permission — so
+    this helper refuses it, which is why the kernel-UUID source needs a Read rule."""
+    body = [r[len("Bash(") : -1] for r in allow if r.startswith("Bash(") and r.endswith(")")]
+    if command.split(" ", 1)[0] == "cat":
+        return False
+    for rule in body:
+        if rule.endswith(" *"):
+            if command.startswith(rule[:-1]):
+                return True
+        elif command == rule:
+            return True
+    return False
+
+
+def _bash_denied(deny: list[str], command: str) -> bool:
+    """Whether a `Bash(…)` deny rule matches `command` (fnmatch globs, as Claude Code applies
+    a deny rule to the whole line)."""
+    for rule in deny:
+        if rule.startswith("Bash(") and rule.endswith(")"):
+            if fnmatch.fnmatchcase(command, rule[len("Bash(") : -1]):
+                return True
+    return False
+
+
+def _read_allowed(allow: list[str], path: str) -> bool:
+    """Whether a `Read(/…)` allow rule covers the absolute `path` (double-slash form)."""
+    for rule in allow:
+        if rule.startswith("Read(") and rule.endswith(")"):
+            pattern = rule[len("Read(") : -1]
+            if pattern == f"/{path}":
+                return True
+    return False
+
+
+def test_the_claude_code_allowlist_lets_a_coder_use_git_dash_c_and_the_uuid_source(
+    tmp_path: Path,
+) -> None:
+    """RED on current main, green with the fix (tsk-66zyvc4xnhtv). A placed coder — in the main
+    session and, identically, in a Task subagent (both resolve permissions the same way,
+    verified on Claude Code 2.1.327) — must be able to drive git through `git -C <clone>` and to
+    read a kernel UUID for Keep-the-Why. On main neither works: `git -C …` matches no allow rule,
+    and `cat /proc/sys/kernel/random/uuid`, though listed as a Bash rule, is routed to the Read
+    tool and refused for want of a Read rule."""
+    ctx = context(tmp_path)
+    settings = adapters.claude_settings(ctx)
+    allow, deny = settings["permissions"]["allow"], settings["permissions"]["deny"]
+    clone = str(ctx.clone)
+    # `git -C <clone>` reads and writes, scoped to this clone only (never a free `git -C *`).
+    assert _bash_allowed(allow, f"git -C {clone} status")
+    assert _bash_allowed(allow, f"git -C {clone} status --short")
+    assert _bash_allowed(allow, f"git -C {clone} commit -m x")
+    assert f"Bash(git -C {clone} status)" in allow and f"Bash(git -C {clone} status *)" in allow
+    assert not any(r == "Bash(git -C *)" for r in allow)  # no unscoped `-C`
+    # The `-C` escapes are denied too, mirroring GIT_DENIED, so the allow cannot be widened by a
+    # config override or a `--no-index` read outside the work tree.
+    assert _bash_denied(deny, f"git -C {clone} -c core.pager=sh log")
+    assert _bash_denied(deny, f"git -C {clone} diff --no-index /etc/passwd /etc/passwd")
+    assert _bash_denied(deny, f"git -C {clone} --exec-path=/tmp log")
+    # A kernel UUID for Keep-the-Why: the Bash rule alone never runs (cat → Read), so a Read rule
+    # on the proc path is what makes it work.
+    assert not _bash_allowed(allow, adapters.UUID_COMMAND)  # cat is routed away from Bash
+    assert _read_allowed(
+        allow, adapters.UUID_PATH
+    ), "a Read rule for the kernel UUID path must let `cat /proc/sys/kernel/random/uuid` run"
 
 
 def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: Path) -> None:
