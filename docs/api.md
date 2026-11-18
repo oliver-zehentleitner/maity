@@ -4814,7 +4814,8 @@ so a `PATCH` cannot name it (naming it is `not_public`): the hub keeps
 every hidden entry through a `PATCH`, in its place among the entries
 the body gives (after the visible entry it followed, first when none
 did; when the body leaves that entry out, after the nearest earlier
-visible entry the body keeps, first when it keeps none), and drops it only when the human becomes a member or the project
+visible entry the body keeps, first when it keeps none), and drops it
+only when the human becomes a member or the project
 is deleted. A hidden entry counts toward the bound, and a `too_many`
 carries `details.hidden`, the number of hidden entries. When the bound
 is lowered below what a human holds, the stars stay: a `PATCH` that
