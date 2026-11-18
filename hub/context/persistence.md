@@ -604,6 +604,48 @@ board is a few hundred cards; the board asks for 200 at a time.
 - Integer positions renumbered on every move. They are simple to compare,
   but a move rewrites every card after it, and each of those is an event.
 
+## The closed columns alone are paged by the database, with a cursor of one card's key
+
+**Id:** 7bad4e04-7132-4825-94c5-825301c20800
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-d4anfsk1e94j and its plan, approved by the lead, 2026-11-18 (PR 1, seq 161546); the board run measured by ops on 2026-11-12 (done column about 790 cards, 4 pages one after another, 546 kB, about 830 ms after the first page); the owner's choice of 50 cards on the first page, req-aa0jka1xsfsy (PR 2)
+**See:** persistence.md#the-boards-card-order-is-sorted-in-python-not-by-the-database — 4e61c371-33b4-4ae4-8bb1-cb8fa974acb3 — as of 2026-11-18
+**Revisit when:** the open columns get the same paging, or a closed card's place can change without its `closed_at` changing
+
+A board read (`order=board`) whose `status` names closed statuses only, and that
+searches nothing (`q`), is sorted and paged by the database: the column's position
+in the contract's status order, a card without `closed_at` last, `closed_at` newest
+first, then the id, with `LIMIT`. The id compares bytewise as in Python:
+`COLLATE "C"` on PostgreSQL, while MySQL's tables are binary (`utf8mb4_bin`) and SQLite
+compares bytes. Its cursor (`paging.closed_cursor`) holds only the last card's column
+position, `closed_at` and id, bound to the list's filters: at most about 120 characters
+by its encoding, whatever the page size. A cursor whose time has no zone is refused as
+`invalid`, as any other the hub did not give. A page of the whole board that ends on a
+closed card hands out the same cursor, and the Python-sorted path then goes on after that
+card's key (`_after_closed`). Open columns keep the cursor with the ids the page showed.
+A `key` cursor given out before this change still pages through the Python path.
+The card first said the cursor grew with the column. Measured, it did not (5551, 5551
+and 5550 characters on pages 2 to 4): it held the ids the page showed in its last column,
+up to the page size, not every id sent. Its size per request was the issue, not its growth.
+
+**Reason:** a closed card's place follows from its status, `closed_at` and id. No move
+re-ranks it, so the reason the board's cursor carries the ids a page showed (moves change
+keys of cards that did not move) does not hold there, and a keyset on the key alone is
+exact. Sorting in the database stops every page of the done column from reading and
+sorting all of the column's cards in Python: about 790 rows read four times for one board.
+The earlier entry rejected SQL keyset paging for the whole board because of collations and
+a `CASE` per state on three dialects. For the closed columns alone it is one `CASE` over
+two statuses and one collation on one dialect.
+
+**Rejected alternatives:**
+- Fetching the done column's follow-up pages in parallel: a keyset page depends on the
+  one before it, and the board's first page of 50 plus "Show more" on demand (PR 2)
+  removes the serial chain instead.
+- Only shrinking the cursor and keeping the Python sort: it fixes the request size
+  (5.5 kB per follow-up page), not the rows read per page.
+
 
 ## Admin-set instance settings in one table with a registry in code, admin-set secrets sealed in a table of their own
 
