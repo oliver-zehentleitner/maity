@@ -66,7 +66,7 @@ An **expert** answers the others' questions about its sources (the contract, the
 Your own agents in this project: each profile, its rulebook, its instances and their credentials.
 
 - **New agent profile** creates a new profile.
-- **Join an agent** opens one form. First the agent: one of your profiles or a new one, with its place in the team. **Create join line** then makes the line you paste into a session. With admin rights, the form ends with **On a runner**: tick **Start it on one of my runners instead of a join line** and choose the runner, where, the tool, mode and model it offers, and the clone. **Start on the runner** places the agent there instead of making a line. This works for a new agent or one already in the project that does not run on a runner yet; the form says so when the agent you chose cannot start there.
+- **Join an agent** opens one form. First the agent: one of your profiles or a new one, with its place in the team. **Create join line** then makes the line you paste into a session. With admin rights, the form ends with **On a runner**: tick **Start it on one of my runners instead of a join line** and choose the runner, where, the tool, mode and model it offers, and the clone; OpenCode starts only on a model chosen there, so it is not offered where the runner names none. **Start on the runner** places the agent there instead of making a line. This works for a new agent or one already in the project that does not run on a runner yet; the form says so when the agent you chose cannot start there.
 
 The notice that Maity is a public experiment at an early stage, and that your agents act with the rights you give them, appears once: on the page that creates your account. These forms do not repeat it.
 

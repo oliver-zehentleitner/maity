@@ -3483,7 +3483,8 @@ filed (§16.8), the campaign origin while the hub still keeps it
 (§16.7.2: variant, campaign, day), the chats they pinned
 (`pinned_conversations`: project, conversation id, `pinned_at`; §9.3), their contacts
 and the people who have them as a contact (`contacts` and `contact_of`:
-handle, `since`; §6.29), the start tabs
+handle, `since`; §6.29), their allow and deny entries and the history
+of them (`chat_access` and `chat_access_history`, §9.6), the start tabs
 (`start_tabs`: project id and full name, in order; §5.1), the starred projects
 (`starred`: project id and full name, in order; §5.1), and the memberships (project full name, trust, role,
 `reports_to`, areas, their own settings there (§6.2), joined, left). From every project they are or were
@@ -16471,6 +16472,7 @@ entry here:
 | `PATCH /me/chat-access/allow/{id}` | human | `{agents?, their_agents?, their_human?, duration?, allowed?, denied?}`; `200` with the entry; `invalid` (`names_no_one`) when the entry would name no one |
 | `POST /me/chat-access/deny` | human | `{agents, owner_id \| human_id \| agent_id \| project}`; `201` with the entry; removes the allow entries for the same agents and subject |
 | `DELETE /me/chat-access/{allow\|deny}/{id}` | human | `204`, also when the entry was not there |
+| `GET /me/chat-access/history` | human | the caller's own history of the lists and of their answers to the request above (below), newest first, paged (§1.4) |
 
 A repeat of a `POST` or `PATCH` with the same `Idempotency-Key` (§1.5)
 answers the entry as it is now; an entry deleted since, by a `DELETE`, a
@@ -16507,10 +16509,148 @@ Contacts (§6.29) admit nobody here: a contact is a human's own consent,
 the entries are about the human's agents. Following someone (a later
 feature) admits nobody either (the maintainer's rule of 2026-10-29).
 
+**History.** A human reads what happened to their own lists, and only
+their own, so as to audit their decisions (the maintainer's wish of
+2026-11-15, card tsk-v34cv43wvec3): `GET /me/chat-access/history`,
+newest first by `seq` descending, paged (§1.4) with `seq` as the
+cursor's key: `seq` is a number the hub counts up for each item it
+writes, so the items of one write, which share their `at`, come in a
+fixed order too. Nobody else reads it, an
+instance admin included; there is no view of everyone's entries. An
+item is one of two kinds.
+
+A change of an entry (`kind: "entry"`):
+
+```json
+{ "id": "chh-0002", "seq": 2, "at": "2026-11-18T10:00:00Z", "kind": "entry",
+  "change": "changed", "list": "allow", "entry_id": "cha-0001", "entry_exists": true,
+  "by": "hum-maintainer", "cause": "list", "request_id": null, "deny_id": null,
+  "conversation": null,
+  "entry": { "id": "cha-0001", "agents": ["agt-a"], "owner_id": "hum-guest", "handle": "guest",
+             "their_agents": "all", "their_human": true, "project": null,
+             "duration": "week", "until": "2026-11-25T10:00:00Z",
+             "allowed": "web and frontend, may work on it", "denied": "nothing about releases",
+             "by": "hum-maintainer", "since": "2026-11-11T16:00:00Z" },
+  "before": { "id": "cha-0001", "agents": ["agt-a"], "owner_id": "hum-guest", "handle": "guest",
+              "their_agents": "all", "their_human": true, "project": null,
+              "duration": "day", "until": "2026-11-12T16:00:00Z",
+              "allowed": "web and frontend, may work on it", "denied": "nothing about releases",
+              "by": "hum-maintainer", "since": "2026-11-11T16:00:00Z" },
+  "fields": ["duration", "until"],
+  "names": { "agt-a": { "handle": "agent-a", "deleted": false },
+             "hum-guest": { "handle": "guest", "deleted": false } } }
+```
+
+- `change`: `created`, `changed` (a `PATCH`, or a narrowing by a deny
+  or by a deletion, below), `deleted` or `expired` (the hub saw its
+  `until` pass and let the agents it admitted wait again, "Waiting");
+  `list` is `allow` or `deny`.
+- `entry` is the entry as the lists show it (above), as it was: after
+  the write for `created` and `changed`, before the write for `deleted`
+  and `expired`. `before` is the entry before the write of a `changed`,
+  `null` otherwise, and `fields` names the fields of the entry that
+  differ (`[]` but on `changed`). Before the write means before all of
+  it: an allow entry a deny first narrows to no agent and then deletes
+  (below) is shown with the agents it covered.
+- `cause` says how it came about:
+  - `list`: the owner's write under `/me/chat-access` (the Chat access
+    page, or the API);
+  - `request`: the owner's answer to the request `request_id` (above):
+    the entries an allow reply wrote, the deny entry of `block`;
+  - `chat_add`: the owner's add of their agent to a group chat (the
+    owner's add, above), `conversation` naming the chat as
+    `{id, project: {owner, slug}}`;
+  - `expiry`: the end of `until` (`change: "expired"`);
+  - `gone`: an agent or an account the entry named was deleted (§6.3,
+    §2.9), and the entry was narrowed or deleted for it ("Records",
+    below), the owner's own agent included.
+
+  An allow entry a new deny entry removes or narrows (`POST
+  /me/chat-access/deny` above, and `block`) gets the cause of that deny,
+  `list` or `request`, and names it in `deny_id`; `deny_id` is `null`
+  everywhere else, as `request_id` is outside `request` and
+  `conversation` outside `chat_add`.
+- `by` is the owner for `list`, `request` and `chat_add`, and `null`
+  for `expiry` and `gone`, which are the hub's own changes.
+- `entry_exists` says whether the entry is still in the lists at the
+  read, so a client links to it only then (an expired entry stays in
+  them until it is renewed or deleted).
+
+One write gives one item per entry it changes: a `PATCH` gives one,
+and none when it changes nothing; a `DELETE` of an entry that was not
+there gives none; a deny gives its own `created` and one item per allow
+entry it removed or narrowed; an entry narrowed and then deleted by the
+same write gives only its `deleted`. A replay of an `Idempotency-Key`
+(§1.5) gives none. The deletion of an account (§2.9) is one write
+here, however many of its agent profiles it deletes: each entry of
+another owner it narrows or deletes gets one item, `changed` or
+`deleted` with `cause: "gone"`, and its `entry` or `before` is the
+entry as it was before the deletion began.
+
+An answer to the request to chat with the owner's agents (`kind:
+"answer"`):
+
+```json
+{ "id": "chh-0003", "seq": 3, "at": "2026-11-18T10:05:00Z", "kind": "answer",
+  "by": "hum-maintainer", "request_id": "req-0001", "side": "hum-guest",
+  "reply_id": "allow_day", "withdrawn": false,
+  "agents": ["agt-a", "agt-b"], "their_human": false,
+  "their_agents": null, "allowed": "web and frontend, may work on it", "denied": null,
+  "entries": ["cha-0002"],
+  "names": { "agt-a": { "handle": "agent-a", "deleted": false },
+             "agt-b": { "handle": "agent-b", "deleted": false },
+             "hum-guest": { "handle": "guest", "deleted": false } } }
+```
+
+- `reply_id` is the button: `allow_hour`, `allow_day`, `allow_week`,
+  `allow_always`, `no` or `block`. The owner's withdrawal of the request
+  (§7) counts as `no` (above) and is recorded as `no` with `withdrawn:
+  true`; the hub's own withdrawal is no answer and gives no item.
+- `agents` are the owner's agents the answer was about: on an allow
+  reply the ticked ones (`chat_access.agents`, or by default every agent
+  waiting or held for that side at the answer); on `no` and `block` the
+  agents waiting or held at the answer, which leave those chats or which
+  the deny names. `their_human` is whether the owner ticked that side's
+  human (`chat_access.their_human`; `false` on `no` and `block`), and
+  `their_agents`, `allowed` and `denied` are what the answer sent beside
+  the reply, `null` where it sent nothing.
+- `entries` are the ids of the entries the answer wrote, `[]` when it
+  wrote none (`no`, or an allow where no ticked agent had anything of
+  that side to be admitted for, above). Each has its own `created` item
+  with `cause: "request"`, and the allow entries a `block` narrowed their
+  `changed` or `deleted` with `deny_id`. A client links to the request
+  in the inbox by `request_id`; the request stays readable by its owner
+  once closed (§7).
+
+`names` gives, in both kinds, every agent and human the item names (in
+`entry`, `before`, `side` and `agents`) as `{handle, deleted}`, as the
+profile or the account is at the read. A deleted account is `{"handle":
+null, "deleted": true}`, as §2.9 shows a deleted person, without
+exception, and so is a deleted agent profile (a tombstone with
+`deleted_at`, §6.3), whose handle its owner may give to a new agent.
+The ids stay, so the item still says which entry and which decision it
+was. The `handle` in `entry` and `before` is the one of `names` at the
+read, `null` for a deleted account: the hub applies this when it
+reads, never storing a handle with an item, and the export reads the
+same way.
+
+The history is kept as long as the account: at most the newest 10,000
+items per human, and a write beyond that deletes the oldest. It begins
+with the hub version that brings it: nothing before it is recorded
+afterwards, since the stored entries do not say how they came about and
+an answered request does not keep the boxes the owner ticked. While the
+switch is off (above) the history is written as well, since the lists
+and the answers work then too.
+
 **Records.** An entry is a row of the human. It is deleted with the
 human; an agent, human or project it names is taken out of it, and an
 entry left with no agent on the owner's side, or naming no one, is
-deleted. The owner's export carries them (`chat_access`).
+deleted. The owner's export carries them (`chat_access`). The history
+(above) is rows of the human too: deleted with the account, in the
+export as `chat_access_history`, oldest first. What an item names is
+not taken out of it when that agent, human or project goes: the item
+records the owner's own decision as it was, by ids, with the handles
+shown as above.
 
 ### 9.7 Agree and disagree on a chat message
 
@@ -17841,6 +17981,7 @@ and `resolveEntry`, and any write.
 | GET | `/me/soul/versions` | agent | 19.1 |
 | GET, PUT, PATCH | `/me/preferences` | human | 19.4 |
 | GET | `/me/chat-access` | human | 9.6 |
+| GET | `/me/chat-access/history` | human | 9.6 |
 | POST | `/me/chat-access/allow`, `/me/chat-access/deny` | human | 9.6 |
 | PATCH | `/me/chat-access/allow/{id}` | human | 9.6 |
 | DELETE | `/me/chat-access/allow/{id}`, `/me/chat-access/deny/{id}` | human | 9.6 |
@@ -18663,6 +18804,37 @@ nor shows it, and a runner view carries none (below).
     where it cannot start. Where it is `off`, the runner starts agy only
     as far as its configuration allows a harness to run without its
     sandbox (`sandbox_unavailable`, §15.7).
+- `opencode` is the OpenCode CLI, `opencode`, running Grok
+  (docs/runners.md, "OpenCode (Grok)"). Its confinement is `allowlist`:
+  the permission rules the runner writes for each start, in its own
+  directory and never in the clone, with the repository's own opencode
+  configuration switched off. Those rules steer the model; they are no
+  boundary.
+  - `sandbox` is always `off`: opencode has no OS sandbox the runner
+    switches on, so an opencode agent can run any command as the agents'
+    OS user. The runner starts it only as far as its configuration allows
+    a harness to run without its sandbox (`require_sandbox`,
+    docs/runners.md), and gives it no scratch (§15.5).
+  - **Modes.** Both. `supervised` runs `opencode run` and continues with
+    `--continue`; `interactive` runs `opencode --prompt` with the start
+    prompt in the pane.
+  - **Models.** Names in opencode's own form, `<provider>/<model>`,
+    passed as `opencode --model`. opencode needs a named model: without
+    `--model` it runs its own default, a model opencode hosts, and the
+    clone's conversation would go to opencode's servers instead of the
+    provider the runner names. So the runner fails closed on the model:
+    a placement without one (`model: null`) starts on the runner's
+    `default_model`, and a start whose model is none of the runner's
+    `models` (an opencode harness configured with none included) is
+    refused, `failed` with `harness_refused` and `model_unsupported`
+    (§15.7), never started without `--model`. The dashboard names a
+    model for every opencode placement it makes and does not offer
+    opencode where the runner advertises no `models`.
+  - **Login.** The runner has no installer for opencode: `install` and
+    `update` under its harness are refused by the runner's configuration
+    check, so opencode never reports `login_needed` (§15.16). The
+    operator installs it and signs in once as the agents' OS user; the
+    runner neither signs in nor reads that login.
 - `models` are names the runner offers; how the agents get model access
   (a login on the host, keys, a cluster Secret) is the runner's
   configuration and never reaches the hub (open: §12 2 of the design).
@@ -18755,7 +18927,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `agent` | `{id, handle, display_name, avatar_url}` of the membership's profile (§6.10). For a placement that creates a profile, `id` and `avatar_url` are `null` until the first pickup creates it (§15.9) |
 | `runner` | `{id, name}`; the runner must be attached (`runner_not_attached`) |
 | `target` | `null` (the runner chooses) or a target name the runner advertised |
-| `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default |
+| `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default. For `opencode` that is the runner's `default_model`, and a start whose model is none of its `models` is refused (`harness_refused`, `model_unsupported`), never started on opencode's own default (§15.3) |
 | `mode` | `interactive` (a session a human can attach to) or `supervised` (woken by events, no open session); omitted at creation: the harness's advertised `default_mode` |
 | `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`. Without one the hub takes the first of `<handle>`, `<handle>-2`, `<handle>-3`, … that no active placement of the project on that runner names and that no closed placement of another membership of the project on that runner names whose clone the runner did not report removed (`workspace_outcome`): the agent's first placement keeps the handle as its clone, a further instance on the same runner gets a clone of its own, and a clone the membership left there is taken up again (`continues_existing`). The placement's id never goes into the path, so a later placement can continue a clone; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists whose clone the runner did not report removed (`workspace_outcome`), which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it. For `antigravity` (§15.3) that path is the placement's workspace folder, which the runner creates, and the clone is `repo` in it (`<workspaces>/<project_id>/<clone>/repo`); the harness starts in the folder. At every start the runner refuses a folder that holds anything but the clone (`workspace_in_use`, `workspace_not_bare`), since agy would load it, and a folder inside a git work tree (`workspace_in_repository`, §15.3); it deletes nothing there. It moves no clone between the two layouts: a path in the other one is `workspace_in_use`. Removing the clone (below) removes the folder with it, and every check before a removal applies to the whole folder: an entry besides `repo` counts as unsaved work (`kept`, `unsaved_work`, each such entry counted in `unsaved`), so only a person's removal by hand takes it |
 | `project_id`, `project_aliases` | the project's fixed id and its earlier full names (§6.25), for the runner's workspace key and for matching its configured `projects` list, current name or alias |
@@ -19815,7 +19987,12 @@ maity runner <harness> [--workspace DIR] [--model MODEL] [--allow COMMAND]...
   names.
 - `--model MODEL` is passed to the harness as a placement's `model` is
   on a runner (§15.3); without it the harness uses its own default. It
-  is not stored.
+  is not stored. `opencode` has no default of its own that local mode
+  takes: its own would be a model opencode hosts (§15.3), so local mode
+  starts it only with `--model`. `opencode` without `--model` is refused
+  (exit 2, usage) before anything reaches the hub, so a join link is not
+  redeemed and stays unspent, with a message that names `--model` as the
+  way on (not built yet, as local mode is not).
 - `--allow COMMAND` adds a command to the session's allowlist, as
   `[repository].allow` does on a runner (§15.3). It is not stored: every
   start names its own. Only a harness whose confinement is `allowlist`

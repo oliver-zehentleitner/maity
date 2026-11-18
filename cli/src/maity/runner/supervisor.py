@@ -1155,6 +1155,14 @@ class Supervisor:
                 rec.enter(self.now(), "failed", refused.reason, detail=refused.detail,
                           exit_code=refused.exit_code)  # fmt: skip
             return
+        except adapters.NotYet as refused:
+            # A fail-closed adapter refusal (opencode's model guard): a clean harness_refused,
+            # not a crash-loop-counted start failure, since retrying cannot fix a model that is
+            # not among the harness's configured ones.
+            self.log(f"{name}: {refused}")
+            with self.lock:
+                rec.enter(self.now(), "failed", "harness_refused", detail="model_unsupported")
+            return
         except Retry as again:
             self.log(f"{name}: {again}; trying again in {PICKUP_RETRY:.0f} s")
             with self.lock:
@@ -1180,6 +1188,8 @@ class Supervisor:
             rec.resume = False
             rec.binary = context.binary
         self.log(f"{name}: started generation {p['generation']}")
+        if harness.id == "opencode":  # name the model in effect: the placement's, or the default
+            self.log(f"{name}: opencode model {p.get('model') or harness.default_model}")
         found = (view or GateView.of(target, harness.id)).found  # the version that started
         warning = capabilities.unchecked(harness.id, found.version if found else None)
         if warning is not None:

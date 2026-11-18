@@ -1458,8 +1458,8 @@ Renamed 2026-11-12: the tab is **Managed agents** on both pages (79438329), at t
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's
-**Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over)
+**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's, except the opencode model rule, the lead's decision (lotse) of 2026-11-18 on card tsk-sn90s6wzp9s7: fail closed on the model wherever opencode starts
+**Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over); for the opencode model rule: the hub refuses an opencode placement without a model itself, or every runner in use fails closed on the model (#1969), so the form need not hold it
 **See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
 
 Moved 2026-11-12 (79438329): the form is no longer in the list. It opens from **Join an agent** →
@@ -1516,6 +1516,35 @@ Listing every attached runner and letting the hub refuse: a choice that
 can only fail. Listing a runner that does not offer the repository as
 unavailable instead of leaving it out: the other runners the hub would
 refuse are left out too, and with none left the section says why.
+
+**OpenCode names its model here (2026-11-18, tsk-sn90s6wzp9s7).** For
+`opencode` the form offers only the models the runner advertises, with
+no "runner's default", and sends nothing until one is chosen; where the
+runner advertises no `models`, OpenCode is left out of the tools and a
+line under them says why. The reason: without `--model` opencode runs
+its own default, a model opencode hosts, so the clone's conversation
+would go to opencode's servers instead of the provider the runner names
+(docs/api.md §15.3, docs/runners.md "OpenCode (Grok)"). A runner with the
+fail-closed adapter of #1969 starts a model-less placement on its
+`default_model` and refuses one it cannot resolve (`harness_refused`,
+`model_unsupported`), but a runner on an older `maity` starts it with no
+`--model`, and the hub does not know which one it is. A named model is
+safe on both, so the form does not depend on the runner's version. The
+list `MODEL_NAMED` in `web/js/placements.js` holds the tools this applies
+to; the other tools keep the runner's default.
+Local mode follows the same rule: `maity runner opencode` starts only
+with `--model`, and without it exits 2 before the join link is redeemed
+(docs/api.md §15.13; not built yet, as local mode is not). The reason is concrete: on
+2026-11-18 two opencode reviewers ran with no model set, so on
+opencode's hosted model, and repository content went to opencode's
+servers. Fail closed on the model wherever opencode starts, the lead's
+decision (lotse), recorded 2026-11-18.
+Rejected: keeping "The runner's default" for OpenCode, since only the
+runner knows whether it resolves to a configured model; offering
+OpenCode without models and letting the runner refuse it, a choice that
+can only fail, against this entry's rule of offering what can start;
+a hub check, which would change the contract for every client and is a
+card of its own.
 
 ## Project settings are the project's last tab, not a panel from the gear menu
 
