@@ -68,9 +68,10 @@ ALLOWED = [
 NOT_DECIDED = [
     "git status | head",
     "make test && echo ok",
-    "FOO=1 maity a > f",  # starts with a variable: not a maity line for the hook
-    "env maity a > f",
-    "echo maity > f",
+    "echo maity > f",  # `maity` as another command's argument
+    "git log --grep maity | head",
+    "echo 'maity' | cat",
+    "env X='maity a' git status | cat",  # quoted text that is not `maity` as a whole
 ]
 
 
@@ -212,7 +213,7 @@ UNREADABLE = [
 
 @pytest.mark.parametrize("command", [COMMENTED, *UNREADABLE])
 def test_a_line_not_read_to_the_end_is_refused_whatever_it_holds(command: str) -> None:
-    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+    assert plaincall.refusal(bash(command)) == runner_refusal(command)
 
 
 # Lines that name `maity` and hold a comment, a heredoc or more than one line.
@@ -341,6 +342,85 @@ def test_one_plain_maity_call_passes(command: str) -> None:
 
 @pytest.mark.parametrize("command", NOT_DECIDED)
 def test_other_command_lines_are_left_to_the_permission_rules(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is None
+
+
+# What may stand before `maity` on a line the hook decides: variable assignments and commands
+# that run the command after them, alone and combined.
+PREFIXES = [
+    "NODE_ENV=1",
+    "A=1 B=2",
+    "A+=1",
+    "env",
+    "env -i A=1",
+    "env -u A",
+    "/usr/bin/env",
+    "ENV",
+    "command",
+    "exec",
+    "builtin",
+    "nice -n 5",
+    "nohup",
+    "timeout 5",
+    "time",
+    "time -p",
+    "stdbuf -oL",
+    "sudo",
+    "sudo -u x",
+    "doas",
+    "xargs",
+    "setsid",
+    "ionice -c 3",
+    "taskset 1",
+    "chrt 1",
+    "eval",
+    "A=1 env nice -n 5",
+    "sudo env A=1 nohup timeout 5",
+    "if",
+]
+
+
+@pytest.mark.parametrize("prefix", PREFIXES)
+def test_a_prefixed_maity_line_reaching_runner_is_refused(prefix: str) -> None:
+    assert plaincall.refusal(bash(prefix + " maity runner status")) == (plaincall.RUNNER_REFUSED)
+
+
+@pytest.mark.parametrize("prefix", PREFIXES)
+@pytest.mark.parametrize("rest", ["a > f", "a | x", "a && x", "a $X"])
+def test_a_prefixed_maity_line_that_is_not_one_plain_call_is_refused(
+    prefix: str, rest: str
+) -> None:
+    assert plaincall.refusal(bash(prefix + " maity " + rest)) == plaincall.REFUSED
+
+
+@pytest.mark.parametrize("prefix", PREFIXES)
+def test_a_prefixed_plain_maity_call_passes(prefix: str) -> None:
+    assert plaincall.refusal(bash(prefix + " maity status")) is None
+
+
+# `maity` by a path, with quotes or a backslash in it, or after a `!`.
+DECIDED = [
+    "/usr/local/bin/maity a | x",
+    "A=1 m'ai'ty a | x",
+    "A=1 mai\\ty a | x",
+    "! A=1 maity a | x",
+    "! A=1 maity runner status",
+    "\ufeffNODE_ENV=1 maity a | x",  # a character the harness may trim before matching
+]
+
+
+@pytest.mark.parametrize("command", DECIDED)
+def test_other_spellings_of_a_maity_line_are_decided(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.REFUSED
+
+
+def test_an_unreadable_line_is_decided_only_when_it_names_maity() -> None:
+    assert plaincall.applies("A=1 maity a 'x")
+    assert not plaincall.applies("A=1 git a 'x")
+
+
+@pytest.mark.parametrize("command", ["maity status", "NODE_ENV=1 maity status", "git status"])
+def test_ordinary_lines_pass(command: str) -> None:
     assert plaincall.refusal(bash(command)) is None
 
 

@@ -1,7 +1,8 @@
 """The hook a placed Claude Code session runs before every tool call, under its sandbox.
 
 `maity` runs outside the sandbox (`excludedCommands`). This hook lets a command line that
-starts with `maity` through only when it is one plain call: words of letters, digits and
+starts with `maity` (`applies`), also after variable assignments or a wrapper command such as
+`env` or `nice`, through only when it is one plain call: words of letters, digits and
 `_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
 redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is refused before
 the command runs (cli/context/runner.md). On any line, a word `maity` followed later by a word
@@ -60,9 +61,37 @@ REFUSED = (
 )
 
 
+# Words that run the command after them, given as their arguments: a line whose first word
+# is one of these, or a variable assignment, and that holds a word `maity` is decided as a
+# `maity` line. Shell words that start a command are on the list as well.
+WRAPPERS = frozenset(
+    {"env", "command", "exec", "builtin", "nice", "nohup", "timeout", "time", "stdbuf", "sudo",
+     "doas", "xargs", "setsid", "ionice", "taskset", "chrt", "eval",
+     "if", "then", "elif", "else", "while", "until", "do"}
+)  # fmt: skip
+_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")
+
+
 def applies(command: str) -> bool:
-    """Whether the line is one the hook decides: it starts with `maity`."""
-    return _MAITY.match(command) is not None
+    """Whether the line is one the hook decides: it starts with `maity`, or its first word is
+    `maity` by a path, a variable assignment or one of `WRAPPERS` (by any path, in any case)
+    and a word of the line is `maity` (`_is_maity`). Quoted text counts as a word only when it
+    is `maity` as a whole. Such a line is decided whatever stands between its start and that
+    word; how the sandbox's exclusion reads such a prefix is not relied on. A line whose
+    quotes never close is decided when it names `maity` anywhere."""
+    if _MAITY.match(command) is not None:
+        return True
+    try:
+        words = [text for text, _ in _words(command)]
+    except _Unreadable:
+        return names_maity(command)
+    first = next((w for w in words if re.search(r"[0-9A-Za-z]", w)), "")
+    first = re.sub(r"^[^0-9A-Za-z]+", "", first)
+    if not (
+        _is_maity(first) or _ASSIGNMENT.match(first) or first.rsplit("/", 1)[-1].lower() in WRAPPERS
+    ):
+        return False
+    return any(_is_maity(word) for word in words)
 
 
 def plain(command: str) -> bool:

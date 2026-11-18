@@ -2919,10 +2919,11 @@ do, and hid that the cause was the shape of its own command.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13; card tsk-54492gk4xp69 part 1 (the lead's order to refuse `maity runner` from a placed session's tool call), 2026-11-17; the fifth review round of #1942 (the order to refuse a line that names `maity` and holds a comment, a heredoc or more than one line, and to count quoted words in line order), 2026-11-18; Claude Code 2.1.327's bundle (`cli.js`), read 2026-11-18: the `excludedCommands` matcher takes the command line with its ends trimmed and, for `maity *`, tests it against `^maity .*$` with no flags, taking off no variable assignment or wrapper (the list of variables taken off belongs to the permission rules' matcher). The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
+**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13; card tsk-54492gk4xp69 part 1 (the lead's order to refuse `maity runner` from a placed session's tool call), 2026-11-17; the fifth review round of #1942 (the order to refuse a line that names `maity` and holds a comment, a heredoc or more than one line, and to count quoted words in line order), 2026-11-18; the `excludedCommands` matcher of Claude Code 2.1.327 (native binary, sha256 `343c744baa14bfd38286a7cb90871051f04379956da6c5b803a9e66019a76ac9`), read statically only in the sixth review round of #1942, 2026-11-18: the readings differ, and nothing was checked live; the sixth review round of #1942 (the order to hold a `maity` line after variable assignments or a wrapper command to the same rules, whichever way the exclusion matches), 2026-11-18. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
 **See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
-**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; its sandbox exclusion takes off leading variable assignments or wrappers, or matches across lines; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295 even with `require_sandbox = false`; opencode gets an OS-level sandbox (tsk-nynpvag9zvhh)
+**Verification:** uncorroborated — what this entry says of Claude Code's sandbox exclusion rests on static readings of its 2.1.327 binary that differ from each other; none was checked live, and the hook relies on none of them
+**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; Claude Code's sandbox exclusion is checked live; the Claude Code version the runner starts changes; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the runner stops accepting Claude Code versions older than 2.1.295 even with `require_sandbox = false`; opencode gets an OS-level sandbox (tsk-nynpvag9zvhh)
 
 Under its sandbox, a placed Claude Code session runs a hook before every
 tool call (`runner/plaincall.py`), written by the runner into the
@@ -2936,8 +2937,15 @@ single-quoted text, and double-quoted text without `$`, a backtick or
 the clone, passed with `--body-file`. So `maity say … - <<'EOF'` does not
 run for a placed Claude Code agent. Before looking for `maity`, every
 leading character that is not a letter or a digit is skipped, so a line
-counts however the harness trims it; a line that starts with a variable
-or another command is left to the permission rules.
+counts however the harness trims it. A line whose first word is `maity`
+by a path, a variable assignment or a command that runs the command after
+it (`env`, `command`, `exec`, `builtin`, `nice`, `nohup`, `timeout`,
+`time`, `stdbuf`, `sudo`, `doas` and a few more, by any path and in any
+case, and the shell words that start a command), and that holds a word
+`maity`, is held to the same rule, whatever stands between its start and
+that word; quoted text counts only when it is `maity` as a whole. Any
+other line is left to the permission rules, apart from the two rules
+below.
 
 Beyond that, on any line, whatever it starts with, two rules refuse a
 call (tsk-54492gk4xp69, part 1). First, a line that names `maity`
@@ -2968,17 +2976,16 @@ placed session needs one.
 Not read: a command the shell builds only from expansions or from
 input. The check is a second line behind the sandbox, not a parser of
 every shell form.
-Claude Code's sandbox exclusion (read in the 2.1.327 bundle,
-2026-11-18) matches `maity *` against the whole command line with its
-ends trimmed, as one line, case-sensitive, with no variable assignment
-or wrapper taken off: a line leaves the sandbox only if it starts with
-the literal word `maity` and holds no newline. Such a line passes the
-hook only as one plain call, so a later `runner` word or any expanding
-word refuses it. A line that starts with a variable (`FOO=1 maity …`) or
-another command stays inside the sandbox and is left to the permission
-rules like any other command, apart from the two rules above. Telling
-the runner's own starts apart by who starts them, not by the line, is
-the card's later part.
+The hook does not depend on how Claude Code's sandbox exclusion matches
+`maity *`. It fails closed on a line naming `maity` after a prefix it
+cannot vouch for (variable assignments or a wrapper command, as above):
+such a line is held to one plain call, as a line that
+starts with `maity` is, and a later `runner` word or an expanding word
+refuses it either way. Claude Code's matcher (2.1.327, native binary,
+Source) was read statically only; the readings differ, so the hook does
+not rely on it.
+Telling the runner's own starts apart by who starts them, not by the
+line, is the card's later part.
 
 Rejected: reading the line the way `maity`'s parser and the shell would
 (the first version of this check: commands split at operators, maity's
@@ -3027,6 +3034,16 @@ spelling nobody listed (`${X@P}`, `$'…'`) falls outside it.
 **Rejected alternatives:**
 - A narrower `excludedCommands` pattern: the exclusion is a pattern
   over the line, and nothing in it says what may not follow `maity`.
+- Deciding only the lines the exclusion lets out of the sandbox, by
+  mirroring how it matches: that is the harness's behaviour, read only
+  statically, with readings that differ, and it can change with any
+  release; deciding every line whose first word is an assignment or a
+  listed wrapper and that holds a word `maity` does not depend on it
+  (sixth review round of #1942: fail closed whichever build runs).
+- Parsing each wrapper's options to find the command it runs: one more
+  parser to mirror; what stands between the first word and `maity` does
+  not matter to the rule, and a plain `maity` call after a prefix still
+  passes.
 - A list of refused operators (the order's first shape): an expansion
   nobody listed would pass.
 - Letting heredocs through: their line holds `<` and a newline like any
