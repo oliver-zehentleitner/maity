@@ -6998,6 +6998,38 @@ entry names an agent by id only, so the same lists give its handle.
 - A page of its own in the account: rejected, the entries are per agent and
   the agents' tabs are where an owner looks for them.
 
+## The firewall history sits under the lists on the Chat access tab, its requests linked to the inbox of all projects
+
+**Id:** bcfb497a-fda1-4ace-aa3c-115dcf3af5a6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-v34cv43wvec3 ("a History section (or tab) on /agents/chat-access"; links to the request in the inbox and to the entry if it still exists); docs/api.md §9.6 "History"; the dashboard's implementation, 2026-11-18
+**Revisit when:** the inbox of all projects gets an address per request, or the history grows a filter by entry or agent
+**See:** views.md#who-may-chat-with-ones-agents-is-a-tab-of-agents-whom-an-entry-names-is-chosen-among-the-members-of-ones-projects — 5be40abe-674f-412a-b4a4-7cfec2ff960d — as of 2026-11-18
+
+The history (`GET /me/chat-access/history`) is a section under the lists
+on the same tab, read after them, 50 items a page with **Show more**. An
+item whose entry is still in the lists has **Show the entry**, which
+focuses that entry's row above; the request of an answer or of an
+entry it made is linked to the inbox of all projects (`/all`) with its
+id. People and agents are named by the item's `names`, so a deleted
+account or agent reads as deleted, never by an id or an old handle.
+
+**Reason:** an item is about an entry in the lists, so beside them the
+way from one to the other is a focus on the same page, not a route.
+The request to chat with one's agents belongs to no project, and the
+inbox has an address per request only inside a project
+(`/<owner>/<slug>/inbox/<id>`), so `/all`, where such a request is
+listed, is the nearest the link can go.
+
+**Rejected alternatives:**
+- A fifth tab for the history: the card allowed either, but a tab would
+  make **Show the entry** a route change to the other tab and back.
+- A new inbox address for a personal request without a project: a
+  route change of its own (js/route.js, the inbox's view), beyond this
+  card.
+
 ## A waiting agent is said in a group chat's people line; one's own lead to the inbox, not to the request
 
 **Id:** 57ad0b3e-1846-4063-9315-0d4ecdfbb200
