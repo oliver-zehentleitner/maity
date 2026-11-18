@@ -133,6 +133,11 @@ grep -q "MAITY_SEAL_VERIFIERS" <<<"$out_sk" && bad "sealing verifiers is on by d
 out_seal="$(render -f "$minimal" --set secretKey.existingSecret=s --set secretKey.sealVerifiers=true)"
 [ "$(grep -c 'name: MAITY_SEAL_VERIFIERS' <<<"$out_seal")" = 2 ] && ok "sealVerifiers reaches the hub and the migrate Job, once each" \
     || bad "sealVerifiers is not in both the hub and the migrate Job"
+grep -q "MAITY_SEALED_VERIFIERS_ONLY" <<<"$out_seal" && bad "sealed verifiers only is on by default" \
+    || ok "sealed verifiers only is off by default, also with sealing on"
+out_only="$(render -f "$minimal" --set secretKey.existingSecret=s --set secretKey.sealVerifiers=true --set secretKey.sealedVerifiersOnly=true)"
+[ "$(grep -c 'name: MAITY_SEALED_VERIFIERS_ONLY' <<<"$out_only")" = 2 ] && ok "sealedVerifiersOnly reaches the hub and the migrate Job, once each" \
+    || bad "sealedVerifiersOnly is not in both the hub and the migrate Job"
 out_att="$(render -f "$minimal" --set attachments.existingClaim=c)"
 [ "$(grep -c 'name: MAITY_ATTACHMENT_DIR' <<<"$out_att")" = 1 ] && [ "$(grep -c 'claimName: "c"' <<<"$out_att")" = 1 ] \
     && [ "$(grep -c 'mountPath: "/var/lib/maity/attachments"' <<<"$out_att")" = 1 ] \
@@ -207,6 +212,8 @@ refuse "Ingress without trusted proxies" "config.trustedProxies is required" -f 
     --set ingress.enabled=true --set ingress.host=maity.example.org
 refuse "sealing verifiers without the key" "secretKey.sealVerifiers needs secretKey.existingSecret" -f "$minimal" \
     --set secretKey.sealVerifiers=true
+refuse "sealed verifiers only without sealing" "secretKey.sealedVerifiersOnly needs secretKey.sealVerifiers" -f "$minimal" \
+    --set secretKey.existingSecret=s --set secretKey.sealedVerifiersOnly=true
 refuse "a typo in a value" "additional propert" -f "$minimal" --set config.publicURL=https://x.example
 refuse "a short digest" "match pattern" -f "$minimal" --set image.digest=sha256:abc
 # By digest by default: no tag of its own (not the appVersion), and a tag alone is not enough.

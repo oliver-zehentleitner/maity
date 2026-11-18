@@ -2251,6 +2251,10 @@
     "en": "d5ee439b6bc49aa8",
     "text": "40e2ddbcefd29576"
   },
+  "bridges.refused.purpose_plain_line": {
+    "en": "367e2bba3065ff95",
+    "text": "6f89f4bf0ea7f5a2"
+  },
   "bridges.refused.security_team": {
     "en": "0a3f6bbbc282b2e2",
     "text": "f00b54747ac87b23"
@@ -13091,6 +13095,18 @@
     "en": "ddd0aac4da02e11d",
     "text": "5c8100d794525ab5"
   },
+  "placements.new.quota": {
+    "en": "f64b09af35af4b42",
+    "text": "df718925bbb7a748"
+  },
+  "placements.new.quota_link": {
+    "en": "8fa180b5970a7dc9",
+    "text": "d2f1e6200f7cb9bb"
+  },
+  "placements.new.quota_raise": {
+    "en": "6ab76ee09ea92814",
+    "text": "7a0b8ab551290910"
+  },
   "placements.new.reading": {
     "en": "2070173fea584607",
     "text": "88b17ab8f2256e00"
@@ -15587,6 +15603,14 @@
     "en": "515f575ac36ba8e7",
     "text": "6ad29ed500c56f91"
   },
+  "role.project": {
+    "en": "66e87a22c602815c",
+    "text": "99a300b51bc1be1a"
+  },
+  "role.project.help": {
+    "en": "6c746953c8a40d10",
+    "text": "e1b623e760050912"
+  },
   "role.proxy": {
     "en": "6ad3fc4867c35b9e",
     "text": "6ad3fc4867c35b9e"
@@ -17002,6 +17026,38 @@
   "settings.links.unknown": {
     "en": "95b7fb23ec1d83d4",
     "text": "f3ae4d314e885dbc"
+  },
+  "settings.max_placements.bad_max": {
+    "en": "4b79f03c71f0b64d",
+    "text": "77212a88a80775b8"
+  },
+  "settings.max_placements.count": {
+    "en": "6775fef7ab26977e",
+    "text": "dbdfb2bc507081a2"
+  },
+  "settings.max_placements.count_unknown": {
+    "en": "93db5d1db0d72fc5",
+    "text": "4b117d9005409219"
+  },
+  "settings.max_placements.hint": {
+    "en": "f8a8ac9943602ffa",
+    "text": "c9648abfcf5ee4a6"
+  },
+  "settings.max_placements.max": {
+    "en": "c2c6ebb43dd590e8",
+    "text": "9d1963eb248a083e"
+  },
+  "settings.max_placements.not_saved": {
+    "en": "5a57a8b3db3bbeca",
+    "text": "146d535b3ed4050a"
+  },
+  "settings.max_placements.saved": {
+    "en": "4181de0e66b45c08",
+    "text": "dd8f78d7cdeccaa9"
+  },
+  "settings.max_placements.title": {
+    "en": "22b8ece9ed431dac",
+    "text": "5e61a5894828ef76"
   },
   "settings.member_agents.bad_max": {
     "en": "942904b5d5bda0bc",

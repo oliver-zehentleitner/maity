@@ -31,7 +31,18 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, hub, onboarding, state
-from . import adapters, capabilities, config, limitread, loop, restart, targets, workspace
+from . import (
+    adapters,
+    capabilities,
+    config,
+    limitread,
+    loop,
+    restart,
+    scratch,
+    scratchop,
+    targets,
+    workspace,
+)
 from .asuser import RUNNER, AsUser, Unreachable
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
@@ -115,6 +126,12 @@ def run_join(
 
 
 RUNNING_AFTER = 10.0  # a process alive this long is `running`
+# Codex's folder prompt at an interactive start (Codex 0.169, tui/src/onboarding): the
+# runner answers only its restricted choice, looked for this long after the start.
+FOLDER_PROMPT = "Folder access"
+OPEN_RESTRICTED = "Open restricted"
+TRUST_FOLDER = "Trust and continue"
+FOLDER_PROMPT_WITHIN = 180.0
 # The harnesses whose run without their OS sandbox is reported (`sandbox_unavailable`): those
 # whose allowlist relies on it. Codex's sandbox is its whole confinement and is checked apart.
 UNCONFINED_REPORTED = ("claude-code", "antigravity")
@@ -125,6 +142,7 @@ LOGS = "logs"
 # The agent-side state the runner reads after a join (its member id): far below this.
 STATE_MAX = 64 * 1024
 ADVERTISE_EVERY = 60.0  # at most one PATCH /runner for a changed `running` per this
+SIZE_EVERY = 600.0  # a placement's clone and scratch are measured at most this often
 LIVE = ("starting", "running", "stopping")
 # The idle check of an interactive session (§15.14): a pane is read at most once per IDLE_EVERY;
 # the minutes come from the placement's `health.settings`, these are the contract's defaults.
@@ -250,6 +268,15 @@ class Record:
     nudges: int = 0  # nudges answered since a `maity wait` was last seen
     unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
     left_typed: bool = False  # a dropped nudge's line may still sit in the input: not again
+    # The sizes of its clone and its scratch as last measured (§15.5), for `maity runner
+    # status`; None until measured or where there is none.
+    clone_bytes: int | None = None
+    scratch_bytes: int | None = None
+    sized_at: float | None = None
+    # Codex's folder prompt at an interactive start: None while looked for, else `answered`,
+    # `left` (a prompt the runner does not answer, until it is gone) or `none` (not seen in
+    # time, or gone).
+    folder_prompt: str | None = None
 
     def calm(self) -> None:
         """Forget the idle check: a new start, or an agent that is listening again."""
@@ -311,6 +338,10 @@ class Supervisor:
     advertised_counts: dict[str, int] = field(default_factory=dict)
     targets: dict[str, Target] = field(default_factory=dict)
     target_errors: dict[str, str] = field(default_factory=dict)  # the last one logged
+    # The placements the hub reads as closed (`GET /runner/placements?closed=true`), and those
+    # whose scratch is gone since this service started (§15.5).
+    closed_placements: list[dict[str, Any]] = field(default_factory=list)
+    scratch_cleared: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -330,6 +361,18 @@ class Supervisor:
         with self.lock:
             self.desired = good
             self.synced = True
+
+    def closed(self, placements: list[dict[str, Any]]) -> None:
+        """The hub's closed placements of this runner: their scratch goes at the next tick."""
+        good = [
+            p for p in placements
+            if isinstance(p, dict) and isinstance(p.get("id"), str)
+            and PLACEMENT_ID.match(p["id"]) is not None and p.get("active") is False
+            and isinstance(p.get("project_id"), str)
+            and workspace.TOKEN.match(p["project_id"]) is not None
+        ]  # fmt: skip
+        with self.lock:
+            self.closed_placements = good
 
     def actual(self) -> list[dict[str, Any]]:
         """`actual` for `hello`."""
@@ -426,7 +469,75 @@ class Supervisor:
             }
         self._report(desired)
         self._advertise(running, now)
+        self._clear_scratch(set(labelled), set(snapshots))
+        self._measure(desired, now)
         self.save()
+
+    # --- the scratch (§15.5) ---------------------------------------------------------------
+
+    def _clear_scratch(self, live: set[str], seen: set[str]) -> None:
+        """Remove the scratch of each placement the hub reads as closed, on every target whose
+        sessions this tick read (`seen`), unless a session of it still runs; a target whose
+        sessions could not be read keeps every scratch until they can. Each removal is logged
+        and written to `removed.jsonl`. A placement whose scratch could not be removed
+        everywhere is tried again."""
+        with self.lock:
+            closed = [p for p in self.closed_placements
+                      if p["id"] not in self.scratch_cleared and p["id"] not in live]  # fmt: skip
+        for p in closed:
+            done = True
+            for target in self.targets.values():
+                if target.name not in seen or (target.remote and target.agent_files is None):
+                    done = False  # its sessions are unknown: unknown means kept
+                    continue
+                try:
+                    path = workspace.scratch_of(
+                        target.workspaces, p["project_id"], p["id"], target.host
+                    )
+                    removed = scratch.remove(path, target.as_user)
+                except workspace.Refused:
+                    break
+                except scratchop.OnTheWay:  # never followed; logged once
+                    self.log(f"{p['id']}: scratch left on {target.name}: a directory on the "
+                             "way to it is a link")  # fmt: skip
+                    continue
+                except (OSError, subprocess.SubprocessError) as exc:
+                    self.log(f"{p['id']}: scratch not removed on {target.name}: {exc}")
+                    done = False
+                    continue
+                if removed is not None:
+                    scratch.log_removal(self.cfg.state_dir, p["id"], path, removed, "closed")
+                    self.log(f"{p['id']}: scratch removed on {target.name} ({removed} bytes): "
+                             "the placement is closed")  # fmt: skip
+            if done:
+                with self.lock:
+                    self.scratch_cleared.add(p["id"])
+
+    def _measure(self, desired: list[dict[str, Any]], now: float) -> None:
+        """The sizes of each placement's clone and scratch on its target, at most every
+        SIZE_EVERY, for `maity runner status` (§15.5); never sent to the hub."""
+        for p in desired:
+            with self.lock:
+                rec = self.records.get(p["id"])
+                where = rec.target if rec is not None else None
+                due = rec is not None and (rec.sized_at is None or now - rec.sized_at >= SIZE_EVERY)
+            target = self.targets.get(where or self._default_target())
+            if rec is None or not due or target is None or not target.reachable:
+                continue
+            try:
+                harness = self.cfg.harnesses.get(p.get("harness") or "")
+                place = workspace.locate(
+                    target.workspaces, p["project_id"], p["workspace"]["clone"], target.host,
+                    folder=workspace.uses_folder(harness.id if harness else ""),
+                )  # fmt: skip
+                path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"],
+                                            target.host)  # fmt: skip
+            except workspace.Refused:
+                continue
+            clone = scratch.size(place.path, target.as_user)
+            room = scratch.measure(path, target.as_user)
+            with self.lock:
+                rec.clone_bytes, rec.scratch_bytes, rec.sized_at = clone, room, now
 
     def _place(
         self,
@@ -547,6 +658,9 @@ class Supervisor:
             backend.kill(mine.name)
             mine = None
         if mine is not None and not mine.dead:
+            if rec.state in ("starting", "running") and p.get("mode") == "interactive":
+                if self.cfg.harnesses[p["harness"]].id == "codex":
+                    self._folder_prompt(rec, mine, backend, now)
             if rec.state != "stopping" and (self.first_tick or rec.state not in LIVE):
                 rec.enter(now, "running", "adopted", started_at=None)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
@@ -558,7 +672,8 @@ class Supervisor:
             elif rec.state == "stopping":  # desired went back to running during a stop
                 rec.enter(now, "running", deadline_at=None, kill_at=None)
             elif rec.state == "running" and p.get("mode") == "interactive":
-                self._idle(p, rec, mine, backend, now)
+                if not self._prompt_shown(p, mine, backend):  # no line into a prompt
+                    self._idle(p, rec, mine, backend, now)
             return 0
         if mine is not None and mine.dead:
             self._exited(rec, mine, now, backend, target)
@@ -634,6 +749,51 @@ class Supervisor:
         else:
             rec.enter(now, "exited", exit_code=code, crashes=decision.crashes,
                       retry_at=decision.retry_at)  # fmt: skip
+
+    def _folder_prompt(self, rec: Record, session: Session, backend: Tmux, now: float) -> None:
+        """Codex asks at an interactive start about a folder it is told not to trust (the
+        clone, `trust_level = "untrusted"`, so the clone's own `.codex` configuration is not
+        loaded), and nobody answers: the agent never starts. Its first choice, already
+        highlighted, is "Open restricted", which keeps the folder untrusted and saves nothing;
+        the runner presses Enter once that shows, with nobody attached. A folder prompt
+        without it (one that would trust the folder) is never answered: said in the log, as
+        a harness waiting on a first-run prompt. Looked for only `FOLDER_PROMPT_WITHIN` after
+        the start; the pane's text is only matched, never kept (Tmux.pane_has)."""
+        if rec.folder_prompt is not None or rec.started_at is None:
+            return
+        if now - rec.started_at > FOLDER_PROMPT_WITHIN:
+            rec.folder_prompt = "none"
+            return
+        shown = backend.pane_has(session.name, (FOLDER_PROMPT, OPEN_RESTRICTED, TRUST_FOLDER))
+        if shown is None or FOLDER_PROMPT not in shown:
+            return
+        if OPEN_RESTRICTED not in shown or TRUST_FOLDER in shown:
+            rec.folder_prompt = "left"
+            self.log(
+                f"{session.name}: waiting on a first-run prompt: Codex asks about its folder "
+                "without offering only to open it restricted; not answered"
+            )
+            return
+        if backend.attached(session.name) is not False:  # a person there answers it
+            return
+        try:
+            backend.submit(session.name)
+        except TmuxError as exc:
+            self.log(f"{session.name}: cannot answer Codex's folder prompt: {exc}")
+            return
+        rec.folder_prompt = "answered"
+        self.log(f"{session.name}: answered Codex's folder prompt with \"Open restricted\"; "
+                 "the clone stays untrusted")  # fmt: skip
+
+    def _prompt_shown(self, p: dict[str, Any], session: Session, backend: Tmux) -> bool:
+        """Whether a Codex session's pane may show its folder prompt, looked at on every
+        check, before the idle check may type: a prompt shown, or a look that cannot tell,
+        keeps the idle line out of it, however long it stays and whenever it shows; one look
+        that misses it decides that check only."""
+        if self.cfg.harnesses[p["harness"]].id != "codex":
+            return False
+        shown = backend.pane_has(session.name, (FOLDER_PROMPT,))
+        return shown is None or FOLDER_PROMPT in shown
 
     def _idle(
         self, p: dict[str, Any], rec: Record, session: Session, backend: Tmux, now: float
@@ -838,15 +998,17 @@ class Supervisor:
         found = view.found
         if found is not None and not found.available:
             return ("harness_missing", found.reason)
-        repository = config.normalise_repository(p["workspace"].get("repository") or "")
-        grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
-        if harness.id == "codex" and (grant.allow or grant.pull_requests):
-            # Codex cannot honour a command allowlist, and its `maity` runs inside its
-            # sandbox, where `maity gh` reaches neither gh's login nor the forge's API.
-            return ("harness_refused", None)
         on = view.sandbox
         if capabilities.sandbox_refused(harness, on, view.held):
             return ("harness_refused", None)  # no run without it, or held back by its version
+        if harness.id == "codex" and not on:
+            # The grant parts Codex starts without are left out only for its sandbox to take
+            # their place; without it, a grant that asked for them refuses the start.
+            repository = config.normalise_repository(p["workspace"].get("repository") or "")
+            if adapters.codex_left_out(
+                self.cfg.repositories.get(repository, config.RepositoryGrant())
+            ):
+                return ("harness_refused", None)
         if on and harness.id == "claude-code":
             # The sandboxed session relies on the runner's hook; settings that switch hooks
             # off would start it without one. Read at every start: they change without us.
@@ -872,6 +1034,11 @@ class Supervisor:
         harness = self.cfg.harnesses[p["harness"]]
         if harness.id not in adapters.READY:
             return self._wait(rec, f"no adapter for {harness.id} in this version", name)
+        if harness.id == "codex":  # starts without what it cannot enforce, said at each start
+            repository = config.normalise_repository(p["workspace"].get("repository") or "")
+            grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
+            for part in adapters.codex_left_out(grant):
+                self.log(f"{name}: repositories.{repository}: {part}")
         as_user = target.as_user
         agent = p.get("agent") or {}
         try:
@@ -911,6 +1078,7 @@ class Supervisor:
             return 0
         retrying = rec.state in ("exited", "rate_limited")
         rec.calm()
+        rec.folder_prompt = None
         rec.enter(now, "starting", retry_at=None, started_at=now)
         rec.sandbox = view.sandbox
         if retrying:
@@ -967,7 +1135,9 @@ class Supervisor:
                 with self.lock:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
-            context = self._context(p, harness, place, target, rec.resume, view=view)
+            scratch = self._scratch(p, harness, target)
+            context = self._context(p, harness, place, target, rec.resume, view=view,
+                                    scratch=scratch)  # fmt: skip
             launch = adapters.launch(context)
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
             target.backend.start(
@@ -1071,6 +1241,7 @@ class Supervisor:
         target: Target | None = None,
         resume: bool = False,
         view: GateView | None = None,
+        scratch: Path | None = None,
     ) -> adapters.Context:
         target = target or self.targets[self._default_target()]
         view = view or GateView.of(target, harness.id)
@@ -1104,7 +1275,27 @@ class Supervisor:
             agent_path=target.agent_path,
             resume=resume,
             git=self.cfg.git,
+            scratch=scratch,
         )
+
+    def _scratch(self, p: dict[str, Any], harness: config.Harness, target: Target) -> Path | None:
+        """The placement's scratch, made as the agents' user with `tmp` in it (§15.5); None
+        for a harness that gets none (workspace.SCRATCH_HARNESSES). A restart or an adoption
+        finds it as it was. Through a link the agents made the runner makes nothing, and a
+        scratch it cannot make (a host whose `maity` has no `scratchop` yet) is none either:
+        the session then starts without one, and the log says why."""
+        if harness.id not in workspace.SCRATCH_HARNESSES:
+            return None
+        path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host)
+        try:
+            scratch.make(path, target.as_user)
+        except scratchop.OnTheWay:
+            self.log(f"{p['id']}: no scratch: a directory on the way to {path} is a link")
+            return None
+        except (OSError, subprocess.SubprocessError) as exc:  # a host's maity without it, too
+            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
+            return None
+        return path
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
         """What the agent's sandbox may not read, as the agents' side of `target` sees it: its
@@ -1314,7 +1505,11 @@ def private_paths(
         return path.resolve() if here else path
 
     clone = norm(clone)
-    found = [*((norm(state_dir),) if state_dir else ()), *(home / n for n in HOME_SECRETS)]
+    # The home resolved too: with a link in its path, its secrets and the runner's own
+    # configuration (resolved) would no longer be seen as one inside the other
+    # (adapters.outermost).
+    found = [*((norm(state_dir),) if state_dir else ()),
+             *(norm(home) / n for n in HOME_SECRETS)]  # fmt: skip
     found += [*others, *(norm(path) for path in extra)]
     return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
 
@@ -1323,9 +1518,12 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     """The credential directories of the other clones under `workspaces` as they stand now,
     a workspace folder's clone `repo` included
     (a clone made later is covered from the agent's next start), listed as the agents' user,
-    who owns them and may be the only one able to list them. A listing that is not complete
-    fails closed (`workspace.Refused`): an unreadable directory could hide a credential, and
-    the sandbox would start without its deny."""
+    who owns them and may be the only one able to list them. A start whose other clones
+    cannot be checked completely is refused (`workspace.Refused`): an unreadable directory
+    could hide a credential, and the sandbox would start without its deny. Each is named
+    where it lies, as the agents' side resolves it; one inside the workspaces root is named
+    below `workspaces` as given (resolved here), the form the clone's own path and the
+    root's deny have."""
     root = workspaces.resolve() if as_user.here else workspaces
     refused = workspace.Refused("harness_refused")
     if as_user.direct:
@@ -1338,18 +1536,101 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
                               if (c / ".git" / "maity").is_dir()]  # fmt: skip
         except OSError as exc:
             raise refused from exc
+        real_root, real_clone = root, clone.resolve()
     elif not as_user.exists(root, "-d"):
-        found = []  # no clone yet: nothing to hide
+        return []  # no clone yet: nothing to hide
     else:
-        # Depth 4 for a clone, 5 for the clone `repo` in a workspace folder (§15.5); a nested
-        # repository's at depth 5 in a plain clone is listed too, which only hides more.
-        done = as_user.run(["find", str(root), "-mindepth", "4", "-maxdepth", "5", "-type", "d",
-                            "-path", "*/.git/maity", "-print0"])  # fmt: skip
-        if done.returncode != 0:  # some directory could not be read: the list may be short
-            raise refused
-        found = [Path(p) for p in done.stdout.split("\0") if p]
-    own = (clone.resolve() if as_user.here else clone) / ".git" / "maity"
-    return sorted(p for p in found if p != own)
+        real_root, real_clone = _canonical([root, clone], as_user, refused)
+        found = _listed(real_root, as_user, refused)
+    own = _below_root(real_clone, real_root, root) / ".git" / "maity"
+    named = {_below_root(p, real_root, root) for p in _canonical(found, as_user, refused)}
+    return sorted(named - {own})
+
+
+# For each clone entry given: its two places for a credential, looked at through a link as
+# Path.is_dir does on the direct side, one NUL after each found. A place that cannot be
+# looked at (a directory on its way, where it lies, that cannot be searched) ends the
+# listing with 3, as a PermissionError does there: it could hide one. Only `test` and
+# `readlink -n` (no `realpath -m`, which not every system has; `-n` keeps a name's own
+# last line break on every system). Links the system does not resolve are followed here
+# one by one; what cannot be checked completely (a loop, a chain too long to follow, a
+# place that cannot be searched) ends the listing with 3: the start is refused.
+_SLOTS = r"""blocked() (
+  q=$1 n=${3:-0}
+  if [ -e "$q" ]; then
+    if [ "$2" = self ] && [ -d "$q" ] && ! [ -x "$q" ]; then exit 0; fi
+    exit 1
+  fi
+  p=${q%/*}
+  [ -n "$p" ] || p=/
+  if [ "$p" != "$q" ] && blocked "$p" self "$n"; then exit 0; fi
+  [ -L "$q" ] || exit 1
+  [ "$n" -lt 40 ] || exit 0
+  t=$(readlink -n -- "$q" && printf x) || exit 0
+  t=${t%x}
+  case $t in /*) ;; *) t=${p%/}/$t ;; esac
+  blocked "$t" "$2" $((n + 1))
+)
+for d; do
+  for c in "$d" "$d/repo"; do
+    for q in "$c" "$c/.git"; do
+      if blocked "$q" self; then exit 3; fi
+    done
+    if blocked "$c/.git/maity" parent; then exit 3; fi
+    if [ -d "$c/.git/maity" ]; then printf '%s\0' "$c/.git/maity"; fi
+  done
+done"""
+
+
+# Each path resolved, one NUL after each, its name kept exactly (a trailing newline too).
+_REALPATHS = r"""for p; do
+  r=$(realpath -- "$p" && printf x) || exit 3
+  printf '%s\0' "${r%?x}"
+done"""
+
+
+def _listed(root: Path, as_user: AsUser, refused: workspace.Refused) -> list[Path]:
+    """The credential directories under the real directory `root`, listed as the agents'
+    user on their side, as the direct side lists them: every clone's two places for one
+    (`<clone>/.git/maity`, `<clone>/repo/.git/maity`) under every project that is not a
+    link, looked at through a link."""
+    entries = as_user.run(["find", str(root), "-mindepth", "2", "-maxdepth", "2", "-print0"])
+    if entries.returncode != 0:  # some directory could not be read: the list may be short
+        raise refused
+    clones = [d for d in entries.stdout.split("\0") if d]
+    if not clones:
+        return []
+    checked = as_user.run(["sh", "-c", _SLOTS, "sh", *clones])
+    if checked.returncode != 0:
+        raise refused
+    return [Path(p) for p in checked.stdout.split("\0") if p]
+
+
+def _below_root(path: Path, real_root: Path, root: Path) -> Path:
+    """`path`, resolved on the agents' side, named below `root` when it lies in `real_root`
+    (what `root` resolves to there); a path outside it stays as it was resolved."""
+    try:
+        return root / path.relative_to(real_root)
+    except ValueError:
+        return path
+
+
+def _canonical(paths: list[Path], as_user: AsUser, refused: workspace.Refused) -> list[Path]:
+    """`paths` as the agents' side resolves them, so that a path's place in the listing is
+    its place on disk (adapters.outermost compares them as written). Resolved where the
+    agents run, as their user; any path that cannot be resolved fails closed."""
+    if not paths:
+        return []
+    if as_user.direct:
+        try:
+            return [path.resolve(strict=True) for path in paths]
+        except OSError as exc:
+            raise refused from exc
+    done = as_user.run(["sh", "-c", _REALPATHS, "sh", *(str(path) for path in paths)])
+    resolved = [Path(p) for p in done.stdout.split("\0")[:-1]]
+    if done.returncode != 0 or len(resolved) != len(paths):
+        raise refused
+    return resolved
 
 
 def agents_user(cfg: config.Config) -> AsUser:

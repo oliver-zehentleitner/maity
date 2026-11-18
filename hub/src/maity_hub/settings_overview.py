@@ -120,6 +120,7 @@ ENTRIES: tuple[Entry, ...] = (
     # security
     Entry("MAITY_SECRET_KEY", "security", secret=True),
     Entry("MAITY_SEAL_VERIFIERS", "security", "0"),
+    Entry("MAITY_SEALED_VERIFIERS_ONLY", "security", "0"),
     Entry("MAITY_SECOND_FACTOR_WRONG_PER_DAY", "security", "50"),
     # sign_in: unset, the admin's choice or the hub's default (§2.6.6)
     Entry("MAITY_SIGN_IN_DEVICE_CODE", "sign_in", "1", admin=SIGN_IN),
