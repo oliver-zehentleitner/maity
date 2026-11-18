@@ -684,7 +684,8 @@ The board's cursor ([the board's card order](#the-boards-card-order-is-sorted-in
 search's hits. Before, a search sorted only its hits, so when the last card shown stopped
 matching, the next page went on from the first card not shown, or the column's top, and a
 card between the two that began to match was skipped. Now the page goes on after the last
-card shown where it still sits, and such a card is found. That is the one change in
+card shown where it still sits, the first card not shown is the next card of the filters,
+a hit or not, and such a card is found. That is the one change in
 behaviour; the contract's paging rule (§6.4) already said a card that did not move is never
 skipped.
 

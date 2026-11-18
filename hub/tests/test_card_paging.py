@@ -121,6 +121,22 @@ def test_a_search_keeps_its_place_when_its_hits_change_between_pages(owner: flow
     assert (_ids(second["items"]), second["next_cursor"]) == ([c, d], None)
 
 
+def test_a_search_finds_a_card_that_begins_to_match_when_the_last_one_shown_moved(
+    owner: flow.Human,
+) -> None:
+    """The last card shown leaves its column and a card after it that did not move begins to
+    match: the next page goes on from the card after the last one shown, not from the next
+    hit, so that card is not skipped (§6.4)."""
+    a, b, c, d, _ = (task(owner, title=t)["id"] for t in ("Hit a", "Hit b", "c", "Hit d", "e"))
+    params = {"q": "hit", "status": "all", "limit": 2}
+    first = _page(owner, params)
+    assert _ids(first["items"]) == [a, b]
+    owner.patch(f"{PROJECT}/tasks/{b}", {"status": "cancelled"})
+    owner.patch(f"{PROJECT}/tasks/{c}", {"title": "Hit c"})
+    rest = _walk(owner, {**params, "cursor": first["next_cursor"]})
+    assert _ids(rest) == [c, d, b]  # b sorts again in its new column
+
+
 def test_cards_added_between_pages_keep_the_others_in_place(owner: flow.Human) -> None:
     before = [task(owner, title=f"Card {n}")["id"] for n in range(6)]
     first = _page(owner, {"status": "open", "limit": 2})

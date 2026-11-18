@@ -14,5 +14,5 @@
 
 - hub: a search's next page on the board's order (`GET …/tasks?q=…` with the
   cursor) goes on after the last card shown even when that card no longer
-  matches, so a card that began to match between two pages is no longer
+  matches or has left its column, so a card that began to match between two pages is no longer
   skipped (§6.4).

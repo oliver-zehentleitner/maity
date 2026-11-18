@@ -786,7 +786,11 @@ def list_tasks(
                     following = paging.closed_cursor(column_at, last.closed_at, last.id, bound)
                 else:
                     in_column = [r.id for r in shown if key(r)[0] == column_at]
-                    first_not_shown = taken[limit]
+                    # The card after the last one shown, a hit or not: should that one
+                    # leave its column, a card between it and the next hit that begins to
+                    # match is then not skipped. Without a search it is the next hit.
+                    at = [r.id for r in ordered].index(last.id)
+                    first_not_shown = ordered[at + 1]
                     following = paging.key_cursor(
                         (last.id, key(last)),
                         (first_not_shown.id, key(first_not_shown)),
