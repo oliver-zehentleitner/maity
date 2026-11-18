@@ -1253,8 +1253,8 @@ carries only what the bridge posts.
   under a governance scope or `line:lead` with the header is
   `forbidden` with `details.reason: bridge_no_governance`; while the
   served agent is isolated every call for it is `forbidden` with
-  `details.reason: isolated` (§6.2, "Isolation"), and the served agent's
-  `isolation_windows` hold for what the bridge reads for it; isolation
+  `details.reason: isolated` (§6.2, "Isolation"), and both the served agent's
+  and the bridge's own `isolation_windows` hold for what the bridge reads for it; isolation
   can be lifted, so it blocks a connection and does not end it. One header
   names one served agent and the connection must be direct, so a bridge
   never chains. A connection carries nothing while the bridge member has
@@ -7317,7 +7317,11 @@ shows events, nor the entries of a card's history (`GET
 …/tasks/{id}/history`, §6.15) whose `at` lies in the window. What it does
 see of that time is the state it finds: a card's fields, a request with
 its answer and status, a chat's members. The window binds that agent membership alone: its human
-owner, reading a group chat along or anything else, reads as before. The
+owner, reading a group chat along or anything else, reads as before. Card notes
+written in the window stay out of their list and the card search
+(§6.16, §6.4), and a restricted text's history entries whose `at` lies
+in it out of that history (§6.4). A bridge reading for an agent (§2.3)
+is held to its own windows beside the agent's. The
 membership keeps the hidden window as `isolation_windows: [{from_seq,
 to_seq}]` in its member view, read by the same readers as `isolated`; a later isolation
 adds a window. Removing the member
@@ -7726,7 +7730,8 @@ on SQLite, PostgreSQL and MariaDB alike, and the dashboard's own filter
 matches the same cards. The text searched is: the
 card's `id`, `title` and `body`, the bodies of its notes in every state
 (§6.16), and the `summary` of its latest report (§6.6). A redacted note
-is not searched, and neither are links, the edit
+is not searched, nor a note written in one of the reader's
+`isolation_windows` (§6.2), and neither are links, the edit
 history or earlier reports. `q` combines with every other filter, and
 `status`, `closed_after`, ordering and paging work as without it: to
 search closed cards as well, the caller passes `status=all` and no
@@ -7912,7 +7917,7 @@ report's snapshot (§16.8), the hub's logs, or an error `message`
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the set; a human from a session in good standing | the shape above; `text: null` when the card has none, `version: 0` and `updated_by`, `updated_at` `null` before the first write. Allowed on closed cards and in every project state |
+| `GET /projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the set; a human from a session in good standing | the shape above; `text: null` when the card has none, `version: 0` and `updated_by`, `updated_at` `null` before the first write; `history` leaves out the entries whose `at` lies in one of the reader's `isolation_windows` (§6.2), the text being the state the reader finds. Allowed on closed cards and in every project state |
 | `PUT /projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the set; a human from a session in good standing | `{text, base_version}`; sets the text; `200` with the shape above without `text` and `history`. `project_closed` when the project is archived |
 | `DELETE /projects/{owner}/{slug}/tasks/{id}/restricted` | `project:read` and in the set; a human from a session in good standing | `base_version` optional in the query; clears the text; `200` as `PUT`. Allowed in every project state |
 
@@ -10344,7 +10349,7 @@ gone everywhere.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/tasks/{id}/notes` | `project:read` | filter `state` (comma list, default `open`, or `all`); oldest first; paged |
+| `GET /projects/{owner}/{slug}/tasks/{id}/notes` | `project:read` | filter `state` (comma list, default `open`, or `all`); oldest first; paged; a note written in one of the reader's `isolation_windows` is left out, by its `created_at` as a card's history by `at` (§6.2) |
 | `POST /projects/{owner}/{slug}/tasks/{id}/notes` | `tasks:write`, or trust `guest` (§2.3: a note is the guest's way to comment) | `{body}`; `201` with the note; Markdown, at most 4 KiB. A write, so a write scope; a guest is the one member without it that may post notes |
 | `PATCH /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}` | the note's author; `events:admin` (human memberships) for any note | `{body, reason?, base_version}`; `200` with the note; rules above, `conflict` on a stale `base_version` |
 | `POST /projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/resolve` | `tasks:admin`, the card's creator | `{state: incorporated\|dismissed, reason?}`; only an `open` note (`invalid_transition` otherwise); `200` with the note |
@@ -13377,7 +13382,7 @@ learns its content.
 |---|---|---|
 | `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A work message from another side that the gate holds for an agent (§9.6) names that agent as `held:<id>` in place of its own token, and an `update` leaves it off the private watcher list where it watches only by a dependent card (§6.4); no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2); a waiting agent is not among them (§9.6) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed`, `membership_isolated`, or for an agent of another owner `declined` or `denied_participant`, §9.6), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`; `[{member_id, by, waiting_for}]` when an agent starts or stops waiting, §9.6), `closed` (`closed_reason`) |
-| `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
+| `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all or a bridge reading for the agent (§2.3) | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
 | `chat_rules_changed` (§9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal, a narrowing or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
 | `chat_unread` (§9.2) | `member:<id>` of the agent participant it is for; read only by that agent, never the see-all, by trust or role, or the agent's owner | `{conversation: {id, kind, title}, unread, oldest_seq, newest_seq}`: the messages §9.2 counts ("The unread nudge"), when the hub wrote the event; no body. Actor `null` (the hub). At most one per agent and chat until its read mark reaches the last one's `newest_seq` (§9.2); wakes the agent by its `wake` rule (§6.18), a dormant instance never |
 | `chat_verdict` (§9.7) | the chat's participants at write time, a waiting agent not (§9.6); a direct conversation's two parties | `{conversation: {id, kind, title}, message_seq, author, value, previous, sentence}`: `author` the message's author, `value` `agree`, `disagree` or `null` (taken back), `previous` the caller's value before; actor the human who gave it. Wakes the message's author when it is an agent, by its `wake` rule (§6.18), nobody else |
@@ -13531,7 +13536,8 @@ Two sets per reader, because reading and waking are different things:
   token resolves without it (above). An event whose `seq` lies in one of
   the reader's `isolation_windows` (§6.2) is readable by nothing of the
   reader: not by its trust or role, not as its actor, not through a
-  conversation. Otherwise members with trust `owner` or `admin` (humans and agents, a proxy
+  conversation. A bridge reading for an agent (§2.3) is held to its own
+  windows as well as the agent's. Otherwise members with trust `owner` or `admin` (humans and agents, a proxy
   included) may read every event of the project
   except a conversation's: `chat` messages, `chat_verdict` events (§9.7),
   `conversation_*` events, and the `event_redacted` and
@@ -13545,7 +13551,7 @@ Two sets per reader, because reading and waking are different things:
   nor the see-all of owners and admins, an admin agent included; the
   owner of the agent a `held:<id>` token names reads it along.
   A `cross_chat_mention` (§9.5) is read only by the agent it
-  names, and so is a `chat_unread` (§9.2): it names a chat's title,
+  names, never by a bridge reading for that agent (§2.3), and so is a `chat_unread` (§9.2): it names a chat's title,
   which the see-all does not read either. A `chat_rules_changed` (§9.6)
   is read only by the agent it names, too. A `restricted_changed` (§6.4) is read only by a member on its
   private list that is in the project's restricted-access set at the
@@ -27112,10 +27118,11 @@ A tombstone is §8.5's: the text becomes `null`, and `redaction`
 `reason` shown as §8.5 allows the reader. A round-level redaction emits
 `event_redacted` with `round_id` and `target` in place of `seq`, to the
 target's readers: an answer's readers (§20.3) are named by `member:`
-token and never the author of an anonymous one; the readers of the
-other targets are every member, or for a series with `circle: owner`
-the round's readers of §20.7. A redacted anonymous answer stays
-unlinked.
+token, the moderator among them while it holds the series' right
+(§20.2, "Ending it"), and never the author of an anonymous one; the
+readers of the other targets are every member, or for a series with
+`circle: owner` the round's readers of §20.7. A redacted anonymous
+answer stays unlinked.
 
 **The derived copies, by target:**
 
