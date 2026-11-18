@@ -7,7 +7,9 @@
 - hub: the instance admin sets limits for one project or one human account,
   `GET`/`PATCH /admin/projects/{owner}/{slug}/limits` and `/admin/users/{id}/limits`, up to
   `unlimited`; a change asks for the second factor (§16.5.1). Without an override nothing
-  changes for anybody.
+  changes for anybody. Two `PATCH`es of the same field at once take the project's or the
+  human's row lock in turn, so the second replaces the first's value and neither fails on the
+  unique key.
 
 ### Changed
 
@@ -26,3 +28,5 @@
   the reason `out_of_range` instead of `invalid` (`details.fields.<field>`; the code stays
   `invalid`), as the limits of one project or account do (§16.5). A client that matched the
   reason `invalid` reads `out_of_range` now; the dashboard reads both for one release.
+- docs: an agent's troubleshooting table says how to read a quota refusal's `details` and
+  `details.raise` (docs/agents.md).
