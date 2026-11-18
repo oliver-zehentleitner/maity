@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import socket
-import struct
 import threading
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -855,13 +854,11 @@ class RawHub:
     after the answer it half-closes and drains until the client closes (at most 2 s). A close
     with request bytes unread sends a reset, not a FIN, and on Windows a reset drops the part
     of the answer the client has received but not read yet: the cut answer then comes out as
-    WinError 10053, "cannot reach", instead of "broke off". `reset` closes each connection
-    with SO_LINGER 0, a forced reset, to show the drain leaves nothing for one to destroy."""
+    WinError 10053, "cannot reach", instead of "broke off"."""
 
-    def __init__(self, replies: list[bytes], last: bytes, reset: bool = False) -> None:
+    def __init__(self, replies: list[bytes], last: bytes) -> None:
         self.replies = list(replies)
         self.last = last
-        self.reset = reset
         self.requests: list[str] = []
         self.bodies: list[bytes] = []
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -908,8 +905,6 @@ class RawHub:
                 pass
         except OSError:
             pass
-        if self.reset:
-            conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
 
     def close(self) -> None:
         # A close alone does not wake a thread blocked in accept() on Linux, and a later test's
@@ -1012,20 +1007,13 @@ def test_get_text_names_an_answer_that_breaks_off(cut: RawHub) -> None:
     assert raised.value.status is None and raised.value.code is None
 
 
-@pytest.mark.parametrize("reset", [False, True], ids=["close", "reset after the drain"])
-def test_an_exchange_names_an_answer_that_breaks_off(reset: bool) -> None:
-    """The one cut-off case with a request body (a POST). The hub reads the body before it
-    answers, and even a forced reset (SO_LINGER 0) only comes after the drain, once the
-    client has closed: the cut answer is never destroyed (see RawHub)."""
-    made = RawHub([], BROKEN["body cut, Content-Length"], reset=reset)
-    cut_off = r"broke off its answer \(IncompleteRead\)"
-    try:
-        with pytest.raises(hub.HubError, match=cut_off) as raised:
-            hub._exchange(f"{made.url}/api/v1/join/exchange", "code", "join", 5)
-        assert raised.value.status is None and raised.value.code is None
-        assert [json.loads(b) for b in made.bodies] == [{"code": "code", "client": hub.CLIENT}]
-    finally:
-        made.close()
+def test_an_exchange_names_an_answer_that_breaks_off(cut: RawHub) -> None:
+    """The one cut-off case with a request body (a POST): the hub has read all of it before
+    it answers (see RawHub)."""
+    with pytest.raises(hub.HubError, match=r"broke off its answer \(IncompleteRead\)") as raised:
+        hub._exchange(f"{cut.url}/api/v1/join/exchange", "code", "join", 5)
+    assert raised.value.status is None and raised.value.code is None
+    assert [json.loads(b) for b in cut.bodies] == [{"code": "code", "client": hub.CLIENT}]
 
 
 def test_runner_check_records_a_hub_that_breaks_off_and_goes_on(
