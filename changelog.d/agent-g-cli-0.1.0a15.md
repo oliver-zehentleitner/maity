@@ -8,13 +8,15 @@
   `--related` (#1941). `maity roles` lists the project's built-in and own
   roles with what each means (#1920). Under a placement, a review's cites
   are checked in the runner's clone (#1914) and a review whose clone
-  maity's git refuses is not sent (#1918); a placement is given a scratch
-  directory beside its clone, removed when the placement ends (#1915). The
-  sandbox-checked Claude Code version is raised to 2.1.325, which drops a
-  version warning (#1893), and antigravity is named as offered in the
-  harness lists (#1891).
+  maity's git refuses is not sent (#1918). A negative count from the hub
+  now reads cleanly: another instance's claims count is left out, a ticker
+  count reads 0, and a hand-over message number of 0 or less names no
+  message (#1853). The sandbox-checked Claude Code version is raised to
+  2.1.325, which drops a version warning (#1893), and antigravity is named
+  as offered in the harness lists (#1891).
 - cli: **Upgrade note:** from 0.1.0a15, a Codex placement whose repository
-  grant carries `allow` or `pull_requests` parts that Codex's sandbox
-  cannot enforce now starts without those parts, where 0.1.0a14 refused the
-  start (#1929). A runner config that was refused for this reason starts
-  after the upgrade, with the unenforceable grant parts left off.
+  grant carries an `allow` list or `pull_requests` starts, without those
+  two parts, where 0.1.0a14 refused it — but only with its sandbox on.
+  With the sandbox off, such a grant still refuses the Codex start (#1929).
+  A runner config refused for this reason starts after the upgrade when the
+  sandbox is on, with the unenforceable grant parts left off.
