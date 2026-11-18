@@ -28,7 +28,7 @@ Status as of **2026-11-18**, maity **0.1.0a15**. Environments are named by OS an
 | antigravity, supervised | ✓ | ✓ | ✓, unsandboxed | – | n/a | – | ✓ | – | off (`sandbox_unavailable`) |
 | opencode | – | – | – | – | n/a | – | – | – | none |
 
-Sources for the Ubuntu cells: the lab's notes on tsk-gw1e87ev707f, tsk-5b5x3k5zvg7x, tsk-66zyvc4xnhtv and tsk-hv7jbgy75zjt. "PR via `maity gh`" ✓ is the lab's report (message 162561) that two Claude Code coders on that runner used `maity gh pr view` successfully after the repository grant was added; `pr create` is not covered by it.
+Sources for the Ubuntu cells: the lab's notes on tsk-gw1e87ev707f, tsk-5b5x3k5zvg7x, tsk-66zyvc4xnhtv and tsk-hv7jbgy75zjt. "PR via `maity gh`" ✓ is lead report 162561, that two Claude Code coders on that runner used `maity gh pr view` successfully after the repository grant was added; `pr create` is not covered by it.
 
 Without the host fix, every sandboxed Claude Code command fails on the seccomp step (tsk-5b5x3k5zvg7x). `maity runner check` reports that as an error.
 
@@ -41,7 +41,7 @@ Without the host fix, every sandboxed Claude Code command fails on the seccomp s
 | antigravity, supervised | ✓ | – | – | – | n/a | – | – | – | off; its namespaces start |
 | opencode | ✓ on opencode's own default model until tsk-kf2kp09d6qew | – | – | – | n/a | – | – | – | none |
 
-On Debian, Start for claude-code and antigravity is the hub's placement state after a runner upgrade; antigravity's "namespaces start" is that runner's `maity runner check` output after the same upgrade (`ok harness antigravity: the namespaces agy's terminal sandbox needs start`); the nested namespace is from the lab's note on tsk-5b5x3k5zvg7x; opencode's start is from its model card. Everything else there is not tested yet, and the codex cell is an expectation, marked so.
+On Debian, Start for claude-code and antigravity is the hub's placement state after a runner upgrade; antigravity's "namespaces start" is the runner's `runner check` output after the 0.1.0a15 upgrade (chat 160741: `ok harness antigravity: the namespaces agy's terminal sandbox needs start`); the nested namespace is from the lab's note on tsk-5b5x3k5zvg7x; opencode's start is from its model card. Everything else there is not tested yet, and the codex cell is an expectation, marked so.
 
 The test cycle after each CLI release: start · `maity resume` · `maity wait` · a subagent with Bash · read and open a PR with `maity gh` · stop · a runner restart that takes the session over · `maity runner check` without false greens. Results go on the lab card (tsk-gw1e87ev707f) and into this page.
 
