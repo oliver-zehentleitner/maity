@@ -547,11 +547,16 @@ off.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation of card order (`docs/api.md` §6.4, contract #135), 2026-10-23
+**Source:** implementation of card order (`docs/api.md` §6.4, contract #135), 2026-10-23; keys first and the batched search, card tsk-ybc2ma72dzvq (PR 2), 2026-11-18
 **Revisit when:** a project's board grows to thousands of cards, or a client reports paging through a board that does not finish while cards keep moving
+**See:** persistence.md — b7d3e9a2-5c41-4f86-9e2d-3a7c1f05b8e4 — as of 2026-11-18
 
-`GET …/tasks` reads a project's cards that match the filters and sorts them
-in Python by `ranks.board_key`: the columns in board order, then within
+`GET …/tasks` reads the order's keys (`id`, `status`, `rank`,
+`created_at`, `closed_at`, `updated_at`) of a project's cards that match
+the filters other than `q`, and sorts them
+in Python by `ranks.board_key`; the full rows are read only for the
+page's cards, and a search is applied to the sorted keys a batch at a
+time (the entry below). The order: the columns in board order, then within
 one by rank, then by `created_at`, then by `id`, and closed cards by
 `closed_at` newest first, then by `id`. A page's cursor names the last
 card it showed and the first card it did not show, each with its sort
@@ -603,6 +608,53 @@ board is a few hundred cards; the board asks for 200 at a time.
   move is what lasts, so the cursor follows the last card shown.
 - Integer positions renumbered on every move. They are simple to compare,
   but a move rewrites every card after it, and each of those is an event.
+
+## The card list reads keys first, and a search reads card text and notes a batch at a time
+
+**Id:** b7d3e9a2-5c41-4f86-9e2d-3a7c1f05b8e4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ybc2ma72dzvq item 2 (the security team's round-3 load pass: "keys first, then full rows only for the page; search doesn't load every note body"), PR 2, 2026-11-18; `hub/tests/test_load_card_paging.py` for the numbers
+**Revisit when:** the board's order moves into SQL, or a project's cards outgrow sorting their keys in Python
+**See:** persistence.md — 4e61c371-33b4-4ae4-8bb1-cb8fa974acb3 — as of 2026-11-18
+
+`GET …/tasks` (`routes/tasks.py`) selects only the order's columns (`KEYS`) for every card
+the filters let through, sorts or keyset-pages those, and reads `select(t.card)` only for the
+ids of the page (`_views`). With `q`, `card_search.Search` decides which keys are kept: it
+reads `id`, `title`, `body` and `report` for one batch of keys at a time, and the notes
+(redacted ones and those in the reader's hidden windows left out, §6.2) only of the cards
+whose own text did not match, and then of the page's cards so that `match` can name `note`.
+The first batch is the page plus one, each next one twice the last, at most 1000
+(`SEARCH_BATCH_MAX`); `order=updated` reads each batch of keys with a keyset after the last
+key read. A card deleted between its key and its row is left out.
+
+The board's cursor (the entry above) is resolved among all cards of the filters, not only a
+search's hits. Before, a search sorted only its hits, so when the last card shown stopped
+matching, the next page went on from the first card not shown, or the column's top, and a
+card between the two that began to match was skipped. Now the page goes on after the last
+card shown where it still sits, and such a card is found. That is the one change in
+behaviour; the contract's paging rule (§6.4) already said a card that did not move is never
+skipped.
+
+**Reason:** the old list read every full row the filters let through (bodies and reports
+included) and the search read every note body of those cards in one statement, so a call's
+memory and time grew with the project, not with the page. The keys are a few short columns;
+the body, the report and the notes are the bulk. Batches that start at the page's size keep a
+search that matches often at about the page's reads, and doubling keeps one that matches
+rarely at a few statements over the whole list. A card found by its own text needs no note
+read, except to name its `match` when it is shown.
+
+**Rejected alternatives:**
+- The search in SQL (`LIKE`/`ILIKE` over the columns and a join on the notes): the contract
+  folds both sides with NFKC and Unicode lowercasing, independent of the database's collation
+  (§6.4), which none of the three engines does the same way in SQL.
+- Keys first, but a search's text read for the whole list in one batch: it bounds nothing,
+  since a search that matches the first card still reads every card's text and notes.
+- A fixed batch the size of the page: a rare hit then costs one statement per page-sized
+  slice of the project.
+- Keeping only the hits in the board's sorted list for the cursor (the first cut of this
+  change): it skipped a card that began to match between two pages, as above.
 
 
 ## Admin-set instance settings in one table with a registry in code, admin-set secrets sealed in a table of their own
