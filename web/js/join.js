@@ -671,6 +671,9 @@ window.Maity = window.Maity || {};
             if (notMember) saidMember.delete(agent.id);
             await rereadMembers();
             if (notMember) M.withMembers(ctx, ctx.members.filter((m) => m.id !== agent.id));
+            // Closed while the members were read: the members are taken, the form opened since
+            // keeps its choice, its status and the focus (A1265 at #1919).
+            if (mine !== submission) return;
             showAgent();
             if (saysMember) { status.fail(M.t("join.failed"), { message: M.t("join.failed.is_member") }); sayBoss(); }
             (replaceOne.checked && !replaceOne.disabled ? replaced : another).focus();
@@ -679,6 +682,8 @@ window.Maity = window.Maity || {};
             // The hub knows better than the list on screen: read it again, and say so at the field.
             if (why === "taken") refused.add(agent.handle);
             try { profiles = await readProfiles(ctx); } catch (ignored) { /* the refusal above says enough */ }
+            // Closed while the profiles were read: the agent chosen since stays chosen (A1265 at #1919).
+            if (mine !== submission) return;
             profileOptions();
             agentSelect.value = "";
             checkHandle();
@@ -699,6 +704,17 @@ window.Maity = window.Maity || {};
           [profiles, joins] = await Promise.all([readProfiles(ctx), M.api.getAll(ctx.base + "/joins")]);
         } catch (err) {
           listStatus.fail(M.t("join.created_unread"), err);
+          return;
+        }
+        // Done while the lists were read: the new profile is offered and the new seat listed,
+        // as after a placement; the form opened since keeps its choice (A1265 at #1919).
+        if (mine !== submission) {
+          const kept = agentSelect.value;
+          profileOptions();
+          agentSelect.value = kept;
+          showAgent();
+          checkHandle();
+          changed();
           return;
         }
         profileOptions();

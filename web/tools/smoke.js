@@ -2079,12 +2079,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const srPost = win.Maity.api.post;
   // srHold: the next POST waits for srRelease(), as a slow hub would.
   let srHold = false, srRelease = null;
-  // srJoinHold: the next join POST waits for srJoinRefuse(err), a refusal that comes late.
-  let srJoinHold = false, srJoinRefuse = null;
+  // srJoinHold: the next join POST waits for srJoinRefuse(err), a refusal that comes late,
+  // or for srJoinAnswer(join), a join the fixture does not keep.
+  let srJoinHold = false, srJoinRefuse = null, srJoinAnswer = null;
   win.Maity.api.post = (p, b) => {
     if (p === "/projects/maintainer/maity/joins" && srJoinHold) {
       srJoinHold = false;
-      return new Promise((ok, no) => { srJoinRefuse = no; });
+      return new Promise((ok, no) => { srJoinRefuse = no; srJoinAnswer = ok; });
     }
     if (p !== "/projects/maintainer/maity/placements") return srPost(p, b);
     srMade.push(b);
@@ -2245,6 +2246,77 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "placements: a join refused after its panel was cancelled leaves the newer placement's button held and its status, and sends no second placement "
     + JSON.stringify([srLate, srMade.length]));
   srCancel().click(); await tick();
+  // A refusal's follow-up read, or the lists read after a join, answered after the panel was
+  // cancelled and opened anew with another agent chosen: the newer form keeps its choice, says
+  // nothing, its button free and the focus where it was (A1265 at #1919). One read is held at a time.
+  {
+    const lrAll = win.Maity.api.getAll;
+    let lrHold = null, lrRelease = null;
+    win.Maity.api.getAll = (p) => {
+      if (p !== lrHold) return lrAll(p);
+      lrHold = null;
+      return new Promise((r) => { lrRelease = r; }).then(() => lrAll(p));
+    };
+    srProto.focus = function () { document.activeElement = this; };
+    const lrChoose = (id) => { byId("join-agent").value = id; byId("join-agent").dispatch("change"); byId("join-agent").focus(); };
+    const lrState = () => [byId("join-agent").value, srSaid(), srCreate().disabled, document.activeElement === byId("join-agent")];
+    const lrNew = (handle) => {
+      lrChoose("");
+      byId("join-handle").value = handle; byId("join-handle").dispatch("input"); byId("join-display").value = handle;
+    };
+    const lrRefused = async (fields, read) => {
+      srJoinHold = true;
+      srJoin().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+      lrHold = read; lrRelease = null;
+      srJoinRefuse(new win.Maity.api.ApiError("refused", 422, "/projects/maintainer/maity/joins", "invalid", { fields })); for (let k = 0; k < 4; k++) await tick();
+      return !!lrRelease && lrHold === null;
+    };
+    // The members read again after "instance: required".
+    await srOpen(); await srTurn(false);
+    lrChoose("agt-a");
+    const lrMembersHeld = await lrRefused({ instance: "required" }, "/projects/maintainer/maity/members");
+    srCancel().click(); await tick();
+    await srOpen(); lrChoose("agt-s1");
+    if (lrRelease) lrRelease(); for (let k = 0; k < 8; k++) await tick();
+    const lrMembers = lrState();
+    expect(lrMembersHeld && JSON.stringify(lrMembers) === JSON.stringify(["agt-s1", "", false, true]),
+      "join: members read again after a refusal and answered after its panel was cancelled leave the newer choice, status, button and focus "
+      + JSON.stringify([lrMembersHeld, lrMembers]));
+    srCancel().click(); await tick();
+    // The profiles read again after "handle: taken" (tqgb's trace).
+    await srOpen(); await srTurn(false);
+    lrNew("late-taken");
+    const lrProfilesHeld = await lrRefused({ handle: "taken" }, "/agents");
+    srCancel().click(); await tick();
+    await srOpen(); lrChoose("agt-a");
+    if (lrRelease) lrRelease(); for (let k = 0; k < 8; k++) await tick();
+    const lrProfiles = lrState();
+    expect(lrProfilesHeld && JSON.stringify(lrProfiles) === JSON.stringify(["agt-a", "", false, true]),
+      "join: profiles read again after a handle refused and answered after its panel was cancelled leave agt-a chosen, the status, button and focus "
+      + JSON.stringify([lrProfilesHeld, lrProfiles]));
+    srCancel().click(); await tick();
+    // The lists read after a join made, the line closed by Done before they answer. The join is
+    // answered here for agt-s1 and not kept, so the joins counted further down stay as they are.
+    await srOpen(); await srTurn(false);
+    lrNew("late-made");
+    srJoinHold = true;
+    srJoin().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    lrHold = "/agents"; lrRelease = null;
+    srJoinAnswer({ id: "join-late", agent_id: "agt-s1", instruction: null, expires_at: new Date(Date.now() + 600000).toISOString(),
+      paste_lines: { join: "maity join late", posix: "curl late", windows: null } }); for (let k = 0; k < 4; k++) await tick();
+    const lrLine = !!lrRelease && lrHold === null && !!srPanel().querySelector(".paste-row");
+    const lrDone = srPanel().querySelectorAll("button").find((b) => text(b) === "Done");
+    if (lrDone) lrDone.click(); await tick();
+    await srOpen(); lrChoose("agt-a");
+    if (lrRelease) lrRelease(); for (let k = 0; k < 8; k++) await tick();
+    const lrMade = lrState();
+    expect(lrLine && JSON.stringify(lrMade) === JSON.stringify(["agt-a", "", false, true]),
+      "join: the lists read after a join and answered after its line was closed leave agt-a chosen in the newer form, its status, button and focus "
+      + JSON.stringify([lrLine, lrMade]));
+    srCancel().click(); await tick();
+    srProto.focus = srFocus;
+    win.Maity.api.getAll = lrAll;
+  }
   // The project's limit of placements reached (§6.1 max_placements, tsk-6s5n7egy4e5r), since
   // tsk-hdczmsq2r431 from the join form's part on a runner: the refusal names the limit and links
   // to where a human admin raises it. Six are active now (the late one above still waits); the limit set to six.
