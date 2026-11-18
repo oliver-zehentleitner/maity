@@ -200,7 +200,6 @@
   "agents.join.failed": "De deelname kon niet worden voorbereid: {reason}",
   "agents.join.none": "Je zit in geen enkel project waarin je een agent zou kunnen meenemen.",
   "agents.join.open": "Een agent laten deelnemen",
-  "agents.join.any": "Een willekeurige agent toevoegen",
   "agents.join.project": "In het project",
   "agents.join.reading": "Het project wordt gelezen…",
   "agents.join_link": "Deelnamelink",
@@ -2348,6 +2347,8 @@
   "mail.day.thu": "donderdag",
   "mail.day.tue": "dinsdag",
   "mail.day.wed": "woensdag",
+  "mail.field.verification_max_per_hour": "Mails voor adresbevestiging per uur",
+  "mail.field.invitation_max_per_hour": "Uitnodigingsmails per uur",
   "mail.kind.chat": "Chatberichten",
   "mail.kind.inbox": "Verzoeken aan jou",
   "mail.kind.invitation": "Uitnodigingen voor een project",
@@ -2400,6 +2401,26 @@
     "one": "{count} inlogmail",
     "other": "{count} inlogmails"
   },
+  "mail.count.verification": {
+    "one": "{count} verificatiemail",
+    "other": "{count} verificatiemails"
+  },
+  "mail.count.invitation": {
+    "one": "{count} uitnodigingsmail",
+    "other": "{count} uitnodigingsmails"
+  },
+  "mail.count.second_factor": {
+    "one": "{count} mail voor de tweede factor",
+    "other": "{count} mails voor de tweede factor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} mail voor de tweede factor verworpen",
+    "other": "{count} mails voor de tweede factor verworpen"
+  },
+  "mail.count.waiting": {
+    "one": "{count} verificatie- of uitnodigingsmail wacht",
+    "other": "{count} verificatie- of uitnodigingsmails wachten"
+  },
   "mail.enable": "E-mail inschakelen",
   "mail.field.from_address": "Afzenderadres",
   "mail.field.from_name": "Afzendernaam",
@@ -2407,6 +2428,7 @@
   "mail.field.max_per_hour": "Meldingsmails per uur",
   "mail.field.port": "SMTP-poort",
   "mail.field.reply_to": "Antwoordadres",
+  "mail.field.second_factor_max_per_hour": "Mails voor de tweede factor per uur",
   "mail.field.security_max_per_hour": "Beveiligingsmails per uur",
   "mail.field.sign_in_max_per_hour": "Inlogmails per uur",
   "mail.field.tls": "Verbindingsbeveiliging",
@@ -2414,6 +2436,7 @@
   "mail.incomplete": "E-mailconfiguratie is onvolledig: {missing}.",
   "mail.keys": "Ondertekeningssleutel: {signing}. Versleutelingssleutel van de instantie: {secret}. Sleutels worden in de omgeving ingesteld.",
   "mail.last_hour": "Laatste uur: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Verder in het laatste uur: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Niet opgeslagen: {reason}",
   "mail.not_set": "niet ingesteld",
   "mail.password.both": "Kies een nieuw wachtwoord of verwijder het opgeslagen wachtwoord, niet allebei.",
@@ -3491,13 +3514,13 @@
   "placements.logs": "Logs",
   "placements.logs.copy": "Het logs-commando kopiëren",
   "placements.logs.region": "Logs-commando",
-  "placements.new.open": "Een agent op een runner starten",
   "placements.new.reading": "De runners worden gelezen…",
-  "placements.new.title": "Een agent op een runner starten",
   "placements.new.hint": "De runner start de agent in een kloon van de repository van dit project, met het hier gekozen hulpmiddel, de modus en het model. Alleen je eigen runners die gekoppeld zijn, in dit project zijn toegestaan en de repository ervan aanbieden, worden aangeboden.",
-  "placements.new.agent_new": "Een nieuwe agent",
-  "placements.new.profile": "Het profiel van de nieuwe agent en zijn plaats in het team",
-  "placements.new.briefing": "Briefing (optioneel, Markdown)",
+  "placements.new.legend": "Op een runner",
+  "placements.new.offer": "Op een van mijn runners starten in plaats van met een deelnameregel",
+  "placements.new.not_member": "Alleen een agent die al in dit project zit, of een nieuwe, start op een runner. Kies een nieuwe agent, of laat deze eerst deelnemen met een regel.",
+  "placements.new.placed": "Deze agent draait hier al op een runner: één plaatsing per agent. Zijn rij staat onder Beheerde agents.",
+  "placements.new.not_ready": "Er is nog geen runner met een tool om hem te starten: het runnerdeel zegt waarom.",
   "placements.new.runner": "Runner",
   "placements.new.runner_option": "{name} · {presence} · {running} van {max} agents actief",
   "placements.new.target": "Waar",

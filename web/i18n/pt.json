@@ -200,7 +200,6 @@
   "agents.join.failed": "Não foi possível preparar o ingresso: {reason}",
   "agents.join.none": "Você não está em nenhum projeto em que possa trazer um agente.",
   "agents.join.open": "Ingressar com um agente",
-  "agents.join.any": "Adicionar qualquer agente",
   "agents.join.project": "No projeto",
   "agents.join.reading": "Lendo o projeto…",
   "agents.join_link": "Link de ingresso",
@@ -2348,6 +2347,8 @@
   "mail.day.thu": "quinta-feira",
   "mail.day.tue": "terça-feira",
   "mail.day.wed": "quarta-feira",
+  "mail.field.verification_max_per_hour": "E-mails de confirmação de endereço por hora",
+  "mail.field.invitation_max_per_hour": "E-mails de convite por hora",
   "mail.kind.chat": "Mensagens de chat",
   "mail.kind.inbox": "Solicitações para você",
   "mail.kind.invitation": "Convites para um projeto",
@@ -2400,6 +2401,26 @@
     "one": "{count} e-mail de acesso",
     "other": "{count} e-mails de acesso"
   },
+  "mail.count.verification": {
+    "one": "{count} e-mail de verificação",
+    "other": "{count} e-mails de verificação"
+  },
+  "mail.count.invitation": {
+    "one": "{count} e-mail de convite",
+    "other": "{count} e-mails de convite"
+  },
+  "mail.count.second_factor": {
+    "one": "{count} e-mail do segundo fator",
+    "other": "{count} e-mails do segundo fator"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} e-mail do segundo fator descartado",
+    "other": "{count} e-mails do segundo fator descartados"
+  },
+  "mail.count.waiting": {
+    "one": "{count} e-mail de verificação ou convite em espera",
+    "other": "{count} e-mails de verificação ou convite em espera"
+  },
   "mail.enable": "Ativar e-mail",
   "mail.field.from_address": "Endereço do remetente",
   "mail.field.from_name": "Nome do remetente",
@@ -2407,6 +2428,7 @@
   "mail.field.max_per_hour": "E-mails de notificação por hora",
   "mail.field.port": "Porta SMTP",
   "mail.field.reply_to": "Endereço de resposta",
+  "mail.field.second_factor_max_per_hour": "E-mails do segundo fator por hora",
   "mail.field.security_max_per_hour": "E-mails de segurança por hora",
   "mail.field.sign_in_max_per_hour": "E-mails de acesso por hora",
   "mail.field.tls": "Segurança da conexão",
@@ -2414,6 +2436,7 @@
   "mail.incomplete": "A configuração de e-mail está incompleta: {missing}.",
   "mail.keys": "Chave de assinatura: {signing}. Chave de criptografia da instância: {secret}. As chaves são configuradas no ambiente.",
   "mail.last_hour": "Última hora: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Além disso, na última hora: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Não salvo: {reason}",
   "mail.not_set": "não definida",
   "mail.password.both": "Escolha uma nova senha ou exclua a armazenada, não as duas.",
@@ -3491,13 +3514,13 @@
   "placements.logs": "Logs",
   "placements.logs.copy": "Copiar o comando dos logs",
   "placements.logs.region": "Comando dos logs",
-  "placements.new.open": "Iniciar um agente em um runner",
   "placements.new.reading": "Lendo os runners…",
-  "placements.new.title": "Iniciar um agente em um runner",
   "placements.new.hint": "O runner inicia o agente em um clone do repositório deste projeto, com a ferramenta, o modo e o modelo escolhidos aqui. Só são oferecidos os seus próprios runners emparelhados, permitidos neste projeto e que oferecem o repositório dele.",
-  "placements.new.agent_new": "Um novo agente",
-  "placements.new.profile": "O perfil do novo agente e o seu lugar na equipe",
-  "placements.new.briefing": "Briefing (opcional, Markdown)",
+  "placements.new.legend": "Em um runner",
+  "placements.new.offer": "Iniciá-lo em um dos meus runners em vez de uma linha de ingresso",
+  "placements.new.not_member": "Só um agente que já está neste projeto, ou um novo, inicia em um runner. Escolha um agente novo ou faça este ingressar primeiro com uma linha.",
+  "placements.new.placed": "Este agente já roda em um runner aqui: uma alocação por agente. A linha dele está em Agentes gerenciados.",
+  "placements.new.not_ready": "Ainda não há runner nem ferramenta para iniciá-lo: a parte do runner diz por quê.",
   "placements.new.runner": "Runner",
   "placements.new.runner_option": "{name} · {presence} · {running} de {max} agentes em execução",
   "placements.new.target": "Onde",

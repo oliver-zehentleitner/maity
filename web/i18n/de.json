@@ -200,7 +200,6 @@
   "agents.join.failed": "Der Beitritt konnte nicht vorbereitet werden: {reason}",
   "agents.join.none": "Du bist in keinem Projekt, in das du einen Agent holen könntest.",
   "agents.join.open": "Agent beitreten lassen",
-  "agents.join.any": "Einen beliebigen Agenten hinzufügen",
   "agents.join.project": "In das Projekt",
   "agents.join.reading": "Das Projekt wird gelesen …",
   "agents.join_link": "Beitrittslink",
@@ -2464,6 +2463,8 @@
   "mail.day.thu": "Donnerstag",
   "mail.day.tue": "Dienstag",
   "mail.day.wed": "Mittwoch",
+  "mail.field.verification_max_per_hour": "Mails zur Adressbestätigung pro Stunde",
+  "mail.field.invitation_max_per_hour": "Einladungsmails pro Stunde",
   "mail.kind.chat": "Chat-Nachrichten",
   "mail.kind.inbox": "Anfragen an dich",
   "mail.kind.invitation": "Einladungen in ein Projekt",
@@ -2518,6 +2519,26 @@
     "one": "{count} Anmeldemail",
     "other": "{count} Anmeldemails"
   },
+  "mail.count.verification": {
+    "one": "{count} Bestätigungsmail",
+    "other": "{count} Bestätigungsmails"
+  },
+  "mail.count.invitation": {
+    "one": "{count} Einladungsmail",
+    "other": "{count} Einladungsmails"
+  },
+  "mail.count.second_factor": {
+    "one": "{count} Mail für den zweiten Faktor",
+    "other": "{count} Mails für den zweiten Faktor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} Mail für den zweiten Faktor verworfen",
+    "other": "{count} Mails für den zweiten Faktor verworfen"
+  },
+  "mail.count.waiting": {
+    "one": "{count} Bestätigungs- oder Einladungsmail wartet",
+    "other": "{count} Bestätigungs- oder Einladungsmails warten"
+  },
   "mail.enable": "Mail aktivieren",
   "mail.field.from_address": "Absenderadresse",
   "mail.field.from_name": "Absendername",
@@ -2525,6 +2546,7 @@
   "mail.field.max_per_hour": "Benachrichtigungsmails pro Stunde",
   "mail.field.port": "SMTP-Port",
   "mail.field.reply_to": "Antwortadresse",
+  "mail.field.second_factor_max_per_hour": "Mails für den zweiten Faktor pro Stunde",
   "mail.field.security_max_per_hour": "Sicherheitsmails pro Stunde",
   "mail.field.sign_in_max_per_hour": "Anmeldemails pro Stunde",
   "mail.field.tls": "Verbindungssicherheit",
@@ -2532,6 +2554,7 @@
   "mail.incomplete": "Die Mail-Konfiguration ist unvollständig: {missing}.",
   "mail.keys": "Signaturschlüssel: {signing}. Verschlüsselungsschlüssel der Instanz: {secret}. Schlüssel werden in der Umgebung konfiguriert.",
   "mail.last_hour": "Letzte Stunde: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Außerdem in der letzten Stunde: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Nicht gespeichert: {reason}",
   "mail.not_set": "nicht gesetzt",
   "mail.password.both": "Wähle ein neues Passwort oder lösche das gespeicherte, nicht beides.",
@@ -3626,13 +3649,13 @@
   "placements.logs": "Logs",
   "placements.logs.copy": "Den Logs-Befehl kopieren",
   "placements.logs.region": "Logs-Befehl",
-  "placements.new.open": "Einen Agenten auf einem Runner starten",
   "placements.new.reading": "Die Runner werden gelesen …",
-  "placements.new.title": "Einen Agenten auf einem Runner starten",
   "placements.new.hint": "Der Runner startet den Agenten in einem Klon des Repositorys dieses Projekts, mit dem hier gewählten Werkzeug, Modus und Modell. Angeboten werden nur deine eigenen Runner, die gekoppelt, in diesem Projekt zugelassen sind und sein Repository anbieten.",
-  "placements.new.agent_new": "Ein neuer Agent",
-  "placements.new.profile": "Das Profil des neuen Agenten und sein Platz im Team",
-  "placements.new.briefing": "Briefing (optional, Markdown)",
+  "placements.new.legend": "Auf einem Runner",
+  "placements.new.offer": "Auf einem meiner Runner starten statt mit einer Beitrittszeile",
+  "placements.new.not_member": "Auf einem Runner startet nur ein Agent, der schon in diesem Projekt ist, oder ein neuer. Wähle einen neuen Agenten oder lass diesen zuerst mit einer Zeile beitreten.",
+  "placements.new.placed": "Dieser Agent läuft hier schon auf einem Runner: eine Platzierung je Agent. Seine Zeile steht unter Verwaltete Agenten.",
+  "placements.new.not_ready": "Es gibt noch keinen Runner und kein Werkzeug, um ihn zu starten: Der Teil zum Runner sagt, warum.",
   "placements.new.runner": "Runner",
   "placements.new.runner_option": "{name} · {presence} · {running} von {max} Agenten laufen",
   "placements.new.target": "Wo",
