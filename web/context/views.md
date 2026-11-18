@@ -6627,7 +6627,7 @@ and the e2e step then needs no wait of its own.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10; card tsk-d4anfsk1e94j: the board run measured by ops on 2026-11-12 (done column about 790 cards, its 3 follow-up pages one after another after the first, 546 kB in all), and the owner's choice of a first page of 50 with "Show more" on demand that says how many are loaded, req-aa0jka1xsfsy
+**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10; card tsk-d4anfsk1e94j: the board run measured by ops on 2026-11-12 (done column about 790 cards, its 3 follow-up pages one after another after the first, 546 kB in all), and the owner's choice of a first page of 50 with "Show more" on demand that says how many are loaded, req-aa0jka1xsfsy; the review of #1980 (a superseded page left the button disabled, reproduced in Chromium; the focus taken back from the board search; a refused cursor sent again)
 **See:** views.md#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow — e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7 — as of 2026-11-11
 **See:** https://github.com/oliver-zehentleitner/maity — 7bad4e04-7132-4825-94c5-825301c20800 — as of 2026-11-18
 **Revisit when:** the closed window or the hub's board shape changes, the hub gives a closed column's total, or a full redraw of the board is measured over about 200 ms again
@@ -6639,7 +6639,17 @@ column's own order. Below each, **Show more (N loaded)** reads that column's
 next page of 50 with the cursor the hub handed out and adds it. It is there
 while the hub names a next page, disabled while that page is read, keeps the
 focus (after the last page, which takes it away, the first card that page
-added has it), and a live region says how many are loaded. The column's
+added has it), and a live region says how many are loaded. The focus stays
+on Show more only where the click left it: a reader who moved it while the
+page was read (into the board search, a card's menu) keeps it there. A write
+whose reload is drawn while a page is read supersedes that page, which is
+dropped, and the button is enabled again with the reload's cursor (review of
+#1980). A Show more page the hub refuses as `invalid` (a cursor from before
+a hub release) reads the board again, each closed column from its first
+page, and then the page asked for with the fresh cursor, instead of offering
+the same cursor again: a closed cursor is bound to the list's filter
+fingerprint (hub/src/maity_hub/paging.py, `unclosed`), so the stored one can
+only fail again. A second refusal is said as a failure. The column's
 count is the cards loaded: the hub gives no total. A write that reads the
 board again reads each closed column with as many cards as it held (at most
 200, the hub's page), so it does not fold back what Show more loaded. A
@@ -6673,6 +6683,15 @@ hold no cancelled card until every done card had been read.
   choice removes the chain instead.
 - One page of `done,cancelled` together: the Cancelled column would stay empty
   behind the done cards (above).
+- Offering the stored cursor again after an `invalid` refusal, as after any
+  failed page: it is bound to a fingerprint the hub no longer gives, so every
+  retry fails the same way (review of #1980).
+- Dropping Show more after an `invalid` refusal and asking the reader to
+  reload the page: the board can read the column again itself, keeping the
+  cards loaded.
+- Moving the focus to Show more on every page, wherever it stood (the first
+  version): it took the focus out of the board search or a card's menu the
+  reader had gone to while the page was read (review of #1980).
 
 ## Report is one small button where a reader sees the thing, one inline form for all, and the account's Reports tab is where its outcome shows
 

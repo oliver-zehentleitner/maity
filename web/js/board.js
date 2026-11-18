@@ -1039,7 +1039,41 @@ window.Maity = window.Maity || {};
     const loadedOf = (s) => boardItems.filter((t) => t.status === s).length;
     const moreKey = (s) => "more:" + s;
     const moreButtonOf = (s) => Array.from(columnsBox.querySelectorAll("button")).find((b) => b.getAttribute("data-focus") === moreKey(s)) || null;
-    async function readMore(s) {
+    // Whether the focus is still where the click left it: on this column's Show more (the one clicked,
+    // gone or not, or the one a redraw put in its place), or nowhere, as when the clicked button was
+    // taken away. Anywhere else the reader moved it while the page was read, and it stays there.
+    const focusOnMore = (s, clicked) => {
+      const at = document.activeElement;
+      return !at || at === document.body || at === document.documentElement || at === clicked
+        || (!!at.getAttribute && at.getAttribute("data-focus") === moreKey(s));
+    };
+    // The page read, or the column read again: the focus stays on Show more; on the last page, which
+    // takes the button away, it goes to the first card the page added, or to the status line. Where the
+    // reader moved the focus meanwhile, it stays.
+    function moreShown(s, ours, added) {
+      if (ours) {
+        const stays = moreButtonOf(s);
+        const first = added.length ? Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === added[0].id) : null;
+        const title = first && first.querySelector("a.card-open");
+        if (stays) stays.focus();
+        else if (title || first) (title || first).focus();
+        else status.el.focus();
+      }
+      closedStatus.textContent = M.t("board.closed.more_loaded", { count: loadedOf(s) });
+    }
+    // Taken before a draw: puts back after it the focus the reader moved away from Show more, and an
+    // open menu's item.
+    const keepFocus = (ours) => {
+      const back = ours ? null : focusSpot();
+      const menuBack = openMenuSpot();
+      return () => {
+        if (back) back();
+        if (menuBack) menuBack();
+      };
+    };
+    // again: the column was read again from its first page after the hub refused the cursor; a second
+    // refusal is said as a failure, not read again once more.
+    async function readMore(s, again) {
       const cursor = closedNext[s];
       if (!cursor || closedBusy.has(s)) return;
       closedBusy.add(s);
@@ -1047,35 +1081,55 @@ window.Maity = window.Maity || {};
       if (button) button.disabled = true;
       // A reload that starts meanwhile reads the column again and supersedes this page.
       const read = reads;
+      // Settled on every way out: a reload drawn meanwhile drew the button disabled (closedBusy), by
+      // its attribute.
+      const settle = () => {
+        closedBusy.delete(s);
+        const now = moreButtonOf(s);
+        if (now) { now.disabled = false; now.removeAttribute("disabled"); }
+      };
       let page;
       try {
         page = await M.api.get(closedPath(s, CLOSED_PAGE) + "&cursor=" + encodeURIComponent(cursor));
       } catch (err) {
-        closedBusy.delete(s);
-        const again = moreButtonOf(s);
-        if (again) again.disabled = false;
+        // A closed cursor is bound to the list's filters (the hub's fingerprint), so one from before a
+        // hub release is refused as invalid and would be refused again: the board is read again, each
+        // closed column from its first page with as many cards as it held, and the page asked for is
+        // read with the fresh cursor; the button stays disabled meanwhile. A reload started meanwhile
+        // already reads them so.
+        const refused = err && err.code === "invalid" && err.details && err.details.fields && err.details.fields.cursor;
+        if (refused && !again && read === reads && closedNext[s] === cursor) {
+          const restore = keepFocus(focusOnMore(s, button));
+          try {
+            await reload();
+          } catch (failed) {
+            settle();
+            restore();
+            status.fail(M.t("board.closed.more_failed"), failed);
+            return;
+          }
+          settle();
+          restore();
+          if (closedNext[s] && !hubResults) return readMore(s, true);
+          moreShown(s, focusOnMore(s, button), []);
+          return;
+        }
+        settle();
         status.fail(M.t("board.closed.more_failed"), err);
         return;
       }
-      closedBusy.delete(s);
+      settle();
       if (read !== reads || closedNext[s] !== cursor) return;
       const known = new Set(boardItems.map((t) => t.id));
       const added = page.items.filter((t) => !known.has(t.id));
       boardItems = boardItems.concat(added);
       closedNext = { ...closedNext, [s]: page.next_cursor || null };
       if (!hubResults) items = boardItems;
-      const menuBack = openMenuSpot();
+      const ours = focusOnMore(s, button);
+      const restore = keepFocus(ours);
       draw(true);
-      if (menuBack) menuBack();
-      // The focus stays on Show more; on the last page, which takes the button away, it goes to the
-      // first card the page added, or to the status line.
-      const stays = moreButtonOf(s);
-      const first = added.length ? Array.from(columnsBox.querySelectorAll("article.card")).find((a) => a.getAttribute("data-card") === added[0].id) : null;
-      const title = first && first.querySelector("a.card-open");
-      if (stays) stays.focus();
-      else if (title || first) (title || first).focus();
-      else status.el.focus();
-      closedStatus.textContent = M.t("board.closed.more_loaded", { count: loadedOf(s) });
+      restore();
+      moreShown(s, ours, added);
     }
     // A hub search's Show more draws the column whole; the first card it adds takes the focus, the button being gone.
     function moreButton(s, cards) {

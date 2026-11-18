@@ -5889,17 +5889,24 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       closed_at: new Date(smNow - (i + 1) * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"), updated_at: smBase.updated_at, parent: null, depends_on: [], related: [] }));
     const smAsked = [];
     let smHold = null;
+    // The hub's release (smEpoch): a cursor handed out before it is refused as invalid, as the hub
+    // refuses one whose filter fingerprint no longer matches (paging.unclosed).
+    let smEpoch = 0;
     win.Maity.api.get = async (p) => {
       // Nothing changed while the board was read: earlier cases' writes stay out of the column.
       if (/^\/projects\/maintainer\/maity\/tasks\?.*order=updated/.test(p)) return { items: [], next_cursor: null };
       if (!/^\/projects\/maintainer\/maity\/tasks\?status=done&closed_after=/.test(p)) return smGet(p);
       const q = new URLSearchParams(p.split("?")[1]);
       smAsked.push({ limit: q.get("limit"), cursor: q.get("cursor") });
-      if (smHold) await new Promise((res) => { smHold = res; });
-      const from = q.get("cursor") ? Number(q.get("cursor").slice(4)) + 1 : 0;
+      if (smHold && q.get("cursor")) await new Promise((res) => { smHold = res; });
+      const at = /^pos-(\d+)(?:\.e(\d+))?$/.exec(q.get("cursor") || "");
+      if (q.get("cursor") && (!at || Number(at[2] || 0) !== smEpoch)) {
+        throw new win.Maity.api.ApiError("not a cursor of this list", 400, p, "invalid", { fields: { cursor: "invalid" } });
+      }
+      const from = at ? Number(at[1]) + 1 : 0;
       const limit = Number(q.get("limit"));
       const items = smRows.slice(from, from + limit);
-      return { items, next_cursor: from + limit < smRows.length ? "pos-" + (from + limit - 1) : null };
+      return { items, next_cursor: from + limit < smRows.length ? "pos-" + (from + limit - 1) + (smEpoch ? ".e" + smEpoch : "") : null };
     };
     const smColumn = () => main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === "done");
     const smCards = () => smColumn().querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
@@ -5942,6 +5949,58 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const smFailed = [smCards().length, smMore() && text(smMore()), smOff(smMore()), text(main.querySelector(".send-status.failed") || main)];
     expect(smFailed[0] === 50 && smFailed[1] === "Show more (50 loaded)" && !smFailed[2] && smFailed[3].includes("More closed cards could not be read: hub unreachable"),
       "board: a failed Show more says so and can be tried again " + JSON.stringify(smFailed));
+    win.Maity.api.get = smGetOk;
+    // A write's reload (a Place arrow; its write answered here without changing the fixture) reads the board
+    // again; the board drawn by it has the closed column's Show more disabled while its page is read.
+    const smPost = win.Maity.api.post;
+    win.Maity.api.post = (p, b) => (/\/tasks\/[^/]+\/move$/.test(p) ? Promise.resolve({}) : smPost(p, b));
+    const smArrow = () => main.querySelectorAll("button").find((b) => /^order:/.test(b.getAttribute("data-focus") || "") && b.attrs.disabled === undefined);
+    const smFresh = async () => { await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 12; k++) await tick(); smAsked.length = 0; };
+    // A write whose reload is drawn while Show more's page is read (review of #1980): the page, superseded,
+    // is dropped, and the redrawn button is enabled again, reading from the reload's cursor.
+    await smFresh();
+    smHold = true;
+    smMore().focus();
+    smMore().dispatch("click"); for (let k = 0; k < 2; k++) await tick();
+    smArrow().click(); for (let k = 0; k < 10; k++) await tick();
+    const smMidReload = [smOff(smMore()), smAsked.map((a) => a.cursor + "/" + a.limit)];
+    const smLate = smHold; smHold = null; smLate(); for (let k = 0; k < 6; k++) await tick();
+    const smOverlap = { midOff: smMidReload[0], asked: smMidReload[1], drawn: smCards().length, button: smMore() && text(smMore()), off: smOff(smMore()) };
+    smMore().dispatch("click"); for (let k = 0; k < 6; k++) await tick();
+    smOverlap.again = smCards().length;
+    expect(smOverlap.midOff && JSON.stringify(smOverlap.asked) === JSON.stringify(["pos-49/50", "null/50"]) && smOverlap.drawn === 50
+      && smOverlap.button === "Show more (50 loaded)" && !smOverlap.off && smOverlap.again === 100 && smAsked[smAsked.length - 1].cursor === "pos-49",
+      "board: a write's reload drawn while Show more's page is read leaves the button enabled once that page answers " + JSON.stringify(smOverlap));
+    // The reader moved the focus while the page was read (review of #1980): it stays where they put it.
+    await smFresh();
+    smHold = true;
+    smMore().focus();
+    smMore().dispatch("click"); for (let k = 0; k < 2; k++) await tick();
+    byId("board-search").focus();
+    const smGo = smHold; smHold = null; smGo(); for (let k = 0; k < 6; k++) await tick();
+    const smMoved = [smCards().length, document.activeElement === byId("board-search"), smLive() && text(smLive())];
+    expect(smMoved[0] === 100 && smMoved[1] && smMoved[2] === "100 closed cards loaded",
+      "board: Show more's page leaves the focus where the reader moved it meanwhile " + JSON.stringify(smMoved));
+    // A cursor from before a hub release, refused as invalid (review of #1980): the column is read again
+    // from its first page and the page asked for is read with the fresh cursor, not the dead one again.
+    await smFresh();
+    smEpoch = 1;
+    smMore().focus();
+    smMore().dispatch("click"); for (let k = 0; k < 16; k++) await tick();
+    const smRestart = { asked: smAsked.map((a) => a.cursor + "/" + a.limit), drawn: smCards().length, button: smMore() && text(smMore()), off: smOff(smMore()),
+      focus: document.activeElement === smMore(), failed: !!main.querySelector(".send-status.failed"), live: smLive() && text(smLive()) };
+    smEpoch = 0;
+    expect(JSON.stringify(smRestart.asked) === JSON.stringify(["pos-49/50", "null/50", "pos-49.e1/50"]) && smRestart.drawn === 100
+      && smRestart.button === "Show more (100 loaded)" && !smRestart.off && smRestart.focus && !smRestart.failed && smRestart.live === "100 closed cards loaded",
+      "board: a Show more cursor refused as invalid reads the column again from its first page, then the page with the fresh cursor " + JSON.stringify(smRestart));
+    // A write after Show more reads the column with as many cards as it held, so nothing loaded folds back.
+    await smFresh();
+    smMore().dispatch("click"); for (let k = 0; k < 6; k++) await tick();
+    smArrow().click(); for (let k = 0; k < 10; k++) await tick();
+    const smKept = { asked: smAsked.map((a) => a.cursor + "/" + a.limit), drawn: smCards().length, button: smMore() && text(smMore()) };
+    expect(JSON.stringify(smKept.asked) === JSON.stringify(["pos-49/50", "null/100"]) && smKept.drawn === 100 && smKept.button === "Show more (100 loaded)",
+      "board: a write's reload after Show more keeps the closed cards loaded " + JSON.stringify(smKept));
+    win.Maity.api.post = smPost;
     smProto.focus = smFocus; document.activeElement = undefined;
     win.Maity.api.get = smGet;
     await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
