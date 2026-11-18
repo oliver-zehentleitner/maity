@@ -162,7 +162,7 @@ models = ["<provider>/<model>"]
 default_model = "<provider>/<model>"
 ```
 
-**Models.** opencode runs **Grok**. opencode names a model as `<provider>/<model>` (its own model selector), so name the Grok model that way under `models` — the provider and Grok model id your account uses — and set `default_model` to the one a placement uses when it names none; `maity runner check` refuses a `default_model` that is not in `models`. The value passes through to `opencode --model`.
+**Models.** opencode runs **Grok**. opencode names a model as `<provider>/<model>` (its own model selector), so name the Grok model that way under `models` — the provider and Grok model id your account uses — and set `default_model` to the one a placement uses when it names none; `maity runner check` refuses a `default_model` that is not in `models`. The value passes through to `opencode --model`. A placement that names no `model` starts on `default_model`; the start log names the model in effect. The runner **fails closed on the model**: if the effective model (the placement's, or `default_model`) is not one of the configured `models`, the start is refused (`failed`, `harness_refused`) instead of launching. A provider-`opencode` model is opencode-hosted, so running one — including the free default opencode would pick with no `--model` — would send the clone's conversation to opencode's servers rather than to the provider you configured.
 
 **Modes.** `supervised` runs `opencode run` on each event and continues the same conversation with `--continue`. `interactive` runs `opencode --prompt` with the start prompt in the tmux pane. opencode's exit code for a provider limit is not known yet, so a limit ends a run like any other failure.
 
