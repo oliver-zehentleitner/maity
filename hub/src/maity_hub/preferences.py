@@ -31,7 +31,8 @@ KIND = "preferences"
 
 
 def size(text: str) -> int:
-    return len(text.encode())
+    # `surrogatepass`: a lone surrogate (Cs) is counted here and refused by `plain` in `check`.
+    return len(text.encode("utf-8", "surrogatepass"))
 
 
 def check(text: str) -> None:

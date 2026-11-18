@@ -145,6 +145,18 @@ def test_an_owner_issues_one_and_its_url_is_shown_once(
     assert created.audience == [f"member:{owner.id}"]
 
 
+def test_a_note_with_a_lone_surrogate_is_a_control_character(owner: flow.Human) -> None:
+    # The escape is JSON text: the test client cannot send a lone surrogate as a str.
+    raw = '{"note": "a\\ud800b", "trust": "member", "role": "coder"}'
+    refused = owner.client.post(
+        f"/api/v1{PATH}",
+        content=raw,
+        headers={"X-CSRF-Token": owner.csrf, "Content-Type": "application/json"},
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"note": "control_character"}
+
+
 def test_what_issuing_refuses(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

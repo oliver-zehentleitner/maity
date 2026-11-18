@@ -66,10 +66,11 @@ def _check(body: InvitationIn) -> None:
         errors["address"] = "invalid"
     if not invitations.TTL_MIN <= body.ttl_seconds <= invitations.TTL_MAX:
         errors["ttl_seconds"] = "out_of_range"
-    if body.note is not None and len(body.note.encode()) > invitations.NOTE_MAX:
-        errors["note"] = "invalid"
-    elif body.note is not None and not plain(body.note, keep="\n\t"):
+    # The character check first: a lone surrogate (Cs) cannot be encoded for the size.
+    if body.note is not None and not plain(body.note, keep="\n\t"):
         errors["note"] = "control_character"  # several lines, plain text (§1.7.1)
+    elif body.note is not None and len(body.note.encode()) > invitations.NOTE_MAX:
+        errors["note"] = "invalid"
     if errors:
         raise invalid(errors)
 

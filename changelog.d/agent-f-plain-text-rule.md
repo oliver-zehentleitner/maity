@@ -31,3 +31,9 @@
 - web: the invitation page shows the inviter as "display name (@handle)"
   and sets the project's and the inviter's names apart from the sentence
   around them.
+
+### Fixed
+
+- hub: an invitation's note holding a lone surrogate (a JSON `\ud800`
+  escape) is refused with `control_character` (400) instead of failing
+  with a server error.
