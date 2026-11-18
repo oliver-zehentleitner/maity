@@ -110,8 +110,8 @@ class ReadCounter:
 
 COUNTER = ReadCounter()
 
-# The instance's value per environment value (one per app; tests build several): (until, limit).
-_cached: dict[object, tuple[float, int | None]] = {}
+# The admin's value or the default, as (until, limit), while the environment sets none.
+_cached: list[tuple[float, int | None] | None] = [None]
 _cache_lock = threading.Lock()
 _tag_key: list[bytes] = [secrets.token_bytes(32)]
 
@@ -134,21 +134,21 @@ def instance_value(conn: Connection, env_value: object) -> int | None:
         return None if env_value == limits.UNLIMITED else int(str(env_value))
     now = clock.now().timestamp()
     with _cache_lock:
-        cached = _cached.get(env_value)
+        cached = _cached[0]
     if cached is not None and cached[0] > now:
         return cached[1]
     name = f"limits.{limits.READS}"
     value = store.effective(name, None, store.stored(conn, "limits"))[0]
     found = None if value == limits.UNLIMITED else int(value)
     with _cache_lock:
-        _cached[env_value] = (now + CACHE_SECONDS, found)
+        _cached[0] = (now + CACHE_SECONDS, found)
     return found
 
 
 def forget_instance_value() -> None:
     """The instance admin changed the value: the next read reads it again."""
     with _cache_lock:
-        _cached.clear()
+        _cached[0] = None
 
 
 def counts(method: str, raw_path: bytes) -> bool:

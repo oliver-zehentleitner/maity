@@ -206,7 +206,9 @@ def test_a_refused_read_writes_nothing(
     _reads(client, agent, 1)  # the last read that fits writes all four
     assert all(value != old for value in written()), written()
     age()
-    _refused(_get(client, agent))
+    refused, sent = _session_updates(migrated, lambda: _get(client, agent))
+    _refused(refused)
+    assert sent == []  # not even an update the refusal rolls back
     assert written() == (old, old, old, old)  # no last use, presence, session or lease
 
 
@@ -295,7 +297,11 @@ def test_a_runners_reads_count_and_a_refused_one_writes_nothing(
             .values(last_used_at=old)
         )
         conn.execute(update(t.runner).where(t.runner.c.id == runner.id).values(last_seen_at=old))
-    _refused(call(client, runner, "GET", f"{API}/runner/placements"))
+    refused, sent = _session_updates(
+        migrated, lambda: call(client, runner, "GET", f"{API}/runner/placements")
+    )
+    _refused(refused)
+    assert sent == []
     with migrated.connect() as conn:
         used = conn.execute(
             select(t.runner_credential.c.last_used_at).where(
