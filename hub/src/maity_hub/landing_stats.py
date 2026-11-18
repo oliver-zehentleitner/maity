@@ -23,10 +23,9 @@ from sqlalchemy import Connection, func, select
 
 from maity_hub import clock, instance_counts, public_projects
 from maity_hub import tables as t
-from maity_hub.seen import SEEN_EVERY
+from maity_hub.seen import ONLINE, SEEN_EVERY
 
 TTL = timedelta(minutes=5)
-ONLINE = timedelta(seconds=120)
 WEEK = timedelta(days=7)
 
 _lock = threading.Lock()
