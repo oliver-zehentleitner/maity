@@ -720,10 +720,6 @@ def list_tasks(
             if q is not None
             else None
         )
-
-        def listed(card_id: str) -> bool:
-            return search is None or bool(search.keep([card_id]))
-
         if order == "board":
             # The board's order (§6.4) is not one the database keeps: the keys are sorted
             # here, a project's cards at a time, and paged after the last item shown.
@@ -732,7 +728,7 @@ def list_tasks(
 
             ordered = sorted(conn.execute(query).all(), key=key)
             if cursor is not None:
-                ordered = _after(ordered, *paging.unkey(cursor, bound), key, listed)
+                ordered = _after(ordered, *paging.unkey(cursor, bound), key)
             taken = _take(_batches(ordered, limit), limit + 1, search)
             shown = taken[:limit]
             following = None
@@ -866,7 +862,6 @@ def _after(
     following: tuple[str, tuple[Any, ...]],
     shown: frozenset[str],
     key: Callable[[Any], tuple[Any, ...]],
-    listed: Callable[[str], bool],
 ) -> list[Any]:
     """The cards after the ones a page showed, never ending early while a card that did
     not move is still unshown. A move ranks unranked cards on the way and spreads a column
@@ -874,15 +869,16 @@ def _after(
     the page goes on after the last card shown where it still sits in its column; else
     from the first card not shown, if it has not moved at all (same key); else from the
     top of the last card's column again, without the cards this page showed. `ordered`
-    holds every card of the filters; `listed` says whether a search still finds one."""
+    holds every card of the filters, a search's hits and the rest: a search keeps its
+    place through a card that stopped matching, and finds one that began to."""
     places = {row.id: i for i, row in enumerate(ordered)}
     anchor_id, was = anchor
     at = places.get(anchor_id)
-    if at is not None and key(ordered[at])[0] == was[0] and listed(anchor_id):
+    if at is not None and key(ordered[at])[0] == was[0]:
         return ordered[at + 1 :]
     following_id, next_was = following
     at = places.get(following_id)
-    if at is not None and key(ordered[at]) == next_was and listed(following_id):
+    if at is not None and key(ordered[at]) == next_was:
         return ordered[at:]
     try:
         return [r for r in ordered if key(r)[0] >= was[0] and r.id not in shown]
