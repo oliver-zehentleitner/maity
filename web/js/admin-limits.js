@@ -46,7 +46,7 @@ window.Maity = window.Maity || {};
   ];
   const SOURCES = { default: () => M.t("limits.source.default"), admin: () => M.t("limits.source.admin"), env: () => M.t("limits.source.env") };
   const sourceOf = (s) => (Object.hasOwn(SOURCES, s) ? SOURCES[s]() : s);
-  const REASONS = { invalid: () => M.t("limits.error.invalid"), set_by_environment: () => M.t("limits.error.env"),
+  const REASONS = { out_of_range: () => M.t("limits.error.invalid"), invalid: () => M.t("limits.error.invalid"), set_by_environment: () => M.t("limits.error.env"),
     read_only: () => M.t("limits.error.read_only"), extra_forbidden: () => M.t("limits.error.unknown") };
 
   async function section(ctx, root) {
@@ -138,7 +138,9 @@ window.Maity = window.Maity || {};
               formStatus.done();
               atField.forEach((p) => {
                 const why = fields[p.f.key];
-                p.error.textContent = why === "invalid" ? p.f.invalid() : Object.hasOwn(REASONS, why) ? REASONS[why]() : why;
+                // `out_of_range` since the limits of one project or account (§16.5.1); `invalid` is
+                // what a hub before that answers, read too for one release.
+                p.error.textContent = why === "out_of_range" || why === "invalid" ? p.f.invalid() : Object.hasOwn(REASONS, why) ? REASONS[why]() : why;
               });
               return;
             }
