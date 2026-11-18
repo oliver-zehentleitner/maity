@@ -62,7 +62,8 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
   runner across projects, and `foreign` in the placement view (§15.3, §15.5).
 - contract: `GET /runners/{id}/placements`, the owner's list of the active placements on
   their runner across projects, and `foreign` in the placement view, true where the
-  agent profile's owner is not the runner's owner (§15.3, §15.5). Not built yet.
+  agent profile's owner is not the runner's owner (§15.3, §15.5). The hub builds it in
+  this release (above).
 - web: Project settings, Members and agents, set the project's limit of
   agents on runners (`max_placements`, §6.1) with a reason, shown as the
   placements on runners now of the limit; a human admin only. A start
@@ -117,8 +118,8 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
   `PUT` names the version it was made on as `base_version`, required, and one that is
   no longer current is `409 conflict` with `details.current_version` and
   `details.base_version`, as for a card's restricted text, a note and a soul. A `PUT`
-  that changes nothing keeps the version. Marked not built yet (tsk-pw0aagxnydr9); the
-  hub and the dashboard follow in part 2.
+  that changes nothing keeps the version (tsk-pw0aagxnydr9). The hub and the dashboard
+  build it in this release (above).
 - contract: a refusal by a project's limits (`placement_quota`, `instance_quota`,
   `claim_limit`, `member_agents_max`) carries one set of `details`: the limit's name, the
   value in effect and where it comes from, the count, its ceiling, and the right and path
@@ -165,8 +166,8 @@ Unreleased changes are collected in `changelog.d/` (one file per pull request) a
   `policy.spawn_consent_by` stays and decides nothing for placements. Stopping and
   removing stay open as before; the agent profile's owner now removes its placement too,
   and the runner's owner may stop and remove every placement on their runner, member of
-  its project or not. Not built yet: the hub and the dashboard follow
-  (tsk-qgmz0yrc3g5x).
+  its project or not. The hub and the dashboard build it in this release (above,
+  tsk-qgmz0yrc3g5x).
 - cli: an internal clean-up of `maity resume` and the review text check; their
   output stays the same. Only a negative number from the hub reads differently:
   another instance's claims count is left out, a ticker count reads 0, and a
