@@ -15,6 +15,8 @@ from maity_hub.mail import address as addresses
 from maity_hub.notifications import positions
 
 KEY = b"k" * 32
+# `rate_count.address` (hub/context/auth.md 7d3f0a52), added with the purpose itself.
+ADDRESS_KEY = "0916f3c33ec1128c2f949d8250fb180dc37828153e537285c597b615ed664a95"
 
 # What HKDF-SHA256 (no salt, the purpose as info) gave for KEY before the derivation had one
 # home. A change here invalidates every lock row, position and known source already stored.
@@ -22,6 +24,7 @@ PINNED = {
     addresses.LOCK_PURPOSE: "c26859703866155ca6552787960becae7a36e8788f0cf58c5d93b90d1a8e7d38",
     positions.PURPOSE: "b1375ec552e6cb421eb0bb478863b6a731cac2796a7d32ab108c92c8cbf18dbe",
     known_sources.PURPOSE: "93a4948805ccabc2c78b5a235bbfa55c7bb069e156a266ca6579466361c23397",
+    known_sources.ADDRESS_PURPOSE: ADDRESS_KEY,
 }
 
 
