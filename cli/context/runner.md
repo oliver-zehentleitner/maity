@@ -2982,8 +2982,10 @@ do, and hid that the cause was the shape of its own command.
 **Rejected alternatives:**
 - Making the credential readable inside the sandbox: repository code an
   allowed build or test command runs could then read it (ea36c196).
-- Rewriting the agent's command in a hook: hooks are switched off for
-  placements (`--setting-sources user`), and the harness owns the command.
+- Rewriting the agent's command in a hook: the harness owns the command.
+  Hooks do run in a sandboxed placement, but the runner's own hook only
+  refuses a line that is more than one plain `maity` call (63492c65); it
+  does not rewrite it.
 
 ## A placed Claude Code agent's `maity` line is one plain call, held to that by a hook
 
