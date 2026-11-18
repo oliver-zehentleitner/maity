@@ -16,17 +16,21 @@ alone is no text, since the rendered page shows nothing there.
 
 The page is read as CommonMark reads it, as far as headings and text go: a
 byte order mark at the start is dropped; a fenced code block opens with three
-or more backticks or tildes indented by at most three spaces and closes only
-with a run of the same character at least as long, indented at least as far
-as the opening one (an unclosed one runs to the end); a heading or an HTML
-comment inside it is code, not structure. A line indented by four columns or
-more (spaces, a tab counting to the next multiple of four) is an indented code
-block unless it continues paragraph text (the line before is a non-blank text
-line); code opens no fence and is no heading, and its content, comments too,
+or more backticks or tildes at the start of the line and closes only with a
+run of the same character at least as long (an unclosed one runs to the end);
+a heading or an HTML comment inside it is code, not structure. A fence line
+with one to three leading spaces makes the whole file refused ("write code
+fences at the start of the line"), wherever it stands: in a list item, inside
+a fence or inside a comment too. That check is a plain scan of the lines, with
+no fence or comment state: fail-closed by construction, and the repository has
+no such fence. A line indented by four columns or more (spaces, a tab
+counting to the next multiple of four) is an indented code block unless it
+continues paragraph text (the line before is a non-blank text line); code
+opens no fence and is no heading, and its content, comments too,
 counts as text. An HTML comment that starts a line opens a block up to its
 `-->` (or the end), and a heading inside it is no heading. Not followed: list
-items, so a line indented four columns inside one is read as code, a fence
-there too.
+items, so a line indented four columns inside one is read as code, and a fence
+indented inside one makes the file refused.
 
 `check` (ci, every pull request): the hub's version is the one in
 hub/pyproject.toml. Once CHANGELOG.md has that version's section (the release
@@ -44,18 +48,17 @@ is the page's file name, with an optional `./` in front, an optional
 `#fragment` after, optionally inside `<...>`, so
 `- [0.1.0a9](<./0.1.0a9.md#top>)` names 0.1.0a9.md; dest has no backtick
 either. A line in a fenced or indented code block or in an HTML comment block
-does not count; a comment opened inside a line hides no later line. Nothing else counts: no reference link, no link
-inside a paragraph, no image. The grammar is one pattern, not a parser: a list
-line inside an HTML block other than a comment (a `<div>`) still counts, though
-CommonMark shows it as raw HTML; any form the rule does not know is refused.
-Two known edges fail closed, on purpose: (1) a listing line right after a list
-item that opened a fence or a comment is refused, though CommonMark ends that
-fence or comment with the list item and shows the link; (2) a fence opened
-with leading spaces closes only on a fence indented at least as far, so one
-closed at column 0 (which CommonMark accepts) hides the rest of the file, its
-listing lines and headings too. For the README, the error message names the
-plain line `- [version](version.md)` to add; on a version page, a section so
-hidden is reported missing. Standard library only.
+does not count; a comment opened inside a line hides no later line. Nothing
+else counts: no reference link, no link inside a paragraph, no image. The
+grammar is one pattern, not a parser: a list line inside an HTML block other
+than a comment (a `<div>`) still counts, though CommonMark shows it as raw
+HTML; any form the rule does not know is refused. A known edge fails closed,
+on purpose: a listing line right after a list item that opened a comment on
+an indented line is refused, though CommonMark ends that comment with the list item and shows the
+link (a list item whose fence goes on to an indented line is refused by the
+fence rule). For the README, the error message names the plain line
+`- [version](version.md)` to add; on a version page, a section so hidden is
+reported missing. Standard library only.
 """
 
 from __future__ import annotations
@@ -78,6 +81,8 @@ VERSION = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 HEADING = re.compile(r"^ {0,3}## (.*)$")
 ATX = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+# A fence line with leading spaces, anywhere in the file: it makes the file refused.
+INDENTED_FENCE = re.compile(r"^ {1,3}(`{3,}|~{3,})")
 COMMENT_START = re.compile(r"^ {0,3}<!--")
 # An HTML comment, or an unclosed one up to the end of the section.
 COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
@@ -111,7 +116,11 @@ def problems(root: Path, version: str) -> list[str]:
             f"{name} is missing: every hub release has an upgrade page"
             " (docs/upgrade/README.md has the template)"
         ]
-    headings, bodies = sections(path.read_text(encoding="utf-8-sig"))
+    text = path.read_text(encoding="utf-8-sig")
+    fences = indented_fences(name, text)
+    if fences:
+        return fences
+    headings, bodies = sections(text)
     found = [h for h in headings if h in SECTIONS]
     out = []
     missing = [s for s in SECTIONS if s not in found]
@@ -123,6 +132,17 @@ def problems(root: Path, version: str) -> list[str]:
         if section in bodies and not has_text(*bodies[section]):
             out.append(f"{name}: '## {section}' is empty (write 'Nothing.' if nothing applies)")
     return out
+
+
+def indented_fences(name: str, text: str) -> list[str]:
+    """One error per line that is a fence line with 1-3 leading spaces, wherever it stands
+    (in a list item, a fence or a comment too): such a line makes the whole file refused.
+    A plain line scan, no fence or comment state; the module's docstring has the reason."""
+    return [
+        f"{name}:{number}: write code fences at the start of the line"
+        for number, line in enumerate(text.splitlines(), start=1)
+        if INDENTED_FENCE.match(line)
+    ]
 
 
 def indent(line: str) -> int:
@@ -145,7 +165,6 @@ def lines(text: str) -> list[tuple[str, str]]:
     The module's docstring has the rules."""
     out: list[tuple[str, str]] = []
     fence: str | None = None  # the opening run of the open fence
-    fence_indent = 0  # the open fence's leading spaces
     comment = False
     paragraph = False  # the line before is paragraph text, which an indented line continues
     for line in text.splitlines():
@@ -156,7 +175,6 @@ def lines(text: str) -> list[tuple[str, str]]:
                 and closing.group(1)[0] == fence[0]
                 and len(closing.group(1)) >= len(fence)
                 and not closing.group(2).strip(" \t")
-                and indent(line) >= fence_indent  # a fence opened indented closes only as far in
             ):
                 # A fence line is no text of its own: an empty code block leaves a section empty.
                 fence = None
@@ -177,7 +195,6 @@ def lines(text: str) -> list[tuple[str, str]]:
         opening = FENCE.match(line)
         if opening and not (opening.group(1)[0] == "`" and "`" in opening.group(2)):
             fence = opening.group(1)
-            fence_indent = indent(line)
             paragraph = False
             continue
         heading = HEADING.match(line)
@@ -231,7 +248,11 @@ def unlisted(root: Path) -> list[str]:
     """The version pages in docs/upgrade/ that docs/upgrade/README.md does not link."""
     folder = root / "docs" / "upgrade"
     readme = folder / "README.md"
-    linked = links(readme.read_text(encoding="utf-8-sig")) if readme.is_file() else set()
+    text = readme.read_text(encoding="utf-8-sig") if readme.is_file() else ""
+    fences = indented_fences("docs/upgrade/README.md", text)
+    if fences:
+        return fences
+    linked = links(text)
     return [
         f"docs/upgrade/README.md does not link {page.name}: add the list line"
         f' "- [{page.stem}]({page.name})" to docs/upgrade/README.md (only such a line counts)'

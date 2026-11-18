@@ -2761,11 +2761,10 @@ follow-ups of the review of #1846, card tsk-tzknz9zzy1m2.) The check reads a
 page as CommonMark does for what it counts, since GitHub and the docs site
 render it that way and a page that renders right must not be refused, nor a
 heading the reader cannot see accepted. A byte order mark is dropped. A fence
-is three or more backticks or tildes indented by at most three spaces (a
-backtick fence's info string has no backtick); it closes only with a run of
-the same character at least as long, indented at least as far as the opening
-one, and an unclosed one runs to the end. A
-line indented by four columns or more (a tab counts to the next four) is an
+is three or more backticks or tildes at the start of the line (a backtick
+fence's info string has no backtick); it closes only with a run of the same
+character at least as long, and an unclosed one runs to the end. A line
+indented by four columns or more (a tab counts to the next four) is an
 indented code block unless it continues paragraph text: it is no fence and no
 heading, and it counts as text, comments in it too, as a code block with
 content does; list items are not followed, so such a line in one is code. A
@@ -2801,15 +2800,22 @@ since the release pull request has passed ci. Listing each version in
 navigation by one entry per release. Review round 4 (A1420) showed a list
 item's own fence or comment (an item `- ~~~` with an indented list line under
 it) faking a list line that CommonMark shows as code, so the list line now
-starts at column 0. A fence opened with leading spaces closes only on a fence
-indented at least as far: otherwise a fence inside a list item, closed at
-column 0, let the list lines after it count, though CommonMark opens a new
-code block there that runs to the end. Two edges then fail closed, on
-purpose: a list line right after a list item that opened a fence or comment
-is refused, though CommonMark ends both with the item and shows the link; and
-a top-level fence opened with leading spaces and closed at column 0 hides the
-rest of the file, which CommonMark shows. The error names the line to add, or
-the section reported missing. Reason (lead, 2026-11-18): a refusal of a
-correct but odd README costs one edit; a parser costs a review round each
-time; fail closed beats fail open. Rejected: following list items (their
-indent and where they end), built and dropped as round 4's option A.
+starts at column 0. A fence line with one to three leading spaces makes the
+README or version page refused as a whole ("write code fences at the start of
+the line", with the line's number), wherever it stands: in a list item, inside
+a fence or inside a comment too. The check is a plain scan of the lines, with
+no fence or comment state. Reason (lead, round 5): CommonMark's closing rules
+for indented fences cannot be followed by a few patterns without failing
+open: round 4's rule (an indented fence closes only on one indented at least
+as far) let a re-opened fence, an empty code block and a hidden duplicate
+heading pass (A1435); the scan is fail-closed by construction, the repository
+has no such fence, and a refusal costs one edit. Rejected: following
+CommonMark's fence-indent closing (round 4, failed open per A1435), and
+refusing only a less-indented closer (still needs fence state). One edge
+fails closed, on purpose: a list line right after a list item that opened a
+comment on an indented line is refused, though CommonMark ends the comment
+with the item and shows the link. The error names the line to add, or the
+section reported missing. Reason (lead, 2026-11-18): a refusal of a correct
+but odd README costs one edit; a parser costs a review round each time; fail
+closed beats fail open. Rejected: following list items (their indent and
+where they end), built and dropped as round 4's option A.

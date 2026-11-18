@@ -154,21 +154,54 @@ class Problems(unittest.TestCase):
             (found,) = u.problems(root, "0.1.0a9")
             self.assertIn("'## The way back' is empty", found)
 
-    def test_an_indented_fence_counts_up_to_three_spaces(self):
-        page = FULL.replace("## The way back\n\nNothing.\n", "   ```\n## The way back\n   ```\n")
+    def fences(self, page, *numbers):
+        """The page is refused as a whole, with one error per indented fence line, by number."""
         with Tree(page=page) as root:
-            (found,) = u.problems(root, "0.1.0a9")
-            self.assertIn("lacks the section(s): ## The way back", found)
+            self.assertEqual(
+                u.problems(root, "0.1.0a9"),
+                [f"docs/upgrade/0.1.0a9.md:{n}: write code fences at the start of the line" for n in numbers],
+            )
 
-    def test_a_fence_opened_indented_is_not_closed_at_column_0(self):
-        # Deliberate fail-closed edge: CommonMark closes "  ```" with a "```" at column 0, but
-        # the rule closes an indented fence only on one indented at least as far, so the rest
-        # stays code and the section after it is missing.
-        block = "  ```\nx\n```\n\n## The way back\n\nNothing.\n"
-        page = FULL.replace("## The way back\n\nNothing.\n", block)
+    def test_an_indented_fence_makes_the_page_refused(self):
+        # Lines 1-18 are the title and four sections; the fifth starts at line 19.
+        for pad in (" ", "  ", "   "):
+            for run in ("```", "~~~", "````", "```sh"):
+                with self.subTest(pad=pad, run=run):
+                    block = f"## The way back\n\n{pad}{run}\nmaity-hub migrate\n{run[:3]}\n"
+                    self.fences(FULL.replace("## The way back\n\nNothing.\n", block), 21)
+
+    def test_an_indented_fence_is_refused_wherever_it_stands(self):
+        # A plain line scan: inside a list item, a column-0 fence or a comment block too.
+        for block, number in (
+            ("- a\n\n  ```\n  x\n", 21),
+            ("```\n  ~~~\n```\n", 20),
+            ("````\n  ```\n````\n", 20),
+            ("<!--\n  ```\n-->\n", 20),
+        ):
+            with self.subTest(block=block):
+                page = FULL.replace("## The way back\n\nNothing.\n", block + "\n## The way back\n\nNothing.\n")
+                self.fences(page, number)
+
+    # A1435: the round-4 indent-closing rule accepted these; CommonMark reads them otherwise.
+    def test_an_empty_block_opened_indented_and_closed_at_column_0_is_refused(self):
+        for block in ("  ```\n```\n", "   ~~~\n~~~\n"):
+            with self.subTest(block=block):
+                self.fences(FULL.replace("## The way back\n\nNothing.\n", "## The way back\n\n" + block), 21)
+
+    def test_a_duplicate_heading_after_an_indented_fence_is_refused(self):
+        self.fences(FULL + "  ```\nx\n```\n## The way back\n\nNothing.\n", 23)
+
+    def test_a_heading_hidden_by_a_reopened_fence_is_refused(self):
+        block = "## What cannot be undone\n\nNothing.\n  ```\nx\n```\n  ```\n"
+        self.fences(FULL.replace("## What cannot be undone\n\nNothing.\n", block), 18, 21)
+
+    def test_check_names_the_indented_fence(self):
+        page = FULL.replace("## The way back\n\nNothing.\n", "## The way back\n\n  ```\n```\n")
         with Tree(page=page) as root:
-            (found,) = u.problems(root, "0.1.0a9")
-            self.assertIn("lacks the section(s): ## The way back", found)
+            code, out = run_main(root)
+        self.assertEqual(code, 1)
+        self.assertIn("::error::docs/upgrade/0.1.0a9.md:21: write code fences at the start of the line", out)
+        self.assertNotIn("complete", out)
 
     def test_a_fence_indented_four_spaces_is_indented_code_and_text(self):
         # CommonMark: four spaces make an indented code block, not a fence; its line shows.
@@ -286,18 +319,44 @@ class Listing(unittest.TestCase):
     def test_a_star_list_line_with_trailing_text_counts(self):
         self.accepted("# Upgrade pages\n\n* [0.1.0a9](0.1.0a9.md) (skip it)\n")
 
-    # A1420: a list line starts at column 0, so a list item's fence or comment cannot fake one.
+    def fences(self, readme, *numbers):
+        """The README is refused as a whole, with one error per indented fence line, by number."""
+        with Tree(readme=readme) as root:
+            self.assertEqual(
+                u.unlisted(root),
+                [f"docs/upgrade/README.md:{n}: write code fences at the start of the line" for n in numbers],
+            )
+
+    # A1420: a list line starts at column 0, so a list item's fence or comment cannot fake one;
+    # a fence indented inside a list item makes the README refused as a whole.
     def test_a_list_line_inside_a_list_items_fence_does_not_count(self):
-        self.refused("# Upgrade pages\n\n- ```\n  - [0.1.0a9](0.1.0a9.md)\n  ```\n")
-        self.refused("# Upgrade pages\n\n1. ~~~\n   - [0.1.0a9](0.1.0a9.md)\n   ~~~\n")
+        self.fences("# Upgrade pages\n\n- ```\n  - [0.1.0a9](0.1.0a9.md)\n  ```\n", 5)
+        self.fences("# Upgrade pages\n\n1. ~~~\n   - [0.1.0a9](0.1.0a9.md)\n   ~~~\n", 5)
 
     def test_a_list_line_inside_a_list_items_comment_does_not_count(self):
         self.refused("# Upgrade pages\n\n- <!--\n  - [0.1.0a9](0.1.0a9.md)\n  -->\n")
 
     def test_a_list_line_inside_a_code_block_after_a_list_items_fence_does_not_count(self):
         # CommonMark: the "```" at column 0 ends the list item and opens a code block that runs
-        # to the end. Here: it does not close the fence opened at two spaces, so the rest is code.
-        self.refused("# Upgrade pages\n\n- a\n  ```\n```\n- [0.1.0a9](0.1.0a9.md)\n")
+        # to the end. Here: the fence indented in the list item refuses the README.
+        self.fences("# Upgrade pages\n\n- a\n  ```\n```\n- [0.1.0a9](0.1.0a9.md)\n", 4)
+
+    # A1435: the round-4 indent-closing rule closed "  ```" on a later "  ```" (CommonMark opens a
+    # new block there, hiding the list line); the indented fence now refuses the README.
+    def test_a_list_line_after_a_reopened_indented_fence_is_refused(self):
+        for block, numbers in (
+            ("  ```\n```\n  ```\n", (5, 7)),
+            ("   ~~~\nx\n~~~\n   ~~~\n", (5, 8)),
+            (" ```\n```\n   ```\n", (5, 7)),
+        ):
+            with self.subTest(block=block):
+                self.fences(f"# Upgrade pages\n\n## Versions\n\n{block}- [0.1.0a9](0.1.0a9.md)\n", *numbers)
+
+    def test_check_names_the_indented_fence_in_the_readme(self):
+        with Tree(readme="# Upgrade pages\n\n  ```\n```\n- [0.1.0a9](0.1.0a9.md)\n") as root:
+            code, out = run_main(root)
+        self.assertEqual(code, 1)
+        self.assertIn("::error::docs/upgrade/README.md:3: write code fences at the start of the line", out)
 
     def test_an_indented_list_line_does_not_count(self):
         for pad in (" ", "  ", "   "):
@@ -307,8 +366,13 @@ class Listing(unittest.TestCase):
 
     def test_a_list_line_after_a_list_items_fence_is_refused(self):
         # Deliberate fail-closed edge: CommonMark ends the fence with the list item and shows
-        # the link, but the list-line rule does not follow list items, so it is refused.
-        self.refused("# Upgrade pages\n\n- ```\n  - [0.1.0a9](0.1.0a9.md)\n  ```\n- [0.1.0a9](0.1.0a9.md)\n")
+        # the link, but the fence indented in the list item refuses the README.
+        self.fences("# Upgrade pages\n\n- ```\n  - [0.1.0a9](0.1.0a9.md)\n  ```\n- [0.1.0a9](0.1.0a9.md)\n", 5)
+
+    def test_a_list_line_after_a_list_items_comment_is_refused(self):
+        # Deliberate fail-closed edge: "  <!--" opens a comment block here that runs to the end;
+        # CommonMark ends it with the list item and shows the link.
+        self.refused("# Upgrade pages\n\n- a\n  <!--\n- [0.1.0a9](0.1.0a9.md)\n")
 
     # Forms a fuller recognizer accepted (9ecab5fe), refused by the list-line rule.
     def test_a_reference_link_does_not_count(self):

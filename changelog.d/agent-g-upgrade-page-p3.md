@@ -1,11 +1,12 @@
 ### Fixed
 
 - ci: `tools/upgrade_page.py check` reads an upgrade page as CommonMark does
-  for headings and text: a byte order mark is dropped, `~~~` fences and
-  fences indented by up to three spaces are fences, and a fence closes only
-  with a run of the same character at least as long as the one that opened
-  it and indented at least as far, so a four-backtick block around a three-backtick one no longer turns
-  the rest of the page inside out. A section that holds only an HTML comment
+  for headings and text: a byte order mark is dropped, `~~~` fences are
+  fences, and a fence closes only with a run of the same character at least
+  as long as the one that opened it, so a four-backtick block around a
+  three-backtick one no longer turns the rest of the page inside out. A fence
+  line with leading spaces makes the page refused: write code fences at the
+  start of the line. A section that holds only an HTML comment
   counts as empty, and a heading inside a comment is no section; a comment in
   an indented code block (four spaces or a tab) is shown, so it counts as text
   (tsk-tzknz9zzy1m2).
