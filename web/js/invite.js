@@ -176,10 +176,12 @@ window.Maity = window.Maity || {};
     const trust = h("select", { id: "invite-trust" }, trusts.map((r) => h("option", { value: r }, M.trust.trustWord(r))));
     trust.value = "member";
     const role = h("select", { id: "invite-role" });
+    // The project's own roles follow the built-in ones, on any base (§2.3, §3.4).
+    let own = M.trust.projectRoles(ctx, (list) => { own = list; roles(); });
     const roles = () => {
       const wanted = role.value || "coder";
-      const offered = M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"));
-      M.trust.fillRoles(role, offered, wanted, "coder");
+      const offered = M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")).concat(own.map((x) => x.name));
+      M.trust.fillRoles(role, offered, wanted, "coder", own);
     };
     const roleHelp = M.trust.roleHint(role);
     trust.addEventListener("change", roles);

@@ -115,7 +115,10 @@ window.Maity = window.Maity || {};
     const trust = select("trust", (ctx.isOwner ? ["member", "guest", "admin"] : ["member", "guest"]).map((r) => h("option", { value: r }, M.trust.trustWord(r))));
     trust.value = "member";
     const role = select("role");
-    const fillRoles = () => M.trust.fillRoles(role, M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")), role.value || "coder", "coder");
+    // The project's own roles follow the built-in ones, on any base, as a join by members:admin (§2.3).
+    let ownRoles = M.trust.projectRoles(ctx, (list) => { ownRoles = list; fillRoles(); });
+    const fillRoles = () => M.trust.fillRoles(role, M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"))
+      .concat(ownRoles.map((x) => x.name)), role.value || "coder", "coder", ownRoles);
     const roleHelp = M.trust.roleHint(role);
     trust.addEventListener("change", fillRoles);
     fillRoles();
@@ -375,9 +378,9 @@ window.Maity = window.Maity || {};
         return b;
       };
       // Ended by the runner's owner or the profile's owner, who places it again on a
-      // runner of their own (§15.5, §15.14): an agent moves to another runner only once
-      // its placement here is gone (`placement_exists`), an own one as much as a foreign
-      // one. Whoever may act on a row here may delete it (§15.6 DELETE: the runner's
+      // runner of their own (§15.5, §15.14): the start form (`startForm`) offers an agent
+      // again only once its placement here is gone (`placed`), an own one as much as a
+      // foreign one. Whoever may act on a row here may delete it (§15.6 DELETE: the runner's
       // owner with any trust, members:admin with the runner included, or the profile's
       // owner): `mayAct` above.
       const remove = h("button", { type: "button", class: "danger", "aria-label": M.t("placements.remove.label", { name }),

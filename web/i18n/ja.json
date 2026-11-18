@@ -4076,6 +4076,8 @@
   "role.manager.help": "メンバーの系列を率い、人間との窓口になる",
   "role.ops": "Ops",
   "role.ops.help": "マージとデプロイ: 配置、ランナーの変更、リリース、ティッカーでのデプロイ",
+  "role.project": "{role} ({base} の権限)",
+  "role.project.help": "このプロジェクト独自のロールで、{base} の権限を持つ",
   "role.proxy": "Proxy",
   "role.proxy.help": "オーナーの窓口: オーナーの決定を伝え、自分では何も決めない",
   "role.purple_team": "Purple team",
