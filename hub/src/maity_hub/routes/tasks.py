@@ -13,7 +13,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, field_validator
 from pydantic_core import PydanticCustomError
-from sqlalchemy import Connection, and_, false, insert, or_, select, update
+from sqlalchemy import Connection, and_, case, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import (
@@ -673,6 +673,7 @@ def list_tasks(
         # Keys first: the order's columns of every card the filters let through, the full
         # rows only for the page (tsk-ybc2ma72dzvq, hub/context/persistence.md).
         query = select(*KEYS).where(t.card.c.project_id == mine.project.id)
+        wanted: list[str] = []
         if status != "all":
             wanted = [s for s in status.split(",") if s]
             if any(s not in cards.STATUSES for s in wanted):
@@ -720,6 +721,50 @@ def list_tasks(
             if q is not None
             else None
         )
+        tag = paging.tag_of(cursor) if cursor is not None else None
+        closed_only = bool(wanted) and set(wanted) <= set(cards.CLOSED)
+        if order == "board" and q is None and closed_only and tag != "key":
+            # Closed columns only (the board's done group, tsk-d4anfsk1e94j): their order,
+            # `closed_at` newest first and then the id (ranks.board_key), is one the
+            # database keeps, so it sorts and pages here instead of every card of the
+            # columns being read for each page. A `key` cursor given out before this path
+            # existed still goes on below.
+            positions = {s: cards.STATUSES.index(s) for s in wanted}
+            position = case(positions, value=t.card.c.status)
+            # The id breaks ties bytewise, as Python compares it: PostgreSQL compares text
+            # by its locale unless told otherwise (MySQL's tables are binary already,
+            # SQLite compares bytes).
+            card_id = t.card.c.id.collate("C") if conn.dialect.name == "postgresql" else t.card.c.id
+            if cursor is not None:
+                at_position, at_closed, at_id = paging.unclosed(cursor, bound)
+                if at_closed is None:
+                    within = and_(t.card.c.closed_at.is_(None), card_id > at_id)
+                else:
+                    within = or_(
+                        t.card.c.closed_at.is_(None),
+                        t.card.c.closed_at < at_closed,
+                        and_(t.card.c.closed_at == at_closed, card_id > at_id),
+                    )
+                query = query.where(
+                    or_(position > at_position, and_(position == at_position, within))
+                )
+            # A card without `closed_at` sorts last in its column, as in board_key, on every
+            # database: PostgreSQL would put NULL first in a descending order.
+            query = query.order_by(
+                position, t.card.c.closed_at.is_(None), t.card.c.closed_at.desc(), card_id
+            ).limit(limit + 1)
+            # The page's keys; its full rows are read after them (_views).
+            rows = conn.execute(query).all()
+            page = rows[:limit]
+            following = None
+            if len(rows) > limit:
+                last = page[-1]
+                following = paging.closed_cursor(
+                    positions[last.status], last.closed_at, last.id, bound
+                )
+            return JSONResponse(
+                {"items": _views(conn, page, None, fg, mine), "next_cursor": following}
+            )
         if order == "board":
             # The board's order (§6.4) is not one the database keeps: the keys are sorted
             # here, a project's cards at a time, and paged after the last item shown.
@@ -727,21 +772,27 @@ def list_tasks(
                 return ranks.board_key(cards.STATUSES, row)
 
             ordered = sorted(conn.execute(query).all(), key=key)
-            if cursor is not None:
+            if tag == "closed":
+                ordered = _after_closed(ordered, paging.unclosed(cursor or "", bound), key)
+            elif cursor is not None:
                 ordered = _after(ordered, *paging.unkey(cursor, bound), key)
             taken = _take(_batches(ordered, limit), limit + 1, search)
             shown = taken[:limit]
             following = None
             if len(taken) > limit:
-                last, column = shown[-1], key(shown[-1])[0]
-                in_column = [r.id for r in shown if key(r)[0] == column]
-                first_not_shown = taken[limit]
-                following = paging.key_cursor(
-                    (last.id, key(last)),
-                    (first_not_shown.id, key(first_not_shown)),
-                    in_column,
-                    bound,
-                )
+                last, column_at = shown[-1], key(shown[-1])[0]
+                if last.status in cards.CLOSED:
+                    # A closed card keeps its place: no list of what was shown is needed.
+                    following = paging.closed_cursor(column_at, last.closed_at, last.id, bound)
+                else:
+                    in_column = [r.id for r in shown if key(r)[0] == column_at]
+                    first_not_shown = taken[limit]
+                    following = paging.key_cursor(
+                        (last.id, key(last)),
+                        (first_not_shown.id, key(first_not_shown)),
+                        in_column,
+                        bound,
+                    )
             return JSONResponse(
                 {"items": _views(conn, shown, search, fg, mine), "next_cursor": following}
             )
@@ -854,6 +905,23 @@ def _views(
         for item in shown:
             item["match"] = places[item["id"]]
     return shown
+
+
+def _after_closed(
+    ordered: list[Any],
+    anchor: tuple[int, datetime | None, str],
+    key: Callable[[Any], tuple[Any, ...]],
+) -> list[Any]:
+    """The cards after a closed card in the board's order. Its key is rebuilt from the
+    cursor as ranks.board_key builds it, so the page goes on there even when that card was
+    reopened meanwhile; a card closed again since sorts ahead of it, and the board's read
+    of the cards changed meanwhile brings it (web/js/board.js)."""
+    position, closed_at, card_id = anchor
+    was = (position, -closed_at.timestamp() if closed_at is not None else 0.0, card_id)
+    try:
+        return [r for r in ordered if key(r) > was]
+    except TypeError:  # a key of another shape: not a cursor this list gave
+        raise invalid({"cursor": "invalid"}) from None
 
 
 def _after(

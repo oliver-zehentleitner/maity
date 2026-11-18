@@ -772,10 +772,9 @@ def create_project(run: Run, page: Page, name: str, slug: str) -> None:
 
 
 def join_any(page: Page) -> None:
-    """Join an agent at the head of a project's Agents or Team page is a menu (tsk-vkyp71qp95n9):
-    Add any agent opens the join panel."""
+    """Join an agent at the head of a project's Agents or Team page is one button (tsk-hdczmsq2r431;
+    once a menu, tsk-vkyp71qp95n9): it opens the join panel."""
     page.locator("main .page-head").get_by_role("button", name="Join an agent", exact=True).click()
-    page.get_by_role("menuitem", name="Add any agent", exact=True).click()
 
 
 def join_line(
@@ -6008,9 +6007,9 @@ def project_runners_step(run: Run, page: Page, name: str) -> None:
 
 
 def start_on_runner_form(run: Run, page: Page, name: str) -> None:
-    """Agents → Start an agent on a runner (docs/api.md §15.6, tsk-dsp6htj4c686) against the hub:
-    E2E Alpha has no repository, so no runner can start an agent in it and no form is offered
-    (tsk-wn6qp27090qy). For the form itself the project's read is answered with a repository and
+    """Agents → Join an agent → On a runner (docs/api.md §15.6, tsk-dsp6htj4c686, tsk-hdczmsq2r431)
+    against the hub: E2E Alpha has no repository, so no runner can start an agent in it and no
+    runner fields are offered (tsk-wn6qp27090qy). For the form itself the project's read is answered with a repository and
     the runner's with it among its repositories: the paired runner allowed here is offered; it has
     not reported what it can do, so there is no tool to choose and nothing to send."""
     run.step("placements: the Agents page's tab Managed agents (§16.11), at /<owner>/<slug>/placements")
@@ -6028,15 +6027,15 @@ def start_on_runner_form(run: Run, page: Page, name: str) -> None:
     expect(page.get_by_role("heading", name="Managed agents", exact=True, level=3)).to_be_visible()
     expect(page.locator("main section.placements button.placement-new-open")).to_have_count(0)
     agents_page_tabs(run, page)
-    run.step("placements: Join an agent → Start an agent on a runner: without a repository no form; with one the paired runner allowed here is offered, no tool yet")
+    run.step("placements: Join an agent → On a runner: without a repository no runner fields; with one the paired runner allowed here is offered, no tool yet")
     page.goto(f"{run.base}/owner/e2e-alpha/placements")
-    section = page.locator("main .join-menu-slot")
+    section = page.locator("main .join-slot")
     open_form = page.locator("main .page-head").get_by_role("button", name="Join an agent", exact=True)
     open_form.click()
-    page.get_by_role("menuitem", name="Start an agent on a runner", exact=True).click()
+    section.get_by_label("Start it on one of my runners instead of a join line", exact=True).check()
     expect(section.locator(".placement-new-none")).to_have_text(
         "A runner starts an agent in a clone of the project's repository, and this project has none.")
-    expect(section.locator("form.placement-new")).to_have_count(0)
+    expect(section.locator(".join-runner-fields")).to_have_count(0)
     project_read = re.compile(r"/api/v1/projects/owner/e2e-alpha(\?|$)")
     runners_read = re.compile(r"/api/v1/projects/owner/e2e-alpha/runners(\?|$)")
 
@@ -6132,37 +6131,39 @@ def agents_chat_access(run: Run, page: Page, tabs) -> None:
 
 
 def start_on_runner_open(run: Run, page: Page, name: str, section, open_form) -> None:
-    """The form opened over the answers start_on_runner_form gives the project's and runners' reads."""
+    """The join form's part on a runner over the answers start_on_runner_form gives the project's
+    and runners' reads: the runner offered, no tool to start with, and a start says why."""
     page.reload()
     expect(open_form).to_be_visible()
     open_form.click()
-    page.get_by_role("menuitem", name="Start an agent on a runner", exact=True).click()
-    form = section.locator("form.placement-new")
-    expect(form).to_be_visible()
-    runner_options = form.locator("#placement-new-runner option")
+    panel = section.locator(".join-panel")
+    form = panel.locator("form.join-form")
+    form.get_by_label("Start it on one of my runners instead of a join line", exact=True).check()
+    fields = form.locator(".join-runner-fields")
+    expect(fields).to_be_visible()
+    runner_options = fields.locator("#placement-new-runner option")
     expect(runner_options).to_have_count(1)
     expect(runner_options.first).to_contain_text(name + " · offline")
-    expect(form.locator("#placement-new-tool option")).to_have_count(0)
+    expect(fields.locator("#placement-new-tool option")).to_have_count(0)
     expect(form).to_contain_text("The runner offers no tool there that is installed.")
-    expect(form.get_by_role("button", name="Start on the runner", exact=True)).to_be_disabled()
+    # What a placement does not take is hidden; the button says what it does.
+    expect(form.locator("#join-ttl")).to_be_hidden()
+    start = form.get_by_role("button", name="Start on the runner", exact=True)
+    expect(start).to_be_visible()
     run.shot(page, "placements-start-form")
     run.a11y(page, "placements, start on a runner")
-    # The browser's own constraint validation (review of #1558): a handle the pattern refuses,
-    # typed for a new profile, stops counting once one of one's agents here is chosen instead.
-    form.locator("#placement-new-handle").fill("INVALID")
-    assert not page.evaluate("document.querySelector('form.placement-new').checkValidity()"), "an invalid new handle passes validation"
-    agents = form.locator("#placement-new-agent option")
-    assert agents.count() >= 2, f"no agent of one's own offered: {agents.all_text_contents()}"
-    form.locator("#placement-new-agent").select_option(index=1)
-    expect(form.locator("fieldset.placement-new-profile")).to_be_hidden()
-    assert page.evaluate("document.querySelector('form.placement-new').checkValidity()"), "a hidden new-profile handle still blocks the form"
+    form.locator("#join-agent").select_option("")
+    form.locator("#join-handle").fill("e2e-runner-new")
+    start.click()
+    expect(form.locator(".send-status")).to_have_text(
+        "Not placed on the runner: There is no runner and tool to start it with yet: the part on a runner says why.")
     # On a phone the open form stays within the page's width (review of #1558: 451 px at 390).
     page.set_viewport_size({"width": 390, "height": 844})
     widths = page.evaluate("[document.documentElement.scrollWidth, document.documentElement.clientWidth]")
     assert widths[0] <= widths[1], f"the form widens the page on a phone: {widths}"
     page.set_viewport_size({"width": 1280, "height": 900})
     form.get_by_role("button", name="Cancel", exact=True).click()
-    expect(form).to_have_count(0)
+    expect(panel).to_be_hidden()
     expect(open_form).to_be_focused()
 
 
@@ -6339,8 +6340,8 @@ def why_step(run: Run, page: Page, alpha: Path) -> None:
 
 def page_heads_step(run: Run, page: Page) -> None:
     """The heads of a project's Agents and Team pages (tsk-vkyp71qp95n9): the heading, the buttons at
-    the right end, the tabs under them, each the page's full width; Join an agent a menu of its two
-    ways, Add any agent and Start an agent on a runner, the same on both pages."""
+    the right end, the tabs under them, each the page's full width; Join an agent one button that
+    opens the join panel, the same on both pages (tsk-hdczmsq2r431; once a menu)."""
     run.step("page heads: Agents and Team carry the heading, the buttons at the right end, the tabs under them")
     for path, title, buttons, tab_names in (
         ("agents", "Agents", ["New agent profile", "Join an agent"], ["Agents", "Managed agents", "Organisation"]),
@@ -6369,19 +6370,26 @@ def page_heads_step(run: Run, page: Page) -> None:
             assert abs(box["tabs"][1] - box["head"][1]) <= 1 and abs(box["tabs"][0] - box["head"][0]) <= 1, f"{path} tabs not the full width at {width} px: {box}"
             assert abs(box["last"][0] - box["bar"][1]) <= 1, f"{path} buttons not at the right end at {width} px: {box}"
             assert box["last"][1] <= box["tabs"][2] + 1, f"{path} tabs not under the buttons at {width} px: {box}"
-            head.get_by_role("button", name="Join an agent", exact=True).click()
-            items = page.locator(".page-head .menu [role=menuitem]")
-            expect(items).to_have_text(["Add any agent", "Start an agent on a runner"])
+            opener = head.get_by_role("button", name="Join an agent", exact=True)
+            expect(opener).not_to_have_attribute("aria-haspopup", re.compile(".*"))
+            opener.click()
+            # The Agents tab has the panel wired to its own lists (.join-panel-slot); Team mounts one in .join-slot.
+            panel = page.locator("main .join-panel")
+            expect(panel).to_be_visible()
             run.shot(page, f"page-head-{path}-{width}")
-            page.keyboard.press("Escape")
+            panel.get_by_role("button", name="Cancel", exact=True).click()
+            expect(panel).to_be_hidden()
+            expect(opener).to_be_focused()
             run.a11y(page, f"{path} page head, {width} px")
     page.set_viewport_size({"width": 1280, "height": 900})
-    run.step("page heads: Add any agent on Team opens the join panel there")
+    run.step("page heads: Join an agent on Team opens the join panel there")
     page.goto(f"{run.base}/owner/e2e-alpha/team")
     join_any(page)
-    expect(page.locator("main .join-menu-slot .join-panel")).to_be_visible()
+    panel = page.locator("main .join-slot .join-panel")
+    expect(panel).to_be_visible()
     expect(page.locator("#join-agent")).to_be_visible()
-    page.keyboard.press("Escape")
+    panel.get_by_role("button", name="Cancel", exact=True).click()
+    expect(panel).to_be_hidden()
     no_problems(run, "page heads")
 
 

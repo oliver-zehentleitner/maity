@@ -204,7 +204,6 @@ window.MAITY_I18N["fr"] = {
     "other": "{active} instances actives sur {count}"
   },
   "agents.intro": "Vos profils d'agent dans tous les projets : chacun est une identité, avec son image, son identifiant et les appartenances qu'il détient. Ajoutez-en un à un projet pour y créer une ligne d'adhésion.",
-  "agents.join.any": "Ajouter n'importe quel agent",
   "agents.join.failed": "L'adhésion n'a pas pu être préparée : {reason}",
   "agents.join.none": "Vous n'êtes dans aucun projet où vous pourriez amener un agent.",
   "agents.join.open": "Faire rejoindre un agent",
@@ -2367,6 +2366,10 @@ window.MAITY_I18N["fr"] = {
     "one": "{count} échec",
     "other": "{count} échecs"
   },
+  "mail.count.invitation": {
+    "one": "{count} e-mail d’invitation",
+    "other": "{count} e-mails d’invitation"
+  },
   "mail.count.notifications": {
     "one": "{count} e-mail de notification",
     "other": "{count} e-mails de notification"
@@ -2375,6 +2378,14 @@ window.MAITY_I18N["fr"] = {
     "one": "{count} e-mail de sécurité en attente",
     "other": "{count} e-mails de sécurité en attente"
   },
+  "mail.count.second_factor": {
+    "one": "{count} e-mail du second facteur",
+    "other": "{count} e-mails du second facteur"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} e-mail du second facteur abandonné",
+    "other": "{count} e-mails du second facteur abandonnés"
+  },
   "mail.count.security": {
     "one": "{count} e-mail de sécurité",
     "other": "{count} e-mails de sécurité"
@@ -2382,6 +2393,14 @@ window.MAITY_I18N["fr"] = {
   "mail.count.sign_in": {
     "one": "{count} e-mail de connexion",
     "other": "{count} e-mails de connexion"
+  },
+  "mail.count.verification": {
+    "one": "{count} e-mail de vérification",
+    "other": "{count} e-mails de vérification"
+  },
+  "mail.count.waiting": {
+    "one": "{count} e-mail de vérification ou d’invitation en attente",
+    "other": "{count} e-mails de vérification ou d’invitation en attente"
   },
   "mail.daily_at": "Résumés quotidiens et hebdomadaires à",
   "mail.day.fri": "vendredi",
@@ -2395,13 +2414,16 @@ window.MAITY_I18N["fr"] = {
   "mail.field.from_address": "Adresse de l'expéditeur",
   "mail.field.from_name": "Nom de l'expéditeur",
   "mail.field.host": "Hôte SMTP",
+  "mail.field.invitation_max_per_hour": "E-mails d'invitation par heure",
   "mail.field.max_per_hour": "E-mails de notification par heure",
   "mail.field.port": "Port SMTP",
   "mail.field.reply_to": "Adresse de réponse",
+  "mail.field.second_factor_max_per_hour": "E-mails de second facteur par heure",
   "mail.field.security_max_per_hour": "E-mails de sécurité par heure",
   "mail.field.sign_in_max_per_hour": "E-mails de connexion par heure",
   "mail.field.tls": "Sécurité de la connexion",
   "mail.field.username": "Nom d'utilisateur SMTP",
+  "mail.field.verification_max_per_hour": "E-mails de confirmation d'adresse par heure",
   "mail.hold_while_online": "Pas d'e-mail tant que je suis en ligne dans l'application web",
   "mail.hold_while_online.hint": "Les e-mails envoyés « Immédiatement » attendent tant que vous utilisez le tableau de bord. Quelques minutes après l'avoir quitté, seul ce que vous n'avez pas lu est envoyé.",
   "mail.incomplete": "La configuration e-mail est incomplète : {missing}.",
@@ -2414,6 +2436,7 @@ window.MAITY_I18N["fr"] = {
   "mail.kinds.hint": "Un résumé contient tout ce qui est encore non lu au moment de son envoi. Un second facteur modifié, une adresse modifiée et une suppression de compte sont toujours envoyés immédiatement.",
   "mail.kinds.legend": "Quand chaque type est envoyé",
   "mail.last_hour": "Dernière heure : {notifications}, {security}, {sign_in}, {failures} ; {queued}.",
+  "mail.last_hour_own": "Aussi dans la dernière heure : {verification}, {invitation}, {second_factor}, {dropped} ; {waiting}.",
   "mail.mode.daily": "Résumé quotidien",
   "mail.mode.hourly": "Résumé toutes les heures",
   "mail.mode.immediate": "Immédiatement",
@@ -3518,9 +3541,7 @@ window.MAITY_I18N["fr"] = {
   "placements.logs": "Journaux",
   "placements.logs.copy": "Copier la commande des journaux",
   "placements.logs.region": "Commande des journaux",
-  "placements.new.agent_new": "Un nouvel agent",
   "placements.new.branch": "Branche de départ (facultatif)",
-  "placements.new.briefing": "Briefing (facultatif, Markdown)",
   "placements.new.busy": "Placement de l'agent…",
   "placements.new.clone": "Clone",
   "placements.new.clone_hint": "Le nom du clone de l'agent sur le runner : lettres minuscules, chiffres et traits d'union. Vide : l'identifiant de l'agent.",
@@ -3529,6 +3550,7 @@ window.MAITY_I18N["fr"] = {
   "placements.new.failed": "Non placé sur le runner : {reason}",
   "placements.new.field": "{field} : {why}",
   "placements.new.hint": "Le runner démarre l'agent dans un clone du dépôt de ce projet, avec l'outil, le mode et le modèle choisis ici. Seuls vos propres runners appairés, autorisés dans ce projet et qui proposent son dépôt sont proposés.",
+  "placements.new.legend": "Sur un runner",
   "placements.new.mode": "Mode",
   "placements.new.model": "Modèle",
   "placements.new.model_default": "Celui du runner par défaut",
@@ -3537,8 +3559,10 @@ window.MAITY_I18N["fr"] = {
   "placements.new.no_tool": "Le runner n'y propose aucun outil installé.",
   "placements.new.none": "Aucun de vos runners appairés n'est encore autorisé dans ce projet. Autorisez-en un sous {link}.",
   "placements.new.none_link": "Runners de ce projet",
-  "placements.new.open": "Démarrer un agent sur un runner",
-  "placements.new.profile": "Le profil du nouvel agent et sa place dans l'équipe",
+  "placements.new.not_member": "Seul un agent déjà dans ce projet, ou un nouveau, démarre sur un runner. Choisissez un nouvel agent, ou faites d'abord adhérer celui-ci avec une ligne.",
+  "placements.new.not_ready": "Il n'y a pas encore de runner ni d'outil pour le démarrer : la partie runner dit pourquoi.",
+  "placements.new.offer": "Le démarrer sur un de mes runners au lieu d'une ligne d'adhésion",
+  "placements.new.placed": "Cet agent tourne déjà sur un runner ici : un placement par agent. Sa ligne est sous Agents gérés.",
   "placements.new.quota": "la limite du projet de {max} placements actifs sur les runners est atteinte.",
   "placements.new.quota_link": "Paramètres, Membres et agents",
   "placements.new.quota_raise": "Augmentez la limite dans {link}.",
@@ -3551,7 +3575,6 @@ window.MAITY_I18N["fr"] = {
   "placements.new.submit": "Démarrer sur le runner",
   "placements.new.target": "Où",
   "placements.new.target_any": "Là où le runner le choisit",
-  "placements.new.title": "Démarrer un agent sur un runner",
   "placements.new.tool": "Outil",
   "placements.not_removed": "Non retiré : {reason}",
   "placements.not_restarted": "Non redémarré : {reason}",
