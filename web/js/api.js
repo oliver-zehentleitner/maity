@@ -745,6 +745,13 @@ window.Maity = window.Maity || {};
   // give an agent of their own (§3.1: not ops, not proxy).
   const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team", "expert"];
   const MEMBER_ROLES = HUB_ROLES.filter((r) => r !== "ops" && r !== "proxy");
+  // The built-in role whose scopes `role` has, as project_roles.base_of answers it (§2.3):
+  // itself for a built-in role, the base of one of the project's own, null for any other name.
+  function roleBaseIn(slug, role, path) {
+    if (HUB_ROLES.includes(role)) return role;
+    const own = (project(slug, path).roles || []).find((r) => r.name === role);
+    return own ? own.base : null;
+  }
   // §2.3 "The expert" (routes/members.py): the role expert waits until the member holds no
   // card and is assigned no open one; the fixture has no takeovers or covers to add.
   function holdsCards(slug, target, body, path) {
@@ -2229,7 +2236,8 @@ window.Maity = window.Maity || {};
       const wantTrust = body.trust || "member";
       const want = body.role || "coder";
       if (!["owner", "admin", "member", "guest"].includes(wantTrust)) fields.trust = "unknown";
-      if (!HUB_ROLES.includes(want)) fields.role = "unknown";
+      // A built-in role or one of the project's own (routes/invitations.py, §2.3).
+      if (roleBaseIn(m[1], want, path) === null) fields.role = "unknown";
       else if (want === "proxy" && wantTrust !== "admin") fields.role = "proxy_needs_admin";
       if ((["admin", "owner"].includes(wantTrust) || want === "proxy") && trust !== "owner") {
         fail(403, "forbidden", "only an owner invites an owner, an admin or a proxy", path, { reason: "owner_only" });
@@ -3392,6 +3400,8 @@ window.Maity = window.Maity || {};
           fail(400, "invalid", "you already have an agent with this handle", path, { fields: { handle: "taken" } });
         }
         if (live.some((x) => !x.agent.id && x.agent.handle === handle)) fail(409, "placement_exists", "an active placement holds this", path);
+        // validate_assignment: a built-in role or one of the project's own (§2.3).
+        if (body.role != null && roleBaseIn(m[1], body.role, path) === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
         agent = { id: null, handle, display_name: name, avatar_url: null };
       }
       const clone = (body.workspace && body.workspace.clone) || agent.handle;
@@ -5497,7 +5507,9 @@ window.Maity = window.Maity || {};
         const limit = (field) => fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field });
         if (body.agent && body.agent.id && !fixtures()["agents.json"].items.some((a) => a.id === body.agent.id && a.owner_id === me().member.id)) limit("agent");
         if (body.trust && !["member", "guest"].includes(body.trust)) limit("trust");
-        if (body.role && !MEMBER_ROLES.includes(body.role)) limit("role");
+        // A project role counts by its base; a name the project does not have is `invalid` below.
+        const base = body.role ? roleBaseIn(m[1], body.role, path) : null;
+        if (base !== null && !MEMBER_ROLES.includes(base)) limit("role");
         if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
         if ((body.areas || []).length) limit("areas");
         if ((body.capabilities || []).length) limit("capabilities");
@@ -5510,6 +5522,8 @@ window.Maity = window.Maity || {};
           if (mine.size >= max) fail(403, "forbidden", "you hold as many agents here as the project allows", path, { reason: "member_agents_max", max });
         }
       }
+      // validate_assignment: a built-in role or one of the project's own (§2.3).
+      if (body.role != null && roleBaseIn(m[1], body.role, path) === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
       let agentId = body.agent && body.agent.id;
       if (!agentId) {
         if (!body.agent || !body.agent.handle) fail(400, "invalid", "agent needs an id or a handle", path, { fields: { agent: "required" } });

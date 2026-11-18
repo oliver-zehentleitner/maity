@@ -71,6 +71,11 @@ def _agent(
         # An agent's reason is shown as sent anyway (§6.12).
         raise invalid({"show_reason_in": "humans_only"})
     row = conn.execute(select(t.membership).where(t.membership.c.id == caller.membership_id)).one()
+    if until is None:
+        # Any `until: null` recomputes the runner's limit (§6.12): while every placement is
+        # still rate-limited, clearing leaves the agent limited by the runner.
+        availability.clear_agent_limit(conn, row, caller.actor(row.id))
+        return idempotency.Outcome(200, "member", str(row.id), load_member(conn, str(row.id)))
     availability.set_agent_limit(
         conn,
         row,

@@ -848,12 +848,19 @@ class RawHub:
     """A hub on a loopback socket, inside the test, that answers each connection with the
     next scripted reply as raw bytes and closes it, so an answer can break off where
     urllib and http.client really see it: a status line, headers or a body cut short.
-    After the script, `last` is sent to every further request."""
+    After the script, `last` is sent to every further request.
+
+    It reads the whole request (headers and a Content-Length body) before it answers, and
+    after the answer it half-closes and drains until the client closes (at most 2 s). A close
+    with request bytes unread sends a reset, not a FIN, and on Windows a reset drops the part
+    of the answer the client has received but not read yet: the cut answer then comes out as
+    WinError 10053, "cannot reach", instead of "broke off"."""
 
     def __init__(self, replies: list[bytes], last: bytes) -> None:
         self.replies = list(replies)
         self.last = last
         self.requests: list[str] = []
+        self.bodies: list[bytes] = []
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind(("127.0.0.1", 0))
         self.sock.listen()
@@ -868,15 +875,36 @@ class RawHub:
             except OSError:
                 return
             with conn:
-                data = b""
-                while b"\r\n\r\n" not in data:
-                    chunk = conn.recv(65536)
-                    if not chunk:
-                        break
-                    data += chunk
-                self.requests.append(data.split(b"\r\n", 1)[0].decode("latin-1"))
-                conn.sendall(self.replies.pop(0) if self.replies else self.last)
-                conn.shutdown(socket.SHUT_WR)
+                self._answer(conn)
+
+    def _answer(self, conn: socket.socket) -> None:
+        data = b""
+        while b"\r\n\r\n" not in data:
+            chunk = conn.recv(65536)
+            if not chunk:
+                break
+            data += chunk
+        head, _, body = data.partition(b"\r\n\r\n")
+        length = 0
+        for line in head.split(b"\r\n")[1:]:
+            name, _, value = line.partition(b":")
+            if name.strip().lower() == b"content-length":
+                length = int(value.strip())
+        while len(body) < length:
+            chunk = conn.recv(65536)
+            if not chunk:
+                break
+            body += chunk
+        self.requests.append(head.split(b"\r\n", 1)[0].decode("latin-1"))
+        self.bodies.append(body)
+        conn.sendall(self.replies.pop(0) if self.replies else self.last)
+        conn.shutdown(socket.SHUT_WR)
+        conn.settimeout(2)
+        try:
+            while conn.recv(65536):
+                pass
+        except OSError:
+            pass
 
     def close(self) -> None:
         # A close alone does not wake a thread blocked in accept() on Linux, and a later test's
@@ -886,7 +914,7 @@ class RawHub:
         except OSError:
             pass
         self.sock.close()
-        self.thread.join(timeout=5)
+        self.thread.join(timeout=10)  # room for a drain still running (at most 2 s)
         assert not self.thread.is_alive()
 
 
@@ -980,9 +1008,12 @@ def test_get_text_names_an_answer_that_breaks_off(cut: RawHub) -> None:
 
 
 def test_an_exchange_names_an_answer_that_breaks_off(cut: RawHub) -> None:
+    """The one cut-off case with a request body (a POST): the hub has read all of it before
+    it answers (see RawHub)."""
     with pytest.raises(hub.HubError, match=r"broke off its answer \(IncompleteRead\)") as raised:
         hub._exchange(f"{cut.url}/api/v1/join/exchange", "code", "join", 5)
     assert raised.value.status is None and raised.value.code is None
+    assert [json.loads(b) for b in cut.bodies] == [{"code": "code", "client": hub.CLIENT}]
 
 
 def test_runner_check_records_a_hub_that_breaks_off_and_goes_on(

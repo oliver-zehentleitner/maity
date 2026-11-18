@@ -443,6 +443,8 @@ def build(
         }
     local = cfg.local
     agents_user = local.agent_user if local and local.layout == "agent_user" else None
+    # `running` (top-level and per target) is the starting count; the supervisor refreshes both
+    # after every `PATCH /runner`, so each target begins at 0 like the ssh ones, not at the total.
     return {
         "backend": cfg.backend,
         "max_agents": limits.max_agents,
@@ -451,7 +453,7 @@ def build(
             {
                 "name": "local",
                 "max_agents": limits.max_agents,
-                "running": running,
+                "running": 0,
                 "reachable": True,
                 "unreachable_since": None,
                 "isolation": {
