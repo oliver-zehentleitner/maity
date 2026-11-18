@@ -98,11 +98,19 @@ EMOJI_NAMES = [
     "\U000000ae\U0000fe0f",
     "\U00002122\U0000fe0f",
     "\U0000231a\U0000fe0f",
+    # A keycap: a digit, # or *, U+FE0F, U+20E3.
+    "1\U0000fe0f\U000020e3",
+    "#\U0000fe0f\U000020e3",
+    "*\U0000fe0f\U000020e3",
 ]
 NOT_EMOJI = {
     "zwj-between-braille-blanks": "\U00002800\U0000200d\U00002800",
     "zwj-between-symbols-below-the-emoji-blocks": "\U000000a9\U0000200d\U000000a9",
     "vs16-after-a-braille-blank": "\U00002800\U0000fe0f",
+    "vs16-after-a-digit-without-keycap": "1\U0000fe0f",
+    "bare-keycap": "\U000020e3",
+    "keycap-without-selector": "1\U000020e3",
+    "keycap-after-a-letter": "A\U0000fe0f\U000020e3",
     "zwj-between-letters": "Ann\u200dBob",
     "vs16-after-a-letter": "Ann\ufe0f",
     "zwj-at-start": "\u200d👩",

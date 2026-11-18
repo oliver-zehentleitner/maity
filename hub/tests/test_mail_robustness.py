@@ -352,3 +352,22 @@ def test_the_invitation_subject_is_cut_like_every_subject() -> None:
         expires_at=clock.now(),
     )
     assert len(subject) <= 120 and subject.endswith("…")
+
+
+def test_the_invitation_mail_folds_a_stored_name_with_a_bidi_control() -> None:
+    bidi = "\U0000202e"
+    subject, body = invitation_mail.text(
+        inviter=f"Ann{bidi}Lee",
+        project_name=f"Mai{bidi}ty",
+        full_name="ann/maity",
+        public_url="https://maity.example",
+        trust="member",
+        role="coder",
+        note=None,
+        url="https://maity.example/i/t",
+        expires_at=clock.now(),
+        inviter_handle="ann",
+    )
+    assert bidi not in subject and bidi not in body
+    assert subject == "[Maity] Ann Lee invites you to Mai ty"
+    assert body.startswith("Ann Lee (@ann) invites you to the Maity project Mai ty (ann/maity) ")

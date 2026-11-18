@@ -10,7 +10,8 @@
   sequence (a zero-width joiner between two emoji, a variation selector
   right after one or after a symbol with an emoji form such as ©, ™ or ⌚;
   an emoji is a symbol of the emoji, miscellaneous-symbol, dingbat and
-  symbols-and-arrows blocks). A name of spaces and blank filler characters alone
+  symbols-and-arrows blocks; a keycap such as 1️⃣ as a whole, the
+  enclosing keycap mark nowhere else). A name of spaces and blank filler characters alone
   is refused. Each field answers with the
   reason it already had (`control_character`, `not_a_url`, `format`); an
   invitation note's refused character is now `control_character` rather

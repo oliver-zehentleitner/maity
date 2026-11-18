@@ -40,6 +40,11 @@ SKIN_TONES = range(0x1F3FB, 0x1F400)
 VS16_SYMBOLS = range(0x2000, 0x2C00)
 BRAILLE = range(0x2800, 0x2900)
 TEXT_DEFAULT = frozenset(chr(code) for code in (0x00A9, 0x00AE))
+# A keycap (1️⃣, #️⃣, *️⃣): a digit, `#` or `*`, U+FE0F, then U+20E3 (combining enclosing
+# keycap, Me). In a name U+FE0F follows such a base only with U+20E3 right after it, and
+# U+20E3 stands only after such a pair (§1.7.1).
+KEYCAP_BASES = frozenset("0123456789#*")
+KEYCAP = chr(0x20E3)
 # Characters that show as nothing but are letters (Lo) or symbols (So): the Hangul fillers
 # U+115F, U+1160, U+3164, U+FFA0 and the blank braille pattern U+2800. A name of these and
 # spaces (Zs) alone is refused; inside a name with something to read they pass (§1.7.1).
@@ -72,16 +77,22 @@ def _blank(value: str) -> bool:
 def plain_name(value: str) -> bool:
     """A name (§1.7.1): `plain`, except that U+200D stands only between two emoji characters
     (or after a symbol with U+FE0F, before an emoji character) and U+FE0F only right after a
-    character that `takes_vs16`, so an emoji sequence (👩‍💻, ❤️, ©️) is a name's and a joiner
-    between letters, at either end or after a selector of a letter is not. A name that is not
-    empty but blank (`_blank`) is refused too; an empty one is left to the field's length."""
+    character that `takes_vs16` or of a keycap (`KEYCAP_BASES`, then `KEYCAP` right after),
+    so an emoji sequence (👩‍💻, ❤️, ©️, 1️⃣) is a name's and a joiner between letters, at
+    either end or after a selector of a letter is not. U+20E3 stands only in a keycap. A name
+    that is not empty but blank (`_blank`) is refused too; an empty one is left to the
+    field's length."""
     if value and _blank(value):
         return False
     for at, ch in enumerate(value):
         before = value[at - 1] if at > 0 else ""
         after = value[at + 1] if at + 1 < len(value) else ""
         if ch == VS16:
-            if not before or not takes_vs16(before):
+            keycap = before in KEYCAP_BASES and after == KEYCAP
+            if not before or not (takes_vs16(before) or keycap):
+                return False
+        elif ch == KEYCAP:
+            if before != VS16 or at < 2 or value[at - 2] not in KEYCAP_BASES:
                 return False
         elif ch == ZWJ:
             emoji_before = bool(before) and (

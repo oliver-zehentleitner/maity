@@ -37,7 +37,9 @@ text or a Markdown line for agents (the join page's `_md`, the rules document's 
 summaries of the requests `foreign_agent`, `cross_owner` and `bridges` (a bridge's consent)
 file, the commitment notice), and a display name into the text of a request or a mail (the
 inviter in an invitation's request and mail, an organisation's name in the title of its
-invitation's request), `plain_line` folds each run of refused characters into one space first;
+invitation's request; a project's name, a notification's title and a writer's display name in
+a notification mail, subject and body), `plain_line` folds each run of refused characters into
+one space first, before `subject_line`, which cleans only Cc, Zl and Zp;
 the JSON answers carry the value unchanged. The invitation's request and mail name the inviter
 as "display name (@handle)", as the invitation page does: a display name alone can be anyone's.
 The mail's subject keeps the display name alone, since the handle would push the project's name
@@ -57,7 +59,10 @@ which shows as nothing); the blocks narrow the joiner to where the emoji are. U+
 character, any So character in U+2000–U+2BFF but the braille patterns U+2800–U+28FF (U+2122,
 U+231A), and U+00A9 and U+00AE, the symbols whose text form is the default. A joiner right after
 such a pair, before an emoji character, passes too: the loop checks the character before the
-selector with `takes_vs16`. Braille is excluded by name because it is So inside that range and
+selector with `takes_vs16`. A keycap (a digit, `#` or `*`, U+FE0F, U+20E3) passes as a whole:
+U+FE0F follows such a base only with U+20E3 (category Me, which `NOT_PLAIN` does not hold)
+right after it, and U+20E3 stands only after such a pair, so a bare U+20E3 is refused in a
+name, a rule of names alone as the joiner's is. Braille is excluded by name because it is So inside that range and
 U+2800 shows as nothing. Every other field, a bridge's purpose and notes included, refuses
 U+200D as before.
 

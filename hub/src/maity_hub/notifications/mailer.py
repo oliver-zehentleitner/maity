@@ -37,6 +37,7 @@ from maity_hub.mail import settings as mail_settings
 from maity_hub.mail.environment import MailEnvironment
 from maity_hub.notifications import items, listing, preferences, presence, records, retention
 from maity_hub.notifications.items import Item
+from maity_hub.plain_text import plain_line
 
 log = logging.getLogger(__name__)
 
@@ -500,8 +501,9 @@ def compose(
     if len(chosen) == 1:
         only = chosen[0]
         name = projects.get(only.project_id or "", "Maity")
-        # A project's name and a title are text the hub did not write (§18.5).
-        line = subject_line(f"[Maity] {name}: {only.title or ''}")
+        # A project's name and a title are text the hub did not write (§18.5), folded first
+        # (`_project_names` folds the name): `subject_line` cleans only Cc, Zl and Zp (§1.7.1).
+        line = subject_line(f"[Maity] {name}: {plain_line(only.title or '')}")
     else:
         line = "[Maity] " + words["updates"].format(n=len(chosen))
     lines: list[str] = []
@@ -516,7 +518,8 @@ def compose(
             text = _message_text(conn, item) if content else None
             if text:
                 # A display name is text the hub did not write either (§18.5).
-                writer = defang(" ".join(items.actor_name(conn, item.actor_membership).split()))
+                name_of = plain_line(items.actor_name(conn, item.actor_membership))
+                writer = defang(" ".join(name_of.split()))
                 lines.append(f"  {writer} {words['wrote']}: {quoted(text[:CONTENT_MAX])}")
         lines.append("")
     if len(chosen) > DIGEST_MAX:
@@ -544,7 +547,7 @@ def _project_names(conn: Connection, chosen: list[Item]) -> dict[str, str]:
     if not ids:
         return {}
     rows = conn.execute(select(t.project.c.id, t.project.c.name).where(t.project.c.id.in_(ids)))
-    return {row.id: row.name for row in rows}
+    return {row.id: plain_line(row.name) for row in rows}  # on one line (§1.7.1)
 
 
 def _sign_in_mail(
@@ -621,7 +624,7 @@ def _two_factor_mail(
         kind="security",
         human_id=row.human_id,
         to=row.address,
-        subject=subject_line(f"[Maity] {item.title}"),
+        subject=subject_line(f"[Maity] {plain_line(item.title or '')}"),
         body=body,
     )
 

@@ -79,8 +79,10 @@ def text(
     body, which the link is in, names it."""
     from maity_hub.notifications.mailer import defang, quoted, subject_line
 
+    # Folded once, for the subject and the body alike: `subject_line` cleans only Cc, Zl and Zp.
+    inviter, project_name = plain_line(inviter), plain_line(project_name)
     title = subject_line(f"[Maity] {inviter} invites you to {project_name}")
-    inviter, project_name = defang(plain_line(inviter)), defang(plain_line(project_name))
+    inviter, project_name = defang(inviter), defang(project_name)
     said = f"{inviter} wrote: {quoted(note)}\n\n" if note else ""
     who = f"{inviter} (@{inviter_handle})" if inviter_handle else inviter
     return (

@@ -495,7 +495,11 @@ for a character's emoji presentation, so it also stands after a symbol
 that has a text and an emoji form: an emoji character, any character of
 category So in U+2000–U+2BFF except the braille patterns U+2800–U+28FF
 (`™️`, `⌚️`), and U+00A9 and U+00AE (`©️`, `®️`). Such a pair may be
-followed by a joiner and an emoji character. A symbol of category So
+followed by a joiner and an emoji character. A keycap is a name's too: a
+digit, `#` or `*`, then U+FE0F, then U+20E3 (combining enclosing
+keycap), as in `1️⃣`; U+FE0F after a digit, `#` or `*` only with U+20E3
+right after it, and U+20E3 only in such a sequence, so `1` with U+FE0F
+alone, `1` with U+20E3 alone and a bare U+20E3 are refused in a name. A symbol of category So
 elsewhere, a braille pattern included, takes neither, so `U+2800 U+FE0F`
 and `U+00A9 U+200D U+00A9` are refused in a name. Every other field
 refuses U+200D. A name that is not empty but holds only spaces
@@ -525,7 +529,8 @@ A value stored before the rule is kept as it is and shown as it is in
 JSON. Where the hub puts a project's name into a text or Markdown line
 for agents (the join page, §3.2; the rules document, §6.9; the summary
 of a request it files, a bridge's consent included, §2.3), or a display
-name into a request or a mail (an invitation's, §3.4), each run of
+name into a request or a mail (an invitation's, §3.4; a notification
+mail's subject and body, §18.5), each run of
 refused characters there becomes one space, so the name stays on its
 line and in its sentence.
 
