@@ -1378,7 +1378,7 @@ def _move_to_replacement(
                 "holder": member.agent_id,
                 "instance": new,
                 "replaces": old,
-                "lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None,
+                "lease_until": clock.rfc3339_or_none(card.lease_until),
             },
             actor=actor,
             subject=("task", card.id),
