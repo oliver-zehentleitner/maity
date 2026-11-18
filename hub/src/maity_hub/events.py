@@ -317,6 +317,12 @@ def emit(
     watcher list (§6.4) the caller already read with `card_watches.at_write` for this event's
     card, so that what it decided from that list and the list stored here are one read."""
     project = lock_project(conn, project_id)
+    if actor is not None and actor.bridge is not None:
+        # The connection was read live before the route ran (`bridges.carry`); ended since, under
+        # this lock, nothing more is written through it (§2.3).
+        from maity_hub import bridges
+
+        bridges.still_live(conn, str(actor.bridge["bridge_id"]))
     if kind == "member_updated":
         # Everyone reads it; these tokens are who it wakes (§8.2).
         from maity_hub.availability import coordinator_token  # availability writes events itself
