@@ -300,16 +300,19 @@ Runs on a shared machine overlapped, and agents gated them by hand with `pgrep`.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-5q7vxjm75t5v (#1958: `/owner at 390x844 light: the picture is 0 px` on #1938, a PR that did not touch the profile); the card tsk-z4ps7cg7ve25 (`/owner at 390x844 dark: the hero stacked is False` on #1983 at fb289e0c, line 5539 of e2e.py with #1958's picture wait already passed before it; `/owner/e2e-alpha for a visitor at 390x844 dark: the hero is not the dark zone` on #1942, its web/ byte-identical to main); web/tools/e2e.py `settle`, `visitor_layout`, `profile_layout`
+**Source:** the card tsk-5q7vxjm75t5v (#1958: `/owner at 390x844 light: the picture is 0 px` on #1938, a PR that did not touch the profile); the card tsk-z4ps7cg7ve25 (`/owner at 390x844 dark: the hero stacked is False` on #1983 at fb289e0c, line 5539 of e2e.py with #1958's picture wait already passed before it; `/owner/e2e-alpha for a visitor at 390x844 dark: the hero is not the dark zone` on #1942, its web/ byte-identical to main); the counter-check probe on #1992 (jobs 135203286573 and 135206781594: a frame stylesheet turned off for 3 s by a test-only hook; the old reads failed, and with the hero waits alone the agent page still read `1 project columns` at 1280); web/tools/e2e.py `settle`, `settle_columns`, `visitor_layout`, `profile_layout`
 **See:** stack.md#a-real-browser-end-to-end-test-runs-in-ci-with-playwright-for-python-next-to-the-smoke-test — fb1daf22-fe54-4073-b89e-9e099a5a389e — as of 2026-11-19
 **Revisit when:** the shell stops carrying the hub's stored page until the dashboard draws, or the frame's stylesheets stop being linked and switched by js/site-chrome.js
 
-A layout or colour check in `tools/e2e.py` that reads a computed value
-once (a size, `flexDirection`, `gridTemplateColumns`, a background) first
-waits, through `settle`, for that same value on that same element: the
-view of its kind that is not `inert`, looked up again on each poll. The
-wait gives up after the timeout without failing, and the unchanged
-assertion after it reads again and names what it found.
+Each check in `visitor_layout` and `profile_layout` that reads a computed
+value once (a size, `flexDirection`, a grid's `gridTemplateColumns`,
+`overflowX`, a background, the list of enabled stylesheets, the page's
+`scrollWidth`) first waits, through `settle`, for that same value on that
+same element: the view of its kind that is not `inert`, looked up again on
+each poll. The wait gives up after the timeout without failing, and the
+unchanged assertion after it reads again and names what it found. Box
+positions that follow from the page's order and widths that come from
+css/app.css, which is never switched, are read without a wait.
 
 **Reason:** a visitor's page is on screen before its rules are sure to
 apply to the element read: the shell shows the hub's stored page until
@@ -319,10 +322,14 @@ js/site-chrome.js. A visible h1 proves no stylesheet. #1983 showed that
 a wait on one rule proves nothing for a read after it either: the
 picture's 96 px (`.av-128`) had been seen, and the stacked read right
 after still found a row, although both rules stand in the same
-`@media (max-width: 760px)` block of public-sections.css. So each read
-gets its own wait on what it asserts. No browser run reproduced the
-cause here (no Playwright on the machine): which of these lagged on CI
-is inferred, not observed.
+`@media (max-width: 760px)` block of public-sections.css. The probe
+showed the same for the grids: with the sheet off for a moment, the
+picture, the colour and the stacked waits all passed (inferred: an
+`<img>` keeps its 128 px from its `width` attribute), and the projects
+grid read right after them found one column instead of three. So each
+read gets its own wait on what it asserts, the grids included. The
+probe shows that the old reads can fail when a sheet is late. Which lag
+caused the original flakes on CI is inferred, not observed.
 
 **Rejected alternatives:**
 - A fixed sleep before the reads: slower on every run, and still a race on a slow runner.
