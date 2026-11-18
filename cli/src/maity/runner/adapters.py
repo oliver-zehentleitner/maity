@@ -567,9 +567,9 @@ def outermost(paths: Sequence[Path], opened: Sequence[Path] = ()) -> tuple[Path,
     (bwrap) hides a path by mounting over it; a path inside one hidden before has nowhere to
     be mounted ("Can't create file … Read-only file system"), and every command fails. A
     path is dropped only when nothing in `opened` (a more specific rule that opens a
-    directory again, the clone's) lies between it and the hidden one that contains it: there
-    the outer path no longer hides it, and it stays listed. Compared as given: the runner
-    lists them resolved where it can (supervisor.private_paths)."""
+    directory again: the clone's, the scratch's) lies between it and the hidden one that
+    contains it: there the outer path no longer hides it, and it stays listed. Compared as
+    given: the runner lists them resolved where it can (supervisor.private_paths)."""
     unique = tuple(dict.fromkeys(paths))
 
     def hidden_by(p: Path, q: Path) -> bool:
@@ -588,9 +588,11 @@ def codex_config(ctx: Context) -> str:
     domains = "".join(f'{json.dumps(host)} = "allow"\n' for host in hosts)
     # Unreadable: other clones (the workspaces root), the runner's state and the secrets in
     # the agents' home. The clone's own rules are more specific and win; its credential
-    # stays readable, since the agent's `maity` runs inside the sandbox.
+    # stays readable, since the agent's `maity` runs inside the sandbox. Every directory
+    # opened again below (the clone, the scratch) keeps a hidden path inside it listed.
+    reopened = (ctx.clone, *((ctx.scratch,) if ctx.scratch is not None else ()))
     roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private),
-                      opened=(ctx.clone,))  # fmt: skip
+                      opened=reopened)  # fmt: skip
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
     return (
         'approval_policy = "never"\n'

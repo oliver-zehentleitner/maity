@@ -716,6 +716,23 @@ def test_codex_keeps_a_hidden_path_inside_its_own_clone_hidden(tmp_path: Path) -
                               opened=(Path("/w/c"),)) == (Path("/w"), Path("/w/c/x"))  # fmt: skip
 
 
+@pytest.mark.parametrize("root", ["clone", "scratch"])
+def test_a_hidden_path_inside_every_reopened_directory_stays_listed(
+    tmp_path: Path, root: str
+) -> None:
+    """The clone and the scratch are both opened again inside the hidden workspaces root: a
+    hidden path inside either is not hidden by the root and stays listed."""
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+    clone = tmp_path / "ws" / "maity" / "agent-3"  # context()'s clone
+    inner = (clone if root == "clone" else room) / "sub" / ".git" / "maity"
+    ctx = context(tmp_path, "codex", sandbox=True, scratch=room, workspaces=tmp_path / "ws",
+                  private=(inner,))  # fmt: skip
+    assert ctx.clone == clone
+    hidden = [path for path, level in tomllib.loads(adapters.codex_config(ctx))["permissions"]
+              ["maity"]["filesystem"].items() if level == "none"]  # fmt: skip
+    assert hidden == [str(tmp_path / "ws"), str(inner)]
+
+
 def test_the_home_secrets_are_listed_under_the_home_resolved(tmp_path: Path) -> None:
     """A home reached through a link: its secrets and the runner's configuration (resolved)
     must be seen as one inside the other, or Codex's profile would list both."""
