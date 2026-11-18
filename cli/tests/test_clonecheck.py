@@ -174,6 +174,23 @@ def test_what_the_sandbox_leaves_empty_reads_as_before(placed: Path) -> None:
     assert gitfacts.mismatches(gitfacts.collect(placed)) == []
 
 
+def test_the_empty_config_lock_the_sandbox_holds_reads_as_before(placed: Path) -> None:
+    """Claude Code's sandbox holds an empty, read-only `.git/config.lock` to keep
+    `.git/config` unwritable; empty it is inert, so a placement's clone is not refused its own
+    report/checkpoint over it (tsk-estwtzbae972). The sandbox leaves it: see
+    test_adapters.py and test_session_identity.py."""
+    (placed / ".git" / "config.lock").write_text("")
+    assert gitfacts.mismatches(gitfacts.collect(placed)) == []
+
+
+def test_a_non_empty_config_lock_is_refused(placed: Path) -> None:
+    """Only the empty lock is tolerated: a non-empty `config.lock` could carry real
+    configuration git would promote on the next write, so it stays refused as before."""
+    (placed / ".git" / "config.lock").write_text('[core]\n\tsshCommand = "touch ran"\n')
+    with pytest.raises(gitfacts.FactsError, match="not a plain clone's"):
+        gitfacts.collect(placed)
+
+
 @pytest.mark.parametrize(
     "entry",
     [

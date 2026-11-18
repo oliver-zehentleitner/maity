@@ -87,9 +87,12 @@ INFO_FILES = frozenset({"exclude", "refs"})
 # Other object stores git would read from (and, over http, fetch from).
 ALTERNATES = ("objects/info/alternates", "objects/info/http-alternates")
 # Claude Code's sandbox leaves these in a clone it ran in, to guard the paths it protects:
-# empty, they change nothing git does. Anything in them is refused as before.
+# empty, they change nothing git does. Anything in them is refused as before. `config.lock`
+# is the empty, read-only lockfile the sandbox holds so `.git/config` stays unwritable; empty,
+# it is inert (git takes it only as "a write is in progress"). A non-empty `config.lock` could
+# carry real configuration git would promote on the next write, so it is refused as before.
 SANDBOX_DIR = ".claude-sandbox-noreplace"  # an empty directory, wherever it appears
-SANDBOX_EMPTY_FILES = frozenset({"config.worktree", *ALTERNATES})
+SANDBOX_EMPTY_FILES = frozenset({"config.worktree", "config.lock", *ALTERNATES})
 # `glab-cli/`, `modules/` and `worktrees/`: Claude Code lists `.git/glab-cli`, `.git/modules` and
 # `.git/worktrees` among the paths its sandbox protects (read in the binary of 2.1.321; seen made
 # empty at every session start by 2.1.323 for `glab-cli` and `worktrees`). With anything in
