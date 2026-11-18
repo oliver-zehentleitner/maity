@@ -2866,7 +2866,7 @@ def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
     asks for the app's code and nothing else, then the dashboard."""
     run.step("second hub: a sign-in asks for the app's code before anything else")
     context, page = signed_in_page(run, browser)
-    step =page.locator("form.second-factor")
+    step = page.locator("form.second-factor")
     expect(step).to_contain_text("Enter the code from your authenticator app")
     # Nobody is shown as signed in yet (the header keeps only the brand and the theme).
     expect(page.locator("header .me-name")).to_have_count(0)
