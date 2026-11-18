@@ -110,10 +110,18 @@ class Service:
     # --- one connection --------------------------------------------------------------------
 
     def hello(self) -> None:
+        # The supervisor's copy carries the live `running` counts; `self.advertised` holds only
+        # the 0 the dict was built with, which a reconnect would otherwise re-assert to the hub
+        # (tsk-yfc9n6kmvs52). Fall back to the base dict when no supervisor is wired (tests).
+        caps = (
+            self.advertised
+            if self.supervisor is None
+            else self.supervisor.advertised_capabilities()
+        )
         packet = self.client.call(
             "POST",
             "/runner/hello",
-            body={"client": hub.CLIENT, "capabilities": self.advertised, "actual": self.actual()},
+            body={"client": hub.CLIENT, "capabilities": caps, "actual": self.actual()},
         )
         runner = packet.get("runner") if isinstance(packet, dict) else None
         self.session_id = runner.get("session_id") if isinstance(runner, dict) else None
@@ -182,6 +190,11 @@ class Service:
         while True:
             try:
                 self.hello()
+                # The hello just (re)set the hub's `running` count to what it carried; have the
+                # supervisor re-PATCH the live total on its next tick even if it has not changed,
+                # so a reconnect never leaves a stale count standing (tsk-yfc9n6kmvs52).
+                if self.supervisor is not None:
+                    self.supervisor.reconnected()
                 while True:
                     started, before = self.monotonic(), self.cursor
                     woken = self.poll()
