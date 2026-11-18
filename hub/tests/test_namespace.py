@@ -11,6 +11,7 @@ from sqlalchemy import Engine, insert, select
 from maity_hub import clock, namespace
 from maity_hub import paths as hub_paths
 from maity_hub import tables as t
+from maity_hub.ids import new_id
 from maity_hub.registration_accounts import check_names
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -65,6 +66,47 @@ def test_an_alias_keeps_its_slug_taken_and_resolves(owner: flow.Human, migrated:
     assert owner.get("/projects/maintainer/old").json()["full_name"] == "maintainer/maity"
     taken = owner.post("/projects", {"slug": "old", "name": "Old"})
     assert taken.json()["error"]["details"]["fields"] == {"slug": "taken"}
+
+
+def test_the_one_owner_join_names_projects_and_aliases_of_either_owner(migrated: Engine) -> None:
+    """`name_of` and `aliases_of` are the batch readers with one id, over one owner join: a
+    human's and an organisation's project by the owner's current handle, aliases oldest first,
+    each under the owner it was taken in."""
+    anna = factory.human(migrated, "anna")
+    acme = new_id("org")
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.org).values(
+                id=acme, handle="acme", display_name="Acme", created_at=clock.now()
+            )
+        )
+    mine = factory.project(migrated, "shop", owner_id=anna)
+    theirs = factory.project(migrated, "shop", owner_id=acme)
+    with migrated.begin() as conn:
+        for slug, was in (("first", anna), ("second", acme)):
+            conn.execute(
+                insert(t.project_alias).values(
+                    project_id=theirs,
+                    **namespace.owner_values(was),
+                    slug=slug,
+                    created_at=clock.now(),
+                )
+            )
+    with migrated.connect() as conn:
+        assert namespace.full_names(conn, [mine, theirs]) == {
+            mine: "anna/shop",
+            theirs: "acme/shop",
+        }
+        assert [namespace.name_of(conn, p) for p in (mine, theirs)] == ["anna/shop", "acme/shop"]
+        row = conn.execute(select(t.project).where(t.project.c.id == theirs)).one()
+        assert namespace.owner_of(conn, row) == {"id": acme, "handle": "acme"}
+        assert namespace.full_name(conn, row) == "acme/shop"
+        assert namespace.aliases_of(conn, theirs) == ["anna/first", "acme/second"]
+        assert namespace.aliases_of(conn, mine) == []
+        assert namespace.aliases_by(conn, [mine, theirs]) == {
+            mine: [],
+            theirs: ["anna/first", "acme/second"],
+        }
 
 
 @pytest.mark.parametrize(

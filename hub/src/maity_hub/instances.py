@@ -25,9 +25,10 @@ from maity_hub.events import Actor, emit, lock_project
 from maity_hub.ids import new_instance_id
 from maity_hub.models import Strict
 from maity_hub.scopes import tokens_of
+from maity_hub.seen import ONLINE, presence_by_age
 
 INSTANCE_PATTERN = re.compile(r"[2-9a-hjkmnp-z]{4,5}")
-MAX_INSTANCES = 16
+BOUND = 1000  # the hub's bound of `max_instances`; its ceiling is in ceilings.py (§6.31)
 
 
 def address(member_id: str, instance: str) -> str:
@@ -155,7 +156,7 @@ def team(conn: Connection, row: Any, people: Mapping[str, Any] | None = None) ->
         "wake": row.wake,
         "review_within_team": bool(row.review_within_team),
         "updated_by": by,
-        "updated_at": clock.rfc3339(row.team_updated_at) if row.team_updated_at else None,
+        "updated_at": clock.rfc3339_or_none(row.team_updated_at),
     }
 
 
@@ -199,14 +200,42 @@ def active_count(conn: Connection, membership_id: int) -> int:
     )
 
 
-def refuse_over_quota(conn: Connection, member: Any, adding: int = 1) -> None:
-    """`instance_quota` when the team would have more active instances than it may."""
-    if active_count(conn, member.id) + adding > member.max_instances:
+def max_instances_limit(conn: Connection, member: Any, project: Any | None = None) -> Any:
+    """`max_instances` in effect for the agent membership `member` (§6.31): its stored value,
+    or its ceiling when that is lower, the agent profile owner's account override counting."""
+    from maity_hub import ceilings
+
+    if project is None:
+        project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
+    owner = conn.execute(
+        select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == member.agent_id)
+    ).scalar_one()
+    return ceilings.resolve(conn, "max_instances", project, member.max_instances, owner), owner
+
+
+def refuse_over_quota(
+    conn: Connection, member: Any, adding: int = 1, caller_id: str | None = None
+) -> None:
+    """`instance_quota` with the quota details (§6.31) when the team would have more active
+    instances than `max_instances` in effect allows. The ceiling's value is shown to the
+    agent profile's owner, who sets the value; `caller_id` names the caller."""
+    from maity_hub import ceilings, namespace
+
+    count = active_count(conn, member.id)
+    project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
+    limit, owner = max_instances_limit(conn, member, project)
+    if count + adding > limit.limit:
         raise ApiError(
             409,
             "instance_quota",
             "the team has as many instances as its rulebook allows",
-            {"max": member.max_instances},
+            ceilings.details(
+                limit,
+                count,
+                namespace.full_name(conn, project),
+                sees_ceiling=caller_id is not None and caller_id == owner,
+                member_id=member.agent_id,
+            ),
         )
 
 
@@ -288,22 +317,14 @@ def resolve(
     raise invalid({field: "instance_required"}, "name the instance: the team has several")
 
 
-ONLINE_SECONDS, AWAY_SECONDS = 120, 2 * 3600
-
-
 def presence(last_used_at: datetime | None, live: bool, listening: bool) -> str:
     """One instance's presence by the table of §5.3; the membership's pause is applied
-    by the caller."""
+    by the caller. Every call writes `last_used_at`, so it is the latest call itself."""
     if listening:
         return "online"
     if not live or last_used_at is None:
         return "offline"
-    age = (clock.now() - last_used_at).total_seconds()
-    if age <= ONLINE_SECONDS:
-        return "online"
-    if age <= AWAY_SECONDS:
-        return "away"
-    return "offline"
+    return presence_by_age(clock.now() - last_used_at)
 
 
 def views(
@@ -365,11 +386,7 @@ def views(
                         "started_at": clock.rfc3339(session.started_at),
                         "listening": is_listening,
                         # When the 10 minutes ran out, while an episode is open (§5.3).
-                        "not_listening_since": (
-                            clock.rfc3339(session.not_listening_since)
-                            if session.not_listening_since is not None
-                            else None
-                        ),
+                        "not_listening_since": clock.rfc3339_or_none(session.not_listening_since),
                     }
                     if session
                     else None
@@ -379,7 +396,7 @@ def views(
                     if member.paused_since is not None or c.paused_since is not None
                     else presence(c.last_used_at, session is not None, is_listening)
                 ),
-                "last_seen_at": clock.rfc3339(c.last_used_at) if c.last_used_at else None,
+                "last_seen_at": clock.rfc3339_or_none(c.last_used_at),
                 "paused": paused_view(c),
                 "dormant": dormant_view(c),
                 "lead": member.lead_instance == c.instance,
@@ -560,11 +577,7 @@ def round_robin(conn: Connection, member: Any) -> str | None:
         if session is not None and session.id in heard:
             return True
         seen = c.last_used_at
-        return (
-            session is not None
-            and seen is not None
-            and (now - seen).total_seconds() <= ONLINE_SECONDS
-        )
+        return session is not None and seen is not None and now - seen <= ONLINE
 
     chosen: str = next((c for c in order if online(c)), order[0]).instance
     conn.execute(
@@ -660,7 +673,7 @@ def refresh_team_wake(conn: Connection, project_id: str) -> None:
 
 
 class TeamIn(Strict):
-    max_instances: int | None = Field(default=None, ge=1, le=MAX_INSTANCES)
+    max_instances: int | None = Field(default=None, ge=1, le=BOUND)
     distribution: Literal["free", "lead", "round_robin"] | None = None
     lead_instance: str | None = Field(default=None, max_length=5)
     wake: Literal["all", "lead", "next_free"] | None = None
@@ -749,6 +762,16 @@ def _set_team(conn: Connection, target: Any, team: TeamIn, caller: Caller) -> No
             if value is None:
                 raise invalid({f"team.{field}": "required"})
             values[field] = value
+    if "max_instances" in values:
+        from maity_hub import ceilings
+
+        project = conn.execute(select(t.project).where(t.project.c.id == target.project_id)).one()
+        owner = conn.execute(
+            select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == target.agent_id)
+        ).scalar_one()
+        cap = ceilings.ceiling(conn, "max_instances", project, owner)
+        if values["max_instances"] > cap.value:
+            raise ceilings.above_ceiling("team.max_instances", cap)
     if "lead_instance" in given:
         if team.lead_instance is not None:
             if not INSTANCE_PATTERN.fullmatch(team.lead_instance):

@@ -56,7 +56,7 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | done, tsk-239r9cwxje6w (#1544) |
 | 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | done, tsk-239r9cwxje6w (#1542) |
 | 10 | One boot read: the window, the session, `/me` and on a project view the head, the project and its members in one answer | two round trips fewer on a project view, one elsewhere (expected) | M, contract | done, tsk-x4z69ff785y6 and tsk-j591fzgnmspf (below) |
-| 11 | Bundling the scripts with a build step | beyond item 2, if still needed | L | later |
+| 11 | Bundling the scripts with a build step | fewer of a cold load's ~100 script and stylesheet requests, if a new measurement still needs it | L | later |
 | 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later |
 | 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | later |
 | 14 | Render cost in the browser, from a performance trace of the board and a chat | unknown | S to measure | later |
@@ -69,8 +69,8 @@ after a measurement before any code (nte-ksp8m8crdtkc): the dashboard loads clas
 deferred scripts, not ES modules, and `modulepreload` applies to module scripts only; on a
 classic script it would fetch the file a second time. After the compression and
 revalidation of item 1 went live, the script phase measured about 0.5–0.6 s cold and
-0.25 s warm (nte-d1jaydnt671c), no longer over the budget, and that note saw no case for
-the build-step question (item 11) then.
+0.25 s warm, signed out (nte-d1jaydnt671c), no longer well over the ~1 s budget, and that
+note saw no case for the build-step question (item 11) then.
 
 **Reason:** the owner set the goal and the order. Working by expected gain puts the shared
 cold-load cost first, since every page pays it. A kept list lets a measure that is not done

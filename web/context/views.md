@@ -4533,6 +4533,24 @@ While full, everything outside the chat is `inert`: no focus reaches the covered
 - A route of its own for the full screen (`…/chat/<id>/full`): a reload or a shared link would open a page with no way out but the button, and the router would draw the chat again on every switch.
 - A history entry without the layer: the router draws the view again on every back (js/app.js `route.listen`), so the chat would be read again and lose its scroll position.
 
+## A chat bubble takes up to 60% of its column, at most 60rem; up to a 960px column it keeps 36rem
+
+**Id:** 40f31221-2c21-486f-acf3-e3d553a4393d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-e305sjdqes86, owner's wish 2026-11-18 (in the chat's full screen on a desktop a bubble used about a third of the width and the middle third stayed empty; bubbles should take 50–60%); the implementing change's estimate of the widths from the stylesheet (15px body text, 16px rem), not measured in a browser
+**Revisit when:** the body's font size or the chat's full-screen layout changes, or the page's main column (1200px) grows so far that the page's chat column passes 960px
+**See:** views.md#on-a-phone-a-chat-shows-less-around-it-and-any-chat-can-take-the-whole-window — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-18
+
+A bubble (`.msg`, web/css/app.css) is `max-width: min(max(36rem, 60%), 60rem, 90%)` of the message column. Up to a 960px column, where 60% is no more than 36rem, that is the old `min(36rem, 90%)`. So a phone and the chat on the page are unchanged; the page's chat column stays under about 770px inside the 1200px main. Wider, as in full screen on a desktop, a bubble grows to 60% of the column, and from a 1600px column on it stops at 60rem: about 750px (60%) at 1280px, 960px (about half) at 1920px. It is one rule for every width, not one under `html.chat-full`, because the page's chat never reaches a column where the two would differ.
+
+**Reason:** the owner asked for 50–60% of the width on a desktop. The cap is in rem, not ch. The body's text is 15px and a `ch` there is about half of that, so 80ch is about 650–700px. That is barely more than the old 36rem (576px), and on a 1920px window a bubble would stay at about a third, the very thing the owner named. 60rem keeps a long line from running across the whole screen and still gives half of a 1920px window. The confirmed part is the wish (50–60% instead of about a third), which is the owner's. The 60rem cap and the arithmetic behind it are the implementing change's own reading and the owner has not confirmed them, so the entry is inferred.
+
+**Rejected alternatives:**
+- An 80ch cap, as the card's implementation note suggested ("e.g. ~80ch"): about 36% of a 1920px window, short of the owner's 50–60%.
+- A rule only under `html.chat-full`, as the card put it ("in full screen (and on wide screens)"): outside the full screen the column never passes 960px, so the rule would change nothing there; with it, a wide window's chat on the page would keep the narrow width for no reason if the page's column ever grew.
+
 ## The row of tabs has no New project tab; the tabs menu follows the tabs, a dragged tab's place is a line
 
 **Id:** 4ff40142-df78-4c11-8f0c-c0024adecd79

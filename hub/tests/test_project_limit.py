@@ -39,7 +39,11 @@ def test_the_default_is_ten_and_the_eleventh_is_refused(admin: flow.Human) -> No
     assert admin.get(PATH).json()["max_projects_per_owner"] == {"value": 10, "source": "default"}
     for n in range(10):
         assert create(admin, f"p{n}").status_code == 201
-    assert error(create(admin, "p10")) == (409, "project_limit", {"limit": 10, "count": 10})
+    assert error(create(admin, "p10")) == (
+        409,
+        "project_limit",
+        {"limit": 10, "count": 10, "source": "instance"},
+    )
     assert admin.get(PATH).json()["owners_at_project_limit"] == 1
 
 
@@ -49,8 +53,12 @@ def test_an_organisation_has_a_cap_of_its_own(admin: flow.Human) -> None:
     assert create(admin, "mine").status_code == 201
     assert create(admin, "ours", owner="oz-team").status_code == 201
     refused = create(admin, "more", owner="oz-team")
-    assert error(refused) == (409, "project_limit", {"limit": 1, "count": 1})
-    assert error(create(admin, "more")) == (409, "project_limit", {"limit": 1, "count": 1})
+    assert error(refused) == (409, "project_limit", {"limit": 1, "count": 1, "source": "instance"})
+    assert error(create(admin, "more")) == (
+        409,
+        "project_limit",
+        {"limit": 1, "count": 1, "source": "instance"},
+    )
     assert admin.get(PATH).json()["owners_at_project_limit"] == 2
 
 
@@ -59,7 +67,11 @@ def test_an_archived_project_counts(admin: flow.Human, migrated: Engine) -> None
     assert create(admin, "old").status_code == 201
     with migrated.begin() as conn:
         conn.execute(update(t.project).values(state="archived"))
-    assert error(create(admin, "new")) == (409, "project_limit", {"limit": 1, "count": 1})
+    assert error(create(admin, "new")) == (
+        409,
+        "project_limit",
+        {"limit": 1, "count": 1, "source": "instance"},
+    )
 
 
 def test_unlimited_lifts_it_and_lowering_keeps_what_is_there(admin: flow.Human) -> None:
@@ -68,7 +80,11 @@ def test_unlimited_lifts_it_and_lowering_keeps_what_is_there(admin: flow.Human) 
     lowered = admin.patch(PATH, {"max_projects_per_owner": 2})
     assert lowered.json()["owners_at_project_limit"] == 1  # three of two: at (or over) it
     assert len(admin.get("/projects").json()["items"]) == 3  # nothing is taken away
-    assert error(create(admin, "p3")) == (409, "project_limit", {"limit": 2, "count": 3})
+    assert error(create(admin, "p3")) == (
+        409,
+        "project_limit",
+        {"limit": 2, "count": 3, "source": "instance"},
+    )
     assert admin.patch(PATH, {"max_projects_per_owner": "unlimited"}).status_code == 200
     assert create(admin, "p3").status_code == 201
     back = admin.patch(PATH, {"max_projects_per_owner": None}).json()
@@ -83,7 +99,11 @@ def test_the_environment_wins(make_client: ClientFactory, migrated: Engine) -> N
         "max_projects_per_owner": "set_by_environment"
     }
     assert create(who, "one").status_code == 201
-    assert error(create(who, "two")) == (409, "project_limit", {"limit": 1, "count": 1})
+    assert error(create(who, "two")) == (
+        409,
+        "project_limit",
+        {"limit": 1, "count": 1, "source": "instance"},
+    )
 
 
 def test_read_only_count_is_refused_in_a_patch(admin: flow.Human) -> None:
@@ -114,7 +134,11 @@ def test_a_transfer_into_a_full_namespace_is_refused_when_filed(
 ) -> None:
     assert admin.patch(PATH, {"max_projects_per_owner": 1}).status_code == 200
     flow.project(anna, "hers")
-    assert error(transfer(admin, anna.id)) == (409, "project_limit", {"limit": 1, "count": 1})
+    assert error(transfer(admin, anna.id)) == (
+        409,
+        "project_limit",
+        {"limit": 1, "count": 1, "source": "instance"},
+    )
 
 
 def test_a_go_into_a_namespace_that_filled_up_withdraws_and_moves_nothing(
@@ -128,7 +152,7 @@ def test_a_go_into_a_namespace_that_filled_up_withdraws_and_moves_nothing(
     answered = anna.post(
         f"/projects/maintainer/maity/requests/{request['id']}/answer", {"reply_id": "go"}
     )
-    assert error(answered) == (409, "project_limit", {"limit": 1, "count": 1})
+    assert error(answered) == (409, "project_limit", {"limit": 1, "count": 1, "source": "instance"})
     got = admin.get(f"/projects/maintainer/maity/requests/{request['id']}").json()
     assert got["status"] == "withdrawn"
     assert admin.get("/projects/maintainer/maity").json()["full_name"] == "maintainer/maity"
@@ -141,7 +165,7 @@ def test_a_move_into_a_full_organisation_is_refused(admin: flow.Human) -> None:
     assert admin.patch(PATH, {"max_projects_per_owner": 1}).status_code == 200
     org_id = admin.get("/orgs/oz-team").json()["id"]
     refused = transfer(admin, org_id, "maintainer/shop")
-    assert error(refused) == (409, "project_limit", {"limit": 1, "count": 1})
+    assert error(refused) == (409, "project_limit", {"limit": 1, "count": 1, "source": "instance"})
     assert admin.get("/projects/maintainer/shop").json()["full_name"] == "maintainer/shop"
 
 
@@ -194,7 +218,11 @@ def test_two_creations_at_nine_give_one_project_and_one_project_limit(
         step = r.run(second, lambda: create(admin, "eleventh"))
         assert waiting(step)  # on the owner's row, which the first creation holds
         first.commit()
-        assert error(finished(step)) == (409, "project_limit", {"limit": 10, "count": 10})
+        assert error(finished(step)) == (
+            409,
+            "project_limit",
+            {"limit": 10, "count": 10, "source": "instance"},
+        )
         second.rollback()
     with migrated.connect() as conn:
         owned = select(t.project.c.id).where(t.project.c.owner_id == admin.id)

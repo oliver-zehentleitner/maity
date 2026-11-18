@@ -70,9 +70,9 @@ def route_words(paths: Iterable[str]) -> frozenset[str]:
 ROUTE_WORDS = frozenset(
     {
         "attachments", "banner", "conversations", "credentials", "events", "forge",
-        "invitations", "joins", "jour-fixe", "keep-the-why", "logo", "me", "members", "memory",
-        "messages", "placements", "probe", "repository", "requests", "roles", "rules", "runners",
-        "swarm", "takeovers", "tasks", "ticker", "transfer",
+        "invitations", "joins", "jour-fixe", "keep-the-why", "limits", "logo", "me", "members",
+        "memory", "messages", "placements", "probe", "repository", "requests", "roles", "rules",
+        "runners", "swarm", "takeovers", "tasks", "ticker", "transfer",
     }
 )  # fmt: skip
 
@@ -99,23 +99,12 @@ def owner_values(owner_id: str) -> dict[str, Any]:
     }
 
 
-def _owners(table: Any) -> Any:
-    """`table` with its owner, a human or an organisation, joined for the handle."""
-    return table.outerjoin(t.human, t.human.c.id == table.c.owner_human_id).outerjoin(
+def join_owner(query: Any, table: Any = t.project) -> Any:
+    """`query`, which has `table` (`project` or `project_alias`) among its tables or is that
+    table, with the row's owner, a human or an organisation, joined: use `owner_handle()` for
+    its handle."""
+    return query.outerjoin(t.human, t.human.c.id == table.c.owner_human_id).outerjoin(
         t.org, t.org.c.id == table.c.owner_org_id
-    )
-
-
-def _handle(table: Any) -> Any:
-    """The current handle of the row's namespace owner, whichever kind it is."""
-    return func.coalesce(t.human.c.handle, t.org.c.handle)
-
-
-def join_owner(query: Any) -> Any:
-    """`query`, which has `project` among its tables, with the project's owner joined: use
-    `owner_handle()` for its handle."""
-    return query.outerjoin(t.human, t.human.c.id == t.project.c.owner_human_id).outerjoin(
-        t.org, t.org.c.id == t.project.c.owner_org_id
     )
 
 
@@ -165,8 +154,8 @@ def resolve(conn: Connection, full_name: str) -> Any | None:
 def owner_of(conn: Connection, project: Any) -> dict[str, str]:
     """`{id, handle}` of the project's namespace owner, by its current handle."""
     handle = conn.execute(
-        select(_handle(t.project))
-        .select_from(_owners(t.project))
+        select(owner_handle())
+        .select_from(join_owner(t.project))
         .where(t.project.c.id == project.id)
     ).scalar_one()
     return {"id": project.owner_id, "handle": handle}
@@ -186,24 +175,13 @@ def full_name(conn: Connection, project: Any) -> str:
 
 def name_of(conn: Connection, project_id: str) -> str:
     """The full name of the project with this id (§6.25)."""
-    row = conn.execute(
-        select(t.project.c.slug, _handle(t.project).label("handle"))
-        .select_from(_owners(t.project))
-        .where(t.project.c.id == project_id)
-    ).one()
-    return f"{row.handle}/{row.slug}"
+    return full_names(conn, [project_id])[project_id]
 
 
 def aliases_of(conn: Connection, project_id: str) -> list[str]:
     """The project's earlier full names, oldest first, each with its owner's current handle
     (an owner's own handle aliases resolve anyway, §6.24)."""
-    rows = conn.execute(
-        select(t.project_alias.c.slug, _handle(t.project_alias).label("handle"))
-        .select_from(_owners(t.project_alias))
-        .where(t.project_alias.c.project_id == project_id)
-        .order_by(t.project_alias.c.id)
-    ).all()
-    return [f"{row.handle}/{row.slug}" for row in rows]
+    return aliases_by(conn, [project_id])[project_id]
 
 
 def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
@@ -212,8 +190,8 @@ def full_names(conn: Connection, project_ids: Iterable[str]) -> dict[str, str]:
     if not ids:
         return {}
     rows = conn.execute(
-        select(t.project.c.id, t.project.c.slug, _handle(t.project).label("handle"))
-        .select_from(_owners(t.project))
+        select(t.project.c.id, t.project.c.slug, owner_handle().label("handle"))
+        .select_from(join_owner(t.project))
         .where(t.project.c.id.in_(ids))
     ).all()
     return {row.id: f"{row.handle}/{row.slug}" for row in rows}
@@ -253,9 +231,9 @@ def aliases_by(conn: Connection, project_ids: Iterable[str]) -> dict[str, list[s
         select(
             t.project_alias.c.project_id,
             t.project_alias.c.slug,
-            _handle(t.project_alias).label("handle"),
+            owner_handle().label("handle"),
         )
-        .select_from(_owners(t.project_alias))
+        .select_from(join_owner(t.project_alias, t.project_alias))
         .where(t.project_alias.c.project_id.in_(ids))
         .order_by(t.project_alias.c.id)
     ).all()

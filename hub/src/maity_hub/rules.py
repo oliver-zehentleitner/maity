@@ -173,11 +173,7 @@ REVIEW = (
 def reviews(project: Any, role: str) -> bool:
     """Whether `role` gets the review line: `reviewer`, a security team that counts as it
     (`purple-team`), or a project role built on either (§2.3, §6.9)."""
-    from maity_hub import project_roles
-    from maity_hub.scopes import counts_as
-
-    base = project_roles.base_of(project, role)
-    return base is not None and counts_as(base) == "reviewer"
+    return rule_role(project, role) == "reviewer"
 
 
 # The naming line (§6.9): how an agent names a member in what a human reads.
@@ -221,8 +217,7 @@ def _project_role_lines(project: Any, role: str) -> list[str]:
     found = rule_role(project, role)
     if found is None:
         return []
-    # `getattr`: a project row always has `settings`; a stand-in of a unit test may not.
-    rules = ((getattr(project, "settings", None) or {}).get("role_rules") or {}).get(found)
+    rules = ((project.settings or {}).get("role_rules") or {}).get(found)
     if not rules:
         return []
     paragraphs: list[list[str]] = []
