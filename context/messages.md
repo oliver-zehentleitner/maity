@@ -423,7 +423,7 @@ needs; the backlog does not.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's go of 2026-10-30 (point 4 of the coordinator's list, card tsk-22kjdwfv19xh) after two reviews that day named code that was not in the diff; contract `docs/api.md` §8.4
+**Source:** the maintainer's go of 2026-10-30 (point 4 of the coordinator's list, card tsk-22kjdwfv19xh) after two reviews that day named code that was not in the diff; contract `docs/api.md` §8.4; the sample check named a process rule, not a hub rule, by the lead's decision of 2026-11-18 on card tsk-dftehq7qvk51
 **Revisit when:** the hub is to check a cite through its forge read, which it can do and has not been asked to, or reviews move to the forge's own review API
 
 A `review_result` message carries `review`: the subject, the full head
@@ -431,6 +431,9 @@ commit it reviewed, a verdict (`approve`, `changes`, `comment`) and
 one to fifty cites, each a path, an optional line and the quoted text.
 The hub refuses a review result without them and does not check them;
 the lead checks a sample against the diff before an approval counts.
+That sample check is a process rule for the lead, not something the
+hub enforces: the hub counts an `approve` on exactly the reported head
+on its own (`docs/api.md` §2.3, "Own approvals").
 
 **Reason:** a review that cites nothing cannot be checked except by
 redoing it; with cites the lead compares a few quotes with the diff in
