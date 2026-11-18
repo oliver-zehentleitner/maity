@@ -1552,7 +1552,9 @@ lead's order seq 161901 and 161910):
 - When a new head reopens a `done` card of outsiders' work (below),
   the claim the closed card kept as a record goes through the checks
   of a claim again: it stays only while the holder may take a claim
-  now under `docs/api.md` §2.3, §6.2 and §6.5, and its
+  now under `docs/api.md` §2.3, §6.2 and §6.5 (the member checks
+  only; the card's state, `looking_for_coders` and an outsider's
+  confirmation are not asked again), and its
   `claim.instance`, if any, is active, or the §6.17 chain from it ends
   in an active instance, which the claim then names; otherwise the hub
   releases it and the card goes to `open`, not `review` (next point;

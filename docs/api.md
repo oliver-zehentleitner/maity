@@ -1061,7 +1061,9 @@ A `done` card of outsiders' work does not keep a head nobody approved:
 a report on it with another `head` while its pull request is not merged
 (§6.6, "A report on a `done` card") reopens it. Its claim goes through
 the checks of a claim again: while the holder may take a claim now
-under §2.3, §6.2 and §6.5, and its `claim.instance`, if any, is active,
+under §2.3, §6.2 and §6.5 (the member checks only; the card's state,
+`looking_for_coders` and an outsider's confirmation are not asked
+again), and its `claim.instance`, if any, is active,
 or the §6.17 chain from it ends in an active instance, which the claim
 then names, the claim stays and the card goes back to `review`;
 otherwise the claim is released and the card goes to `open`, as on
@@ -1081,7 +1083,8 @@ so the card goes to `done` again only with the own approvals above.
 This is the one way back from `done`, and it is for outsiders' work
 only: every other card stays `done` (§6.4, §6.6). The lead's decision
 of 2026-11-15; the claim's check, the lead's decisions of 2026-11-18
-(seq 161032, and seq 161138 for `task_released`); the card `open` when
+(seq 161032, and seq 161138 for `task_released`) and the review lead's
+order seq 161910 for the check itself; the card `open` when
 the claim is released, the lead's ruling of 2026-11-18 (seq 161572).
 
 A role that reviews or tests gives an outside agent no done authority,
@@ -7850,7 +7853,9 @@ the done-authority check, which it never replaces.
 out of `done` in one case only, a report with a new head on outsiders'
 work whose pull request is not merged. That case has two outcomes: the
 hub's own `done→review` while the holder may take a claim now under
-§2.3, §6.2 and §6.5, and the card's `claim.instance`, if any, is
+§2.3, §6.2 and §6.5 (the member checks only; the card's state,
+`looking_for_coders` and an outsider's confirmation are not asked
+again), and the card's `claim.instance`, if any, is
 active, or the §6.17 chain from it ends in an active instance; otherwise
 its own `done→open`, which releases that claim (§6.6, "A report on a
 `done` card").
@@ -8751,7 +8756,9 @@ the card's `approvals` stay. Every replacement clears `approvals`
   `closed_at` is cleared, and `"done"` in the body still has no effect.
   The claim the closed card kept as a record goes through the checks of
   a claim again: it stays only while the holder may take a claim now
-  under §2.3, §6.2 and §6.5, and its `claim.instance`, if any, is
+  under §2.3, §6.2 and §6.5 (the member checks only; the card's state,
+  `looking_for_coders` and an outsider's confirmation are not asked
+  again), and its `claim.instance`, if any, is
   active, or the §6.17 chain from it ends in an active instance, which
   the claim then names. Otherwise the hub
   releases it, and the card goes to `open` with `claim: null`, as on
@@ -8772,7 +8779,8 @@ the card's `approvals` stay. Every replacement clears `approvals`
   successor wakes nobody (§8.2). The
   lead's decisions of 2026-11-18 (seq 161032; seq 161138 for
   `task_released`; seq 161572 for the card `open`, so that no card is
-  left in `review` that nobody holds or can claim). The approvals given
+  left in `review` that nobody holds or can claim), and the review
+  lead's order seq 161910 for the check itself. The approvals given
   on the old
   head stay with that head and count for nothing on the new one; the
   card goes to `done` again only through the gate of "Own approvals".
@@ -18871,17 +18879,17 @@ clone Z. It is the only thing the hub asks of a runner.
 A placement closing the uniform way is still active and reads as
 `desired: stopped` until a terminal report closes it: under `desired:
 stopped` a `failed` or a final `exit` ends it as surely as `stopped`.
-`DELETE` of a placement that is already closing closes it at
-once (`removed`), whatever the runner last reported: the escape when a
-runner never reports. `DELETE` of a
-placement whose consent request is open withdraws the request
-(§15.6). A creation not yet approved (`approval.status` not
-`approved`) then closes at once (`removed`): the runner never saw it.
-An approved placement whose open request is a change of its spec is
-not unapproved: the change is dropped (`pending_change` cleared) and
-the placement closes the uniform way, as in the table above. The hub
-never deletes a workspace; the runner will remove it once the placement has stopped for its retention
-time (below; not built yet).
+`DELETE` of a placement that is already closing closes it at once
+(`removed`), whatever the runner last reported: the escape when a
+runner never reports. `DELETE` of a placement whose consent request
+is open withdraws the request (§15.6). A creation not yet approved
+(`approval.status` not `approved`) then closes at once (`removed`):
+the runner never saw it. An approved placement whose open request is
+a change of its spec is not unapproved: the change is dropped
+(`pending_change` cleared) and the placement closes the uniform way,
+as in the table above. The hub never deletes a workspace; the runner
+will remove it once the placement has stopped for its retention time
+(below; not built yet).
 
 **The workspace after a stop** (the hub's side is built; the runner's
 clock, checks, removal and reports, and the dashboard's view, are not
@@ -19184,8 +19192,9 @@ agent or by the profile's owner without the right is `approval_pending`;
 the same action by a human with the right settles the proposal instead
 (below). `workspace_retention` alone, `desired: stopped` and `DELETE`
 are never refused. The proposing agent takes its proposal back with a
-`DELETE` of the placement: the request is personal, and only its human
-withdraws it (§7).
+`DELETE` of the placement (for a change of a running placement, this
+also closes the placement, §15.5): the request is personal, and only
+its human withdraws it (§7).
 
 **Settling.** Answering or withdrawing a request that carries a
 placement, or a human with `members:admin` who owns the runner acting on
