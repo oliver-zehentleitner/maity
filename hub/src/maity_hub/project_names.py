@@ -81,12 +81,9 @@ def withdraw_into(conn: Connection, org_id: str, reason: str) -> None:
         close_request(conn, row.id, "withdrawn", None, reason=reason)
 
 
-def withdraw_started_by(conn: Connection, human_id: str, reason: str) -> None:
-    """Withdraw every open transfer into an organisation that `human_id` started (§2.9): the
-    consent requests to the owners are theirs, and nobody is left to stand behind them. The
-    organisations' rows are locked by the caller (`orgs.lock_all_of`), before the projects'."""
-    from maity_hub.routes.requests import close_request
-
+def started_by(conn: Connection, human_id: str) -> list[Any]:
+    """The open transfers into an organisation that `human_id` started: their requests' rows
+    (`id`, `project_id`, `proposal`), oldest first."""
     rows = conn.execute(
         select(t.request.c.id, t.request.c.project_id, t.request.c.proposal)
         .where(
@@ -96,10 +93,21 @@ def withdraw_started_by(conn: Connection, human_id: str, reason: str) -> None:
         )
         .order_by(t.request.c.created_at, t.request.c.id)
     ).all()
-    for row in rows:
-        proposal = row.proposal or {}
-        if proposal.get("kind") != KIND or proposal.get("by") != human_id:
-            continue
+    return [
+        row
+        for row in rows
+        if (row.proposal or {}).get("kind") == KIND and (row.proposal or {}).get("by") == human_id
+    ]
+
+
+def withdraw_started_by(conn: Connection, human_id: str, reason: str) -> None:
+    """Withdraw every open transfer into an organisation that `human_id` started (§2.9): the
+    consent requests to the owners are theirs, and nobody is left to stand behind them. The
+    organisations' and the projects' rows are locked by the caller, in that order, in the
+    deletion's first pass (`account_deletion.lock_first`)."""
+    from maity_hub.routes.requests import close_request
+
+    for row in started_by(conn, human_id):
         events.lock_project(conn, row.project_id)
         close_request(conn, row.id, "withdrawn", None, reason=reason)
 

@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import hub, onboarding, sign, state
-from . import capabilities, config, supervisor, targets
+from . import capabilities, config, keeper, supervisor, targets
 
 EXIT_CONFIG = 78  # EX_CONFIG; RestartPreventExitStatus in the unit
 POLL_WAIT = 55
@@ -93,6 +93,8 @@ class Service:
     client: hub.Client
     advertised: dict[str, Any]
     reconcile: Callable[[list[dict[str, Any]]], None] = lambda placements: None
+    # The hub's closed placements of this runner (§15.8 `closed=true`), for their scratch.
+    closed: Callable[[list[dict[str, Any]]], None] = lambda placements: None
     actual: Callable[[], list[dict[str, Any]]] = lambda: []
     sleep: Callable[[float], None] = time.sleep
     monotonic: Callable[[], float] = time.monotonic
@@ -103,6 +105,7 @@ class Service:
     last_read: float = 0.0
     connected: bool = False
     supervisor: supervisor.Supervisor | None = None
+    keeper: keeper.Keeper | None = None
 
     # --- one connection --------------------------------------------------------------------
 
@@ -144,6 +147,20 @@ class Service:
     def read_placements(self) -> None:
         answer = self.client.call("GET", "/runner/placements")
         self._take(answer.get("items") if isinstance(answer, dict) else None)
+        self.read_closed()
+
+    def read_closed(self) -> None:
+        """The closed placements whose scratch the supervisor removes (§15.5). A hub that
+        refuses the read leaves them for the next one; it never ends the service."""
+        try:
+            answer = self.client.call("GET", "/runner/placements", query=[("closed", "true")])
+        except hub.HubError as exc:
+            if exc.status is None or exc.status >= 500 or exc.status == 429:
+                raise
+            log(f"closed placements not read: {onboarding.inline(str(exc))}")
+            return
+        items = answer.get("items") if isinstance(answer, dict) else None
+        self.closed([p for p in items or [] if isinstance(p, dict)])
 
     def _take(self, placements: Any) -> None:
         self.placements = [p for p in placements or [] if isinstance(p, dict)]
@@ -320,7 +337,10 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
     else:
         path = capabilities.agent_path(cfg, os.environ.get("PATH", ""))
         as_user = supervisor.agents_user(cfg)
-        probes = {h.id: capabilities.probe(h, path, as_user) for h in cfg.harnesses.values()}
+        probes = {
+            h.id: capabilities.probe(h, path, as_user, cfg.tools_dir)
+            for h in cfg.harnesses.values()
+        }
         for harness_id, found in probes.items():
             if not found.available:
                 log(f"harness {harness_id} is advertised as unavailable ({found.reason})")
@@ -331,8 +351,28 @@ def open_service(cfg: config.Config, runner_state: dict[str, Any]) -> Service:
     sup = supervisor.build(
         cfg, hub.Client(base, key), log, probes, service.advertised, found_targets
     )
-    service.reconcile, service.actual = sup.update, sup.actual
+    service.reconcile, service.actual, service.closed = sup.update, sup.actual, sup.closed
     service.supervisor = sup
+    if found_targets is None and any(keeper.managed(h) for h in cfg.harnesses.values()):
+        # Only a runner that manages a tool advertises `tools` (§15.16): a hub from before
+        # them refuses the field, and a runner that manages none stays as it was for it.
+        # Its own client: an install takes minutes and never holds up the event wait.
+        service.keeper = keeper.Keeper(
+            cfg,
+            hub.Client(base, key),
+            log,
+            probes,
+            service.advertised,
+            capabilities.agent_path(cfg, os.environ.get("PATH", "")),
+            supervisor.agents_user(cfg),
+            sessions_on=sup.sessions_on,
+            advertise=sup.advertise_now,
+            sandbox=sup.targets["local"].sandbox if "local" in sup.targets else {},
+            held=sup.targets["local"].held if "local" in sup.targets else set(),
+            binaries_in_use=sup.binaries_in_use,
+            guard=sup.lock,
+        )
+        service.advertised["tools"] = service.keeper.entries()
     return service
 
 
@@ -360,6 +400,10 @@ def serve(config_path: Path) -> int:
     if service.supervisor is not None:
         threading.Thread(
             target=service.supervisor.run, args=(stopping,), daemon=True, name="maity-supervisor"
+        ).start()
+    if service.keeper is not None:
+        threading.Thread(
+            target=service.keeper.run, args=(stopping,), daemon=True, name="maity-tools"
         ).start()
     with stop_on_signals():
         try:

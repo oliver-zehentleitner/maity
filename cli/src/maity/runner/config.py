@@ -23,6 +23,7 @@ from ..hub import HubError, hub_base
 DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
+DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
 # Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
 # domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
 # configuration, which in the `single` layout is the operator's (cli/context/runner.md).
@@ -36,8 +37,18 @@ HARNESSES = (
 # No command allowlist in their own configuration (runner design §6.3): refused unless they
 # run in a pod and the operator says so for each.
 NOT_UNATTENDED = ("pi", "hermes", "kimi", "cline", "omp")
-# Built but not offered: the maintainer decides on these when the runner goes into use.
-NOT_OFFERED_YET = ("opencode",)
+# Built but not offered yet: a harness named here is refused until the maintainer offers it.
+# Empty now -- both earlier entries were offered. Antigravity was held back while its one
+# command grant was unconfined; the owner accepted that residual risk (req-9spwe33neh1z) and it
+# is offered again, with OS-level confinement of command(maity) added incrementally
+# (tsk-zjv2xyhyggnm). OpenCode (Grok) is likewise offered now (req-g4d2cskx6zxv): it has no OS
+# sandbox the runner switches on, so its command rules are not a security boundary and an
+# opencode agent must be treated as able to run any command as the agents' OS user (give it a
+# separate OS user). The owner accepted that residual risk (req-kezp8rppfhn5, "ship now, harden
+# next"), with an OS-level sandbox the planned hardening (tsk-nynpvag9zvhh).
+NOT_OFFERED_YET: tuple[str, ...] = ()
+# Why a not-offered harness is held back, where there is a specific reason to name.
+NOT_OFFERED_WHY: dict[str, str] = {}
 BINARIES = {"claude-code": "claude", "codex": "codex", "opencode": "opencode",
             "antigravity": "agy", "pi": "pi", "hermes": "hermes", "kimi": "kimi", "cline": "cline",
             "omp": "omp"}  # fmt: skip
@@ -124,6 +135,9 @@ class Harness:
     env_file: Path | None = None
     stub_exit_code: int = 0
     stub_run_seconds: int = 30
+    # §15.16: whether the runner installs a missing tool, and looks for a newer one daily.
+    install: bool = False
+    update: str = "never"
 
 
 @dataclass(frozen=True)
@@ -158,6 +172,10 @@ class Config:
     repositories: dict[str, RepositoryGrant]
     ssh: Ssh | None = None
     git: GitIdentity = GitIdentity()
+    maity_update: str = "never"  # `[maity] update` (§15.16)
+    # The versions the runner installs (§15.16): beside, not inside, state_dir, which no
+    # sandboxed command may read, while a harness's sandbox runs the harness's own files.
+    tools_dir: Path = Path(DEFAULT_TOOLS_DIR).expanduser()
 
 
 # --- reading ---------------------------------------------------------------------------------
@@ -497,10 +515,32 @@ def parse(raw: dict[str, Any], path: Path) -> Config:
         )
         git_in.done()
 
+    maity_update = "never"
+    maity_in = root.table("maity")
+    if maity_in is not None:
+        maity_update = maity_in.get("update", str, "never", check=_one_of("daily", "never"))
+        maity_in.done()
+
+    # §15.16 "Where": the runner manages tools on its local target only; on an ssh target it
+    # reports what it finds. Managed versions live in the runner user's own tools_dir, which
+    # the agents' own user in the agent_user layout cannot rely on (lotse 131453, not yet).
+    for name, harness in harnesses.items():
+        if not harness.install and harness.update == "never":
+            continue
+        if kind != "local":
+            problems.append(f"harness.{name}: install and update work on the local backend only")
+        elif local is not None and local.layout == "agent_user":
+            problems.append(
+                f"harness.{name}: install and update are not available in the agent_user "
+                "layout yet"
+            )
+
     root.done()
     if problems:
         raise ConfigError(problems)
-    return Config(path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh, git)
+    return Config(
+        path, hub_url, state_dir, limits, kind, local, harnesses, grants, ssh, git, maity_update
+    )
 
 
 _RESTART = Restart()
@@ -595,6 +635,8 @@ def unsupported(cfg: Config) -> list[str]:
     for harness in cfg.harnesses.values():
         if harness.env_file is not None:
             found.append(f"harness.{harness.id}.env_file is not passed on yet (R5)")
+    if cfg.maity_update != "never":
+        found.append('maity.update is not carried out yet; remove it or set "never"')
     return found
 
 
@@ -666,10 +708,9 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
             "(runner design §6.3)"
         )
     elif name in NOT_OFFERED_YET:
-        problems.append(
-            f"{where}: not offered yet; for now the runner runs claude-code, codex and antigravity"
-            " (and stub)"
-        )
+        why = NOT_OFFERED_WHY.get(name)
+        reason = f": {why}" if why else ""
+        problems.append(f"{where}: not offered yet{reason}")
     modes = tuple(
         table.get(
             "modes",
@@ -688,6 +729,18 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
     if default_model is not None and default_model not in models:
         problems.append(f"{where}.default_model: must be one of its models")
     env_file = table.get("env_file", str, None)
+    install = table.get("install", bool, False)
+    update = table.get("update", str, "never", check=_one_of("daily", "never"))
+    if install or update != "never":
+        from maity.runner import installers  # noqa: F401  (fills tools.INSTALLERS)
+        from maity.runner.tools import INSTALLERS
+
+        if name not in INSTALLERS:
+            problems.append(
+                f"{where}: the runner has no installer for this harness; " "drop install and update"
+            )
+        if "binary" in table.data:
+            problems.append(f"{where}.binary: a tool the runner installs or updates is its own")
     harness = Harness(
         id=name,
         modes=modes,
@@ -697,6 +750,8 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         binary=None if name == "stub" else table.get("binary", str, BINARIES.get(name)),
         require_sandbox=table.get("require_sandbox", bool, None),
         env_file=Path(env_file).expanduser() if env_file else None,
+        install=install,
+        update=update,
     )
     if name == "stub":
         return Harness(

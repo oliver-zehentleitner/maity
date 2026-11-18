@@ -522,10 +522,10 @@ def test_two_deletions_with_clones_in_each_others_namespace_do_not_deadlock(
 
     with race(setup.engine) as r:
         first, second = r.first, r.second
-        account_deletion._lock_namespace(first, setup.owner.id)
+        account_deletion.lock_first(first, setup.owner.id)
 
         def other_deletion() -> None:
-            account_deletion._lock_namespace(second, pat.id)
+            account_deletion.lock_first(second, pat.id)
             deletion(second, pat.id, their_runner.id)
 
         step = r.run(second, other_deletion)

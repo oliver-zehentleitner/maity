@@ -119,6 +119,9 @@ class Settings:
     # MAITY_SEAL_VERIFIERS: 1 seals the credentials' verifiers at rest with `secret_key`
     # (§2.2, hub/context/credentials.md); opt-in, default off. Sealed rows are read either way.
     seal_verifiers: bool = False
+    # MAITY_SEALED_VERIFIERS_ONLY: 1 refuses a plain verifier when it authenticates, and the
+    # start while a live one is left (§2.2); needs `seal_verifiers`. Default off.
+    sealed_verifiers_only: bool = False
     # MAITY_SMTP_*, MAITY_MAIL_*: the mail settings the environment sets (§16.2); the
     # password and the signing key never appear in a repr.
     mail: MailEnvironment = field(default_factory=MailEnvironment)
@@ -187,6 +190,12 @@ class Settings:
     # MAITY_HSTS_MAX_AGE: the `Strict-Transport-Security` max-age, in seconds, sent on every
     # answer that went out over TLS (§1.1, §2.5); 0 sends none.
     hsts_max_age: int = 31536000
+    # The `MAITY_*` variables set at start, name and value as written (a parser that keeps
+    # spaces, like the SMTP password's, must be seen as set), for the admin's overview of the
+    # settings (§16.14, settings_overview); never printed, compared or hashed.
+    environment: tuple[tuple[str, str], ...] = field(
+        default=(), repr=False, compare=False, hash=False
+    )
 
     @property
     def join_host(self) -> str | None:
@@ -262,6 +271,7 @@ class Settings:
             ),
             secret_key=parse_secret_key(env.get("MAITY_SECRET_KEY", "")),
             seal_verifiers=parse_seal_verifiers(env),
+            sealed_verifiers_only=parse_sealed_verifiers_only(env),
             mail=parse_mail(env),
             sign_in_device_code=parse_switch(env, "MAITY_SIGN_IN_DEVICE_CODE"),
             sign_in_email_link=parse_switch(env, "MAITY_SIGN_IN_EMAIL_LINK"),
@@ -309,6 +319,9 @@ class Settings:
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),
             badge_limit=parse_rate(env, "MAITY_BADGE_LIMIT", (60, 60)),
             hsts_max_age=parse_whole(env, "MAITY_HSTS_MAX_AGE", 31536000, 0, 63072000),
+            environment=tuple(
+                sorted((k, v) for k, v in env.items() if k.startswith("MAITY_") and v)
+            ),
         )
 
 
@@ -735,6 +748,17 @@ def parse_seal_verifiers(env: dict[str, str]) -> bool:
     if seal and parse_secret_key(env.get("MAITY_SECRET_KEY", "")) is None:
         raise ConfigError("MAITY_SEAL_VERIFIERS=1 needs MAITY_SECRET_KEY")
     return seal
+
+
+def parse_sealed_verifiers_only(env: dict[str, str]) -> bool:
+    """MAITY_SEALED_VERIFIERS_ONLY: refusing plain verifiers needs sealing on, or every new
+    join would write a plain row and be refused at once."""
+    only = parse_flag(env.get("MAITY_SEALED_VERIFIERS_ONLY", ""), "MAITY_SEALED_VERIFIERS_ONLY")
+    if only and not parse_seal_verifiers(env):
+        raise ConfigError(
+            "MAITY_SEALED_VERIFIERS_ONLY=1 needs MAITY_SEAL_VERIFIERS=1 and MAITY_SECRET_KEY"
+        )
+    return only
 
 
 def parse_switch(env: dict[str, str], name: str) -> bool | None:

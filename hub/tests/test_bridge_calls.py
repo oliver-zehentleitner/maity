@@ -5,14 +5,16 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 from datetime import timedelta
 from typing import Any
 
 import pytest
+from fastapi.routing import iter_route_contexts
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock
+from maity_hub import bridges, clock
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from tests import factory, flow
@@ -70,6 +72,9 @@ class Calls:
 
     def post(self, path: str, body: Any, served: str | None = None) -> Any:
         return self.client.post(f"{API}{path}", json=body, headers=self.headers(served))
+
+    def send(self, method: str, path: str, body: Any = None, served: str | None = None) -> Any:
+        return self.client.request(method, f"{API}{path}", json=body, headers=self.headers(served))
 
 
 def _say(calls: Calls, served: str | None, body: str = "hello") -> Any:
@@ -201,6 +206,241 @@ def test_the_header_is_taken_on_project_routes_only(
     assert refused.json()["error"]["details"]["fields"] == {"Maity-For": "route"}
 
 
+def test_the_header_is_not_taken_on_the_memory_or_the_connections(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§2.3: the memory stores are the served agent's own, as its soul is, and a bridge makes,
+    changes or ends no connection in the served agent's name. Nothing is written."""
+    served, bridge, connection = _pair(migrated, owner)
+    other = factory.agent(migrated, _project(migrated), owner.id, "coder", instance="brg2")
+    calls = Calls(make_client(), bridge)
+    entry = {"store": "team", "text": "written as the served agent"}
+    for method, path, body in (
+        ("GET", f"{PROJECT}/memory?store=team", None),
+        ("POST", f"{PROJECT}/memory", entry),
+        ("POST", f"{PROJECT}/memory", {"store": "role", "text": "x"}),
+        ("POST", f"{PROJECT}/memory", {"store": "community", "text": "x"}),
+        ("DELETE", f"{PROJECT}/memory/mem-000000000000", None),
+        (
+            "POST",
+            f"{PROJECT}/members/{served.agent_id}/bridges",
+            {"bridge": other.agent_id, "purpose": "x"},
+        ),
+        ("PATCH", f"{PROJECT}/members/{served.agent_id}/bridges/{connection}", {"purpose": "y"}),
+        ("DELETE", f"{PROJECT}/members/{served.agent_id}/bridges/{connection}", None),
+    ):
+        refused = calls.send(method, path, body, served.agent_id)
+        assert refused.status_code == 400, (method, path, refused.text)
+        assert refused.json()["error"]["details"]["fields"] == {"Maity-For": "route"}
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.memory_entry)).first() is None
+        assert conn.execute(select(t.request)).first() is None
+        live = conn.execute(select(t.bridge.c.id).where(t.bridge.c.live.is_(True))).scalars().all()
+    assert live == [connection]
+    # Without the header the bridge is itself: its own memory, as its own role allows.
+    own = calls.send("POST", f"{PROJECT}/memory", entry)
+    assert own.status_code == 201, own.text
+    assert own.json()["by"]["member_id"] == bridge.agent_id
+
+
+def test_every_memory_and_connection_route_refuses_the_header(client: Any) -> None:
+    """A guard (§2.3): a route added under `…/memory` or `…/members/{id}/bridges` is refused for
+    `Maity-For` as well, by the path alone, whatever its method."""
+    paths = {
+        route.path_format
+        for route in iter_route_contexts(list(client.app.routes))
+        if route.path_format is not None and route.path_format.startswith(f"{API}/projects/")
+    }
+    guarded = [
+        p for p in paths if re.search(r"/\{slug\}/(memory|members/\{[^}]+\}/bridges)(/|$)", p)
+    ]
+    assert len(guarded) >= 4, guarded  # two paths each, one per method or more
+    for path in guarded:
+        concrete = re.sub(r"\{[^}]+\}", "x", path)
+        assert bridges._never_carried(concrete), path
+    # and the other project routes are not caught by it
+    assert not bridges._never_carried(f"{API}/projects/x/x/events")
+    assert not bridges._never_carried(f"{API}/projects/x/x/members/x")
+
+
+def test_a_write_through_a_connection_ended_meanwhile_is_refused(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """§2.3: the connection is read live when the call is carried, before the route runs; an
+    ending that commits in between, under the project's lock, refuses the write that follows
+    (S124). The write waits on the lock the ending holds, then reads the connection again."""
+    import threading
+
+    from maity_hub import bridges, events
+    from maity_hub.errors import ApiError
+
+    served, bridge, connection = _pair(migrated, owner)
+    project_id = _project(migrated)
+    with migrated.connect() as conn:
+        served_row = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == served.agent_id)
+        ).scalar_one()
+    carried = events.Actor(
+        served_row,
+        bridge={"member_id": bridge.agent_id, "instance": "brg1", "bridge_id": connection},
+    )
+    ending, written = threading.Event(), threading.Event()
+    outcome: list[str] = []
+
+    def end() -> None:
+        with events.transaction(migrated) as conn:
+            events.lock_project(conn, project_id)
+            row = conn.execute(select(t.bridge).where(t.bridge.c.id == connection)).one()
+            bridges.end(conn, row, None)
+            ending.set()
+            written.wait(timeout=2)  # the write is held on the lock until this commits
+
+    def write() -> None:
+        ending.wait()
+        try:
+            with events.transaction(migrated) as conn:
+                written.set()
+                events.emit(
+                    conn,
+                    project_id,
+                    "message",
+                    ["all"],
+                    {"type": "notice", "body": "through an ended bridge"},
+                    actor=carried,
+                )
+            outcome.append("written")
+        except ApiError as error:
+            outcome.append(error.details["reason"])
+
+    threads = [threading.Thread(target=end), threading.Thread(target=write)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert outcome == ["not_your_bridge"]
+    with migrated.connect() as conn:
+        bodies = conn.execute(select(t.event.c.payload)).scalars().all()
+    assert not any("through an ended bridge" in str(body) for body in bodies)
+
+
+@pytest.mark.parametrize("write", ["upload", "message"])
+def test_a_carried_write_after_its_connection_ended_is_refused_with_or_without_an_event(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    write: str,
+) -> None:
+    """§2.3: every write carried through a connection checks it again under the project's
+    lock, also one that emits no event (an upload). The connection ends after the call was
+    carried and before the route runs, committed, as an owner's `DELETE` would."""
+    from maity_hub import bridges, events, write_guard
+
+    store = tmp_path / "blobs"
+    store.mkdir()
+    served, bridge, connection = _pair(migrated, owner)
+    project_id = _project(migrated)
+    bind = write_guard.bind_bridge
+
+    def bind_then_end(project: str, bridge_id: str) -> None:
+        bind(project, bridge_id)
+        with events.transaction(migrated) as conn:
+            events.lock_project(conn, project_id)
+            row = conn.execute(select(t.bridge).where(t.bridge.c.id == bridge_id)).one()
+            bridges.end(conn, row, None)
+
+    calls = Calls(make_client(attachment_dir=store), bridge)
+    monkeypatch.setattr(write_guard, "bind_bridge", bind_then_end)
+    if write == "upload":
+        answer = calls.client.post(
+            f"{API}{PROJECT}/attachments?name=a.txt",
+            content=b"abc",
+            headers={"Content-Type": "text/plain", **calls.headers(served.agent_id)},
+        )
+    else:
+        answer = _say(calls, served.agent_id, "through an ended bridge")
+    assert answer.status_code == 403, answer.text
+    assert _reason(answer) == "not_your_bridge"
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.attachment)).all() == []
+        bodies = conn.execute(select(t.event.c.payload)).scalars().all()
+        assert not any("through an ended bridge" in str(body) for body in bodies)
+        assert (
+            conn.execute(select(t.bridge.c.live).where(t.bridge.c.id == connection)).scalar()
+            is None
+        )
+
+
+@pytest.mark.parametrize("change", ["bridge_guest", "bridge_isolated", "owner_suspended"])
+def test_a_carried_write_after_the_connections_standing_ended_is_refused(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
+) -> None:
+    """§2.3, §16.8: the bridge lowered to guest, the bridge isolated, or the served agent's
+    owner suspended after the call was carried and before the route writes: the write is
+    refused under the project's lock as an ended connection's is (`bridges.still_live`). The
+    connection itself stays live."""
+    from maity_hub import events, write_guard
+
+    served, bridge, connection = _pair(migrated, owner)
+    project_id = _project(migrated)
+    bind = write_guard.bind_bridge
+
+    def bind_then_change(project: str, bridge_id: str) -> None:
+        bind(project, bridge_id)
+        with events.transaction(migrated) as conn:
+            events.lock_project(conn, project_id)
+            if change == "owner_suspended":
+                conn.execute(
+                    update(t.human).where(t.human.c.id == owner.id).values(suspended_at=clock.now())
+                )
+                return
+            values: dict[str, Any] = (
+                {"trust": "guest"}
+                if change == "bridge_guest"
+                else {
+                    "isolated_since": clock.now(),
+                    "isolated_reason": "test",
+                    "isolated_by": "hub",
+                }
+            )
+            conn.execute(
+                update(t.membership).where(t.membership.c.id == bridge.membership_id).values(values)
+            )
+
+    calls = Calls(make_client(), bridge)
+    monkeypatch.setattr(write_guard, "bind_bridge", bind_then_change)
+    answer = _say(calls, served.agent_id, "through a bridge that no longer stands")
+    assert answer.status_code == 403, answer.text
+    assert _reason(answer) == "not_your_bridge"
+    with migrated.connect() as conn:
+        bodies = conn.execute(select(t.event.c.payload)).scalars().all()
+        assert not any("no longer stands" in str(body) for body in bodies)
+        assert (
+            conn.execute(select(t.bridge.c.live).where(t.bridge.c.id == connection)).scalar()
+            is True
+        )
+
+
+def test_a_carried_upload_through_a_live_connection_is_written(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, tmp_path: Any
+) -> None:
+    store = tmp_path / "blobs"
+    store.mkdir()
+    served, bridge, _connection = _pair(migrated, owner)
+    calls = Calls(make_client(attachment_dir=store), bridge)
+    answer = calls.client.post(
+        f"{API}{PROJECT}/attachments?name=a.txt",
+        content=b"abc",
+        headers={"Content-Type": "text/plain", **calls.headers(served.agent_id)},
+    )
+    assert answer.status_code == 201, answer.text
+
+
 def test_a_bridge_calls_under_no_governance_scope(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -316,6 +556,29 @@ def test_a_call_through_the_bridge_renews_what_it_holds_for_the_served_agent(
     with migrated.begin() as conn:
         conn.execute(update(t.card).where(t.card.c.id == card).values(lease_until=past))
     assert calls.get(f"{PROJECT}/members/{served.agent_id}", served.agent_id).status_code == 200
+    with migrated.connect() as conn:
+        renewed = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
+    assert renewed is not None and renewed > clock.now()
+
+
+def test_the_conversation_list_with_renew_false_renews_nothing_through_the_bridge(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`renew=false` withholds the renewal of what the bridge holds for the served agent
+    too, and only that (§9.3, §2.4)."""
+    served, bridge, _ = _pair(migrated, owner)
+    card = owner.post(f"{PROJECT}/tasks", {"title": "Carry the files"}).json()["id"]
+    calls = Calls(make_client(), bridge)
+    assert calls.post(f"{PROJECT}/tasks/{card}/claim", {}, served.agent_id).status_code == 200
+    past = clock.now() - timedelta(hours=1)
+    with migrated.begin() as conn:
+        conn.execute(update(t.card).where(t.card.c.id == card).values(lease_until=past))
+    listed = calls.get(f"{PROJECT}/conversations?renew=false", served.agent_id)
+    assert listed.status_code == 200, listed.text
+    with migrated.connect() as conn:
+        kept = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
+    assert kept is not None and kept < clock.now()  # still in the past: not renewed
+    assert calls.get(f"{PROJECT}/conversations", served.agent_id).status_code == 200
     with migrated.connect() as conn:
         renewed = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
     assert renewed is not None and renewed > clock.now()

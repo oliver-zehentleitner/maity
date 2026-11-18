@@ -110,11 +110,13 @@ merge — the status quo that caused the problem.
 
 **Id:** 3ac98e12-f84b-423d-98de-3d3f7f610b8f
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** https://github.com/oliver-zehentleitner/maity — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
 **Evidence:** confirmed
-**Source:** the maintainer's standing instruction, 2026-10-22, relayed by the coordinator
+**Source:** the maintainer's standing instruction, 2026-10-22, relayed by the coordinator; retired by the maintainer's answer to req-5x293t6ntn8q, 2026-11-14, relayed by the team lead
 **Revisit when:** the maintainer withdraws the standing instruction, or a deploy without a go breaks maity.team
 **See:** https://github.com/oliver-zehentleitner/maity — 5e42eb26-9883-49e2-89c0-9fe4e6517c62 — as of 2026-10-22
+**See:** https://github.com/oliver-zehentleitner/maity — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
 
 For the night of 2026-10-22 the maintainer gave a standing instruction:
 the coordinator deploys a new image to maity.team before the maintainer
@@ -131,6 +133,14 @@ reasons in the hub's Kubernetes entry.
 night's merges deployed before the maintainer is back was stated.
 
 **Alternatives:** none were weighed.
+
+**Superseded:** from deploy 6 (2026-11-10) every deploy of maity.team
+is a release built by the maintainer's `v*` tag, the hub context's
+entry 1555765c. The two descriptions disagreed until the maintainer
+settled it on 2026-11-14 (req-5x293t6ntn8q): that entry stays, and this
+one, which deployed the image from the publish workflow on `main`, is
+retired. The documented `cosign verify` no longer accepts an image
+signed on `main` (the hub context's entry 9c3f6a1e).
 
 ## Before the deploy go, the lead puts every upgrade or setting note of the shipped changelog fragments on the deploy list
 
@@ -244,15 +254,21 @@ job's `make smoke` also runs `tools/run_slot.sh` (web/Makefile's `SLOT`), which 
 
 Three hub test files (`test_contract_routes.py`, `test_guide.py`, `test_paths.py`) read `docs/api.md`, but the `hub` part of the `changes` job
 did not list it, so a pull request that changed only the contract got a green `ci-ok` and main went red after the merge. A new
-part `contract` (`docs/api.md` and `hub/*`) starts the job `hub-contract`: `make install` and every test file that builds
+part `contract` (`docs/api.md` and `hub/*`; since 2026-11-16 also `cli/src/maity/runner/capabilities.py`, below) starts the job `hub-contract`: `make install` and every test file that builds
 the path `"docs" / "api.md"` (found by `grep` in the job, not listed; today `test_contract_routes`, `test_guide` and
 `test_paths`) on SQLite, a few minutes. It is in `ci-ok`. A change under `hub/` starts it too, beside the hub jobs that run the same files: it answers in a few minutes, while the database
-jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*`; a push to main and a change
+jobs take about an hour, and the coordinator asked for the filter `contract:docs/api.md` and `contract:hub/*` (the third pattern came with the review of #1872, below); a push to main and a change
 to the workflow start it like every other part.
 
 **Known gap (review of 2026-11-02):** hub tests also read files outside `hub/` and `docs/` (`web/tools/hub-shapes.json`,
 `web/tools/site-fixture.json`, `deploy/Dockerfile`, `cli/src/maity/__init__.py`, `README.md`); a pull request that changes only
 one of them starts neither the hub jobs nor this one. Not solved here; its own task.
+
+**One file of the gap now starts the job (2026-11-16, tsk-ag8rgjnzt0kg):** `hub/tests/test_runner_confinement.py` checks the
+hub's confinements against the CLI's `cli/src/maity/runner/capabilities.py` and builds the path `"docs" / "api.md"`, so
+`hub-contract` runs it. The `contract` part also lists `cli/src/maity/runner/capabilities.py`: a pull request that
+changes only that file would otherwise leave a confinement the hub refuses unseen until main (the finding H1 of review A783
+of #1872). Only this file, because the job runs it already; the other files of the gap stay open.
 
 **Rejected alternatives:**
 - `docs/api.md` in the `hub` part: every contract pull request would run the PostgreSQL and SQLite suites, about an
@@ -790,6 +806,57 @@ only from a copy that belongs to the runner, so no system Python is changed.
 - `pip install --break-system-packages` in the jobs: it would leak a self-hosted special case into the shared workflow.
 - Root creating the links and files in the tool cache: the first version did, and the review showed it follows symlinks a
   job may have left there.
+
+## Install and CI downloads that run code are checked against a pinned checksum or digest
+
+**Id:** 7d1e4c96-2b8a-4f53-a6e0-95c3f8b2d147
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 5 (release chain hardening, 2026-11-13; the kind-smoke pin settled by the team lead, 2026-11-13); `deploy/runner/install-python.sh`, `deploy/runner/README.md`, `docs/install/README.md`, `deploy/helm/kind-smoke.sh`
+**Revisit when:** uv, k3s or cert-manager publish a signature this setup can check offline, or one of the pinned versions changes
+**See:** process.md#the-runner-gets-its-python-through-uv-into-the-tool-cache-and-starts-through-runsvcsh — 2bede3db-2d8e-4716-851b-0ecc07cb140d — as of 2026-11-13
+
+Where a download runs code, the version is pinned and the bytes are
+checked before they run:
+- `install-python.sh` no longer pipes uv's installer script into a
+  shell. It downloads the uv release tarball of `UV_VERSION` as the
+  runner user, checks it against `UV_SHA256` with `sha256sum -c`, and
+  only then unpacks `uv` and `uvx` into `~/.local/bin`. A checksum that
+  is not 64 lowercase hex digits stops the script before the download.
+  A machine that already has uv is not touched.
+- The k3s install guide downloads `install.sh` from the release tag it
+  installs, not from `get.k3s.io`, and checks its sha256 before running
+  it; the installer itself checks the k3s binary against the release's
+  checksums.
+- cert-manager's chart is pulled as an archive of the pinned version and
+  checked with `sha256sum -c` before `helm install` takes the file. Its
+  five images (controller, webhook, cainjector, startupapicheck,
+  acmesolver) are pinned by digest too, through the chart's
+  `*.image.digest` values, each the digest of the multi-arch index.
+- Known limit: the images k3s pulls itself (Traefik, CoreDNS, klipper,
+  metrics server, local-path provisioner) still run by tag. k3s bundles
+  them with its release, so they are outside this install's control.
+- `kind-smoke.sh` runs PostgreSQL by digest too: the pin
+  `postgres:17.10@sha256:7958605b…` came with #1751, and this change
+  keeps it.
+
+**Reason:** a tag, a moving URL or an installer piped into a shell runs
+whatever the server sends that day. A checksum or digest pinned in the
+repository makes the code that runs the reviewed code. The uv tarball
+is used instead of the installer because the installer is a second
+download whose own downloads are not pinned here.
+
+**Rejected alternatives:**
+- Checking the uv installer script by checksum and still running it:
+  it fetches the binary itself, so the binary would stay unpinned.
+- `helm install --verify` with jetstack's signing key: it needs the key
+  fetched and trusted as well; a checksum of the archive needs nothing
+  more.
+- kind-smoke's PostgreSQL on `ci.yml`'s `postgres:17@sha256:31ba9c94…`,
+  the image the CI service tests against: #1751's `17.10` digest is what
+  that tag resolves to today and what production runs, so the smoke test
+  of the chart stays on it. `ci.yml`'s service pin is unchanged.
 
 ## One runner service per database job type, a label each, three workers per job
 
@@ -1815,7 +1882,7 @@ because every version of an image stays in the history.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf
+**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf; card tsk-deaaanqsq5e2 (the slot log, the lead's go, 2026-11-17)
 **Revisit when:** contributors no longer share one machine and account, the shared machine gets enough memory for more parallel runs (two runs at once no longer bring a reap near), or CI checks a pull request's merge with the current main on PostgreSQL before review
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the tests it affects on
@@ -1825,6 +1892,19 @@ on SQLite only. On a machine several contributors share under one Unix account, 
 named after whoever runs it. `make smoke` and `with_postgres.sh` each hold one of two run slots
 (`tools/run_slot.sh`, a lock file per slot), so a third run waits instead of starting. The commands
 are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
+
+Since 2026-11-17 every run that gets a slot appends a start line (time, slot, pid, seconds waited,
+who, the program and its first argument), and once its process is gone an end line (time, seconds
+held), to `log` in the run-slot directory; the format is in the script's header. The log is
+append-only, one `printf` per short line, created 0640. The end line comes from a watcher the
+script starts before its `exec`, not from a wrapper around the command; the watcher runs in a
+session of its own (`setsid`) and ignores INT, HUP and TERM, so cancelling the command's process
+group leaves it running. A KILL to the watcher or a reboot still ends it, so the log does not
+promise an end line for every run: once a run is over, a start line without a matching end line
+(same slot and pid) means it was aborted. A log that is not a regular file is skipped, one that
+cannot be written is ignored. `who` is `MAITY_RUN_NAME`, which each run sets to
+`handle#instance`. Its purpose is measuring which run holds a slot how long and for whom (card
+tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
 
 **Reason:**
 - SQLite does not show PostgreSQL's errors, and CI as the first PostgreSQL run finds them only
@@ -1848,6 +1928,26 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
 - The slots and the server are files of one account (the data directory is the owner's only), so
   they bind the runs of that account. That is how the machine is shared; several accounts would
   each get two slots and a server of their own.
+- The slot log: a short line written in one `printf` onto a file opened for appending is one
+  write, so runs that log at the same moment do not interleave. A watcher keeps the `exec`, so
+  fd 7, the pid and the signals reach the command as before; a wrapper that waited for the command
+  would have to pass on every signal and its exit status. The watcher holds neither fd 7 nor the
+  run's output, and is no child of the command. Its cost: the end is when the command's process
+  ended, to the second; a process the command left running can hold the slot longer. Logging
+  never stops a run: a measurement must not become a new way for a run to fail.
+- The watcher's own session (review A1081): created before the `exec`, it was in the command's
+  process group, and a supervisor that sent TERM to that group (an ordinary cancellation) took the
+  watcher along, so exactly the interrupted runs lost their end line. `setsid` comes from
+  util-linux, like `flock`; without it the watcher only ignores the signals. They are ignored
+  before the watcher is forked (review A1093), so a group signal right after the `exec` cannot
+  reach it ahead of the trap. Only a regular file
+  (or none yet) is opened as the log: an append open of a FIFO without a reader blocks, and it
+  came after the slot was taken and before the command started, so the run held its slot without
+  running.
+- The program and its first argument, not the whole command line (review A1081): the log is kept,
+  and for measuring which kind of run holds a slot, `pytest -n` or `make smoke` says enough. The
+  slot's `.who` file names the run the same way. 0640 rather than group-writable: every run that
+  writes the log is the account's own, so only reading it needs the group.
 
 **Rejected alternatives:**
 - A server per contributor: what was done before, and what used the memory.
@@ -1861,6 +1961,10 @@ are in `CONTRIBUTING.md`, "PostgreSQL runs and a shared machine".
   who holds the slots.
 - A cap in CI: each CI runner already has its own limits (the runner entries above), and the card
   left CI out.
+- For the slot log, the command as a child of the script, logged when it exits: an exact end,
+  but the `exec` goes, and with it the pid and the signals the command gets today.
+- For the slot log, the whole command line cut at 200 characters (the first version): more than
+  the measurement needs, kept in a file that is not cleaned up.
 
 ## An opt-in pre-push hook runs CI's lint and types for the packages a push touches, with the lock's tool versions
 
@@ -2611,3 +2715,43 @@ a tool that only sends what it is given is the place to refuse one before it is 
 - Chasing every Markdown form that renders a label (shortcut reference links were next, in round
   6): the lead stopped there, since the check guards against accidents, and the texts name what
   it does not detect instead.
+
+## Every hub release ships an upgrade page, and the release is refused without it
+
+**Id:** eb6ffcd4-28b0-4413-bc51-db3ead6cefb5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision of 2026-11-15 in the team chat, relayed on card tsk-ptpqwezfnkk0; `tools/upgrade_page.py`, `tools/release_gate.py` (`--upgrade-page`), `docs/upgrade/README.md`, `hub/README.md` § Releases
+**Revisit when:** the hub leaves its pre-releases and gets an upgrade guide of another form, or operators other than maity.team's own run hubs and ask for a different shape
+**See:** process.md#a-release-tag-trusts-cis-result-on-its-commit-instead-of-running-the-suites-again — ea58fdd2-6e3f-45df-ae48-4ce6825cafde — as of 2026-11-15
+**See:** process.md#changelog-entries-are-one-file-per-pull-request-in-changelogd-folded-into-changelogmd-at-release — b1258d90-a82b-48a1-9c5f-7ee4eb1295f9 — as of 2026-11-15
+
+Every hub release has a page, `docs/upgrade/<version>.md`, with five
+sections in a fixed order: what changes for users, what the operator must
+do, what happens by itself on upgrade, what cannot be undone, and the way
+back. The release pull request adds it together with a docs pass over the
+quickstart, getting started and the install guide. ci refuses the fold of a
+version into `CHANGELOG.md` without a complete page
+(`tools/upgrade_page.py check`), and the release tag's gate refuses it again
+on the tagged commit (`tools/release_gate.py --upgrade-page`, in
+`release-hub.yml` and `publish-image.yml`). The release author lists every
+migration and every new or changed default since the last tag; the lead and
+ops confirm that list before the tag.
+
+**Reason:** deploy 10 on 2026-11-15 nearly shipped 0.1.0a6 as it was: the
+upgrade would have sealed the stored credential verifiers and started the
+agent firewall's gate, which holds agents back from mixed group chats, with
+no warning to the operator. The changelog listed both among about 145
+entries; an operator without inside knowledge could not have told that the upgrade changes stored data and who reaches a
+chat. 0.1.0a7 put both behind settings that start off. The page asks the
+questions an operator needs answered, and the gate makes sure someone
+answered them for every release.
+
+**Alternatives:** unknown beyond the state before, the changelog alone: it
+records every change, but nothing in the release asked for the operator's
+view of them.
+
+The check counts the five headings and that each has text; it cannot tell
+whether the text is right. That is what the confirmation by the lead and ops
+before the tag is for.

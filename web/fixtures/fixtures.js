@@ -3751,6 +3751,7 @@ window.MAITY_FIXTURES = {
         "created_by": "hum-maintainer",
         "credential_id": "crd-b-0003",
         "desired": "running",
+        "foreign": false,
         "generation": 4,
         "harness": "claude-code",
         "id": "plc-0001",
@@ -3810,9 +3811,11 @@ window.MAITY_FIXTURES = {
         "created_by": "hum-maintainer",
         "credential_id": "crd-c-0002",
         "desired": "stopped",
+        "foreign": false,
         "generation": 2,
         "harness": "codex",
         "id": "plc-0002",
+        "logs_hint": "maity runner logs plc-0002",
         "mode": "supervised",
         "model": null,
         "project": "maintainer/maity",
@@ -3867,9 +3870,11 @@ window.MAITY_FIXTURES = {
         "created_by": "hum-maintainer",
         "credential_id": "crd-d-0001",
         "desired": "running",
+        "foreign": false,
         "generation": 3,
         "harness": "claude-code",
         "id": "plc-0003",
+        "logs_hint": "maity runner logs plc-0003",
         "mode": "supervised",
         "model": null,
         "project": "maintainer/maity",
@@ -3924,9 +3929,11 @@ window.MAITY_FIXTURES = {
         "created_by": "hum-maintainer",
         "credential_id": null,
         "desired": "running",
+        "foreign": false,
         "generation": 1,
         "harness": "claude-code",
         "id": "plc-0004",
+        "logs_hint": "maity runner logs plc-0004",
         "mode": "interactive",
         "model": null,
         "project": "maintainer/maity",
@@ -4123,6 +4130,7 @@ window.MAITY_FIXTURES = {
       "keep_the_why": "required",
       "keep_the_why_defaults": "adopt",
       "lease_seconds": 7200,
+      "max_placements": 8,
       "member_agents": "on",
       "member_agents_max": 3,
       "on_runner_revoke": "stop",
@@ -6999,11 +7007,27 @@ window.MAITY_FIXTURES = {
                 "supervised"
               ],
               "reason": null,
-              "sandbox": "off",
+              "sandbox": "on",
               "targets": [
                 "local"
               ],
               "version": "2.1.308"
+            },
+            {
+              "available": true,
+              "confinement": "sandbox",
+              "default_mode": "supervised",
+              "id": "codex",
+              "models": [],
+              "modes": [
+                "supervised"
+              ],
+              "reason": null,
+              "sandbox": "off",
+              "targets": [
+                "local"
+              ],
+              "version": "0.156.1"
             },
             {
               "available": false,
@@ -7076,7 +7100,7 @@ window.MAITY_FIXTURES = {
           "harnesses": [
             {
               "available": true,
-              "confinement": "allowlist",
+              "confinement": "sandbox",
               "default_mode": "supervised",
               "id": "codex",
               "models": [

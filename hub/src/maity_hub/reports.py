@@ -111,14 +111,14 @@ def _lists(page: Any, path: str) -> bool:
 
 
 def _agent_shown(conn: Connection, pages: bool, agent: Any, owner: str) -> bool:
-    """Whether a page served now shows the agent: its own page, its owner's agents page, or
-    the page of a project it is named on (§16.8)."""
+    """Whether a page served now shows the agent: its own page, its owner's page, or the page
+    of a project it is named on (§16.8)."""
     path = f"/{owner}/agents/{agent.handle}"
     if _page(conn, pages, path, "agent") is not None:
         return True
-    # The owner's agents page lists an agent with or without a page of its own (`page`
-    # null): handles are unique per owner, so its handle there names it (§16.8).
-    listing = _page(conn, pages, f"/{owner}/agents", public_people.AGENTS_VIEW)
+    # The owner's page lists an agent with or without a page of its own (`page` null):
+    # handles are unique per owner, so its handle there names it (§16.8).
+    listing = _page(conn, pages, f"/{owner}", public_people.KIND)
     if listing is not None and any(
         isinstance(a, dict) and a.get("handle") == agent.handle
         for a in (listing.data or {}).get("agents") or []

@@ -27,10 +27,13 @@ from . import (
     loop,
     operate,
     plaincall,
+    scratch,
+    scratchop,
     serve,
     stub,
     supervisor,
     targets,
+    tools,
     trust,
 )
 from .asuser import RUNNER, AsUser
@@ -39,12 +42,20 @@ STATE_FILE = serve.RUNNER_FILE
 UNIT = "maity-runner.service"
 REVOKE = serve.REVOKE
 HEALTH_TIMEOUT = 10.0
+REMOVED_SHOWN = 20  # `status --removed`: the newest removals shown
 # The agents' user's Claude Code settings, read by `check`: larger is not looked at.
 SETTINGS_MAX = 1024 * 1024
 
 
 class Refused(Exception):
     """The command is refused before anything is sent; exits 2 like a usage error."""
+
+
+# The `maity runner` subcommands that run inside a placed session, started there by the
+# runner's own launch (the loop on an ssh host, the stub, Claude Code's hook, the pane's log):
+# the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
+# runner's own, and an agent's call of it is refused (cli.main).
+IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
 
 
 # --- pair ------------------------------------------------------------------------------------
@@ -266,10 +277,10 @@ def _check_config_file(report: Report, path: Path) -> None:
 def _check_repositories(report: Report, cfg: config.Config) -> None:
     """A gh rule in a grant's `allow` is not applied: agents open their pull requests with
     `maity gh`, which `pull_requests = true` switches on (cli/context/runner.md). With
-    antigravity configured, an exact entry agy cannot be given exactly (adapters.agy_grants)
-    is named too, and a repository with exact entries for agy gets one line on what agy cannot
-    see: an extra argument that is empty or blank. Said, never an error, so a restart before
-    the table is edited keeps every placement running."""
+    antigravity configured, a command grant is not applied to agy (adapters.agy_grants): it is
+    named as left out and runs in agy's sandbox like an unlisted command. With codex
+    configured, the grant parts a Codex placement starts without (adapters.codex_left_out).
+    Said, never an error, so a restart before the table is edited keeps every placement running."""
     for name, grant in cfg.repositories.items():
         if grant.refused:
             listed = ", ".join(repr(rule) for rule in grant.refused)
@@ -279,21 +290,18 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
                 "with `maity gh pr create`"
             )
         if "antigravity" in cfg.harnesses:
-            # agy matches by prefix; an exact entry it cannot make exact is left out for it.
+            # agy reads the command past a leading assignment/wrapper; no command grant is
+            # applied to it, exact or prefix, so each is left out and runs sandboxed.
             plain = [rule for rule in grant.allow if config.plain_command(rule)]
-            granted = adapters.agy_grants(plain)
-            for rule, why in granted.left_out:
+            for rule, why in adapters.agy_grants(plain).left_out:
                 report.warn(
                     f"repositories.{name}: allow {rule!r} is left out for antigravity and runs "
                     f"in agy's sandbox like an unlisted command: {why}"
                 )
-            if granted.deny:
-                # agy drops a word that is empty once quotes and edge blanks are gone.
-                report.warn(
-                    f"repositories.{name}: for antigravity, an exact allow entry also allows "
-                    "the command with an extra empty or blank argument (`''`, `\" \"`): agy "
-                    "drops such an argument before it matches and cannot tell it apart"
-                )
+        if "codex" in cfg.harnesses:
+            # Codex starts without what it cannot enforce, said here and at each start.
+            for part in adapters.codex_left_out(grant):
+                report.warn(f"repositories.{name}: {part}")
         if grant.pull_requests and "api.github.com" in grant.network:
             report.warn(
                 f"repositories.{name}: network api.github.com is not needed for pull requests "
@@ -382,12 +390,24 @@ def _existing_parent(path: Path) -> Path:
 
 
 def _check_harness(
-    report: Report, harness: config.Harness, agent_path: str, as_user: AsUser = RUNNER
+    report: Report,
+    harness: config.Harness,
+    agent_path: str,
+    as_user: AsUser = RUNNER,
+    tools_dir: Path | None = None,
 ) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
         return
-    found = capabilities.probe(harness, agent_path, as_user)
+    found = capabilities.probe(harness, agent_path, as_user, tools_dir)
+    if found.reason == "binary_not_found" and tools_dir is not None and harness.install:
+        report.ok(f"harness {harness.id}: not installed yet; `serve` installs it (§15.16)")
+        return
+    if found.reason == "binary_not_found" and tools_dir is not None and harness.update != "never":
+        report.error(
+            f"harness {harness.id}: no version installed by the runner; set install = true"
+        )
+        return
     if found.reason == "binary_not_found":
         report.error(f"harness {harness.id}: `{harness.binary}` not found on {agent_path}")
         return
@@ -714,7 +734,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         else:
             report.ok("maity found on agent_path")
         for harness in cfg.harnesses.values():
-            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg))
+            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir)
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
     if not args.offline:
@@ -753,6 +773,46 @@ def _alive(pid: Any) -> bool:
     return b"runner" in command and b"serve" in command
 
 
+def cmd_tools(args: argparse.Namespace) -> int:
+    """The tools this runner installs and updates (§15.16), from its tools directory only;
+    `rollback` makes the kept version the one new sessions start with. Never contacts the
+    hub: a running `serve` notices within a minute and tells the hub."""
+    cfg = config.load(config.path_of(args.config))
+    managed = {h.id: h for h in cfg.harnesses.values() if h.install or h.update != "never"}
+    if getattr(args, "tools_action", None) == "rollback":
+        if args.tool not in managed:
+            print(f"{args.tool}: not a tool this runner installs or updates", file=sys.stderr)
+            return 1
+        try:
+            done = tools.rollback(cfg.tools_dir, args.tool)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(
+            f"{args.tool}: new sessions start with {done.version}; {done.previous_version} "
+            "stays for a second rollback; running sessions keep the version they started with"
+        )
+        return 0
+    rows = [
+        tools.report(cfg.tools_dir, h.id, install=h.install, update=h.update,
+                     sessions_on_older=0)  # fmt: skip
+        for h in managed.values()
+    ]
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+    if not rows:
+        print("no tool is installed or updated by this runner (harness install / update)")
+    for row in rows:
+        state_text = row["state"] + (f": {row['reason']}" if row["reason"] else "")
+        print(
+            f"{row['id']}: {row['version'] or '-'} ({state_text}); kept "
+            f"{row['previous_version'] or '-'}; latest {row['latest'] or '-'}; "
+            f"checked {row['checked_at'] or 'never'}"
+        )
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """The local view, from the state directory only; never contacts the hub."""
     cfg = config.load(config.path_of(args.config))
@@ -776,8 +836,11 @@ def cmd_status(args: argparse.Namespace) -> int:
         rec = rec if isinstance(rec, dict) else {}
         live = rec.get("state") in ("starting", "running")
         hint = rec.get("session_hint") if live else None
+        sizes = {k: rec.get(k) if type(rec.get(k)) is int else None
+                 for k in ("clone_bytes", "scratch_bytes")}  # fmt: skip
         placements.append({**placement, "state": rec.get("state"),
-                           "attach": hint if isinstance(hint, str) else None})  # fmt: skip
+                           "attach": hint if isinstance(hint, str) else None,
+                           **sizes})  # fmt: skip
     view: dict[str, Any] = {
         "hub": paired.get("hub"),
         "runner_id": paired.get("runner_id"),
@@ -786,6 +849,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         **{k: current.get(k) for k in ("session_id", "error", "retry_at", "updated_at")},
         "placements": placements,
     }
+    if getattr(args, "removed", False):
+        # What the runner removed (§15.5), newest last; from the state directory only.
+        view["removed"] = scratch.removals(cfg.state_dir, REMOVED_SHOWN) if cfg.state_dir.is_dir() \
+            else []  # fmt: skip
     if args.json:
         print(json.dumps(view, indent=2))
         return 0
@@ -805,7 +872,28 @@ def cmd_status(args: argparse.Namespace) -> int:
         )
         if placement["attach"]:
             print(f"  attach   {show(placement['attach'])}")
+        if placement["clone_bytes"] is not None or placement["scratch_bytes"] is not None:
+            print(f"  disk     clone {_bytes(placement['clone_bytes'])}, "
+                  f"scratch {_bytes(placement['scratch_bytes'])}")  # fmt: skip
+    for entry in view.get("removed") or []:
+        print(f"removed  {show(entry.get('at'))}  {show(entry.get('placement'))}  "
+              f"{_bytes(entry.get('size_bytes'))}  {show(entry.get('why'))}  "
+              f"{show(entry.get('path'))}")  # fmt: skip
     return 0
+
+
+def _bytes(value: Any) -> str:
+    """A size for a person: `-` when unknown."""
+    if type(value) is not int:
+        return "-"
+    if value < 1024:
+        return f"{value} B"
+    amount = float(value)
+    for unit in ("KiB", "MiB", "GiB"):
+        amount /= 1024
+        if amount < 1024 or unit == "GiB":
+            break
+    return f"{amount:.1f} {unit}"
 
 
 def _seconds(value: str) -> int:
@@ -873,6 +961,13 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
          *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
     ))  # fmt: skip
+    # Internal too: a placement's scratch made, measured or removed on the agents' side,
+    # every directory from the workspaces root opened without following a link (scratchop).
+    r = rsub.add_parser("scratchop")
+    r.add_argument("op", choices=scratchop.OPS)
+    r.add_argument("--under", required=True)
+    r.add_argument("path")
+    r.set_defaults(handler=lambda a: scratchop.main([a.op, "--under", a.under, a.path]))
     # Internal too: what a pane's output goes through on an ssh host, holding its log to
     # limits.log_keep_bytes (logcap).
     r = rsub.add_parser("logcap")
@@ -948,7 +1043,34 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     )
     r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
     r.add_argument("--json", action="store_true", help="print it as JSON")
+    r.add_argument(
+        "--removed", action="store_true",
+        help=f"also the last {REMOVED_SHOWN} scratch directories the runner removed",
+    )  # fmt: skip
     r.set_defaults(handler=cmd_status)
+
+    r = rsub.add_parser(
+        "tools",
+        help="the tools this runner installs and updates; `rollback <tool>` goes back",
+        description="List the harness tools this runner installs or updates (harness "
+        "install / update): the version new sessions start with, the one kept, the latest "
+        "found. `rollback <tool>` swaps the two for new sessions; a second rollback swaps "
+        "back. Reads the tools directory only; a running serve picks the change up.",
+        formatter_class=fmt,
+    )
+    r.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+    r.add_argument("--json", action="store_true", help="print it as JSON")
+    r.set_defaults(handler=cmd_tools)
+    tsub = r.add_subparsers(dest="tools_action")
+    rb = tsub.add_parser(
+        "rollback",
+        help="new sessions start with the kept version",
+        description="Make the kept version the one new sessions start with (§15.16).",
+        formatter_class=fmt,
+    )
+    rb.add_argument("tool", help="a harness id, e.g. codex")
+    rb.add_argument("--config", help=f"configuration file (default {config.DEFAULT_PATH})")
+    rb.set_defaults(handler=cmd_tools, json=False)
 
     r = rsub.add_parser(
         "unit",
@@ -1046,12 +1168,16 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
 
     r = runner_cmd(
         "gc",
-        "list, and with --yes remove, workspaces whose credential is revoked",
-        "For every recorded workspace without a placement whose credential the hub reports as "
-        "revoked: its uncommitted files and the commits on no remote (git run with hooks, "
-        "fsmonitor and pagers off). Removes only with --yes.",
+        "list, and with --yes remove, workspaces whose credential is revoked and old scratch",
+        "--revoked: every recorded workspace without a placement whose credential the hub "
+        "reports as revoked, with its uncommitted files and the commits on no remote (git run "
+        "with hooks, fsmonitor and pagers off). --scratch: every placement's scratch the hub "
+        "does not list as active. Removes only with --yes.",
     )
-    r.add_argument("--revoked", action="store_true", help="required: the only kind gc knows")
+    r.add_argument("--revoked", action="store_true",
+                   help="workspaces whose credential is revoked")  # fmt: skip
+    r.add_argument("--scratch", action="store_true",
+                   help="the scratch of placements that are not active (§15.5)")  # fmt: skip
     r.add_argument("--yes", action="store_true", help="remove the workspaces listed")
     r.set_defaults(handler=_operate("cmd_gc"))
 

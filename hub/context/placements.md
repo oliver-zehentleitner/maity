@@ -75,7 +75,8 @@ discussion: only the runner's owner may give a placement's go.
 
 **Id:** 22e17362-56cb-4bf7-94fa-c245119e6eac
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** a35d39cd-b7ca-4cd8-941d-a420ba73336e
 **Evidence:** confirmed
 **Source:** `docs/api.md` §6.1 and §15.6 (contract #137), 2026-10-22
 **See:** https://github.com/oliver-zehentleitner/maity — 97a02556-475b-4041-8db5-6ce845ceb7fa — as of 2026-10-22
@@ -100,6 +101,32 @@ among the kept fields since the contract owner's ruling on #185 (#186).
 **Rejected alternative:** only the runner's owner gives the go (the open
 question this replaces). Not chosen by the maintainer; the policy names a
 class of answerer, not one person.
+
+## Only the runner's owner answers a placement's consent request
+
+**Id:** a35d39cd-b7ca-4cd8-941d-a420ba73336e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** `docs/api.md` §15.6, the maintainer's decision of 2026-11-16 (tsk-qgmz0yrc3g5x)
+**See:** https://github.com/oliver-zehentleitner/maity — 320a6e51-5a65-4684-8da8-df911d4273c1 — as of 2026-11-16
+**See:** placements.md#a-placements-consent-needs-a-human-unless-the-project-says-otherwise — 22e17362-56cb-4bf7-94fa-c245119e6eac — as of 2026-11-16
+
+An agent's placement proposal under `consent` files a personal request to
+the runner's owner (`human:<id>`), answered only by that human directly
+under `/requests/{id}/answer`; `policy.spawn_consent_by` is kept and no
+longer read for placements. Creating, changing the spec of, moving onto,
+starting, restarting and nudging a placement is refused off the runner's
+side with `forbidden`, `details.reason: runner_owner_only`.
+
+**Reason:** the project-wide rule that only a runner's owner places agents
+on it (see the root entry); a project request answered by
+`requests:answer` could be given by a human who does not own the runner.
+
+**Rejected alternative:** keep the project request and check the answerer
+against the runner's owner. The owner need not be a member of the
+project, and a project request does not reach a non-member; the personal
+request does, and it already has an answer route of its own.
 
 ## A runner's stop revokes its agents' credentials when they are next used
 
@@ -749,11 +776,14 @@ after a revocation no person chose for that agent: the hub's own after the
 runner removed the clone (`workspace_removed` with `revoked_by` null) or the
 runner owner's revocation of the runner (`runner_revoked` with `revoked_by`
 that owner). Everything else is `forbidden` with `details.reason:
-"owner_only"` (`routes/placements._undone_by_anyone`). The check runs on
-every start that carries a rejoin out, not only on `rejoin: true`: a
-`rejoin` stored on the placement by the clone's removal is carried out by a
-`restart` with `{}` or a `PATCH desired: running` too
-(`routes/placements._check_rejoin`).
+"owner_only"` (`placements.undone_by_anyone`). The check runs on every
+start of a placement whose credential is revoked, not only on `rejoin:
+true` and not only once a `rejoin` is stored: a `rejoin` the clone's removal
+stores is carried out by a `restart` with `{}` or a `PATCH desired:
+running` too (`routes/placements._check_rejoin`). A removal reported for a running
+placement whose credential was revoked that way stores the `rejoin` and
+stops the placement as well (`placements._removed`, no new `generation`),
+so the rejoin waits for a start the check lets through.
 
 **Reason:** a revocation is how a person stops their agent, and a leak's
 revocation ends a credential someone else may hold. Undoing either by a new
@@ -766,5 +796,9 @@ rejoin after any revocation: a removed clone revokes the credential on the
 runner's own report, and its placement is meant to join anew at its next
 start (§15.5) without waiting for the owner. Not storing `rejoin` on the
 removal when the credential was already revoked otherwise: the owner's
-next plain start should still join anew, and a check at the start covers
-every way a start comes.
+next plain start should still join anew. A check at the start alone,
+once a `rejoin` is stored: the check runs whether a `rejoin` is stored or
+not, and the removal stops a placement that runs. A check at the runner's pickup instead: the pickup
+cannot tell whose start it carries out, so it would refuse the owner's
+own rejoin, or need a stored record of who started; the start already
+knows who asks.

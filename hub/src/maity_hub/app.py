@@ -242,9 +242,16 @@ def check_startup(engine: Engine, settings: Settings) -> None:
                 "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
             )
     check_secrets(engine, settings.secret_key)
-    verifiers.check_at_startup(  # read only (§2.2)
+    _, plain = verifiers.check_at_startup(  # read only (§2.2)
         engine, settings.secret_key, settings.seal_verifiers
     )
+    # Refused here, not by locking agents out while serving: each would answer as an unknown
+    # credential (hub/context/credentials.md).
+    if settings.sealed_verifiers_only and plain:
+        raise ConfigError(
+            f"MAITY_SEALED_VERIFIERS_ONLY=1, but {plain} live credential verifier(s) are "
+            "stored unsealed; run `maity-hub seal-verifiers` first"
+        )
 
 
 def start_once(engine: Engine, settings: Settings) -> None:
@@ -344,8 +351,11 @@ def create_app(
     shared_counts.configure(shared_engine)
     shared_budget.configure(shared_engine)
     known_sources.configure(settings.secret_key)  # the key of the sources' fingerprints (§2.1)
-    # Reads sealed verifiers with the key; seals new ones only with MAITY_SEAL_VERIFIERS (§2.2).
-    verifiers.configure(settings.secret_key, settings.seal_verifiers)
+    # Reads sealed verifiers with the key; seals new ones only with MAITY_SEAL_VERIFIERS, and
+    # refuses plain ones with MAITY_SEALED_VERIFIERS_ONLY (§2.2).
+    verifiers.configure(
+        settings.secret_key, settings.seal_verifiers, settings.sealed_verifiers_only
+    )
     chat_gate.configure(settings.agent_firewall)  # MAITY_AGENT_FIREWALL (§9.6, "The switch")
 
     @asynccontextmanager

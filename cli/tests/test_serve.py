@@ -54,7 +54,12 @@ class Script:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def call(self, method: str, path: str, **kwargs: Any) -> Any:
+        if list(kwargs.get("query") or ()) == [("closed", "true")]:
+            path += "?closed=true"
         self.calls.append((f"{method} {path}", kwargs))
+        closed = path.endswith("?closed=true")
+        if closed and (not self.steps or self.steps[0][0] != f"{method} {path}"):
+            return {"items": []}  # the closed placements (§15.5), unless a test scripts them
         if not self.steps:
             raise serve.Stop
         expected, answer = self.steps.pop(0)
@@ -130,7 +135,8 @@ def test_hello_then_a_wake_rereads_the_placements(tmp_path: Path) -> None:
     assert hello["client"] == hub.CLIENT and hello["actual"] == []
     assert script.calls[1][1]["query"] == [("after", "5120"), ("wait", "55")]
     assert script.calls[1][1]["timeout"] == serve.POLL_WAIT + serve.POLL_SLACK
-    assert script.calls[3][1]["query"][0] == ("after", "5121")
+    assert script.calls[3][0] == "GET /runner/placements?closed=true"
+    assert script.calls[4][1]["query"][0] == ("after", "5121")
     assert [len(p) for p in seen] == [1, 2]
 
 
@@ -328,8 +334,10 @@ def test_serve_end_to_end_signed_with_the_runner_credential(
     runner_calls = [s for s in fake.signed() if s.path.startswith("/api/v1/runner/")]
     assert [s.path for s in runner_calls] == [
         "/api/v1/runner/hello", "/api/v1/runner/events", "/api/v1/runner/placements",
-        "/api/v1/runner/events",
+        "/api/v1/runner/placements", "/api/v1/runner/events",
     ]  # fmt: skip
+    # After the active placements, the closed ones, for their scratch (§15.5).
+    assert [runner_calls[2].query, runner_calls[3].query] == ["", "closed=true"]
     assert all(
         s.headers["authorization"] == f"Maity-HMAC {fakehub.RUNNER_CREDENTIAL_ID}"
         for s in runner_calls
@@ -343,8 +351,9 @@ def test_serve_end_to_end_signed_with_the_runner_credential(
     view = json.loads(capsys.readouterr().out)
     # No supervisor record yet: the stub placement was not started in this run.
     assert view["runner_id"] == "rnr-0002" and view["placements"] == [
-        {**PLACEMENT, "agent": None, "state": None, "attach": None}
-    ]
+        {**PLACEMENT, "agent": None, "state": None, "attach": None, "clone_bytes": None,
+         "scratch_bytes": None}
+    ]  # fmt: skip
 
 
 def test_serve_refuses_to_start_without_a_credential(
@@ -607,3 +616,48 @@ def test_status_prints_the_attach_line_of_a_running_placement(
     assert cli.main(["runner", "status", "--config", str(path), "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)["placements"]
     assert [(p["state"], p["attach"]) for p in shown][:2] == [("running", hint), ("failed", None)]
+
+
+def test_the_keeper_changes_the_targets_tools_under_the_supervisors_lock(
+    tmp_path: Path,
+) -> None:
+    """The keeper writes the local target's own probes, sandbox and held state, and under
+    the lock the start gate reads them under (supervisor.GateView): never half of a swap."""
+    cfg = _tools_config(tmp_path, "\ninstall = true\n")
+    state.write_credential(cfg.state_dir, state.Secret(fakehub.CREDENTIAL))
+    svc = serve.open_service(cfg, {})
+    assert svc.keeper is not None and svc.supervisor is not None
+    local = svc.supervisor.targets["local"]
+    assert svc.keeper.guard is svc.supervisor.lock
+    assert svc.keeper.probes is local.probes
+    assert svc.keeper.sandbox is local.sandbox and svc.keeper.held is local.held
+
+
+def _tools_config(tmp_path: Path, codex: str) -> config.Config:
+    """test_supervisor's configuration, with `codex` appended to its [harness.codex]."""
+    from test_supervisor import CONFIG
+
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path, max_agents=2) + codex)
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    return config.load(path)
+
+
+@pytest.mark.parametrize(
+    ("codex", "reports"), [("", False), ("\ninstall = true\n", True),
+                           ('\nupdate = "daily"\n', True)],
+)  # fmt: skip
+def test_only_a_runner_that_manages_a_tool_reports_tools(
+    tmp_path: Path, codex: str, reports: bool
+) -> None:
+    """A hub from before §15.16 refuses `capabilities.tools`: a runner that manages no tool
+    leaves it out, and its hello is what such a hub accepts; one that manages a tool sends
+    it, and runs the tool thread."""
+    cfg = _tools_config(tmp_path, codex)
+    state.write_credential(cfg.state_dir, state.Secret(fakehub.CREDENTIAL))
+    svc = serve.open_service(cfg, {})
+    assert ("tools" in svc.advertised) is reports
+    assert (svc.keeper is not None) is reports
+    if reports:
+        ids = [entry["id"] for entry in svc.advertised["tools"]]
+        assert ids == ["codex", "maity"]

@@ -38,9 +38,13 @@ expect() {
 out="$(render -f "$minimal")"
 expect "minimal: one pod, recreated, migrate hook first" "$out" \
     "replicas: 1" "type: Recreate" "helm.sh/hook: pre-install,pre-upgrade" 'args: ["migrate"]' \
-    'value: "https://maity.example.org"' "image: maity-hub:ci" "readOnlyRootFilesystem: true"
-expect "minimal: hub pods selected by component, version label from the tag" "$out" \
-    "app.kubernetes.io/component: hub" 'app.kubernetes.io/version: "ci"'
+    'value: "https://maity.example.org"' "readOnlyRootFilesystem: true" \
+    "image: maity-hub@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+expect "minimal: hub pods selected by component" "$out" "app.kubernetes.io/component: hub"
+# A tag only as an explicit opt-in, and then it also names the version label.
+expect "tag: pulled by tag only with image.allowTag, version label from the tag" \
+    "$(render -f "$minimal" --set image.digest= --set image.allowTag=true --set image.tag=ci)" \
+    "image: maity-hub:ci" 'app.kubernetes.io/version: "ci"'
 selector="$(sed -n '/^kind: Service$/,/^---/p' <<<"$out" | sed -n '/selector:/,$p')"
 expect "minimal: the Service selects only the hub" "$selector" "app.kubernetes.io/component: hub"
 expect "minimal: one serving process unless set" "$out" "name: MAITY_WORKERS" 'value: "1"'
@@ -129,6 +133,11 @@ grep -q "MAITY_SEAL_VERIFIERS" <<<"$out_sk" && bad "sealing verifiers is on by d
 out_seal="$(render -f "$minimal" --set secretKey.existingSecret=s --set secretKey.sealVerifiers=true)"
 [ "$(grep -c 'name: MAITY_SEAL_VERIFIERS' <<<"$out_seal")" = 2 ] && ok "sealVerifiers reaches the hub and the migrate Job, once each" \
     || bad "sealVerifiers is not in both the hub and the migrate Job"
+grep -q "MAITY_SEALED_VERIFIERS_ONLY" <<<"$out_seal" && bad "sealed verifiers only is on by default" \
+    || ok "sealed verifiers only is off by default, also with sealing on"
+out_only="$(render -f "$minimal" --set secretKey.existingSecret=s --set secretKey.sealVerifiers=true --set secretKey.sealedVerifiersOnly=true)"
+[ "$(grep -c 'name: MAITY_SEALED_VERIFIERS_ONLY' <<<"$out_only")" = 2 ] && ok "sealedVerifiersOnly reaches the hub and the migrate Job, once each" \
+    || bad "sealedVerifiersOnly is not in both the hub and the migrate Job"
 out_att="$(render -f "$minimal" --set attachments.existingClaim=c)"
 [ "$(grep -c 'name: MAITY_ATTACHMENT_DIR' <<<"$out_att")" = 1 ] && [ "$(grep -c 'claimName: "c"' <<<"$out_att")" = 1 ] \
     && [ "$(grep -c 'mountPath: "/var/lib/maity/attachments"' <<<"$out_att")" = 1 ] \
@@ -203,8 +212,14 @@ refuse "Ingress without trusted proxies" "config.trustedProxies is required" -f 
     --set ingress.enabled=true --set ingress.host=maity.example.org
 refuse "sealing verifiers without the key" "secretKey.sealVerifiers needs secretKey.existingSecret" -f "$minimal" \
     --set secretKey.sealVerifiers=true
+refuse "sealed verifiers only without sealing" "secretKey.sealedVerifiersOnly needs secretKey.sealVerifiers" -f "$minimal" \
+    --set secretKey.existingSecret=s --set secretKey.sealedVerifiersOnly=true
 refuse "a typo in a value" "additional propert" -f "$minimal" --set config.publicURL=https://x.example
 refuse "a short digest" "match pattern" -f "$minimal" --set image.digest=sha256:abc
+# By digest by default: no tag of its own (not the appVersion), and a tag alone is not enough.
+refuse "no digest" "image.digest is required" -f "$minimal" --set image.digest=
+refuse "a tag without image.allowTag" "image.digest is required" -f "$minimal" --set image.digest= --set image.tag=ci
+refuse "image.allowTag without a tag" "image.tag is required" -f "$minimal" --set image.digest= --set image.allowTag=true
 refuse "a replica count" "additional propert" -f "$minimal" --set replicaCount=2
 refuse "a pull secret as a bare string" "imagePullSecrets" -f "$minimal" --set "imagePullSecrets[0]=registry"
 refuse "Ingress without trusted proxies, plain HTTP allowed" "config.trustedProxies is required" \

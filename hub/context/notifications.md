@@ -1445,3 +1445,42 @@ unread one again; the test fails with a 31-day window.
   never pruned would delete every old row in one statement and hold their locks to its end.
 - An index for the sweep in the same change: a migration needs a slot, and the sweep runs once an
   hour, the account records' walk on their primary key.
+
+## The notice to the old address names where a change was asked from, kept with the pending address until it is verified or expires
+
+**Id:** 569a1661-3a51-45bb-b7e3-47a3f4368354
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-y5hkg2ztvwq9, item 10, from the clean-up audit tsk-hgnbapyw7hnh (area 12, seq 125423); the lead's decision for variant (a), 2026-11-15; docs/api.md §2.6.3 and §18.4 ("When the new address is verified ... from which browser, operating system and IP address"); `notifications/preferences.py` (`apply_address`, `verify`, `void_pending_address`, `NO_PENDING_ORIGIN`), `notifications/retention.py` (`_pending_origin`), migration `20261115000000_address_where`; tests in `tests/test_notification_address.py`, `tests/test_notification_retention.py`, `tests/test_export.py`, `tests/test_per_human_tables.py`
+**Revisit when:** the old-address notice gets a channel other than mail, an address change can be asked without a session (an admin's or an API key's), or the session list starts keeping where every sensitive call came from
+
+`verify` sent the notice to the old address without the "From: <browser> on <os>, <ip>" line:
+only a removal passed the session to `_tell_old_address`, while the link that confirms a change
+carries no session. `apply_address` now writes the requesting session's browser, operating system
+and IP address beside `pending_nonce` (`pending_browser`, `pending_os`, `pending_ip`), and
+`verify` names them in the notice, in the same `address_from` line, with the same fallbacks, as a
+removal does. For an approved held change the session is the approving one, as for an approved
+removal.
+
+The three columns are never kept for good. They are cleared wherever the pending address is: at
+the verification, when a new request replaces them with its own, at a removal, and when a new
+password voids the pending address (`void_pending_address`). A link that expired leaves its
+pending address in the settings, so the hourly retention sweep clears the three columns of every
+row whose `pending_expires_at` has passed. A row pending at the upgrade has none, and its notice
+leaves the line out, as before. They go with the settings row at an account's deletion, and the
+export leaves them out: a copy of the session's data for one mail, while the export's session
+list holds the browser and system.
+
+**Reason:** the notice to the old address is the account's protection against a takeover through
+its address: the person who lost the account learns when and from where it happened. Narrowing
+the contract to name the "where" only on removal would take that from the common case, a change
+confirmed by its link.
+
+**Rejected alternatives:**
+- Variant (b), changing §2.6.3 and §18.4 to give the "where" on removal only: smaller (no
+  migration), but it weakens the takeover warning where it matters most.
+- Reading the session at verify time from a stored session id: the session may have ended (its
+  `ip` is cleared then) or be another device's; the request's own data is what the notice names.
+- Keeping the columns until the next request instead of clearing them at expiry: an IP address
+  would stay for as long as nobody touches the address.

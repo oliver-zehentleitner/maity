@@ -20,7 +20,19 @@ LIMIT = 12
 NAME = re.compile(r"[a-z][a-z0-9-]{1,23}", re.ASCII)
 # Built-in trusts and tokens a project role may not be named (§2.3); the built-in roles
 # are refused as well.
-RESERVED = ("owner", "admin", "member", "guest", "team", "all", "proxy", "lead", "null", "none")
+RESERVED = (
+    "owner",
+    "admin",
+    "member",
+    "outside",
+    "guest",
+    "team",
+    "all",
+    "proxy",
+    "lead",
+    "null",
+    "none",
+)
 DESCRIPTION_MAX = 200
 
 
@@ -48,10 +60,10 @@ def on_base(project: Any, base: str) -> list[str]:
 
 
 def view(project: Any) -> dict[str, Any]:
-    """The `custom` half of `GET …/roles`: `{custom: [{name, base, description, guide,
-    guide_by}]}`. The route (routes/roles.py `read_roles`) adds the `builtin` half from
-    `guide.builtin`."""
-    return {"custom": of(project)}
+    """The `custom` half of `GET …/roles` and its version: `{custom: [{name, base,
+    description, guide, guide_by}], version}` (§2.3 "Version."). The route (routes/roles.py
+    `read_roles`) adds the `builtin` half from `guide.builtin`."""
+    return {"custom": of(project), "version": project.roles_version}
 
 
 def parse(raw: Any) -> list[dict[str, Any]]:

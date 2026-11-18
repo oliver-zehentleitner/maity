@@ -65,10 +65,15 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("serve", help="serve the API and the dashboard")
     commands.add_parser("migrate", help="bring the database schema to the current version")
-    commands.add_parser(
+    seal = commands.add_parser(
         "seal-verifiers",
         help="seal the credentials' plain verifiers with MAITY_SECRET_KEY; only with "
         "MAITY_SEAL_VERIFIERS=1, a second run seals nothing",
+    )
+    seal.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="only count the sealed and the plain verifiers; writes nothing, needs no setting",
     )
     owner = commands.add_parser("owner", help="manage human accounts")
     owner_commands = owner.add_subparsers(dest="owner_command", required=True)
@@ -142,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "migrate":
         return _migrate(settings)
     if args.command == "seal-verifiers":
-        return _seal_verifiers(settings)
+        return _seal_verifiers(settings, args.dry_run)
     if args.command == "owner":
         return _owner_create(settings, args.handle, args.display_name, args.email)
     if args.command == "second-factor":
@@ -512,10 +517,13 @@ def _migrate(settings: Settings) -> int:
     return 0
 
 
-def _seal_verifiers(settings: Settings) -> int:
+def _seal_verifiers(settings: Settings, dry_run: bool = False) -> int:
     """The explicit step that seals the verifiers written before sealing was switched on
-    (hub/context/credentials.md); no migration seals. Idempotent: a sealed row stays."""
-    if not settings.seal_verifiers or settings.secret_key is None:
+    (hub/context/credentials.md); no migration seals. Idempotent: a sealed row stays. Prints
+    `sealed N, already sealed M, plain left K` per table and in all; exit 1 when a plain row
+    is left after a real run (one written meanwhile). `--dry-run` only counts."""
+    key = settings.secret_key
+    if not dry_run and (not settings.seal_verifiers or key is None):
         return _fail(
             "refused: sealing is off; set MAITY_SEAL_VERIFIERS=1 and MAITY_SECRET_KEY first",
             EXIT_CONFIG,
@@ -526,16 +534,33 @@ def _seal_verifiers(settings: Settings) -> int:
         return _database_error(settings, error)
     try:
         require_current_schema(engine)
-        counted = verifiers.seal_plain(engine, settings.secret_key)
+        if dry_run or key is None:
+            counted = verifiers.count(engine)
+        else:
+            counted = verifiers.seal_and_count(engine, key)
     except SchemaNotCurrentError as error:
         return _fail(str(error), EXIT_FAILURE)
     except SQLAlchemyError as error:
         return _database_error(settings, error)
     finally:
         engine.dispose()
-    for table, count in counted.items():
-        print(f"{table}: {count}")
-    print(f"sealed {sum(counted.values())} verifier(s)")
+    total = verifiers.Counted(
+        sealed=sum(c.sealed for c in counted.values()),
+        already=sum(c.already for c in counted.values()),
+        left=sum(c.left for c in counted.values()),
+    )
+    for name, line in (*counted.items(), ("total", total)):
+        print(
+            f"{name}: sealed {line.sealed}, already sealed {line.already}, plain left {line.left}"
+        )
+    if dry_run:
+        print("dry run: nothing written")
+        return 0
+    if total.left:
+        return _fail(
+            f"{total.left} plain verifier(s) left: written while this ran; run it again",
+            EXIT_FAILURE,
+        )
     return 0
 
 

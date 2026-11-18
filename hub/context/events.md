@@ -860,6 +860,33 @@ or stopped), never one less for the entry's own change.
   rules its owner set". The contract now says so (an open point of the PR for the
   maintainer).
 
+## A chat message's current verdicts are rows of their own, not read from the `chat_verdict` events
+
+**Id:** 82dc9315-5185-4996-881d-437c7cbbeddd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §9.7 ("Redaction": the verdict an event set stays until a `PUT` or `DELETE` changes it, and reads its `value` with `sentence: null`), card tsk-55x4f398dttv
+**Revisit when:** a redaction comes to keep the fields of an event it does not take out, or a verdict comes to be removed with the redaction of its event
+
+A human's current verdict on a message is a `chat_verdict` row (one per message and human,
+`set_seq` naming the event that set it), written in the same transaction as each
+`chat_verdict` event, replaced by the next and deleted when taken back. A message's
+`verdicts` reads these rows, and the `sentence` of one whose event is redacted as null.
+
+**Reason:** a redaction replaces an event's whole payload with the tombstone, so the
+`value` the contract says survives it would be gone from the log. The row keeps it; the
+redaction of the event that set it clears the row's `sentence` in the same transaction, so
+no copy of the redacted text stays in storage. The contract states what is read (`value`
+kept, `sentence: null`); that the sentence goes from storage too is inferred from what a
+redaction is for (§8.5), not stated.
+
+**Rejected alternative:** deriving the current verdict from the latest `chat_verdict` per
+human and message: a redacted latest event has no `value` left, and reading the one before
+it would show an older verdict than the one that stands. Keeping the sentence in the row and
+hiding it only on read: a redaction exists to take the text out, and that would leave it in
+the database.
+
 ## A long-poll ends with its credential or session: at once in the process that ended it, at the next pass elsewhere, the check inside the look
 
 **Id:** 92ef7fa8-fc4f-4b96-8089-903b6ac959af

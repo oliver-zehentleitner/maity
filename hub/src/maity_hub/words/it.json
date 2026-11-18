@@ -121,6 +121,7 @@
   "password_reset.mail_mailbox": "Questa casella è anche il tuo secondo fattore: chi la legge può reimpostare la tua password e accedere. Configura un'app di autenticazione in Sicurezza, nel tuo account: così una reimpostazione richiederà anche il suo codice.\n\n",
   "password_reset.subject": "[Maity] Reimposta la password",
   "product.bug": "Hai trovato un bug?",
+  "product.discord": "Chatta con noi su Discord",
   "product.love": "amore",
   "product.made_by": "Fatto con {heart} da {name} su {github} & {maity}",
   "product.security": "Hai trovato una vulnerabilità?",

@@ -140,8 +140,10 @@ async def login(body: Login, request: Request) -> JSONResponse:
             # before anything else, so the two run one after the other; after the deletion
             # `sessions.create` finds the account gone.
             write_guard.share(conn, row.id)
-            sessions.forget_expired_addresses(conn)
+            # The presented session first: it takes its human's account lock before any
+            # row of theirs, and the addresses' pass may lock an expired session of theirs.
             end_presented(conn, presented)
+            sessions.forget_expired_addresses(conn)
             session_id, csrf, _, state = second_factor.begin(
                 conn,
                 hub,
@@ -202,9 +204,23 @@ def pending_answer(state: str, via: str = "totp") -> dict[str, Any]:
 
 def end_presented(conn: Connection, presented: str | None) -> None:
     """A browser that holds a session, of any human, has it ended before a new one is
-    made; the new one never takes over a presented id (§2.6.5, session fixation)."""
-    if presented:
-        sessions.end_where(conn, t.human_session.c.id_hash == session_id_hash(presented), "logout")
+    made; the new one never takes over a presented id (§2.6.5, session fixation).
+
+    Ending it writes the record of the session's human (`records.session_ended`), who need
+    not be the one signing in: that human's account lock is taken shared first, as every
+    change of an account without its session takes it (`write_guard.share`). A deletion of
+    that account then runs before or after this, never across it; after it, the session is
+    ended already and nothing is written."""
+    if not presented:
+        return
+    which = t.human_session.c.id_hash == session_id_hash(presented)
+    owner = conn.execute(
+        select(t.human_session.c.human_id).where(which, t.human_session.c.ended_at.is_(None))
+    ).scalar()
+    if owner is None:
+        return
+    write_guard.share(conn, owner)
+    sessions.end_where(conn, which, "logout")
 
 
 def set_session_cookies(

@@ -13,7 +13,7 @@ import pytest
 from test_supervisor import REPO, Clock, FakeTmux, Reports, placement, settle, states
 
 from maity import cli
-from maity.runner import capabilities, config, supervisor, targets, workspace
+from maity.runner import capabilities, config, supervisor, targets, tmux, workspace
 from maity.runner.asuser import Ssh, Unreachable
 
 CONFIG = """\
@@ -65,15 +65,18 @@ def fake_ssh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home.mkdir(parents=True)
     (tmp_path / "remote" / "bin").mkdir()
     # The host's own maity (targets.pin_maity finds it on agent_path): this checkout's. The
-    # runner reads the agents' files through it (`maity runner limitread`): that read is
-    # started straight away, since loading the whole CLI on a busy machine outlasts what
-    # `settle` waits; a test of the host's own install replaces it.
+    # runner reads the agents' files through it (`maity runner limitread`) and makes their
+    # scratch (`maity runner scratchop`): both are started straight away, since loading the
+    # whole CLI on a busy machine outlasts what `settle` waits; a test of the host's own
+    # install replaces it.
     maity = tmp_path / "remote" / "bin" / "maity"
     src = Path(__file__).resolve().parent.parent / "src"
     maity.write_text(
         "#!/bin/sh\n"
         'if [ "$1" = runner ] && [ "$2" = limitread ]; then shift 2; '
         f'PYTHONPATH={src} exec {sys.executable} -m maity.runner.limitread "$@"; fi\n'
+        'if [ "$1" = runner ] && [ "$2" = scratchop ]; then shift 2; '
+        f'PYTHONPATH={src} exec {sys.executable} -m maity.runner.scratchop "$@"; fi\n'
         f'PYTHONPATH={src} exec {sys.executable} -m maity "$@"\n'
     )
     maity.chmod(0o755)
@@ -609,7 +612,7 @@ def test_a_hosts_deny_lists_name_the_hosts_paths(tmp_path: Path, fake_ssh: Path)
     assert remote_home / ".ssh" in ctx.private and remote_home / ".codex" in ctx.private
     assert sibling in ctx.private and place.credential.parent not in ctx.private
     assert sup.cfg.state_dir not in ctx.private and sup.cfg.state_dir.resolve() not in ctx.private
-    assert "-path" in fake_ssh.read_text()  # listed on the host, over ssh
+    assert "-mindepth 2 -maxdepth 2 -print0" in fake_ssh.read_text()  # listed on the host, over ssh
 
 
 def test_codexs_sandbox_is_tried_on_the_host(tmp_path: Path, fake_ssh: Path) -> None:
@@ -701,3 +704,29 @@ def test_claude_codes_sandbox_on_a_host_needs_the_hook_failure_policy(
     target = targets.ssh_hosts(cfg)[1]
     probes, sandbox, held = targets.probe_remote(target.as_user, harnesses, target.agent_path)
     assert probes["claude-code"].version == version and sandbox["claude-code"] is on
+
+
+def test_a_host_whose_sessions_cannot_be_read_keeps_its_scratch(
+    tmp_path: Path, fake_ssh: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The host's own maity, with its fast `runner scratchop`, ahead of any other on PATH.
+    monkeypatch.setenv("PATH", f"{tmp_path / 'remote' / 'bin'}{os.pathsep}{os.environ['PATH']}")
+    sup, backends, _, _, logs = remote_world(tmp_path, fake_ssh)
+    assert sup.cfg.ssh is not None
+    room = sup.cfg.ssh.hosts[0].workspaces / "maity" / ".scratch" / "plc-0003"
+    (room / "tmp").mkdir(parents=True)
+    sup.closed([{"id": "plc-0003", "project_id": "maity", "active": False,
+                 "closed_reason": "deleted"}])  # fmt: skip
+
+    def unreadable() -> dict[str, tmux.Session]:
+        raise tmux.TmuxError("tmux list-panes failed: lost")
+
+    readable = {name: backend.sessions for name, backend in backends.items()}
+    for backend in backends.values():
+        monkeypatch.setattr(backend, "sessions", unreadable)
+    sup.tick()  # a session of it may still run there: unknown means kept
+    assert room.is_dir() and "plc-0003" not in sup.scratch_cleared
+    for name, backend in backends.items():
+        monkeypatch.setattr(backend, "sessions", readable[name])
+    sup.tick()
+    assert not room.exists() and "plc-0003" in sup.scratch_cleared

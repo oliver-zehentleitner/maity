@@ -9,7 +9,11 @@ Once an hour the mail worker (`outbox.Worker`) deletes:
 - `mail_item_sent` rows mailed more than `SENT_KEPT` ago: no item the mailer can still derive
   is that old, so the row can no longer stop a second mail;
 - `mail_delivery` rows past `DELIVERIES_KEPT`: the counters and the budget read the last hour;
-- stored positions (`notification_position`) unused for `POSITIONS_KEPT`.
+- stored positions (`notification_position`) unused for `POSITIONS_KEPT`;
+
+and clears the browser, system and IP address kept with a pending address change
+(`notification_settings.pending_browser`, `pending_os`, `pending_ip`) once its link expired: they
+are only for the notice to the old address at the verification (§18.4), which can no longer come.
 
 Each table goes in batches of `BATCH` rows, a short transaction each, chosen by key and deleted
 by key with the same condition again, so no statement holds many rows' locks and the same
@@ -24,7 +28,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Column, Connection, Engine, Table, delete, func, select, tuple_
+from sqlalchemy import Column, Connection, Engine, Table, delete, func, or_, select, tuple_, update
 
 from maity_hub import clock, worker_runs
 from maity_hub import tables as t
@@ -79,7 +83,39 @@ def prune(engine: Engine, stop: Stopping = None, budget: float = PASS_BUDGET) ->
             position.last_used_at < now - POSITIONS_KEPT,
             deadline,
         ),
+        "pending_origin": _pending_origin(engine, now, deadline),
     }
+
+
+def _pending_origin(engine: Engine, now: datetime, stop: _Deadline) -> int:
+    """Clear where an expired address change was asked from, `BATCH` rows at a time; the
+    pending address itself stays, as the settings show it until it is replaced or removed."""
+    from maity_hub.notifications import preferences  # it sends mail through the outbox
+
+    c = t.notification_settings.c
+    condition = (
+        c.pending_expires_at <= now,
+        or_(c.pending_browser.is_not(None), c.pending_os.is_not(None), c.pending_ip.is_not(None)),
+    )
+    done = 0
+    while not stop.is_set():
+        with engine.begin() as conn:
+            rows = list(
+                conn.execute(
+                    select(c.human_id).where(*condition).order_by(c.human_id).limit(BATCH)
+                ).scalars()
+            )
+            if not rows:
+                break
+            conn.execute(
+                update(t.notification_settings)
+                .where(c.human_id.in_(rows), *condition)
+                .values(**preferences.NO_PENDING_ORIGIN)
+            )
+        done += len(rows)
+        if len(rows) < BATCH:
+            break
+    return done
 
 
 def _batched(

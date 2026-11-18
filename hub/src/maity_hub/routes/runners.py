@@ -632,6 +632,22 @@ def get_runner(runner_id: str, request: Request, caller: HumanCaller) -> JSONRes
         return JSONResponse(runner_view(conn, row, caller.principal_id))
 
 
+@router.get("/runners/{runner_id}/placements")
+def runner_placements(runner_id: str, request: Request, caller: HumanCaller) -> JSONResponse:
+    """The owner's list of the active placements on their runner, in every project it is
+    attached to (§15.3): the owner stops or removes any of them, a foreign one too (§15.6)."""
+    with engine_of(request).begin() as conn:
+        row = _own_runner(conn, caller, runner_id)
+        found = conn.execute(
+            select(t.placement).where(
+                t.placement.c.runner_id == row.id, t.placement.c.active.is_(True)
+            )
+        ).all()
+        views = [placements.owner_line(conn, p) for p in found]
+        views.sort(key=lambda v: (v["project"], v["agent"]["handle"] or "", v["id"]))
+        return JSONResponse({"items": views, "next_cursor": None})
+
+
 @router.patch("/runners/{runner_id}")
 def update_runner(
     runner_id: str, body: RunnerUpdate, request: Request, caller: HumanCaller

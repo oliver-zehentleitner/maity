@@ -35,6 +35,7 @@ LINKS = [
     "https://maity.team/oliver-zehentleitner",
     "https://github.com/oliver-zehentleitner/maity/issues",
     "https://github.com/oliver-zehentleitner/maity/blob/main/SECURITY.md",
+    "https://discord.gg/VRWUe7zKzp",
 ]
 
 
@@ -54,15 +55,15 @@ def test_the_line_has_its_parts_its_links_and_no_style() -> None:
     line = product_line.html("en")
     assert text_of(line) == (
         "Maity 2031 · Made with ♥ by Oliver Zehentleitner on & · "
-        "Found a bug? · Found a vulnerability?"
+        "Found a bug? · Found a vulnerability? · Chat with us on Discord"
     )  # the year from the hub's clock, never a fixed one
     assert re.findall(r'<a href="([^"]+)"', line) == LINKS  # absolute, the Maity page without @
-    assert line.count('target="_blank" rel="noopener noreferrer"') == 4
+    assert line.count('target="_blank" rel="noopener noreferrer"') == 5
     assert 'aria-label="GitHub"' in line and 'aria-label="Maity"' in line
     assert '<span role="img" aria-label="love">♥</span>' in line
-    # Three icons and the three separators, which are drawn, not read.
-    assert line.count("<svg") == 3 and line.count('aria-hidden="true"') == 6
-    assert line.count('<span class="product-sep" aria-hidden="true"> · </span>') == 3
+    # Three icons and the four separators, which are drawn, not read; Discord is text only.
+    assert line.count("<svg") == 3 and line.count('aria-hidden="true"') == 7
+    assert line.count('<span class="product-sep" aria-hidden="true"> · </span>') == 4
     # Presentation attributes only: the pages' policies allow no inline style (§16.13).
     for forbidden in ("style=", "<style", "<use", "<title", "<img"):
         assert forbidden not in line
@@ -70,14 +71,14 @@ def test_the_line_has_its_parts_its_links_and_no_style() -> None:
 
 def test_at_phone_width_the_line_is_its_first_part() -> None:
     # §16.13: at most 600 CSS pixels wide, only "Maity <year>" with its mark; the separators
-    # and the other three parts are not shown. Four parts, three separators between them, in
+    # and the other four parts are not shown. Five parts, four separators between them, in
     # that order, and the rule that hides all but the first in the block the policy allows.
     clock.set_source(lambda: datetime(2031, 5, 1, tzinfo=UTC))
     line = product_line.html("en")
     inner = re.search(r"<small>(.*)</small>", line)
     assert inner is not None
     pieces = re.findall(r'<span class="(product-part|product-sep)"', inner[1])
-    assert pieces == ["product-part", "product-sep"] * 3 + ["product-part"]
+    assert pieces == ["product-part", "product-sep"] * 4 + ["product-part"]
     first = re.search(r'<span class="product-part">(.*?)</span><span class="product-sep"', line)
     assert first is not None and text_of(first[1]) == "Maity 2031" and "<svg" in first[1]
     assert (
@@ -109,6 +110,7 @@ def test_every_link_has_the_dashboards_target_size() -> None:
 def test_the_line_is_in_the_pages_language() -> None:
     line = product_line.html("de")
     assert "Einen Fehler gefunden?" in line and "Mit " in line and " auf " in line
+    assert "Chatte mit uns auf Discord" in line  # Discord, a name, stays as it is
     assert 'aria-label="Liebe"' in line
     assert 'aria-label="GitHub"' in line  # names are never translated
 
@@ -116,6 +118,12 @@ def test_the_line_is_in_the_pages_language() -> None:
 def test_every_language_names_each_placeholder_exactly_once() -> None:
     for language in ["en", "de", "es", "fr", "it", "ja", "ko", "nl", "pt", "zh-Hans"]:
         assert product_line.well_formed(catalog.section("product", language)["made_by"]), language
+
+
+def test_every_language_keeps_the_name_discord() -> None:
+    # §16.13 "Words": `Discord` is a name and is never translated.
+    for language in ["en", "de", "es", "fr", "it", "ja", "ko", "nl", "pt", "zh-Hans"]:
+        assert "Discord" in catalog.section("product", language)["discord"], language
 
 
 @pytest.mark.parametrize(
@@ -266,6 +274,7 @@ def test_every_mail_link_page_answers_the_pinned_policy_and_its_sheets_load_unde
     assert [s.split("?")[0] for s in sheets] == [
         "/assets/landing/landing.css",
         "/assets/landing/public-pages.css",
+        "/assets/landing/public-sections.css",
     ]
     for sheet in sheets:
         served = client.get(unescape(sheet))

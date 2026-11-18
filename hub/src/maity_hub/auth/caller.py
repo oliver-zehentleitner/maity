@@ -452,9 +452,10 @@ def is_runner_credential(credential_id: str) -> bool:
 
 
 def _verifier(row: Any) -> str | None:
-    """The row's verifier, unsealed; None when the instance key does not open it."""
+    """The row's verifier, unsealed; None when the instance key does not open it, or when it is
+    plain while MAITY_SEALED_VERIFIERS_ONLY is on: both answer alike (§2.2)."""
     table: verifiers.Table = "runner_credential" if is_runner_credential(row.id) else "credential"
-    return verifiers.usable(table, row.id, row.verifier)
+    return verifiers.accepted(table, row.id, row.verifier)
 
 
 def _credential(conn: Connection, credential_id: str) -> Any:
@@ -588,10 +589,17 @@ def _agent(conn: Connection, row: Any, via: str, renew: bool, facts: RequestFact
             t.agent_session.c.live.is_(True),
         )
     ).first()
+    # Reseal on use (§2.2): a plain row that verified is sealed in this same update.
     conn.execute(
         update(t.credential)
         .where(t.credential.c.id == credential_id)
-        .values(last_used_at=now, last_used_via=via)
+        .values(
+            last_used_at=now,
+            last_used_via=via,
+            **verifiers.reseal_value(
+                "credential", t.credential.c.verifier, credential_id, row.verifier
+            ),
+        )
     )
     # Presence at most once every `SEEN_EVERY` (§2.4): within it these match nothing and write
     # nothing.
@@ -685,10 +693,16 @@ def _runner_credential(conn: Connection, credential_id: str) -> Any:
 
 def _runner(conn: Connection, row: Any) -> Caller:
     now = clock.now()
-    conn.execute(
+    conn.execute(  # reseal on use, as `_agent` does (§2.2)
         update(t.runner_credential)
         .where(t.runner_credential.c.id == row.id)
-        .values(last_used_at=now, last_used_via="signed")
+        .values(
+            last_used_at=now,
+            last_used_via="signed",
+            **verifiers.reseal_value(
+                "runner_credential", t.runner_credential.c.verifier, row.id, row.verifier
+            ),
+        )
     )
     conn.execute(update(t.runner).where(t.runner.c.id == row.runner_id).values(last_seen_at=now))
     session_id = conn.execute(

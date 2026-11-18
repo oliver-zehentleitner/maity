@@ -84,7 +84,7 @@ A stranger reports a target whose public page is served now, and only
 that. Served now means `MAITY_PUBLIC_PAGES` is `on` and the hub stores
 the page (§16.9). The page is where they see it, so the report is not
 narrower than the page: an agent with its own page, listed on its
-owner's served agents page (with or without a page of its own) or named
+owner's served page (with or without a page of its own) or named
 on a served project page, a person whose page is served, a project whose page is
 served, and a card whose own page is served. A card with no stored page
 is members-only, and so is every message, because §16.9 shows no

@@ -273,6 +273,11 @@ no dotfile, so `index.html`, `fixtures/`, `tools/`, `context/` and the README ar
 `/join/…`, `/r/…`, `/mail/…`, `/badge/…`, the crawler files and the legal pages) and answers `index.html` to `GET`
 and `HEAD` with `Cache-Control: no-cache` and `X-Robots-Tag: noindex`; any other method is `not_found`. A hub path
 that names nothing is therefore the router's `not_found`, a wrong method on one its `405`, and never the shell.
+An address that can never be a page (`paths.never_a_page`, §16.11 since 2026-11-16) gets the same document with
+`404`, decided from the path's words before the public page is looked up, so no lookup can colour the status;
+`paths.NO_ROUTE_FIRST` and `paths.DEEPEST` are its words and its depth. It reads the path as sent
+(`raw_path`), split at its slashes before a segment is decoded, as the dashboard does; a segment with any `%` that
+starts no escape, or bytes that are no UTF-8, stays whole as sent, as `decodeURIComponent` leaves it.
 `paths.RESERVED_FIRST` is the list of first segments no handle may take, `paths.PROJECT_VIEWS` the views no slug
 may be; `tests/test_paths.py` compares both with §16.11, and registration, `maity-hub owner create` and the
 `next` of a login (`paths.safe_next`) use them. `maity-hub migrate` stops, before it changes anything, when a
@@ -669,10 +674,11 @@ range; a HEAD says the whole length and sends no body.
 **Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); lotse#wtwy (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
 **Revisit when:** a strict page gets a stylesheet of its own, the dashboard's phone breakpoint (600 px) changes, or the line's parts change
 **See:** https://github.com/oliver-zehentleitner/maity — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-08
+**Verification:** corroborated — re-checked on 2026-11-15, when "Chat with us on Discord" became the fifth part (card tsk-01tt7j11yx3w): the rule hides every part after the first, so the decision holds; only the count changed
 
 The hub draws the product line on the join page, the `503` maintenance
 page and the registration link page (`product_line.html`). Each of its
-four parts is a `span.product-part` and each separator a
+five parts is a `span.product-part` and each separator a
 `span.product-sep`, the classes the dashboard uses. At
 `max-width: 600px` a rule hides the separators and every part after the
 first, so the line is the mark, `Maity` and the year, as on the
@@ -708,6 +714,7 @@ c6768529 left one revalidation per file: after #1518, a warm load of a signed-in
 - `shell.versioned` adds `?v=<version>` to every `src`/`href` of the shell that names a file under `brand/`, `css/`, `js/` or `vendor/`. The version is the first 16 hex digits of the SHA-256 of the body sent, the same form `/assets/landing/` uses.
 - A stylesheet is served with its `url()`s to such files (fonts, brand masks) versioned the same way, so its version is that of the rewritten body. Like every file here, it is sent from the bytes kept in memory, and a range is cut from them.
 - The files a script loads later by a name it builds (i18n catalogs, Keep the Why's files, brand pictures) are listed in `<script type="application/json" id="maity-assets">`. `web/js/assets.js` (`M.assetQuery`) reads that block.
+- `shell.web_version` digests `index.html` and these versions into the dashboard's version, `Maity-Web-Version` (§1.1, since 2026-11-16): the shell carries it as `<meta name="maity-web-version">` beside that block, and the middleware sends it on every `/api/v1/` answer, the files looked at again at most every 10 seconds (`WEB_VERSION_TTL`), off the event loop; the shell itself is always versioned from a fresh reading, so a page loaded just after a deploy names the new dashboard. On the join host only the exchange `POST /{token}` carries it, as its `/api/v1/join/{token}` does. Why the page compares the two: web/context/refresh.md 9d7aee6c.
 - `AssetFiles` answers `public, max-age=31536000, immutable` only when the request's one `v` equals the version of the body this hub would send. Any other request gets c6768529's answer.
 - The middleware lets those four directories choose it (`DASHBOARD_FILES`), as it lets `/assets/landing/`.
 

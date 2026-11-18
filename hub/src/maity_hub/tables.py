@@ -649,7 +649,8 @@ project = Table(
     Column("state_changed_at", UtcDateTime, nullable=False),
     # Set once, when the probe first finds a release's tag; never cleared (§6.1).
     Column("released_at", UtcDateTime),
-    Column("repository_url", String(255)),
+    # 2048 is the contract's maximum for a stored repository URL (§6.1).
+    Column("repository_url", String(2048)),
     Column("repository_default_branch", String(255)),
     # The one check that says a commit is good (§6.1 `repository.required_check`), or null.
     Column("repository_required_check", String(200)),
@@ -722,6 +723,9 @@ project = Table(
     # The project roles (§2.3): `[{name, base, description, guide, guide_by}]`, at most
     # 12; null for none.
     Column("roles", JSON_VALUE),
+    # The list's version (§2.3 "Version."): +1 with every `PUT …/roles` that changes it, in
+    # the same UPDATE as `roles`; the `base_version` a `PUT` names.
+    Column("roles_version", Integer, nullable=False, server_default="0"),
     Column("onboarding_version", Integer, nullable=False, server_default="0"),
     Column("rules_markdown", MARKDOWN_TEXT),
     Column("rules_version", Integer, nullable=False),
@@ -1663,9 +1667,11 @@ request = Table(
     "request",
     metadata,
     _id(primary_key=True),
-    # Null only for a personal request that concerns an organisation and no project: an
-    # invitation (§7, §6.26); then `org_id` is set and `asked_by` is null, the inviter being
-    # `asked_by_human`.
+    # Null only for a personal request that belongs to no project (`scope_known` below): an
+    # organisation's invitation (§7, §6.26), with `org_id` set and the inviter as
+    # `asked_by_human`; or one the hub files with no asker and no organisation, the owner's
+    # digest (§5.3), the request about a new abuse report (§16.8) and the request to chat
+    # with an owner's agents (§9.6).
     _ref("project_id", "project.id"),
     _ref("org_id", "org.id"),
     Column("class", String(16), nullable=False),
@@ -1675,22 +1681,31 @@ request = Table(
     Column("mentions", JSON_VALUE),  # resolved from `summary` and `tried` (§8.6)
     Column("options", JSON_VALUE, nullable=False),
     Column("priority", String(16), nullable=False),
-    # `to`: a member, a role, the project's owner, or (filed by the hub only) the human who
-    # owns an agent profile, member of the project or not: a personal request (§7).
-    Column("to_kind", String(16), nullable=False),  # member, role, owner, profile_owner
+    # `to`: a member, a role, the project's owner, or (filed by the hub only) a human, member
+    # of the project or not: the owner of an agent profile, or a human in person (§19.4): a
+    # personal request (§7).
+    Column("to_kind", String(16), nullable=False),  # member, role, owner, profile_owner, human
     _membership_ref("to_member"),
     Column("to_instance", String(INSTANCE)),  # the address as written: `<member>#<id>` (§7)
     Column("to_role", String(32)),  # the whole token: `trust:admin`, `role:designer` (§2.3)
     _ref("to_profile", "agent_profile.id"),
-    _ref("to_human", "human.id"),  # the profile's owner when the hub filed it
+    _ref("to_human", "human.id"),  # the profile's owner when the hub filed it, or `human`'s
     Column("personal", Boolean, nullable=False, server_default=false()),
-    # "hub" on a request the hub files on an agent's behalf (§7): the notice of an agent's
-    # outage (§15.7); its events reach the owner only, and no project route shows it.
+    # "hub" on a request the hub files itself, with no asker who reads it (§7). On an
+    # agent's behalf, `asked_by` the agent's member: the notice of its outage (§15.7), of its
+    # unconfirmed Keep the Why commitment (§6.23) and of its isolation (§6.2), all three
+    # `file_hub_notice`, and a jour fixe moderator's consent the upgrade's grants file
+    # (§20.2). With no asker and no project: the owner's digest (§5.3), the request about a
+    # new abuse report (§16.8) and the request to chat with an owner's agents (§9.6). Its
+    # events never reach the agent in `asked_by`; the project route's `answer` is
+    # `not_found` for it, and every project route is for a personal one.
     Column("filed_by", String(8)),
     # A closed personal request's card as it was when it closed (§7): a non-member owner
     # does not follow the card after the outcome.
     Column("task_snapshot", JSON_VALUE),
-    _membership_ref("asked_by"),  # null with `project_id`: the human is `asked_by_human`
+    # Null for a human who asks without a membership (`asked_by_human`: an organisation's
+    # inviter, an owner outside the project, §6.2) and for the hub's own requests above.
+    _membership_ref("asked_by"),
     _ref("asked_by_human", "human.id"),
     Column("asked_session_id", String(ID)),
     _membership_ref("on_behalf_of"),
@@ -1756,9 +1771,11 @@ request = Table(
         " OR (NOT personal AND to_kind NOT IN ('profile_owner', 'human'))",
         name="personal_shape",
     ),
-    # No project: a personal request that concerns an organisation (§7, §6.26), or the owner's
-    # digest of agent instances that are not listening, which concerns every project of the
-    # human's agents at once and has no asker (§5.3).
+    # No project: a personal request that concerns an organisation (§7, §6.26), or one the hub
+    # files with no asker and no organisation: the owner's digest of agent instances that are
+    # not listening, which concerns every project of the human's agents at once (§5.3), the
+    # request about a new abuse report (§16.8) and the request to chat with an owner's agents
+    # (§9.6).
     CheckConstraint(
         "project_id IS NOT NULL"
         " OR (org_id IS NOT NULL AND personal AND asked_by IS NULL)"
@@ -2130,6 +2147,28 @@ conversation_meat_proxy = Table(
     Column("conversation_id", String(ID), nullable=False),
     Column("meat_proxy", Boolean, nullable=False),
     PrimaryKeyConstraint("human_id", "project_id", "conversation_id"),
+    **MYSQL_TABLE,
+)
+
+VERDICT_SENTENCE = 500  # Unicode code points, docs/api.md §9.7
+
+# A human's current verdict on a chat message (docs/api.md §9.7): one row per message and human,
+# replaced by a new one and deleted when taken back. `set_seq` is the `chat_verdict` event that
+# set it. Kept apart from the events because a redacted event loses its payload, and the verdict
+# it set must stay (hub/context/events.md). The projects' record, kept with a deleted account.
+chat_verdict = Table(
+    "chat_verdict",
+    metadata,
+    Column("message_seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    _ref("human_id", "human.id", nullable=False),
+    _ref("project_id", "project.id", nullable=False),
+    Column("conversation_id", String(ID), nullable=False),
+    Column("value", String(8), nullable=False),
+    Column("sentence", String(VERDICT_SENTENCE)),
+    Column("set_seq", BIG_ID, ForeignKey("event.seq"), nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    PrimaryKeyConstraint("message_seq", "human_id"),
+    CheckConstraint("value IN ('agree', 'disagree')", name="value"),
     **MYSQL_TABLE,
 )
 
@@ -2646,7 +2685,10 @@ mail_delivery = Table(
 # as one JSON value, beside the address and its verification. `pending_nonce` makes the
 # newest verification link the only valid one; `epoch` moves when the address changes or
 # is removed, which voids every unsubscribe link (§18.6). `address_change` is a change
-# held for approval (§18.4).
+# held for approval (§18.4). `pending_browser`, `pending_os` and `pending_ip` are the
+# requesting session's, for the notice to the old address once the new one is verified
+# (§2.6.3, §18.4); they go with the pending address: at its verification, when it is
+# replaced, removed or voided, and once it expired (`notifications/retention`).
 notification_settings = Table(
     "notification_settings",
     metadata,
@@ -2663,6 +2705,9 @@ notification_settings = Table(
     Column("pending_address", String(254)),
     Column("pending_nonce", String(32)),
     Column("pending_expires_at", UtcDateTime),
+    Column("pending_browser", String(64)),
+    Column("pending_os", String(64)),
+    Column("pending_ip", String(64)),
     Column("epoch", Integer, nullable=False),
     Column("hard_failures", Integer, nullable=False),
     Column("disabled_at", UtcDateTime),

@@ -113,7 +113,11 @@ def test_a_public_merge_and_a_decision_on_a_public_card_are_shown(world: World) 
     assert entries[0]["merge"] is None  # a decision has no merge facts
     assert entries[1]["url"] == "https://github.com/o/r/pull/1" and entries[0]["url"] is None
     text = world.anyone.get(BASE).text
-    assert "<h2>Recently</h2>" in text and "#1 merged &lt;b&gt;x&lt;/b&gt;" in text
+    assert "<h2>Recently merged</h2>" in text
+    # The merge as a pull request card, its text escaped; the decision as a line under it.
+    assert '<a class="pr" href="https://github.com/o/r/pull/1" rel="nofollow ugc">' in text
+    assert "<b>#1 merged &lt;b&gt;x&lt;/b&gt;</b>" in text
+    assert f"<span>Decided: {card_id}</span></li>" in text
     raw = world.anyone.get(f"/api/v1/public/pages{BASE}").text
     assert "agt-secret-reason" not in raw and "secret/path.py" not in raw
 
@@ -286,8 +290,11 @@ def test_an_away_or_paused_member_is_not_counted_online(world: World, hub: Any) 
 
 
 def online_section(world: World) -> str:
+    """Right now, in the hero: who is online and who of them is named (§16.9)."""
     text = world.anyone.get(BASE).text
-    return text[text.index("<h2>Online</h2>") :]
+    if '<div class="ph-live">' not in text:
+        return ""
+    return text[text.index('<div class="ph-live">') : text.index("</section>")]
 
 
 def test_with_public_presence_off_a_person_is_neither_named_nor_counted(
@@ -298,14 +305,14 @@ def test_with_public_presence_off_a_person_is_neither_named_nor_counted(
     worker.run_once()
     before = snapshot(world)["online"]
     assert any(p["handle"] == "anna" for p in before["named"])
-    assert "(anna)" in online_section(world)
+    assert 'aria-label="Human anna"' in online_section(world)
     switched = world.anna.patch("/me", {"public_presence": False})
     assert switched.status_code == 200, switched.text
     assert switched.json()["member"]["public_presence"] is False
     up = snapshot(world)["online"]  # at once, without the worker's run
     assert all(p["handle"] != "anna" for p in up["named"])
     assert up["humans"] == before["humans"] - 1  # a count beside the names would point at them
-    assert "(anna)" not in online_section(world)
+    assert 'aria-label="Human anna"' not in online_section(world)
     worker.run_once()
     assert all(p["handle"] != "anna" for p in snapshot(world)["online"]["named"])
     assert world.anna.patch("/me", {"public_presence": True}).status_code == 200

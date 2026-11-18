@@ -19,7 +19,6 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Collection
 from datetime import timedelta
-from html import escape
 from typing import Any
 
 from sqlalchemy import Connection, select
@@ -29,6 +28,7 @@ from maity_hub import (
     clock,
     moderation,
     namespace,
+    public_design,
     public_pages,
     public_people,
     public_projects,
@@ -139,51 +139,15 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
     if found is None:
         return []
     listed = sorted(((p, namespace.full_name(conn, p)) for p, _ in found), key=lambda pair: pair[1])
-    projects = "".join(
-        f'<li><a href="/{escape(full, quote=True)}">{escape(project.name)}</a> '
-        f'<span class="tag">{escape(full)}</span> <span class="tag">{escape(project.member_role)}'
-        "</span></li>"
-        for project, full in listed
-    )
     since = public_people.member_since(agent.created_at)
     up = online(conn, found)
     model, harness = latest_session(conn, found)
-    facts = [f"<li>Member since {escape(since)}</li>"]
-    if up:
-        facts.append("<li>Online</li>")
-    if model:
-        facts.append(f"<li>Model: {escape(model)}</li>")
-    if harness:
-        facts.append(f"<li>Harness: {escape(harness)}</li>")
     totals = statistics(conn, found)
-    counters = (
-        f"<h2>Statistics, last {public_projects.STAT_DAYS} days</h2><ul>"
-        + "".join(
-            f"<li>{escape(label)}: {escape(public_projects.stat_value(key, totals[key]))}</li>"
-            for key, label in public_projects.stat_labels(totals)
-        )
-        + "</ul>"
-    )
-    owner_link = f'<a href="/{escape(owner.handle, quote=True)}">{escape(owner.display_name)}</a>'
     # An agent always has a picture (§6.10), shown as a person's page shows theirs (§16.9).
     # The owner's picture as their own page shows it: only while their `public_profile` is on.
     pictures = avatars.public_urls(conn, [agent.id, *([owner.id] if owner.public_profile else [])])
     picture = pictures[agent.id]
     path = f"/{owner.handle}/agents/{agent.handle}"
-    content = (
-        f'<p class="eyebrow">{escape(owner.handle)}/agents/{escape(agent.handle)}</p>'
-        f"{public_people.picture_html(picture, 128)}"
-        f"<h1>{escape(agent.display_name)}</h1>{render.report_link(path)}"
-        f'<p>An agent of {owner_link}</p><ul class="facts">{"".join(facts)}</ul>'
-        f"<h2>Projects</h2><ul>{projects}</ul>{counters}"
-    )
-    body = render.page_document(
-        lang="en",
-        title=f"{agent.display_name} ({agent.handle})",
-        canonical=f"{hub.public_url.rstrip('/')}{path}",
-        content=content,
-    )
-    digest = hashlib.sha256("\x00".join((path, agent.display_name, content)).encode())
     data = {
         "name": agent.display_name,
         "handle": agent.handle,
@@ -203,13 +167,23 @@ def render_agent(conn: Connection, hub: Settings, agent_id: str) -> list[public_
         "model": model,
         "harness": harness,
     }
+    # The HTML in the dashboard's design as a pure function of `data` (`public_design.profile`).
+    content = public_design.profile(KIND, data, path)
+    body = render.page_document(
+        lang="en",
+        title=f"{agent.display_name} ({agent.handle})",
+        canonical=f"{hub.public_url.rstrip('/')}{path}",
+        content=content,
+        styled=False,
+    )
+    digest = hashlib.sha256("\x00".join((path, agent.display_name, content)).encode())
     return [
         public_pages.Page(
             path=path,
             body=body,
             inputs=digest.hexdigest(),
             lastmod=clock.now(),
-            view="agent",
+            view=KIND,
             data=data,
         )
     ]
