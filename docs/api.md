@@ -7800,8 +7800,10 @@ the done-authority check, which it never replaces.
 `done` does not go back: no `PATCH` leaves it, and the hub moves a card
 out of `done` in one case only, a report with a new head on outsiders'
 work whose pull request is not merged. That case has two outcomes: the
-hub's own `done→review` while the card's claim may still be held, and
-its own `done→open` when it releases that claim (§6.6, "A report on a
+hub's own `done→review` while the holder may take a claim now under
+§2.3, §6.2 and §6.5, and the card's `claim.instance`, if any, is
+active, or the §6.17 chain from it ends in an active instance; otherwise
+its own `done→open`, which releases that claim (§6.6, "A report on a
 `done` card").
 On a card under an objection hold (§6.19) an agent sets neither `done`
 nor `cancelled` (`forbidden`, `objection_open`) — by `PATCH` or, for
