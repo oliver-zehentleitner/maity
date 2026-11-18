@@ -206,6 +206,23 @@ class Problems(unittest.TestCase):
         with Tree(page=page) as root:
             self.assertEqual(u.problems(root, "0.1.0a9"), [])
 
+    def test_a_comment_indented_four_spaces_is_code_and_text(self):
+        # CommonMark shows "    <!-- x -->" as a code block; the fenced control is the test above.
+        page = FULL.replace("## The way back\n\nNothing.\n", "## The way back\n\n    <!-- x -->\n")
+        with Tree(page=page) as root:
+            self.assertEqual(u.problems(root, "0.1.0a9"), [])
+
+    def test_a_comment_indented_by_a_tab_is_code_and_text(self):
+        page = FULL.replace("## The way back\n\nNothing.\n", "## The way back\n\n\t<!-- x -->\n")
+        with Tree(page=page) as root:
+            self.assertEqual(u.problems(root, "0.1.0a9"), [])
+
+    def test_an_indented_unclosed_comment_hides_no_text_after_it(self):
+        # "    <!-- example" is code, so it opens no comment block that would swallow "Nothing.".
+        page = FULL.replace("## The way back\n\nNothing.\n", "## The way back\n\n    <!-- example\n\nNothing.\n")
+        with Tree(page=page) as root:
+            self.assertEqual(u.problems(root, "0.1.0a9"), [])
+
     def test_a_heading_inside_a_comment_does_not_count(self):
         page = FULL.replace("## The way back\n\nNothing.\n", "<!--\n## The way back\nNothing.\n-->\n")
         with Tree(page=page) as root:
@@ -222,6 +239,44 @@ class Listing(unittest.TestCase):
         with Tree(readme="# Upgrade pages\n\nNo list.\n") as root:
             (found,) = u.unlisted(root)
         self.assertIn("docs/upgrade/README.md does not link 0.1.0a9.md", found)
+
+    def refused(self, readme):
+        with Tree(readme=readme) as root:
+            (found,) = u.unlisted(root)
+        self.assertIn("does not link 0.1.0a9.md", found)
+
+    def accepted(self, readme):
+        with Tree(readme=readme) as root:
+            self.assertEqual(u.unlisted(root), [])
+
+    def test_a_link_inside_a_comment_does_not_count(self):
+        self.refused("# Upgrade pages\n\n<!-- - [0.1.0a9](0.1.0a9.md) -->\n")
+
+    def test_a_link_inside_a_fenced_example_does_not_count(self):
+        self.refused("# Upgrade pages\n\n```markdown\n- [0.1.0a9](0.1.0a9.md)\n```\n")
+
+    def test_a_link_inside_an_indented_example_does_not_count(self):
+        self.refused("# Upgrade pages\n\n    - [0.1.0a9](0.1.0a9.md)\n")
+
+    def test_a_link_inside_a_code_span_does_not_count(self):
+        self.refused("# Upgrade pages\n\nWrite `- [0.1.0a9](0.1.0a9.md)`.\n")
+
+    def test_a_reference_definition_alone_does_not_count(self):
+        self.refused("# Upgrade pages\n\n[a9]: 0.1.0a9.md\n")
+
+    def test_a_dot_slash_link_counts(self):
+        self.accepted("# Upgrade pages\n\n- [0.1.0a9](./0.1.0a9.md)\n")
+
+    def test_a_link_with_a_fragment_or_angle_brackets_counts(self):
+        self.accepted("# Upgrade pages\n\n- [0.1.0a9](0.1.0a9.md#x)\n")
+        self.accepted("# Upgrade pages\n\n- [0.1.0a9](<./0.1.0a9.md#x> \"title\")\n")
+
+    def test_a_reference_link_counts(self):
+        self.accepted("# Upgrade pages\n\n- [0.1.0a9][A9]\n\n[a9]: 0.1.0a9.md\n")
+
+    def test_an_indented_line_continuing_a_paragraph_is_text(self):
+        # CommonMark: an indented code block cannot interrupt a paragraph, so the link shows.
+        self.accepted("# Upgrade pages\n\nThe pages:\n    [0.1.0a9](0.1.0a9.md)\n")
 
     def test_check_refuses_an_unlisted_page_before_the_fold_too(self):
         with Tree(folded=False, readme="# Upgrade pages\n") as root:

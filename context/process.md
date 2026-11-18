@@ -2757,26 +2757,34 @@ whether the text is right. That is what the confirmation by the lead and ops
 before the tag is for.
 
 **Fences, comments and the list of pages (2026-11-18):** (Source: the P3
-follow-ups of the review of #1846, card tsk-tzknz9zzy1m2.) The check reads a page as CommonMark does for what it counts, since GitHub
-and the docs site render it that way and a page that renders right must not
-be refused, nor a heading the reader cannot see accepted. A byte order mark
-is dropped. A fence is three or more backticks or tildes indented by at most
-three spaces (a backtick fence's info string has no backtick); it closes only
-with a run of the same character at least as long, and an unclosed one runs
-to the end. Four spaces or more make an indented code block: such a line is
-no fence and no heading, and it counts as text, as a code block with content
-does; a fence inside a list item indented that far is not followed, which no
-page needs. A second-level heading may be indented by up to three spaces. An
-HTML comment alone is no text, so `<!-- TODO -->` cannot stand in for
-`Nothing.`; a comment that starts a line runs as a block to its `-->` (or the
-end), and a heading inside it is no section. Comments are cut from prose
-only, never from a code block, where they show. The
-alternative, a Markdown library, was left out: the check runs in ci's
-changelog job and the release gate on the standard library alone.
-`docs/upgrade/README.md` lists every version page, oldest first: the docs
-site renders only that README (`docs/nav.yml`), so its links are how a site
-reader finds a page. `check` refuses, on every pull request and before the
-fold too, a version page the README does not link; the release gate does not
-ask again, since the release pull request has passed ci. Listing each version
-in `docs/nav.yml` as a page of its own was left out: it would grow the site's
+follow-ups of the review of #1846, card tsk-tzknz9zzy1m2.) The check reads a
+page as CommonMark does for what it counts, since GitHub and the docs site
+render it that way and a page that renders right must not be refused, nor a
+heading the reader cannot see accepted. A byte order mark is dropped. A fence
+is three or more backticks or tildes indented by at most three spaces (a
+backtick fence's info string has no backtick); it closes only with a run of
+the same character at least as long, and an unclosed one runs to the end. A
+line indented by four columns or more (a tab counts to the next four) is an
+indented code block unless it continues paragraph text: it is no fence and no
+heading, and it counts as text, comments in it too, as a code block with
+content does; list items are not followed, so such a line in one is code. A
+second-level heading may be indented by up to three spaces. An HTML comment
+alone is no text, so `<!-- TODO -->` cannot stand in for `Nothing.`; a comment
+that starts a line runs as a block to its `-->` (or the end), and a heading
+inside it is no section. Comments are cut from prose only, never from code,
+where they show. Not followed either, on purpose: HTML blocks other than
+comments (a heading inside a `<div>` counts, as does a section holding only a
+link reference definition), closing `#`s, `##` plus a tab, and setext
+headings (refused, so the author writes a plain `## ` heading). Each needs
+markup no page uses. The alternative, a Markdown library, was left out: the
+check runs in ci's changelog job and the release gate on the standard library
+alone. `docs/upgrade/README.md` lists every version page, oldest first: the
+docs site renders only that README (`docs/nav.yml`), so its links are how a
+site reader finds a page. `check` refuses, on every pull request and before
+the fold too, a version page the README does not link. Only a link the
+rendered README shows counts, never one in code or a comment: an inline link,
+or a reference link whose definition is there; `./`, a `#fragment` and angle
+brackets do not change the page it names. The release gate does not ask
+again, since the release pull request has passed ci. Listing each version in
+`docs/nav.yml` as a page of its own was left out: it would grow the site's
 navigation by one entry per release.
