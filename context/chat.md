@@ -823,6 +823,51 @@ chance to set their entries.
   (`chat_request.sweep_owners`): it only syncs owners who already have
   an open request, so a fresh switch-on would file none.
 
+## An owner's firewall history is their own, kept as long as the account, from the deploy on
+
+**Id:** 756da7d0-c973-4ea0-82a0-5fe28a238f59
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the maintainer's wish of 2026-11-15 as the lead wrote it on card tsk-v34cv43wvec3 (a history of his own firewall decisions on Chat access, to audit them; no instance-wide admin view; retention to be decided in the contract; no backfill unless the existing rows carry it); the retention, the cap, the start and what stays when a named agent or person goes are the contract author's reading, open to the review of the contract
+**Revisit when:** the maintainer or an operator asks for a time limit on the history, for an admin's view of it, or the 10,000-item cap is reached in practice
+**See:** chat.md#an-agents-owner-decides-who-chats-with-it-once-per-side — 57bb158d-e8a4-4ef5-961a-53d1e4e648b1 — as of 2026-11-18
+
+`GET /me/chat-access/history` (§9.6, "History") lists every change of
+a human's allow and deny entries and every answer they gave to the
+request to chat with their agents, read by that human alone. It is kept
+as long as the account exists, capped at the newest 10,000 items per
+human, deleted with the account and in the export. It starts with the
+hub version that brings it. An item keeps what it names when that agent
+or person is deleted.
+
+**Reason:** the history exists to audit decisions, and the decisions
+that matter most last longest: an "allow always" given months ago is
+exactly the one an owner later wants to trace, so a time limit would
+drop what the audit is for. The cap only bounds a scripted write loop;
+the lists themselves hold at most 1,000 entries and most changes come
+from a human's click. No backfill, as the card allows only where rows
+carry the data: an entry stores `by` and `since` but not whether a
+click, an answer or an add made it, nor its state at creation, and an
+answered request keeps its button but not the ticked agents, the ticked
+person or the entries it wrote, so a backfilled item would look complete
+and be wrong. An item records the owner's own past decision, so taking
+a deleted agent or person out of it would falsify it; handles stay
+taken after a deletion (§2.9), so naming them reveals nothing new.
+
+**Rejected alternatives:**
+- 90 days, as the account records (`records.KEPT`): it would forget
+  the long-lived allows first, the ones worth auditing.
+- No cap: one client looping create and delete would grow one human's
+  rows without bound.
+- An instance-wide view for admins: the maintainer did not want one.
+- Backfilling items from the entries' `since` and the requests'
+  `answer`: half of each item would be guessed (above).
+- Deriving the history from events: a write to the lists emits only
+  `chat_rules_changed`, an entry id for the agent alone, and an answer
+  to this request, which has no project, writes no `request_answered`
+  event; neither carries the ticks or the entries.
+
 ## 👍 and 👎 on a chat message are a decision, kept as events
 
 **Id:** 331822d8-0cfc-471a-a4a7-8dbae7d0aa41
