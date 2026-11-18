@@ -54,7 +54,12 @@ class Script:
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def call(self, method: str, path: str, **kwargs: Any) -> Any:
+        if list(kwargs.get("query") or ()) == [("closed", "true")]:
+            path += "?closed=true"
         self.calls.append((f"{method} {path}", kwargs))
+        closed = path.endswith("?closed=true")
+        if closed and (not self.steps or self.steps[0][0] != f"{method} {path}"):
+            return {"items": []}  # the closed placements (§15.5), unless a test scripts them
         if not self.steps:
             raise serve.Stop
         expected, answer = self.steps.pop(0)
@@ -130,7 +135,8 @@ def test_hello_then_a_wake_rereads_the_placements(tmp_path: Path) -> None:
     assert hello["client"] == hub.CLIENT and hello["actual"] == []
     assert script.calls[1][1]["query"] == [("after", "5120"), ("wait", "55")]
     assert script.calls[1][1]["timeout"] == serve.POLL_WAIT + serve.POLL_SLACK
-    assert script.calls[3][1]["query"][0] == ("after", "5121")
+    assert script.calls[3][0] == "GET /runner/placements?closed=true"
+    assert script.calls[4][1]["query"][0] == ("after", "5121")
     assert [len(p) for p in seen] == [1, 2]
 
 
@@ -328,8 +334,10 @@ def test_serve_end_to_end_signed_with_the_runner_credential(
     runner_calls = [s for s in fake.signed() if s.path.startswith("/api/v1/runner/")]
     assert [s.path for s in runner_calls] == [
         "/api/v1/runner/hello", "/api/v1/runner/events", "/api/v1/runner/placements",
-        "/api/v1/runner/events",
+        "/api/v1/runner/placements", "/api/v1/runner/events",
     ]  # fmt: skip
+    # After the active placements, the closed ones, for their scratch (§15.5).
+    assert [runner_calls[2].query, runner_calls[3].query] == ["", "closed=true"]
     assert all(
         s.headers["authorization"] == f"Maity-HMAC {fakehub.RUNNER_CREDENTIAL_ID}"
         for s in runner_calls
@@ -343,8 +351,9 @@ def test_serve_end_to_end_signed_with_the_runner_credential(
     view = json.loads(capsys.readouterr().out)
     # No supervisor record yet: the stub placement was not started in this run.
     assert view["runner_id"] == "rnr-0002" and view["placements"] == [
-        {**PLACEMENT, "agent": None, "state": None, "attach": None}
-    ]
+        {**PLACEMENT, "agent": None, "state": None, "attach": None, "clone_bytes": None,
+         "scratch_bytes": None}
+    ]  # fmt: skip
 
 
 def test_serve_refuses_to_start_without_a_credential(

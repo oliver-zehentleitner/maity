@@ -716,6 +716,23 @@ def test_codex_keeps_a_hidden_path_inside_its_own_clone_hidden(tmp_path: Path) -
                               opened=(Path("/w/c"),)) == (Path("/w"), Path("/w/c/x"))  # fmt: skip
 
 
+@pytest.mark.parametrize("root", ["clone", "scratch"])
+def test_a_hidden_path_inside_every_reopened_directory_stays_listed(
+    tmp_path: Path, root: str
+) -> None:
+    """The clone and the scratch are both opened again inside the hidden workspaces root: a
+    hidden path inside either is not hidden by the root and stays listed."""
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+    clone = tmp_path / "ws" / "maity" / "agent-3"  # context()'s clone
+    inner = (clone if root == "clone" else room) / "sub" / ".git" / "maity"
+    ctx = context(tmp_path, "codex", sandbox=True, scratch=room, workspaces=tmp_path / "ws",
+                  private=(inner,))  # fmt: skip
+    assert ctx.clone == clone
+    hidden = [path for path, level in tomllib.loads(adapters.codex_config(ctx))["permissions"]
+              ["maity"]["filesystem"].items() if level == "none"]  # fmt: skip
+    assert hidden == [str(tmp_path / "ws"), str(inner)]
+
+
 def test_the_home_secrets_are_listed_under_the_home_resolved(tmp_path: Path) -> None:
     """A home reached through a link: its secrets and the runner's configuration (resolved)
     must be seen as one inside the other, or Codex's profile would list both."""
@@ -1005,3 +1022,29 @@ def test_a_version_is_a_token_of_its_own(printed: str, version: str | None) -> N
 
     found = capabilities.VERSION.search(printed)
     assert (found.group(0) if found else None) == version
+
+
+def test_the_scratch_is_told_to_the_session_and_opened_in_both_sandboxes(tmp_path: Path) -> None:
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+    claude = context(tmp_path / "c", sandbox=True, scratch=room)
+    settings = adapters.claude_settings(claude)
+    assert settings["sandbox"]["filesystem"]["allowWrite"] == [str(room)]
+    assert {f"{tool}(/{room}/**)" for tool in ("Read", "Edit", "Write")} <= set(
+        settings["permissions"]["allow"]
+    )
+    codex = context(tmp_path / "x", "codex", sandbox=True, scratch=room,
+                    workspaces=tmp_path / "ws")  # fmt: skip
+    toml = adapters.codex_config(codex)
+    hidden, opened = f'"{tmp_path / "ws"}" = "none"', f'"{room}" = "write"'
+    assert hidden in toml and opened in toml  # the root stays hidden, its scratch opened again
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=room))
+    assert launched.env["MAITY_SCRATCH"] == str(room)
+    assert launched.env["TMPDIR"] == str(room / "tmp")
+
+
+def test_without_a_scratch_nothing_names_one(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    assert "allowWrite" not in adapters.claude_settings(ctx)["sandbox"]["filesystem"]
+    assert ".scratch" not in adapters.codex_config(context(tmp_path / "x", "codex", sandbox=True))
+    launched = adapters.launch(context(tmp_path / "s", "stub"))
+    assert "MAITY_SCRATCH" not in launched.env and "TMPDIR" not in launched.env
