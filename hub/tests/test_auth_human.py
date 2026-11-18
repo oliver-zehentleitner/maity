@@ -516,7 +516,7 @@ def test_a_login_holds_its_place_in_the_count_while_it_compares(
 
 
 def test_a_login_counts_an_address_of_no_account_only_by_its_keyed_fingerprint(
-    make_client: ClientFactory, owner: str
+    make_client: ClientFactory, migrated: Engine, owner: str
 ) -> None:
     from maity_hub.auth import password_limits
     from tests import stored_keys
@@ -527,7 +527,7 @@ def test_a_login_counts_an_address_of_no_account_only_by_its_keyed_fingerprint(
     client = make_client(peer="203.0.113.30")
     assert factory.login_handle(client, "nobody", "wrong").status_code == 401
     address = f"nobody@{factory.SIGN_IN_DOMAIN}".lower()
-    stored_keys.assert_keyed(client.app.state.engine, counted, address)
+    stored_keys.assert_keyed(migrated, counted, address)
 
 
 def _signed_in_with_four_wrong(
