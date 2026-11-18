@@ -517,7 +517,7 @@ Latin) passes.
 
 | Field | Lines | A refused character |
 |---|---|---|
-| A project's `name`, an agent profile's, a human's and an organisation's `display_name` (§1.7, §2.7.4, §6.26) | one | `details.fields.<field>: "control_character"`; a human's at registration as §2.7.4 says |
+| A project's `name`, an agent profile's, a human's and an organisation's `display_name` (§1.7, §2.7.4, §6.26) | one | `details.fields.<field>: "control_character"`; a human's at registration as §2.7.4 says; an organisation's `details.fields.display_name: "invalid"` (§6.26) |
 | An invitation's `note` (§3.4) | several | `details.fields.note: "control_character"` |
 | A card link's `url`, `forge_url` and `label` (§6.13) | one | `url` `not_a_url`, `forge_url` `not_a_forge_url`, `label` `control_character` |
 | A person's `website`, a project's `links` (§16.9, §6.11) | one | `details.fields.website: "format"`, a link's as §6.11 says |

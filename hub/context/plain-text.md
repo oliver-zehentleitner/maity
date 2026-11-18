@@ -17,7 +17,7 @@ field the rule covers calls it: a project's name and every display name (`models
 `owner create`), an invitation's note, a card link's URL and label, a person's website and a
 project's links (`person_links.website_problem`), a review's subject, and a human's preferences
 (`preferences.check`); a bridge's purpose through `is_plain_line`, the same rule. The answer keeps each field's existing reason (`control_character`,
-`not_a_url`, `format`), so a client that knew a field's reasons meets no new one there, except
+`not_a_url`, `format`, and `invalid` for a display name at registration and an organisation's), so a client that knew a field's reasons meets no new one there, except
 the invitation note, whose character refusal now says `control_character` rather than
 `invalid`.
 
