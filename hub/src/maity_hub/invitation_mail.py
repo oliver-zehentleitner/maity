@@ -21,6 +21,7 @@ from sqlalchemy import Connection, select
 from maity_hub import clock, namespace, registration
 from maity_hub import tables as t
 from maity_hub.mail import outbox
+from maity_hub.mail.text import defang, quoted, subject_line
 from maity_hub.plain_text import plain_line
 
 
@@ -77,8 +78,6 @@ def text(
     as the invitation page does (§3.4), each name on one line (§1.7.1). The subject keeps the
     display name alone: the handle would push the project's name toward the cut, and the
     body, which the link is in, names it."""
-    from maity_hub.notifications.mailer import defang, quoted, subject_line
-
     # Folded once, for the subject and the body alike: `subject_line` cleans only Cc, Zl and Zp.
     inviter, project_name = plain_line(inviter), plain_line(project_name)
     title = subject_line(f"[Maity] {inviter} invites you to {project_name}")

@@ -411,9 +411,9 @@ Changed on 2026-11-02, the third time: the maintainer made an exception in §11.
 or an owner's token, as long as that read found the repository public; nothing else from such a
 read reaches a page without sign-in, no title, no name, no link. The count no longer asks
 `read_via`, and the ticker's scan sets `merge.public` from its own read's answer instead of from
-the token; §17.2 of `docs/api.md` defines the field that way. A public project read only through an App or an owner's token gets its line again, and
-link events read through a grant while public count again; those were written with the read's
-answer all along.
+the token; §17.2 of `docs/api.md` defines the field that way. A public project read only
+through an App or an owner's token gets its line again, and link events read through a grant
+while public count again; those were written with the read's answer all along.
 
 **Reason:** §11.4 says data read through an owner's grant never appears
 there, and the contract stands above this entry; privacy goes before the

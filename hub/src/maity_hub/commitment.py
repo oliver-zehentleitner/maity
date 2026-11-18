@@ -113,7 +113,7 @@ def audience(conn: Connection, project_id: str, agent_id: str) -> list[str]:
     return ([f"member:{owner}"] if is_member else []) + ["trust:admin"]
 
 
-def confirmed(conn: Connection, project: Any, credential: Any, agent_id: str) -> None:
+def confirmed(conn: Connection, credential: Any) -> None:
     """What a confirmation ends: the owner's request, when one was filed, is withdrawn
     (§6.23)."""
     from maity_hub.routes.requests import withdraw_hub_notice

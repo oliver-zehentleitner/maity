@@ -70,7 +70,8 @@ the other author or the lead before you push. Exit 2 means the check could
 not run; it never ends in 0 then. It needs bash 4 or newer and `gh`, and it fetches
 `origin main` and the head of every pull request open in origin's repository. It lists
 them over GitHub's REST API (`gh api`), so it also runs where the GraphQL API is
-blocked, as in Claude Code's cloud sessions.
+blocked, as in Claude Code's cloud sessions. In a checkout of a fork, origin is the
+fork: the pull requests open in the repository it was forked from are not checked.
 
 ## The coverage check before a MERGE-READY
 

@@ -71,6 +71,8 @@ window.Maity = window.Maity || {};
     "POST /projects/{owner}/{slug}/joins",
     "POST /projects/{owner}/{slug}/requests/{request_id}/answer",
     "POST /requests/{request_id}/answer",
+    "PATCH /admin/projects/{owner}/{slug}/limits",
+    "PATCH /admin/users/{human_id}/limits",
     "POST /admin/users/{human_id}/second-factor/reset",
     "PATCH /admin/settings/auth-pages",
     "PATCH /admin/settings/landing",

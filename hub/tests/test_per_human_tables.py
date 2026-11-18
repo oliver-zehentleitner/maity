@@ -207,6 +207,7 @@ EXPORT_LEAVES_OUT = {
     "legal_version": _INSTANCE,
     "instance_secret": _INSTANCE,
     "instance_setting": _INSTANCE,
+    "limit_override": _INSTANCE,
     "invitation": _UNLISTED,
     "join_link": _UNLISTED,
     "jour_fixe_moderator": f"names a person only as who granted a right; {_UNLISTED}",

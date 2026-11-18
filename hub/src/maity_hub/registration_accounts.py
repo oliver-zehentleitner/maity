@@ -39,6 +39,7 @@ from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords, sessions
 from maity_hub.ids import new_id
+from maity_hub.mail.text import quoted
 from maity_hub.models import HANDLE_PATTERN
 from maity_hub.notifications import records
 from maity_hub.plain_text import plain_name
@@ -406,8 +407,6 @@ def _ending(status: str, reason: str | None, public_url: str) -> tuple[str, str]
     """Subject and body of the mail that tells the person their pending account is gone
     (§2.7.5): the operator's `reason` on a rejection, as plain text (§18.5); "was not
     approved in time" on an expiry. Neither says more about the instance than its address."""
-    from maity_hub.notifications.mailer import quoted
-
     if status == "rejected":
         # The operator's words, defanged: the hub's own address is the only link (§18.5).
         why = f"The operator gave this reason: {quoted(reason)}\n\n" if reason else ""
