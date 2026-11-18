@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -20,6 +21,7 @@ from maity.runner import (
     config,
     restart,
     scratch,
+    serve,
     supervisor,
     tmux,
     workspace,
@@ -964,60 +966,130 @@ def test_records_survive_a_restart(world: Any) -> None:
 # --- the running count the hub shows (tsk-yfc9n6kmvs52) --------------------------------------
 
 
-class CountingHub:
-    """A stand-in hub that keeps a runner's ``running`` count the way the real one does.
+class FakeHub:
+    """Keeps a runner's ``running`` the way the real hub does: the last of a ``hello`` or a
+    ``PATCH /runner`` wins, since both store the whole capabilities. It records what each spoke
+    carried, so a test can see what ``hello`` sent on its own."""
 
-    Both ``PATCH /runner`` (the supervisor's advertisement) and a reconnect ``hello`` overwrite
-    the stored capabilities, so whichever spoke last wins. ``serve.Service.hello`` sends
-    ``self.advertised`` -- the very dict the supervisor holds as ``self.capabilities`` and never
-    updates -- so a reconnect re-asserts whatever ``running`` that dict was built with (0)."""
-
-    def __init__(self, advertised: dict[str, Any]) -> None:
-        self.advertised = advertised
+    def __init__(self) -> None:
         self.running: int | None = None
+        self.hello_running: list[int] = []
+        self.patched: list[int] = []
 
     def call(self, method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
+        if path == "/runner/hello":
+            self.running = body["capabilities"]["running"]
+            self.hello_running.append(self.running)
+            return {"runner": {"id": "rnr-1", "name": "home", "session_id": "s"},
+                    "cursor": 0, "placements": []}  # fmt: skip
         if method == "PATCH" and path == "/runner":
             self.running = body["capabilities"]["running"]
+            self.patched.append(self.running)
         return {}
 
-    def hello(self) -> None:
-        # serve.Service.hello re-sends the advertised capabilities on every (re)connect.
-        self.running = self.advertised["running"]
 
-
-def test_the_hub_count_survives_a_reconnect_while_placements_run(world: Any) -> None:
-    """A reconnect must not blank the hub's running count while placements keep running.
-
-    Reproduces tsk-yfc9n6kmvs52: after a dropped connection the runner says ``hello`` again,
-    which re-advertises a stale ``running: 0``; the supervisor then suppresses the correction
-    because the live count has not changed since its last ``PATCH``. The hub is left at 0/10
-    while two placements run."""
+def connected(world: Any) -> tuple[Any, Any, Any, FakeHub, serve.Service]:
+    """A supervisor and a real ``serve.Service`` over one ``FakeHub``, as serve wires them: the
+    service holds the same capabilities dict the supervisor does, and both call the same hub."""
     sup, backend, _, clock, _ = world
     sup.capabilities = capabilities.build(sup.cfg, sup.probes)  # running = 0, as serve builds it
-    hub_view = CountingHub(sup.capabilities)
-    sup.client = hub_view  # type: ignore[assignment]
+    fake = FakeHub()
+    sup.client = cast(Any, fake)
+    svc = serve.Service(
+        sup.cfg, cast(Any, fake), sup.capabilities,
+        reconcile=lambda _p: None, actual=sup.actual, supervisor=sup,
+        sleep=lambda _s: None, monotonic=clock, rand=lambda: 0.5,
+    )  # fmt: skip
+    return sup, backend, clock, fake, svc
 
-    # Two agents are live and adopted: the runner is running two placements.
-    for n in (3, 4):
+
+def adopt(sup: supervisor.Supervisor, backend: Any, *ns: int) -> None:
+    """Record a clone and a live, labelled session per agent, and desire them all running."""
+    for n in ns:
         recorded(sup.cfg, n)
         backend.live[f"maity_maity_agent-{n}"] = tmux.Session(
             f"maity_maity_agent-{n}", False, None, 90 + n, f"plc-000{n}", 1
         )
-    sup.update([placement(3), placement(4)])
-    sup.tick()
-    assert hub_view.running == 2  # the supervisor advertised the true count
+    sup.update([placement(n) for n in ns])
 
-    # A dropped connection makes serve say `hello` again (same process, agents untouched).
-    hub_view.hello()
-    assert hub_view.running == 0  # hello carried the stale advertised dict
 
-    # The two placements keep running; the next tick must restore the hub's count to 2.
-    clock.now += supervisor.ADVERTISE_EVERY + 1
+def test_a_reconnect_keeps_the_hub_count_while_placements_run(world: Any) -> None:
+    """tsk-yfc9n6kmvs52: a reconnect's ``hello`` must carry the live running count, not the 0 the
+    capabilities were built with, or the hub reads 0/N while the placements keep running.
+
+    Counter-check: with the fix reverted, ``hello`` re-sends ``running: 0`` and the throttled tick
+    cannot correct it, so both asserts below fail (red)."""
+    sup, backend, clock, fake, svc = connected(world)
+    adopt(sup, backend, 3, 4)
     sup.tick()
-    assert hub_view.running == 2, (
-        "after a reconnect the hub still counts 0 running while two placements run"
-    )
+    assert fake.running == 2  # the supervisor advertised the true count
+
+    # A dropped connection: serve says `hello` again (same process, agents untouched).
+    svc.hello()
+    assert fake.hello_running[-1] == 2  # the reconnect carried the live count, not a stale 0
+
+    # Still two placements, still inside the advertise throttle: the hub stays at 2.
+    clock.now += 1
+    sup.tick()
+    assert fake.running == 2
+
+
+def test_hello_around_an_advertise_never_sends_a_stale_count(world: Any) -> None:
+    """The capabilities dict is shared between serve's hello thread and the supervisor's tick
+    thread. A hello taken around an advertise must carry a whole, current count -- never the 0 the
+    dict was built with, never a torn value. Exercises the lock that coordinates the two.
+
+    Counter-check: with the fix reverted, every hello sends the build-time 0, so the final assert
+    (all counts in {2, 3}) fails (red)."""
+    sup, backend, clock, fake, svc = connected(world)
+    sup.advertised_counts, sup.advertised_at = {}, 0.0
+    sup._advertise({"local": 2}, clock(), force=True)  # a count is advertised before any hello
+
+    stop = threading.Event()
+
+    def toggle() -> None:
+        n = 2
+        while not stop.is_set():
+            sup._advertise({"local": n}, clock(), force=True)
+            n = 5 - n  # 2 <-> 3
+
+    worker = threading.Thread(target=toggle)
+    worker.start()
+    try:
+        for _ in range(150):
+            svc.hello()
+    finally:
+        stop.set()
+        worker.join(5)
+
+    assert fake.hello_running, "hello ran"
+    assert all(v in (2, 3) for v in fake.hello_running), sorted(set(fake.hello_running))
+
+
+def test_a_reconnect_with_a_changing_count_ends_at_the_new_count(world: Any) -> None:
+    """A placement ends between the reconnect and the next tick. The hub must end at the new
+    count -- not 0, not the old count -- even within the advertise throttle, where only clearing
+    the cache on reconnect lets the next tick re-PATCH.
+
+    Counter-check: with the fix reverted there is no reconnect signal and the throttled tick is
+    suppressed, so the hub stays at the hello's 0 and the final assert fails (red)."""
+    sup, backend, clock, fake, svc = connected(world)
+    adopt(sup, backend, 3, 4)
+    sup.tick()
+    assert fake.running == 2
+
+    # One agent exits (its session is gone) and the hub now desires only one; a reconnect lands
+    # before the next tick.
+    backend.live.pop("maity_maity_agent-4", None)
+    sup.update([placement(3)])
+    svc.hello()
+    signal = getattr(svc.supervisor, "reconnected", None)
+    if signal is not None:  # the serve run loop signals the supervisor after each hello
+        signal()
+
+    clock.now += 1  # still inside the advertise throttle
+    sup.tick()
+    assert fake.running == 1, fake.running
 
 
 # --- workspaces: clone, records, no git in an existing clone ---------------------------------

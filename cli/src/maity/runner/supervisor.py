@@ -1391,6 +1391,33 @@ class Supervisor:
         """`PATCH /runner` at once: the capabilities themselves changed (a tool, §15.16)."""
         self._advertise(None, self.now(), force=True)
 
+    def advertised_capabilities(self) -> dict[str, Any]:
+        """A copy of the capabilities for serve's `hello`, with the live `running` counts in it.
+
+        `hello` runs on serve's connection thread while `_advertise` runs on this tick thread,
+        and both reach the one shared capabilities dict. The copy is read under `self.lock` -- the
+        lock `_advertise`'s write-back also takes -- so the two coordinate over the `running`
+        fields and a reconnect carries the count last counted here, never the `running: 0` the
+        dict was first built with (the reconnect that leaves the hub reading 0/N while agents run,
+        tsk-yfc9n6kmvs52)."""
+        with self.lock:
+            if not isinstance(self.capabilities, dict):
+                return self.capabilities  # type: ignore[return-value]
+            caps = {**self.capabilities}
+            caps["targets"] = [
+                dict(t) if isinstance(t, dict) else t for t in self.capabilities.get("targets", [])
+            ]
+            return caps
+
+    def reconnected(self) -> None:
+        """Serve calls this after each `hello`. The hub's stored `running` is then whatever that
+        hello carried, so clear the advertise cache: the next tick re-PATCHes the freshly counted
+        total unconditionally, where a steady count would otherwise be suppressed as `unchanged`
+        and leave a hello that undercounted (a lost race, or the first hello's 0) standing."""
+        with self.lock:
+            self.advertised_counts = {}
+            self.advertised_at = 0.0
+
     def _advertise(self, running: dict[str, int] | None, now: float, force: bool = False) -> None:
         """`PATCH /runner` with the targets' `running` and reachability: at most every
         ADVERTISE_EVERY seconds for a changed count, at once (`force`) for reachability."""
@@ -1422,6 +1449,14 @@ class Supervisor:
             return
         self.advertised_counts, self.advertised_at = counts, now
         self.advertised_running = total
+        # Write the live counts back into the shared capabilities so the next `hello` carries this
+        # total and these per-target counts, not the 0 the dict was built with. `self.lock` guards
+        # the `running` fields -- the one place this tick thread and serve's hello thread
+        # coordinate over the shared dict (see `advertised_capabilities`).
+        with self.lock:
+            self.capabilities["running"] = total
+            for entry in self.capabilities.get("targets", []):
+                entry["running"] = counts.get(entry.get("name"), 0)
 
     # --- reports ---------------------------------------------------------------------------
 

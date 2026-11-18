@@ -152,6 +152,52 @@ only the runner's own process may be signalled.
   `ReadWritePaths`: tools that hardcode `/tmp` would fail, and in the
   `agent_user` layout the agents' user cannot write there.
 
+## The runner's advertised `running` count survives a reconnect
+
+**Id:** d0270526-fca9-4a6c-8e5e-50eea8f2feac
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-yfc9n6kmvs52; the reconnect-count reproduction tests in `cli/tests/test_supervisor.py`
+**See:** runner.md#serve-ends-with-78-on-anything-retrying-cannot-fix-and-never-takes-the-agents-with-it — e210a162-44c7-4efd-9176-c3c3f66b3e63 — as of 2026-11-18
+**Revisit when:** the capabilities shape, the advertise throttle, or how `serve` and the supervisor share the capabilities dict changes
+
+`maity runners` shows a runner's `running`/`max_agents` straight from the
+capabilities the runner advertised; the hub stores and returns that number
+unchanged. The count is kept correct across a reconnect three ways, together:
+
+- The supervisor writes each advertised total (and the per-target counts) back
+  into the shared capabilities dict, so serve's next `hello` carries the live
+  count, not the `running: 0` the dict was first built with.
+- `serve`'s `hello` reads that dict through the supervisor under the
+  supervisor's lock (`advertised_capabilities`), and after each `hello` signals
+  the supervisor to clear its advertise cache, so the next tick re-PATCHes the
+  freshly counted total even when it has not changed.
+- `capabilities.build` starts every target's `running` at 0, the honest value
+  before anything is counted; the supervisor refreshes them.
+
+**Reason:** the capabilities dict is shared between serve's connection thread
+(`hello`) and the supervisor's tick thread (`_advertise`). Without the
+write-back a reconnect re-asserted the build-time `0`, and the advertise
+throttle (one `PATCH /runner` per changed count, at most every 60 s) then
+suppressed the correction while the count stayed steady — so the hub read `0/N`
+while the placements ran on. This was a latent gap the capabilities shape had
+from the start; reconnects during a routine CLI upgrade exposed it, so it is a
+design gap, not a regression a single change introduced.
+
+**Rejected alternative:** have `hello` read only the scalar `advertised_running`
+int (atomic under the GIL) instead of locking the dict. Rejected because
+`hello` sends the whole capabilities object — backend, targets, per-target
+running, harnesses — so a coherent snapshot of the dict is needed regardless;
+one lock over the running fields covers the top-level and per-target counts in
+one place.
+
+**Rejected alternative:** force an immediate re-advertise (`advertise_now`) at
+the reconnect instead of clearing the cache. Rejected because the authoritative
+count is the next tick's live session snapshot, not the cached one; clearing
+the cache lets that tick send the true total unconditionally and avoids
+re-asserting a possibly one-tick-stale cached count at the reconnect moment.
+
 ## Capabilities say `sandbox: off` until an adapter switches a sandbox on
 
 **Id:** 0e700858-b898-4d5d-b230-b5d9ce3e0941
