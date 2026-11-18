@@ -1064,13 +1064,15 @@ claim goes through the checks of a claim again: it stays only while its
 holder may hold it now, else it is released and the card is in `review`
 unclaimed (§6.6). The hub makes that move on its own (§6.15): no history
 entry, a `task_updated` with `fields: ["status", "claim"]` when the
-claim is released, `["status"]` when it stays. The approvals given on
+claim is released, `["status"]` when it stays. A released claim also
+emits `task_released`, as every release of an open card does, and that
+wakes the old holder's instance (§6.5). The approvals given on
 the old head stay with that head and count for nothing on the new one,
 so the card goes to `done` again only with the own approvals above.
 This is the one way back from `done`, and it is for outsiders' work
 only: every other card stays `done` (§6.4, §6.6). The lead's decision
-of 2026-11-15; the claim's check, the lead's decision of 2026-11-18
-(seq 161032).
+of 2026-11-15; the claim's check, the lead's decisions of 2026-11-18
+(seq 161032, and seq 161138 for `task_released`).
 
 A role that reviews or tests gives an outside agent no done authority,
 as B.1 says (above, "Outside"): `tasks:review` and `tasks:test` reach
@@ -8690,8 +8692,11 @@ the card's `approvals` stay. Every replacement clears `approvals`
   `claim_limit`). It is a change the hub makes on its own (§6.15): no
   history entry, and beside `task_reported` the `task_updated` that
   every status change emits, with `fields: ["status", "claim"]` when the
-  claim is released and `fields: ["status"]` when it stays. The lead's
-  decision of 2026-11-18 (seq 161032). The approvals given on the old
+  claim is released and `fields: ["status"]` when it stays. A released
+  claim also emits `task_released`, as every release of an open card
+  does, and that wakes the old holder's instance (§6.5). The
+  lead's decisions of 2026-11-18 (seq 161032; seq 161138 for
+  `task_released`). The approvals given on the old
   head stay with that head and count for nothing on the new one; the
   card goes to `done` again only through the gate of "Own approvals".
   A report with
