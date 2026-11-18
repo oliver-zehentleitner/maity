@@ -13,7 +13,7 @@ import pytest
 from test_supervisor import REPO, Clock, FakeTmux, Reports, placement, settle, states
 
 from maity import cli
-from maity.runner import capabilities, config, supervisor, targets, tmux, workspace
+from maity.runner import capabilities, commands, config, supervisor, targets, tmux, workspace
 from maity.runner.asuser import Ssh, Unreachable
 
 CONFIG = """\
@@ -388,6 +388,62 @@ def test_check_reports_an_unreachable_host_and_checks_the_other(
     code = cli.main(["runner", "check", "--offline", "--target", "build-2",
                      "--config", str(tmp_path / "runner.toml")])  # fmt: skip
     assert "build-1" not in capsys.readouterr().out
+
+
+def test_check_warns_opencode_is_unsandboxed_on_an_ssh_host(tmp_path: Path, fake_ssh: Path) -> None:
+    # The ssh backend also accepts [harness.opencode]; an opencode agent there runs any command
+    # as the remote agents' user and opencode has no OS sandbox the runner switches on.
+    # `_check_host` keeps the ok line and adds the no-sandbox warning, with the generic wording
+    # (an ssh host has no local layout) (docs/runners.md#opencode-grok, tsk-nynpvag9zvhh).
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path) + '\n[harness.opencode]\nmodels = ["xai/grok"]\n')
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    (tmp_path / "remote" / "ws").mkdir(parents=True)
+    opencode = tmp_path / "remote" / "bin" / "opencode"
+    opencode.write_text("#!/bin/sh\necho '0.5.3'\n")
+    opencode.chmod(0o755)
+    cfg = config.load(path)
+    target = targets.ssh_hosts(cfg)[1]
+    report = commands.Report()
+    commands._check_host(report, cfg, target)
+    ok = [t for level, t in report.lines if level == "ok" and "harness opencode" in t]
+    assert ok and "(0.5.3)" in ok[0], report.lines
+    warning = [t for level, t in report.lines if level == "warn" and "harness opencode" in t]
+    assert len(warning) == 1, report.lines
+    assert warning[0].startswith("build-2: harness opencode: no OS sandbox")
+    assert "an agent can run any command as the agents' user" in warning[0]
+    assert "under layout single" not in warning[0]
+    assert "docs/runners.md#opencode-grok" in warning[0] and "tsk-nynpvag9zvhh" in warning[0]
+
+
+@pytest.mark.parametrize(
+    ("extra", "level"),
+    [("", "warn"), ("\nrequire_sandbox = true", "error")],
+)
+def test_check_refuses_opencode_on_an_ssh_host_when_a_sandbox_is_required(
+    tmp_path: Path, fake_ssh: Path, extra: str, level: str
+) -> None:
+    # opencode has no OS sandbox the runner switches on, so every placement is unsandboxed. Like
+    # claude-code and antigravity, `require_sandbox = true` under [harness.opencode] turns
+    # `_check_host`'s residual-risk warning into an error; without it it only warns.
+    path = tmp_path / "runner.toml"
+    path.write_text(
+        CONFIG.format(root=tmp_path) + f'\n[harness.opencode]\nmodels = ["xai/grok"]{extra}\n'
+    )
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    (tmp_path / "remote" / "ws").mkdir(parents=True)
+    opencode = tmp_path / "remote" / "bin" / "opencode"
+    opencode.write_text("#!/bin/sh\necho '0.5.3'\n")
+    opencode.chmod(0o755)
+    cfg = config.load(path)
+    target = targets.ssh_hosts(cfg)[1]
+    report = commands.Report()
+    commands._check_host(report, cfg, target)
+    found = [
+        (lvl, t) for lvl, t in report.lines if "harness opencode" in t and "no OS sandbox" in t
+    ]
+    assert len(found) == 1, report.lines
+    assert found[0][0] == level, report.lines
 
 
 def test_stop_all_names_a_host_it_could_not_reach(

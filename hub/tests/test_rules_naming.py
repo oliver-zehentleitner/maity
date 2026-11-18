@@ -7,19 +7,13 @@ from types import SimpleNamespace
 from sqlalchemy import Engine
 
 from maity_hub import rules
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 
 def _project(**overrides: object) -> SimpleNamespace:
-    fields = {
-        "name": "p", "rules_version": 1, "state": "build", "state_note": None,
-        "released_at": None, "policy_preset": "x", "claim_policy": "x", "done_authority": "x",
-        "tag_authority": "x", "steward_writes": "x", "lease_seconds": 60,
-        "keep_the_why": True, "rules_markdown": "owner text", "roles": None,
-    }  # fmt: skip
-    fields.update(overrides)
-    return SimpleNamespace(**fields)
+    fields = {"keep_the_why": True, "rules_markdown": "owner text", **overrides}
+    return factory.rules_project(**fields)
 
 
 def test_every_role_gets_the_naming_line_before_the_owners_text() -> None:

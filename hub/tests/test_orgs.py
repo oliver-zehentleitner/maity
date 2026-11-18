@@ -162,7 +162,7 @@ def test_the_count_of_organisations_is_atomic_per_human(
     assert sorted(r.status_code for r in results) == [201, 409]
     refused = next(r for r in results if r.status_code == 409)
     assert refused.json()["error"]["code"] == "org_limit"
-    assert refused.json()["error"]["details"] == {"limit": 2, "count": 2}
+    assert refused.json()["error"]["details"] == {"limit": 2, "count": 2, "source": "instance"}
     assert len(who.get("/orgs").json()["items"]) == 2
 
 

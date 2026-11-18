@@ -45,6 +45,10 @@
     "value": 60,
     "source": "default"
   },
+  "second_factor_max_per_hour": {
+    "value": 60,
+    "source": "default"
+  },
   "signing_key": {
     "set": true
   },
@@ -58,5 +62,19 @@
   "security_queued": 0,
   "sign_in_sent_last_hour": 0,
   "sign_in_dropped_last_hour": 0,
-  "failed_last_hour": 0
+  "second_factor_sent_last_hour": 0,
+  "second_factor_dropped_last_hour": 0,
+  "failed_last_hour": 0,
+  "verification_max_per_hour": {
+    "value": 60,
+    "source": "default"
+  },
+  "verification_sent_last_hour": 0,
+  "verification_queued": 0,
+  "invitation_max_per_hour": {
+    "value": 60,
+    "source": "default"
+  },
+  "invitation_sent_last_hour": 0,
+  "invitation_queued": 0
 }

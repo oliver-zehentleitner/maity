@@ -2323,17 +2323,32 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.count.failures": {
     "other": "{count} 次失败"
   },
+  "mail.count.invitation": {
+    "other": "邀请邮件 {count} 封"
+  },
   "mail.count.notifications": {
     "other": "{count} 封通知邮件"
   },
   "mail.count.queued": {
     "other": "{count} 封安全邮件排队中"
   },
+  "mail.count.second_factor": {
+    "other": "第二因素邮件 {count} 封"
+  },
+  "mail.count.second_factor_dropped": {
+    "other": "已丢弃的第二因素邮件 {count} 封"
+  },
   "mail.count.security": {
     "other": "{count} 封安全邮件"
   },
   "mail.count.sign_in": {
     "other": "{count} 封登录邮件"
+  },
+  "mail.count.verification": {
+    "other": "验证邮件 {count} 封"
+  },
+  "mail.count.waiting": {
+    "other": "等待中的验证或邀请邮件 {count} 封"
   },
   "mail.daily_at": "每日和每周摘要的发送时间",
   "mail.day.fri": "星期五",
@@ -2347,13 +2362,16 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.field.from_address": "发件地址",
   "mail.field.from_name": "发件人名称",
   "mail.field.host": "SMTP 主机",
+  "mail.field.invitation_max_per_hour": "每小时邀请邮件数",
   "mail.field.max_per_hour": "每小时通知邮件数",
   "mail.field.port": "SMTP 端口",
   "mail.field.reply_to": "回复地址",
+  "mail.field.second_factor_max_per_hour": "每小时第二因素邮件数",
   "mail.field.security_max_per_hour": "每小时安全邮件数",
   "mail.field.sign_in_max_per_hour": "每小时登录邮件数",
   "mail.field.tls": "连接安全",
   "mail.field.username": "SMTP 用户名",
+  "mail.field.verification_max_per_hour": "每小时地址确认邮件数",
   "mail.hold_while_online": "我在网页应用中在线时不发送邮件",
   "mail.hold_while_online.hint": "“立即”发送的邮件会在你使用控制台期间暂缓。离开几分钟后，只会发送你还没读过的内容。",
   "mail.incomplete": "邮件配置不完整：{missing}。",
@@ -2366,6 +2384,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.kinds.hint": "摘要包含发送时仍未读的全部内容。第二因素变更、地址变更和账户删除总是立即发送邮件。",
   "mail.kinds.legend": "每类内容何时发送邮件",
   "mail.last_hour": "最近一小时：{notifications}、{security}、{sign_in}、{failures}；{queued}。",
+  "mail.last_hour_own": "此外，最近一小时：{verification}、{invitation}、{second_factor}、{dropped}；{waiting}。",
   "mail.mode.daily": "每日摘要",
   "mail.mode.hourly": "每小时摘要",
   "mail.mode.immediate": "立即",
