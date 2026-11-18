@@ -680,7 +680,17 @@ the key is set, so switching the setting off again locks no one out. The
 verifiers stored before the setting was switched on are sealed by
 `maity-hub seal-verifiers`, which runs only with the setting on and the
 key set; it seals the plain ones, leaves sealed ones as they are (a
-second run seals nothing) and prints how many it sealed. No migration
+second run seals nothing) and prints `sealed N, already sealed M, plain
+left K` per table and in all (`--dry-run` only counts, with or without
+the setting). With the setting on, a plain verifier that verifies a call
+is also sealed in that call's own update of the credential's last use;
+an idle credential, and an isolated agent's (its calls write nothing,
+§6.2), are sealed only by `maity-hub seal-verifiers`.
+With `MAITY_SEALED_VERIFIERS_ONLY=1` (default off; it needs
+`MAITY_SEAL_VERIFIERS=1`) a plain verifier verifies nothing: the
+credential answers exactly as one whose sealed verifier the key does not
+open (below), and the hub does not start while a live plain verifier is
+left. No migration
 seals: `20261114020000_sealed_verifiers` only widens the column for
 sealed values. (In 0.1.0a6 it also sealed the stored verifiers when run
 with the key; a database that ran that form keeps its sealed rows, which
