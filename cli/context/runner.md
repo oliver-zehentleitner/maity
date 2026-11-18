@@ -1075,7 +1075,7 @@ than block every antigravity placement until that work lands.
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's acceptance on decision request req-kezp8rppfhn5 ("ship now, harden next"), 2026-11-17, after an independent review found opencode's command rules do not bound what an agent can run; the original offer decision req-g4d2cskx6zxv and the 2026-11-15 spike (opencode 5/5 green, the limit run passed, Grok reviews ran); maintainer order tsk-sn90s6wzp9s7
+**Source:** the owner's acceptance on decision request req-kezp8rppfhn5 ("ship now, harden next"), 2026-11-17, after an independent review found opencode's command rules do not bound what an agent can run; the original offer decision req-g4d2cskx6zxv and the 2026-11-15 spike (opencode 5/5 green, the limit run passed, Grok reviews ran); maintainer order tsk-sn90s6wzp9s7; #1963 review round 3 then made `runner check` refuse opencode under `require_sandbox`, like claude-code and antigravity
 **Revisit when:** the OS-level sandbox for opencode (tsk-nynpvag9zvhh) lands, so the harness runs confined, or the owner withdraws the accepted risk
 
 `opencode` is dropped from `config.NOT_OFFERED_YET`, which is now empty
@@ -1091,7 +1091,22 @@ read, write or reach. The mitigation is operational, not in the settings: run
 opencode's agents as a **separate OS user**, isolated from the runner and from
 the other harnesses, so the blast radius is that user's own files. This is
 stated plainly in docs/runners.md and the CLI README, without any bypass
-detail.
+detail. `maity runner check` also surfaces the residual risk, on both
+backends: the local one through `_check_harness`, each ssh host through
+`_check_host`. It keeps the `ok harness opencode` line and adds a
+`harness opencode: no OS sandbox` one whenever the opencode check reaches it
+— a missing binary or a failed `--version` errors out before it, so it is
+not literally unconditional. Because every opencode placement is unsandboxed,
+that line is an **error** under `require_sandbox = true` (the start is
+refused, the way claude-code and antigravity call
+`capabilities.sandbox_refused` when their sandbox is off) and a **warning**
+without it. Unlike agy's `sandbox reported off`, this is not a diagnostic the
+runner might later clear but a permanent property (opencode never has a
+runner-switched OS sandbox to report). Under `layout = "single"`, where the
+agents' user is the runner's own, the line spells out the concrete reach —
+any command as the runner's own user, including reading the runner's state,
+the other clones and logins; an ssh host has no local layout, so it takes the
+generic wording (an agent can run any command as the agents' user).
 
 **Reason:** the owner decided (req-kezp8rppfhn5, "ship now, harden next") that
 opencode should run now carrying this known residual risk rather than stay
