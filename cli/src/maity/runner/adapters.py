@@ -64,11 +64,10 @@ SUPERVISED_PROMPT = (
     "turn; do not run `maity wait`: you are started again on the next event."
 )
 
-# git subcommands an agent needs for project work. Not `git *`: options such as `-c`,
-# `--config-env` or `--exec-path` run arbitrary programs. `diff` still reads a file outside
-# the work tree without `--no-index` (`git diff /dev/null <path>`), so these lists stop
-# accidents and naive injection only; the boundary is the harness's OS sandbox and the OS
-# user, see cli/context/runner.md.
+# git subcommands an agent needs for project work. Not `git *`: some git options run programs,
+# and git can still read files outside the work tree, so these lists stop accidents and naive
+# injection only; the boundary is the harness's OS sandbox and the OS user, see
+# cli/context/runner.md.
 GIT_SUBCOMMANDS = (
     "status", "diff", "log", "show", "add", "commit", "push", "pull", "fetch", "checkout",
     "switch", "branch", "merge", "rebase", "restore", "rm", "mv", "stash", "tag", "rev-parse",
@@ -212,6 +211,9 @@ class Context:
     git: config.GitIdentity = config.GitIdentity()  # who the session commits as (`[git]`)
     # The workspace folder the harness starts in, holding the clone (§15.5); None: the clone.
     folder: Path | None = None
+    # The placement's scratch (§15.5), made by the supervisor; None where the harness gets none
+    # (workspace.SCRATCH_HARNESSES).
+    scratch: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -236,6 +238,10 @@ def launch(ctx: Context) -> Launch:
         **git_config(ctx),
         **git_identity(ctx),
         **ctx.extra_env,
+        # Its scratch, and temporary files inside it, so a review's or a test's leftovers go
+        # when the placement ends instead of piling up in the agents' home (§15.5).
+        **({"MAITY_SCRATCH": str(ctx.scratch), "TMPDIR": str(ctx.scratch / "tmp")}
+           if ctx.scratch is not None else {}),  # fmt: skip
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
     # session's variables are gone (clonecheck.placement_root), instead of trusting that.
@@ -263,6 +269,9 @@ def launch(ctx: Context) -> Launch:
     # What `maity gh` may do here: the repository it pins and the gh it starts, or nothing
     # (an empty record also clears one a former grant left).
     ctx.as_user.write(records / ghpr.PULL_REQUESTS, pull_requests_record(ctx))
+    # Where maity also reads a file the agent names (inclone): its scratch, or nowhere.
+    scratch = f"{ctx.scratch}\n" if ctx.scratch is not None else ""
+    ctx.as_user.write(records / clonecheck.SCRATCH_RECORD, scratch)
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
@@ -317,14 +326,17 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
 
 def claude_settings(ctx: Context) -> dict[str, Any]:
     """The grant (§6.1): maity, git, the repository's own allow list, and file tools inside
-    the clone only. Absolute paths take a double slash in Claude Code's rules. The clone's
-    credential is neither readable nor writable through the file tools."""
+    the clone and the placement's scratch only. Absolute paths take a double slash in Claude
+    Code's rules. The clone's credential is neither readable nor writable through the file
+    tools."""
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash({UUID_COMMAND})"]  # an OS-made UUID v4 for Keep-the-Why entries
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
+    if ctx.scratch is not None:  # the placement's scratch (§15.5), for the file tools too
+        allow += [f"{tool}(/{ctx.scratch}/**)" for tool in ("Read", "Edit", "Write")]
     # Agents commit through git and never edit what makes git run something (GIT_PROTECTED).
     # Not all of .git: the sandbox turns an Edit deny into a write deny for every command, and
     # git could no longer fetch or commit. The credential is not readable through Read.
@@ -361,7 +373,10 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # re-open its credential as well, and that order is unverified here.
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private)],
                            "denyWrite": [f"{git}/maity",
-                                         *(f"{git}/{name}" for name in GIT_PROTECTED)]},
+                                         *(f"{git}/{name}" for name in GIT_PROTECTED)],
+                           # Commands write the placement's scratch besides the clone (§15.5).
+                           **({"allowWrite": [str(ctx.scratch)]}
+                              if ctx.scratch is not None else {})},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
         # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
@@ -404,11 +419,31 @@ def trust_clone(ctx: Context) -> None:
         )
 
 
+def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
+    """The parts of a repository's grant a Codex placement starts without, each with why
+    (cli/context/runner.md): Codex has no command allowlist, and its `maity` runs inside its
+    sandbox, not outside it as `maity gh` needs. Only with its sandbox on: without it, a
+    grant with any of these parts refuses the start (supervisor `_refusal`)."""
+    left = []
+    if grant.allow:
+        listed = ", ".join(repr(rule) for rule in grant.allow)
+        left.append(
+            f"allow {listed} is not applied to codex: Codex has no command allowlist, so "
+            "every command runs in its sandbox, listed or not (refused without the sandbox)"
+        )
+    if grant.pull_requests:
+        left.append(
+            "pull_requests is not given to codex: its `maity` runs inside its sandbox, and "
+            "the runner sets up `maity gh` only for a `maity` outside it"
+        )
+    return left
+
+
 def pull_requests_record(ctx: Context) -> str:
     """The content of the runner's record `ghpr.PULL_REQUESTS`: the placement's repository
     and the gh on the runner's PATH when the grant has pull requests and gh is there, else
-    empty."""
-    if not ctx.grant.pull_requests:
+    empty. Always empty for Codex (codex_left_out)."""
+    if not ctx.grant.pull_requests or ctx.harness.id == "codex":
         return ""
     gh = proc.program("gh")
     workspace = ctx.placement.get("workspace") or {}
@@ -527,6 +562,24 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
 CODEX_PROVIDER_HOSTS = ("api.openai.com", "chatgpt.com")
 
 
+def outermost(paths: Sequence[Path], opened: Sequence[Path] = ()) -> tuple[Path, ...]:
+    """`paths` without those another of them already hides, in their order. Codex's sandbox
+    (bwrap) hides a path by mounting over it; a path inside one hidden before has nowhere to
+    be mounted ("Can't create file … Read-only file system"), and every command fails. A
+    path is dropped only when nothing in `opened` (a more specific rule that opens a
+    directory again: the clone's, the scratch's) lies between it and the hidden one that
+    contains it: there the outer path no longer hides it, and it stays listed. Compared as
+    given: the runner lists them resolved where it can (supervisor.private_paths)."""
+    unique = tuple(dict.fromkeys(paths))
+
+    def hidden_by(p: Path, q: Path) -> bool:
+        return q in p.parents and not any(
+            q in r.parents and (r == p or r in p.parents) for r in opened
+        )
+
+    return tuple(p for p in unique if not any(hidden_by(p, q) for q in unique))
+
+
 def codex_config(ctx: Context) -> str:
     """`config.toml` in the placement's own CODEX_HOME (§6.1): Codex's sandbox with the
     workspace profile, the clone's `.git` writable (commits need it), no approvals asked,
@@ -535,8 +588,11 @@ def codex_config(ctx: Context) -> str:
     domains = "".join(f'{json.dumps(host)} = "allow"\n' for host in hosts)
     # Unreadable: other clones (the workspaces root), the runner's state and the secrets in
     # the agents' home. The clone's own rules are more specific and win; its credential
-    # stays readable, since the agent's `maity` runs inside the sandbox.
-    roots = (*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private)
+    # stays readable, since the agent's `maity` runs inside the sandbox. Every directory
+    # opened again below (the clone, the scratch) keeps a hidden path inside it listed.
+    reopened = (ctx.clone, *((ctx.scratch,) if ctx.scratch is not None else ()))
+    roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private),
+                      opened=reopened)  # fmt: skip
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
     return (
         'approval_policy = "never"\n'
@@ -554,7 +610,9 @@ def codex_config(ctx: Context) -> str:
         # Its hooks and config are read-only; a `commondir` the agent writes is ignored by
         # every git outside the sandbox, which runs with GIT_COMMON_DIR set (launch()).
         f"{json.dumps(str(ctx.clone / '.git' / 'hooks'))} = \"read\"\n"
-        f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n\n"
+        f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n"
+        # The placement's scratch (§15.5), under the hidden workspaces root, opened again.
+        + (f'{json.dumps(str(ctx.scratch))} = "write"\n' if ctx.scratch is not None else "") + "\n"
         "[permissions.maity.network]\nenabled = true\n\n"
         "[permissions.maity.network.domains]\n" + domains
         # Nobody answers a headless run: the question tool is not offered (cli/context/runner.md).
@@ -597,9 +655,9 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     for cmd in (*(f"git {sub}" for sub in GIT_SUBCOMMANDS), *granted):
         bash[cmd] = "allow"
         bash[f"{cmd} *"] = "allow"
-    # After the allows: the last match wins. A `maity` call only as one plain call, as the
-    # Claude Code hook has it (plaincall): opencode checks each command its scanner finds,
-    # and a redirect or a substitution on maity's line would pass `maity *`.
+    # After the allows: the last match wins. The rules are meant to allow `maity` only as one
+    # plain call, as the Claude Code hook has it (plaincall). Without a sandbox these rules are
+    # not a boundary, see cli/context/runner.md.
     bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
     bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
@@ -611,8 +669,7 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
         "$schema": "https://opencode.ai/config.json",
         "permission": {
             "*": "deny",
-            # grep and glob are asked about the pattern typed, not the path searched, so a path
-            # rule cannot keep them off .git/maity: they are off.
+            # grep and glob cannot be scoped to a path here, so they are off.
             "read": read, "glob": "deny", "grep": "deny", "list": "allow",
             "edit": edit,
             "bash": bash,

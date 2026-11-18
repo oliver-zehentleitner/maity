@@ -2247,6 +2247,10 @@
     "en": "d5ee439b6bc49aa8",
     "text": "b4202945b40992ec"
   },
+  "bridges.refused.purpose_plain_line": {
+    "en": "367e2bba3065ff95",
+    "text": "54fbee0c0172abe0"
+  },
   "bridges.refused.security_team": {
     "en": "0a3f6bbbc282b2e2",
     "text": "2ab671fa2b80e49d"
@@ -13663,6 +13667,18 @@
     "en": "46eba681e2d58129",
     "text": "87dd762d8c8daf8c"
   },
+  "placements.new.quota": {
+    "en": "f64b09af35af4b42",
+    "text": "e3746afd8e0c4075"
+  },
+  "placements.new.quota_link": {
+    "en": "8fa180b5970a7dc9",
+    "text": "baac2c9fb99bd0b6"
+  },
+  "placements.new.quota_raise": {
+    "en": "6ab76ee09ea92814",
+    "text": "a3117b5e9252804b"
+  },
   "placements.new.reading": {
     "en": "2070173fea584607",
     "text": "89142e373f3844be"
@@ -16163,6 +16179,14 @@
     "en": "515f575ac36ba8e7",
     "text": "2e7e28440170894e"
   },
+  "role.project": {
+    "en": "66e87a22c602815c",
+    "text": "92df1708371b0dc4"
+  },
+  "role.project.help": {
+    "en": "6c746953c8a40d10",
+    "text": "2defaef7b4c19c19"
+  },
   "role.proxy": {
     "en": "6ad3fc4867c35b9e",
     "text": "6ad3fc4867c35b9e"
@@ -16348,8 +16372,8 @@
     "text": "cb66fbd90ef048b7"
   },
   "roles.stale": {
-    "en": "35c1d1facd879f68",
-    "text": "2ea5ee2daef2a180"
+    "en": "3f39a43554402004",
+    "text": "2e40ab015ec83dbe"
   },
   "roles.title": {
     "en": "b4aba51bf4160c74",
@@ -17766,6 +17790,38 @@
   "settings.links.unknown": {
     "en": "95b7fb23ec1d83d4",
     "text": "538f207e57e93de2"
+  },
+  "settings.max_placements.bad_max": {
+    "en": "4b79f03c71f0b64d",
+    "text": "315fa6adae595e26"
+  },
+  "settings.max_placements.count": {
+    "en": "6775fef7ab26977e",
+    "text": "20297714823a1373"
+  },
+  "settings.max_placements.count_unknown": {
+    "en": "93db5d1db0d72fc5",
+    "text": "ac092eff5c8a71b2"
+  },
+  "settings.max_placements.hint": {
+    "en": "f8a8ac9943602ffa",
+    "text": "965f5df8b46e3215"
+  },
+  "settings.max_placements.max": {
+    "en": "c2c6ebb43dd590e8",
+    "text": "78e4a779c37213ae"
+  },
+  "settings.max_placements.not_saved": {
+    "en": "5a57a8b3db3bbeca",
+    "text": "cb827c1f640bb06c"
+  },
+  "settings.max_placements.saved": {
+    "en": "4181de0e66b45c08",
+    "text": "ac9cee06da59f70b"
+  },
+  "settings.max_placements.title": {
+    "en": "22b8ece9ed431dac",
+    "text": "6a047707f65a943f"
   },
   "settings.member_agents.bad_max": {
     "en": "942904b5d5bda0bc",

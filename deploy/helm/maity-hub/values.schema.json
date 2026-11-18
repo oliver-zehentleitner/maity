@@ -418,6 +418,9 @@
         },
         "sealVerifiers": {
           "type": "boolean"
+        },
+        "sealedVerifiersOnly": {
+          "type": "boolean"
         }
       }
     },

@@ -7,10 +7,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import StringConstraints
+from pydantic import BeforeValidator, StringConstraints
+from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, select
 
-from maity_hub import bridges, idempotency, namespace
+from maity_hub import bridges, idempotency, namespace, plain_text
 from maity_hub import tables as t
 from maity_hub.access import Membership, member_row, membership
 from maity_hub.cross_owner import owner_of
@@ -24,8 +25,21 @@ from maity_hub.views import principal_id
 
 router = APIRouter(route_class=ProjectRoute)
 
+
+def _plain(purpose: Any) -> Any:
+    """The purpose is one plain line (§2.3): it stands quoted in the consent request, where a
+    line break or a control could make it read as the request's own text. Checked on the
+    input as sent, before the trimming: a line break or tab at either end is refused, not
+    trimmed away; spaces at the ends are trimmed."""
+    if isinstance(purpose, str) and not plain_text.is_plain_line(purpose):
+        raise PydanticCustomError("plain_line", "the purpose is one line of plain text")
+    return purpose
+
+
 Purpose = Annotated[
-    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=BRIDGE_PURPOSE)
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=BRIDGE_PURPOSE),
+    BeforeValidator(_plain),
 ]
 
 

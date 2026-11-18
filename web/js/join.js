@@ -247,10 +247,15 @@ window.Maity = window.Maity || {};
     const trust = h("select", { id: "join-trust" }, trusts.map((r) => h("option", { value: r }, M.trust.trustWord(r))));
     trust.value = "member";
     const role = h("select", { id: "join-role" });
+    // The project's own roles follow the built-in ones (§2.3): for one's own agent only those on
+    // a base a member join may give (not ops), as the hub's member limits check it.
+    const takeOwn = (list) => (own ? list.filter((x) => M.trust.MEMBER_ROLES.includes(x.base)) : list);
+    let ownRoles = takeOwn(M.trust.projectRoles(ctx, (list) => { ownRoles = takeOwn(list); if (ownRoles.length) fillRoles(); }));
     const fillRoles = () => {
       const wanted = role.value || "coder";
-      const offered = own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin"));
-      M.trust.fillRoles(role, offered, wanted, "coder");
+      const offered = (own ? M.trust.MEMBER_ROLES : M.trust.ROLES.filter((r) => r !== "proxy" || (ctx.isOwner && trust.value === "admin")))
+        .concat(ownRoles.map((x) => x.name));
+      M.trust.fillRoles(role, offered, wanted, "coder", ownRoles);
     };
     const roleHelp = M.trust.roleHint(role);
     // The owner's instruction to work in subagents (docs/api.md §3.1): on by default for
@@ -487,7 +492,7 @@ window.Maity = window.Maity || {};
         // submission's to touch (review of #1919).
         if (mine !== submission) return;
         create.disabled = false;
-        status.fail(M.t("placements.new.failed"), viaRunner.said(err));
+        viaRunner.refuse(status, err);
         const fields = (err.code === "invalid" && err.details && err.details.fields) || {};
         if (fields.handle === "taken" && agent.handle) { refused.add(agent.handle); checkHandle(); handle.focus(); }
         return;

@@ -24,6 +24,7 @@ from maity_hub import (
     clock,
     contract_text,
     cover,
+    events,
     idempotency,
     instances,
     line,
@@ -309,8 +310,8 @@ def _new_release(conn: Connection, mine: Membership, body: ReleaseIn | None) -> 
     mine.require("releases:write")
     if body is None:
         raise invalid({"release.version": "required"})
-    if not releases.SEMVER.fullmatch(body.version):
-        raise invalid({"release.version": "not_semver"})
+    if not releases.valid_version(body.version):
+        raise invalid({"release.version": "not_a_version"})
     taken = conn.execute(
         select(t.card.c.id).where(
             t.card.c.project_id == mine.project.id, t.card.c.release_version == body.version
@@ -706,12 +707,18 @@ def list_tasks(
             **({"q": q} if q is not None else {}),
         )  # fmt: skip
         matched: dict[str, list[str]] = {}
+        # Notes written in the reader's hidden windows are not searched (§6.2, §6.4).
+        listable = (
+            events.outside_window_times(conn, mine.project.id, mine.row, t.card_note.c.created_at)
+            if q is not None
+            else None
+        )
 
         def matching(rows: Sequence[Any]) -> list[Any]:
             if q is None:
                 return list(rows)
             result = []
-            notes = card_search.note_bodies(conn, (row.id for row in rows))
+            notes = card_search.note_bodies(conn, (row.id for row in rows), listable)
             for row in rows:
                 hit = card_search.matches(row, q, notes[row.id])
                 if hit:

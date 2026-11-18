@@ -34,8 +34,10 @@ from typing import Any
 from .. import clonecheck, proc, redact, state
 from . import config
 from .asuser import RUNNER, AsUser
+from .scratchop import SCRATCH as SCRATCH  # defined there: it runs with `-I`
+from .scratchop import SCRATCH_ID as SCRATCH_ID
+from .scratchop import TOKEN as TOKEN
 
-TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 # A project as the hub names it since the namespace (§6.25): `<owner>/<slug>`.
 FULL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9-]{0,62}$")
 RECORDS = "workspaces.json"
@@ -46,6 +48,10 @@ PROTOCOLS = ("https", "ssh")
 FOLDER_HARNESSES = ("antigravity",)
 REPO = "repo"
 FOLDER, CLONE = "folder", "clone"  # the layouts, as the record names them
+# The harnesses whose session is told its scratch and whose sandbox the runner opens for it
+# (adapters). agy's sandbox is not shown to write there yet; opencode keeps its file tools
+# inside the clone.
+SCRATCH_HARNESSES = ("stub", "claude-code", "codex")
 _lock = threading.Lock()
 
 
@@ -105,6 +111,16 @@ class Workspace:
     def credential(self) -> Path:
         """Where the agent-side CLI keeps the clone's credential (its Git directory)."""
         return self.repo / ".git" / "maity" / state.CREDENTIAL_FILE
+
+
+def scratch_of(root: Path, project: str, placement_id: str, host: str = "") -> Path:
+    """The placement's scratch under `root` (§15.5), built from validated tokens and kept
+    inside `root` as a clone's path is (locate). Not resolved: what is there is the agents'
+    to write, and the runner reaches it only from the root down (scratchop)."""
+    if not (TOKEN.match(project) and SCRATCH_ID.match(placement_id)):
+        raise Refused("workspace_in_use", "workspace_unrecorded")
+    base = root if host else root.resolve()
+    return base / project / SCRATCH / placement_id
 
 
 def uses_folder(harness_id: str) -> bool:
