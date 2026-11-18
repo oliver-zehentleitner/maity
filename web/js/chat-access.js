@@ -384,10 +384,12 @@ window.Maity = window.Maity || {};
     const historyMore = h("div", { class: "actions" });
     append(historyBox, historyStatus.el, historyList, historyMore);
 
+    // Whether the item names `id` as deleted (or not at all): then no handle, never "@…".
+    const goneIn = (item, id) => { const n = (item.names || {})[id]; return !n || n.deleted || !n.handle; };
+
     function named(item, id) {
-      const n = (item.names || {})[id];
-      if (!n || n.deleted || !n.handle) return M.t("chat_access.history.deleted");
-      return "@" + n.handle;
+      if (goneIn(item, id)) return M.t("chat_access.history.deleted");
+      return "@" + item.names[id].handle;
     }
 
     function agentsOf(item, agents) {
@@ -400,12 +402,13 @@ window.Maity = window.Maity || {};
       if (!e) return null;
       const person = e.owner_id || e.human_id;
       const handle = person ? named(item, person).replace(/^@/, "") : "";
-      const gone = person && !((item.names || {})[person] || {}).handle;
+      const gone = person && goneIn(item, person);
       let whomText;
       if (e.project) whomText = M.t("chat_access.project", { project: projectText(e.project) });
+      else if (item.list === "deny" && e.agent_id && goneIn(item, e.agent_id)) whomText = M.t("chat_access.history.deleted_agent");
+      else if (item.list === "deny" && e.agent_id) whomText = M.t("chat_access.deny.agent", { agent: named(item, e.agent_id) });
       else if (gone && item.list === "deny" && e.human_id) whomText = M.t("chat_access.history.deleted_person");
       else if (gone) whomText = M.t("chat_access.history.deleted_side");
-      else if (item.list === "deny" && e.agent_id) whomText = M.t("chat_access.deny.agent", { agent: named(item, e.agent_id) });
       else if (item.list === "deny" && e.human_id) whomText = M.t("chat_access.deny.person", { handle });
       else if (item.list === "deny") whomText = M.t("chat_access.deny.side", { handle });
       else {
@@ -415,24 +418,32 @@ window.Maity = window.Maity || {};
         whomText = [M.t("chat_access.side", { handle }), " · ", theirs, " · ",
           e.their_human ? M.t("chat_access.human_yes", { handle }) : M.t("chat_access.human_no", { handle })].join("");
       }
-      const time = item.list === "allow" ? " · " + (e.duration ? durationWords(e.duration) : M.t("chat_access.for_good")) : "";
-      return h("p", { class: "muted" }, whomText, " · ", M.t("chat_access.for_agents", { agents: agentsOf(item, e.agents) }), time);
+      // The time as the lists say it, its end included, so a renewal differs from what it was.
+      const time = item.list !== "allow" ? "" : " · " + (!e.duration ? M.t("chat_access.for_good")
+        : e.until ? durationWords(e.duration) + " · " + M.t("chat_access.until", { at: formatTime(e.until) }) : durationWords(e.duration));
+      return [h("p", { class: "muted" }, whomText, " · ", M.t("chat_access.for_agents", { agents: agentsOf(item, e.agents) }), time),
+        e.allowed ? h("p", null, M.t("chat_access.allowed_said"), " ", h("q", null, e.allowed)) : null,
+        e.denied ? h("p", null, M.t("chat_access.denied_said"), " ", h("q", null, e.denied)) : null];
     }
 
     function how(item) {
       const parts = [];
-      if (item.cause === "request") parts.push(M.t("chat_access.history.by_request"));
-      else if (item.cause === "chat_add") parts.push(M.t("chat_access.history.by_chat_add", { project: projectText(item.conversation.project) }));
+      const chat = item.conversation && item.conversation.project;
+      if (item.cause === "list") parts.push(M.t("chat_access.history.by_list"));
+      else if (item.cause === "request") parts.push(M.t("chat_access.history.by_request"));
+      else if (item.cause === "chat_add" && chat) parts.push(M.t("chat_access.history.by_chat_add", { project: projectText(chat) }));
+      else if (item.cause === "chat_add") parts.push(M.t("chat_access.history.by_chat_add_unnamed"));
       else if (item.cause === "expiry") parts.push(M.t("chat_access.history.by_expiry"));
       else if (item.cause === "gone") parts.push(M.t("chat_access.history.by_gone"));
-      else parts.push(M.t("chat_access.history.by_list"));
+      // A cause this page does not know is said as the hub sent it, never as "by you".
+      else parts.push(M.t("chat_access.history.by_unknown", { cause: String(item.cause) }));
       if (item.deny_id) parts.push(M.t("chat_access.history.by_deny"));
       return parts.join(" ");
     }
 
-    // A request in the inbox: a personal request about no project is listed in the inbox of all
-    // projects, /all (js/inbox.js), by its id.
-    const requestLink = (id) => h("a", { href: "/all", class: "chat-access-request" }, M.t("chat_access.history.open_request", { id }));
+    // The request by its id, as text: a closed personal request about no project has no page in the
+    // inbox, and /all lists only the open ones (js/inbox.js; review of #1989, A1438 P2-2).
+    const requestLink = (id) => h("span", { class: "muted chat-access-request" }, M.t("chat_access.history.request_id", { id }));
 
     function showEntry(id) {
       return h("button", { type: "button", onclick: () => {
@@ -444,23 +455,31 @@ window.Maity = window.Maity || {};
     function historyRow(item) {
       const row = h("li", { class: "chat-access-entry chat-access-event", "data-history": item.id });
       const at = h("span", { class: "muted" }, formatTime(item.at) + " · ");
+      if (item.kind !== "answer" && item.kind !== "entry") {
+        append(row, h("p", { class: "chat-access-whom" }, at, h("strong", null, M.t("chat_access.history.unknown_kind", { kind: String(item.kind) }))));
+        return row;
+      }
       if (item.kind === "answer") {
-        const reply = REPLIES[item.reply_id] ? REPLIES[item.reply_id]() : item.reply_id;
+        const reply = REPLIES[item.reply_id] ? REPLIES[item.reply_id]() : String(item.reply_id);
+        const said = goneIn(item, item.side) ? M.t("chat_access.history.answer_deleted", { reply })
+          : M.t("chat_access.history.answer", { handle: item.names[item.side].handle, reply });
         append(row,
-          h("p", { class: "chat-access-whom" }, at, h("strong", null, M.t("chat_access.history.answer", { handle: named(item, item.side).replace(/^@/, ""), reply }))),
+          h("p", { class: "chat-access-whom" }, at, h("strong", null, said)),
           item.withdrawn ? h("p", { class: "muted" }, M.t("chat_access.history.withdrawn")) : null,
           h("p", { class: "muted" }, M.t("chat_access.history.ticked", { agents: agentsOf(item, item.agents) || M.t("chat_access.history.none") }),
-            item.reply_id.startsWith("allow_") ? [" · ", item.their_human ? M.t("chat_access.history.person_ticked") : M.t("chat_access.history.person_not_ticked")] : null),
+            String(item.reply_id).startsWith("allow_") ? [" · ", item.their_human ? M.t("chat_access.history.person_ticked") : M.t("chat_access.history.person_not_ticked")] : null),
           item.allowed ? h("p", null, M.t("chat_access.allowed_said"), " ", h("q", null, item.allowed)) : null,
           item.denied ? h("p", null, M.t("chat_access.denied_said"), " ", h("q", null, item.denied)) : null,
-          h("p", { class: "muted" }, M.t("chat_access.history.entries", { count: item.entries.length })),
+          h("p", { class: "muted" }, M.t("chat_access.history.entries", { count: (item.entries || []).length })),
           h("div", { class: "actions" }, requestLink(item.request_id)));
         return row;
       }
       const change = CHANGES[item.list + "." + item.change];
       const what = change ? change() : item.change;
-      const changed = item.change === "changed" && item.fields.length
-        ? h("p", { class: "muted" }, M.t("chat_access.history.fields", { fields: item.fields.filter((f) => FIELDS[f]).map((f) => FIELDS[f]()).join(", ") }))
+      const fields = Array.isArray(item.fields) ? item.fields : [];
+      // A field this page has no word for is named as the hub sent it, so the line is never empty.
+      const changed = item.change === "changed" && fields.length
+        ? h("p", { class: "muted" }, M.t("chat_access.history.fields", { fields: fields.map((f) => (FIELDS[f] ? FIELDS[f]() : String(f))).join(", ") }))
         : null;
       append(row,
         h("p", { class: "chat-access-whom" }, at, h("strong", null, what), " ", h("span", null, how(item))),
@@ -473,21 +492,28 @@ window.Maity = window.Maity || {};
       return row;
     }
 
+    // Each read counts; an answer to a read that a newer one replaced (a Show more still on its
+    // way when a write draws page one again) is dropped. A failed Show more keeps its button.
+    let historyRead = 0;
+    const moreButton = (cursor) => h("button", { type: "button", class: "chat-access-history-more", onclick: () => loadHistory(cursor) },
+      M.t("chat_access.history.more"));
+
     async function loadHistory(cursor) {
+      const mine = ++historyRead;
       historyStatus.busy(M.t("chat_access.history.reading"));
       clear(historyMore);
       try {
         const page = await M.api.get(HISTORY + "?limit=" + HISTORY_PAGE + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+        if (mine !== historyRead) return;
         historyStatus.done();
         if (!cursor) clear(historyList);
         append(historyList, page.items.map(historyRow));
         if (!historyList.childNodes.length) append(historyMore, h("p", { class: "muted" }, M.t("chat_access.history.empty")));
-        if (page.next_cursor) {
-          append(historyMore, h("button", { type: "button", class: "chat-access-history-more", onclick: () => loadHistory(page.next_cursor) },
-            M.t("chat_access.history.more")));
-        }
+        if (page.next_cursor) append(historyMore, moreButton(page.next_cursor));
       } catch (err) {
+        if (mine !== historyRead) return;
         historyStatus.fail(M.t("chat_access.history.read_failed"), err);
+        if (cursor) append(historyMore, moreButton(cursor));
       }
     }
 

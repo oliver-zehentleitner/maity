@@ -18979,6 +18979,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // and further pages through Show more.
   {
     await go("#/agents/chat-access"); await mtSettle();
+    const caPageNow = () => main.querySelector("section.chat-access-page");
     const chBox = () => main.querySelector("section.chat-access-history");
     const chRows = () => chBox().querySelectorAll("li.chat-access-event");
     const chText = text(chBox());
@@ -18992,9 +18993,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       && text(chGone).includes("The entry is no longer in your lists."),
       "chat access history: a deleted account reads as deleted, never by its id or an old handle " + (chGone ? text(chGone) : ""));
     const chAnswer = chRows().find((li) => li.attrs["data-history"] === "chh-0003");
-    const chLink = chAnswer && chAnswer.querySelector("a.chat-access-request");
-    expect(chLink && /(^|#)\/all$/.test(chLink.getAttribute("href")) && text(chLink) === "Request req-0chatanna1 in your inbox",
-      "chat access history: the request is linked to the inbox by its id " + (chLink ? chLink.getAttribute("href") + " " + text(chLink) : chAnswer ? text(chAnswer) : "no answer row"));
+    const chLink = chAnswer && chAnswer.querySelector(".chat-access-request");
+    expect(chLink && chLink.tagName !== "A" && text(chLink) === "Request req-0chatanna1",
+      "chat access history: the request is named by its id, as text: /all does not list a closed one (A1438 P2-2) " + (chLink ? chLink.tagName + " " + text(chLink) : chAnswer ? text(chAnswer) : "no answer row"));
     expect(text(chRows()[0]).includes("Allow entry changed by you, on this page or through the API.") && text(chRows()[0]).includes("What changed: your agents"),
       "chat access history: the case above's last write is the newest item " + text(chRows()[0]));
     const chProto = Object.getPrototypeOf(main);
@@ -19020,6 +19021,70 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(chFirst === 50 && chMore && chRows().length > 50 && !chBox().querySelector("button.chat-access-history-more"),
       "chat access history: 50 items a page, the next ones under Show more " + chFirst + " " + chRows().length);
     for (const id of chMade) await win.Maity.api.del("/me/chat-access/allow/" + id);
+
+    // Items the fixture hub does not make (review of #1989, A1438 and A1439): a deleted side on
+    // an answer, a deleted agent of a deny, a change of the rules and the end, an unknown cause,
+    // field and kind, a chat add without its chat; then a failed and a stale Show more.
+    const chGet = win.Maity.api.get;
+    const chNames = { "agt-a": { handle: "agent-a", deleted: false }, "hum-anna": { handle: "anna", deleted: false },
+      "hum-gone": { handle: null, deleted: true }, "agt-gone": { handle: null, deleted: true } };
+    const chAllow = { id: "cha-0009", agents: ["agt-a"], owner_id: "hum-anna", handle: null, their_agents: "all", their_human: false, project: null,
+      duration: "week", until: "2026-11-25T10:00:00Z", allowed: "only the web", denied: "nothing about releases", by: "hum-maintainer", since: "2026-11-11T16:00:00Z" };
+    const chOdd = [
+      { id: "chh-9001", seq: 9001, at: "2026-11-18T10:00:00Z", kind: "answer", by: "hum-maintainer", request_id: "req-0gone00001", side: "hum-gone",
+        reply_id: "no", withdrawn: false, agents: ["agt-a"], their_human: false, their_agents: null, allowed: null, denied: null, entries: [], names: chNames },
+      { id: "chh-9002", seq: 9002, at: "2026-11-18T10:00:00Z", kind: "entry", change: "deleted", list: "deny", entry_id: "cha-0008", entry_exists: false,
+        by: null, cause: "gone", request_id: null, deny_id: null, conversation: null,
+        entry: { id: "cha-0008", agents: "all", agent_id: "agt-gone", by: "hum-maintainer", since: "2026-11-01T09:00:00Z" }, before: null, fields: [], names: chNames },
+      { id: "chh-9003", seq: 9003, at: "2026-11-18T10:00:00Z", kind: "entry", change: "changed", list: "allow", entry_id: "cha-0009", entry_exists: false,
+        by: "hum-maintainer", cause: "brand_new", request_id: null, deny_id: null, conversation: null,
+        entry: chAllow, before: Object.assign({}, chAllow, { until: "2026-11-18T10:00:00Z", allowed: "the shop" }),
+        fields: ["allowed", "until", "shiny"], names: chNames },
+      { id: "chh-9004", seq: 9004, at: "2026-11-18T10:00:00Z", kind: "entry", change: "created", list: "allow", entry_id: "cha-0009", entry_exists: false,
+        by: "hum-maintainer", cause: "chat_add", request_id: null, deny_id: null, conversation: null, entry: chAllow, before: null, fields: [], names: chNames },
+      { id: "chh-9005", seq: 9005, at: "2026-11-18T10:00:00Z", kind: "verdict", names: {} },
+    ];
+    let chMoreGate = null, chMoreFail = false;
+    win.Maity.api.get = (p) => {
+      if (!p.startsWith("/me/chat-access/history")) return chGet(p);
+      if (!p.includes("cursor=")) return Promise.resolve({ items: chOdd, next_cursor: "9000" });
+      if (chMoreFail) return Promise.reject(Object.assign(new Error("hub unreachable"), { code: "network" }));
+      return new Promise((resolve) => { chMoreGate = () => resolve({ items: [chOdd[0]], next_cursor: null }); });
+    };
+    await go("#/agents/chat-access"); await mtSettle();
+    const chRow = (id) => chRows().find((li) => li.attrs["data-history"] === id);
+    expect(text(chRow("chh-9001")).includes("You answered the request of a deleted account: no, they leave") && !text(chRow("chh-9001")).includes("@a deleted"),
+      "chat access history: an answer to a deleted account's request names no handle, no @ (A1438 P2-1) " + text(chRow("chh-9001")));
+    expect(text(chRow("chh-9002")).includes("a deleted agent · for all your agents") && !text(chRow("chh-9002")).includes("the agent a deleted"),
+      "chat access history: a deny of a deleted agent says so once (A1439 P2-1) " + text(chRow("chh-9002")));
+    const chChanged = text(chRow("chh-9003"));
+    expect(chChanged.includes("in a way this page does not know (brand_new).") && !chChanged.includes("by you")
+      && chChanged.includes("What changed: what they may talk about, the end, shiny")
+      && chChanged.includes("only the web") && chChanged.includes("the shop") && chChanged.includes("nothing about releases")
+      && (chChanged.match(/until /g) || []).length === 2,
+      "chat access history: a change of the rules and the end shows both, an unknown cause and field are said as sent (A1439 P2-2, P2-3) " + chChanged);
+    expect(text(chRow("chh-9004")).includes("by you adding your agent to a group chat.") && text(chRow("chh-9005")).includes("An item this page does not know (verdict)"),
+      "chat access history: a chat add without its chat and an unknown kind are drawn, not a crash (A1439 P2-3) " + text(chRow("chh-9004")) + " | " + text(chRow("chh-9005")));
+    // A failed Show more keeps its button; pressed again, it reads again.
+    chMoreFail = true;
+    chBox().querySelector("button.chat-access-history-more").dispatch("click"); await mtSettle();
+    const chAgain = chBox().querySelector("button.chat-access-history-more");
+    expect(chAgain && text(chBox()).includes("The history could not be read"),
+      "chat access history: a failed Show more says so and keeps its button (A1439 P2-4)");
+    // A Show more still on its way when a write draws page one again is dropped.
+    chMoreFail = false;
+    chAgain.dispatch("click"); await mtSettle();
+    const chBefore = chRows().length;
+    win.confirm = () => true;
+    const chRemove = caPageNow().querySelectorAll("ul.chat-access-list.deny li button").find((b) => text(b) === "Remove")
+      || caPageNow().querySelectorAll("ul.chat-access-list.allow li button").find((b) => text(b) === "Remove");
+    if (chRemove) chRemove.dispatch("click");
+    await mtSettle();
+    if (chMoreGate) chMoreGate();
+    await mtSettle();
+    expect(chRemove && chBefore === chOdd.length && chRows().length === chOdd.length,
+      "chat access history: an older Show more answering after page one was read again is dropped (A1439 P2-4) " + chBefore + " " + chRows().length);
+    win.Maity.api.get = chGet;
   }
 
   // API mode against a fake hub: CSRF on writes, fail loud without a hub.
