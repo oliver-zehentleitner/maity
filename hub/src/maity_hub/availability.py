@@ -371,7 +371,7 @@ def coordinator_gate(conn: Connection, project: Any) -> dict[str, Any] | None:
     known = None if None in untils else min(u for u in untils if u is not None)
     return {
         "coordinator": coordinator_of(conn, project),
-        "until": clock.rfc3339(known) if known is not None else None,
+        "until": clock.rfc3339_or_none(known),
     }
 
 
