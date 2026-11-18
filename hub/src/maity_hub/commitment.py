@@ -58,7 +58,7 @@ def packet(project: Any, credential: Any) -> dict[str, Any]:
     confirmed = credential.ktw_acknowledged_at
     return {
         "commitment": "required",
-        "acknowledged_at": clock.rfc3339(confirmed) if confirmed else None,
+        "acknowledged_at": clock.rfc3339_or_none(confirmed),
         **(
             {"acknowledge_by": clock.rfc3339(credential.ktw_acknowledge_by)}
             if confirmed is None and credential.ktw_acknowledge_by is not None
@@ -76,7 +76,7 @@ def instance_fields(project: Any, credential: Any) -> dict[str, Any]:
     confirmed = credential.ktw_acknowledged_at
     due = credential.ktw_acknowledge_by
     return {
-        "keep_the_why_acknowledged_at": clock.rfc3339(confirmed) if confirmed else None,
+        "keep_the_why_acknowledged_at": clock.rfc3339_or_none(confirmed),
         "keep_the_why_acknowledge_by": clock.rfc3339(due) if confirmed is None and due else None,
     }
 
@@ -112,7 +112,7 @@ def audience(conn: Connection, project_id: str, agent_id: str) -> list[str]:
     return ([f"member:{owner}"] if is_member else []) + ["trust:admin"]
 
 
-def confirmed(conn: Connection, project: Any, credential: Any, agent_id: str) -> None:
+def confirmed(conn: Connection, credential: Any) -> None:
     """What a confirmation ends: the owner's request, when one was filed, is withdrawn
     (§6.23)."""
     from maity_hub.routes.requests import withdraw_hub_notice

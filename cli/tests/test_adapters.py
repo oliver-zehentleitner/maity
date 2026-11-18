@@ -56,6 +56,8 @@ def test_claude_code_interactive(tmp_path: Path) -> None:
         "MAITY_PLACEMENT": "plc-0003", "GIT_COMMON_DIR": str(ctx.clone / ".git"),
         clonecheck.GIT_INODE_ENV: str(os.lstat(ctx.clone / ".git").st_ino),
         clonecheck.GIT_PRIVATE_ENV: str(ctx.agent_dir / "git"),
+        # The reaper opt-out is on every claude-code placement (test below for both modes).
+        "CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP": "1",
         **adapters.SESSION_GIT_CONFIG,
         **adapters.git_identity(ctx),  # `[git]`, here its default (test_session_identity.py)
     }  # fmt: skip
@@ -294,6 +296,19 @@ def test_claude_code_supervised_runs_the_loop(tmp_path: Path) -> None:
     assert spec["again"][-1] == "--continue" and "--model" not in spec["first"]
     assert spec["env"]["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] == "1"
     assert spec["restart"]["crash_cap"] == 5
+
+
+def test_claude_code_disables_the_bg_shell_pressure_reaper_for_both_modes(tmp_path: Path) -> None:
+    # The reaper would kill the interactive placement's background `maity wait` under low memory,
+    # so the start env carries the opt-out for both the interactive and the supervised launch.
+    interactive = adapters.launch(context(tmp_path))
+    assert interactive.env["CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP"] == "1"
+    sup = adapters.launch(context(tmp_path / "s", placement={**PLACEMENT, "mode": "supervised"}))
+    spec = json.loads(Path(sup.argv[-1]).read_text())
+    assert spec["env"]["CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP"] == "1"
+    # Scoped to Claude Code: another harness's start env does not carry it.
+    codex = context(tmp_path / "c", harness_id="codex", binary="/usr/bin/codex")
+    assert "CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP" not in adapters.launch(codex).env
 
 
 def test_the_sandboxed_session_prompt_and_git_settings(tmp_path: Path) -> None:
@@ -606,12 +621,21 @@ def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert spec["env"]["CODEX_HOME"] == str(codex_home)
 
 
+OPENCODE_HARNESS = config.Harness(
+    "opencode", ("interactive", "supervised"), "interactive",
+    ("xai/grok-4.7", "opus"), "xai/grok-4.7",
+)  # fmt: skip
+
+
 def test_opencode_launch(tmp_path: Path) -> None:
-    ctx = context(tmp_path, harness_id="opencode", binary="/usr/bin/opencode",
+    # No model on the placement: the harness default (xai/grok-4.7) reaches opencode as
+    # `--model`, not opencode's own free default.
+    ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
                   placement={**PLACEMENT, "mode": "interactive", "model": None})  # fmt: skip
     launch = adapters.launch(ctx)
     assert launch.env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
-    assert launch.argv == ["/usr/bin/opencode", str(ctx.clone), "--prompt", adapters.START_PROMPT]
+    assert launch.argv == ["/usr/bin/opencode", str(ctx.clone), "--model", "xai/grok-4.7",
+                           "--prompt", adapters.START_PROMPT]  # fmt: skip
     settings = json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())
     rules = settings["permission"]
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
@@ -631,11 +655,35 @@ def test_opencode_launch(tmp_path: Path) -> None:
 
 
 def test_opencode_supervised(tmp_path: Path) -> None:
-    ctx = context(tmp_path, harness_id="opencode", binary="/usr/bin/opencode",
-                  placement={**PLACEMENT, "mode": "supervised"})  # fmt: skip
+    # A model-less supervised placement carries the harness default in both the first run and
+    # the continuation: interactive and supervised share `chosen`.
+    ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
+                  placement={**PLACEMENT, "mode": "supervised", "model": None})  # fmt: skip
     spec = json.loads(Path(adapters.launch(ctx).argv[-1]).read_text())
     assert spec["first"][:4] == ["/usr/bin/opencode", "run", "--dir", str(ctx.clone)]
     assert "--continue" in spec["again"] and "--continue" not in spec["first"]
+    assert spec["first"][4:6] == ["--model", "xai/grok-4.7"]
+    assert spec["again"][4:6] == ["--model", "xai/grok-4.7"]
+
+
+def test_opencode_refuses_a_model_that_is_not_configured(tmp_path: Path) -> None:
+    # Fail closed: a placement model outside the harness's `models` (here opencode's own free
+    # default) would send the conversation to opencode's servers, so the start is refused
+    # instead of carried as `--model`.
+    ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
+                  placement={**PLACEMENT, "model": "opencode/hy4-flash-free"})  # fmt: skip
+    with pytest.raises(adapters.NotYet):
+        adapters.launch(ctx)
+
+
+def test_opencode_refuses_when_no_model_can_be_resolved(tmp_path: Path) -> None:
+    # No placement model and no harness default (a harness configured without `models`): nothing
+    # safe to pass, so the start is refused rather than left to opencode's free default.
+    harness = config.Harness("opencode", ("interactive", "supervised"), "interactive")
+    ctx = context(tmp_path, harness=harness, binary="/usr/bin/opencode",
+                  placement={**PLACEMENT, "model": None})  # fmt: skip
+    with pytest.raises(adapters.NotYet):
+        adapters.launch(ctx)
 
 
 def test_codex_is_advertised_as_sandbox_confined(monkeypatch: pytest.MonkeyPatch) -> None:

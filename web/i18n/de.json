@@ -2514,6 +2514,8 @@
   "mail.day.thu": "Donnerstag",
   "mail.day.tue": "Dienstag",
   "mail.day.wed": "Mittwoch",
+  "mail.field.verification_max_per_hour": "Mails zur Adressbestätigung pro Stunde",
+  "mail.field.invitation_max_per_hour": "Einladungsmails pro Stunde",
   "mail.kind.chat": "Chat-Nachrichten",
   "mail.kind.inbox": "Anfragen an dich",
   "mail.kind.invitation": "Einladungen in ein Projekt",
@@ -2568,6 +2570,26 @@
     "one": "{count} Anmeldemail",
     "other": "{count} Anmeldemails"
   },
+  "mail.count.verification": {
+    "one": "{count} Bestätigungsmail",
+    "other": "{count} Bestätigungsmails"
+  },
+  "mail.count.invitation": {
+    "one": "{count} Einladungsmail",
+    "other": "{count} Einladungsmails"
+  },
+  "mail.count.second_factor": {
+    "one": "{count} Mail für den zweiten Faktor",
+    "other": "{count} Mails für den zweiten Faktor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} Mail für den zweiten Faktor verworfen",
+    "other": "{count} Mails für den zweiten Faktor verworfen"
+  },
+  "mail.count.waiting": {
+    "one": "{count} Bestätigungs- oder Einladungsmail wartet",
+    "other": "{count} Bestätigungs- oder Einladungsmails warten"
+  },
   "mail.enable": "Mail aktivieren",
   "mail.field.from_address": "Absenderadresse",
   "mail.field.from_name": "Absendername",
@@ -2575,6 +2597,7 @@
   "mail.field.max_per_hour": "Benachrichtigungsmails pro Stunde",
   "mail.field.port": "SMTP-Port",
   "mail.field.reply_to": "Antwortadresse",
+  "mail.field.second_factor_max_per_hour": "Mails für den zweiten Faktor pro Stunde",
   "mail.field.security_max_per_hour": "Sicherheitsmails pro Stunde",
   "mail.field.sign_in_max_per_hour": "Anmeldemails pro Stunde",
   "mail.field.tls": "Verbindungssicherheit",
@@ -2582,6 +2605,7 @@
   "mail.incomplete": "Die Mail-Konfiguration ist unvollständig: {missing}.",
   "mail.keys": "Signaturschlüssel: {signing}. Verschlüsselungsschlüssel der Instanz: {secret}. Schlüssel werden in der Umgebung konfiguriert.",
   "mail.last_hour": "Letzte Stunde: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Außerdem in der letzten Stunde: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.not_saved": "Nicht gespeichert: {reason}",
   "mail.not_set": "nicht gesetzt",
   "mail.password.both": "Wähle ein neues Passwort oder lösche das gespeicherte, nicht beides.",

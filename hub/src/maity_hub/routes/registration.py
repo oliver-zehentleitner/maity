@@ -34,10 +34,12 @@ from maity_hub import (
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
 from maity_hub.auth import anonymous, passwords, second_factor
+from maity_hub.auth import email_links as links
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
 from maity_hub.ids import new_id
 from maity_hub.mail import address
+from maity_hub.net import limit_key
 from maity_hub.ratelimit import Limiter
 
 router = APIRouter()
@@ -51,7 +53,25 @@ BY_SOURCE = Limiter(
 # Silent limits: over them the answer is still 202 and nothing is sent (§2.7.3).
 BY_PAIR_SHORT = Limiter(3, 900, name="routes.registration.BY_PAIR_SHORT")
 BY_PAIR_DAY = Limiter(10, 86400, name="routes.registration.BY_PAIR_DAY")
-BY_ADDRESS_DAY = Limiter(20, 86400, name="routes.registration.BY_ADDRESS_DAY")
+# Per address, counted in source networks (`email_links.recipient_over`).
+BY_ADDRESS_HOUR = Limiter(
+    links.RECIPIENT_PER_HOUR, 3600, name="routes.registration.BY_ADDRESS_HOUR"
+)
+BY_ADDRESS_DAY = Limiter(links.RECIPIENT_PER_DAY, 86400, name="routes.registration.BY_ADDRESS_DAY")
+BY_ADDRESS_HOUR_NETWORKS = Limiter(1, 3600, name="routes.registration.BY_ADDRESS_HOUR_NETWORKS")
+BY_ADDRESS_DAY_NETWORKS = Limiter(1, 86400, name="routes.registration.BY_ADDRESS_DAY_NETWORKS")
+BY_ADDRESS_MAILS_HOUR = Limiter(
+    links.RECIPIENT_MAILS_PER_HOUR,
+    3600,
+    name="routes.registration.BY_ADDRESS_MAILS_HOUR",
+    exact=True,
+)
+BY_ADDRESS_MAILS_DAY = Limiter(
+    links.RECIPIENT_MAILS_PER_DAY,
+    86400,
+    name="routes.registration.BY_ADDRESS_MAILS_DAY",
+    exact=True,
+)
 
 
 class OriginIn(BaseModel):
@@ -148,7 +168,7 @@ async def register(request: Request, background: BackgroundTasks) -> JSONRespons
     if tripped:
         raise rate_limited(tripped)
     body = _body(await request.body())
-    wait = await run_in_threadpool(BY_SOURCE.hit, origin.address)  # off the loop
+    wait = await run_in_threadpool(BY_SOURCE.hit, origin.limit_key)  # off the loop
     if wait:
         raise rate_limited(wait)
     # Every accepted request costs one scrypt before it is answered (§2.7.1 step 2).
@@ -186,8 +206,23 @@ def _store(
     """§2.7.1 step 3, after the answer: drop, mail the account's owner, or make a pending
     registration and mail its link."""
     normalized = registration.normalized(given)
-    pair = f"{normalized}\x00{source}"
-    over = BY_PAIR_SHORT.hit(pair) or BY_PAIR_DAY.hit(pair) or BY_ADDRESS_DAY.hit(normalized)
+    pair = f"{normalized}\x00{limit_key(source)}"
+    over = (
+        BY_PAIR_SHORT.hit(pair)
+        or BY_PAIR_DAY.hit(pair)
+        or links.recipient_over(
+            (
+                BY_ADDRESS_HOUR,
+                BY_ADDRESS_DAY,
+                BY_ADDRESS_HOUR_NETWORKS,
+                BY_ADDRESS_DAY_NETWORKS,
+                BY_ADDRESS_MAILS_HOUR,
+                BY_ADDRESS_MAILS_DAY,
+            ),
+            normalized,
+            limit_key(source),
+        )
+    )
     address.prepare(engine, hub.secret_key)  # before the lock's transaction
     with engine.begin() as conn:
         now = clock.now()

@@ -2323,17 +2323,32 @@ window.MAITY_I18N["ko"] = {
   "mail.count.failures": {
     "other": "실패 {count}건"
   },
+  "mail.count.invitation": {
+    "other": "초대 메일 {count}통"
+  },
   "mail.count.notifications": {
     "other": "알림 메일 {count}건"
   },
   "mail.count.queued": {
     "other": "대기 중인 보안 메일 {count}건"
   },
+  "mail.count.second_factor": {
+    "other": "2차 인증 메일 {count}통"
+  },
+  "mail.count.second_factor_dropped": {
+    "other": "버린 2차 인증 메일 {count}통"
+  },
   "mail.count.security": {
     "other": "보안 메일 {count}건"
   },
   "mail.count.sign_in": {
     "other": "로그인 메일 {count}건"
+  },
+  "mail.count.verification": {
+    "other": "확인 메일 {count}통"
+  },
+  "mail.count.waiting": {
+    "other": "대기 중인 확인·초대 메일 {count}통"
   },
   "mail.daily_at": "일일 및 주간 요약 메일 시각",
   "mail.day.fri": "금요일",
@@ -2347,13 +2362,16 @@ window.MAITY_I18N["ko"] = {
   "mail.field.from_address": "발신 주소",
   "mail.field.from_name": "발신자 이름",
   "mail.field.host": "SMTP 호스트",
+  "mail.field.invitation_max_per_hour": "시간당 초대 메일",
   "mail.field.max_per_hour": "시간당 알림 메일 수",
   "mail.field.port": "SMTP 포트",
   "mail.field.reply_to": "회신 주소",
+  "mail.field.second_factor_max_per_hour": "시간당 2단계 인증 메일 수",
   "mail.field.security_max_per_hour": "시간당 보안 메일 수",
   "mail.field.sign_in_max_per_hour": "시간당 로그인 메일 수",
   "mail.field.tls": "연결 보안",
   "mail.field.username": "SMTP 사용자 이름",
+  "mail.field.verification_max_per_hour": "시간당 주소 확인 메일",
   "mail.hold_while_online": "웹 앱에 접속해 있는 동안 메일 보내지 않기",
   "mail.hold_while_online.hint": "'즉시'로 보내는 메일은 대시보드를 사용하는 동안 대기합니다. 대시보드를 떠나고 몇 분 뒤, 읽지 않은 것만 메일로 보냅니다.",
   "mail.incomplete": "메일 설정이 완전하지 않습니다: {missing}.",
@@ -2366,6 +2384,7 @@ window.MAITY_I18N["ko"] = {
   "mail.kinds.hint": "요약 메일에는 보내는 시점에 아직 읽지 않은 모든 항목이 담겨요. 2단계 인증 변경, 주소 변경, 계정 삭제는 항상 즉시 메일로 보내요.",
   "mail.kinds.legend": "종류별 메일 발송 시점",
   "mail.last_hour": "최근 1시간: {notifications}, {security}, {sign_in}, {failures}, {queued}.",
+  "mail.last_hour_own": "그 밖에 최근 1시간: {verification}, {invitation}, {second_factor}, {dropped}, {waiting}.",
   "mail.mode.daily": "일일 요약",
   "mail.mode.hourly": "시간별 요약",
   "mail.mode.immediate": "즉시",

@@ -736,33 +736,52 @@ def free_clone(
         n += 1
 
 
-def refuse_over_instances(conn: Connection, member: Any, *, adding: int) -> None:
-    """`instance_quota` when a placement would bring the membership past `max_instances`
-    (§15.5): its active instances, joined by hand or by a pickup, plus its active
-    placements that hold no live credential yet and will each start one, plus `adding`."""
+def instances_held(conn: Connection, membership_id: int) -> int:
+    """What a membership holds of its `max_instances` (§15.5, §6.31): its active instances,
+    joined by hand or by a pickup, plus its active placements that hold no live credential
+    yet (before their first pickup, or waiting to rejoin), which will each start one. The
+    count a placement's creation meets and the limits overview shows."""
+    from maity_hub import instances
+
     live = select(t.credential.c.id).where(
-        t.credential.c.membership_id == member.id, t.credential.c.revoked_at.is_(None)
+        t.credential.c.membership_id == membership_id, t.credential.c.revoked_at.is_(None)
     )
-    instances = conn.execute(
-        select(func.count())
-        .select_from(t.credential)
-        .where(t.credential.c.membership_id == member.id, t.credential.c.revoked_at.is_(None))
-    ).scalar_one()
     waiting = conn.execute(
         select(func.count())
         .select_from(t.placement)
         .where(
-            t.placement.c.membership_id == member.id,
+            t.placement.c.membership_id == membership_id,
             t.placement.c.active.is_(True),
             or_(t.placement.c.credential_id.is_(None), t.placement.c.credential_id.not_in(live)),
         )
     ).scalar_one()
-    if int(instances) + int(waiting) + adding > member.max_instances:
+    return instances.active_count(conn, membership_id) + int(waiting)
+
+
+def refuse_over_instances(
+    conn: Connection, member: Any, *, adding: int, caller_id: str | None = None
+) -> None:
+    """`instance_quota` with the quota details (§6.31) when a placement would bring the
+    membership past `max_instances` in effect (§15.5), the same ceiling a join meets
+    (`instances.refuse_over_quota`): what it holds (`instances_held`) plus `adding`. The
+    ceiling's value is shown to the agent profile's owner; `caller_id` names the caller."""
+    from maity_hub import ceilings, instances
+
+    count = instances_held(conn, member.id)
+    project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
+    limit, owner = instances.max_instances_limit(conn, member, project)
+    if count + adding > limit.limit:
         raise ApiError(
             409,
             "instance_quota",
             "the agent runs as many instances as its rulebook allows",
-            {"max": member.max_instances},
+            ceilings.details(
+                limit,
+                count,
+                namespace.full_name(conn, project),
+                sees_ceiling=caller_id is not None and caller_id == owner,
+                member_id=member.agent_id,
+            ),
         )
 
 
@@ -1135,6 +1154,28 @@ def clamp_since(since: datetime, previous: dict[str, Any] | None, now: datetime)
     return min(since, now)
 
 
+def runner_quota(runner_id: str, quota: dict[str, Any]) -> dict[str, Any]:
+    """A `capacity` report's `quota` as the quota details of §6.31: the runner's own limit,
+    which only its owner lifts, in its configuration (`raise.path` null, `field` its key)."""
+    target = quota["scope"] == "target"
+    scope: dict[str, Any] = {"scope": quota["scope"], "runner": runner_id}
+    if target:
+        scope["target"] = quota["target"]
+    return {
+        "name": "max_agents",
+        "limit": quota["max"],
+        "count": quota["count"],
+        "max": quota["max"],
+        **scope,
+        "source": "runner",
+        "raise": {
+            "right": "runner_owner",
+            "path": None,
+            "field": "backend.ssh.hosts[].max_agents" if target else "limits.max_agents",
+        },
+    }
+
+
 def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor) -> Any:
     """A status report, as a compare-and-set on `seq`. Returns the placement after it."""
     if placement.active is None or body["seq"] <= placement.reported_seq:
@@ -1163,6 +1204,8 @@ def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor)
         "target": body["target"],
         "reported_at": clock.rfc3339(now),
     }
+    if body.get("quota") is not None:
+        fields["quota"] = runner_quota(placement.runner_id, body["quota"])
     values: dict[str, Any] = {"reported_seq": body["seq"]}
     if current:
         values["reported"] = fields

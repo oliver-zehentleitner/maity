@@ -2323,17 +2323,32 @@ window.MAITY_I18N["ja"] = {
   "mail.count.failures": {
     "other": "失敗 {count} 件"
   },
+  "mail.count.invitation": {
+    "other": "招待メール {count} 通"
+  },
   "mail.count.notifications": {
     "other": "通知メール {count} 通"
   },
   "mail.count.queued": {
     "other": "キュー待ちのセキュリティメール {count} 通"
   },
+  "mail.count.second_factor": {
+    "other": "2 要素目のメール {count} 通"
+  },
+  "mail.count.second_factor_dropped": {
+    "other": "破棄した 2 要素目のメール {count} 通"
+  },
   "mail.count.security": {
     "other": "セキュリティメール {count} 通"
   },
   "mail.count.sign_in": {
     "other": "サインインメール {count} 通"
+  },
+  "mail.count.verification": {
+    "other": "確認メール {count} 通"
+  },
+  "mail.count.waiting": {
+    "other": "待機中の確認・招待メール {count} 通"
   },
   "mail.daily_at": "毎日と毎週のまとめの送信時刻",
   "mail.day.fri": "金曜日",
@@ -2347,13 +2362,16 @@ window.MAITY_I18N["ja"] = {
   "mail.field.from_address": "送信元アドレス",
   "mail.field.from_name": "送信元名",
   "mail.field.host": "SMTP ホスト",
+  "mail.field.invitation_max_per_hour": "招待メール (1 時間あたり)",
   "mail.field.max_per_hour": "1 時間あたりの通知メール数",
   "mail.field.port": "SMTP ポート",
   "mail.field.reply_to": "返信先アドレス",
+  "mail.field.second_factor_max_per_hour": "1 時間あたりの第2要素メール数",
   "mail.field.security_max_per_hour": "1 時間あたりのセキュリティメール数",
   "mail.field.sign_in_max_per_hour": "1 時間あたりのサインインメール数",
   "mail.field.tls": "接続のセキュリティ",
   "mail.field.username": "SMTP ユーザー名",
+  "mail.field.verification_max_per_hour": "アドレス確認メール (1 時間あたり)",
   "mail.hold_while_online": "Web アプリにオンラインの間はメールを送らない",
   "mail.hold_while_online.hint": "「すぐに」で送るメールは、ダッシュボードを使っている間は待機します。離れてから数分後、まだ読んでいないものだけがメールで届きます。",
   "mail.incomplete": "メール設定が未完了です: {missing}。",
@@ -2366,6 +2384,7 @@ window.MAITY_I18N["ja"] = {
   "mail.kinds.hint": "まとめには、送信時にまだ未読のものがすべて入ります。第2要素の変更、アドレスの変更、アカウントの削除は、常にすぐメールで届きます。",
   "mail.kinds.legend": "種類ごとのメールの送信",
   "mail.last_hour": "直近 1 時間: {notifications}、{security}、{sign_in}、{failures}、{queued}。",
+  "mail.last_hour_own": "同じく直近 1 時間: {verification}、{invitation}、{second_factor}、{dropped}、{waiting}。",
   "mail.mode.daily": "毎日のまとめ",
   "mail.mode.hourly": "1 時間ごとのまとめ",
   "mail.mode.immediate": "すぐに",

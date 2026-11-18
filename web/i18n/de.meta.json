@@ -9563,6 +9563,10 @@
     "en": "567da5e03ff731cc",
     "text": "19a2c71d43c1cce6"
   },
+  "mail.count.invitation": {
+    "en": "afb850023735f0fe",
+    "text": "f54ca804ce5893cd"
+  },
   "mail.count.notifications": {
     "en": "cf4244089b4d2a59",
     "text": "5020cc6e00f84002"
@@ -9571,6 +9575,14 @@
     "en": "426e163f99eb2205",
     "text": "e99ff570affb4dab"
   },
+  "mail.count.second_factor": {
+    "en": "1fdf5a41382421f7",
+    "text": "f346a59598799498"
+  },
+  "mail.count.second_factor_dropped": {
+    "en": "8b46799280621ba5",
+    "text": "716ee62a9dbf182e"
+  },
   "mail.count.security": {
     "en": "adf52a828041cc88",
     "text": "d99b8a520bf5efe3"
@@ -9578,6 +9590,14 @@
   "mail.count.sign_in": {
     "en": "bcc7dccc569cd7b6",
     "text": "d15baa322b987459"
+  },
+  "mail.count.verification": {
+    "en": "3fc58fcda4039acb",
+    "text": "3593316baf785a3b"
+  },
+  "mail.count.waiting": {
+    "en": "9ccd882b8c02b169",
+    "text": "822e1df28f028c6c"
   },
   "mail.daily_at": {
     "en": "369ed1844262c810",
@@ -9627,6 +9647,10 @@
     "en": "ce94bc42c2f35c49",
     "text": "6dd923e2210fcade"
   },
+  "mail.field.invitation_max_per_hour": {
+    "en": "7ffc81960324c689",
+    "text": "342e9a824ce7454b"
+  },
   "mail.field.max_per_hour": {
     "en": "68ba54d57ddc42f2",
     "text": "0c8c47b1c2aaefc4"
@@ -9638,6 +9662,10 @@
   "mail.field.reply_to": {
     "en": "21ddd237dd770f94",
     "text": "946e2ec3ce0b5fc8"
+  },
+  "mail.field.second_factor_max_per_hour": {
+    "en": "fab856110f4750bb",
+    "text": "b9bc1092cf7a1251"
   },
   "mail.field.security_max_per_hour": {
     "en": "ef0519e539df1c43",
@@ -9654,6 +9682,10 @@
   "mail.field.username": {
     "en": "f241302d339e4d2b",
     "text": "8b4eb9e83215a051"
+  },
+  "mail.field.verification_max_per_hour": {
+    "en": "fdedf191d9c4159a",
+    "text": "5d1371bd16f3e057"
   },
   "mail.hold_while_online": {
     "en": "8d0b00032d7d5518",
@@ -9702,6 +9734,10 @@
   "mail.last_hour": {
     "en": "e5837bcc394066d8",
     "text": "60275ed48dc9cf14"
+  },
+  "mail.last_hour_own": {
+    "en": "fa53485ddec3c17b",
+    "text": "b286de550f8f6a40"
   },
   "mail.mode.daily": {
     "en": "e1bd7da6f2ab099f",
