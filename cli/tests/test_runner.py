@@ -544,6 +544,31 @@ def test_check_finds_opencode_and_its_version(
     assert not any(line.startswith("error") for line in out), out
 
 
+def test_check_warns_opencode_is_unsandboxed_under_single_layout(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # opencode never has a runner-switched OS sandbox, so under the single layout an opencode
+    # agent runs as the operator's own user and can read the runner's state and the other
+    # harnesses' clones (docs/runners.md#opencode-grok, tsk-nynpvag9zvhh). `check` keeps the
+    # ok line and adds the warning; `paired` leaves backend.local.layout at its "single" default.
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "opencode", "0.5.3")
+    paired.write_text(paired.read_text() + '\n[harness.opencode]\nmodels = ["xai/grok"]\n')
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    out = lines(capsys)
+    assert any(
+        line.startswith("ok") and "harness opencode" in line and "(0.5.3)" in line for line in out
+    ), out
+    warning = [line for line in out if line.startswith("warn") and "harness opencode" in line]
+    assert len(warning) == 1, out
+    assert "no OS sandbox" in warning[0]
+    assert "under layout single" in warning[0]
+    assert "read the runner's state and other clones" in warning[0]
+    assert "tsk-nynpvag9zvhh" in warning[0]
+
+
 def test_check_warns_about_inherited_claude_settings(
     paired: Path, bin_dir: Path, home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

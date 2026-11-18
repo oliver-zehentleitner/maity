@@ -395,6 +395,7 @@ def _check_harness(
     agent_path: str,
     as_user: AsUser = RUNNER,
     tools_dir: Path | None = None,
+    layout: str | None = None,
 ) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
@@ -427,6 +428,8 @@ def _check_harness(
         _check_claude_code(report, harness, as_user, agent_path, found.version)
     if harness.id == "antigravity":
         _check_antigravity(report, harness, as_user, agent_path)
+    if harness.id == "opencode":
+        _check_opencode(report, layout)
     if harness.id == "codex":
         # The login of whoever runs the agents, as the adapter links it.
         own = None if as_user.user else os.environ.get("CODEX_HOME")
@@ -434,6 +437,25 @@ def _check_harness(
         login = Path(own or home / ".codex") / "auth.json"
         if not as_user.exists(login, "-f"):
             report.warn(f"harness codex: no login at {login}; agents would start without one")
+
+
+def _check_opencode(report: Report, layout: str | None = None) -> None:
+    """opencode has no OS sandbox the runner switches on, so the deny/allow rules it writes
+    are model-steering, not a boundary: an opencode agent runs any command as the agents' OS
+    user. Under layout = "single" that user is the operator's own, so the agent can read the
+    runner's state and the other harnesses' clones. Unlike agy's `sandbox reported off`, this
+    is not a diagnostic the runner might later clear: opencode never has a runner-switched OS
+    sandbox, so the warning fires whenever opencode is configured (docs/runners.md#opencode-grok,
+    tsk-nynpvag9zvhh)."""
+    risk = (
+        "under layout single an agent can read the runner's state and other clones"
+        if layout == "single"
+        else "an agent can run any command as the agents' user"
+    )
+    report.warn(
+        f"harness opencode: no OS sandbox; {risk} "
+        "(docs/runners.md#opencode-grok, tsk-nynpvag9zvhh)"
+    )
 
 
 def _check_antigravity(
@@ -734,7 +756,10 @@ def cmd_check(args: argparse.Namespace) -> int:
         else:
             report.ok("maity found on agent_path")
         for harness in cfg.harnesses.values():
-            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir)
+            _check_harness(
+                report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir,
+                cfg.local.layout,
+            )  # fmt: skip
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
     if not args.offline:

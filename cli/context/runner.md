@@ -1019,7 +1019,14 @@ read, write or reach. The mitigation is operational, not in the settings: run
 opencode's agents as a **separate OS user**, isolated from the runner and from
 the other harnesses, so the blast radius is that user's own files. This is
 stated plainly in docs/runners.md and the CLI README, without any bypass
-detail.
+detail. `maity runner check` also surfaces the residual risk as a warning
+whenever `[harness.opencode]` is configured, keeping the `ok harness
+opencode` line and adding a `warn harness opencode: no OS sandbox` one;
+unlike agy's `sandbox reported off`, this is not a diagnostic the runner
+might later clear but a permanent property (opencode never has a
+runner-switched OS sandbox), so it fires unconditionally, with the concrete
+reach — the runner's state and the other harnesses' clones — named under
+`layout = "single"`, where the agents' user is the operator's own.
 
 **Reason:** the owner decided (req-kezp8rppfhn5, "ship now, harden next") that
 opencode should run now carrying this known residual risk rather than stay
