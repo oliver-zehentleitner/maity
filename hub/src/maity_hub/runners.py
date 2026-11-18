@@ -20,7 +20,8 @@ from maity_hub import tables as t
 from maity_hub.events import Actor
 from maity_hub.ids import new_id
 from maity_hub.scopes import has_scope
-from maity_hub.views import AWAY, ONLINE, ts
+from maity_hub.seen import presence_by_age
+from maity_hub.views import ts
 
 
 def listening_key(runner_id: str) -> str:
@@ -95,16 +96,12 @@ def administers(conn: Connection, project_id: str, human_id: str) -> bool:
 
 
 def presence(row: Any, is_listening: bool) -> str:
+    """Every call writes the runner's `last_seen_at` (`auth/caller`), so it is the latest call."""
     if is_listening:
         return "online"
     if row.last_seen_at is None:
         return "offline"
-    age = clock.now() - row.last_seen_at
-    if age <= ONLINE:
-        return "online"
-    if age <= AWAY:
-        return "away"
-    return "offline"
+    return presence_by_age(clock.now() - row.last_seen_at)
 
 
 def latest_credential(conn: Connection, runner_id: str) -> Any:

@@ -116,8 +116,10 @@ example; any cluster with the same pieces works.
    they are set up, `extraEnv: [{name: MAITY_DB_ALLOW_PRIVILEGED, value: "1"}]`
    lets the hub start on one URL, with a warning.
 
-   `sslmode=require` encrypts but does not check the server's certificate.
-   To check it, put the provider's CA into a Secret, mount it with
+   `sslmode=require` makes encryption required. libpq checks the server's
+   certificate with it only when a root CA file is present (then as
+   `verify-ca`, without the host name); `verify-full` also checks the
+   host name. To check both, put the provider's CA into a Secret, mount it with
    `extraVolumes` and `extraVolumeMounts` (the hub and the migrate Job both
    get them), and use
    `?sslmode=verify-full&sslrootcert=/etc/maity/db-ca/ca.crt`:

@@ -236,11 +236,11 @@ def view(conn: Connection, human_id: str, mail_available: bool) -> dict[str, Any
     email = {
         "address": row.address,
         "address_status": row.address_status,
-        "verified_at": clock.rfc3339(row.verified_at) if row.verified_at else None,
+        "verified_at": clock.rfc3339_or_none(row.verified_at),
         "pending_address": row.pending_address,
         **merged["email"],
         "hard_failures": row.hard_failures,
-        "disabled_at": clock.rfc3339(row.disabled_at) if row.disabled_at else None,
+        "disabled_at": clock.rfc3339_or_none(row.disabled_at),
     }
     if held is not None:
         email["address_change"] = held
