@@ -72,6 +72,12 @@
       "when": "a go on a project transfer"
     },
     {
+      "route": "PATCH /admin/projects/{owner}/{slug}/limits"
+    },
+    {
+      "route": "PATCH /admin/users/{human_id}/limits"
+    },
+    {
       "route": "POST /admin/users/{human_id}/second-factor/reset"
     },
     {

@@ -46,7 +46,7 @@ def test_the_value_is_one_to_eight_and_never_unlimited(admin: flow.Human) -> Non
     for bad in (0, 9, "unlimited", True, 2.5):
         refused = admin.patch(PATH, {"max_aliases": bad})
         assert refused.status_code == 400, (bad, refused.text)
-        assert refused.json()["error"]["details"]["fields"] == {"max_aliases": "invalid"}
+        assert refused.json()["error"]["details"]["fields"] == {"max_aliases": "out_of_range"}
     back = admin.patch(PATH, {"max_aliases": None})
     assert back.json()["max_aliases"] == {"value": 3, "source": "default"}
     refused = admin.patch(PATH, {"names_at_alias_limit": 0})
