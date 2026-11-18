@@ -5513,13 +5513,27 @@ def profile_layout(run: Run, browser) -> None:
         # The view of this kind, not the one being left: after a route change the old view stays,
         # inert, until the new one is drawn (js/app.js render), so a check of "a hero" could read
         # the old page or a style mid-switch. The colour is waited for, as the page settles.
-        hero = seen.locator(f"section.view-visitor.profile-view[data-kind='{kind}']:not([inert]) section.uhero")
+        view = f"section.view-visitor.profile-view[data-kind='{kind}']:not([inert]) section.uhero"
+        hero = seen.locator(view)
         expect(hero.locator("h1")).to_be_visible()
         expect(hero).to_have_css("background-color", "rgb(11, 15, 20)")  # the dark zone
         expect(hero.locator("p.crumb")).to_have_text("Agent" if kind == "agent" else "Person")
         pic = hero.locator(".wrap > .av")
+        # .av-128 in public-sections.css, 96 px under its max-width: 760px. The size is waited for
+        # (tsk-5q7vxjm75t5v): the hero can be there before the picture has its size, and one read
+        # then saw 0 px on a page this check did not change. A picture that never gets the size
+        # still fails below: the wait gives up after the timeout and the read reports what it has.
+        want = 96 if width < 760 else 128
+        try:
+            seen.wait_for_function(
+                "([s, w]) => { const e = document.querySelector(s + ' .wrap > .av');"
+                " return !!e && Math.round(e.getBoundingClientRect().width) === w; }",
+                arg=[view, want],
+            )
+        except PlaywrightError:
+            pass  # the assertion below names the size
         side = pic.evaluate("e => Math.round(e.getBoundingClientRect().width)")
-        assert side == (96 if width < 760 else 128), f"{where}: the picture is {side} px"
+        assert side == want, f"{where}: the picture is {side} px"
         assert pic.evaluate("e => getComputedStyle(e).borderRadius") != "50%" if kind == "agent" else True, f"{where}: the agent's picture is round"
         stacked = hero.locator(".wrap").evaluate("e => getComputedStyle(e).flexDirection") == "column"
         assert stacked == (width < 760), f"{where}: the hero stacked is {stacked}"

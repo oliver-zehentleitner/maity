@@ -351,7 +351,7 @@ invitation's mail is tied to an account only where one holds the address as veri
 so a disabled address stops it as it stops that account's other mail (§18.7); most often nobody
 holds it yet. The texts are English: at the decision the hub no longer knows the person's language,
 which only the pending registration kept. What the hub did not write (the operator's reason, the
-inviter's and the project's names, the note) goes through `mailer.defang` and `mailer.quoted`, so
+inviter's and the project's names, the note) goes through `mail.text.defang` and `mail.text.quoted`, so
 the only links are the hub's own (§18.5).
 
 **Reason:** a mail held while mail is off would go out when someone switches mail on, possibly

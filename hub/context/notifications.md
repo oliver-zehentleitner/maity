@@ -1404,12 +1404,12 @@ Setting a pending address takes, per human, at most 3 verification mails an hour
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-e2m6krwdk5rg (hardening from the security rounds, tsk-v9kheekgq115); the review of #1807 (seq 131769) moved the mark from projects to membership rows; `notifications/mailer.py` `subject_line`, `_memberships_of`, `mail/outbox.py` `_membership_ended`; tests in `tests/test_notification_mail.py` and `tests/test_mail_robustness.py`, each red without the change
-**Revisit when:** the defang helpers move to `mail/` (card tsk-xx108ajy287x), `mail_outbox` gets a project column, or a notification mail starts carrying items that rest on something other than a membership
+**Source:** card tsk-e2m6krwdk5rg (hardening from the security rounds, tsk-v9kheekgq115); the review of #1807 (seq 131769) moved the mark from projects to membership rows; `notifications/mailer.py` `subject_line`, `_memberships_of`, `mail/outbox.py` `_membership_ended`; tests in `tests/test_notification_mail.py` and `tests/test_mail_robustness.py`, each red without the change; card tsk-xx108ajy287x item 12 moved `subject_line` with `defang` and `quoted` unchanged to `mail/text.py` (2026-11-18), re-checked against this entry then
+**Revisit when:** `mail_outbox` gets a project column, or a notification mail starts carrying items that rest on something other than a membership
 
 A subject that carries text the hub did not write (a project's name, an item's title with a
 display name or a card's title in it, the inviter and project of an invitation) goes through
-`mailer.subject_line`: control characters become spaces (`headers.clean`), whitespace runs become
+`mail.text.subject_line`: control characters become spaces (`headers.clean`), whitespace runs become
 one space, the result is defanged with the same `defang` as the body, and it is cut at
 `SUBJECT_MAX` (120) with `…`. The body was defanged already; the subject only lost its line
 breaks. Cleaning comes before defanging, so a control character between a name and its dot cannot
