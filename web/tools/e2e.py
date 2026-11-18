@@ -3929,7 +3929,8 @@ def chat_bubble_width(run: Run, browser) -> None:
     full screen; in full screen on a desktop that is more than the old 36rem (at 1920 the 60rem
     cap); at phone width it is the old 90%. The code scrolls in itself, the URL stays inside, the
     page does not scroll sideways. Full screen left and opened again, and the window resized while
-    full, give the widths of a fresh load at that size."""
+    full, draw each side's bubble as wide as before and as a fresh load at that size, every stage
+    held to the rule as well."""
     run.step("fixtures: chat bubbles up to 60% of the column in full screen, the old width on a phone and on the page")
     index = (WEB / "index.html").as_uri()
 
@@ -3946,6 +3947,15 @@ def chat_bubble_width(run: Run, browser) -> None:
             assert abs(m["allowed"] - 0.9 * m["column"]) <= 1, f"{where}: a phone's bubble is {m['allowed']:.1f}, not 90% of {m['column']:.1f}"
         elif full:
             assert m["allowed"] > 576 + 1 and m["allowed"] >= 0.5 * m["column"] - 1, f"{where}: {m['allowed']:.1f} of {m['column']:.1f} in full screen"
+
+    # The bubbles as drawn, side by side (own and other): the same rendered widths, not only the
+    # same computed rule (A1359 on #1972).
+    def same_widths(m: dict, first: dict, where: str, than: str) -> None:
+        drawn = {p["side"]: p["width"] for p in m["probes"]}
+        before = {p["side"]: p["width"] for p in first["probes"]}
+        assert sorted(drawn) == sorted(before) == ["in", "out"], f"{where}: sides {sorted(drawn)}, {than} {sorted(before)}"
+        for side in ("in", "out"):
+            assert abs(drawn[side] - before[side]) <= 1, f"{where}, {side}: the bubble is {drawn[side]:.1f} px, {than} {before[side]:.1f}"
 
     for chat, kind in (("agt-a", ".chat-pane:not(.group-chat)"), ("cnv-0007", ".chat-pane.group-chat")):
         for width, height in ((1920, 1080), (1280, 800), (390, 844)):
@@ -3982,11 +3992,14 @@ def chat_bubble_width(run: Run, browser) -> None:
                     again = page.evaluate(BUBBLE_MEASURE)
                     check(again, f"{where}, full screen left", phone, False)
                     assert abs(again["allowed"] - on_page["allowed"]) <= 1, f"{where}, full screen left: {again['allowed']:.1f}, before {on_page['allowed']:.1f}"
+                    same_widths(again, on_page, f"{where}, full screen left", "on the page before")
                     toggle.click()
                     expect(page.locator("html.chat-full")).to_have_count(1)
                     page.wait_for_timeout(200)
                     reopened = page.evaluate(BUBBLE_MEASURE)
+                    check(reopened, f"{where}, full screen again", phone, True)
                     assert abs(reopened["allowed"] - full["allowed"]) <= 1, f"{where}, full screen again: {reopened['allowed']:.1f}, first {full['allowed']:.1f}"
+                    same_widths(reopened, full, f"{where}, full screen again", "the first full screen")
                     # Resized while full to the next size, compared with a fresh load there (below).
                     if not phone:
                         other = (1280, 800) if width == 1920 else (1920, 1080)
@@ -4006,6 +4019,8 @@ def chat_bubble_width(run: Run, browser) -> None:
                             loaded = p2.evaluate(BUBBLE_MEASURE)
                         finally:
                             load.close()
+                        check(loaded, f"{where}, a fresh load at {other[0]}x{other[1]} in full screen", False, True)
+                        same_widths(resized, loaded, f"{where}, full screen resized to {other[0]}x{other[1]}", "a fresh load")
                         assert abs(resized["allowed"] - loaded["allowed"]) <= 1 and abs(resized["column"] - loaded["column"]) <= 1, (
                             f"{where}, resized to {other[0]}x{other[1]}: {resized['allowed']:.1f} of {resized['column']:.1f}, a fresh load {loaded['allowed']:.1f} of {loaded['column']:.1f}"
                         )
