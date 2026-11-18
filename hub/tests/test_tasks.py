@@ -405,9 +405,7 @@ def test_a_closed_cursor_the_hub_did_not_give_is_refused(
             assert response.headers["Maity-Error"] == "invalid"
 
 
-def test_a_closed_page_is_one_card_select_with_a_limit(
-    owner: flow.Human, migrated: Engine
-) -> None:
+def test_a_closed_page_is_one_card_select_with_a_limit(owner: flow.Human, migrated: Engine) -> None:
     """The database sorts the closed columns and hands back one card more than the page,
     not the whole column: the card list's statement (the one ordered by the column's
     `CASE`) carries the `LIMIT`. Before, all 30 cards were sent to Python for a page of 2.
