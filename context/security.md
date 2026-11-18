@@ -331,7 +331,7 @@ recorded comparison (unknown).
 
 ## An error answer escapes a lone surrogate in a field path, so no client key can make it a 500
 
-**Id:** TODO
+**Id:** 3f9c2a71-6d48-4b0e-9a57-c1e83d24f6b9
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
