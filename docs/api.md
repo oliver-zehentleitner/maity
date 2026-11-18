@@ -8543,7 +8543,7 @@ POST /projects/{owner}/{slug}/tasks/{id}/report
   "pr_status": "found",
   "pr_unknown_reason": null,
   "code": true,
-  "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
+  "why": { "ref": "context/reports.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
   "done": false
 }
 ```
@@ -8574,7 +8574,7 @@ Stored on the card as `report`:
   "observed": { "pr_state": "open", "pr_head_sha": "d91e294c…", "checks": "success",
                 "required_check": { "name": "ci-ok", "status": "success" },
                 "branch_head_sha": "d91e294c…", "observed_at": "…" },
-  "why": { "ref": "context/cards.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
+  "why": { "ref": "context/reports.md#2280ced7-c51f-48f5-aab7-3bdacc7de21e" },
   "revision": 2, "mismatch": false }
 ```
 
