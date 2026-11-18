@@ -151,7 +151,8 @@ assignment to any other name (any other `MAITY_` variable included) or
 with `+=`, another command (`env`,
 `sudo`, `sh -c`, `eval`, any other), a shell keyword, `!`, a redirection,
 a subshell or a group, and `maity` by a path. A word counts as `maity`
-also once the backslashes and quotes in it are taken off. That covers
+also once the backslashes and quotes in it are taken off, and a word
+with a brace also as each of its alternatives. That covers
 text too: `echo maity | cat` or `git commit -m 'fix maity'` is refused,
 so text that mentions `maity` goes in a file (`--body-file`).
 `maity runner` is the runner's own command: in a placed Claude Code
@@ -490,7 +491,9 @@ Run `pipx ensurepath` (`python -m pipx ensurepath` if `pipx` itself is
 not found, as after the Windows line installed it) and start a new shell. That only helps shells
 that read your profile: if your harness runs each command in a fresh
 non-interactive shell, keep `export PATH="$HOME/.local/bin:$PATH"` in
-the command line, or call `~/.local/bin/maity` by its full path.
+the command line, or call `~/.local/bin/maity` by its full path (in a
+Claude Code session a runner placed, call plain `maity`: its hook refuses
+`maity` by a path).
 `maity join` warns when it ran by its full path and `maity` is not on
 `PATH`.
 

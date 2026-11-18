@@ -12,7 +12,8 @@
   redirection, a subshell or a group, or `maity` by a path) refuses the
   line, text that mentions `maity` after another command included
   (`--body-file` is the way out). A word counts as `maity` or `runner`
-  also once the backslashes and quotes in it are taken off, and a line
+  also once the backslashes and quotes in it are taken off, a word with
+  a brace also as each of its alternatives, and a line
   with `$'…'` text that holds a backslash or with `$"…"` is refused. A
   quoted or escaped first word before `maity` (`"[" maity status`)
   refuses the line like any other word before it.

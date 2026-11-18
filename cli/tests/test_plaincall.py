@@ -388,6 +388,9 @@ NOT_ALLOWED = [
     "MAITY_X+=1",
     "MAITY_WAIT_TIMEOUT+=5",
     "TZ+=x",
+    "tz=UTC",
+    "lc_all=C",
+    "LC_=x",
 ]
 
 # The `MAITY_` names maity's code reads or sets that are not documented for agents: the
@@ -715,6 +718,45 @@ SPELLED_LONGER = ["cat ma\\\\ity.md", "ls 'ma\\ity'/", "git log --author m\\'\\'
 
 @pytest.mark.parametrize("command", SPELLED_LONGER)
 def test_a_longer_word_spelled_with_backslashes_or_quotes_is_not_decided(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is None
+
+
+# Words that hold literal brace alternatives: the shell makes a word of each alternative.
+BRACE_ALTERNATIVES = [
+    "{maity,runner} status",
+    "{maity,runner,status}",
+    "{maity,} {runner,} status",
+    '{"maity",runner} status',
+    "eval {maity,runner} status",
+    "TZ=UTC {maity,runner} status",
+    "[m]aity {runner,} status",
+]
+
+
+@pytest.mark.parametrize("command", BRACE_ALTERNATIVES)
+def test_each_brace_alternative_counts_as_a_word_of_its_own(command: str) -> None:
+    assert plaincall.calls_runner(command)
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+@pytest.mark.parametrize("command", ["echo {maity,x}", "echo x{,maity}", "{MAITY,} status"])
+def test_a_brace_alternative_maity_is_a_maity_word(command: str) -> None:
+    assert plaincall.prefixed(command)
+    assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
+
+
+BRACES_WITHOUT_BOTH = [
+    "echo {a,b}",
+    "find . -exec ls {} \\;",
+    "git log @{u}",
+    "gh issue list --label bug,maity",
+    "gh issue list --label maity,runner",
+    "maity wait",
+]
+
+
+@pytest.mark.parametrize("command", BRACES_WITHOUT_BOTH)
+def test_braces_and_commas_without_both_alternatives_are_not_refused(command: str) -> None:
     assert plaincall.refusal(bash(command)) is None
 
 

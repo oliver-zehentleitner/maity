@@ -8,7 +8,8 @@ redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is ref
 command runs (cli/context/runner.md). Any other line in which `maity` is a word (`prefixed`) is
 refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
 a subshell or a group before it, or `maity` by a path. A word counts as `maity` (and as
-`runner`) also once its backslashes and quotes are taken off (`_reads_as`). On any line, a word
+`runner`) also once its backslashes and quotes are taken off (`_reads_as`), and a word that
+holds a `{` also as each part of it between `{`, `,` and `}` (`_names`). On any line, a word
 `maity` followed later by a word `runner`, as `calls_runner` splits words, is refused as well:
 those commands are the runner's own, and the runner never starts them through an agent's tool
 call. A line that names `maity` anywhere (`names_maity`) is refused when it holds a comment, a
@@ -200,13 +201,22 @@ def _is_maity(word: str) -> bool:
         return True
     return any(
         re.sub(r"^[^0-9A-Za-z]+", "", name.rsplit("/", 1)[-1]).lower() == "maity"
-        for name in _reads_as(word)
+        for name in _names(word)
     )
 
 
 def _is_runner(word: str) -> bool:
-    """Whether a word is `runner`, in any case, also as `_reads_as` takes it."""
-    return any(name.lower() == "runner" for name in _reads_as(word))
+    """Whether a word is `runner`, in any case, also as `_names` takes it."""
+    return any(name.lower() == "runner" for name in _names(word))
+
+
+def _names(word: str) -> tuple[str, ...]:
+    """The word as `_reads_as` takes it and, when that holds a `{`, each part of it between
+    `{`, `,` and `}`: a brace expansion may make a word of its own of each alternative."""
+    names = _reads_as(word)
+    if "{" not in names[1]:
+        return names
+    return (*names, *re.split(r"[{},]", names[1]))
 
 
 def _reads_as(word: str) -> tuple[str, str]:
@@ -355,6 +365,8 @@ def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> boo
             return True
         if expands and maity_here:
             return True
+        if expands and _is_maity(text) and _is_runner(text):
+            return True  # both words as alternatives of one brace
         if any(c in " \t" or c in _SEPARATORS for c in text) and (
             depth >= _NESTING or calls_runner(text, depth + 1, seen)
         ):
