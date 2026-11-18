@@ -2347,6 +2347,8 @@
   "mail.day.thu": "jeudi",
   "mail.day.tue": "mardi",
   "mail.day.wed": "mercredi",
+  "mail.field.verification_max_per_hour": "E-mails de confirmation d'adresse par heure",
+  "mail.field.invitation_max_per_hour": "E-mails d'invitation par heure",
   "mail.kind.chat": "Messages de discussion",
   "mail.kind.inbox": "Demandes pour vous",
   "mail.kind.invitation": "Invitations à un projet",
@@ -2399,6 +2401,26 @@
     "one": "{count} e-mail de connexion",
     "other": "{count} e-mails de connexion"
   },
+  "mail.count.verification": {
+    "one": "{count} e-mail de vérification",
+    "other": "{count} e-mails de vérification"
+  },
+  "mail.count.invitation": {
+    "one": "{count} e-mail d’invitation",
+    "other": "{count} e-mails d’invitation"
+  },
+  "mail.count.second_factor": {
+    "one": "{count} e-mail du second facteur",
+    "other": "{count} e-mails du second facteur"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} e-mail du second facteur abandonné",
+    "other": "{count} e-mails du second facteur abandonnés"
+  },
+  "mail.count.waiting": {
+    "one": "{count} e-mail de vérification ou d’invitation en attente",
+    "other": "{count} e-mails de vérification ou d’invitation en attente"
+  },
   "mail.enable": "Activer l'e-mail",
   "mail.field.from_address": "Adresse de l'expéditeur",
   "mail.field.from_name": "Nom de l'expéditeur",
@@ -2406,6 +2428,7 @@
   "mail.field.max_per_hour": "E-mails de notification par heure",
   "mail.field.port": "Port SMTP",
   "mail.field.reply_to": "Adresse de réponse",
+  "mail.field.second_factor_max_per_hour": "E-mails de second facteur par heure",
   "mail.field.security_max_per_hour": "E-mails de sécurité par heure",
   "mail.field.sign_in_max_per_hour": "E-mails de connexion par heure",
   "mail.field.tls": "Sécurité de la connexion",
@@ -2413,6 +2436,7 @@
   "mail.incomplete": "La configuration e-mail est incomplète : {missing}.",
   "mail.keys": "Pour la signature : {signing}. Pour le chiffrement de l'instance : {secret}. Les clés se configurent dans l'environnement.",
   "mail.last_hour": "Dernière heure : {notifications}, {security}, {sign_in}, {failures} ; {queued}.",
+  "mail.last_hour_own": "Aussi dans la dernière heure : {verification}, {invitation}, {second_factor}, {dropped} ; {waiting}.",
   "mail.not_saved": "Non enregistré : {reason}",
   "mail.not_set": "non défini",
   "mail.password.both": "Choisissez un nouveau mot de passe ou supprimez celui qui est enregistré, pas les deux.",

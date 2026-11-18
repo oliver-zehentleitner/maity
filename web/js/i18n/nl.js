@@ -2366,6 +2366,10 @@ window.MAITY_I18N["nl"] = {
     "one": "{count} mislukking",
     "other": "{count} mislukkingen"
   },
+  "mail.count.invitation": {
+    "one": "{count} uitnodigingsmail",
+    "other": "{count} uitnodigingsmails"
+  },
   "mail.count.notifications": {
     "one": "{count} meldingsmail",
     "other": "{count} meldingsmails"
@@ -2374,6 +2378,14 @@ window.MAITY_I18N["nl"] = {
     "one": "{count} beveiligingsmail in de wachtrij",
     "other": "{count} beveiligingsmails in de wachtrij"
   },
+  "mail.count.second_factor": {
+    "one": "{count} mail voor de tweede factor",
+    "other": "{count} mails voor de tweede factor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} mail voor de tweede factor verworpen",
+    "other": "{count} mails voor de tweede factor verworpen"
+  },
   "mail.count.security": {
     "one": "{count} beveiligingsmail",
     "other": "{count} beveiligingsmails"
@@ -2381,6 +2393,14 @@ window.MAITY_I18N["nl"] = {
   "mail.count.sign_in": {
     "one": "{count} inlogmail",
     "other": "{count} inlogmails"
+  },
+  "mail.count.verification": {
+    "one": "{count} verificatiemail",
+    "other": "{count} verificatiemails"
+  },
+  "mail.count.waiting": {
+    "one": "{count} verificatie- of uitnodigingsmail wacht",
+    "other": "{count} verificatie- of uitnodigingsmails wachten"
   },
   "mail.daily_at": "Dagelijkse en wekelijkse overzichten om",
   "mail.day.fri": "vrijdag",
@@ -2394,13 +2414,16 @@ window.MAITY_I18N["nl"] = {
   "mail.field.from_address": "Afzenderadres",
   "mail.field.from_name": "Afzendernaam",
   "mail.field.host": "SMTP-host",
+  "mail.field.invitation_max_per_hour": "Uitnodigingsmails per uur",
   "mail.field.max_per_hour": "Meldingsmails per uur",
   "mail.field.port": "SMTP-poort",
   "mail.field.reply_to": "Antwoordadres",
+  "mail.field.second_factor_max_per_hour": "Mails voor de tweede factor per uur",
   "mail.field.security_max_per_hour": "Beveiligingsmails per uur",
   "mail.field.sign_in_max_per_hour": "Inlogmails per uur",
   "mail.field.tls": "Verbindingsbeveiliging",
   "mail.field.username": "SMTP-gebruikersnaam",
+  "mail.field.verification_max_per_hour": "Mails voor adresbevestiging per uur",
   "mail.hold_while_online": "Geen e-mail zolang ik online ben in de webapp",
   "mail.hold_while_online.hint": "E-mail van wat 'Meteen' uitgaat wacht zolang je het dashboard gebruikt. Een paar minuten nadat je het hebt verlaten, wordt alleen gemaild wat je nog niet hebt gelezen.",
   "mail.incomplete": "E-mailconfiguratie is onvolledig: {missing}.",
@@ -2413,6 +2436,7 @@ window.MAITY_I18N["nl"] = {
   "mail.kinds.hint": "Een overzicht bevat alles wat nog ongelezen is als het verstuurd wordt. Een gewijzigde tweede factor, een gewijzigd adres en het verwijderen van een account worden altijd meteen gemaild.",
   "mail.kinds.legend": "Wanneer elk soort wordt gemaild",
   "mail.last_hour": "Laatste uur: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Verder in het laatste uur: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Dagelijks overzicht",
   "mail.mode.hourly": "Overzicht per uur",
   "mail.mode.immediate": "Meteen",
