@@ -194,7 +194,6 @@
   "agents.join.failed": "参加を準備できませんでした: {reason}",
   "agents.join.none": "エージェントを迎え入れられるプロジェクトに参加していません。",
   "agents.join.open": "エージェントを参加させる",
-  "agents.join.any": "任意のエージェントを追加",
   "agents.join.project": "参加先のプロジェクト",
   "agents.join.reading": "プロジェクトを読み込み中…",
   "agents.join_link": "参加リンク",
@@ -2306,6 +2305,8 @@
   "mail.day.thu": "木曜日",
   "mail.day.tue": "火曜日",
   "mail.day.wed": "水曜日",
+  "mail.field.verification_max_per_hour": "アドレス確認メール (1 時間あたり)",
+  "mail.field.invitation_max_per_hour": "招待メール (1 時間あたり)",
   "mail.kind.chat": "チャットのメッセージ",
   "mail.kind.inbox": "あなたへのリクエスト",
   "mail.kind.invitation": "プロジェクトへの招待",
@@ -2353,6 +2354,21 @@
   "mail.count.sign_in": {
     "other": "サインインメール {count} 通"
   },
+  "mail.count.verification": {
+    "other": "確認メール {count} 通"
+  },
+  "mail.count.invitation": {
+    "other": "招待メール {count} 通"
+  },
+  "mail.count.second_factor": {
+    "other": "2 要素目のメール {count} 通"
+  },
+  "mail.count.second_factor_dropped": {
+    "other": "破棄した 2 要素目のメール {count} 通"
+  },
+  "mail.count.waiting": {
+    "other": "待機中の確認・招待メール {count} 通"
+  },
   "mail.enable": "メールを有効にする",
   "mail.field.from_address": "送信元アドレス",
   "mail.field.from_name": "送信元名",
@@ -2360,6 +2376,7 @@
   "mail.field.max_per_hour": "1 時間あたりの通知メール数",
   "mail.field.port": "SMTP ポート",
   "mail.field.reply_to": "返信先アドレス",
+  "mail.field.second_factor_max_per_hour": "1 時間あたりの第2要素メール数",
   "mail.field.security_max_per_hour": "1 時間あたりのセキュリティメール数",
   "mail.field.sign_in_max_per_hour": "1 時間あたりのサインインメール数",
   "mail.field.tls": "接続のセキュリティ",
@@ -2367,6 +2384,7 @@
   "mail.incomplete": "メール設定が未完了です: {missing}。",
   "mail.keys": "署名キー: {signing}。インスタンスの暗号化キー: {secret}。キーは環境変数で設定します。",
   "mail.last_hour": "直近 1 時間: {notifications}、{security}、{sign_in}、{failures}、{queued}。",
+  "mail.last_hour_own": "同じく直近 1 時間: {verification}、{invitation}、{second_factor}、{dropped}、{waiting}。",
   "mail.not_saved": "保存されませんでした: {reason}",
   "mail.not_set": "未設定",
   "mail.password.both": "新しいパスワードを設定するか、保存済みのものを削除するか、どちらか一方を選んでください。",
@@ -3403,13 +3421,13 @@
   "placements.logs": "ログ",
   "placements.logs.copy": "ログのコマンドをコピー",
   "placements.logs.region": "ログのコマンド",
-  "placements.new.open": "ランナーでエージェントを起動",
   "placements.new.reading": "ランナーを読み込み中…",
-  "placements.new.title": "ランナーでエージェントを起動",
   "placements.new.hint": "ランナーは、ここで選んだツール、モード、モデルで、このプロジェクトのリポジトリのクローン内でエージェントを起動します。表示されるのは、ペアリング済みでこのプロジェクトに許可され、そのリポジトリを提供する自分のランナーだけです。",
-  "placements.new.agent_new": "新しいエージェント",
-  "placements.new.profile": "新しいエージェントのプロフィールとチームでの位置づけ",
-  "placements.new.briefing": "ブリーフィング（任意、Markdown）",
+  "placements.new.legend": "ランナーで",
+  "placements.new.offer": "参加コマンドの代わりに自分のランナーで起動する",
+  "placements.new.not_member": "ランナーで起動できるのは、このプロジェクトにすでにいるエージェントか新しいエージェントだけです。新しいエージェントを選ぶか、まずこのエージェントを参加コマンドで参加させてください。",
+  "placements.new.placed": "このエージェントはここですでにランナーで動いています。配置はエージェントごとに1つです。その行は「管理対象のエージェント」にあります。",
+  "placements.new.not_ready": "起動に使えるランナーとツールがまだありません。理由はランナーの部分に表示されています。",
   "placements.new.runner": "ランナー",
   "placements.new.runner_option": "{name} · {presence} · {max} 体中 {running} 体のエージェントが稼働中",
   "placements.new.target": "実行場所",

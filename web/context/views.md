@@ -1463,8 +1463,10 @@ Renamed 2026-11-12: the tab is **Managed agents** on both pages (79438329), at t
 **See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
 
 Moved 2026-11-12 (79438329): the form is no longer in the list. It opens from **Join an agent** →
-**Start an agent on a runner** at the head of the project's Agents and Team pages. What follows
-about runners, tools and refusals is unchanged.
+**Start an agent on a runner** at the head of the project's Agents and Team pages. Since
+2026-11-17 (6a3baa58) it is no form of its own: the runner part ends the one join form, the
+agent and its profile fields are the join's. What follows about runners, tools and refusals is
+unchanged.
 
 Where they run, on the project's Agents, has **Start an agent on a runner**
 for a human with members:admin. It offers the runners attached here
@@ -5267,7 +5269,8 @@ The join panel asks `GET /agents` and `GET /agents?allowed_in=` and offers the s
 **See:** views.md#ones-agents-have-a-page-of-their-own-in-the-gear-menu-adding-one-to-a-project-is-that-projects-join-panel — 1031c11b-7642-4ed9-87ce-de504b2044fc — as of 2026-11-01
 
 On a project's Agents and Team, superseded by 79438329 (2026-11-12): Add reads **New agent
-profile**, and **Join an agent** is a menu (any agent, or start on a runner) on both project pages,
+profile**, and **Join an agent** is a menu (any agent, or start on a runner; one form since
+2026-11-17, 6a3baa58) on both project pages,
 with Team's no longer leading to Agents. On `/agents` the two buttons stay, Add with the new words.
 
 Both pages have **+ Add an agent** and **Join an agent** at their head, and
@@ -6755,7 +6758,9 @@ effective value: naming an agent then would be a guess.
 **Revisit when:** a third page needs the head, or a way into a project other than these two needs a place in the menu
 
 The project's Agents and Team pages share one head (`web/js/page-head.js`). It holds the heading, the page's
-buttons at the right end and the tab row under them, each the page's full width. Agents has
+buttons at the right end and the tab row under them, each the page's full width. Since
+2026-11-17 **Join an agent** is one button and one form, the start on a runner its last part
+(6a3baa58); the menu below is the way it was. Agents has
 **New agent profile** and **Join an agent**. Team has **Invite user** and the same **Join an agent**.
 **Join an agent** is a menu of two ways in: **Add any agent** (the join panel) and **Start an agent
 on a runner** (the form that was at the foot of the list). The list tab is named **Managed agents**
@@ -6774,6 +6779,41 @@ head above the tabs puts the menu on every tab, and the Team page no longer jump
   would mix what runs with how to start one.
 - Renaming the path to say the tab's words: an address read from the API, a log or the CLI would
   name another thing than the contract's `placements` (context/routing.md, b32bb82c).
+
+## Join an agent is one form: the agent's profile first, a start on a runner its last part
+
+**Id:** 6a3baa58-467c-4e73-855b-9e8447854738
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer on the card tsk-hdczmsq2r431, 2026-11-16 (the way on a runner was drawn without any layout; one form that starts with the agent's profile for both ways, with a part below for a runner instead of a join line); the lead's go on the design proposal, 2026-11-16; docs/api.md §15.6
+**See:** views.md#one-page-head-for-agents-and-team-managed-agents-at-placements-the-start-on-a-runner-in-a-join-an-agent-menu — 79438329-b7bb-435a-b384-3f597a2d7d04 — as of 2026-11-17
+**Revisit when:** a placement takes a field the join has and this form hides (subagents, a take-over), a human without members:admin may start an agent on a runner, or a way in other than a join line and a runner needs a place in the form
+
+**Join an agent** is one button that opens the join panel (`js/join.js`) on the project's Agents
+and Team pages and on `/agents`. Its form starts with the agent and its place in the team, as
+every join does. For a human with members:admin it ends with **On a runner** (`runnerPart` in
+`js/placements.js`): a box, off by default, and when ticked the runner, where, tool, mode, model,
+clone, branch and reason, read from one's own live runners here that offer the repository. Ticked,
+the button reads **Start on the runner**; the fields a placement does not take are hidden
+(validity, the instance choice, take-over, hand-over, subagents, the boss of an agent already
+here), and the submit is `POST …/placements` instead of a join. An agent by id must be a member
+here without an active placement (§15.6, §15.5); otherwise the part says why and nothing is sent.
+A new profile sends its join fields. The part reads the runners and placements each time it is
+ticked and each time the panel opens. A runner that answers after it was unticked draws nothing.
+
+**Reason:** the maintainer found the runner way asking for the profile a second time in a form of
+its own, and that form had no layout (its fields were `div.field` outside the grid that
+`.join-fields` gives). One form asks for the agent once, and the runner fields sit in the same
+grid. The join line stays the default: it works without a runner, for every member who may
+bring an agent.
+
+**Rejected alternatives:**
+- The menu of two ways, each with its own form (79438329, 2026-11-12): the profile asked twice,
+  in two layouts, and the way chosen before the agent.
+- Only fixing the start form's layout: the profile would still be asked in two places.
+- The runner part open by default: most joins have no runner, and reading the runners for each
+  opening of the panel would be a read nobody asked for.
 
 ## The reset page is drawn before the session is read, and never says why a link is dead
 

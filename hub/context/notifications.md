@@ -174,7 +174,7 @@ log showed pool timeouts at a low request rate, with no lock wait found on these
 **Source:** card tsk-a5pxwgkgr73e: the operators' hub timing on rev 30 (2026-11-10: a held bell call about 480 statements and 2.8 s of database time, 38 % of the hub's database time); `tests/test_bell_quiet_heads.py`, red on main (5 derivations where one is due)
 **See:** notifications.md#a-held-long-poll-compares-a-stamp-before-it-derives-again-and-full-answers-run-a-few-at-a-time — 06563fc8-cd5c-4820-b089-9d233f3d44b8 — as of 2026-11-10
 **See:** events.md#a-held-waits-later-pass-looks-at-the-projects-head-before-it-reads-the-runners-stream-does-not — 2263cf0a-7f4d-44e8-9264-352005a8390f — as of 2026-11-10
-**Revisit when:** `items.derive_page` reads rows its superset filters (`_may_concern`, `_names`, `_addressed`) would not, a kind in `listing.QUIET_KINDS` comes to change a relation the derive reads, the derive comes to read a relation whose change writes no event, `seq` stops following commit order within a project, the stamp gains a part besides the heads that agents' chatter moves, or the mail pass comes to store `listing.held_stamp` instead of `listing.stamp`
+**Revisit when:** `items.derive_page` reads rows its superset filters (`may_concern_member`, `names`, `addressed`) would not, a kind in `listing.QUIET_KINDS` comes to change a relation the derive reads, the derive comes to read a relation whose change writes no event, `seq` stops following commit order within a project, the stamp gains a part besides the heads that agents' chatter moves, or the mail pass comes to store `listing.held_stamp` instead of `listing.stamp`
 
 The stamp's project heads count every event kind that can make an item, and `message` is one
 of them. So every message agents send each other moved the stamp of every human in the
@@ -273,6 +273,47 @@ personal requests grow.
 
 **Reason:** the smallest change that removes the per-event cost while keeping the rules in
 one place. Evidence is inferred: measured locally, production to confirm.
+
+## The bell's head reads every project's position in one statement, a correlated `max(seq)` per project
+
+**Id:** 1309e2d7-66a1-4faf-a779-cafc1d1371b7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-xx108ajy287x (clean-up audit tsk-hgnbapyw7hnh, item 15), PR #1952; reviews A1263 and A1264 of PR #1952 (query plans on test fixtures, a timing on synthetic data)
+**See:** notifications.md#deriving-items-reads-each-kind-of-lookup-once-per-batch-not-once-per-event — b4a7c2f0-e8c8-4e9d-a093-95f07b4eb411 — as of 2026-11-18
+**Revisit when:** the head is to respect visibility or isolation, `ix_event_project_seq` changes, or the head query changes
+
+`listing.head` gives `GET /me/notifications` each project's highest `seq`. It ran one
+`max(event.seq)` statement per membership on every read. It now reads every membership's
+project in one statement: `select(project.id, (select coalesce(max(seq), 0) from event where
+event.project_id = project.id)) where project.id in (...)`, a project without events reading
+as 0, and no statement at all without memberships. A test keeps the count flat as
+memberships grow.
+
+**Reason:** each project's `max(seq)` stays a one-row lookup at the end of
+`ix_event_project_seq` (`project_id`, `seq`), however many events the project has, while a
+`GROUP BY project_id` over `event` reads every event row of the human's projects. The choice
+was made by reasoning from how the index serves the query; no EXPLAIN was run for the change.
+The reviews of PR #1952 then looked. Review A1263: on PostgreSQL 16.2 the plan was a SubPlan
+with a Limit over an Index Only Scan Backward using `ix_event_project_seq` (one row per
+project), the `GROUP BY` a Bitmap Heap Scan, a Sort and a GroupAggregate; on SQLite 3.46 with
+600,000 synthetic events over 3 projects the subquery took 0.16 ms and the `GROUP BY`
+51.21 ms, with the same maxima. Review A1264: on PostgreSQL, EXPLAIN ANALYZE showed a Limit 1
+over an Index Only Scan Backward using `ix_event_project_seq`, 0.090 ms on a fixture of 6,001
+events; the bell's head read 2 statements with 4 memberships (the projects and the account)
+where the loop read 5, and with no membership the account statement alone. These are plans
+and timings on test fixtures, not a production benchmark, and they support the reasoning on
+SQLite and PostgreSQL only: MariaDB was not measured, and its optimizer can serve a
+`GROUP BY … max()` by a loose index scan. So the evidence stays inferred, with measurement on
+test fixtures beside it.
+
+**Rejected alternatives:**
+- One `GROUP BY project_id` over `event` for the human's projects, as the card proposed: it
+  reads every event row of those projects on SQLite and PostgreSQL (above), and it gives no
+  row for a project without events, which then needs filling in.
+- The old loop of one statement per membership: the same index lookup, but a round trip per
+  project on every bell read.
 
 ## Notification settings store only what the human changed; the defaults fill the rest on read
 
@@ -577,7 +618,7 @@ Now:
   (`count_items`) and the pinned alerts are derived as before.
 - `_chats` reads only messages of a conversation whose audience text holds the human's
   `member:` token.
-- Request events are read only where the request may concern the member (`_may_concern`):
+- Request events are read only where the request may concern the member (`may_concern_member`):
   - addressed to a role or the owner, or to the member;
   - held by the member or the admin pool;
   - covered by someone;
@@ -1336,6 +1377,26 @@ module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
 - A new module for the three functions: one more home for the instance
   key, beside the one that parses and uses it.
 - `instance_settings`: it stores the fallback, but knows nothing of keys.
+
+## A verification mail is limited per human and per recipient address, the latter in asking accounts
+
+**Id:** aedbf93a-563a-4753-9cdf-8a9bae72e43b
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §18.4; tsk-q4zynccy5t0b and its review, counting in asking accounts decided by the maintainer on 2026-11-17, counting at request time on 2026-11-18; `hub/src/maity_hub/notifications/preferences.py` `apply_address`, `_recipient_over`; `hub/src/maity_hub/auth/email_links.py` `recipient_over`; `hub/tests/test_notification_address.py`, red when every mail counts
+**See:** mail.md#mails-anyone-can-send-to-an-address-have-budgets-of-their-own-and-wait-over-them-verification-and-invitation — d3113259-e9eb-4321-8a8a-70080feaf52b — as of 2026-11-14
+**See:** auth.md#anonymous-mail-requests-are-capped-per-recipient-in-source-networks-and-limits-per-source-address-count-an-ipv6-client-by-its-64 — ad4dc104-7b44-4049-a9e4-ebcf7aef9dd2 — as of 2026-11-17
+
+Setting a pending address takes, per human, at most 3 verification mails an hour and 10 a day; past that the `PATCH` answers `rate_limited` and nothing changes. Per recipient (a digest of the normalised address) there are places for 3 asking accounts an hour and 10 a day: an account's first verification mail to the address in a window takes one, its further ones none; and at most 9 verification mails queued for the address in any hour and 100 in any day from all accounts together, counted as the sign-in link's (ad4dc104): when the mail is requested and queued, not when the outbox delivers it within `verification_max_per_hour`, so mails queued in different windows can arrive together after a delay. Past either the change is stored but no mail is queued, and the answer is the same.
+
+**Reason:** the budget of its own (d3113259) keeps verification mail from holding up security mail, but alone it lets one account fill it, or many accounts flood one stranger's inbox. Counted in mails, the per-recipient limit equalled the per-human one, so one account asking three times spent the address's hour and the owner's own verification waited; counted in accounts, one or two cannot: one account's requests run one at a time under its settings row (taken for update; its first write waits on the row's primary key on PostgreSQL, and SQLite's `BEGIN IMMEDIATE` serialises every write), so an account never holds two places, unlike a network (ad4dc104). Three distinct accounts in an hour (ten in a day) still hold the address's places; where one source can make active accounts (open registration with automatic approval: 10 registrations an hour per source address, within the instance's new accounts per hour), one source can so hold them — an accepted limit for now, a further cap per address is a separate decision. The windows slide, so places alone let 15 mails through in one hour and 186 in one day (measured in review); the count of the mails bounds what is queued at 9 and 100, and two accounts at their own limits (at most 6 requested in any hour, 20 in any day) never reach it. The per-human limit tells the caller, who is signed in and owns the attempts; the per-recipient one stays silent so that it reveals nothing about what other accounts asked for that address.
+
+**Rejected alternatives:**
+- Counting mails per recipient from all accounts together (the first design): one account spends the address's hour.
+- Refuse over the per-recipient limit too: it would tell one account that others are trying the same address.
+- Only the per-human limit: many accounts could still each send a stranger three mails an hour.
+- A per-recipient check at delivery too, in the outbox: decided against by the maintainer on 2026-11-18 (review of PR #1797); these limits apply at request time, as for the anonymous paths (ad4dc104).
 
 ## A notification mail's subject is defanged and cut like its body; a waiting mail is dropped once a membership it relies on ended
 

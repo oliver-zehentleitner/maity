@@ -168,7 +168,7 @@ async def handle(
     deliveries from one forge address can delay a verified one from the same
     address, which the probe then catches up on its interval."""
     slug = PATH.match(str(scope["path"])).group(1)  # type: ignore[union-attr]
-    source = scope["state"]["origin"].address
+    source = scope["state"]["origin"].limit_key
     bucket = f"{slug}|{source}"
     # The limiters write `shared_counts` on PostgreSQL: off the event loop.
     wait, address_mark, bucket_mark = await run_in_threadpool(_places, source, bucket)

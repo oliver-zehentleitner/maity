@@ -727,10 +727,6 @@
     "en": "eb3c55d425e3efcc",
     "text": "9209574fbd0a6f1d"
   },
-  "agents.join.any": {
-    "en": "0a199db71af3f5a8",
-    "text": "4595272761427301"
-  },
   "agents.join.failed": {
     "en": "d9eda7d9dc411b60",
     "text": "a45eb99f983e73eb"
@@ -8911,6 +8907,10 @@
     "en": "567da5e03ff731cc",
     "text": "a8509a97d2003ca2"
   },
+  "mail.count.invitation": {
+    "en": "afb850023735f0fe",
+    "text": "aed9e701da7ebed5"
+  },
   "mail.count.notifications": {
     "en": "cf4244089b4d2a59",
     "text": "22db30bcd39948d7"
@@ -8919,6 +8919,14 @@
     "en": "426e163f99eb2205",
     "text": "cd2b37977bc43200"
   },
+  "mail.count.second_factor": {
+    "en": "1fdf5a41382421f7",
+    "text": "5775fdf6b7a8794e"
+  },
+  "mail.count.second_factor_dropped": {
+    "en": "8b46799280621ba5",
+    "text": "afc9de7936f184e7"
+  },
   "mail.count.security": {
     "en": "adf52a828041cc88",
     "text": "a0e1715b111116d6"
@@ -8926,6 +8934,14 @@
   "mail.count.sign_in": {
     "en": "bcc7dccc569cd7b6",
     "text": "54a84a0dfa23b801"
+  },
+  "mail.count.verification": {
+    "en": "3fc58fcda4039acb",
+    "text": "936c54fe797c7b5a"
+  },
+  "mail.count.waiting": {
+    "en": "9ccd882b8c02b169",
+    "text": "0bd5e933bea4b3f0"
   },
   "mail.daily_at": {
     "en": "369ed1844262c810",
@@ -8975,6 +8991,10 @@
     "en": "ce94bc42c2f35c49",
     "text": "51f58e99f8840596"
   },
+  "mail.field.invitation_max_per_hour": {
+    "en": "7ffc81960324c689",
+    "text": "c2ed5fcb376623e7"
+  },
   "mail.field.max_per_hour": {
     "en": "68ba54d57ddc42f2",
     "text": "7d1b165748a6e4f8"
@@ -8986,6 +9006,10 @@
   "mail.field.reply_to": {
     "en": "21ddd237dd770f94",
     "text": "4a782aceca542411"
+  },
+  "mail.field.second_factor_max_per_hour": {
+    "en": "fab856110f4750bb",
+    "text": "c3f31713765e138f"
   },
   "mail.field.security_max_per_hour": {
     "en": "ef0519e539df1c43",
@@ -9002,6 +9026,10 @@
   "mail.field.username": {
     "en": "f241302d339e4d2b",
     "text": "3bfe802286d998c3"
+  },
+  "mail.field.verification_max_per_hour": {
+    "en": "fdedf191d9c4159a",
+    "text": "ab5d495b449323de"
   },
   "mail.hold_while_online": {
     "en": "8d0b00032d7d5518",
@@ -9050,6 +9078,10 @@
   "mail.last_hour": {
     "en": "e5837bcc394066d8",
     "text": "77ac7ebff45a85de"
+  },
+  "mail.last_hour_own": {
+    "en": "fa53485ddec3c17b",
+    "text": "608c35e5a33aedaf"
   },
   "mail.mode.daily": {
     "en": "e1bd7da6f2ab099f",
@@ -12975,17 +13007,9 @@
     "en": "7ea323c032a73009",
     "text": "097b79cb7712c8b2"
   },
-  "placements.new.agent_new": {
-    "en": "850f486460afc138",
-    "text": "7985b50ce9de707b"
-  },
   "placements.new.branch": {
     "en": "96c59fd717d8cd7b",
     "text": "ff71297011b7924e"
-  },
-  "placements.new.briefing": {
-    "en": "6da8dc3401eadaa4",
-    "text": "f679476c9f45f707"
   },
   "placements.new.busy": {
     "en": "a3a89076ed74c17c",
@@ -13019,6 +13043,10 @@
     "en": "0f5300ecabf4f2b2",
     "text": "20b29305d4518365"
   },
+  "placements.new.legend": {
+    "en": "87df56605ba0a822",
+    "text": "35d4542992e6a136"
+  },
   "placements.new.mode": {
     "en": "b47ccf6a86662344",
     "text": "7512bacdac6c4c2d"
@@ -13051,13 +13079,21 @@
     "en": "2585c200021d665e",
     "text": "be159886f543dfe5"
   },
-  "placements.new.open": {
-    "en": "0fe4c7d73ff8f4e0",
-    "text": "dc3a8bd579f45091"
+  "placements.new.not_member": {
+    "en": "55e42ae71f048f84",
+    "text": "20ef7225e0f9411d"
   },
-  "placements.new.profile": {
-    "en": "ddd0aac4da02e11d",
-    "text": "575847758dcdfa21"
+  "placements.new.not_ready": {
+    "en": "43cf84b554dc3e1f",
+    "text": "ec524118d51a01ea"
+  },
+  "placements.new.offer": {
+    "en": "78860a7edd225009",
+    "text": "e3b440669c0d81d1"
+  },
+  "placements.new.placed": {
+    "en": "46eba681e2d58129",
+    "text": "8b35c80eac49cdc0"
   },
   "placements.new.quota": {
     "en": "f64b09af35af4b42",
@@ -13106,10 +13142,6 @@
   "placements.new.target_any": {
     "en": "50d82c38be3b5eee",
     "text": "5dbe4045bf4fd5f2"
-  },
-  "placements.new.title": {
-    "en": "0fe4c7d73ff8f4e0",
-    "text": "dc3a8bd579f45091"
   },
   "placements.new.tool": {
     "en": "077dcaba577a59ac",

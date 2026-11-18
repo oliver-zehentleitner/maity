@@ -204,7 +204,6 @@ window.MAITY_I18N["en"] = {
     "other": "{active} of {count} instances active"
   },
   "agents.intro": "Your agent profiles across every project: each is one identity, with its picture, its handle and the memberships it holds. Add one to a project to make a join line there.",
-  "agents.join.any": "Add any agent",
   "agents.join.failed": "The join could not be prepared: {reason}",
   "agents.join.none": "You are in no project you could bring an agent into.",
   "agents.join.open": "Join an agent",
@@ -2492,6 +2491,10 @@ window.MAITY_I18N["en"] = {
     "one": "{count} failure",
     "other": "{count} failures"
   },
+  "mail.count.invitation": {
+    "one": "{count} invitation mail",
+    "other": "{count} invitation mails"
+  },
   "mail.count.notifications": {
     "one": "{count} notification mail",
     "other": "{count} notification mails"
@@ -2500,6 +2503,14 @@ window.MAITY_I18N["en"] = {
     "one": "{count} security mail queued",
     "other": "{count} security mails queued"
   },
+  "mail.count.second_factor": {
+    "one": "{count} second-factor mail",
+    "other": "{count} second-factor mails"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} second-factor mail dropped",
+    "other": "{count} second-factor mails dropped"
+  },
   "mail.count.security": {
     "one": "{count} security mail",
     "other": "{count} security mails"
@@ -2507,6 +2518,14 @@ window.MAITY_I18N["en"] = {
   "mail.count.sign_in": {
     "one": "{count} sign-in mail",
     "other": "{count} sign-in mails"
+  },
+  "mail.count.verification": {
+    "one": "{count} verification mail",
+    "other": "{count} verification mails"
+  },
+  "mail.count.waiting": {
+    "one": "{count} verification or invitation mail waiting",
+    "other": "{count} verification or invitation mails waiting"
   },
   "mail.daily_at": "Daily and weekly digests at",
   "mail.day.fri": "Friday",
@@ -2520,13 +2539,16 @@ window.MAITY_I18N["en"] = {
   "mail.field.from_address": "Sender address",
   "mail.field.from_name": "Sender name",
   "mail.field.host": "SMTP host",
+  "mail.field.invitation_max_per_hour": "Invitation mails per hour",
   "mail.field.max_per_hour": "Notification mails per hour",
   "mail.field.port": "SMTP port",
   "mail.field.reply_to": "Reply-to address",
+  "mail.field.second_factor_max_per_hour": "Second-factor mails per hour",
   "mail.field.security_max_per_hour": "Security mails per hour",
   "mail.field.sign_in_max_per_hour": "Sign-in mails per hour",
   "mail.field.tls": "Connection security",
   "mail.field.username": "SMTP username",
+  "mail.field.verification_max_per_hour": "Address confirmation mails per hour",
   "mail.hold_while_online": "No mail while I'm online in the web app",
   "mail.hold_while_online.hint": "Mail of what goes out At once waits while you use the dashboard. A few minutes after you have left it, only what you have not read is mailed.",
   "mail.incomplete": "Mail configuration is incomplete: {missing}.",
@@ -2539,6 +2561,7 @@ window.MAITY_I18N["en"] = {
   "mail.kinds.hint": "A digest holds everything still unread when it goes out. A changed second factor, a changed address and an account deletion are always mailed at once.",
   "mail.kinds.legend": "When each kind is mailed",
   "mail.last_hour": "Last hour: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Also in the last hour: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Daily digest",
   "mail.mode.hourly": "Hourly digest",
   "mail.mode.immediate": "At once",
@@ -3680,9 +3703,7 @@ window.MAITY_I18N["en"] = {
   "placements.logs": "Logs",
   "placements.logs.copy": "Copy the logs command",
   "placements.logs.region": "Logs command",
-  "placements.new.agent_new": "A new agent",
   "placements.new.branch": "Starting branch (optional)",
-  "placements.new.briefing": "Briefing (optional, Markdown)",
   "placements.new.busy": "Placing the agent…",
   "placements.new.clone": "Clone",
   "placements.new.clone_hint": "The name of the agent's clone on the runner: lowercase letters, digits and hyphens. Empty: the agent's handle.",
@@ -3691,6 +3712,7 @@ window.MAITY_I18N["en"] = {
   "placements.new.failed": "Not placed on the runner: {reason}",
   "placements.new.field": "{field}: {why}",
   "placements.new.hint": "The runner starts the agent in a clone of this project's repository, with the tool, mode and model chosen here. Only your own runners that are paired, allowed in this project and offer its repository are offered.",
+  "placements.new.legend": "On a runner",
   "placements.new.mode": "Mode",
   "placements.new.model": "Model",
   "placements.new.model_default": "The runner's default",
@@ -3699,8 +3721,10 @@ window.MAITY_I18N["en"] = {
   "placements.new.no_tool": "The runner offers no tool there that is installed.",
   "placements.new.none": "None of your paired runners is allowed in this project yet. Allow one under {link}.",
   "placements.new.none_link": "this project's Runners",
-  "placements.new.open": "Start an agent on a runner",
-  "placements.new.profile": "The new agent's profile and its place in the team",
+  "placements.new.not_member": "Only an agent already in this project, or a new one, starts on a runner. Choose a new agent, or join this one with a line first.",
+  "placements.new.not_ready": "There is no runner and tool to start it with yet: the part on a runner says why.",
+  "placements.new.offer": "Start it on one of my runners instead of a join line",
+  "placements.new.placed": "This agent already runs on a runner here: one placement per agent. Its row is under Managed agents.",
   "placements.new.quota": "the project's limit of {max} active placements on runners is reached.",
   "placements.new.quota_link": "Settings, Members and agents",
   "placements.new.quota_raise": "Raise the limit in {link}.",
@@ -3713,7 +3737,6 @@ window.MAITY_I18N["en"] = {
   "placements.new.submit": "Start on the runner",
   "placements.new.target": "Where",
   "placements.new.target_any": "Wherever the runner chooses",
-  "placements.new.title": "Start an agent on a runner",
   "placements.new.tool": "Tool",
   "placements.not_removed": "Not removed: {reason}",
   "placements.not_restarted": "Not restarted: {reason}",
