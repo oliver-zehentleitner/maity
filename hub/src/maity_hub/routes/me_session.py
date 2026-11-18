@@ -867,7 +867,7 @@ def _acknowledge(request: Request, caller: Caller) -> dict[str, Any]:
             .where(t.credential.c.id == caller.credential_id)
             .values(ktw_acknowledged_at=now, ktw_acknowledged_session=session_id)
         )
-        commitment.confirmed(conn, project, credential, caller.agent_id or "")
+        commitment.confirmed(conn, credential)
         events.emit(
             conn,
             project.id,
