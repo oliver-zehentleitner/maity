@@ -9,6 +9,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -164,9 +165,9 @@ NOT_RUNNER = [
 
 
 def nested(line: str, levels: int) -> str:
-    """`line` run by `sh -c`, `levels` times over."""
+    """`line` run by `watch`, `levels` times over: quoted text another shell reads again."""
     for _ in range(levels):
-        line = "sh -c " + shlex.quote(line)
+        line = "watch " + shlex.quote(line)
     return line
 
 
@@ -540,9 +541,6 @@ def test_a_prefixed_maity_line_with_an_expanding_word_keeps_the_runner_reason(pr
 REFUSED_OUTRIGHT = [
     "stubwrap maity status",  # a command word nobody listed
     "eval maity status",
-    "eval 'maity status'",
-    "sh -c 'maity status'",
-    "bash -c 'maity status'",
     "xargs maity status",
     "source maity status",
     ". maity status",
@@ -694,13 +692,13 @@ def test_an_unreadable_line_is_decided_only_when_it_names_maity() -> None:
 SPELLED = [
     ("eval ma\\\\ity runner status", plaincall.RUNNER_REFUSED),
     ("eval ma\\'\\'ity runner status", plaincall.RUNNER_REFUSED),
-    ("eval ma\\\\ity --version | cat", plaincall.PREFIX_REFUSED),
+    ("eval ma\\\\ity --version | cat", plaincall.RUNNER_REFUSED),
     ("eval $'ma\\x69ty runner status'", plaincall.RUNNER_REFUSED),
-    ("eval ma\\\\ity status", plaincall.PREFIX_REFUSED),
-    ("eval 'ma\\ity' status", plaincall.PREFIX_REFUSED),
-    ("eval 'm\"a\"ity' status", plaincall.PREFIX_REFUSED),
-    ("eval ma\\$\\'i\\'ty status", plaincall.PREFIX_REFUSED),
-    ("eval ma\\$\\'\\\\x69\\'ty status", plaincall.PREFIX_REFUSED),
+    ("eval ma\\\\ity status", plaincall.RUNNER_REFUSED),
+    ("eval 'ma\\ity' status", plaincall.RUNNER_REFUSED),
+    ("eval 'm\"a\"ity' status", plaincall.RUNNER_REFUSED),
+    ("eval ma\\$\\'i\\'ty status", plaincall.RUNNER_REFUSED),
+    ("eval ma\\$\\'\\\\x69\\'ty status", plaincall.RUNNER_REFUSED),
     ("eval $'ma\\x69ty' status", plaincall.RUNNER_REFUSED),
     ("sh -c $'ma\\x69ty status'", plaincall.RUNNER_REFUSED),
     ("eval maity r\\\\unner status", plaincall.RUNNER_REFUSED),
@@ -742,7 +740,7 @@ def test_each_brace_alternative_counts_as_a_word_of_its_own(command: str) -> Non
     assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
 
 
-@pytest.mark.parametrize("command", ["echo {maity,x}", "echo x{,maity}", "{MAITY,} status"])
+@pytest.mark.parametrize("command", ["echo {maity,x}", "echo {,x}maity", "{MAITY,} status"])
 def test_a_brace_alternative_maity_is_a_maity_word(command: str) -> None:
     assert plaincall.prefixed(command)
     assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
@@ -821,7 +819,36 @@ EXPANSIONS = [
 
 @pytest.mark.parametrize(("word", "words"), EXPANSIONS)
 def test_a_word_expands_as_bash_expands_its_braces(word: str, words: list[str] | None) -> None:
-    assert plaincall._brace_words(word) == words
+    assert plaincall._brace_words(word, bash=(5, 2)) == words
+
+
+# Where Bash 5.3 reads braces otherwise (`braces.c` of 5.3): a `..` after the first `,` does
+# not count, and a group with a `..` opens only when its text starts like a range.
+BASH_5_3_EXPANSIONS = [
+    ("{a..b{c,d}}", ["{a..bc}", "{a..bd}"]),
+    ("{ab..c{d,e}}", ["{ab..cd}", "{ab..ce}"]),
+    ("{a..e}", ["a", "b", "c", "d", "e"]),
+    ('{a..","}y', ["{a..,}y"]),
+    ("{X=},mait}y", ["X=}y", "maity"]),
+    ("{a,b..c}", ["a", "b..c"]),
+]
+
+
+@pytest.mark.parametrize(("word", "words"), BASH_5_3_EXPANSIONS)
+def test_a_word_expands_as_bash_5_3_expands_its_braces(word: str, words: list[str]) -> None:
+    assert plaincall._brace_words(word, bash=(5, 3)) == words
+
+
+def test_a_range_only_bash_5_3_expands_into_a_backtick_is_not_read() -> None:
+    word = "{a..b{Z..a}}"
+    assert plaincall._brace_words(word, bash=(5, 2)) == [word]
+    assert plaincall._brace_words(word) is None
+    assert plaincall.refusal(bash("echo " + word)) == plaincall.RUNNER_REFUSED
+
+
+def test_the_hook_reads_the_words_of_both_versions() -> None:
+    both = plaincall._brace_words("{a..b{c,d}}")
+    assert both == ["a..bc", "a..bd", "{a..bc}", "{a..bd}"]
 
 
 NUMBER_EXPANSIONS = [
@@ -882,6 +909,8 @@ BRACES_THAT_PASS = [
     "echo {}",
     "echo {a}b",
     "for i in {1..1000}; do echo $i; done",
+    "cat cli/src/{maity,x}.py",
+    "echo x{,maity}",
 ]
 
 
@@ -983,7 +1012,7 @@ def test_such_words_in_quoted_text_read_again_count_the_same(command: str) -> No
 
 
 @pytest.mark.parametrize(
-    "command", ["echo {a,'}'}", 'git diff -- cli/{src,"t,s"}', "echo {a,\\,b}", "ls {a,$'{'}"]
+    "command", ["echo {a,'}'}", 'git diff -- cli/{src,"t,s"}', "echo {a,\\,b}"]
 )
 def test_quoted_brace_characters_without_both_words_pass(command: str) -> None:
     assert plaincall.refusal(bash(command)) is None
@@ -1206,27 +1235,84 @@ def test_quoted_text_the_hook_cannot_read_counts_only_when_it_names_maity() -> N
     assert not plaincall.prefixed('echo "\'x status"')
 
 
-def _bash_5_2() -> str | None:
-    """A Bash of version 5.2 or later on the path, or None; on Windows none is looked for,
-    since `bash` there may be WSL's launcher or a Bash that needs its own environment."""
+def _bash_5_2() -> tuple[str, tuple[int, int], str] | None:
+    """A Bash of version 5.2 or later on the path, its version and its full version string,
+    or None; on Windows none is looked for, since `bash` there may be WSL's launcher or a Bash
+    that needs its own environment."""
     found = shutil.which("bash")
     if found is None or sys.platform == "win32":
         return None
     try:
         done = subprocess.run(
-            [found, "-c", 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"'],
+            [found, "-c", 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]} $BASH_VERSION"'],
             capture_output=True, text=True, timeout=30, check=False,
         )  # fmt: skip
     except (OSError, subprocess.SubprocessError):
         return None
     try:
-        major, minor = map(int, done.stdout.split())
+        major, minor, full = done.stdout.split()
+        version = (int(major), int(minor))
     except ValueError:
         return None
-    return found if (major, minor) >= (5, 2) else None
+    return (found, version, full) if version >= (5, 2) else None
 
 
-BASH = _bash_5_2()
+FOUND = _bash_5_2()
+BASH = None if FOUND is None else FOUND[0]
+# The brace rules of the Bash on the path, as `_expand` knows them: 5.2's, or 5.3's for 5.3
+# and later.
+BASH_RULES = (5, 2) if FOUND is None or FOUND[1] < (5, 3) else (5, 3)
+BASH_NAME = "no bash" if FOUND is None else f"bash {FOUND[2]}"
+
+
+def bash_records(
+    words: list[str], commands: list[str], tmp_path: Path, label: str = ""
+) -> list[list[list[str]]]:
+    """What Bash prints for each word: for each of `commands` (a line with `{w}` for the word,
+    that prints `$#` and the words, or `E`), the words it made. Each word's records start
+    with a mark, and the script ends with one, so a record Bash does not print fails the
+    test with the word and the Bash version, not with a misread count."""
+    lines = ["set -f"]
+    for k, word in enumerate(words):
+        lines.append(f"printf 'R{k}\\0'; " + "; ".join(c.format(w=word) for c in commands))
+    lines.append("printf 'END\\0'")
+    script = tmp_path / "words.sh"
+    script.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
+    assert BASH is not None
+    done = subprocess.run(
+        [BASH, "--norc", "--noprofile", str(script)], cwd=tmp_path, capture_output=True,
+        timeout=120, check=False, env={"PATH": "", "LC_ALL": "C"},
+    )  # fmt: skip
+    out = done.stdout.decode("utf-8", "replace").split("\0")
+    err = done.stderr.decode("utf-8", "replace")[-2000:]
+    records: list[list[list[str]]] = []
+    at = 0
+    for k, word in enumerate(words):
+        if at >= len(out) or out[at] != f"R{k}":
+            pytest.fail(
+                f"{label}{BASH_NAME} printed no record for word {word!r} "
+                f"(exit {done.returncode}): {err}"
+            )
+        at += 1
+        made: list[list[str]] = []
+        for _ in commands:
+            head = out[at] if at < len(out) else ""
+            if head == "E":
+                made.append([])
+                at += 1
+                continue
+            if not head.isdigit():
+                pytest.fail(
+                    f"{label}{BASH_NAME} printed {head!r} for word {word!r} "
+                    f"(exit {done.returncode}): {err}"
+                )
+            made.append(out[at + 1 : at + 1 + int(head)])
+            at += 1 + int(head)
+        records.append(made)
+    assert out[at:] == ["END", ""], f"{label}{BASH_NAME}: {err}"
+    return records
+
+
 BRACE_TOKENS = ["{", "}", ",", "..", "a", "e", "m", "z", "A", "V", "Z", "0", "1", "5", "-2", "+3"]
 BRACE_ENDS = ["a", "e", "z", "A", "V", "W", "Z", "1", "5", "01", "-2", "x"]
 
@@ -1263,29 +1349,17 @@ def brace_words(count: int, seed: int) -> list[str]:
 
 @pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
 def test_braces_expand_as_bash_expands_them_or_are_not_read(tmp_path: Path) -> None:
+    """The words `_expand` makes under the rules of the Bash on the path are Bash's, or it
+    does not read the word; the hook's words, both versions' together, hold Bash's."""
     words = brace_words(600, seed=1942)
-    asked = [w for w in words if plaincall._brace_words(w, numbers=True) is not None]
-    script = tmp_path / "words.sh"
-    lines = ["set -f"] + [f'set -- {w}; printf \'%s\\0\' "$#" "$@"' for w in asked]
-    script.write_bytes(("\n".join(lines) + "\n").encode("utf-8"))
-    assert BASH is not None
-    done = subprocess.run(
-        [BASH, "--norc", "--noprofile", str(script)], cwd=tmp_path, capture_output=True,
-        timeout=60, check=False, env={"PATH": "", "LC_ALL": "C"},
-    )  # fmt: skip
-    assert done.returncode == 0, done.stderr
-    out = done.stdout.decode("utf-8").split("\0")
-    made: dict[str, list[str]] = {}
+    asked = [w for w in words if plaincall._brace_words(w, True, BASH_RULES) is not None]
+    printed = bash_records(asked, ['set -- {w}; printf \'%s\\0\' "$#" "$@"'], tmp_path)
+    made = {w: records[0] for w, records in zip(asked, printed, strict=True)}
     for w in asked:
-        n = int(out.pop(0))
-        made[w], out = out[:n], out[n:]
-    assert out == [""]
-    for w in words:
-        exact, read = plaincall._brace_words(w, numbers=True), plaincall._brace_words(w)
-        if exact is not None:
-            assert exact == made[w], w
-        if read is not None and exact is not None:
-            assert set(read) <= set(made[w]), w
+        exact = plaincall._brace_words(w, True, BASH_RULES)
+        assert exact == made[w], f"{BASH_NAME}: {w!r}"
+        both = plaincall._brace_words(w, True)
+        assert both is None or set(made[w]) <= set(both), f"{BASH_NAME}: {w!r}"
     assert len(asked) > len(words) // 2
     assert sum(1 for w in asked if made[w] != [w]) > len(words) // 3  # most of them expand
 
@@ -1306,18 +1380,6 @@ def quoted_brace_word(generate: random.Random) -> str:
     head, tail = generate.choice([("mait", "y"), ("runne", "r")])
     body = "{" + inner + "}," + head + "}" + tail
     return f"'{body}'" if "'" not in body and generate.random() < 0.3 else body
-
-
-def bash_words(script_lines: list[str], tmp_path: Path) -> list[str]:
-    script = tmp_path / "words.sh"
-    script.write_bytes(("\n".join(["set -f", *script_lines]) + "\n").encode("utf-8"))
-    assert BASH is not None
-    done = subprocess.run(
-        [BASH, "--norc", "--noprofile", str(script)], cwd=tmp_path, capture_output=True,
-        timeout=120, check=False, env={"PATH": "", "LC_ALL": "C"},
-    )  # fmt: skip
-    assert done.returncode == 0, done.stderr
-    return done.stdout.decode("utf-8").split("\0")
 
 
 # Lines in which Bash makes `maity` and `runner` of braces with quoted, escaped or stray
@@ -1367,10 +1429,7 @@ def test_quoted_brace_words_name_maity_only_where_the_hook_sees_it(tmp_path: Pat
     """Each word Bash makes of the word, and of its text read again (`eval`), that is
     `maity` or `runner` the hook counts as such, or it does not read the word: no word
     passes that Bash makes into either name. A fixed seed and a fresh one each run."""
-    version = subprocess.run(
-        [str(BASH), "-c", "echo $BASH_VERSION"], capture_output=True, text=True, check=True
-    ).stdout.strip()
-    print(f"bash {version}")  # noqa: T201 - recorded in the test log
+    print(BASH_NAME)  # noqa: T201 - recorded in the test log
     fresh = random.SystemRandom().randrange(2**32)
     for seed in (19420, fresh):
         generate = random.Random(seed)  # noqa: S311 - test data, seeded on purpose
@@ -1381,27 +1440,319 @@ def test_quoted_brace_words_name_maity_only_where_the_hook_sees_it(tmp_path: Pat
                 [(text, _, _, written)] = plaincall._split(word)
             except (plaincall._Unreadable, ValueError):
                 continue
+            if "{" in written and plaincall._brace_names(text, written) is None:
+                continue  # not read: the line is refused, and Bash may not finish it
             read.append((word, text, written))
-        out = bash_words(
+        printed = bash_records(
+            [w for w, _, _ in read],
             [
-                f'set -- {w}; printf \'%s\\0\' "$#" "$@"; if eval "set -- $*" 2>/dev/null; '
-                "then printf '%s\\0' \"$#\" \"$@\"; else printf 'E\\0'; fi"
-                for w, _, _ in read
+                'set -- {w}; printf \'%s\\0\' "$#" "$@"',
+                'if eval "set -- $*" 2>/dev/null; then printf \'%s\\0\' "$#" "$@"; '
+                "else printf 'E\\0'; fi",
             ],
             tmp_path,
+            f"seed {seed}, ",
         )
         opened = []
-        for word, text, written in read:
+        for (word, text, written), records in zip(read, printed, strict=True):
             maity, runner = plaincall._is_maity(text, written), plaincall._is_runner(text, written)
-            for again in (False, True):
-                head = out.pop(0)
-                made = [] if head == "E" else out[: int(head)]
-                out = out[len(made) :]
-                if again and any(c in " \t" for c in text):
-                    continue  # text with spaces is read again as a line of its own
+            for again, made in zip((False, True), records, strict=True):
+                if again and plaincall.calls_runner("eval " + word):
+                    continue  # the line `eval WORD` is refused
                 for one in made:
                     is_maity, is_runner = bash_names(one)
                     if (is_maity and not maity) or (is_runner and not runner):
                         opened.append((word, again, one))
         assert len(read) >= 2900, f"seed {seed}"
-        assert opened == [], f"seed {seed} bash {version}"
+        assert opened == [], f"seed {seed} {BASH_NAME}"
+
+
+def escaped(word: str, layers: int, depth_of: Callable[[str], int] | None = None) -> str:
+    """`word` with each brace character escaped to stay text for `layers` readings, so that
+    the reading after them expands it (or each character as deep as `depth_of` says)."""
+    depth = depth_of or (lambda c: layers if c in "{},." else 0)
+    return "".join("\\" * (2 ** depth(c) - 1) + c for c in word)
+
+
+READ_AGAIN = [
+    "{m..m}aity {r..r}unner status",
+    "{m..m..+1}aity {r..r..+1}unner status",
+    "{mait,--for=}y {--for=,runne}r status",
+]
+
+
+@pytest.mark.parametrize("evals", [plaincall._NESTING - 1, plaincall._NESTING + 1, 6])
+@pytest.mark.parametrize("words", READ_AGAIN)
+def test_braces_read_again_past_the_bound_refuse_the_line(words: str, evals: int) -> None:
+    line = "eval " * evals + " ".join(escaped(w, evals) for w in words.split())
+    assert plaincall.calls_runner(line)
+    assert plaincall.refusal(bash(line)) == plaincall.RUNNER_REFUSED
+
+
+def test_the_words_an_expansion_makes_are_read_again() -> None:
+    word = "{,..}{},mait}y"  # makes `..{},mait}y`, which a shell that reads it again expands
+    assert plaincall._is_maity(word, word)
+    assert plaincall.refusal(bash(f"env {word} status")) == plaincall.PREFIX_REFUSED
+    line = "echo {'maity {r,x}unner',x}"  # makes `maity {r,x}unner`, read again as a line
+    assert plaincall.calls_runner(line)
+
+
+def test_braces_over_the_limit_still_refuse_the_line() -> None:
+    assert plaincall.refusal(bash("echo {a..z}{a..z}")) == plaincall.RUNNER_REFUSED
+
+
+def test_a_word_that_still_changes_after_the_last_reading_is_not_read() -> None:
+    within = escaped("{m..m}aity", plaincall._NESTING)
+    [(text, _, _, written)] = plaincall._split(within)
+    assert plaincall._is_maity(text, written) and not plaincall._is_runner(text, written)
+    past = escaped("{m..m}aity", plaincall._NESTING + 1)
+    [(text, _, _, written)] = plaincall._split(past)
+    assert plaincall._is_maity(text, written) and plaincall._is_runner(text, written)
+
+
+def test_a_word_made_with_spaces_is_read_again_by_its_parts() -> None:
+    written = "{x,'a {r,x}unner'}"
+    [(text, _, _, as_written)] = plaincall._split(written)
+    assert as_written == written
+    assert plaincall._is_runner(text, written)
+
+
+def test_more_readers_than_the_bound_refuse_braces_whatever_they_name() -> None:
+    assert plaincall.calls_runner("eval " * (plaincall._NESTING + 1) + "echo {a,b}")
+    assert plaincall.calls_runner("x; . x{a,b}")
+    assert plaincall.calls_runner("eval echo {a,b}")
+    assert not plaincall.calls_runner("eval " * (plaincall._NESTING + 1) + "echo a")
+    assert not plaincall.calls_runner("find . -name x{a,b}")
+
+
+EVAL_BASES = [
+    "{m..m}aity",
+    "{r..r}unner",
+    "{mait,--for=}y",
+    "{--for=,runne}r",
+    "{X=},mait}y",
+    "m{V..a..6}aity",
+    "{ma,x}ity",
+]
+
+
+@pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
+def test_words_read_again_by_eval_chains_name_maity_only_where_the_hook_sees_it(
+    tmp_path: Path,
+) -> None:
+    """A word escaped for `k` readings after `eval` × `k` (k from 1 to 6), each character
+    as deep as chance says: no word passes that Bash makes into `maity` or `runner` at the
+    end of the chain, unless the hook counts it as such or refuses the line."""
+    print(BASH_NAME)  # noqa: T201 - recorded in the test log
+    fresh = random.SystemRandom().randrange(2**32)
+    for seed in (19421, fresh):
+        generate = random.Random(seed)  # noqa: S311 - test data, seeded on purpose
+        lines, judged, refused = [], [], []
+        for n in range(800):
+            k = generate.randint(1, 6)
+            base = EVAL_BASES[n % len(EVAL_BASES)] if n < 70 else brace_word(generate)
+            full = n % 2 == 0
+
+            def depth(c: str, k: int = k, full: bool = full, g: random.Random = generate) -> int:
+                if c in "{},.":
+                    return k if full else g.randint(0, k)
+                return 0
+
+            word = escaped(base, k, depth)
+            line = "eval " * k + word
+            try:
+                [*_, (text, _, _, written)] = plaincall._split(line)
+            except (plaincall._Unreadable, ValueError):
+                continue
+            if plaincall.calls_runner(line):
+                refused.append(line)
+                continue
+            lines.append("eval " * k + "set -- " + word)
+            judged.append(
+                (line, plaincall._is_maity(text, written), plaincall._is_runner(text, written))
+            )
+        printed = bash_records(
+            lines,
+            [
+                "if {w}; then printf '%s\\0' \"$#\" \"$@\"; else printf 'E\\0'; fi",
+            ],
+            tmp_path,
+            f"seed {seed}, ",
+        )
+        opened = []
+        for (line, maity, runner), [made] in zip(judged, printed, strict=True):
+            for one in made:
+                is_maity, is_runner = bash_names(one)
+                if (is_maity and not maity) or (is_runner and not runner):
+                    opened.append((line, one))
+        assert len(judged) + len(refused) >= 700, f"seed {seed}"
+        assert opened == [], f"seed {seed} {BASH_NAME}"
+
+
+_B = "\\" * 31  # five readings: escaped five times over
+# Lines with a construct the hook does not read exactly, around braces that make `maity`
+# and `runner`: each is refused.
+CONSTRUCT_LINES = [
+    f"eval eval eval eval eval {_B}{{m..m{_B}}}aity {_B}{{r..r{_B}}}unner status",
+    f"eval eval eval eval eval {_B}{{m..m..+1{_B}}}aity {_B}{{r..r..+1{_B}}}unner status",
+    f"eval eval eval eval eval {_B}{{mait{_B},--for={_B}}}y {_B}{{--for={_B},runne{_B}}}r status",
+    "$\\\n'\\x6daity' $\\\n'\\x72unner' status",
+    "env $\\\n'\\x6daity' status",
+    'echo $\\\n"hi"',
+    "env -u {a\\..b},{m.\\\n.m}ait}y --for {a\\..b},{r.\\\n.r}unne}r status",
+    "env -u {a\\..b},{m\\\n..m}ait}y --for {a\\..b},{r\\\n..r}unne}r status",
+    "env -u {a\\..b},{m..\\\nm}ait}y --for {a\\..b},{r..\\\nr}unne}r status",
+    "env -u {a\\..b},{m..m..\\\n1}ait}y --for {a\\..b},{r..r..\\\n1}unne}r status",
+    'env -u {a..\\\n},"{",mait}y --for {a..\\\n},"{",runne}r status',
+    "eval {X=a\\..b},'{mait,--for=}'}y {--for=a\\..b},'{--for=,runne}'}r status",
+    "eval {MAITY_PLACEMENT=a\\..b},'{mait,--for=}'}y status",
+    "eval {X=1,'{mait,--for=}y {--for=,runne}r'} status",
+    "eval {X=1,'{mait,--for=}y --for='} {--for=1,'{--for=,runne}r --for='} status",
+    "eval {MAITY_PLACEMENT=,'{mait,--for=}y --for='} status",
+    "`# '` {mait,--for='x '}y {--for='x ',runne}r status `# '`",
+    "eval env -u {1..${x:-'}'}},mait}y --for {1..${x:-'}'}},runne}r status",
+    "true # '\n{mait,--for='x '}y {--for='x ',runne}r status # '",
+    "cat <<EOF >/dev/null\n'\nEOF\n{mait,--for='x '}y {--for='x ',runne}r status # '",
+    "eval {X=''}V,\"{mait,--for=}\"}y {--for=''}V,\"{--for=,runne}\"}r status",
+]
+
+
+@pytest.mark.parametrize("command", CONSTRUCT_LINES, ids=range(len(CONSTRUCT_LINES)))
+def test_a_construct_the_hook_does_not_read_exactly_refuses_the_line(command: str) -> None:
+    assert plaincall.calls_runner(command)
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+# Heredocs and substitutions without such constructs.
+PLAIN_CONSTRUCTS = [
+    "x=\"$(jq '{a:1}' f.json)\"",
+    'x="$(curl -s -d \'{"a":1}\' https://example.com)"',
+    "echo \"author $(git log -1 --format='%an'): {ok}\"",
+    'echo "$((1 + 2)) {a,b}"',
+    "cat <<EOF\nhello {a,b}\nEOF",
+    "python3 - <<'EOF'\nprint({'a': 1})\nEOF",
+    "cat <<EOF x",
+]
+
+
+@pytest.mark.parametrize("command", PLAIN_CONSTRUCTS, ids=range(len(PLAIN_CONSTRUCTS)))
+def test_plain_heredocs_and_substitutions_pass(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is None
+
+
+# One construct each, without braces or names: each refuses the line.
+CONSTRUCTS = [
+    "eval 'echo hi'",
+    "bash -c 'echo hi'",
+    "sh -ec 'echo hi'",
+    "x; . ./{a,b}.sh",
+    "echo $'hi'",
+    "echo a \\\nb {c,d}",
+    "echo `echo 'x'`",
+    "echo `x",
+    "echo ${x:-'y'}",
+    "echo {a,${x}}",
+    "echo {a,$(x)}",
+    "echo {a,`x`}",
+    'echo "${HOME}"{a,b}',
+    "echo {mait,$(true)--for=}y",
+    "echo {a,b} # c",
+    "cat <<EOF\n$(date)\nEOF",
+]
+
+
+@pytest.mark.parametrize("command", CONSTRUCTS, ids=range(len(CONSTRUCTS)))
+def test_each_construct_refuses_the_line(command: str) -> None:
+    assert plaincall._unmodelled(command)
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+# The same constructs where the hook reads them exactly.
+NOT_CONSTRUCTS = [
+    "eval echo hi",
+    ". venv/bin/activate",
+    "find . -name x",
+    "echo '$'\"'\"'x'",
+    "echo '\\\n'",
+    "echo `date`",
+    "echo ${HOME}",
+    "echo hi # c",
+    "cat <<'EOF'\n$(date)\nEOF",
+]
+
+
+@pytest.mark.parametrize("command", NOT_CONSTRUCTS, ids=range(len(NOT_CONSTRUCTS)))
+def test_the_same_constructs_read_exactly_pass(command: str) -> None:
+    assert not plaincall._unmodelled(command)
+    assert plaincall.refusal(bash(command)) is None
+
+
+LINE_SHAPES = [
+    "{w}",
+    "true # '\n{w}",
+    'true # "\n{w} # "',
+    "cat <<E >/dev/null\n'\nE\n{w}",
+    "cat <<'E' >/dev/null\n\"\nE\n{w} # '",
+    "`# '` {w} `# '`",
+    "`true` {w}",
+    "x=$'\\x61' {w}",
+    "{w} \\\n# '",
+    "true \\\n'' {w}",
+    "eval {w}",
+    "eval eval {w}",
+]
+LINE_WORDS = [
+    "{mait,--for='x '}y {--for='x ',runne}r status",
+    "{mait,--for=}y {--for=,runne}r status",
+    "{m..m}aity {r..r}unner status",
+    "ma{i,}ty run{n,}er status",
+    "\\{mait,--for=\\}y \\{--for=,runne\\}r status",
+]
+
+
+@pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
+def test_lines_with_comments_heredocs_and_substitutions_run_maity_runner_only_if_refused(
+    tmp_path: Path,
+) -> None:
+    """Brace words that make `maity … runner` set in lines with comments, heredocs,
+    backticks, `$'...'`, continuations and `eval`: Bash runs `maity runner` from none of
+    them unless the hook refuses the line. Each line runs in its own Bash, with `maity` a
+    function that prints its words."""
+    print(BASH_NAME)  # noqa: T201 - recorded in the test log
+    fresh = random.SystemRandom().randrange(2**32)
+    ran = 0
+    for seed in (19422, fresh):
+        generate = random.Random(seed)  # noqa: S311 - test data, seeded on purpose
+        lines = [shape.format(w=w) for shape in LINE_SHAPES for w in LINE_WORDS]
+        for _ in range(60):
+            words = generate.choice(LINE_WORDS).split()
+            junk = generate.choice(["'", '"', "\\", "`", "#", "$'", "''", " "])
+            at = generate.randint(0, len(words))
+            line = " ".join([*words[:at], junk, *words[at:]])
+            lines.append(generate.choice(LINE_SHAPES).format(w=line))
+        opened = []
+        for line in lines:
+            assert BASH is not None
+            script = "maity() { printf 'M %s\\n' \"$*\"; }\n" + line
+            done = subprocess.run(
+                [BASH, "--norc", "--noprofile", "-c", script], cwd=tmp_path,
+                capture_output=True, text=True, timeout=30, check=False,
+                env={"PATH": "", "LC_ALL": "C"},
+            )  # fmt: skip
+            runs = [out.split() for out in done.stdout.splitlines() if out.startswith("M ")]
+            if any("runner" in words for words in runs):
+                ran += 1
+                if plaincall.refusal(bash(line)) is None:
+                    opened.append(line)
+        assert opened == [], f"seed {seed} {BASH_NAME}"
+    assert ran > 50  # most of the lines do run `maity runner` in Bash
+
+
+def test_text_with_braces_and_backticks_in_a_maity_call_passes() -> None:
+    assert plaincall.refusal(bash("maity say x 'see `{x}` and {a,b}'")) is None
+    assert plaincall.refusal(bash("watch 'eval echo \\{a,b\\}'")) == plaincall.RUNNER_REFUSED
+
+
+def test_the_runner_reason_names_the_constructs() -> None:
+    assert "`eval`, `source`, `.`, `trap` or `bash -c`" in plaincall.RUNNER_REFUSED
+    assert "a backslash-newline" in plaincall.RUNNER_REFUSED

@@ -17,6 +17,7 @@
   expansion makes, as Bash expands its braces, quoted and escaped
   characters as text; a word whose braces make more than 256 words
   refuses the line, and a line
-  with `$'…'` text that holds a backslash or with `$"…"` is refused. A
+  with `$'…'` or `$"…"` text, a backslash-newline, or `eval`, `source`,
+  `.`, `trap` or `bash -c` with a quoted or expanded word is refused. A
   quoted or escaped first word before `maity` (`"[" maity status`)
   refuses the line like any other word before it.

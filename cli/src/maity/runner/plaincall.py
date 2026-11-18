@@ -18,7 +18,9 @@ those commands are the runner's own, and the runner never starts them through an
 call. A line that names `maity` anywhere (`names_maity`) is refused when it holds a comment, a
 heredoc or more than one line (`read_whole`), and any line is refused when its quotes never
 close, when it holds `$'...'` text with a backslash or an unquoted `$"`, or when its quoted
-text is nested too deep: the hook does not read such lines to the end. A command the shell
+text is nested too deep: the hook does not read such lines to the end. Nor does it read a
+line that holds a construct it does not model exactly (`_unmodelled`): such a line is
+refused as well. A command the shell
 builds from values the hook cannot know, such as globs against files and expansions of
 variables or of input, is not read. Any other tool call is left to the
 permission rules: the hook prints nothing and exits 0.
@@ -72,7 +74,10 @@ RUNNER_REFUSED = (
     "the hook cannot read to the end (one that names `maity` and holds a comment, a heredoc "
     "or more than one line; a quote that never closes; `$'...'` text with a backslash or a "
     '`$"`; quoted text nested too deep; a word whose braces make more than '
-    f"{BRACE_LIMIT} words or that the hook does not read). Run "
+    f"{BRACE_LIMIT} words or that the hook does not read; a construct the hook does not read "
+    "exactly: `eval`, `source`, `.`, `trap` or `bash -c` with a quoted or expanded word, "
+    "`$'...'`, a backslash-newline, a backtick or `${...}` that holds quotes, a substitution "
+    "in a word with braces, a comment on a line with braces). Run "
     "each `maity` command on a line of its own, without a comment; text that holds both "
     "words goes in a file in this clone, passed with `--body-file`."
 )
@@ -228,39 +233,42 @@ def _is_runner(word: str, written: str) -> bool:
 
 
 def _names(word: str, written: str) -> tuple[str, ...]:
-    """The word as `_reads_as` takes it and, when it holds a `{`, each part of it between
-    `{`, `,` and `}` and each word its brace expansion makes (`_brace_names`): a brace
-    expansion may make a word of its own of each alternative, joined with the text around
-    it. A word whose braces are not read counts as `maity` and as `runner`."""
+    """The word as `_reads_as` takes it and, when it holds a `{`, each word its brace
+    expansion makes (`_brace_names`): a brace expansion may make a word of its own of each
+    alternative, joined with the text around it. A word whose braces are not read counts as
+    `maity` and as `runner`."""
     names = _reads_as(word)
     if "{" not in word and "{" not in written:
         return names
     made = _brace_names(word, written)
     if made is None:
         return (*names, "maity", "runner")
-    return (*names, *re.split(r"[{},]", names[1]), *made)
+    return (*names, *made)
 
 
 def _brace_names(word: str, written: str) -> list[str] | None:
     """The words brace expansion makes of a word (`_brace_words`): of the word as it is
-    `written`, as this shell expands it, and of its text `word`, as a shell that reads it
-    again expands it (`eval`), up to `_NESTING` readings deep, with what each reading makes
-    read again; text that holds spaces or operators is read again as a line instead
-    (`calls_runner`), and text whose quotes do not close is not read again, since a shell
-    that reads it stops there. A word made with a space or an operator counts also as each
-    part between them. None when one of them is not read, or when they make more than
+    `written`, as this shell expands it, and of its text `word` and of each word that
+    expansion makes, as a shell that reads them again expands them (`eval`), up to
+    `_NESTING` readings deep, with what each reading makes read again. A word with a space
+    or an operator is read again as the words between them (`_pieces`), and counts as each
+    of them too; text whose quotes do not close is not read again, since a shell that reads
+    it stops there. None when one of them is not read, when a word the last reading made
+    holds a `{` and would change if read once more, or when they make more than
     `BRACE_LIMIT` words in all."""
     made: list[str] = []
+    first = [word]
     if "{" in written:
-        first = _brace_words(written)
-        if first is None:
+        expanded = _brace_words(written)
+        if expanded is None:
             return None
-        made += first
-    seen, again = {written}, [word]
+        made += expanded
+        first += expanded
+    seen, again = {written}, first
     for _ in range(_NESTING):
         following: list[str] = []
-        for text in again:
-            if "{" not in text or text in seen or any(c in " \t" or c in _SEPARATORS for c in text):
+        for text in _pieces(again):
+            if "{" not in text or text in seen:
                 continue
             seen.add(text)
             try:
@@ -275,19 +283,34 @@ def _brace_names(word: str, written: str) -> list[str] | None:
             if len(set(made)) > BRACE_LIMIT:
                 return None
         again = following
+    if any("{" in text and text not in seen for text in _pieces(again)):
+        return None  # a further reading would change it: past the bound, not read
     if len(set(made)) > BRACE_LIMIT:
         return None
-    return made + [part for w in made for part in re.split(r"[ \t();<>|&\n]+", w) if part != w]
+    return made + [part for part in _pieces(made) if part not in made]
 
 
-def _brace_words(written: str, numbers: bool = False) -> list[str] | None:
+def _pieces(words: list[str]) -> list[str]:
+    """The words, each split at spaces, tabs and operators, as a shell that reads it again
+    as a line splits it."""
+    return [part for w in words for part in re.split(r"[ \t();<>|&\n]+", w) if part]
+
+
+def _brace_words(
+    written: str, numbers: bool = False, bash: tuple[int, int] | None = None
+) -> list[str] | None:
     """The words brace expansion makes of a word as `written` (`_expand`), each with its
     quotes and backslashes then taken off, as the shell's quote removal takes them off: a
-    backslash a range of letters makes (`{V..a..6}`) goes too. None when the expansion is not
-    read, or when a word it makes does not read as one (`_split`)."""
-    made = _expand(written, numbers=numbers)
-    if made is None:
-        return None
+    backslash a range of letters makes (`{V..a..6}`) goes too. Unless `bash` names one
+    version, the words of Bash 5.2 and of Bash 5.3 together, since the two read some braces
+    differently and either may run the line. None when an expansion is not read, or when a
+    word it makes does not read as one (`_split`)."""
+    made: list[str] = []
+    for version in [(5, 2), (5, 3)] if bash is None else [bash]:
+        some = _expand(written, numbers=numbers, bash=version)
+        if some is None:
+            return None
+        made += [one for one in some if one not in made]
     words: list[str] = []
     for one in made:
         try:
@@ -331,9 +354,12 @@ def _has_comma(text: str) -> bool:
     return False
 
 
-def _expand(word: str, limit: int = BRACE_LIMIT, numbers: bool = False) -> list[str] | None:
+def _expand(
+    word: str, limit: int = BRACE_LIMIT, numbers: bool = False, bash: tuple[int, int] = (5, 2)
+) -> list[str] | None:
     """The words Bash's brace expansion makes of `word` as it is written, quotes and
-    backslashes and all (bash 5.2, `braces.c`), before quote removal, or None when they are
+    backslashes and all (`braces.c` of the `bash` version given, 5.2 or 5.3, the two that
+    read braces differently), before quote removal, or None when they are
     not known: more than `limit` words or brace groups, braces nested deeper than the stack
     allows, a letter range that makes a backtick (the shell reads it as the start of a
     command), or a part the reading below does not cover. Quoted and escaped characters,
@@ -341,7 +367,9 @@ def _expand(word: str, limit: int = BRACE_LIMIT, numbers: bool = False) -> list[
     no group. A `{` opens a group when a `}`
     closes it: the first `}` outside nested braces after a `,` or a `..` outside nested
     braces, a `..` right before that `}` not counting (a `}` before that is text), except a
-    `{` at the word's start, or after a space, followed by a `}` or a space. A scan that
+    `{` at the word's start, or after a space, followed by a `}` or a space. Bash 5.3 counts
+    a `..` only before the first such `,`, and a group with a `..` and no `,` opens only when
+    its text starts like a range (`valid_seqterm`). A scan that
     visits more characters than a bound set by the word's length does not read it. A group
     with a `,` makes a word of each alternative, one without one a range (`_sequence`), or
     stays text when it is none; any other brace is text, and a group after it, or inside
@@ -353,18 +381,24 @@ def _expand(word: str, limit: int = BRACE_LIMIT, numbers: bool = False) -> list[
 
     def substitution(i: int, hi: int) -> int:
         """The index of the `)` that closes the substitution opened at `i`, which Bash steps
-        over by its own parse; _Unsure when it holds what that parse would read otherwise
-        (quotes, backslashes, braces, commas, nested parentheses) or never closes."""
-        close = word.find(")", i + 2, hi)
-        if close < 0 or any(c in "'\"`\\{},()" for c in word[i + 2 : close]):
+        over by its own parse (`_substitution_end`); _Unsure when that is not known."""
+        try:
+            close = _substitution_end(word, i)
+        except ValueError:
+            raise _Unsure(word) from None
+        if close >= hi:
             raise _Unsure(word)
         return close
+
+    kind = ""  # what the last scan for a `}` found first: "," or ".." (Bash 5.3's `btype`)
+    new = bash >= (5, 3)
 
     def gobble(lo: int, hi: int, i: int, satisfy: str) -> int | None:
         """Where Bash's `brace_gobbler` stops in `word[lo:hi]` from `i`: the index of the
         `satisfy` that ends the scan, or None at the end."""
-        nonlocal budget
+        nonlocal budget, kind
         level, quoted, commas, pass_next = 0, "", int(satisfy != "}"), False
+        kind = ""
         while True:
             if pass_next:
                 pass_next, i = False, i + 1
@@ -380,6 +414,8 @@ def _expand(word: str, limit: int = BRACE_LIMIT, numbers: bool = False) -> list[
             if c == "\\" and quoted in ("", '"', "`"):
                 pass_next = True
             elif c == "$" and after == "{" and quoted != "'":
+                if word[i + 2 : min(i + 3, hi)] in (" ", "\t", "\n", "|", "("):
+                    raise _Unsure(word)  # Bash 5.3 runs `${ ...; }` as a command
                 pass_next, level = True, level + (not quoted)
             elif quoted:
                 if c == quoted:
@@ -403,9 +439,10 @@ def _expand(word: str, limit: int = BRACE_LIMIT, numbers: bool = False) -> list[
             elif c == "}" and level:
                 level -= 1
             elif satisfy == "}" and level == 0 and c == ",":
-                commas += 1
+                commas, kind = commas + 1, ","
             elif satisfy == "}" and level == 0 and word.startswith("..", i) and i + 1 < hi:
-                commas += word[i + 2 : min(i + 3, hi)] != "}"
+                if word[i + 2 : min(i + 3, hi)] != "}" and not (new and kind):
+                    commas, kind = commas + 1, ".."
             i += 1
 
     def parse(lo: int, hi: int) -> list[_Part]:
@@ -418,6 +455,8 @@ def _expand(word: str, limit: int = BRACE_LIMIT, numbers: bool = False) -> list[
             while True:  # the first `{` that a `}` closes
                 start = gobble(lo, hi, i, "{")
                 end = None if start is None else gobble(lo, hi, start + 1, "}")
+                if start is not None and end is not None and new and kind == "..":
+                    end = end if _ranges_like(word, start, end) else None
                 if start is None or end is not None:
                     break
                 i = start + 1
@@ -426,8 +465,8 @@ def _expand(word: str, limit: int = BRACE_LIMIT, numbers: bool = False) -> list[
                 return parts
             parts.append(word[lo:start])
             group: _Part | None
-            if not _has_comma(word[start + 1 : end]):
-                group = _sequence(word[start + 1 : end], limit, numbers)
+            if (kind == "..") if new else not _has_comma(word[start + 1 : end]):
+                group = _sequence(word[start + 1 : end], limit, numbers, bash)
             else:
                 alternatives, a = [], start + 1
                 while True:
@@ -485,7 +524,30 @@ def _integer(number: re.Match[str]) -> int | None:
     return value if -_INTMAX - 1 <= value <= _INTMAX else None
 
 
-def _sequence(text: str, limit: int, numbers: bool) -> list[str] | None:
+def _ranges_like(word: str, start: int, end: int) -> bool:
+    """Whether the text of the group `word[start:end + 1]` starts like a range, as Bash 5.3
+    checks it before it takes the `{` as one (`valid_seqterm`)."""
+    text = word[start + 1 : end]
+    at = text.find("..")
+    if at < 0:
+        return False
+    left, right = text, text[at + 2 :] + "}"
+
+    def kind(side: str, letter_ends: str) -> str:
+        if side[:1].isdigit() or (side[:1] in "+-" and side[1:2].isdigit()):
+            return "int"
+        if side[:1].isascii() and side[:1].isalpha() and side[1:2] in letter_ends:
+            return "char"
+        return ""
+
+    if left[:1] == "." or right[0] == "}":
+        return False
+    return kind(left, ".") == kind(right, "}.") != ""
+
+
+def _sequence(
+    text: str, limit: int, numbers: bool, bash: tuple[int, int] = (5, 2)
+) -> list[str] | None:
     """The words Bash makes of a range `text` between braces (`expand_seqterm` and `mkseq`):
     `a..e`, `1..9`, each with an optional `..step`, letters and numbers either way, the
     step's sign not counting and a step of 0 counting as 1, numbers padded with zeros when an
@@ -496,7 +558,7 @@ def _sequence(text: str, limit: int, numbers: bool) -> list[str] | None:
     left, right = text[:at], text[at + 2 :]
     if at < 0 or not left or not right:
         return None
-    first = _INTEGER.fullmatch(left.rstrip(" \t"))
+    first = _INTEGER.fullmatch(left.rstrip(" \t\n\v\f\r" if bash >= (5, 3) else " \t"))
     end = _INTEGER.match(right) if right[0] in "0123456789+-" else None
     if end is not None and end.start(1) == 0 and first is not None:
         a, b, rest = _integer(first), _integer(end), right[end.end() :]
@@ -519,7 +581,10 @@ def _sequence(text: str, limit: int, numbers: bool) -> list[str] | None:
         if value is None or value == -_INTMAX - 1:
             return None  # Bash leaves a range with the least integer as its step as text
         step = abs(value) or 1
-    if not -_INTMAX + 2 <= b - a <= _INTMAX - 2 or abs(b - a) // step > _INT_MAX - 3:
+    if bash >= (5, 3):
+        if abs(b - a) > _INTMAX:
+            return None  # Bash 5.3's checked subtraction
+    elif not -_INTMAX + 2 <= b - a <= _INTMAX - 2 or abs(b - a) // step > _INT_MAX - 3:
         return None
     count = abs(b - a) // step + 1
     if width < 0:
@@ -532,8 +597,8 @@ def _sequence(text: str, limit: int, numbers: bool) -> list[str] | None:
     elif count > limit:
         raise _Over(text)
     values = [a + k * step * (1 if a <= b else -1) for k in range(count)]
-    if width and max(abs(a), abs(b)) > _INT_MAX:
-        raise _Unsure(text)
+    if width and max(abs(a), abs(b)) > _INT_MAX and bash < (5, 3):
+        raise _Unsure(text)  # Bash 5.2 pads an `int`
     return [f"{value:0{width}d}" if width else str(value) for value in values]
 
 
@@ -541,6 +606,153 @@ def _reads_as(word: str) -> tuple[str, str]:
     """The word, and the word with its backslashes, quotes and a `$` before a quote taken off,
     as a shell that reads it again may take it."""
     return word, re.sub(r"\$(?=['\"])|[\\'\"]", "", word)
+
+
+def _substitution_end(text: str, i: int) -> int:
+    """The index of the `)` that closes the `$(` (or `<(`, `>(`) at `i`, quotes, escapes and
+    nested substitutions and parentheses inside it passed over; ValueError when it never
+    closes or holds a backtick, a comment or a heredoc, whose reading is not modelled."""
+    depth, j, n = 0, i + 1, len(text)
+    while j < n:
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "'":
+            j = text.find("'", j + 1)
+            if j < 0:
+                raise ValueError(text)
+        elif c == '"':
+            j += 1
+            while j < n and text[j] != '"':
+                if text[j] == "\\":
+                    j += 1
+                elif text[j] == "`":
+                    raise ValueError(text)
+                elif text[j] == "$" and text[j + 1 : j + 2] == "(":
+                    j = _substitution_end(text, j)
+                j += 1
+            if j >= n:
+                raise ValueError(text)
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+        elif c == "`" or (c == "#" and text[j - 1] in " \t\n(") or text.startswith("<<", j):
+            raise ValueError(text)
+        j += 1
+    raise ValueError(text)
+
+
+def _unquoted_brace(written: str) -> bool:
+    """Whether a word as written holds a `{` outside quotes and escapes that does not open a
+    `${`: a brace the shell may expand. Unsure counts as yes."""
+    i, n = 0, len(written)
+    while i < n:
+        c = written[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "'":
+            i = written.find("'", i + 1)
+            if i < 0:
+                return True
+        elif c == '"':
+            i += 1
+            while i < n and written[i] != '"':
+                if written[i] == "\\":
+                    i += 1
+                elif written[i] == "$" and written[i + 1 : i + 2] == "(":
+                    try:
+                        i = _substitution_end(written, i)
+                    except ValueError:
+                        return True
+                i += 1
+            if i >= n:
+                return True
+        elif c == "{" and written[i - 1 : i] != "$":
+            return True
+        i += 1
+    return False
+
+
+# A heredoc operator and its delimiter, plain or quoted.
+_HEREDOC = re.compile(
+    r"<<(-?)[ \t]*((?:[A-Za-z0-9_.-]|'[A-Za-z0-9_.-]*'|\"[A-Za-z0-9_.-]*\"|\\[A-Za-z0-9_.-])+)"
+)
+
+
+def _without_heredocs(command: str) -> tuple[str, list[tuple[str, bool]]] | None:
+    """The line with the bodies of its heredocs taken out, and each body with whether its
+    delimiter is quoted (the body then is plain text); None when the hook is not sure where
+    one starts or ends. Quotes, escapes and comments are passed over, so a `<<` in them
+    starts none."""
+    out: list[str] = []
+    bodies: list[tuple[str, bool]] = []
+    pending: list[tuple[str, bool, bool]] = []
+    i, n, quote = 0, len(command), ""
+    while i < n:
+        c = command[i]
+        if quote:
+            if c == quote:
+                quote = ""
+            elif c == "\\" and quote == '"':
+                out.append(command[i : i + 2])
+                i += 2
+                continue
+            out.append(c)
+            i += 1
+            continue
+        if c == "\\":
+            out.append(command[i : i + 2])
+            i += 2
+            continue
+        if c in "'\"":
+            quote = c
+        elif c == "#" and (i == 0 or command[i - 1] in " \t\n;&|()"):
+            stop = command.find("\n", i)
+            stop = n if stop < 0 else stop
+            out.append(command[i:stop])
+            i = stop
+            continue
+        elif command.startswith("<<", i) and not command.startswith("<<<", i):
+            m = _HEREDOC.match(command, i)
+            if m is None:
+                return None
+            raw = m.group(2)
+            pending.append(
+                (re.sub(r"['\"\\]", "", raw), m.group(1) == "-", raw != re.sub(r"['\"\\]", "", raw))
+            )
+            out.append(m.group(0))
+            i = m.end()
+            continue
+        elif c == "\n" and pending:
+            out.append(c)
+            i += 1
+            for delimiter, tabs, quoted in pending:
+                body: list[str] = []
+                while True:
+                    if i >= n:
+                        break  # the body runs to the end, as Bash reads it
+                    stop = command.find("\n", i)
+                    stop = n if stop < 0 else stop
+                    text = command[i:stop]
+                    i = stop + 1
+                    if (text.lstrip("\t") if tabs else text) == delimiter:
+                        break
+                    body.append(text)
+                bodies.append(("\n".join(body), quoted))
+            pending = []
+            if i > n:
+                break
+            out.append("\n")
+            continue
+        out.append(c)
+        i += 1
+    bodies += [("", quoted) for _, _, quoted in pending]  # no line after it: an empty body
+    return "".join(out), bodies
 
 
 class _Unreadable(ValueError):
@@ -668,6 +880,131 @@ class _Seen:
         self.maity = self.open = False
 
 
+# Words after which a word is a command too, and the commands whose `-c` option makes the
+# shell read the word after it again (`bash -c`).
+_BEFORE_COMMAND = frozenset(("command", "builtin", "exec", "time", "nohup", "sudo", "env"))
+_SHELLS = frozenset(("sh", "bash", "dash", "ksh", "mksh", "zsh", "busybox", "su", "script"))
+# A word the shell takes as it is written: no quotes, escapes, braces or expansions.
+_LITERAL = re.compile(r"[A-Za-z0-9_./:=@%+,-]*")
+
+
+def _readers(line: str) -> list[int]:
+    """The indexes of the words of the line (`_split`) that make the shell read the words
+    after them again: `eval` and `trap` anywhere, `source` and `.` as a command (at the
+    line's start, after an operator or after a word such as `command`), and an option with a
+    `c` after a shell (`bash -c`, `sh -ec`)."""
+    found, before = [], ""
+    for k, (text, _, at, _) in enumerate(_split(line)):
+        name = text.rsplit("/", 1)[-1]
+        head = line[:at].rstrip(" \t")
+        command = not head or head[-1] in ";&|()\n!" or before in _BEFORE_COMMAND
+        if (
+            name in ("eval", "trap")
+            or (name in ("source", ".") and command)
+            or (before in _SHELLS and text.startswith("-") and "c" in text and "-" not in text[1:])
+        ):
+            found.append(k)
+        before = name
+    return found
+
+
+def _unsure_quoting(line: str) -> bool:
+    """Whether the line, outside single quotes and comments, holds `$'...'`, a
+    backslash-newline, a backtick whose text holds a quote, a backslash or a `#` or that
+    never closes, a `${` whose text holds a quote, a backslash or a backtick or that never
+    closes, a `$(` in double quotes the hook cannot delimit, or a double quote that never
+    closes: quoting the split does not read exactly."""
+    i, n, double = 0, len(line), False
+    while i < n:
+        c = line[i]
+        if not double:
+            if c == "'":
+                close = line.find("'", i + 1)
+                if close < 0:
+                    return True
+                i = close + 1
+                continue
+            if c == "$" and line[i + 1 : i + 2] == "'":
+                return True
+            if c == "#" and (i == 0 or line[i - 1] in " \t\n;&|()"):
+                close = line.find("\n", i)
+                i = n if close < 0 else close
+                continue
+        if c == '"':
+            double = not double
+        elif c == "\\":
+            if line[i + 1 : i + 2] == "\n":
+                return True
+            i += 1
+        elif c == "`":
+            close = line.find("`", i + 1)
+            if close < 0 or any(x in "'\"\\#" for x in line[i + 1 : close]):
+                return True
+            i = close
+        elif c == "$" and line[i + 1 : i + 2] == "{":
+            close = line.find("}", i + 2)
+            if close < 0 or any(x in "'\"\\`" for x in line[i + 2 : close]):
+                return True
+        elif c == "$" and line[i + 1 : i + 2] == "(" and double:
+            try:
+                i = _substitution_end(line, i)
+            except ValueError:
+                return True
+        i += 1
+    return double
+
+
+def _touching(line: str) -> list[str]:
+    """The line's words as written (`_split`), those with nothing but parentheses, `<`, `>`
+    or nothing at all between them joined with what stands between: one word to Bash where a
+    substitution splits it for the split (`{a,$(x)}y`)."""
+    joined: list[str] = []
+    end = -1
+    for _, _, at, written in _split(line):
+        if joined and set(line[end:at]) <= set("()<>"):
+            joined[-1] += line[end:at] + written
+        else:
+            joined.append(written)
+        end = at + len(written)
+    return joined
+
+
+def _unmodelled(command: str, nested: bool = False) -> bool:
+    """Whether the line holds a construct the hook does not read exactly, so that it does
+    not try (cli/context/runner.md): a word read again after `eval`, `source`, `.`, `trap`
+    or `bash -c` that is not a plain literal; `$'...'`; a backslash-newline; a word with a
+    brace the shell may expand that also holds `${`, `$(` or a backtick; a backtick whose
+    text holds a quote, a backslash or a `#`, or that never closes; a `${` whose text holds a
+    quote, a backslash or a backtick; a comment on a line with a `{`; a heredoc the hook
+    cannot delimit, or one with an unquoted delimiter whose body holds `$(` or a backtick;
+    and a line whose quotes the split cannot read. In quoted text read again (`nested`),
+    which may be text and no command at all, only the first of these counts, and only when
+    the text holds a `{`."""
+    stripped = _without_heredocs(command)
+    if stripped is None:
+        return True
+    line, bodies = stripped
+    if nested and "{" not in line:
+        return False
+    if not nested and any(not quoted and ("$(" in b or "`" in b) for b, quoted in bodies):
+        return True
+    if not nested and _unsure_quoting(line):
+        return True
+    if not nested and "{" in line and not read_whole(line.replace("\n", " ")):
+        return True  # a comment: its quotes are not the line's
+    try:
+        words = _words(line)
+    except _Unreadable:
+        return True
+    readers = _readers(line)
+    if readers and any(not _LITERAL.fullmatch(w) for _, _, w in words[readers[0] + 1 :]):
+        return True
+    return not nested and any(
+        _unquoted_brace(text) and any(s in text for s in ("${", "$(", "`", "<(", ">("))
+        for text in _touching(line)
+    )
+
+
 def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> bool:
     """Whether the line may run `maity runner`: a word `maity` (`_is_maity`) is followed
     later on the line by a word `runner` (`_is_runner`), as `_words` splits them. Neither has
@@ -678,7 +1015,11 @@ def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> boo
     would read it, up to `_NESTING` levels deep; its words continue the line where the text
     stands, so a `maity` word in it counts before a `runner` word after it and the other way
     round. Such text below that depth counts whatever it holds. A line whose quotes never
-    close counts whatever it holds."""
+    close counts whatever it holds, and so does one with a construct the hook does not read
+    exactly (`_unmodelled`), on the line or in quoted text read again."""
+    if _unmodelled(command, nested=depth > 0):
+        return True  # a construct the hook does not read exactly: refused
+    command = _without_heredocs(command)[0]  # type: ignore[index]
     try:
         words = _words(command)
     except _Unreadable:

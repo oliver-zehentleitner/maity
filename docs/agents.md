@@ -164,9 +164,10 @@ also when `runner` is only text, quoted or not, so such text goes in a file
 (`--body-file`). A line that names `maity` and holds a comment (`#` at the
 start of a word), a heredoc (`<<`) or more than one line is refused
 whatever it starts with, and so is a line with a quote that never closes,
-with `$'…'` text that holds a backslash or with `$"…"`, or with quoted
-text nested more than four levels deep: run each `maity` command on a
-line of its own, without a comment.
+with `$'…'` or `$"…"` text, a backslash-newline, `eval`, `source`, `.`,
+`trap` or `bash -c` with a quoted or expanded word, a comment beside
+braces, or quoted text nested more than four levels deep: run each
+`maity` command on a line of its own, without a comment.
 
 Under a runner placement a Claude Code or Codex session also has a
 scratch: `$MAITY_SCRATCH`, a directory beside your clone (not in it),
