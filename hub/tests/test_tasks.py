@@ -364,9 +364,7 @@ def test_a_key_cursor_from_before_still_pages_the_closed_columns(
         status="done,cancelled", kind=None, label=None, needs=None, holder=None,
         assigned_to=None, area=None, parent=None, closed_after=None, order="board",
     )  # fmt: skip
-    old = paging.key_cursor(
-        (order[1], key(order[1])), (order[2], key(order[2])), order[:2], bound
-    )
+    old = paging.key_cursor((order[1], key(order[1])), (order[2], key(order[2])), order[:2], bound)
     response = owner.get(
         f"/projects/maintainer/maity/tasks?status=done,cancelled&limit=10&cursor={old}"
     )

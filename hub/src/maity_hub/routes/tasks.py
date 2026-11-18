@@ -747,9 +747,7 @@ def list_tasks(
             # The id breaks ties bytewise, as Python compares it: PostgreSQL compares text
             # by its locale unless told otherwise (MySQL's tables are binary already,
             # SQLite compares bytes).
-            card_id = (
-                t.card.c.id.collate("C") if conn.dialect.name == "postgresql" else t.card.c.id
-            )
+            card_id = t.card.c.id.collate("C") if conn.dialect.name == "postgresql" else t.card.c.id
             if cursor is not None:
                 at_position, at_closed, at_id = paging.unclosed(cursor, bound)
                 if at_closed is None:
