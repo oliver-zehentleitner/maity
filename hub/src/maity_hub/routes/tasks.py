@@ -743,7 +743,7 @@ def list_tasks(
             # columns being read for each page. A `key` cursor given out before this path
             # existed still goes on below.
             positions = {s: cards.STATUSES.index(s) for s in wanted}
-            column = case(positions, value=t.card.c.status)
+            position = case(positions, value=t.card.c.status)
             # The id breaks ties bytewise, as Python compares it: PostgreSQL compares text
             # by its locale unless told otherwise (MySQL's tables are binary already,
             # SQLite compares bytes).
@@ -758,11 +758,13 @@ def list_tasks(
                         t.card.c.closed_at < at_closed,
                         and_(t.card.c.closed_at == at_closed, card_id > at_id),
                     )
-                query = query.where(or_(column > at_position, and_(column == at_position, within)))
+                query = query.where(
+                    or_(position > at_position, and_(position == at_position, within))
+                )
             # A card without `closed_at` sorts last in its column, as in board_key, on every
             # database: PostgreSQL would put NULL first in a descending order.
             query = query.order_by(
-                column, t.card.c.closed_at.is_(None), t.card.c.closed_at.desc(), card_id
+                position, t.card.c.closed_at.is_(None), t.card.c.closed_at.desc(), card_id
             ).limit(limit + 1)
             rows = conn.execute(query).all()
             page = rows[:limit]
