@@ -378,9 +378,9 @@ window.Maity = window.Maity || {};
         return b;
       };
       // Ended by the runner's owner or the profile's owner, who places it again on a
-      // runner of their own (§15.5, §15.14): an agent moves to another runner only once
-      // its placement here is gone (`placement_exists`), an own one as much as a foreign
-      // one. Whoever may act on a row here may delete it (§15.6 DELETE: the runner's
+      // runner of their own (§15.5, §15.14): the start form (`startForm`) offers an agent
+      // again only once its placement here is gone (`placed`), an own one as much as a
+      // foreign one. Whoever may act on a row here may delete it (§15.6 DELETE: the runner's
       // owner with any trust, members:admin with the runner included, or the profile's
       // owner): `mayAct` above.
       const remove = h("button", { type: "button", class: "danger", "aria-label": M.t("placements.remove.label", { name }),

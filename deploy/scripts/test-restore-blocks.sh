@@ -7,6 +7,11 @@
 # It also runs the two blocks that close the hub's NetworkPolicy after a restore and open it again (docs/install/README.md,
 # steps 4 and 6): the hub starts only once the policy admits nobody, the kept rules are never overwritten, and they are
 # removed only once the policy has them again.
+# The two restore blocks also check the backup's signature against the fingerprint in MAITY_BACKUP_SIGNER (the signing key's
+# or its primary key's), and stop before anything is decrypted when it is not set, or the signature is missing, bad, by
+# another key, or made under another file name (the name carries the backup's time stamp), or by a key that is revoked or
+# expired; only MAITY_RESTORE_UNSIGNED=1 restores without the check, and says so. Neither block may hold a single quote. The same
+# blocks run against a real gpg in deploy/scripts/test-backup-signing.sh.
 # Usage: deploy/scripts/test-restore-blocks.sh   (no cluster needed; GNU tar, python3)
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
@@ -42,6 +47,8 @@ for b in db-block att-block close-block open-block; do
 done
 for b in db-block att-block; do
   grep -q 'k get pods' "$work/$b" || { echo "FAIL the $b has no pod check"; exit 1; }
+  # The block is pasted inside sh -eu -c '...': a single quote in it, even in a comment, would end the script there.
+  ! grep -q "'" "$work/$b" || { echo "FAIL the $b holds a single quote: $(grep -n "'" "$work/$b" | head -1)"; exit 1; }
 done
 
 cat > "$work/bin/kubectl" <<'STUB'
@@ -87,6 +94,30 @@ exit 0
 STUB
 cat > "$work/bin/gpg" <<'STUB'
 #!/bin/bash
+# --verify: $SIG good (by $SUBKEY, primary $PRIMARY, signed under the file's name), renamed (signed under an older name),
+# noname (no signed name), double (an older name by the right key, the file's name by another key), revoked or expired (a good signature by a revoked or expired key), other (by another key) or bad; a missing .sig fails like gpg. Else decrypt.
+echo "gpg $*" >> "$S/log"
+args=("$@")
+for i in "${!args[@]}"; do
+  [ "${args[$i]}" = --verify ] || continue
+  sig=${args[$((i + 1))]} name=$(basename "${args[$((i + 2))]}")
+  [ -e "$sig" ] || { echo "gpg: can't open '$sig': No such file or directory" >&2; exit 2; }
+  note() { printf '[GNUPG:] NOTATION_NAME backup-file@maity\n[GNUPG:] NOTATION_FLAGS 0 1\n[GNUPG:] NOTATION_DATA %s\n' "$1"; }
+  valid="[GNUPG:] VALIDSIG $SUBKEY 2026-11-14 1794614400 0 4 0 22 10 00 $PRIMARY"
+  echo "[GNUPG:] NEWSIG"   # gpg opens each signature's section with it
+  case "${SIG:-good}" in
+    double)  echo "[GNUPG:] GOODSIG ${SUBKEY: -16} sign"; note "maity-20000101T000000Z.dump.gpg"; echo "$valid"
+             echo "[GNUPG:] NEWSIG"; echo "[GNUPG:] GOODSIG ${OTHER: -16} other"; note "$name"
+             echo "[GNUPG:] VALIDSIG $OTHER 2026-11-14 1794614400 0 4 0 22 10 00 $OTHER"; exit 0;;
+    good)    echo "[GNUPG:] GOODSIG ${SUBKEY: -16} sign"; note "$name"; echo "$valid"; exit 0;;
+    renamed) echo "[GNUPG:] GOODSIG ${SUBKEY: -16} sign"; note "maity-20000101T000000Z.dump.gpg"; echo "$valid"; exit 0;;
+    noname)  echo "[GNUPG:] GOODSIG ${SUBKEY: -16} sign"; echo "$valid"; exit 0;;
+    revoked) echo "[GNUPG:] KEYREVOKED"; echo "[GNUPG:] REVKEYSIG ${SUBKEY: -16} sign"; note "$name"; echo "$valid"; exit 0;;
+    expired) echo "[GNUPG:] EXPKEYSIG ${SUBKEY: -16} sign"; note "$name"; echo "$valid"; exit 0;;
+    other) echo "[GNUPG:] GOODSIG ${OTHER: -16} other"; echo "[GNUPG:] VALIDSIG $OTHER 2026-11-14 1794614400 0 4 0 22 10 00 $OTHER"; exit 0;;
+    bad)   echo "[GNUPG:] BADSIG ${SUBKEY: -16} sign"; exit 1;;
+  esac
+done
 cat "$S/plain"
 STUB
 cat > "$work/bin/pg_restore" <<'STUB'
@@ -111,7 +142,8 @@ failures=0
 run() { # block, FAIL value, expected: restores | stops
   local block=$1 fail=$2 want=$3 name="$1/$2"
   export S="$work/run-$block-$fail" FAIL=$fail; mkdir -p "$S"; : > "$S/log"; cp "$work/plain.tar" "$S/plain"
-  ( cd "$S" && PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$block")" restore test-context backup.gpg ) >"$S/out" 2>&1
+  # these cases are about the hub's state: the signature check is switched off (it has cases of its own below)
+  ( cd "$S" && MAITY_RESTORE_UNSIGNED=1 PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$block")" restore test-context backup.gpg ) >"$S/out" 2>&1
   local got=$? reached=stops
   grep -q " exec " "$S/log" && reached=restores
   local status_ok=no
@@ -122,7 +154,7 @@ run() { # block, FAIL value, expected: restores | stops
     echo "FAIL $name: $reached with exit $got (want $want)"; sed 's/^/     /' "$S/out"; failures=$((failures + 1))
   fi
   # Every kubectl names the context given.
-  if grep -v -- "--context test-context" "$S/log" | grep -q .; then echo "FAIL $name: a kubectl without --context"; failures=$((failures + 1)); fi
+  if grep '^kubectl' "$S/log" | grep -v -- "--context test-context" | grep -q .; then echo "FAIL $name: a kubectl without --context"; failures=$((failures + 1)); fi
 }
 for b in db-block att-block; do
   run $b none restores
@@ -131,6 +163,46 @@ for b in db-block att-block; do
   run $b pods_fail stops
   run $b replica stops
   run $b pod_left stops
+done
+# The signature; a stop must come before any decryption.
+export SUBKEY=B1B2B3B4B5B6B7B8B9B0B1B2B3B4B5B6B7B8B9B0 PRIMARY=A1A2A3A4A5A6A7A8A9A0A1A2A3A4A5A6A7A8A9A0 OTHER=C1C2C3C4C5C6C7C8C9C0C1C2C3C4C5C6C7C8C9C0
+sig_run() { # block, name, MAITY_BACKUP_SIGNER, SIG (good, other, bad, missing), want: restores | stops; $UNSIGNED: MAITY_RESTORE_UNSIGNED
+  local block=$1 name="$1/sig_$2" signer=$3 sig=$4 want=$5
+  export S="$work/sig-$block-$2" FAIL=none SIG=$sig; mkdir -p "$S"; : > "$S/log"; cp "$work/plain.tar" "$S/plain"
+  [ "$sig" = missing ] || : > "$S/backup.gpg.sig"
+  ( cd "$S" && MAITY_RESTORE_UNSIGNED=${UNSIGNED:-} MAITY_BACKUP_SIGNER=$signer PATH="$work/bin:$PATH" sh -eu -c "$(cat "$work/$block")" restore test-context backup.gpg ) >"$S/out" 2>&1
+  local got=$? reached=stops
+  grep -q " exec " "$S/log" && reached=restores
+  if [ "$want" = restores ] && [ "$reached" = restores ] && [ "$got" = 0 ]; then echo "ok   $name (restores)"
+  elif [ "$want" = stops ] && [ "$reached" = stops ] && [ "$got" != 0 ] && ! grep -q '^gpg -d' "$S/log"; then echo "ok   $name (stops before decrypting, exit $got)"
+  else echo "FAIL $name: $reached with exit $got (want $want)"; sed 's/^/     /' "$S/out"; failures=$((failures + 1)); fi
+}
+lower=$(printf '%s' "$SUBKEY" | tr A-F a-f)
+for b in db-block att-block; do
+  # Without a fingerprint the block refuses, and names both ways on; MAITY_RESTORE_UNSIGNED=1 restores and says so,
+  # even past a signature that would not check out; any other value of it changes nothing.
+  sig_run $b unset "" missing stops
+  grep -q "MAITY_RESTORE_UNSIGNED=1 to restore an unsigned backup" "$work/sig-$b-unset/out" && echo "ok   $b/sig_unset: names the switch" \
+    || { echo "FAIL $b/sig_unset: does not name the switch"; failures=$((failures + 1)); }
+  sig_run $b unset_signed "" good stops
+  UNSIGNED=1 sig_run $b emergency "" missing restores
+  grep -q "WITHOUT checking its signature" "$work/sig-$b-emergency/out" && echo "ok   $b/sig_emergency: says the signature is not checked" \
+    || { echo "FAIL $b/sig_emergency: no line"; failures=$((failures + 1)); }
+  UNSIGNED=1 sig_run $b emergency_other_key "$SUBKEY" other restores
+  UNSIGNED=yes sig_run $b switch_not_1 "" missing stops
+  sig_run $b subkey "$SUBKEY" good restores
+  sig_run $b primary "$PRIMARY" good restores
+  sig_run $b spaced_lower "$(printf '%s' "$lower" | sed 's/..../& /g')" good restores
+  sig_run $b other_key "$SUBKEY" other stops
+  sig_run $b bad "$SUBKEY" bad stops
+  sig_run $b renamed "$SUBKEY" renamed stops
+  sig_run $b no_name "$SUBKEY" noname stops
+  sig_run $b two_signatures "$SUBKEY" double stops
+  sig_run $b revoked_key "$SUBKEY" revoked stops
+  sig_run $b expired_key "$SUBKEY" expired stops
+  sig_run $b missing "$SUBKEY" missing stops
+  sig_run $b partial "${SUBKEY:0:16}" good stops
+  sig_run $b not_hex "not a fingerprint" good stops
 done
 # Closing and opening the hub's NetworkPolicy. $S/np.json is the policy; RULES its rules at the start.
 rules='[{"from": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}}], "ports": [{"port": "http", "protocol": "TCP"}]}]'

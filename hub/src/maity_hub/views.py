@@ -445,8 +445,9 @@ def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:
     return best
 
 
-def _placements(conn: Connection, membership_ids: set[int]) -> dict[int, dict[str, Any]]:
-    """Per agent membership its active placement, as the Agents list needs it (§15.11)."""
+def _placements(conn: Connection, membership_ids: set[int]) -> dict[int, list[dict[str, Any]]]:
+    """Per agent membership its active placements, oldest first, one per instance, as the
+    Agents list needs them (§15.11): `placements`, and `placement` the first of them."""
     if not membership_ids:
         return {}
     rows = conn.execute(
@@ -456,19 +457,32 @@ def _placements(conn: Connection, membership_ids: set[int]) -> dict[int, dict[st
             t.placement.c.desired,
             t.placement.c.reported,
             t.runner.c.name,
+            t.credential.c.instance,
         )
         .join(t.runner, t.runner.c.id == t.placement.c.runner_id)
+        .outerjoin(t.credential, t.credential.c.id == t.placement.c.credential_id)
         .where(t.placement.c.membership_id.in_(membership_ids), t.placement.c.active.is_(True))
+        .order_by(t.placement.c.created_at, t.placement.c.id)
     ).all()
-    return {
-        r.membership_id: {
-            "id": r.id,
-            "state": (r.reported or {}).get("state"),
-            "desired": r.desired,
-            "runner_name": r.name,
-        }
-        for r in rows
-    }
+    found: dict[int, list[dict[str, Any]]] = {}
+    for r in rows:
+        found.setdefault(r.membership_id, []).append(
+            {
+                "id": r.id,
+                "instance": r.instance,
+                "state": (r.reported or {}).get("state"),
+                "desired": r.desired,
+                "runner_name": r.name,
+            }
+        )
+    return found
+
+
+def _first_placement(placements: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """`placement` of the member view: the oldest active placement in its v1 shape."""
+    if not placements:
+        return None
+    return {k: v for k, v in placements[0].items() if k != "instance"}
 
 
 def _sessions(conn: Connection, membership_ids: set[int]) -> tuple[dict[int, Any], dict[int, Any]]:
@@ -771,7 +785,10 @@ def member_views(
                 "covered_by": covered_by.get(row.id),
                 "covering": covering.get(row.id, []),
                 "joined_at": ts(row.joined_at),
-                "placement": placed.get(row.id),  # always null for a human
+                # The first placement, without `instance` as before, and every one (§15.11);
+                # null and empty for a human.
+                "placement": _first_placement(placed.get(row.id)),
+                "placements": placed.get(row.id, []),
             }
         )
         if row.agent_id is not None:
