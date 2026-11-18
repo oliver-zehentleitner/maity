@@ -274,6 +274,47 @@ personal requests grow.
 **Reason:** the smallest change that removes the per-event cost while keeping the rules in
 one place. Evidence is inferred: measured locally, production to confirm.
 
+## The bell's head reads every project's position in one statement, a correlated `max(seq)` per project
+
+**Id:** 1309e2d7-66a1-4faf-a779-cafc1d1371b7
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-xx108ajy287x (clean-up audit tsk-hgnbapyw7hnh, item 15), PR #1952; reviews A1263 and A1264 of PR #1952 (query plans on test fixtures, a timing on synthetic data)
+**See:** notifications.md#deriving-items-reads-each-kind-of-lookup-once-per-batch-not-once-per-event — b4a7c2f0-e8c8-4e9d-a093-95f07b4eb411 — as of 2026-11-18
+**Revisit when:** the head is to respect visibility or isolation, `ix_event_project_seq` changes, or the head query changes
+
+`listing.head` gives `GET /me/notifications` each project's highest `seq`. It ran one
+`max(event.seq)` statement per membership on every read. It now reads every membership's
+project in one statement: `select(project.id, (select coalesce(max(seq), 0) from event where
+event.project_id = project.id)) where project.id in (...)`, a project without events reading
+as 0, and no statement at all without memberships. A test keeps the count flat as
+memberships grow.
+
+**Reason:** each project's `max(seq)` stays a one-row lookup at the end of
+`ix_event_project_seq` (`project_id`, `seq`), however many events the project has, while a
+`GROUP BY project_id` over `event` reads every event row of the human's projects. The choice
+was made by reasoning from how the index serves the query; no EXPLAIN was run for the change.
+The reviews of PR #1952 then looked. Review A1263: on PostgreSQL 16.2 the plan was a SubPlan
+with a Limit over an Index Only Scan Backward using `ix_event_project_seq` (one row per
+project), the `GROUP BY` a Bitmap Heap Scan, a Sort and a GroupAggregate; on SQLite 3.46 with
+600,000 synthetic events over 3 projects the subquery took 0.16 ms and the `GROUP BY`
+51.21 ms, with the same maxima. Review A1264: on PostgreSQL, EXPLAIN ANALYZE showed a Limit 1
+over an Index Only Scan Backward using `ix_event_project_seq`, 0.090 ms on a fixture of 6,001
+events; the bell's head read 2 statements with 4 memberships (the projects and the account)
+where the loop read 5, and with no membership the account statement alone. These are plans
+and timings on test fixtures, not a production benchmark, and they support the reasoning on
+SQLite and PostgreSQL only: MariaDB was not measured, and its optimizer can serve a
+`GROUP BY … max()` by a loose index scan. So the evidence stays inferred, with measurement on
+test fixtures beside it.
+
+**Rejected alternatives:**
+- One `GROUP BY project_id` over `event` for the human's projects, as the card proposed: it
+  reads every event row of those projects on SQLite and PostgreSQL (above), and it gives no
+  row for a project without events, which then needs filling in.
+- The old loop of one statement per membership: the same index lookup, but a round trip per
+  project on every bell read.
+
 ## Notification settings store only what the human changed; the defaults fill the rest on read
 
 **Id:** 3e9a6b69-7715-4ce3-8c9d-a9194fbf9500
