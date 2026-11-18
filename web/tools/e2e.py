@@ -5543,6 +5543,49 @@ def stored_page_layout(run: Run, browser) -> None:
             context.close()
 
 
+# [probe, do not merge] tsk-z4ps7cg7ve25: the counter-check's hook, on by default on the probe
+# branch only. It turns a frame stylesheet off for 3 s at the moment that splits a wait from the
+# read after it (media "not all", which js/site-chrome.js never touches, unlike `disabled`):
+# - public-sections.css once the phone picture has been measured at 96 px twice (the picture
+#   wait's poll and the picture assertion's read), before profile_layout's stacked read;
+# - landing.css when the dashboard draws the Board view over the project's page (the tab's
+#   click), before visitor_layout's dark-zone read.
+LATE_SHEET = """(() => {
+  const off = (name) => {
+    [...document.querySelectorAll('link[rel=stylesheet]')]
+      .filter((l) => (l.getAttribute('href') || '').split('?')[0].endsWith('/' + name))
+      .forEach((l) => {
+        const was = l.getAttribute('media');
+        l.setAttribute('media', 'not all');
+        setTimeout(() => { if (was === null) l.removeAttribute('media'); else l.setAttribute('media', was); }, 3000);
+      });
+  };
+  const real = Element.prototype.getBoundingClientRect;
+  let seen = 0;
+  Element.prototype.getBoundingClientRect = function () {
+    const r = real.call(this);
+    if (innerWidth < 760 && seen < 2 && this.matches('section.uhero .wrap > .av')
+        && Math.round(r.width) === 96 && ++seen === 2) off('public-sections.css');
+    return r;
+  };
+  document.addEventListener('DOMContentLoaded', () => {
+    const main = document.getElementById('main');
+    if (!main) return;
+    // Only the route change from the project's page (its view removed, the Board's added), not a
+    // fresh load of the Board, which the step then checks with axe.
+    const is = (nodes, kind) => [...nodes].some((n) => n.matches && n.matches(`section.view-visitor[data-kind="${kind}"]`));
+    new MutationObserver((ms) => {
+      if (ms.some((m) => is(m.addedNodes, 'board')) && ms.some((m) => is(m.removedNodes, 'project'))) off('landing.css');
+    }).observe(main, { childList: true });
+  });
+})()"""
+
+
+def late_sheet(context) -> None:
+    if os.environ.get("E2E_LATE_SHEET", "1") == "1":
+        context.add_init_script(LATE_SHEET)
+
+
 def visitor_layout(run: Run, browser) -> None:
     """A public page the dashboard draws for a visitor, in the frame of §16.7.5 as the sign-in and
     the stored pages are (tsk-tp97v64vpy5z, PR 3): the landing page's header and footer around it,
@@ -5551,6 +5594,7 @@ def visitor_layout(run: Run, browser) -> None:
     for width, height in ((1280, 900), (390, 844)):
         for scheme in ("light", "dark"):
             context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+            late_sheet(context)  # [probe, do not merge]
             seen = context.new_page()
             refused: list[str] = []
             seen.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
@@ -5711,6 +5755,7 @@ def profile_layout(run: Run, browser) -> None:
         for scheme in ("light", "dark"):
             context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
             context.set_default_timeout(TIMEOUT_MS)
+            late_sheet(context)  # [probe, do not merge]
             seen = context.new_page()
             refused: list[str] = []
             seen.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
@@ -5772,8 +5817,16 @@ def visitor_step(run: Run, page: Page) -> None:
     guest.locator("section.view-visitor").get_by_role("link", name="Board", exact=True).click()
     expect(guest).to_have_url(f"{run.base}/owner/e2e-alpha/board")
     expect(guest.locator('section.view-visitor[data-kind="board"]')).to_be_visible()
-    visitor_layout(run, page.context.browser)
-    profile_layout(run, page.context.browser)
+    # [probe, do not merge] Both rounds run, each failure printed, then raised together, so one
+    # run shows the dark-zone and the stacked read.
+    probe_failures = []
+    for layout in (visitor_layout, profile_layout):
+        try:
+            layout(run, page.context.browser)
+        except AssertionError as err:
+            print(f"probe: {layout.__name__}: {err}", file=sys.stderr, flush=True)
+            probe_failures.append(f"{layout.__name__}: {err}")
+    assert not probe_failures, " | ".join(probe_failures)
     # The way to sign in leads to the form, and the address it came from is kept.
     guest.locator("header.site-header a.signin").click()
     expect(guest.locator("#login-email")).to_be_visible()
