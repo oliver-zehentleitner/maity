@@ -40,22 +40,28 @@ The list, in the order agreed (gain is the expected share of a page's time):
 
 | # | Measure | Gain | Cost | Status, card |
 |---|---|---|---|---|
-| 1 | Caching: content-hashed files `immutable`, ETag/304 on avatars and reads | warm load without ~100 requests and their waves | M | in progress, tsk-pcw785rhymyg |
-| 1a | Avatars cached for good: every `avatar_url` already names its version (`?v=…`), so its answer can be `immutable` | board and card −1.5–2 s warm | S | tsk-vvyqmk9vwg8e |
-| 2 | One load wave: `modulepreload` for every module in the HTML | cold load −2–4 s | M | card to come |
+| 1 | Caching: content-hashed files `immutable`, ETag/304 on avatars and reads | warm load without ~100 requests and their waves | M | done, tsk-pcw785rhymyg (revalidation) and tsk-0pp41wxp6f75 (content-hashed URLs) |
+| 1a | Avatars cached for good: every `avatar_url` already names its version (`?v=…`), so its answer can be `immutable` | board and card −1.5–2 s warm | S | done, tsk-vvyqmk9vwg8e |
+| 2 | One load wave: `modulepreload` for every module in the HTML | cold load −2–4 s | M | cancelled, tsk-ym4a7c9rvsn2 (reason not recorded, below) |
 | 3 | A page of requests in one batch | inbox −~4 s | S | done, tsk-fxjtwmkc4md5 (#1515) |
-| 4 | The inbox reads open requests first, the history on demand | inbox −1–2 s | S | tsk-y8gkq1kvt63c |
-| 5 | The board without serial paging (open cards first, closed window later) | board −1 s | S–M | tsk-d61rvjm6gteh |
-| 6 | The members page reads credentials on expand, not per member up front | members −0.5 s, 26 requests | S | tsk-d61rvjm6gteh |
-| 7 | The repeated reads (card panel `…/members`, chat list) found and stopped | load on every page | S | tsk-d61rvjm6gteh |
+| 4 | The inbox reads open requests first, the history on demand | inbox −1–2 s | S | done, tsk-y8gkq1kvt63c |
+| 5 | The board without serial paging (open cards first, closed window later) | board −1 s | S–M | done for the column groups, tsk-d61rvjm6gteh; the done column's follow-up pages still serial, tsk-d4anfsk1e94j |
+| 6 | The members page reads credentials on expand, not per member up front | members −0.5 s, 26 requests | S | done, tsk-d61rvjm6gteh |
+| 7 | The repeated reads (card panel `…/members`, chat list) found and stopped | load on every page | S | done, tsk-d61rvjm6gteh |
 | 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | done, tsk-239r9cwxje6w (#1544) |
 | 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | done, tsk-239r9cwxje6w (#1542) |
-| 10 | One boot read: the window, the session, `/me` and on a project view the head, the project and its members in one answer | two round trips fewer on a project view, one elsewhere (expected) | M, contract | decided, tsk-x4z69ff785y6 (below) |
+| 10 | One boot read: the window, the session, `/me` and on a project view the head, the project and its members in one answer | two round trips fewer on a project view, one elsewhere (expected) | M, contract | done, tsk-x4z69ff785y6 and tsk-j591fzgnmspf (below) |
 | 11 | Bundling the scripts with a build step | beyond item 2, if still needed | L | later |
 | 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later |
 | 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | later |
 | 14 | Render cost in the browser, from a performance trace of the board and a chat | unknown | S to measure | later |
-| 15 | A statement test per list route, and a check on the number and size of the files the HTML loads, in CI | keeps the gains | S | later |
+| 15 | A statement test per list route, and a check on the number and size of the files the HTML loads, in CI | keeps the gains | S | proposed, tsk-xdn21ph67js9 |
+
+Statuses as of 2026-11-18, read from the board. Items 11 to 14 wait for a new measurement
+against the 2026-11-08 baseline, and each becomes a card only where that run shows a page
+still missing the goal. Why item 2 was cancelled is **unknown**: the card's text gives no
+reason, and nobody now on the team knows. Whoever knows adds it here with
+tsk-ym4a7c9rvsn2 as the source.
 
 **Reason:** the owner set the goal and the order. Working by expected gain puts the shared
 cold-load cost first, since every page pays it. A kept list lets a measure that is not done
