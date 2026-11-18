@@ -18651,6 +18651,37 @@ nor shows it, and a runner view carries none (below).
     where it cannot start. Where it is `off`, the runner starts agy only
     as far as its configuration allows a harness to run without its
     sandbox (`sandbox_unavailable`, §15.7).
+- `opencode` is the OpenCode CLI, `opencode`, running Grok
+  (docs/runners.md, "OpenCode (Grok)"). Its confinement is `allowlist`:
+  the permission rules the runner writes for each start, in its own
+  directory and never in the clone, with the repository's own opencode
+  configuration switched off. Those rules steer the model; they are no
+  boundary.
+  - `sandbox` is always `off`: opencode has no OS sandbox the runner
+    switches on, so an opencode agent can run any command as the agents'
+    OS user. The runner starts it only as far as its configuration allows
+    a harness to run without its sandbox (`require_sandbox`,
+    docs/runners.md), and gives it no scratch (§15.5).
+  - **Modes.** Both. `supervised` runs `opencode run` and continues with
+    `--continue`; `interactive` runs `opencode --prompt` with the start
+    prompt in the pane.
+  - **Models.** Names in opencode's own form, `<provider>/<model>`,
+    passed as `opencode --model`. opencode needs a named model: without
+    `--model` it runs its own default, a model opencode hosts, and the
+    clone's conversation would go to opencode's servers instead of the
+    provider the runner names. So the runner fails closed on the model:
+    a placement without one (`model: null`) starts on the runner's
+    `default_model`, and a start whose model is none of the runner's
+    `models` (an opencode harness configured with none included) is
+    refused, `failed` with `harness_refused` and `model_unsupported`
+    (§15.7), never started without `--model`. The dashboard names a
+    model for every opencode placement it makes and does not offer
+    opencode where the runner advertises no `models`.
+  - **Login.** The runner has no installer for opencode: `install` and
+    `update` under its harness are refused by the runner's configuration
+    check, so opencode never reports `login_needed` (§15.16). The
+    operator installs it and signs in once as the agents' OS user; the
+    runner neither signs in nor reads that login.
 - `models` are names the runner offers; how the agents get model access
   (a login on the host, keys, a cluster Secret) is the runner's
   configuration and never reaches the hub (open: §12 2 of the design).
@@ -18743,7 +18774,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `agent` | `{id, handle, display_name, avatar_url}` of the membership's profile (§6.10). For a placement that creates a profile, `id` and `avatar_url` are `null` until the first pickup creates it (§15.9) |
 | `runner` | `{id, name}`; the runner must be attached (`runner_not_attached`) |
 | `target` | `null` (the runner chooses) or a target name the runner advertised |
-| `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default |
+| `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default. For `opencode` that is the runner's `default_model`, and a start whose model is none of its `models` is refused (`harness_refused`, `model_unsupported`), never started on opencode's own default (§15.3) |
 | `mode` | `interactive` (a session a human can attach to) or `supervised` (woken by events, no open session); omitted at creation: the harness's advertised `default_mode` |
 | `workspace` | `clone`: `[a-z0-9][a-z0-9-]{0,62}`. Without one the hub takes the first of `<handle>`, `<handle>-2`, `<handle>-3`, … that no active placement of the project on that runner names and that no closed placement of another membership of the project on that runner names whose clone the runner did not report removed (`workspace_outcome`): the agent's first placement keeps the handle as its clone, a further instance on the same runner gets a clone of its own, and a clone the membership left there is taken up again (`continues_existing`). The placement's id never goes into the path, so a later placement can continue a clone; `branch`: an optional starting branch. The repository is always the project's `repository.url`; a placement never names a repository or a path. `continues_existing` is true when a closed placement of the same membership on the same (runner, clone) exists whose clone the runner did not report removed (`workspace_outcome`), which is also when the credential is carried over. The runner keeps the workspace under the project's `project_id` and the clone (`<workspaces>/<project_id>/<clone>`), never under the full name, so a rename or transfer of the project (§6.25) keeps it. For `antigravity` (§15.3) that path is the placement's workspace folder, which the runner creates, and the clone is `repo` in it (`<workspaces>/<project_id>/<clone>/repo`); the harness starts in the folder. At every start the runner refuses a folder that holds anything but the clone (`workspace_in_use`, `workspace_not_bare`), since agy would load it, and a folder inside a git work tree (`workspace_in_repository`, §15.3); it deletes nothing there. It moves no clone between the two layouts: a path in the other one is `workspace_in_use`. Removing the clone (below) removes the folder with it, and every check before a removal applies to the whole folder: an entry besides `repo` counts as unsaved work (`kept`, `unsaved_work`, each such entry counted in `unsaved`), so only a person's removal by hand takes it |
 | `project_id`, `project_aliases` | the project's fixed id and its earlier full names (§6.25), for the runner's workspace key and for matching its configured `projects` list, current name or alias |
@@ -19802,7 +19833,9 @@ maity runner <harness> [--workspace DIR] [--model MODEL] [--allow COMMAND]...
   names.
 - `--model MODEL` is passed to the harness as a placement's `model` is
   on a runner (§15.3); without it the harness uses its own default. It
-  is not stored.
+  is not stored. `opencode` has no default of its own that local mode
+  takes: its own would be a model opencode hosts (§15.3), so local mode
+  starts it only with `--model`.
 - `--allow COMMAND` adds a command to the session's allowlist, as
   `[repository].allow` does on a runner (§15.3). It is not stored: every
   start names its own. Only a harness whose confinement is `allowlist`

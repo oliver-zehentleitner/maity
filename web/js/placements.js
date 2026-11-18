@@ -398,6 +398,13 @@ window.Maity = window.Maity || {};
   //   refuse(status, err): a refusal into a status line, placement_quota with its link;
   // - reread(): read again while it is on (the panel opened anew, a placement made).
   // hooks.changed(): turned on or off, or read; the form shows and hides its fields.
+  // The tools that start only on a model named in the placement: opencode without `--model`
+  // runs opencode's own default, an opencode-hosted model, and the clone's conversation would go
+  // to opencode's servers (docs/api.md §15.3, docs/runners.md "OpenCode (Grok)"). The form
+  // offers such a tool only with the models its runner names, with no "runner's default", and
+  // leaves it out where the runner names none (web/context/views.md, the opencode model entry).
+  const MODEL_NAMED = new Set(["opencode"]);
+
   function runnerPart(ctx, hooks) {
     if (!M.placements.startOffered(ctx)) return null;
     const words = M.runnerWords;
@@ -438,15 +445,26 @@ window.Maity = window.Maity || {};
       const mode = select("mode");
       const model = select("model");
       const noTool = h("p", { class: "hint", id: id("tool") + "-none", hidden: true }, M.t("placements.new.no_tool"));
+      // A tool left out because its runner names no model for it (MODEL_NAMED, above).
+      const noModel = h("p", { class: "hint placement-new-no-model", hidden: true });
+      const modelHint = h("p", { class: "hint", id: id("model") + "-hint", hidden: true }, M.t("placements.new.model_named"));
+      model.setAttribute("aria-describedby", id("model") + "-hint");
       const caps = () => (runners.find((a) => a.runner.id === runner.value).runner.capabilities || {});
-      const tools = () => (caps().harnesses || []).filter((x) => x.available !== false && (!target.value || (x.targets || []).includes(target.value)));
+      const installed = () => (caps().harnesses || []).filter((x) => x.available !== false && (!target.value || (x.targets || []).includes(target.value)));
+      const tools = () => installed().filter((x) => !MODEL_NAMED.has(x.id) || (x.models || []).length);
       const harness = () => tools().find((x) => x.id === tool.value);
       const fillModes = () => {
         const x = harness();
         const modes = x ? x.modes || [] : [];
         append(clear(mode), modes.map((m) => h("option", { value: m }, Object.hasOwn(words.MODES, m) ? words.MODES[m] : m)));
         mode.value = x && modes.includes(x.default_mode) ? x.default_mode : modes[0] || "";
-        append(clear(model), h("option", { value: "" }, M.t("placements.new.model_default")), (x ? x.models || [] : []).map((m) => h("option", { value: m }, m)));
+        // A tool of MODEL_NAMED starts only on a model chosen here: no "runner's default", and
+        // the placeholder keeps the required select empty until one is.
+        const named = !!x && MODEL_NAMED.has(x.id);
+        append(clear(model), h("option", { value: "" }, named ? M.t("placements.new.model_choose") : M.t("placements.new.model_default")),
+          (x ? x.models || [] : []).map((m) => h("option", { value: m }, m)));
+        model.required = named;
+        modelHint.hidden = !named;
       };
       const fillTools = () => {
         const kept = tool.value;
@@ -455,6 +473,9 @@ window.Maity = window.Maity || {};
         tool.value = list.some((x) => x.id === kept) ? kept : list.length ? list[0].id : "";
         // Nothing to start with: the hub would refuse it (harness_not_offered).
         noTool.hidden = !!list.length;
+        const left = installed().filter((x) => !list.includes(x)).map((x) => words.toolName(x.id));
+        noModel.hidden = !left.length;
+        noModel.textContent = left.length ? M.t("placements.new.no_model", { tools: M.fmt.list(left) }) : "";
         fillModes();
       };
       const fillTargets = () => {
@@ -475,9 +496,9 @@ window.Maity = window.Maity || {};
       const set = h("fieldset", { class: "join-runner-fields" },
         field("runner", M.t("placements.new.runner"), runner),
         field("target", M.t("placements.new.target"), target),
-        h("div", { class: "field" }, h("label", { for: id("tool") }, M.t("placements.new.tool")), tool, noTool),
+        h("div", { class: "field" }, h("label", { for: id("tool") }, M.t("placements.new.tool")), tool, noTool, noModel),
         field("mode", M.t("placements.new.mode"), mode),
-        field("model", M.t("placements.new.model"), model),
+        h("div", { class: "field" }, h("label", { for: id("model") }, M.t("placements.new.model")), model, modelHint),
         field("clone", M.t("placements.new.clone"), clone, M.t("placements.new.clone_hint")),
         field("branch", M.t("placements.new.branch"), branch),
         h("div", { class: "field wide" }, h("label", { for: id("reason") },
@@ -579,7 +600,10 @@ window.Maity = window.Maity || {};
       el,
       on: () => offer.checked,
       ready: () => offer.checked && !!fields && !!fields.tool.value,
+      // A tool that needs a model named (MODEL_NAMED) without one chosen: words, else null.
+      unnamed: () => (fields && fields.model.required && !fields.model.value ? M.t("placements.new.model_missing", { tool: words.toolName(fields.tool.value) }) : null),
       first: () => (fields ? fields.runner : offer),
+      model: () => (fields ? fields.model : offer),
       follow, blocked, body, said, refuse,
       reread: () => { if (offer.checked) load(); },
     };
