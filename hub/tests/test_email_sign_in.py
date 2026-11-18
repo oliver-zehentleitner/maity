@@ -22,7 +22,7 @@ from maity_hub.routes import email_sign_in
 from tests import factory, flow, stored_keys
 from tests.conftest import ClientFactory
 
-KEY =base64.b64encode(b"s" * 32).decode()
+KEY = base64.b64encode(b"s" * 32).decode()
 
 
 @pytest.fixture(autouse=True)
