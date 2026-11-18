@@ -456,10 +456,19 @@ window.MAITY_I18N["en"] = {
   "board.claim.unclaimed": "Unclaimed",
   "board.closed.failed": "The closed cards could not be read: {reason}",
   "board.closed.loading": "Reading the closed cards…",
+  "board.closed.more_failed": "More closed cards could not be read: {reason}",
+  "board.closed.more_loaded": {
+    "one": "{count} closed card loaded",
+    "other": "{count} closed cards loaded"
+  },
   "board.closed.recheck_failed": "The closed cards could not be checked for changes made while they were read: {reason}",
   "board.closed.show_more": {
     "one": "Show {count} more closed card",
     "other": "Show {count} more closed cards"
+  },
+  "board.closed.show_more_loaded": {
+    "one": "Show more ({count} loaded)",
+    "other": "Show more ({count} loaded)"
   },
   "board.column.other": "Other",
   "board.column.unknown": "Unknown status",

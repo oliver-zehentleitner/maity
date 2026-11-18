@@ -50,7 +50,7 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 2 | One load wave: `modulepreload` for every module in the HTML | cold load −2–4 s | M | cancelled, tsk-ym4a7c9rvsn2: does not apply, the dashboard has no ES modules (below) |
 | 3 | A page of requests in one batch | inbox −~4 s | S | done, tsk-fxjtwmkc4md5 (#1515) |
 | 4 | The inbox reads open requests first, the history on demand | inbox −1–2 s | S | done, tsk-y8gkq1kvt63c |
-| 5 | The board without serial paging (open cards first, closed window later) | board −1 s | S–M | done for the column groups, tsk-d61rvjm6gteh; the done column's follow-up pages still serial, tsk-d4anfsk1e94j |
+| 5 | The board without serial paging (open cards first, closed window later) | board −1 s | S–M | done for the column groups, tsk-d61rvjm6gteh; done for the closed columns, tsk-d4anfsk1e94j (a page of 50 each at load, the next on Show more, no follow-up pages) |
 | 6 | The members page reads credentials on expand, not per member up front | members −0.5 s, 26 requests | S | done, tsk-d61rvjm6gteh |
 | 7 | The repeated reads (card panel `…/members`, chat list) found and stopped | load on every page | S | done, tsk-d61rvjm6gteh |
 | 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | done, tsk-239r9cwxje6w (#1544) |

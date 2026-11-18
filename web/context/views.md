@@ -1996,6 +1996,10 @@ the same second as the newest one is recovered too. A pass of one page has
 no gap and ends the reading. After three passes that each followed a
 cursor, one list of every status in the window (`status=all` with the
 window, all its pages) is read instead and replaces the cards.
+Since tsk-d4anfsk1e94j the closed group is two reads, `done` and
+`cancelled`, one page of 50 each (b7b0a38f): six reads, not five. The one
+list of that fallback still holds every closed card of the window, so after
+it no closed page is left to read.
 What is guaranteed: every card that did not change during the reads is
 shown as its group read it, and every card that did is shown once, as the
 last pass, or the one list, has it. The one list has the gaps between its
@@ -6497,7 +6501,7 @@ card asked for. Alternatives beyond that were not discussed.
 
 **Id:** e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** card tsk-a5pxwgkgr73e: the owner's feedback on deploy 6 (2026-11-10, the board one of two pages still over 1 s); the operators' per-call measurement of the board on rev 30 (2026-11-10: the five group reads start together and take 83–203 ms each; the closed group then pages serially, 4 pages of 200, about 0.9 s and 550 kB); the coordinator's go for this change the same day
 **See:** views.md#the-board-reads-its-column-groups-side-by-side — 145f0bf3-3024-414a-8026-19dad1960ff7 — as of 2026-11-10
@@ -6538,6 +6542,11 @@ draws the panel anew as before. A board left from a
 closed card finds that card now. A reload after a write
 supersedes the first read: an answer is drawn only if no later read's
 answer has been.
+
+The `Revisit when` above has come about with tsk-d4anfsk1e94j: the closed
+columns are now one page of 50 each, done and cancelled read apart, not a
+group that pages (b7b0a38f). The draw before them is kept as it is; whether it
+still earns its cost with a page of 50 has not been measured.
 
 **Reason:** on the maintainer's project the closed window was 783 cards,
 the largest group by far, and its pages follow each other through a
@@ -6612,32 +6621,43 @@ and the e2e step then needs no wait of its own.
   listener for clicks elsewhere and none was removed until such a click, so repeated refreshes stacked
   them on detached menus (review of #1654).
 
-## A closed column draws the 50 cards closed last; Show more draws the rest
+## A closed column reads and draws the 50 cards closed last; Show more reads the next 50
 
 **Id:** b7b0a38f-66a0-4224-82de-57e1300cc63a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10
+**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10; card tsk-d4anfsk1e94j: the board run measured by ops on 2026-11-12 (done column about 790 cards, its 3 follow-up pages one after another after the first, 546 kB in all), and the owner's choice of a first page of 50 with "Show more" on demand that says how many are loaded, req-aa0jka1xsfsy
 **See:** views.md#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow — e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7 — as of 2026-11-11
-**Revisit when:** the closed window or the hub's board shape changes, or a full redraw of the board is measured over about 200 ms again
+**See:** https://github.com/oliver-zehentleitner/maity — 7bad4e04-7132-4825-94c5-825301c20800 — as of 2026-11-18
+**Revisit when:** the closed window or the hub's board shape changes, the hub gives a closed column's total, or a full redraw of the board is measured over about 200 ms again
 
-The board still reads every card of the closed window (the entry above). The
-Done and Cancelled columns draw only the 50 cards closed last (by
-`closed_at`), in the column's own order, and a button below them shows how
-many more there are ("Show 11 more closed cards"). The column's count stays
-the whole number. The button draws that column whole for the rest of the
-board view, and the first card it added takes the focus, since the button is
-gone. A card the board is opened on (by its link, or coming back from it) is
-drawn wherever it stands, and a subtask folded under a parent with that
-parent, since it is found only under a drawn parent. A hub search's
-columns follow the same rule.
+Since tsk-d4anfsk1e94j the board no longer reads every card of the closed
+window. Done and Cancelled are each read as one page, `limit=50`, which the
+hub orders by `closed_at`, newest first (7bad4e04), and are drawn in the
+column's own order. Below each, **Show more (N loaded)** reads that column's
+next page of 50 with the cursor the hub handed out and adds it. It is there
+while the hub names a next page, disabled while that page is read, keeps the
+focus (after the last page, which takes it away, the first card that page
+added has it), and a live region says how many are loaded. The column's
+count is the cards loaded: the hub gives no total. A write that reads the
+board again reads each closed column with as many cards as it held (at most
+200, the hub's page), so it does not fold back what Show more loaded. A
+closed card the board is opened on that is not loaded opens in its panel,
+read by itself, as a card outside the window does. A hub search, whose
+results come whole, still draws the 50 closed last of each closed column
+and a button the rest ("Show 11 more closed cards").
 
 **Reason:** every redraw of the board (a filter change, each keystroke of
 the board search, a card's update) drew every closed card: with 783 a full
 redraw took about 640 ms (2.7 s on a CPU four times slower), with 100 about
-100 ms (0.44 s). The closed cards are the ones a reader works in least; the
-newest are the ones looked for.
+100 ms (0.44 s). Reading them all cost more still: the done column's pages
+followed one another through a keyset cursor, about 0.8 s and 546 kB after
+the first page. The closed cards are the ones a reader works in least; the
+newest are the ones looked for. The owner chose the first page of 50 with
+"Show more" on demand (req-aa0jka1xsfsy). Done and Cancelled are read apart
+because the hub orders a closed list by column first: one page of both would
+hold no cancelled card until every done card had been read.
 
 **Rejected alternatives:**
 - A leaner card shape for the board's list, without the largest fields: a
@@ -6646,6 +6666,13 @@ newest are the ones looked for.
   not only from the drawing, and changes what the board offers.
 - The first 50 in the column's order: that order is by rank and creation,
   so it would show old closed cards and hide the ones just closed.
+- Reading the whole closed window and drawing 50 of it (this entry before
+  tsk-d4anfsk1e94j): the drawing was fast, the read stayed serial.
+- Reading the follow-up pages in parallel once the cursor was short: a keyset
+  page needs the one before it, so they cannot start together; the owner's
+  choice removes the chain instead.
+- One page of `done,cancelled` together: the Cancelled column would stay empty
+  behind the done cards (above).
 
 ## Report is one small button where a reader sees the thing, one inline form for all, and the account's Reports tab is where its outcome shows
 

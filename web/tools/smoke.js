@@ -5535,18 +5535,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "board: a card closed before its panel took the focus leaves no panel and no error " + JSON.stringify(rrOpenedFirst));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
 
-  // The board reads its column groups side by side, each with its own pages, the closed window on the closed
-  // group alone (tsk-d61rvjm6gteh); answered in any order, each column holds what one status=all read gives it.
+  // The board reads its column groups side by side, the open ones each with its own pages, the closed window on
+  // the closed columns alone, each one page of 50 (tsk-d61rvjm6gteh, tsk-d4anfsk1e94j); answered in any order,
+  // each column holds what one status=all read gives it.
   {
-    const bgAll = win.Maity.api.getAll, bgHeld = [];
-    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=/.test(p) && !p.includes("q=")
+    const bgAll = win.Maity.api.getAll, bgGet = win.Maity.api.get, bgHeld = [];
+    const bgList = /^\/projects\/maintainer\/maity\/tasks\?status=/;
+    win.Maity.api.getAll = (p) => (bgList.test(p) && !p.includes("q=")
       ? new Promise((res, rej) => { bgHeld.push({ p, go: () => bgAll(p).then(res, rej) }); }) : bgAll(p));
+    win.Maity.api.get = (p) => (bgList.test(p) && !p.includes("q=") && !p.includes("order=")
+      ? new Promise((res, rej) => { bgHeld.push({ p, go: () => bgGet(p).then(res, rej) }); }) : bgGet(p));
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
     const bgStarted = bgHeld.map((x) => decodeURIComponent(x.p.split("?")[1]));
     const bgDrawnEarly = !!main.querySelector(".columns article.card");
     bgHeld.slice().reverse().forEach((x) => x.go()); for (let k = 0; k < 8; k++) await tick();
-    win.Maity.api.getAll = bgAll;
-    const closedAt = (bgStarted.find((q) => q.startsWith("status=done,cancelled&closed_after=")) || "").split("closed_after=")[1];
+    win.Maity.api.getAll = bgAll; win.Maity.api.get = bgGet;
+    const closedAt = ((bgStarted.find((q) => q.startsWith("status=done&closed_after=")) || "").split("closed_after=")[1] || "").split("&")[0];
     const all = (await bgAll("/projects/maintainer/maity/tasks?status=all&closed_after=" + encodeURIComponent(closedAt || ""))).items;
     const shownIds = new Set(all.map((t) => t.id));
     const bgWant = {}, bgGot = {};
@@ -5556,8 +5560,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       bgGot[st] = col.querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
       bgWant[st] = all.filter((t) => t.status === st && !(t.parent && shownIds.has(t.parent))).sort(win.Maity.boardEdit.byOrder).map((t) => t.id);
     });
-    expect(JSON.stringify(bgStarted.map((q) => q.split("&")[0])) === JSON.stringify(["status=proposed", "status=open", "status=in_progress", "status=blocked,review", "status=done,cancelled"])
-      && bgStarted.filter((q) => q.includes("closed_after=")).length === 1 && !!closedAt && !bgDrawnEarly,
+    expect(JSON.stringify(bgStarted.map((q) => q.split("&")[0])) === JSON.stringify(["status=proposed", "status=open", "status=in_progress", "status=blocked,review", "status=done", "status=cancelled"])
+      && bgStarted.filter((q) => q.includes("closed_after=")).length === 2 && bgStarted.filter((q) => q.endsWith("&limit=50")).length === 2
+      && bgStarted.slice(4).every((q) => q === q.split("&")[0] + "&closed_after=" + closedAt + "&limit=50") && !!closedAt && !bgDrawnEarly,
       "board: the column groups are asked side by side, the closed window on the closed group alone " + JSON.stringify(bgStarted));
     expect(Object.keys(bgWant).length === 7 && JSON.stringify(bgGot) === JSON.stringify(bgWant),
       "board: answered in reverse, each column holds the cards of one status=all read, in the board's order " + JSON.stringify([bgGot, bgWant]));
@@ -5567,12 +5572,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // follow, its columns say they are being read and hold no count, then fill in; a closed read that fails says
   // so in those columns and leaves the open ones as drawn.
   {
-    const clAll = win.Maity.api.getAll;
+    const clAll = win.Maity.api.getAll, clGetReal = win.Maity.api.get;
     let clHeld = null;
     const clColumn = (st) => main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === st);
     const clCards = (st) => clColumn(st).querySelectorAll("article.card").length;
-    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=done,cancelled&closed_after=/.test(p)
-      ? new Promise((res, rej) => { clHeld = { go: () => clAll(p).then(res, rej), fail: () => rej(new Error("hub unreachable")) }; }) : clAll(p));
+    // The closed columns' reads (done, then cancelled, one page each) held together; a board drawn anew
+    // drops the reads of the one before, as clHeld was replaced when they were one read.
+    let clWait = [];
+    const clRelease = (how) => clWait.splice(0).forEach((x) => x[how]());
+    const clHoldGet = (onAsk) => (p) => {
+      const m = /^\/projects\/maintainer\/maity\/tasks\?status=(done|cancelled)&closed_after=/.exec(p);
+      if (!m) return clGetReal(p);
+      if (m[1] === "done") clWait = [];
+      if (onAsk) onAsk(p);
+      return new Promise((res, rej) => {
+        clWait.push({ go: () => clGetReal(p).then(res, rej), fail: () => rej(new Error("hub unreachable")) });
+        clHeld = { go: () => clRelease("go"), fail: () => clRelease("fail") };
+      });
+    };
+    win.Maity.api.get = clHoldGet();
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
     const clEarly = { open: clCards("open"), done: clCards("done"), doneText: text(clColumn("done")), cancelledText: text(clColumn("cancelled")),
       count: !!clColumn("done").querySelector(".count"), empty: !!main.querySelector(".first-hint") };
@@ -5717,21 +5735,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     clHeld.go(); for (let k = 0; k < 8; k++) await tick();
     const clFilled = clCards("done") > 0;
     byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
-    win.Maity.api.getAll = clAll;
+    win.Maity.api.get = clGetReal;
     expect(clNoVerdict && clFilled, "board: a filter on the closed columns says no verdict while they are read " + JSON.stringify([clNoVerdict, clFilled]));
 
-    // The closed group held again, for the checks below; each says whether it was held when it looked.
+    // The closed columns held again, for the checks below; each says whether it was held when it looked.
     const clHold = win.Maity.api.getAll;
     // The hub search's tsk-0003 closed an hour ago, inside the window whatever the fixture says.
     let clClosedAt = new Date(Date.now() - 3600000).toISOString();
     let clSince = null;
-    win.Maity.api.getAll = (p) => (/^\/projects\/maintainer\/maity\/tasks\?status=done,cancelled&closed_after=/.test(p)
-      ? new Promise((res, rej) => {
-        clSince = decodeURIComponent(p.split("closed_after=")[1].split("&")[0]);
-        clHeld = { go: () => clAll(p).then(res, rej), fail: () => rej(new Error("hub unreachable")) };
-      })
-      : /[?&]q=tsk-0003/.test(p) ? clAll(p).then((r) => ({ ...r, items: r.items.map((t) => (t.id === "tsk-0003" ? { ...t, closed_at: clClosedAt } : t)) }))
-        : clAll(p));
+    win.Maity.api.get = clHoldGet((p) => { clSince = decodeURIComponent(p.split("closed_after=")[1].split("&")[0]); });
+    win.Maity.api.getAll = (p) => (/[?&]q=tsk-0003/.test(p)
+      ? clAll(p).then((r) => ({ ...r, items: r.items.map((t) => (t.id === "tsk-0003" ? { ...t, closed_at: clClosedAt } : t)) }))
+      : clAll(p));
     const clReading = () => text(clColumn("done")).includes("Reading the closed cards…");
     // A hub search while the closed cards are still read marks a closed card outside the window by its
     // closed_at, not by the cards loaded so far (review of #1622): tsk-0003, done inside the window, has no
@@ -5852,7 +5867,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
     const clRecheckHeld = clReading();
     clHeld.go(); for (let k = 0; k < 8; k++) await tick();
-    win.Maity.api.get = clGet;
+    win.Maity.api.get = clGetReal;
     win.Maity.api.getAll = clHold;
     const clRecheck = text(clColumn("done"));
     expect(clRecheckHeld && clRecheck.includes("The closed cards could not be checked for changes made while they were read: hub unreachable")
@@ -5860,77 +5875,75 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "board: a failed read again of the changed cards is not called a failed closed read " + JSON.stringify(clRecheck));
   }
 
-  // A closed column draws the 50 cards closed last and offers the rest (tsk-a5pxwgkgr73e, the owner's decision,
-  // seq 109362); the count is the column's whole; Show more draws the column whole and focuses the first card it
-  // added; a marked card older than the 50 is drawn. The column's order (rank, then id here) runs against the
-  // closing order, so the first 50 in the column are not the 50 closed last.
+  // A closed column reads one page of 50 at board load and the next page only on Show more (tsk-d4anfsk1e94j,
+  // the owner's req-aa0jka1xsfsy): done and cancelled each one read with limit=50 and no cursor, no read after it
+  // on its own; Show more (N loaded) reads the next page with the cursor the hub handed out and adds it, is
+  // disabled while that page is read (a second click reads nothing), keeps the focus, says the count in the live
+  // region, and is gone after the last page, the focus then on the first card that page added. The hub is served
+  // here as it pages a closed column: closed_at newest first, the cursor the last card's place.
   {
-    const smAll = win.Maity.api.getAll;
-    const smBase = (await smAll("/projects/maintainer/maity/tasks?status=done,cancelled")).items.find((t) => t.status === "done");
+    const smGet = win.Maity.api.get;
+    const smBase = (await smGet("/projects/maintainer/maity/tasks?status=done")).items[0];
     const smNow = Date.now();
-    const smExtra = Array.from({ length: 60 }, (_, i) => Object.assign({}, smBase, { id: "tsk-m" + String(100 + i), title: "Closed " + i,
-      closed_at: new Date(smNow - (60 - i) * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"), updated_at: smBase.updated_at, parent: null, depends_on: [], related: [] }));
-    win.Maity.api.getAll = async (p) => {
-      const got = await smAll(p);
-      return /^\/projects\/maintainer\/maity\/tasks\?status=done,cancelled&closed_after=/.test(p) ? { items: got.items.concat(smExtra), next_cursor: null } : got;
+    const smRows = Array.from({ length: 120 }, (_, i) => Object.assign({}, smBase, { id: "tsk-m" + String(100 + i), title: "Closed " + i,
+      closed_at: new Date(smNow - (i + 1) * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"), updated_at: smBase.updated_at, parent: null, depends_on: [], related: [] }));
+    const smAsked = [];
+    let smHold = null;
+    win.Maity.api.get = async (p) => {
+      // Nothing changed while the board was read: earlier cases' writes stay out of the column.
+      if (/^\/projects\/maintainer\/maity\/tasks\?.*order=updated/.test(p)) return { items: [], next_cursor: null };
+      if (!/^\/projects\/maintainer\/maity\/tasks\?status=done&closed_after=/.test(p)) return smGet(p);
+      const q = new URLSearchParams(p.split("?")[1]);
+      smAsked.push({ limit: q.get("limit"), cursor: q.get("cursor") });
+      if (smHold) await new Promise((res) => { smHold = res; });
+      const from = q.get("cursor") ? Number(q.get("cursor").slice(4)) + 1 : 0;
+      const limit = Number(q.get("limit"));
+      const items = smRows.slice(from, from + limit);
+      return { items, next_cursor: from + limit < smRows.length ? "pos-" + (from + limit - 1) : null };
     };
     const smColumn = () => main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === "done");
     const smCards = () => smColumn().querySelectorAll("article.card").map((a) => a.attrs["data-card"]);
     const smMore = () => smColumn().querySelectorAll("button").find((b) => b.className.includes("show-more"));
-    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 8; k++) await tick();
-    const smFirstCards = smCards();
-    const smNewest = smExtra.slice(10).map((t) => t.id);  // closed last: tsk-m110 … tsk-m159
-    const smFirst = { drawn: smFirstCards.length, count: text(smColumn().querySelector(".count")), button: smMore() && text(smMore()),
-      newest: smNewest.every((id) => smFirstCards.includes(id)), oldest: smFirstCards.includes("tsk-m100") };
+    const smLive = () => main.querySelectorAll("p.visually-hidden").find((x) => x.getAttribute("role") === "status");
+    const smOff = (b) => !!b && (b.disabled === true || (b.getAttribute("disabled") != null && b.getAttribute("disabled") !== false));
     const smProto = Object.getPrototypeOf(main), smFocus = smProto.focus;
     smProto.focus = function () { document.activeElement = this; };
-    smMore().dispatch("click"); await tick();
-    const smAfter = smCards();
-    const smFocused = document.activeElement && document.activeElement.className === "card-open"
-      ? document.activeElement.parentNode : null;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 12; k++) await tick();
+    const smFirst = { asked: JSON.stringify(smAsked), drawn: smCards().length, button: smMore() && text(smMore()), tag: smMore() && smMore().tagName,
+      type: smMore() && smMore().getAttribute("type"), off: smOff(smMore()) };
+    expect(smAsked.length === 1 && smAsked[0].limit === "50" && smAsked[0].cursor === null && smFirst.drawn === 50
+      && smFirst.button === "Show more (50 loaded)" && smFirst.tag === "BUTTON" && smFirst.type === "button" && !smFirst.off,
+      "board: the done column reads one page with limit=50 at load, no page after it, and offers Show more (50 loaded) " + JSON.stringify(smFirst));
+    // Show more: held, a second click while it is read reads nothing; the button is disabled meanwhile.
+    smHold = true;
+    smMore().focus();
+    smMore().dispatch("click"); for (let k = 0; k < 2; k++) await tick();
+    const smBusy = smOff(smMore());
+    smMore().dispatch("click"); for (let k = 0; k < 2; k++) await tick();
+    const smAskedHeld = smAsked.length;
+    const smRelease = smHold; smHold = null; smRelease(); for (let k = 0; k < 6; k++) await tick();
+    const smSecond = { asked: smAsked.slice(1), drawn: smCards().length, button: smMore() && text(smMore()), off: smOff(smMore()),
+      focus: document.activeElement === smMore(), live: smLive() && text(smLive()), newest: smCards().includes("tsk-m100"), page2: smCards().includes("tsk-m199") };
+    expect(smBusy && smAskedHeld === 2 && smSecond.asked.length === 1 && smSecond.asked[0].cursor === "pos-49" && smSecond.asked[0].limit === "50"
+      && smSecond.drawn === 100 && smSecond.button === "Show more (100 loaded)" && !smSecond.off && smSecond.focus
+      && smSecond.live === "100 closed cards loaded" && smSecond.newest && smSecond.page2,
+      "board: Show more reads the next page by the hub's cursor once, disabled while read, adds it and keeps the focus "
+      + JSON.stringify([smBusy, smAskedHeld, smSecond]));
+    // The last page takes the button away; the focus goes to the first card it added.
+    smMore().dispatch("click"); for (let k = 0; k < 6; k++) await tick();
     const smFocusedCard = (() => { for (let x = document.activeElement; x; x = x.parentNode) if (x.attrs && x.attrs["data-card"]) return x.attrs["data-card"]; return null; })();
+    expect(smAsked.length === 3 && smAsked[2].cursor === "pos-99" && smCards().length === 120 && !smMore() && smFocusedCard === "tsk-m200",
+      "board: the last page leaves no Show more, the focus on the first card it added " + JSON.stringify([smAsked.slice(2), smCards().length, smFocusedCard]));
+    // A failed page says so and leaves the button to try again.
+    const smGetOk = win.Maity.api.get;
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 12; k++) await tick();
+    win.Maity.api.get = (p) => (/status=done&closed_after=.*cursor=/.test(p) ? Promise.reject(new Error("hub unreachable")) : smGetOk(p));
+    smMore().dispatch("click"); for (let k = 0; k < 6; k++) await tick();
+    const smFailed = [smCards().length, smMore() && text(smMore()), smOff(smMore()), text(main.querySelector(".send-status.failed") || main)];
+    expect(smFailed[0] === 50 && smFailed[1] === "Show more (50 loaded)" && !smFailed[2] && smFailed[3].includes("More closed cards could not be read: hub unreachable"),
+      "board: a failed Show more says so and can be tried again " + JSON.stringify(smFailed));
     smProto.focus = smFocus; document.activeElement = undefined;
-    const smAdded = smAfter.find((id) => !smFirstCards.includes(id));
-    expect(smFirst.drawn === 50 && smFirst.newest && !smFirst.oldest && smFirst.count === "61" && smFirst.button === "Show 11 more closed cards"
-      && smAfter.length === 61 && !smMore() && !!smAdded && smFocusedCard === smAdded,
-      "board: a closed column draws the 50 closed last and Show more the rest, focusing the first card it added "
-      + JSON.stringify([smFirst, smAfter.length, smFocusedCard, smAdded, !!smFocused]));
-    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board/tsk-m100"); for (let k = 0; k < 8; k++) await tick();
-    expect(smCards().length === 51 && smCards().includes("tsk-m100") && text(smMore()) === "Show 10 more closed cards",
-      "board: a card linked from older than the 50 closed last is drawn with them " + JSON.stringify([smCards().length, smMore() && text(smMore())]));
-    // A subtask folded under a parent, both closed before the 50 (review of #1645): the link to the subtask
-    // draws its parent, unfolds it and marks the subtask's row. The Cancelled column runs the same rule.
-    const smOld = (n) => new Date(smNow - (120 + n) * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
-    smExtra.push(Object.assign({}, smBase, { id: "tsk-mp00", title: "Old parent", closed_at: smOld(2), updated_at: smBase.updated_at,
-      parent: null, depends_on: [], related: [], children: { open: 0, total: 1 } }));
-    smExtra.push(Object.assign({}, smBase, { id: "tsk-mc00", title: "Old child", closed_at: smOld(1), updated_at: smBase.updated_at,
-      parent: "tsk-mp00", depends_on: [], related: [], children: { open: 0, total: 0 } }));
-    smExtra.push(...Array.from({ length: 55 }, (_, i) => Object.assign({}, smBase, { id: "tsk-mx" + String(100 + i), title: "Cancelled " + i,
-      status: "cancelled", closed_at: new Date(smNow - (55 - i) * 60000).toISOString().replace(/\.\d{3}Z$/, "Z"), updated_at: smBase.updated_at,
-      parent: null, depends_on: [], related: [] })));
-    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board/tsk-mc00"); for (let k = 0; k < 8; k++) await tick();
-    const smRow = smColumn().querySelectorAll("li.subtask").find((li) => li.attrs["data-card"] === "tsk-mc00");
-    const smCancelled = main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === "cancelled");
-    const smCancelledMore = smCancelled.querySelectorAll("button").find((b) => b.className.includes("show-more"));
-    const smFold = [smCards().includes("tsk-mp00"), !!smRow && smRow.className.includes("wanted"), smRow && !smRow.parentNode.hidden,
-      smCancelled.querySelectorAll("article.card").length, smCancelledMore && text(smCancelledMore),
-      Number(text(smCancelled.querySelector(".count")))];
-    expect(smFold[0] && smFold[1] && smFold[2] && smFold[3] === 50 && smFold[5] >= 55
-      && smFold[4] === "Show " + (smFold[5] - 50) + " more closed cards",
-      "board: a subtask linked from older than the 50 is drawn under its parent and marked; Cancelled draws its 50 too " + JSON.stringify(smFold));
-    // The same across columns (review of #1645): the parent cancelled, the subtask done, both older than the 50.
-    smExtra.push(Object.assign({}, smBase, { id: "tsk-mp01", title: "Old cancelled parent", status: "cancelled", closed_at: smOld(4),
-      updated_at: smBase.updated_at, parent: null, depends_on: [], related: [], children: { open: 0, total: 1 } }));
-    smExtra.push(Object.assign({}, smBase, { id: "tsk-mc01", title: "Old done child", closed_at: smOld(3), updated_at: smBase.updated_at,
-      parent: "tsk-mp01", depends_on: [], related: [], children: { open: 0, total: 0 } }));
-    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board/tsk-mc01"); for (let k = 0; k < 8; k++) await tick();
-    const smCancelled2 = main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === "cancelled");
-    const smRow2 = smCancelled2.querySelectorAll("li.subtask").find((li) => li.attrs["data-card"] === "tsk-mc01");
-    const smCross = [smCancelled2.querySelectorAll("article.card").map((x) => x.attrs["data-card"]).includes("tsk-mp01"),
-      !!smRow2 && smRow2.className.includes("wanted"), smRow2 && !smRow2.parentNode.hidden, smCards().includes("tsk-mc01")];
-    expect(smCross[0] && smCross[1] && smCross[2] && !smCross[3],
-      "board: a done subtask of an old cancelled parent, linked, is drawn under that parent in Cancelled and marked " + JSON.stringify(smCross));
-    win.Maity.api.getAll = smAll;
+    win.Maity.api.get = smGet;
     await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   }
 
