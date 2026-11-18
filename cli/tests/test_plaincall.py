@@ -524,6 +524,24 @@ def test_maity_inside_a_longer_word_is_not_decided(command: str) -> None:
     assert plaincall.refusal(bash(command)) is None
 
 
+# A path counts as `maity` in any position only when its last component is `maity`: a clone
+# directory named after a handle is no `maity` word.
+PATH_ENDS_IN_OTHER_NAME = [
+    "cd /some/path/maity-coder-claude-004 && make",
+    "cd /some/path/maity-coder-claude-004-2 && make",
+]
+
+
+@pytest.mark.parametrize("command", PATH_ENDS_IN_OTHER_NAME)
+def test_a_path_whose_last_component_is_longer_than_maity_is_not_decided(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is None
+
+
+@pytest.mark.parametrize("command", ["cd /some/path/maity && make", "cd /some/path/MAITY && make"])
+def test_a_path_ending_in_maity_counts_as_maity_after_another_command(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
+
+
 # A quoted `maity` or one with a backslash, after assignments.
 DECIDED = [
     "A=1 m'ai'ty a | x",
