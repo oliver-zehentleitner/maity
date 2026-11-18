@@ -5543,6 +5543,19 @@ def stored_page_layout(run: Run, browser) -> None:
             context.close()
 
 
+def settle(seen: Page, check: str, arg) -> None:
+    """Wait until `check`, a function of `arg` run in the page, is true, before a read whose
+    assertion follows. A layout or colour read once can see the view before the frame's
+    stylesheets apply to it: the shell's stored page stands until the dashboard draws over it, an
+    old view until the new one is drawn (tsk-5q7vxjm75t5v, tsk-z4ps7cg7ve25). The check looks the
+    element up again on each poll and tests the exact quantity the assertion reads. It gives up
+    after the timeout without failing: the read after it then names what it found."""
+    try:
+        seen.wait_for_function(check, arg=arg)
+    except PlaywrightError:
+        pass  # the assertion after it names the value
+
+
 def visitor_layout(run: Run, browser) -> None:
     """A public page the dashboard draws for a visitor, in the frame of §16.7.5 as the sign-in and
     the stored pages are (tsk-tp97v64vpy5z, PR 3): the landing page's header and footer around it,
@@ -5572,7 +5585,13 @@ def visitor_layout(run: Run, browser) -> None:
                 # The approved mockup's project page (tsk-9482zxza3gs3): the landing's dark hero, the
                 # figures band on the Overview, the views as a bar across the whole window under them;
                 # at 390 px the hero stacked, three figures a row, the bar scrolling sideways.
-                hero = seen.locator("section.phero")
+                # The view of this kind, not the one being left or the shell's stored page. Its colour
+                # (.hero in landing.css) and, on a phone, its one column (public-sections.css) are
+                # waited for before each is read once (tsk-z4ps7cg7ve25): a visible h1 proves neither.
+                view = f'section.view-visitor.public-view[data-kind="{kind}"]:not([inert]) section.phero'
+                hero = seen.locator(view)
+                settle(seen, "([s, c]) => { const e = document.querySelector(s);"
+                       " return !!e && getComputedStyle(e).backgroundColor === c; }", [view, "rgb(11, 15, 20)"])
                 assert hero.evaluate("e => getComputedStyle(e).backgroundColor") == "rgb(11, 15, 20)", f"{where}: the hero is not the dark zone"
                 expect(hero.locator(".pmark")).to_have_text("E")
                 expect(hero.locator("p.crumb")).to_have_text("owner / e2e-alpha")
@@ -5610,6 +5629,8 @@ def visitor_layout(run: Run, browser) -> None:
                     assert tab.evaluate("e => e.getBoundingClientRect().width") == width, f"{where}: the board's section is not as wide as the window"
                 if width < 760:
                     assert bar.locator(".wrap").evaluate("e => getComputedStyle(e).overflowX") == "auto", f"{where}: the bar does not scroll"
+                    settle(seen, "(s) => { const e = document.querySelector(s + ' .wrap');"
+                           " return !!e && getComputedStyle(e).gridTemplateColumns.split(' ').length === 1; }", view)
                     assert hero.locator(".wrap").evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length") == 1, f"{where}: the hero is not stacked"
                 expect(seen.locator("header.site-header")).to_be_visible()
                 expect(seen.locator("footer.site-footer")).to_be_visible()
@@ -5668,17 +5689,16 @@ def profile_layout(run: Run, browser) -> None:
         # then saw 0 px on a page this check did not change. A picture that never gets the size
         # still fails below: the wait gives up after the timeout and the read reports what it has.
         want = 96 if width < 760 else 128
-        try:
-            seen.wait_for_function(
-                "([s, w]) => { const e = document.querySelector(s + ' .wrap > .av');"
-                " return !!e && Math.round(e.getBoundingClientRect().width) === w; }",
-                arg=[view, want],
-            )
-        except PlaywrightError:
-            pass  # the assertion below names the size
+        settle(seen, "([s, w]) => { const e = document.querySelector(s + ' .wrap > .av');"
+               " return !!e && Math.round(e.getBoundingClientRect().width) === w; }", [view, want])
         side = pic.evaluate("e => Math.round(e.getBoundingClientRect().width)")
         assert side == want, f"{where}: the picture is {side} px"
         assert pic.evaluate("e => getComputedStyle(e).borderRadius") != "50%" if kind == "agent" else True, f"{where}: the agent's picture is round"
+        # The column on a phone (.uhero .wrap under public-sections.css's max-width: 760px) is waited
+        # for on its own (tsk-z4ps7cg7ve25): the picture's wait saw its rule at one moment, and on
+        # #1983 the read after it still found a row. The picture's size proves nothing later.
+        settle(seen, "([s, col]) => { const e = document.querySelector(s + ' .wrap');"
+               " return !!e && (getComputedStyle(e).flexDirection === 'column') === col; }", [view, width < 760])
         stacked = hero.locator(".wrap").evaluate("e => getComputedStyle(e).flexDirection") == "column"
         assert stacked == (width < 760), f"{where}: the hero stacked is {stacked}"
         expect(seen.locator("nav.person-tabs, nav.ptabs")).to_have_count(0)
