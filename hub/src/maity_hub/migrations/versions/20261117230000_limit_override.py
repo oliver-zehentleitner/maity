@@ -6,7 +6,7 @@ ceiling (§6.31). A new table: nothing to carry over, and without a row every li
 it was.
 
 Revision ID: 20261117230000_limit_override
-Revises: 20261117100000_roles_version
+Revises: 20261117130000_plc_per_instance
 Create Date: 2026-11-17
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from maity_hub.types import JSON_VALUE, UtcDateTime
 
 revision: str = "20261117230000_limit_override"
-down_revision: str | None = "20261117100000_roles_version"
+down_revision: str | None = "20261117130000_plc_per_instance"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
