@@ -301,7 +301,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 429 | `rate_limited` | `Retry-After` is set |
 | 500 | `internal` | an unexpected failure; `details` is `{}`, the message names no internals; the response still carries the envelope and every header of §1.1 |
 | 503 | `maintenance` | the hub is in a maintenance window (§16.12); `Retry-After` is the seconds until its `until`, `details` is `{from, until, text}`; every caller, every route but the few §16.12 names |
-| 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation (§11.4) |
+| 503 | `forge_unavailable` | the forge did not answer while linking a GitHub App installation or checking an owner's own token before it is stored (`PUT /me/forge/github/token`) (§11.4) |
 | 503 | `probe_unavailable` | the forge did not answer a probe read; `details.last` holds the last observation if any, never for the views' reads (§11.5), which carry no export; `details.retry_at` while the forge's rate limit for the source is spent: no read before that time (§11) |
 | 503 | `ktw_unavailable` | the root `.keep-the-why` of the Keep the Why family could not be read (§11.3); `details.reason`, `details.last` holds the last good answer if any; a family member's own failure is reported on that member, not as this error. For the views' reads (§11.5) also the export or bodies file asked for could not be read, with that member's reason, `repository_moved` or `bodies_url_invalid` |
 | 503 | `database_unavailable` | the database cannot be reached, or no pooled connection to it came free in time (`/health`, and any call that needs it); `Retry-After` is set, the same for both causes; `details` is `{}`, the message carries no driver text |
@@ -17385,8 +17385,9 @@ second source, for a forge setup where an App cannot be installed.
   dashboard asks for read-only permissions on the chosen repositories
   and says that the hub never writes (§11), which holds whatever the
   token could do. Without that key it is `409
-  secret_key_missing`. It answers `{configured: true, login}`; the token
-  is never returned.
+  secret_key_missing`. When the forge does not answer the check it is
+  `503 forge_unavailable`, and nothing is stored. It answers
+  `{configured: true, login}`; the token is never returned.
 - `DELETE /me/forge/github/token` (human) removes it.
 - A token the forge refuses later sets `status: "rejected"` and the
   reason `token_rejected`; the hub does not try it again until it is replaced.

@@ -1136,7 +1136,9 @@ def wakes(
         return False
     if row.kind == "member_updated" and (row.payload or {}).get("changed") == ["language"]:
         return False  # read at the next wake-up, never a reason for one (§6.2)
-    if row.kind in ("holder_stalled", "claim_expired"):
+    from maity_hub import holder_stalled  # holder_stalled writes events itself
+
+    if row.kind in holder_stalled.KINDS:
         # A holder that stops (§6.5): the member the agent reports to re-routes; the admins,
         # the owner and the holding instance itself only read, so its `instance:` token never
         # makes such an event wait for it (§8.2).
