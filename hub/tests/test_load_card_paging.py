@@ -8,8 +8,9 @@ p50 and p95 of `ROUNDS` calls: the first page of the default list and of the ope
 the second page of the open column, `order=updated`, a search that finds one card and a
 search that finds every card. It runs on a hub without the change too: it sets nothing the
 older hub does not know. The checks are what holds on both: every read answers 200 with
-the page it asked for; the numbers are printed, not checked, since on a shared machine
-they are noise."""
+the page it asked for, and a read without a search sends at most `STATEMENTS_MAX`
+statements, whatever the card count. The times and the memory are printed, not checked,
+since on a shared machine they are noise."""
 
 from __future__ import annotations
 
@@ -35,6 +36,7 @@ CARDS = int(os.environ.get("MAITY_LOAD_UNIT", "1000"))
 ROUNDS = int(os.environ.get("MAITY_LOAD_ROUNDS", "20"))
 PROJECT = "/projects/maintainer/maity"
 BODY = "Steps, acceptance and pointers for this card. " * 22  # about a kilobyte
+STATEMENTS_MAX = 25  # per page of a read without a search, whatever CARDS is
 
 
 def _statements(engine: Engine, call: Callable[[], Any]) -> int:
@@ -142,3 +144,7 @@ def test_card_list_and_search_timing(make_client: ClientFactory, migrated: Engin
             "p50_p95_ms": _quantiles(_timed(call, ROUNDS)),
         }
     print(f"\nLOAD card list and search: {shown}")
+    # A read without a search sends the same statements per page whatever the card count
+    # (21 on SQLite and 19 on PostgreSQL at 1000 and 3000 cards): the bound leaves headroom.
+    for name in ("list_all_50", "open_200", "open_200_page_2", "updated_50"):
+        assert shown[name]["statements"] <= STATEMENTS_MAX, (name, shown[name])
