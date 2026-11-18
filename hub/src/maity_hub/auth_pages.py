@@ -32,7 +32,7 @@ def _text(value: Any, path: str, found: Problems) -> str | None:
         return None
     text = value.strip()
     if not 1 <= len(text) <= MAX_TEXT or any(
-        unicodedata.category(c) in ("Cc", "Zl", "Zp") for c in text
+        unicodedata.category(c) in ("Cc", "Cs", "Zl", "Zp") for c in text  # Cs: lone surrogate
     ):
         found.add(path, "invalid")
         return None
