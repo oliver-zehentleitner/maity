@@ -13,10 +13,10 @@ a subshell or a group before it, or `maity` by a path. A word counts as `maity` 
 those commands are the runner's own, and the runner never starts them through an agent's tool
 call. A line that names `maity` anywhere (`names_maity`) is refused when it holds a comment, a
 heredoc or more than one line (`read_whole`), and any line is refused when its quotes never
-close, when it holds `$'...'` text with a backslash, or when its quoted text is nested too
-deep: the hook does not read such lines to the end. A command the shell builds only from
-expansions or from input is not read. Any other tool call is left to the permission rules: the
-hook prints nothing and exits 0.
+close, when it holds `$'...'` text with a backslash or an unquoted `$"`, or when its quoted
+text is nested too deep: the hook does not read such lines to the end. A command the shell
+builds only from expansions or from input is not read. Any other tool call is left to the
+permission rules: the hook prints nothing and exits 0.
 
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
 stderr. Input it cannot read is refused too.
@@ -34,13 +34,15 @@ from collections.abc import Sequence
 UNQUOTED = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-./:=@%+,~^#")
 # Inside double quotes the shell still expands `$` and backticks; `!` is left out as well.
 NOT_IN_DOUBLE_QUOTES = frozenset("$`!\n")
-# Leading characters a plain call may not hold, spaces and quotes are skipped before looking
-# for `maity`, so a line counts as a maity call however the harness trims it. A character a
-# plain word may hold (`/`, `.`, `:` and the rest of `UNQUOTED`) is not skipped: before
-# `maity` it makes a path or another command. After `maity` only a space, a tab, an operator
-# or the line's end may follow: anything else makes it part of a longer word, which the word
-# split reads (`_placement`).
-_MAITY = re.compile(r"[^0-9A-Za-z_\-./:=@%+,~^#]*maity(?=[ \t();<>|&\n]|\Z)", re.IGNORECASE)
+# Leading spaces and characters a plain call may not hold are skipped before looking for
+# `maity`, so a line counts as a maity call however the harness trims it; `plain` refuses
+# what was skipped. A character a plain call may hold (`/`, `.`, `:` and the rest of
+# `UNQUOTED`, a quote, a backslash) is not skipped: before `maity` it makes a path, another
+# command or a quoted or escaped word of its own (`"[" maity`, `\! maity`, `"" maity`),
+# which the word split reads. After `maity` only a space, a tab, an operator or the line's
+# end may follow: anything else makes it part of a longer word, which the word split reads
+# (`_placement`).
+_MAITY = re.compile(r"[^0-9A-Za-z_\-./:=@%+,~^#'\"\\]*maity(?=[ \t();<>|&\n]|\Z)", re.IGNORECASE)
 
 # Unquoted characters that end a word, besides spaces and tabs: the shell's operators.
 _SEPARATORS = frozenset("();<>|&\n")
@@ -58,7 +60,8 @@ RUNNER_REFUSED = (
     "`maity runner` is the runner's own command and does not run from a placed session's tool "
     "call: a line where a word `runner` follows a word `maity` is refused, and so is a line "
     "the hook cannot read to the end (one that names `maity` and holds a comment, a heredoc "
-    "or more than one line; a quote that never closes; quoted text nested too deep). Run "
+    "or more than one line; a quote that never closes; `$'...'` text with a backslash or a "
+    '`$"`; quoted text nested too deep). Run '
     "each `maity` command on a line of its own, without a comment; text that holds both "
     "words goes in a file in this clone, passed with `--body-file`."
 )
@@ -126,11 +129,12 @@ def _placement(command: str) -> str | None:
 
 def _maity_in_text(text: str, depth: int) -> bool:
     """Whether `maity` is a word of quoted text that holds spaces or operators, read again as
-    a line the way `calls_runner` reads it, up to `_NESTING` levels deep; text nested deeper
-    counts when it names `maity` anywhere (`names_maity`)."""
+    a line the way `calls_runner` reads it, up to `_NESTING` levels deep (`depth` is the
+    level of `text`, 1 for quoted text on the line itself); text nested deeper counts when it
+    names `maity` anywhere (`names_maity`)."""
     if not any(c in " \t" or c in _SEPARATORS for c in text):
         return False
-    if depth >= _NESTING:
+    if depth > _NESTING:
         return names_maity(text)
     try:
         words = _words(text)
@@ -212,8 +216,8 @@ def _reads_as(word: str) -> tuple[str, str]:
 
 
 class _Unreadable(ValueError):
-    """A quote the line never closes, or `$'...'` text with a backslash: its words are not
-    known."""
+    """A quote the line never closes, `$'...'` text with a backslash or a `$"`: its words are
+    not known."""
 
 
 def _words(line: str) -> list[tuple[str, bool]]:
@@ -230,8 +234,9 @@ def _split(line: str) -> list[tuple[str, bool, int]]:
     lines; nothing is expanded. Each word comes with the index in the line where it starts. A
     `#` and a heredoc are read like any other text, so a line that holds them is not split as
     the shell splits it: `read_whole` refuses such a line when it names `maity`. Raises
-    _Unreadable for a quote that is never closed and for `$'...'` text that holds a
-    backslash, whose escapes the shell decodes and this split does not."""
+    _Unreadable for a quote that is never closed, for `$'...'` text that holds a backslash,
+    whose escapes the shell decodes and this split does not, and for an unquoted `$"`, Bash's
+    locale quoting, whose text a translation may replace."""
     words: list[tuple[str, bool, int]] = []
     chars: list[str] = []
     started = expands = tilde = False
@@ -265,6 +270,8 @@ def _split(line: str) -> list[tuple[str, bool, int]]:
                 started = True
                 chars.append(line[i + 1])
             i += 1  # a backslash-newline is a line continuation: nothing
+        elif c == "$" and i + 1 < n and line[i + 1] == '"':
+            raise _Unreadable(line)  # $"...": Bash may translate it, so its text is not known
         elif c == "$" and i + 1 < n and line[i + 1] == "'":
             end_at = closing(i + 2, escapes=True)  # $'...': the shell decodes its escapes
             if "\\" in line[i + 2 : end_at]:

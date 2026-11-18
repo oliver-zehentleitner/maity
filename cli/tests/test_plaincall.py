@@ -146,6 +146,9 @@ RUNNER_ANYWHERE = [
     # words the shell puts a directory in place of
     "maity ~- status",
     "maity ~ status",
+    # quotes inside a word that `eval` takes off again
+    "eval \"'maity'\" \"'runner'\" status",
+    "eval 'm\"a\"ity' 'r\\unner' status",
 ]
 NOT_RUNNER = [
     "maity runners",
@@ -803,3 +806,67 @@ def test_the_hook_process_refuses_a_runner_call() -> None:
     done = run_hook(json.dumps(bash("maity runner status")).encode())
     assert done.returncode == 2 and done.stdout == ""
     assert done.stderr.strip() == plaincall.RUNNER_REFUSED
+
+
+# A first word that is quoted or escaped and holds no letter: a word of its own before
+# `maity`, not leading text to skip.
+QUOTED_FIRST_WORDS = [
+    '"[" maity status',
+    "\\[ maity status",
+    '"" maity status',
+    "'' maity status",
+    "\\! maity status",
+    "'!' maity status",
+    '"maity status"',
+    "'maity status' x",
+    "/maity status",  # `maity` by a path from the root
+    "//maity status",
+]
+
+
+@pytest.mark.parametrize("command", QUOTED_FIRST_WORDS)
+def test_a_quoted_or_escaped_first_word_before_maity_is_refused_outright(command: str) -> None:
+    assert plaincall.prefixed(command)
+    assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
+
+
+@pytest.mark.parametrize("command", ["\\maity status", '"maity" status', "'maity' status"])
+def test_maity_itself_quoted_or_escaped_is_held_to_one_plain_call(command: str) -> None:
+    assert plaincall.held(command)
+    assert plaincall.refusal(bash(command)) is None
+    assert plaincall.refusal(bash(command + " | cat")) == plaincall.REFUSED
+
+
+# Bash's locale quoting: `$"..."` is the text, or its translation.
+LOCALE_QUOTED = [
+    'ma$"ity" run$"ner"',
+    'TZ=UTC ma$"ity" status',
+    'x; $"maity" $"runner"',
+    'maity $"runner" status',
+    'maity say lotse $"text"',
+    'echo $"hi"',
+]
+
+
+@pytest.mark.parametrize("command", LOCALE_QUOTED)
+def test_a_line_with_locale_quoting_is_refused_whatever_it_holds(command: str) -> None:
+    assert plaincall.refusal(bash(command)) in (plaincall.RUNNER_REFUSED, plaincall.REFUSED)
+    assert plaincall.calls_runner(command)
+
+
+@pytest.mark.parametrize("levels", [1, 2, 3, 4])
+def test_quoted_text_without_a_maity_word_is_read_four_levels_deep(levels: int) -> None:
+    command = nested("cat maity.md", levels)
+    assert not plaincall.prefixed(command)
+    assert plaincall.refusal(bash(command)) is None
+
+
+def test_quoted_text_past_four_levels_counts_when_it_names_maity() -> None:
+    command = nested("cat maity.md", 5)
+    assert plaincall.prefixed(command)
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+def test_quoted_text_the_hook_cannot_read_counts_only_when_it_names_maity() -> None:
+    assert plaincall.prefixed('echo "\'maity status"')
+    assert not plaincall.prefixed('echo "\'x status"')
