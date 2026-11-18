@@ -17,6 +17,7 @@ from maity_hub import (
     export,
     handles,
     images,
+    inbox,
     maintenance,
     moderation,
     namespace,
@@ -219,7 +220,7 @@ def _human_projects(conn: Connection, human_id: str) -> list[dict[str, Any]]:
                 shown[row.project_id],
                 names[row.project_id],
             ),
-            "open_requests": open_requests(conn, row.id),
+            "open_requests": inbox.open_requests(conn, row.id),
             # The project's own setting (§16.9), so the tabs mark a private project without a read
             # per project (§5.1); whether a page is served is the public read's business.
             "public_page": row.public_page,
@@ -242,26 +243,6 @@ def _agent_project(conn: Connection, caller: Caller) -> list[dict[str, Any]]:
     ).one()
     shown = images.views(conn, [row.id])[row.id]
     return [_project_row(row, row.id, row.trust, row.role, shown, namespace.name_of(conn, row.id))]
-
-
-def open_requests(conn: Connection, membership_id: int) -> int:
-    """Open requests addressed to this membership: `GET …/requests` with `to=me` (§7),
-    through the listing's own rule so that the two cannot drift."""
-    from maity_hub import inbox
-    from maity_hub.access import Membership
-
-    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
-    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
-    mine = Membership(project, row, "agent" if row.agent_id else "human")
-    open_rows = conn.execute(
-        select(t.request).where(
-            t.request.c.project_id == row.project_id,
-            t.request.c.status == "open",
-            # A personal request is never addressed to a membership (§7): not read here.
-            t.request.c.personal.is_(False),
-        )
-    ).all()
-    return sum(1 for r in open_rows if inbox.addressed_to(conn, r, mine))
 
 
 @router.get("/me/export")

@@ -198,7 +198,6 @@ window.MAITY_I18N["zh-Hans"] = {
     "other": "{count} 个实例中 {active} 个活跃"
   },
   "agents.intro": "你在所有项目中的智能体档案：每个档案是一个身份，带有其头像、用户名和所持有的成员资格。把档案添加到项目，即可在那里生成加入通道。",
-  "agents.join.any": "添加任意智能体",
   "agents.join.failed": "无法准备加入： {reason}",
   "agents.join.none": "你不在任何可以带入智能体的项目中。",
   "agents.join.open": "让智能体加入",
@@ -2324,17 +2323,32 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.count.failures": {
     "other": "{count} 次失败"
   },
+  "mail.count.invitation": {
+    "other": "邀请邮件 {count} 封"
+  },
   "mail.count.notifications": {
     "other": "{count} 封通知邮件"
   },
   "mail.count.queued": {
     "other": "{count} 封安全邮件排队中"
   },
+  "mail.count.second_factor": {
+    "other": "第二因素邮件 {count} 封"
+  },
+  "mail.count.second_factor_dropped": {
+    "other": "已丢弃的第二因素邮件 {count} 封"
+  },
   "mail.count.security": {
     "other": "{count} 封安全邮件"
   },
   "mail.count.sign_in": {
     "other": "{count} 封登录邮件"
+  },
+  "mail.count.verification": {
+    "other": "验证邮件 {count} 封"
+  },
+  "mail.count.waiting": {
+    "other": "等待中的验证或邀请邮件 {count} 封"
   },
   "mail.daily_at": "每日和每周摘要的发送时间",
   "mail.day.fri": "星期五",
@@ -2348,13 +2362,16 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.field.from_address": "发件地址",
   "mail.field.from_name": "发件人名称",
   "mail.field.host": "SMTP 主机",
+  "mail.field.invitation_max_per_hour": "每小时邀请邮件数",
   "mail.field.max_per_hour": "每小时通知邮件数",
   "mail.field.port": "SMTP 端口",
   "mail.field.reply_to": "回复地址",
+  "mail.field.second_factor_max_per_hour": "每小时第二因素邮件数",
   "mail.field.security_max_per_hour": "每小时安全邮件数",
   "mail.field.sign_in_max_per_hour": "每小时登录邮件数",
   "mail.field.tls": "连接安全",
   "mail.field.username": "SMTP 用户名",
+  "mail.field.verification_max_per_hour": "每小时地址确认邮件数",
   "mail.hold_while_online": "我在网页应用中在线时不发送邮件",
   "mail.hold_while_online.hint": "“立即”发送的邮件会在你使用控制台期间暂缓。离开几分钟后，只会发送你还没读过的内容。",
   "mail.incomplete": "邮件配置不完整：{missing}。",
@@ -2367,6 +2384,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "mail.kinds.hint": "摘要包含发送时仍未读的全部内容。第二因素变更、地址变更和账户删除总是立即发送邮件。",
   "mail.kinds.legend": "每类内容何时发送邮件",
   "mail.last_hour": "最近一小时：{notifications}、{security}、{sign_in}、{failures}；{queued}。",
+  "mail.last_hour_own": "此外，最近一小时：{verification}、{invitation}、{second_factor}、{dropped}；{waiting}。",
   "mail.mode.daily": "每日摘要",
   "mail.mode.hourly": "每小时摘要",
   "mail.mode.immediate": "立即",
@@ -3430,9 +3448,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.logs": "日志",
   "placements.logs.copy": "复制日志命令",
   "placements.logs.region": "日志命令",
-  "placements.new.agent_new": "新智能体",
   "placements.new.branch": "起始分支（可选）",
-  "placements.new.briefing": "简报（可选，Markdown）",
   "placements.new.busy": "正在部署智能体…",
   "placements.new.clone": "克隆",
   "placements.new.clone_hint": "运行器上该智能体克隆的名称：小写字母、数字和连字符。留空则用智能体的用户名。",
@@ -3441,6 +3457,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.new.failed": "未能部署到运行器：{reason}",
   "placements.new.field": "{field}：{why}",
   "placements.new.hint": "运行器会在此项目仓库的克隆中，用这里选择的工具、模式和模型启动智能体。只列出你自己已配对、获准用于此项目并提供其仓库的运行器。",
+  "placements.new.legend": "在运行器上",
   "placements.new.mode": "模式",
   "placements.new.model": "模型",
   "placements.new.model_default": "运行器默认",
@@ -3449,8 +3466,10 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.new.no_tool": "运行器在那里没有提供已安装的工具。",
   "placements.new.none": "你已配对的运行器尚无获准用于此项目的。请在{link}中允许一个。",
   "placements.new.none_link": "此项目的“运行器”",
-  "placements.new.open": "在运行器上启动智能体",
-  "placements.new.profile": "新智能体的资料及其在团队中的位置",
+  "placements.new.not_member": "只有已在本项目中的智能体或新智能体才能在运行器上启动。请选择新智能体，或先用加入通道让此智能体加入。",
+  "placements.new.not_ready": "还没有可用来启动它的运行器和工具：运行器部分说明了原因。",
+  "placements.new.offer": "在我的某个运行器上启动，而不是用加入通道",
+  "placements.new.placed": "此智能体已在这里的运行器上运行：每个智能体一个部署。它的行在“托管的智能体”下。",
   "placements.new.quota": "已达到此项目运行器上活动部署的上限（{max} 个）。",
   "placements.new.quota_link": "设置的成员与智能体",
   "placements.new.quota_raise": "在{link}中提高上限。",
@@ -3463,7 +3482,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.new.submit": "在运行器上启动",
   "placements.new.target": "运行位置",
   "placements.new.target_any": "由运行器决定",
-  "placements.new.title": "在运行器上启动智能体",
   "placements.new.tool": "工具",
   "placements.not_removed": "未移除：{reason}",
   "placements.not_restarted": "未重启：{reason}",

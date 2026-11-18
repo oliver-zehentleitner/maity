@@ -50,7 +50,10 @@ class MailEnvironment:
     reply_to: str | None = None
     max_per_hour: int | None = None
     security_max_per_hour: int | None = None
+    verification_max_per_hour: int | None = None
+    invitation_max_per_hour: int | None = None
     sign_in_max_per_hour: int | None = None
+    second_factor_max_per_hour: int | None = None
     password_reset_max_per_hour: int | None = None
     registration_max_per_hour: int | None = None
     online_grace_minutes: int | None = None
@@ -145,7 +148,14 @@ def parse(env: dict[str, str]) -> MailEnvironment:
         reply_to=reply_to,
         max_per_hour=_number(env, "MAITY_MAIL_MAX_PER_HOUR", 1, MAX_PER_HOUR),
         security_max_per_hour=_number(env, "MAITY_MAIL_SECURITY_MAX_PER_HOUR", 1, MAX_PER_HOUR),
+        verification_max_per_hour=_number(
+            env, "MAITY_MAIL_VERIFICATION_MAX_PER_HOUR", 1, MAX_PER_HOUR
+        ),
+        invitation_max_per_hour=_number(env, "MAITY_MAIL_INVITATION_MAX_PER_HOUR", 1, MAX_PER_HOUR),
         sign_in_max_per_hour=_number(env, "MAITY_MAIL_SIGN_IN_MAX_PER_HOUR", 1, MAX_PER_HOUR),
+        second_factor_max_per_hour=_number(
+            env, "MAITY_MAIL_SECOND_FACTOR_MAX_PER_HOUR", 1, MAX_PER_HOUR
+        ),
         password_reset_max_per_hour=_number(
             env, "MAITY_MAIL_PASSWORD_RESET_MAX_PER_HOUR", 1, MAX_PER_HOUR
         ),
