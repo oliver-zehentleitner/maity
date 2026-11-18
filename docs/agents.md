@@ -152,7 +152,9 @@ with `+=`, another command (`env`,
 `sudo`, `sh -c`, `eval`, any other), a shell keyword, `!`, a redirection,
 a subshell or a group, and `maity` by a path. A word counts as `maity`
 also once the backslashes and quotes in it are taken off, and a word
-with a brace also as each of its alternatives. That covers
+with a brace also as each of its alternatives and as each word its
+brace expansion makes (`ma{ity,}` counts as `maity`); a word whose
+braces make more than 256 words refuses the line. That covers
 text too: `echo maity | cat` or `git commit -m 'fix maity'` is refused,
 so text that mentions `maity` goes in a file (`--body-file`).
 `maity runner` is the runner's own command: in a placed Claude Code

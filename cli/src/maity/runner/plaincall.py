@@ -9,14 +9,17 @@ command runs (cli/context/runner.md). Any other line in which `maity` is a word 
 refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
 a subshell or a group before it, or `maity` by a path. A word counts as `maity` (and as
 `runner`) also once its backslashes and quotes are taken off (`_reads_as`), and a word that
-holds a `{` also as each part of it between `{`, `,` and `}` (`_names`). On any line, a word
+holds a `{` also as each part of it between `{`, `,` and `}` and as each word its brace
+expansion makes, up to `BRACE_LIMIT` words; a word that makes more is not read and counts as
+both (`_names`). On any line, a word
 `maity` followed later by a word `runner`, as `calls_runner` splits words, is refused as well:
 those commands are the runner's own, and the runner never starts them through an agent's tool
 call. A line that names `maity` anywhere (`names_maity`) is refused when it holds a comment, a
 heredoc or more than one line (`read_whole`), and any line is refused when its quotes never
 close, when it holds `$'...'` text with a backslash or an unquoted `$"`, or when its quoted
 text is nested too deep: the hook does not read such lines to the end. A command the shell
-builds only from expansions or from input is not read. Any other tool call is left to the
+builds from values the hook cannot know, such as globs against files and expansions of
+variables or of input, is not read. Any other tool call is left to the
 permission rules: the hook prints nothing and exits 0.
 
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
@@ -25,10 +28,12 @@ stderr. Input it cannot read is refused too.
 
 from __future__ import annotations
 
+import bisect
+import itertools
 import json
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Iterator, Sequence
 
 # Characters a word may hold unquoted: none of them makes the shell do anything but take it
 # as text (`#` starts a comment only at a word's start, where the rest is ignored).
@@ -52,6 +57,9 @@ _SEPARATORS = frozenset("();<>|&\n")
 _EXPANDS = frozenset("$`*?[{")
 # How deep quoted text is read again as a line of its own (`sh -c '...'`).
 _NESTING = 4
+# How many words the brace expansion of one word may make, and how many brace groups it may
+# hold, before the word is not read (`_expand`).
+BRACE_LIMIT = 256
 # Characters after which a `#` is inside a word, not the start of a comment: printable ASCII
 # that is neither a space nor one of the shell's operators. After anything else, or at the
 # line's start, a `#` counts as a comment.
@@ -62,7 +70,8 @@ RUNNER_REFUSED = (
     "call: a line where a word `runner` follows a word `maity` is refused, and so is a line "
     "the hook cannot read to the end (one that names `maity` and holds a comment, a heredoc "
     "or more than one line; a quote that never closes; `$'...'` text with a backslash or a "
-    '`$"`; quoted text nested too deep). Run '
+    '`$"`; quoted text nested too deep; a word whose braces make more than '
+    f"{BRACE_LIMIT} words). Run "
     "each `maity` command on a line of its own, without a comment; text that holds both "
     "words goes in a file in this clone, passed with `--body-file`."
 )
@@ -212,11 +221,79 @@ def _is_runner(word: str) -> bool:
 
 def _names(word: str) -> tuple[str, ...]:
     """The word as `_reads_as` takes it and, when that holds a `{`, each part of it between
-    `{`, `,` and `}`: a brace expansion may make a word of its own of each alternative."""
+    `{`, `,` and `}` and each word its brace expansion makes (`_expand`): a brace expansion
+    may make a word of its own of each alternative, joined with the text around it. A word
+    whose expansion makes more than `BRACE_LIMIT` words is not read: it counts as `maity` and
+    as `runner`."""
     names = _reads_as(word)
     if "{" not in names[1]:
         return names
-    return (*names, *re.split(r"[{},]", names[1]))
+    expanded = _expand(names[1])
+    if expanded is None:
+        expanded = ["maity", "runner"]
+    return (*names, *re.split(r"[{},]", names[1]), *expanded)
+
+
+# A letter range in braces, `{a..e}` or `{a..e..2}`. A number range is left as it is: each of
+# its words holds a digit, and neither `maity` nor `runner` does.
+_LETTER_RANGE = re.compile(r"([A-Za-z])\.\.([A-Za-z])(?:\.\.(-?[0-9]+))?")
+
+
+def _expand(word: str, limit: int = BRACE_LIMIT) -> list[str] | None:
+    """The words a shell's brace expansion makes of `word`, or None when it makes more than
+    `limit` words or holds more than `limit` brace groups. A brace group is a `{` with its
+    matching `}` that holds a `,` outside nested braces, or a letter range (`_LETTER_RANGE`);
+    any other brace is text, and a group inside it still expands (`{x{a,b}}` makes `{xa}` and
+    `{xb}`). Words are made one at a time and only up to `limit` + 1, so the work stays
+    bounded however many words the expansion would make; braces nested deeper than the
+    stack allows count as more than `limit` words."""
+    # start -> end, the commas at its level, the letters of a letter range
+    groups: dict[int, tuple[int, list[int], list[str]]] = {}
+    stack: list[tuple[int, list[int]]] = []
+    for i, c in enumerate(word):
+        if c == "{":
+            stack.append((i, []))
+        elif c == "," and stack:
+            stack[-1][1].append(i)
+        elif c == "}" and stack:
+            start, commas = stack.pop()
+            letter_range = None if commas else _LETTER_RANGE.fullmatch(word, start + 1, i)
+            if commas or letter_range:
+                groups[start] = (i, commas, _letters(letter_range) if letter_range else [])
+    if len(groups) > limit:
+        return None
+    starts = sorted(groups)
+
+    def words(lo: int, hi: int) -> Iterator[str]:
+        """The words `word[lo:hi]` expands to; every group that starts in it ends in it."""
+        k = bisect.bisect_left(starts, lo)
+        if k == len(starts) or starts[k] >= hi:
+            yield word[lo:hi]
+            return
+        start = starts[k]
+        end, commas, letters = groups[start]
+        middles: Iterable[str] = letters
+        if commas:
+            middles = itertools.chain.from_iterable(
+                words(a + 1, b) for a, b in itertools.pairwise([start, *commas, end])
+            )
+        for middle in middles:
+            for tail in words(end + 1, hi):
+                yield word[lo:start] + middle + tail
+
+    try:
+        made = list(itertools.islice(words(0, len(word)), limit + 1))
+    except RecursionError:
+        return None  # nested deeper than the stack the hook runs with: not read
+    return None if len(made) > limit else made
+
+
+def _letters(letter_range: re.Match[str]) -> list[str]:
+    """The letters a letter range (`_LETTER_RANGE`) makes, as Bash makes them: every
+    character from the first to the last, either way, in steps of the increment's size."""
+    first, last, step = letter_range.groups()
+    a, b, size = ord(first), ord(last), max(abs(int(step or 1)), 1)
+    return list(map(chr, range(a, b + 1, size) if a <= b else range(a, b - 1, -size)))
 
 
 def _reads_as(word: str) -> tuple[str, str]:
@@ -365,8 +442,8 @@ def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> boo
             return True
         if expands and maity_here:
             return True
-        if expands and _is_maity(text) and _is_runner(text):
-            return True  # both words as alternatives of one brace
+        if _is_maity(text) and _is_runner(text):
+            return True  # both words as alternatives of one brace, or a word not read
         if any(c in " \t" or c in _SEPARATORS for c in text) and (
             depth >= _NESTING or calls_runner(text, depth + 1, seen)
         ):

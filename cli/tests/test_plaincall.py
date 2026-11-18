@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import io
 import json
 import re
@@ -758,6 +759,105 @@ BRACES_WITHOUT_BOTH = [
 @pytest.mark.parametrize("command", BRACES_WITHOUT_BOTH)
 def test_braces_and_commas_without_both_alternatives_are_not_refused(command: str) -> None:
     assert plaincall.refusal(bash(command)) is None
+
+
+BRACES_JOINED = [
+    "{mait,--for=}y {--for=,runne}r status",
+    "{mait,--f=}y {--f=,runne}r status",
+    "eval {mait,--for=}y {--for=,runne}r status",
+    "ma{ity,} run{ner,} status",
+    "{ma{ity,},runner} status",
+    "{m,-}aity {r,-}unner status",
+    "{l..m}aity {r..r}unner status",
+    "{m,x}{a,x}ity {r,x}{u,x}nner status",
+]
+
+
+@pytest.mark.parametrize("command", BRACES_JOINED)
+def test_a_brace_expansion_joined_with_its_word_counts_as_each_word_it_makes(
+    command: str,
+) -> None:
+    assert plaincall.prefixed(command)
+    assert plaincall.calls_runner(command)
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+EXPANSIONS = [
+    ("{mait,--for=}y", ["maity", "--for=y"]),
+    ("{ma{ity,},runner}", ["maity", "ma", "runner"]),
+    ("a{b,c}{d,e}", ["abd", "abe", "acd", "ace"]),
+    ("{x{a,b}}", ["{xa}", "{xb}"]),
+    ("{a{b,c}d}", ["{abd}", "{acd}"]),
+    ("x{}y{a,b}", ["x{}ya", "x{}yb"]),
+    ("{a,{b}", ["{a,{b}"]),
+    ("{,}", ["", ""]),
+    ("{a..e..2}", ["a", "c", "e"]),
+    ("{c..a}", ["c", "b", "a"]),
+    ("{a..c..0}", ["a", "b", "c"]),
+    ("{Z..a}", ["Z", "[", "\\", "]", "^", "_", "`", "a"]),
+    ("{a..}", ["{a..}"]),
+    ("{1..3}", ["{1..3}"]),
+    ("@{u}", ["@{u}"]),
+]
+
+
+@pytest.mark.parametrize(("word", "words"), EXPANSIONS)
+def test_a_word_expands_as_bash_expands_its_braces(word: str, words: list[str]) -> None:
+    assert plaincall._expand(word) == words
+
+
+BRACES_BELOW_THE_LIMIT = [
+    "echo {a..z} {1..1000}",
+    "echo {x{a,b}}",
+    "echo " + "{a,b}" * 8,
+    "echo " + "{a..a}" * 256,
+]
+
+
+@pytest.mark.parametrize(
+    "command", BRACES_BELOW_THE_LIMIT, ids=["ranges", "nested", "256 words", "256 groups"]
+)
+def test_brace_expansions_without_both_words_are_not_refused(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is None
+
+
+def test_a_word_at_the_brace_limit_is_judged_by_the_words_it_makes() -> None:
+    word = "{a,b}" * 7 + "/{mait,x}y"
+    assert len(plaincall._expand(word) or []) == plaincall.BRACE_LIMIT == 256
+    assert plaincall.refusal(bash(word + " {r,x}unner status")) == plaincall.RUNNER_REFUSED
+    assert plaincall.refusal(bash(word + " status")) == plaincall.PREFIX_REFUSED
+    assert plaincall.refusal(bash("echo " + "{a,b}" * 7 + "/{x,y}z")) is None
+
+
+BRACES_OVER_THE_LIMIT = [
+    "echo {x," + "{a,b}" * 8 + "}",
+    "echo " + "{a,b}" * 9,
+    "echo " + "{a,b}" * 64,
+    "echo " + "{a..a}" * 257,
+    "echo '" + "{a,b}" * 9 + "'",
+]
+
+
+@pytest.mark.parametrize(
+    "command",
+    BRACES_OVER_THE_LIMIT,
+    ids=["257 words", "512 words", "2**64 words", "257 groups", "512 words quoted"],
+)
+def test_a_word_over_the_brace_limit_refuses_the_line(command: str) -> None:
+    word = command.removeprefix("echo ").strip("'")
+    assert plaincall._expand(word) is None
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+def test_braces_nested_deeper_than_the_stack_allows_refuse_the_line() -> None:
+    command = "echo " + "{a," * 255 + "}" * 255
+    assert plaincall.refusal(bash(command)) is None
+    limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(len(inspect.stack(0)) + 150)
+    try:
+        assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+    finally:
+        sys.setrecursionlimit(limit)
 
 
 # A first word that only starts with `maity`.

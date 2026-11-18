@@ -2991,11 +2991,11 @@ do, and hid that the cause was the shape of its own command.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13; card tsk-54492gk4xp69 part 1 (the lead's order to refuse `maity runner` from a placed session's tool call), 2026-11-17; the fifth review round of #1942 (the order to refuse a line that names `maity` and holds a comment, a heredoc or more than one line, and to count quoted words in line order), 2026-11-18; the `excludedCommands` matcher of Claude Code 2.1.327 (native binary, sha256 `343c744baa14bfd38286a7cb90871051f04379956da6c5b803a9e66019a76ac9`), read statically only in the sixth review round of #1942, 2026-11-18: the readings differ, and nothing was checked live; the sixth review round of #1942 (the order to hold a `maity` line after variable assignments or a wrapper command to the same rules, whichever way the exclusion matches), 2026-11-18; the seventh review round of #1942 (the decision to replace the wrapper list by one rule: only variable assignments may stand before `maity`, anything else is refused outright), 2026-11-18; a review leg of the seventh round (the confirmation that a word whose path ends in `/maity` counts as `maity` in every position, and the order to name that rule and test it), 2026-11-18; the eighth review round of #1942 (review A1269 and its order: a word counts as `maity` or `runner` also with the backslashes and quotes left in it taken off, the line starts with `maity` only when its first word is `maity` alone, and the sentence that assignments cannot run another program goes; review A1271 on the same start of the line), 2026-11-18; review A1270 of the seventh round, relayed in message 162483 (a quoted or escaped first word skipped before `maity`, `$"…"` locale quoting, quoted text read again one level less than `calls_runner` reads it, mutants that survived), 2026-11-18; the decision of the eighth round (message 162185) to allow only assignments to a list of names before `maity`, and every `+=` refused, 2026-11-18; review A1269 and the decision of the eighth round that amends 162185 (message 162361, relayed in 162371 and 162378): no `MAITY_*` wildcard, only `MAITY_` names documented for agents, every runner-trusted name refused and a guard test for the list, 2026-11-18; the inventory of the `MAITY_` names in `cli/src/maity` at d6474bb5 for that decision, 2026-11-18; the ninth review round of #1942 (review A1309 and the order in message 163399: a word that holds literal brace alternatives counts by each alternative; lowercase and bare `LC_` names before `maity` stay refused), 2026-11-18. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
+**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13; card tsk-54492gk4xp69 part 1 (the lead's order to refuse `maity runner` from a placed session's tool call), 2026-11-17; the fifth review round of #1942 (the order to refuse a line that names `maity` and holds a comment, a heredoc or more than one line, and to count quoted words in line order), 2026-11-18; the `excludedCommands` matcher of Claude Code 2.1.327 (native binary, sha256 `343c744baa14bfd38286a7cb90871051f04379956da6c5b803a9e66019a76ac9`), read statically only in the sixth review round of #1942, 2026-11-18: the readings differ, and nothing was checked live; the sixth review round of #1942 (the order to hold a `maity` line after variable assignments or a wrapper command to the same rules, whichever way the exclusion matches), 2026-11-18; the seventh review round of #1942 (the decision to replace the wrapper list by one rule: only variable assignments may stand before `maity`, anything else is refused outright), 2026-11-18; a review leg of the seventh round (the confirmation that a word whose path ends in `/maity` counts as `maity` in every position, and the order to name that rule and test it), 2026-11-18; the eighth review round of #1942 (review A1269 and its order: a word counts as `maity` or `runner` also with the backslashes and quotes left in it taken off, the line starts with `maity` only when its first word is `maity` alone, and the sentence that assignments cannot run another program goes; review A1271 on the same start of the line), 2026-11-18; review A1270 of the seventh round, relayed in message 162483 (a quoted or escaped first word skipped before `maity`, `$"…"` locale quoting, quoted text read again one level less than `calls_runner` reads it, mutants that survived), 2026-11-18; the decision of the eighth round (message 162185) to allow only assignments to a list of names before `maity`, and every `+=` refused, 2026-11-18; review A1269 and the decision of the eighth round that amends 162185 (message 162361, relayed in 162371 and 162378): no `MAITY_*` wildcard, only `MAITY_` names documented for agents, every runner-trusted name refused and a guard test for the list, 2026-11-18; the inventory of the `MAITY_` names in `cli/src/maity` at d6474bb5 for that decision, 2026-11-18; the ninth review round of #1942 (review A1309 and the order in message 163399: a word that holds literal brace alternatives counts by each alternative; lowercase and bare `LC_` names before `maity` stay refused), 2026-11-18; the tenth review round of #1942 (review A1337, and the lead's order in message 164326 after the decision in message 164294 to do it in one round: a word's brace expansion, joined with the text around it, counts by each word it makes, capped at 256 words, a word over the cap refuses the line, and the reason the ninth round gave for leaving such names unread was wrong), 2026-11-18. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
 **See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
 **Verification:** uncorroborated — what this entry says of Claude Code's sandbox exclusion rests on static readings of its 2.1.327 binary that differ from each other; none was checked live, and the hook relies on none of them
-**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; Claude Code's sandbox exclusion is checked live; the Claude Code version the runner starts changes; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the names allowed before `maity` change; the runner stops accepting Claude Code versions older than 2.1.295 even with `require_sandbox = false`; opencode gets an OS-level sandbox (tsk-nynpvag9zvhh)
+**Revisit when:** Claude Code can exclude a single call from its sandbox rather than a pattern over the command line; Claude Code's sandbox exclusion is checked live; the Claude Code version the runner starts changes; `maity` runs inside the sandbox and needs no exclusion; hooks stop loading from a `--settings` file under `--setting-sources user`; the names allowed before `maity` change; the brace limit (`BRACE_LIMIT`) changes, or Bash changes its brace expansion; the runner stops accepting Claude Code versions older than 2.1.295 even with `require_sandbox = false`; opencode gets an OS-level sandbox (tsk-nynpvag9zvhh)
 
 Under its sandbox, a placed Claude Code session runs a hook before every
 tool call (`runner/plaincall.py`), written by the runner into the
@@ -3059,9 +3059,20 @@ between `{`, `,` and `}`: the shell may make a word of its own of each
 literal alternative of a brace, so a brace that holds both words counts
 as `maity` followed by `runner`, and one whose alternative is `runner`
 counts as `runner` after a `maity` word or a word the shell expands. A
-name the shell only builds by joining a brace's parts with the text
-around it is not read: that is a command built from expansions. It expands nothing and knows no comments or heredocs, which is why the first rule
-refuses those lines rather than reading them. A word the shell would
+word that holds a `{` counts as well as each word its brace expansion
+makes, the alternatives joined with the text around them
+(`{mait,--for=}y` makes `maity` and `--for=y`; nested braces and several
+brace groups in one word expand as Bash expands them, letter ranges such
+as `{a..e}` included), up to 256 words (`BRACE_LIMIT`). A word whose
+expansion makes more, that holds more than 256 brace groups, or whose
+braces nest deeper than the hook's stack allows is not read: it counts
+as `maity` and as `runner`, so it refuses the line. The words are made
+one at a time and only up to the limit, so a word that would make
+millions costs no more than one at the limit. Number ranges (`{1..9}`)
+are left as they are: each of their words holds a digit, and neither
+name does. The split itself expands nothing and knows no comments or
+heredocs, which is why the first rule refuses those lines rather than
+reading them. A word the shell would
 still expand counts as `maity` before a later `runner` word, and as
 `runner` after a `maity` word in the same text; a word that starts with
 an unquoted `~` and holds no `/` counts as one the shell expands. Quoted
@@ -3075,9 +3086,23 @@ the runner's own: it starts its in-session ones through the launch, the
 pane's pipe and this hook, never through an agent's tool call, so no
 placed session needs one.
 
-Not read: a command the shell builds only from expansions or from
-input. The check is a second line behind the sandbox, not a parser of
-every shell form.
+Not read: values the hook cannot know, such as globs matched against
+files and expansions of variables or of input. The check is a second
+line behind the sandbox, not a parser of every shell form.
+
+Corrected in the tenth review round of #1942: the ninth round counted a
+word with a brace only by the parts between `{`, `,` and `}`, and left a
+name the shell builds by joining those parts with the text around them
+unread, as a command built from expansions, on the reading that such a
+join leaves an extra word `maity`'s parser rejects. That reading was
+wrong: an option that takes a value swallows the extra word
+(`{mait,--for=}y {--for=,runne}r status` makes
+`maity --for=y --for=r runner status`), and the joined forms are known
+from the line alone. So the brace expansion is now made, up to the
+limit, and the boundary of what is not read is only what the line does
+not hold. Letter ranges are expanded on the author's reading that they
+are as knowable as alternatives (`{l..m}aity` makes `maity`); the order
+named alternatives only.
 The hook does not depend on how Claude Code's sandbox exclusion matches
 `maity *`. It fails closed on a line where `maity` is a word after
 anything but the allowed assignments: such a line is refused, and one
@@ -3107,6 +3132,7 @@ line the check cannot read to the end, costs refusing text that holds
 both words (quoted text included), comments, heredocs and several lines
 beside a `maity`, deeply nested quoting, lines with an unclosed quote
 and lines with `$'…'` text that holds a backslash or with `$"…"`,
+and lines with a word whose braces make more than 256 words,
 whatever they name;
 each has a way out (a file with `--body-file`, one command per line
 without a comment, a line without the nesting, or `printf` with single
