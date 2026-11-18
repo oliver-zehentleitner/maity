@@ -19,7 +19,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, Engine, select, update
+from sqlalchemy import ColumnElement, Connection, Engine, and_, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
@@ -89,7 +89,7 @@ def _payload(
             {
                 "id": c.id,
                 "title": c.title,
-                "lease_until": clock.rfc3339(c.lease_until) if c.lease_until else None,
+                "lease_until": clock.rfc3339_or_none(c.lease_until),
             }
             for c in cards
         ],
@@ -161,6 +161,16 @@ def revoked(conn: Connection, credential_id: str) -> None:
         stalled(conn, row.membership_id, row.instance, "session_ended")
 
 
+def _unreported(now: datetime) -> ColumnElement[bool]:
+    """A claim's lease passed before `now` and no pass named this expiry yet."""
+    c = t.card.c
+    return and_(
+        c.lease_until.is_not(None),
+        c.lease_until < now,
+        (c.lease_expiry_reported.is_(None)) | (c.lease_expiry_reported != c.lease_until),
+    )
+
+
 def expire(engine: Engine, now: datetime | None = None) -> None:
     """The minute's pass: `claim_expired` once per holder for the claims whose lease passed
     since the last pass named them, each claim once per expiry (§6.5)."""
@@ -170,12 +180,7 @@ def expire(engine: Engine, now: datetime | None = None) -> None:
         due = conn.execute(
             select(c.claim_holder, c.claim_instance, t.membership.c.project_id)
             .join(t.membership, t.membership.c.id == c.claim_holder)
-            .where(
-                open_claims(None),
-                c.lease_until.is_not(None),
-                c.lease_until < now,
-                (c.lease_expiry_reported.is_(None)) | (c.lease_expiry_reported != c.lease_until),
-            )
+            .where(open_claims(None), _unreported(now))
             .distinct()
         ).all()
     for holder, instance, project_id in sorted(due, key=lambda r: (r[2], r[0], r[1] or "")):
@@ -189,12 +194,7 @@ def _expire_one(conn: Connection, membership_id: int, instance: str | None, now:
     cards = list(
         conn.execute(
             select(c.id, c.title, c.lease_until)
-            .where(
-                open_claims(membership_id, instance=instance),
-                c.lease_until.is_not(None),
-                c.lease_until < now,
-                (c.lease_expiry_reported.is_(None)) | (c.lease_expiry_reported != c.lease_until),
-            )
+            .where(open_claims(membership_id, instance=instance), _unreported(now))
             .order_by(c.id)
         )
     )

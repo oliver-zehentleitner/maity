@@ -176,11 +176,18 @@ def _hold(conn: Connection, bucket: str, key: str) -> None:
 
 
 def log_take(
-    bucket: str, key: str, seconds: float, count: int, limit: int
+    bucket: str,
+    key: str,
+    seconds: float,
+    count: int,
+    limit: int,
+    *,
+    at: datetime | None = None,
 ) -> tuple[Log, datetime | None]:
-    """Record `count` attempts at this moment when they fit `limit` within `seconds`; the log
-    as read, and the moment recorded (None when refused: nothing is written then)."""
-    key, now = _key(key), _now()
+    """Record `count` attempts at this moment, or at `at` (another log's recorded moment),
+    when they fit `limit` within `seconds`; the log as read, and the moment recorded (None
+    when refused: nothing is written then)."""
+    key, now = _key(key), (_now() if at is None else at)
     with _db().begin() as conn:
         write_guard.exempt(conn)  # a count is no write of an account
         _hold(conn, bucket, key)
