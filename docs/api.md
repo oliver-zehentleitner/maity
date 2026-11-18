@@ -18628,9 +18628,13 @@ stopped` a `failed` or a final `exit` ends it as surely as `stopped`.
 `DELETE` of a placement that is already closing closes it at
 once (`removed`), whatever the runner last reported: the escape when a
 runner never reports. `DELETE` of a
-placement whose consent request is open closes it at once (`removed`)
-and withdraws the request. The hub never deletes a workspace; the
-runner will remove it once the placement has stopped for its retention
+placement whose consent request is open withdraws the request
+(§15.6). A creation not yet approved (`approval.status` not
+`approved`) then closes at once (`removed`): the runner never saw it.
+An approved placement whose open request is a change of its spec is
+not unapproved: the change is dropped (`pending_change` cleared) and
+the placement closes the uniform way, as in the table above. The hub
+never deletes a workspace; the runner will remove it once the placement has stopped for its retention
 time (below; not built yet).
 
 **The workspace after a stop** (the hub's side is built; the runner's
@@ -18945,7 +18949,7 @@ it, settles it in the same transaction:
 |---|---|---|
 | `go` (only an answer with `reply_id: go`; any other answer, text-only included, settles as `no`) | `approval.status: approved`; `placement_updated` reaches the runner | the change is applied, `generation` bumped, `pending_change` cleared |
 | `no` | `refused`; closed (`refused`) | `pending_change` cleared; the placement runs on as it was |
-| withdrawn (by the runner's owner; a `DELETE` of the placement withdraws it too) | closed (`withdrawn`) | `pending_change` cleared |
+| withdrawn (by the runner's owner; a `DELETE` of the placement withdraws it too) | closed (`withdrawn`; after a `DELETE`, `removed`) | `pending_change` cleared; after a `DELETE`, the placement closes the uniform way (§15.5) |
 | the human with the right acts (their own action is their consent) | their `PATCH`, start or restart approves it: `approval.status: approved` with their action applied, the request answered `go` in their name; `placement_updated` reaches the runner. A `DELETE` withdraws the request and closes the placement (`removed`) | their change of spec or restart withdraws the proposal: `pending_change` cleared, the request withdrawn, their own action applied |
 
 Only the runner's owner answers a placement's consent request, directly
