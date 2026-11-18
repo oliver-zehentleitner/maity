@@ -600,6 +600,12 @@ is the whole lever; nothing subagent-specific is needed.
   early error. `config.parse` alone was rejected; `workspace.locate` alone was
   not chosen either — the raw check gives the operator a clearer message before
   a placement is ever attempted.
+- Also refusing `(` and `)`, for antigravity: not done — open and unverified.
+  Refusing `(`/`)` now would be fail-wrong — a directory like `ws (old)` is
+  legitimate and common — so the set stays `*?[]`. Open question: whether agy
+  reads a resolved path holding further special characters as intended; settle by
+  probing agy 1.5.9 (alongside the agy install work, tsk-6d7mecktrqgs), and widen
+  the set for agy only then, and only if needed.
 
 ## The command allowlists are not a boundary until agents run as their own user
 

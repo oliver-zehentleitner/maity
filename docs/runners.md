@@ -132,7 +132,7 @@ Install agy for the user the agents run as (`~/.local/bin/agy`; add that to `age
 
 An agent that sends a review from the folder (`maity say --type review_result`) has its cites checked in the clone, `repo`, whichever directory it is in: maity checks them in the runner's clone, never in the folder, which is no clone.
 
-The runner deletes nothing in the folder. The service's log names what it found, without file contents; remove the entry by hand and restart the placement. Keep the workspaces root out of any git repository: `maity runner check` fails when it lies inside one. A clone does not move between the two layouts: an existing plain clone at the folder's path, or a folder at a plain clone's path, is refused as `workspace_in_use`.
+The runner deletes nothing in the folder. The service's log names what it found, without file contents; remove the entry by hand and restart the placement. Keep the workspaces root out of any git repository: `maity runner check` fails when it lies inside one. Its real path, after symlinks and `~` expansion, must not contain `*`, `?`, `[` or `]`: a placement on such a root fails to start with `workspace_in_use`, and the runner log says why. A clone does not move between the two layouts: an existing plain clone at the folder's path, or a folder at a plain clone's path, is refused as `workspace_in_use`.
 
 **Session settings.** Before each start the runner writes the settings agy gets for that session with `--settings`, in the runner's own directory for the agent, outside the folder:
 
