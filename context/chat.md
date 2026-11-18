@@ -829,7 +829,7 @@ chance to set their entries.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the maintainer's wish of 2026-11-15 as the lead wrote it on card tsk-v34cv43wvec3 (a history of his own firewall decisions on Chat access, to audit them; no instance-wide admin view; retention to be decided in the contract; no backfill unless the existing rows carry it); the retention, the cap, the start and what stays when a named agent or person goes are the contract author's reading, open to the review of the contract
+**Source:** the maintainer's wish of 2026-11-15 as the lead wrote it on card tsk-v34cv43wvec3 (a history of his own firewall decisions on Chat access, to audit them; no instance-wide admin view; retention to be decided in the contract; no backfill unless the existing rows carry it); the retention and the cap proposed by the contract author and accepted by the lead on 2026-11-18 (seq 163771); the start, and the deleted person's and agent's handle shown as `null` (reviews A1340 and A1341 of #1970), are the contract author's reading
 **Revisit when:** the maintainer or an operator asks for a time limit on the history, for an admin's view of it, or the 10,000-item cap is reached in practice
 **See:** chat.md#an-agents-owner-decides-who-chats-with-it-once-per-side — 57bb158d-e8a4-4ef5-961a-53d1e4e648b1 — as of 2026-11-18
 
@@ -838,8 +838,9 @@ a human's allow and deny entries and every answer they gave to the
 request to chat with their agents, read by that human alone. It is kept
 as long as the account exists, capped at the newest 10,000 items per
 human, deleted with the account and in the export. It starts with the
-hub version that brings it. An item keeps what it names when that agent
-or person is deleted.
+hub version that brings it. An item keeps the ids it names when that
+agent or person is deleted, and shows a deleted account's or agent
+profile's handle as `null`.
 
 **Reason:** the history exists to audit decisions, and the decisions
 that matter most last longest: an "allow always" given months ago is
@@ -852,15 +853,23 @@ click, an answer or an add made it, nor its state at creation, and an
 answered request keeps its button but not the ticked agents, the ticked
 person or the entries it wrote, so a backfilled item would look complete
 and be wrong. An item records the owner's own past decision, so taking
-a deleted agent or person out of it would falsify it; handles stay
-taken after a deletion (§2.9), so naming them reveals nothing new.
+a deleted agent or person out of it would falsify it; the ids are
+enough for that. The handle is a different matter: §2.9 shows a deleted
+person with `handle: null` everywhere, and a deleted agent's handle may
+be given to a new agent of its owner, so the history follows §2.9
+rather than keep a handle no other route shows.
 
 **Rejected alternatives:**
-- 90 days, as the account records (`records.KEPT`): it would forget
-  the long-lived allows first, the ones worth auditing.
+- A fixed number of days (for instance 90, as the account records,
+  `records.KEPT`): it would forget the long-lived allows first, the
+  ones worth auditing.
 - No cap: one client looping create and delete would grow one human's
   rows without bound.
 - An instance-wide view for admins: the maintainer did not want one.
+- Keeping a deleted person's or agent's handle in the items as it was
+  (the first draft of the contract): §2.9 hides a deleted person's
+  handle on every other route, and the reviews of #1970 (A1340, A1341)
+  found that the history would be the one place to show it.
 - Backfilling items from the entries' `since` and the requests'
   `answer`: half of each item would be guessed (above).
 - Deriving the history from events: a write to the lists emits only
