@@ -1532,7 +1532,13 @@ o1 asks for one approval on every such card; `own_agents` stays as
 planned (`owners`, `members` by default, `owners_of`; trust `owner`
 only), `owners_of` naming human members only, since the agents of an
 owner who is no member never count as own (the lead's decision of
-2026-11-18: fewer own approvals, so the stricter reading). Where o1
+2026-11-18: fewer own approvals, so the stricter reading). A picked
+member who later leaves stays in `owners_of` and counts nothing while
+not a member; a rejoin, a deliberate act, makes their agents count
+again, and a display may mark the entry as not a member (the lead's
+decision of 2026-11-18). Rejected: the hub removing the handle when
+the member leaves, since that would be a silent policy change by the
+hub. Where o1
 left room, the contract takes the narrowest choice: a human of the
 project is a human member, not isolated, with
 `tasks:review` or `tasks:test`, the standing an `approvals` signature
