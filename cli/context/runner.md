@@ -2009,7 +2009,7 @@ operator's config would admit every owner's project with that slug.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), lotse's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); the review lead's order of 2026-11-03 for the next fixes (pmwg, dzse on 83b3a7ca); the review lead's order of 2026-11-03 for the fixes on 6b564a86 (nyh5, dzse); the manager's order of 2026-11-03 for a last text round on 9ebbdcd1 (wtwy; dzse, nyh5); the manager's order of 2026-11-03 for a text round on 1a77bbdc (wtwy; dzse); `docs/api.md` §15.13, §5.3
+**Source:** card tsk-qe0ka9e341gh, the lead's assignment of 2026-11-03; the reviews of #1294 (pmwg, dzse), the lead's request for a state table (2026-11-03); the review lead's scope decision for #1294 of 2026-11-03 (only the parts settled across reviewers, the run's lifetime to card tsk-3tzhegcrr48h); the review lead's order of 2026-11-03 for the next fixes (pmwg, dzse on 83b3a7ca); the review lead's order of 2026-11-03 for the fixes on 6b564a86 (nyh5, dzse); the manager's order of 2026-11-03 for a last text round on 9ebbdcd1 (wtwy; dzse, nyh5); the manager's order of 2026-11-03 for a text round on 1a77bbdc (wtwy; dzse); `docs/api.md` §15.13, §5.3
 **See:** credentials.md — 116c5330-8dab-42ed-af06-74b6f02cee89 — as of 2026-11-03
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-03
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-11-03
@@ -3084,7 +3084,7 @@ spelling nobody listed (`${X@P}`, `$'…'`) falls outside it.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-bg81webs911m, the follow-up to #1752 the lead ordered (lotse seq 127403, 127806, 128291) with the review of #1752 (hcrb, seq 128028: a version token needs its boundaries), 2026-11-14; Claude Code's settings documentation (managed settings take precedence over a `--settings` file; `disableAllHooks`, `allowManagedHooksOnly`). Which paths and switches count is the author's reading, not checked against a managed Claude Code install
+**Source:** card tsk-bg81webs911m, the follow-up to #1752 the lead ordered (seq 127403, 127806, 128291) with the review of #1752 (hcrb, seq 128028: a version token needs its boundaries), 2026-11-14; Claude Code's settings documentation (managed settings take precedence over a `--settings` file; `disableAllHooks`, `allowManagedHooksOnly`). Which paths and switches count is the author's reading, not checked against a managed Claude Code install
 **See:** runner.md#a-placed-claude-code-agents-maity-line-is-one-plain-call-held-to-that-by-a-hook — 63492c65-e6bf-4fd8-9a73-5a599f11707e — as of 2026-11-14
 **Revisit when:** Claude Code reads managed settings from another place or under another switch, or reports whether hooks are on; a host without bubblewrap must run Claude Code sandboxed; the opt-out `require_sandbox = false` is no longer used; agents on an ssh host may install their own `maity` on purpose
 
@@ -3659,7 +3659,7 @@ in his words are this design's (inferred).
   `hello`, and the CLI ships before such a hub is deployed everywhere;
   a runner that manages nothing has nothing to report, so it stays as
   it was. The lead chose this over waiting for the hub release
-  (confirmed, lotse 139517). Rejected: a retry of `hello` without
+  (confirmed, the lead 139517). Rejected: a retry of `hello` without
   `tools` after the refusal, and reading the hub's version first; both
   add a second path to every start for a gap that closes with the next
   hub release.

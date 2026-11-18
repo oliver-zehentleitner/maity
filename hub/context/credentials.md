@@ -8,7 +8,7 @@ How the hub stores what verifies an agent's or a runner's credential.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-d9r02hn5n32y and the lead's go on its five open points, 2026-11-14; the switch: card tsk-47b7fwkvft30 by lead lotse, 2026-11-15, and lotse's decision to edit the migration in place (seq 136270, 136323); sealed-only, the counts and reseal on use: card tsk-ebc2fhdxttm7, its plan and the lead's approval, 2026-11-17 (seq 152498, 152518, 152522, 153623)
+**Source:** the card tsk-d9r02hn5n32y and the lead's go on its five open points, 2026-11-14; the switch: card tsk-47b7fwkvft30 by the lead, 2026-11-15, and the lead's decision to edit the migration in place (seq 136270, 136323); sealed-only, the counts and reseal on use: card tsk-ebc2fhdxttm7, its plan and the lead's approval, 2026-11-17 (seq 152498, 152518, 152522, 153623)
 **Revisit when:** sealing is switched on for good (both settings on in production, or made the default), `MAITY_SECRET_KEY` becomes mandatory, the hub gets a previous-key mechanism for its sealed values, or credentials move to asymmetric keys
 
 The verifier `sha256(<secret>)` is the HMAC key of a signed request (docs/api.md §2.2), so a

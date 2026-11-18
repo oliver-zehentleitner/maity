@@ -300,7 +300,7 @@ create humans with handles such as `admin` without going through the CLI.
   envelope and from the tests that read routes, and would have to know the hub's paths as well.
 - Refusing to start on a held reserved word, as the contract words it: right for a release, but it would stop
   every test database that holds a human named `admin`, and the operator is told at `migrate` anyway. The contract
-  owner (oz-agent-a) decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
+  owner decided on 2026-10-29 that `migrate` refuses and the start only logs, and aligns the
   contract text with it.
 
 ## The request log carries `ms=` and the route's pattern, and one `stats` line a minute says how loaded the hub is
@@ -671,7 +671,7 @@ range; a HEAD says the whole length and sends no body.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); lotse#wtwy (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
+**Source:** card tsk-fnch2yxp2kk1 (the owner, seq 93747: "on every page (global), only 'maity 2026'"); the lead (seq 94142): the hub's pages follow the web PR (#1525) at the same breakpoint; docs/api.md §16.13 "At phone width"
 **Revisit when:** a strict page gets a stylesheet of its own, the dashboard's phone breakpoint (600 px) changes, or the line's parts change
 **See:** https://github.com/oliver-zehentleitner/maity — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-08
 **Verification:** corroborated — re-checked on 2026-11-15, when "Chat with us on Discord" became the fifth part (card tsk-01tt7j11yx3w): the rule hides every part after the first, so the decision holds; only the count changed
@@ -705,11 +705,11 @@ markup for every width, as the dashboard does.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-0pp41wxp6f75, its plan notes nte-8d01b7h5b0cf and nte-46bhk8n4nrmd (approved by lotse#wtwy, seq 96636), an extension of the owner's caching decision req-s246xb6k1mpp (option A, `no-cache` + ETag), which the owner decides as req-jjqtn71qaa90; docs/api.md §1, §16.11
+**Source:** the card tsk-0pp41wxp6f75, its plan notes nte-8d01b7h5b0cf and nte-46bhk8n4nrmd (approved by the lead, seq 96636), an extension of the owner's caching decision req-s246xb6k1mpp (option A, `no-cache` + ETag), which the owner decides as req-jjqtn71qaa90; docs/api.md §1, §16.11
 **Revisit when:** a dashboard file is loaded by a name the shell neither writes nor lists, a file under `/assets/` carries anything per user, or the dashboard gets a build step that names its files itself
 **See:** serving.md#the-dashboards-files-are-revalidated-by-an-etag-of-their-content-not-no-store — c6768529-3654-45c7-bd5e-aab3067ce04f — as of 2026-11-09
 
-c6768529 left one revalidation per file: after #1518, a warm load of a signed-in page still asked about 100 times and got `304` 98 times out of 102 (maity-ops-team#q8q9's measurement on prod, seq 96553). This record names the files so that a warm load does not ask at all. Its "Revisit when: the shell names its files by digest" has come, and the versioned names it rejected are now built. Everything else in c6768529 stays: the ETag, the gzip form and the `no-cache` answer for any other request.
+c6768529 left one revalidation per file: after #1518, a warm load of a signed-in page still asked about 100 times and got `304` 98 times out of 102 (ops' measurement on prod, seq 96553). This record names the files so that a warm load does not ask at all. Its "Revisit when: the shell names its files by digest" has come, and the versioned names it rejected are now built. Everything else in c6768529 stays: the ETag, the gzip form and the `no-cache` answer for any other request.
 
 - `shell.versioned` adds `?v=<version>` to every `src`/`href` of the shell that names a file under `brand/`, `css/`, `js/` or `vendor/`. The version is the first 16 hex digits of the SHA-256 of the body sent, the same form `/assets/landing/` uses.
 - A stylesheet is served with its `url()`s to such files (fonts, brand masks) versioned the same way, so its version is that of the rewritten body. Like every file here, it is sent from the bytes kept in memory, and a range is cut from them.
@@ -737,7 +737,7 @@ c6768529 left one revalidation per file: after #1518, a warm load of a signed-in
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's decision on req-t92kvhzpdrpx (option a), 2026-11-14, passed on by lotse#wtwy (seq 132677): "Both become a setting with a generous default", a read limit per credential after sign-in as an instance/project setting, default around 600 reads per minute, and a cap on open claims per caller as a project setting, default none; the contract first, replacing the 2026-11-04 line "no general request budget in the hub"; card tsk-ybc2ma72dzvq, items 6 and 7; docs/api.md §1.7, §6.1, §6.5, §16.5
+**Source:** the owner's decision on req-t92kvhzpdrpx (option a), 2026-11-14, passed on by the lead (seq 132677): "Both become a setting with a generous default", a read limit per credential after sign-in as an instance/project setting, default around 600 reads per minute, and a cap on open claims per caller as a project setting, default none; the contract first, replacing the 2026-11-04 line "no general request budget in the hub"; card tsk-ybc2ma72dzvq, items 6 and 7; docs/api.md §1.7, §6.1, §6.5, §16.5
 **Revisit when:** the hub runs several replicas and a per-process count lets a credential through too often, a deployment's agents meet 600 reads a minute in normal work, or plans set limits per account
 **See:** serving.md#an-emergency-limit-on-single-routes-comes-from-the-environment-and-counts-in-each-process-the-public-read-limits-stay-configurable — f3198c35-b163-4fce-b3ad-683d8b825555 — as of 2026-11-14
 

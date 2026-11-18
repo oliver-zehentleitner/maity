@@ -119,7 +119,7 @@ would have to find every copy.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** implementation session, 2026-10-23 (availability stage 2, cover); the review of #285 by oz-agent-h (a return overwrote a third party's claim)
+**Source:** implementation session, 2026-10-23 (availability stage 2, cover); the review of #285 by a reviewer (a return overwrote a third party's claim)
 **See:** https://github.com/oliver-zehentleitner/maity — 10798a45-310b-4c30-859f-30fea2454ece — as of 2026-10-29
 **Revisit when:** a moved item needs to show after the return who once covered it
 
@@ -184,7 +184,7 @@ by the substitute that covers.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the review of #285 by oz-agent-h (a delegated decision stalled at a substitute that got 403)
+**Source:** the review of #285 by a reviewer (a delegated decision stalled at a substitute that got 403)
 **Revisit when:** a proposal kind's answer rule depends on more than a scope and `humans_only`
 
 For a `consent` request or a request that carries a proposal, the cover
