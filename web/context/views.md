@@ -1517,6 +1517,28 @@ can only fail. Listing a runner that does not offer the repository as
 unavailable instead of leaving it out: the other runners the hub would
 refuse are left out too, and with none left the section says why.
 
+**OpenCode names its model here (2026-11-18, tsk-sn90s6wzp9s7).** For
+`opencode` the form offers only the models the runner advertises, with
+no "runner's default", and sends nothing until one is chosen; where the
+runner advertises no `models`, OpenCode is left out of the tools and a
+line under them says why. The reason: without `--model` opencode runs
+its own default, a model opencode hosts, so the clone's conversation
+would go to opencode's servers instead of the provider the runner names
+(docs/api.md §15.3, docs/runners.md "OpenCode (Grok)"). A runner with the
+fail-closed adapter of #1969 starts a model-less placement on its
+`default_model` and refuses one it cannot resolve (`harness_refused`,
+`model_unsupported`), but a runner on an older `maity` starts it with no
+`--model`, and the hub does not know which one it is. A named model is
+safe on both, so the form does not depend on the runner's version. The
+list `MODEL_NAMED` in `web/js/placements.js` holds the tools this applies
+to; the other tools keep the runner's default.
+Rejected: keeping "The runner's default" for OpenCode, since only the
+runner knows whether it resolves to a configured model; offering
+OpenCode without models and letting the runner refuse it, a choice that
+can only fail, against this entry's rule of offering what can start;
+a hub check, which would change the contract for every client and is a
+card of its own.
+
 ## Project settings are the project's last tab, not a panel from the gear menu
 
 **Id:** ecbeaecb-2dcf-45ff-ae44-d8b2b455e218
