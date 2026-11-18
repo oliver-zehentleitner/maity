@@ -2755,3 +2755,26 @@ view of them.
 The check counts the five headings and that each has text; it cannot tell
 whether the text is right. That is what the confirmation by the lead and ops
 before the tag is for.
+
+## The runner lab's state is a page in docs/, kept up to date by every runner change
+
+**Id:** 37546df5-acb8-4acd-a595-781e15e44079
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's order on the runner lab card, 2026-11-18 (tsk-sfs7kkrz7tk8, tsk-gw1e87ev707f)
+**Revisit when:** the lab's matrix moves into the runner itself (`maity runner check` reports what this page lists), or CI runs the harnesses on each OS
+
+`docs/runners-lab.md` holds where the runner and its harnesses are tested,
+how the test machines are set up, what `maity runner check`'s warnings
+mean, and the open gaps with their cards. A pull request that changes the
+runner updates that page in the same pull request. Environments are named
+by OS and version only, because the repository is public.
+
+**Reason:** the lab's findings lived in card notes and in the lab agents'
+heads. Someone setting up a runner, or a coder changing it, could not see
+which OS and harness combinations work today, or which host change a
+fix depends on.
+
+**Alternatives:** unknown beyond the card notes alone, which do not reach
+readers of the repository and go stale without anyone noticing.

@@ -283,5 +283,6 @@ The check covers the clone as it was then, and a session can change it afterward
 
 ## Read more
 
+- [The runner lab](runners-lab.md): where the runner is tested, how the test machines are set up, and the open gaps. A pull request that changes the runner updates it.
 - [`maity runner`](../cli/README.md#maity-runner): every setting and how the service runs.
 - [`docs/api.md` §15](api.md): the contract.
