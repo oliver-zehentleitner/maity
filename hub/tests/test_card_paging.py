@@ -7,6 +7,7 @@ reader's hidden windows."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import pytest
@@ -232,8 +233,30 @@ def test_a_search_reads_no_note_of_a_card_its_own_text_found(
         page = _page(owner, {"q": "needle", "status": "open", "limit": 2})
     assert [i["match"] for i in page["items"]] == [["title", "note"]] * 2
     note_reads = [p for s, p in sent if "FROM card_note" in s and "card_note.body" in s]
-    asked = {v for p in note_reads for v in p if isinstance(v, str) and v.startswith("tsk-")}
+    asked = set().union(*(_card_ids(p) for p in note_reads))
     assert asked == {i["id"] for i in page["items"]}
+
+
+def _card_ids(parameters: Any) -> set[str]:
+    """The card ids among a statement's parameters: SQLite's driver gets them as a tuple,
+    psycopg on PostgreSQL as a dict (its values are what counts, not its keys), and an
+    expanding `IN` may pass the ids as one list."""
+    values = parameters.values() if isinstance(parameters, Mapping) else parameters or ()
+    found: set[str] = set()
+    for value in values:
+        if isinstance(value, (list, tuple)):
+            found |= _card_ids(value)
+        elif isinstance(value, str) and value.startswith("tsk-"):
+            found.add(value)
+    return found
+
+
+def test_card_ids_are_read_from_the_parameters_of_either_driver() -> None:
+    assert _card_ids(("tsk-a", 3, "tsk-b")) == {"tsk-a", "tsk-b"}
+    assert _card_ids({"id_1": "tsk-a", "id_2": "tsk-b", "tsk-key": 1}) == {"tsk-a", "tsk-b"}
+    assert _card_ids({"id_1": ["tsk-a", "tsk-b"], "limit": 2}) == {"tsk-a", "tsk-b"}
+    assert _card_ids((("tsk-a", "tsk-b"), "x")) == {"tsk-a", "tsk-b"}
+    assert _card_ids(None) == set()
 
 
 def test_a_card_gone_since_its_key_matches_nothing(migrated: Engine) -> None:
