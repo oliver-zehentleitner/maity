@@ -410,12 +410,26 @@ def open_proposals(conn: Connection, membership_id: int, human_id: str) -> list[
     return [r for r in rows if (r.proposal or {}).get("kind") == KIND]
 
 
+def _require_proposer(conn: Connection, request: Any, human_id: str) -> None:
+    """The proposing agent still stands and may still propose (§19.4): its `go` is given
+    on that agent's authority, which a demotion or a suspension took away."""
+    from maity_hub.access import Membership
+
+    row = proposals.proposer_row(conn, request)
+    if row is None:
+        raise proposals.proposer_lost()
+    project = conn.execute(select(t.project).where(t.project.c.id == request.project_id)).one()
+    if not may_propose(conn, Membership(project, row, "agent"), human_id):
+        raise proposals.proposer_lost()
+
+
 def settle(conn: Connection, settled: proposals.Settlement) -> None:
     """On `go`: the proposed text, or the human's edit of it, becomes the next version.
     The answer route checked `base_version` before it answered (`check_answer`)."""
     if settled.outcome != "go" or settled.approver is None:
         return
     proposal, request = settled.proposal, settled.request
+    _require_proposer(conn, request, proposal["human_id"])
     edit = proposal.get("edit")
     proposer = {**proposal["proposed_by"], "request_id": request.id}
     if edit is None:

@@ -51,7 +51,7 @@ def test_one_attachment_is_named_and_its_command_given() -> None:
     assert cli._event_line(event).startswith(
         "#108514 message: chat [1 attachment: screen shot.png]"
     )
-    # No `-o`: the file goes into ./maity-files/, never into the working directory (§13).
+    # No `-o`: the file is saved outside the work tree, never into it (§13).
     assert cli._attachment_lines(event) == ["  maity files get att-0042"]
 
 

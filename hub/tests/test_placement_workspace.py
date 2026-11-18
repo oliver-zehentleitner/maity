@@ -17,6 +17,7 @@ from tests.test_auth_agent import signed
 from tests.test_join_pickup import _allow_instances, exchange, pick_up
 from tests.test_placements import (
     REPOSITORY,
+    REVOCATIONS,
     Setup,
     admin_agent,
     events_of,
@@ -314,6 +315,166 @@ def test_a_stopped_placement_naming_it_does_not_keep_it_and_rejoins(
     assert started.status_code == 200, started.text
     again = pick_up(setup, started.json())
     assert again.status_code == 201, again.text
+
+
+# --- a rejoin after a revocation only the profile's owner may undo (§15.5, §15.6) ----------
+
+
+def _revoked_as(
+    s: Setup, make_client: ClientFactory, credential_id: str, reason: str, by: str | None
+) -> flow.Human:
+    """The credential revoked as `auth.revocation.revoke` stores it, without the stop that
+    revocation brings, so a placement can be found running on it. `by` names a human of
+    the setup as in `REVOCATIONS`; the other human is returned."""
+    someone = flow.human(make_client, s.engine, "someone")
+    who = {"owner": s.owner.id, "runner_owner": s.owner.id, "someone": someone.id}
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == credential_id)
+            .values(revoked_at=clock.now(), revoked_by=who.get(by or ""), revoked_reason=reason)
+        )
+    return someone
+
+
+def _profile_to(s: Setup, human_id: str) -> None:
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == s.agent.id)
+            .values(owner_id=human_id)
+        )
+
+
+@pytest.mark.parametrize(("reason", "by", "anyone"), REVOCATIONS)
+def test_a_removal_after_an_owner_only_revocation_stops_the_placement(
+    setup: Setup, make_client: ClientFactory, reason: str, by: str | None, anyone: bool
+) -> None:
+    # A running placement whose credential was revoked: the removal stores the rejoin, and
+    # after a revocation only the profile's owner may undo it also stops the placement, so
+    # the rejoin waits for the owner's start (§15.5). After the hub's own revocation or the
+    # runner owner's revocation of the runner it keeps running and picks up at once.
+    body, credential_id = with_credential(setup, make_client)
+    _revoked_as(setup, make_client, credential_id, reason, by)
+    answer = workspace(setup, body["id"], state="removed", removes_at=None)
+    assert answer.status_code == 200, answer.text
+    after = get(setup, body["id"])
+    assert (after["rejoin"], after["workspace_epoch"]) == (True, 2)
+    assert after["generation"] == body["generation"]
+    assert revoked_reason(setup, credential_id) == reason  # nothing revoked again
+    if anyone:
+        assert after["desired"] == "running"
+        picked = pick_up(setup, after)
+        assert picked.status_code == 201, picked.text
+        return
+    assert after["desired"] == "stopped"
+    refused = pick_up(setup, after)
+    assert (refused.status_code, refused.json()["error"]["details"]) == (
+        409,
+        {"why": "not_running"},
+    )
+    started = setup.owner.patch(f"{PATH}/{body['id']}", {"desired": "running"})
+    assert started.status_code == 200, started.text  # the profile's owner
+    picked = pick_up(setup, started.json())
+    assert picked.status_code == 201, picked.text
+
+
+@pytest.mark.parametrize(("reason", "by", "anyone"), REVOCATIONS)
+@pytest.mark.parametrize("caller", ["profile_owner", "runner_owner", "proposing_agent"])
+def test_a_start_after_an_owner_only_revocation_waits_for_the_owner(
+    setup: Setup,
+    make_client: ClientFactory,
+    reason: str,
+    by: str | None,
+    anyone: bool,
+    caller: str,
+) -> None:
+    # Every start of a placement whose credential is revoked follows the owner rule, also
+    # before any rejoin is stored: one the removal stores later is carried out by the
+    # start that came first (§15.6). "runner_owner" is the setup's owner with the profile
+    # moved to someone else.
+    body, credential_id = with_credential(setup, make_client)
+    setup.owner.patch(f"{PATH}/{body['id']}", {"desired": "stopped"})
+    someone = _revoked_as(setup, make_client, credential_id, reason, by)
+    if caller == "runner_owner":
+        _profile_to(setup, someone.id)
+    asker = admin_agent(make_client, setup) if caller == "proposing_agent" else setup.owner
+    assert get(setup, body["id"])["rejoin"] is False
+    started = asker.patch(f"{PATH}/{body['id']}", {"desired": "running", "reason": "go on"})
+    if caller == "profile_owner" or anyone:
+        assert started.status_code == 200, started.text
+    else:
+        assert started.status_code == 403, started.text
+        assert started.json()["error"]["details"] == {"reason": "owner_only"}
+        assert get(setup, body["id"])["desired"] == "stopped"
+    restarted = asker.post(f"{PATH}/{body['id']}/restart", {})
+    assert restarted.status_code == started.status_code, restarted.text
+    workspace(setup, body["id"], state="removed", removes_at=None)
+    after = get(setup, body["id"])
+    assert after["rejoin"] is True
+    if anyone:
+        assert after["desired"] == "running"
+        assert pick_up(setup, after).status_code == 201
+    else:
+        assert after["desired"] == "stopped"  # whoever started it: the owner starts again
+        assert pick_up(setup, after).status_code == 409
+
+
+def test_a_successor_naming_an_owner_only_revoked_credential_waits_for_the_owner(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # The other placements a removal gives a rejoin are stopped already (none runs, or the
+    # credential would not be revoked by the removal); their start follows the owner rule.
+    first, credential_id = with_credential(setup, make_client)
+    closed(setup, first)
+    second = placed(setup)
+    assert second["credential_id"] == credential_id
+    setup.owner.patch(f"{PATH}/{second['id']}", {"desired": "stopped"})
+    someone = _revoked_as(setup, make_client, credential_id, "revoked", "owner")
+    _profile_to(setup, someone.id)  # the setup's owner is now the runner's owner only
+    workspace(setup, first["id"], state="removed", removes_at=None)
+    assert revoked_reason(setup, credential_id) == "revoked"
+    after = get(setup, second["id"])
+    assert (after["rejoin"], after["desired"]) == (True, "stopped")
+    refused = setup.owner.patch(f"{PATH}/{second['id']}", {"desired": "running"})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"reason": "owner_only"}
+    _profile_to(setup, setup.owner.id)  # the profile's owner again, and a project member
+    started = setup.owner.patch(f"{PATH}/{second['id']}", {"desired": "running"})
+    assert started.status_code == 200, started.text
+    assert pick_up(setup, started.json()).status_code == 201
+
+
+def test_a_removal_while_another_placement_runs_on_the_credential_stops_this_one(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # Another running placement names the credential, so the removal revokes nothing; after
+    # a revocation only the owner may undo, the reported placement still waits for the
+    # owner's start, and the other keeps what it had.
+    body, credential_id = with_credential(setup, make_client)
+    other = placed(setup, agent={"handle": "agent-x", "display_name": "X"})
+    with setup.engine.begin() as conn:
+        conn.execute(
+            update(t.placement)
+            .where(t.placement.c.id == other["id"])
+            .values(credential_id=credential_id)
+        )
+    _revoked_as(setup, make_client, credential_id, "leaked_in_payload", None)
+    workspace(setup, body["id"], state="removed", removes_at=None)
+    after = get(setup, body["id"])
+    assert (after["rejoin"], after["desired"]) == (True, "stopped")
+    kept = get(setup, other["id"])
+    assert (kept["rejoin"], kept["desired"]) == (False, "running")
+    assert revoked_reason(setup, credential_id) == "leaked_in_payload"
+
+
+def test_a_removal_without_a_credential_keeps_the_start(setup: Setup) -> None:
+    body = placed(setup)
+    assert body["credential_id"] is None
+    workspace(setup, body["id"], state="removed", removes_at=None)
+    after = get(setup, body["id"])
+    assert (after["rejoin"], after["desired"], after["workspace_epoch"]) == (True, "running", 2)
+    assert pick_up(setup, after).status_code == 201
 
 
 def test_a_start_clears_the_outcome_and_a_removed_clone_continues_nothing(

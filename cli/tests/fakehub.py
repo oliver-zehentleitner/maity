@@ -100,6 +100,7 @@ class FakeHub:
     join_instance: str | None = "wqe2"  # Maity-Instance answered by the join exchange
     # (status, code, details[, message]) the join exchange answers instead of a credential
     join_error: tuple[Any, ...] | None = None
+    help_text: str = "# Maity help\n"  # what GET /api/v1/help answers
 
     def signed(self) -> list[Seen]:
         return [s for s in self.seen if s.headers.get("authorization", "").startswith("Maity-HMAC")]
@@ -187,7 +188,7 @@ def _handler(hub: FakeHub) -> type[BaseHTTPRequestHandler]:
                 self.end_headers()
                 return None
             if path == "/api/v1/help":
-                return self._send(200, "# Maity help\n")
+                return self._send(200, hub.help_text)
             if path == "/api/v1/health":
                 return self._send(200, {"status": "ok"})
             if path == f"/api/v1/runners/pair/{PAIR_TOKEN}" and self.command == "POST":

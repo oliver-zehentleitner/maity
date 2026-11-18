@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -11,7 +12,7 @@ from sqlalchemy import Engine, insert, select
 from maity_hub import clock, forge, probe
 from maity_hub import tables as t
 from maity_hub.board import links, notes
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_tasks import task
 
@@ -324,6 +325,132 @@ def test_a_human_redacts_a_history_entry_and_the_events_values(
     # Again: answered as it is, no second notice.
     assert owner.post(path, {"reason": "again"}).json()["before"]["reason"] == "leak"
     assert len(events(migrated, "event_redacted")) == 1
+
+
+def test_a_history_tombstones_reason_reaches_only_owners_admins_and_the_redactor(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§6.15, §8.5: the reason in the history and in the write's event, per reader."""
+    agent = flow.agent(make_client, owner, role="admin")  # reads every event, as an agent
+    member = flow.human(make_client, migrated, "a-member")  # creates the card: in the audience
+    guest = flow.human(make_client, migrated, "a-guest")  # project:read only
+    admin = flow.human(make_client, migrated, "an-admin")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    for who, role in ((member, "member"), (guest, "guest"), (admin, "admin")):
+        factory.membership(migrated, project_id, role, human_id=who.id)
+    card = task(member, title="hunter2 in the title")
+    owner.patch(f"/projects/maintainer/maity/tasks/{card['id']}", {"title": "clean"})
+    for entry in history(owner, card):  # the created entry and the title change
+        path = f"/projects/maintainer/maity/tasks/{card['id']}/history/{entry['id']}/redact"
+        assert owner.post(path, {"reason": "a password"}).status_code == 200
+
+    def in_history(who: Any) -> list[Any]:
+        return [e[side] for e in history(who, card) for side in ("before", "after", "diff")]
+
+    def in_events(who: Any) -> list[Any]:
+        listed = who.get("/projects/maintainer/maity/events?after=0&limit=200")
+        assert listed.status_code == 200, listed.text
+        kinds = ("task_created", "task_updated")
+        found = [e["payload"] for e in listed.json()["items"] if e["kind"] in kinds]
+        return [v for p in found for v in p.values() if isinstance(v, dict) and v.get("redacted")]
+
+    stored = len(in_events(owner))  # the created event's field values and the update's title
+    assert stored > 1
+    readers: list[tuple[Any, str | None, int]] = [
+        (owner, "a password", stored),
+        (admin, "a password", stored),
+        (agent, None, stored),
+        (member, None, stored),
+        (guest, None, 0),
+    ]
+    for who, seen, carried in readers:
+        marks = in_history(who) + in_events(who)
+        assert len(marks) == 6 + carried, who  # two entries, each before, after and diff
+        assert {m["reason"] for m in marks} == {seen}, who
+        assert all(m["redacted"] is True and m["by"] == owner.id and m["at"] for m in marks)
+    for plain in (agent, member, guest):
+        assert "a password" not in json.dumps(history(plain, card))
+        assert "a password" not in plain.get("/projects/maintainer/maity/events?after=0").text
+    # The stored tombstones keep the reason; only the reading leaves it out.
+    stored_reasons = {e.payload["title"]["reason"] for e in events(migrated, "task_updated")}
+    assert stored_reasons == {"a password"}
+
+
+def test_only_a_tombstone_with_who_and_when_is_shaped_per_reader() -> None:
+    """§8.5: a task event's field value or task copy counts as a tombstone only with
+    `redacted: true`, `by` and `at`; another dict value keeps its keys as they are."""
+    from types import SimpleNamespace
+
+    from maity_hub.views import _without_reason
+
+    mark = {"redacted": True, "reason": "a password", "by": "hum-x", "at": "2026-11-14T00:00:00Z"}
+    lookalike = {"redacted": True, "reason": "kept"}  # a dict-valued field, not a tombstone
+    for kind, payload in (
+        ("task_updated", {"title": mark, "extra": lookalike}),
+        ("note_added", {"note": {"body": "n"}, "task": {"title": mark, "extra": lookalike}}),
+    ):
+        row = SimpleNamespace(kind=kind, payload=payload, redacted=False, conversation_id=None)
+        shown = _without_reason(row, None)
+        values = shown if kind == "task_updated" else shown["task"]
+        assert values["title"] == {**mark, "reason": None}, kind
+        assert values["extra"] == lookalike, kind
+
+
+def test_a_replayed_link_removal_shows_its_tombstone_without_the_reason(
+    owner: flow.Human, make_client: ClientFactory
+) -> None:
+    agent = flow.agent(make_client, owner)
+    card = task(agent)
+    added = link(agent, card, kind="url", url="https://example.com/secret").json()
+    path = f"/api/v1/projects/maintainer/maity/tasks/{card['id']}/links/{added['id']}"
+    keyed = agent.auth | {"Idempotency-Key": "link-removal-reason-0001"}
+    assert agent.client.delete(path, headers=keyed).status_code == 200
+    removal = next(e for e in history(owner, card) if e["field"] == "links" and e["after"] is None)
+    owner.post(
+        f"/projects/maintainer/maity/tasks/{card['id']}/history/{removal['id']}/redact",
+        {"reason": "a password"},
+    )
+    for headers in (keyed, agent.auth):  # the replay, and a new removal answered from the entry
+        again = agent.client.delete(path, headers=headers)
+        assert again.status_code == 200, again.text
+        assert again.json()["redacted"] is True and again.json()["reason"] is None
+    assert owner.delete(path.removeprefix("/api/v1")).json()["reason"] == "a password"
+
+
+def test_a_replayed_history_redaction_shows_the_reason_as_a_fresh_read_does(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§1.5, §8.5: a replay of `…/redact` shows the tombstone's reason as the caller's own
+    `GET …/history` does now, not as it did when the key was stored."""
+    bea = flow.human(make_client, migrated, "bea")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "admin", human_id=bea.id)
+    card = task(owner, title="hunter2 in the title")
+    entry = history(owner, card)[0]
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/history/{entry['id']}/redact"
+    assert owner.post(path, {"reason": "a password"}).status_code == 200
+    keyed = {"X-CSRF-Token": bea.csrf, "Idempotency-Key": "history-redaction-reason-0001"}
+
+    def bea_redacts() -> Any:  # she loses to the owner's redaction: the answer is his tombstone
+        answer = bea.client.post(f"/api/v1{path}", json={"reason": "bea's"}, headers=keyed)
+        assert answer.status_code == 200, answer.text
+        return answer
+
+    first = bea_redacts()
+    assert first.json()["after"]["reason"] == "a password"  # an admin reads it (§8.5)
+    again = bea_redacts()
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert again.json()["after"]["reason"] == "a password"
+    demoted = owner.patch(f"/projects/maintainer/maity/members/{bea.id}", {"trust": "member"})
+    assert demoted.status_code == 200, demoted.text
+    fresh = next(e for e in history(bea, card) if e["id"] == entry["id"])
+    assert fresh["after"]["reason"] is None
+    replayed = bea_redacts()
+    assert replayed.headers["Idempotent-Replayed"] == "true"
+    assert {replayed.json()[side]["reason"] for side in ("before", "after", "diff")} == {None}
+    assert "a password" not in replayed.text
 
 
 # --- notes ------------------------------------------------------------------------------------

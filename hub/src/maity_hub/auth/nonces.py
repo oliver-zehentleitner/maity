@@ -13,6 +13,7 @@ caller's transaction, the short one that authenticates and commits before the ro
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import cast
 
 from sqlalchemy import Connection, delete, func, select
 from sqlalchemy.dialects import postgresql
@@ -39,7 +40,7 @@ def epoch(conn: Connection) -> datetime:
     found = conn.execute(select(t.nonce_epoch.c.since).where(t.nonce_epoch.c.id == EPOCH_ID))
     since = found.scalar()
     if since is not None:
-        return since  # type: ignore[no-any-return]
+        return cast(datetime, since)
     # The database's clock, not the replica's: a replica whose clock runs behind could put the
     # boundary before nonces another replica spent just before the loss.
     conn.execute(
@@ -47,9 +48,12 @@ def epoch(conn: Connection) -> datetime:
         .values(id=EPOCH_ID, since=func.timezone("UTC", func.now()))
         .on_conflict_do_nothing()
     )
-    return conn.execute(  # type: ignore[no-any-return]
-        select(t.nonce_epoch.c.since).where(t.nonce_epoch.c.id == EPOCH_ID)
-    ).scalar_one()
+    return cast(
+        datetime,
+        conn.execute(
+            select(t.nonce_epoch.c.since).where(t.nonce_epoch.c.id == EPOCH_ID)
+        ).scalar_one(),
+    )
 
 
 def first_use(conn: Connection, credential_id: str, nonce: str) -> bool:

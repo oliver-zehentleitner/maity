@@ -72,7 +72,7 @@ def load_preferences(conn: Connection, human_id: str) -> dict[str, Any]:
     return _mine(conn, human_id)
 
 
-idempotency.LOADERS["preferences"] = idempotency.plain(load_preferences)
+idempotency.register("preferences", idempotency.plain(load_preferences), idempotency.is_caller)
 
 
 @router.get("/me/preferences")

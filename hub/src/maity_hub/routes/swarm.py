@@ -14,6 +14,7 @@ from maity_hub import clock, swarm
 from maity_hub import tables as t
 from maity_hub.access import membership
 from maity_hub.cards import open_claims
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.namespace import ProjectRoute
 from maity_hub.views import member_views
@@ -124,7 +125,7 @@ def _who(rows: list[Any], live: list[dict[str, Any]]) -> dict[int, dict[str, Any
 
 @router.get("/projects/{owner}/{slug}/swarm")
 def project_swarm(slug: str, request: Request, caller: AnyCaller, days: int = DAYS) -> JSONResponse:
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         rows = _active(conn, mine.project.id)

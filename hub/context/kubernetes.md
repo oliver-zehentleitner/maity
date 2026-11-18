@@ -467,7 +467,9 @@ then waits at Traefik, and reaches the hub whole and at once.
 **Revisit when:** a CLI release whose `maity wait` retries a 429 is installed on every agent (then the limit can be on by default), the chart ships a Gateway API route, the k3s setup moves off Traefik or runs more than one Traefik, or the hub's attachment cap or memory limit changes
 **See:** kubernetes.md#the-ingress-lets-a-10-mib-upload-through-11m-for-ingress-nginx-a-buffered-route-of-its-own-on-traefik — 5eb8e035-d2f3-4eed-872b-7e21bd473792 — as of 2026-11-04
 
-The hub has no general request budget. Its own limits are per route,
+The hub has no general request budget per client address (a signed-in
+credential's reads have a limit of their own since 2026-11-14,
+serving.md#a-signed-in-credentials-reads-have-a-limit-per-minute-and-a-project-may-cap-open-claims-per-member-both-settings — aaf47866-499a-46f5-be4c-51319a781dd9 — as of 2026-11-14). Its own limits are per route,
 among them sign-ins, codes, sign-ups, mail, uploads and the public pages'
 reads. The general limit
 sits at the ingress, one per client address for every request:

@@ -368,13 +368,13 @@ window.Maity = window.Maity || {};
     {
       name: "reviewer",
       description: "reviews: moves cards from `review` to `done`, prepares releases",
-      guide: "You review: check the exact head you were given against the contract and the recorded reasons, name each finding with file and line, and say approve or changes.",
+      guide: "You review: check the exact head you were given against the contract and the recorded reasons, name each finding with file and line, and say approve or changes. When $MAITY_SCRATCH is set (a runner placement under Claude Code or Codex), keep evidence, scratch clones and venvs there and delete them once you have reported; docs/agents.md says how to check out another head there.",
       scopes: ["project:read", "tasks:write", "tasks:review", "releases:write", "requests:ask", "events:post"],
     },
     {
       name: "tester",
       description: "tests, files bug cards, moves `review` to `done` where the policy requires a test (§6.1 `done_authority`)",
-      guide: "You test what was deployed: check the behaviour against the card and the contract, and file what fails as a new card.",
+      guide: "You test what was deployed: check the behaviour against the card and the contract, and file what fails as a new card. When $MAITY_SCRATCH is set (a runner placement under Claude Code or Codex), keep evidence, scratch clones and venvs there and delete them once you have reported; docs/agents.md says how to check out another head there.",
       scopes: ["project:read", "tasks:write", "tasks:test", "requests:ask", "events:post"],
     },
     {
@@ -745,6 +745,13 @@ window.Maity = window.Maity || {};
   // give an agent of their own (§3.1: not ops, not proxy).
   const HUB_ROLES = ["coder", "reviewer", "tester", "designer", "writer", "ops", "proxy", "manager", "red-team", "blue-team", "purple-team", "expert"];
   const MEMBER_ROLES = HUB_ROLES.filter((r) => r !== "ops" && r !== "proxy");
+  // The built-in role whose scopes `role` has, as project_roles.base_of answers it (§2.3):
+  // itself for a built-in role, the base of one of the project's own, null for any other name.
+  function roleBaseIn(slug, role, path) {
+    if (HUB_ROLES.includes(role)) return role;
+    const own = (project(slug, path).roles || []).find((r) => r.name === role);
+    return own ? own.base : null;
+  }
   // §2.3 "The expert" (routes/members.py): the role expert waits until the member holds no
   // card and is assigned no open one; the fixture has no takeovers or covers to add.
   function holdsCards(slug, target, body, path) {
@@ -770,7 +777,7 @@ window.Maity = window.Maity || {};
       personal: to !== "owner", humans_only: true, priority: "normal", options: [], replies: [{ id: "go", label: "Go" }, { id: "no", label: "No" }],
       asked_by: { member_id: who.id, display_name: who.display_name, role: mine.role || "member", trust: mine.trust || "member",
         instance: null, session_id: null, avatar_url: null },
-      action: null, answer: null, answered_at: null, cover: null, filed_by: null, forwarding: [], jour_fixe: null, ktw_ref: null,
+      action: null, answer: null, answered_at: null, cover: null, filed_by: null, forwarding: [], held: [], jour_fixe: null, ktw_ref: null,
       mentions: [], needs_in_session: null, on_behalf_of: null, placement: null, report: null, takeover_id: null, task: null, task_id: null,
       tried: null, while_open: "wait", created_at: nowIso() };
   }
@@ -1238,6 +1245,8 @@ window.Maity = window.Maity || {};
     if (/[\s\u0000-\u001f\u007f]/.test(value)) return "format";
     const m = /^https:\/\/([^/?#]*)/.exec(value);
     if (!m) return "format";
+    // ASCII before case-folding, as the hub (U+212A KELVIN SIGN lower-cases to "k").
+    if (!/^[\x00-\x7f]*$/.test(m[1])) return "format";
     const host = m[1].toLowerCase(); // the hub reads the host without case, as urlsplit does
     const label = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?";
     if (host.length > 253 || !new RegExp("^" + label + "(?:\\." + label + ")+$").test(host) || /^\d+$/.test(host.split(".").pop())) return "format";
@@ -1257,6 +1266,8 @@ window.Maity = window.Maity || {};
   };
   function personNetworkName(network, name) {
     let value = String(name);
+    // ASCII before case-folding, as the hub (U+212A KELVIN SIGN lower-cases to "k").
+    if ((network === "mastodon" || network === "bluesky") && !/^[\x00-\x7f]*$/.test(value)) return null;
     if (network === "mastodon") { const at = value.lastIndexOf("@"); value = value.slice(0, at + 1) + value.slice(at + 1).toLowerCase(); }
     if (network === "bluesky") value = value.toLowerCase();
     if (network === "gitlab" && /\.(git|atom)$/i.test(value)) return null;
@@ -1478,7 +1489,40 @@ window.Maity = window.Maity || {};
     return d ? { direct: d[0] } : null;
   }
   // A message item as §9 shows it (#206): redacted and redaction always there.
-  const messageView = (x) => Object.assign({ redacted: false, redaction: null }, x);
+  // §9.7: each human's current verdict, oldest first; a redacted message reads none.
+  const messageView = (x) => {
+    const v = Object.assign({ redacted: false, redaction: null }, x);
+    v.verdicts = v.redacted ? [] : (x.verdicts || []).map((y) => Object.assign({}, y));
+    return v;
+  };
+  // §9.7: a human's verdict on someone else's chat message, given, replaced (PUT) or taken back (DELETE).
+  function verdictRoute(m, body, path, method) {
+    const meId = me().member.id;
+    if (me().member.kind !== "human") fail(403, "forbidden", "only humans give a verdict", path, { reason: "humans_only" });
+    const seq = Number(m[3]);
+    let msg = null;
+    if (/^cnv-/.test(m[2])) {
+      const c = groupChat(m[1], m[2], path);
+      if (!groupItem(m[1], c, path)) fail(404, "not_found", "Not found", path);
+      msg = c.items.find((x) => x.seq === seq);
+      if (msg && c.view.closed_at) fail(409, "conversation_closed", "the chat is closed", path, { closed_reason: c.view.closed_reason || null });
+    } else {
+      msg = keyed(m[1], "conversations.json", m[2], path).items.find((x) => x.seq === seq);
+    }
+    if (!msg) fail(404, "not_found", "Not found", path);
+    if (msg.from === meId) fail(400, "invalid", "your own message", path, { fields: { seq: "own_message" } });
+    if (msg.redacted || msg.body === null) fail(400, "invalid", "a redacted message", path, { fields: { seq: "redacted" } });
+    const kept = (msg.verdicts || []).filter((v) => v.by !== meId);
+    if (method === "DELETE") { msg.verdicts = kept; return messageView(msg); }
+    if (!["agree", "disagree"].includes(body.value)) fail(400, "invalid", "agree or disagree", path, { fields: { value: "invalid" } });
+    const sentence = typeof body.sentence === "string" && body.sentence.trim() ? body.sentence.trim() : null;
+    if (sentence && body.value === "agree") fail(400, "invalid", "a sentence goes with disagree only", path, { fields: { sentence: "agree_has_none" } });
+    if (sentence && Array.from(sentence).length > 500) fail(400, "invalid", "at most 500 characters", path, { fields: { sentence: "too_long" } });
+    const before = (msg.verdicts || []).find((v) => v.by === meId);
+    if (before && before.value === body.value && before.sentence === sentence) return messageView(msg);
+    msg.verdicts = kept.concat({ by: meId, value: body.value, sentence, at: nowIso(), seq: 9000 + kept.length + seq });
+    return messageView(msg);
+  }
   // Read again, a deleted file says so (§8.7): the message as written, the tombstone from the file.
   const withTombstones = (slug, x) => (x.attachments && x.attachments.length ? Object.assign({}, x, { attachments: x.attachments.map((f) => {
     const a = attachmentsOf(slug).find((y) => y.id === f.id);
@@ -1806,6 +1850,34 @@ window.Maity = window.Maity || {};
   }
 
   const SLUG = /^[a-z0-9][a-z0-9-]{1,62}$/;
+  // A repository URL as the hub stores it, or null (hub/src/maity_hub/forge.py repository_url,
+  // §6.1 "The shape of `url`"), and its forge kind from the host alone (kind_of).
+  function repositoryUrl(raw) {
+    const m = /^([^:/]*):\/\/([^/]*)\/(.*)$/s.exec(raw);
+    if (!m || m[1].toLowerCase() !== "https") return null;
+    // ASCII before case-folding, as the hub (a Unicode host is refused, never folded into ASCII).
+    if (!/^[\x00-\x7f]*$/.test(m[2])) return null;
+    const host = m[2].toLowerCase();
+    if (host === "localhost" || host.endsWith(".localhost")) return null;
+    let path = m[3];
+    if (path.endsWith("/") && !path.endsWith("//")) path = path.slice(0, -1);
+    const segments = path.split("/");
+    if (segments[segments.length - 1].endsWith(".git")) segments[segments.length - 1] = segments[segments.length - 1].slice(0, -4);
+    const labels = host.split(".");
+    if (host.length > 253 || labels.length < 2
+      || !labels.every((l) => /^(?:[a-z0-9]|[a-z0-9][a-z0-9-]{0,61}[a-z0-9])$/.test(l)) || /^[0-9]+$/.test(labels[labels.length - 1])) return null;
+    if (segments.some((x) => !/^[A-Za-z0-9._-]{1,255}$/.test(x) || x === "." || x === ".." || /\.(git|atom)$/i.test(x))) return null;
+    if (segments.length < 2 || segments.length > (host === "github.com" ? 2 : 22)) return null;
+    const stored = "https://" + host + "/" + segments.join("/");
+    return stored.length <= 2048 ? stored : null;
+  }
+  function forgeKind(url) {
+    const host = url.split("://")[1].split("/")[0];
+    const first = host.split(".")[0];
+    if (host === "github.com") return "github";
+    if (first === "gitlab" || first === "bitbucket") return first;
+    return host === "codeberg.org" || first === "gitea" || first === "forgejo" ? "gitea" : "other";
+  }
 
   // The policy fields each preset fills (docs/api.md §6.1); a missing
   // contract_arbiter is the owner.
@@ -2164,7 +2236,8 @@ window.Maity = window.Maity || {};
       const wantTrust = body.trust || "member";
       const want = body.role || "coder";
       if (!["owner", "admin", "member", "guest"].includes(wantTrust)) fields.trust = "unknown";
-      if (!HUB_ROLES.includes(want)) fields.role = "unknown";
+      // A built-in role or one of the project's own (routes/invitations.py, §2.3).
+      if (roleBaseIn(m[1], want, path) === null) fields.role = "unknown";
       else if (want === "proxy" && wantTrust !== "admin") fields.role = "proxy_needs_admin";
       if ((["admin", "owner"].includes(wantTrust) || want === "proxy") && trust !== "owner") {
         fail(403, "forbidden", "only an owner invites an owner, an admin or a proxy", path, { reason: "owner_only" });
@@ -3222,6 +3295,20 @@ window.Maity = window.Maity || {};
       return Object.assign({}, broadcastsChoice, { agents: broadcastsChoice.agents.slice() });
     }],
     ["GET", /^\/health$/, () => ({ status: "ok", version: "fixture", api: "v1", database: { reachable: true, revision: "fixture-head", head: "fixture-head" } })],
+    // §16.14: a few settings of each kind, one secret set and one not.
+    ["GET", /^\/admin\/instance$/, (m, body, path) => {
+      if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
+      const row = (name, group, source, value, admin) => ({ name, group, source, value, secret: false, admin: admin || null });
+      const secret = (name, group, set, admin) => ({ name, group, source: set ? "environment" : "default", value: null, secret: true, set, admin: admin || null });
+      return { version: "fixture", schema: { revision: "fixture-head", head: "fixture-head" }, docs: "hub/README.md#configuration", settings: [
+        row("MAITY_PUBLIC_URL", "address", "environment", "https://hub.example"), row("MAITY_JOIN_URL", "address", "default", null),
+        secret("MAITY_DATABASE_URL", "database", true), row("MAITY_DB_POOL_SIZE", "database", "default", "16"),
+        secret("MAITY_SECRET_KEY", "security", true), row("MAITY_SEAL_VERIFIERS", "security", "environment", "1"),
+        row("MAITY_REGISTRATION", "registration", "default", "closed", "16.4"),
+        secret("MAITY_SMTP_PASSWORD", "mail", false, "16.2"),
+        row("MAITY_AGENT_FIREWALL", "agents", "environment", "on"),
+      ] };
+    }],
     ["GET", /^\/admin\/settings\/mail$/, (m, body, path) => {
       if (!me().member.instance_admin) fail(403, "forbidden", "instance:admin needed", path);
       return fixtures()["admin-mail.json"];
@@ -3281,8 +3368,8 @@ window.Maity = window.Maity || {};
       return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
     }],
     // A human with members:admin places an agent on a runner of their own attached here: one of
-    // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: not
-    // the placement quota or the spec's other validations (review of #1558); the repository's
+    // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: the
+    // placement quota (§6.1 max_placements), not the spec's other validations (review of #1558); the repository's
     // offer with `*` and `?` only (tsk-wn6qp27090qy). The placement waits for the runner
     // (reported null) and needs no consent.
     ["POST", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
@@ -3296,6 +3383,8 @@ window.Maity = window.Maity || {};
       if (prj.state === "archived") fail(409, "project_closed", "the project is closed", path);
       if (r.credential_state !== "active") fail(409, "runner_revoked", "the runner has no live credential", path);
       const live = placementsOf(m[1]).filter((x) => x.active);
+      const quota = (prj.policy || {}).max_placements === undefined ? 8 : prj.policy.max_placements;
+      if (live.length >= quota) fail(409, "placement_quota", "the project's placements are at its limit", path, { max: quota });
       const members = (fixtures()[m[1] + "/members.json"] || { items: [] }).items;
       let agent;
       if (body.agent && body.agent.id) {
@@ -3311,6 +3400,8 @@ window.Maity = window.Maity || {};
           fail(400, "invalid", "you already have an agent with this handle", path, { fields: { handle: "taken" } });
         }
         if (live.some((x) => !x.agent.id && x.agent.handle === handle)) fail(409, "placement_exists", "an active placement holds this", path);
+        // validate_assignment: a built-in role or one of the project's own (§2.3).
+        if (body.role != null && roleBaseIn(m[1], body.role, path) === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
         agent = { id: null, handle, display_name: name, avatar_url: null };
       }
       const clone = (body.workspace && body.workspace.clone) || agent.handle;
@@ -3336,7 +3427,7 @@ window.Maity = window.Maity || {};
         desired: body.desired || "running", generation: 1, rejoin: false, stop_grace_seconds: body.stop_grace_seconds || 120,
         approval: { status: "approved", request_id: null, pending_change: null }, credential_id: null, reported_current: false,
         session_hint: null, logs_hint: null, active: true, closed_at: null, closed_reason: null,
-        created_by: caller.id, proposed_by: null, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
+        created_by: caller.id, proposed_by: null, foreign: false, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
       };
       made.logs_hint = "maity runner logs " + made.id;
       placementsOf(m[1]).push(made);
@@ -3348,6 +3439,13 @@ window.Maity = window.Maity || {};
       if (body.desired === "running" && project(m[1], path).state === "archived") fail(409, "project_closed", "the project is closed", path);
       p.desired = body.desired;
       p.updated_by = me().member.id; p.updated_at = nowIso();
+      return p;
+    }],
+    // The placement routes' DELETE (§15.6): it closes at once here, as no runner reports.
+    ["DELETE", /^\/projects\/([^/]+)\/placements\/([^/]+)$/, (m, body, path) => {
+      const p = placementFor(m[1], m[2], path);
+      p.active = false; p.desired = "stopped"; p.closed_at = nowIso(); p.closed_reason = "removed";
+      p.updated_by = me().member.id; p.updated_at = p.closed_at;
       return p;
     }],
     ["POST", /^\/projects\/([^/]+)\/placements\/([^/]+)\/restart$/, (m, body, path) => {
@@ -3394,6 +3492,16 @@ window.Maity = window.Maity || {};
       return e;
     }],
     ["GET", /^\/runners\/([^/]+)$/, (m, body, path) => runnerOf(m[1], path)],
+    // The owner's list across projects (§15.3), as the runner owner's line.
+    ["GET", /^\/runners\/([^/]+)\/placements$/, (m, body, path) => {
+      const r = runnerOf(m[1], path);
+      if (r.owner_id !== me().member.id) fail(404, "not_found", "Not found", path);
+      const items = fixtureSlugs().flatMap((slug) => placementsOf(slug).filter((p) => p.active && p.runner.id === r.id).map((p) => ({
+        id: p.id, project: p.project || fullOf(slug), agent: { handle: p.agent.handle }, desired: p.desired,
+        state: p.reported ? p.reported.state : null, foreign: !!p.foreign, created_at: p.created_at,
+      })));
+      return { items, next_cursor: null };
+    }],
     ["PATCH", /^\/runners\/([^/]+)$/, (m, body, path) => {
       const r = runnerOf(m[1], path);
       if (r.removed_at) fail(409, "invalid_transition", "the runner was removed", path, { from: "removed", to: null });
@@ -3533,8 +3641,7 @@ window.Maity = window.Maity || {};
         : null;
       return req;
     }],
-    // The forge rule as the hub applies it, with github.com as the one
-    // configured forge.
+    // The repository rule as the hub applies it (§6.1, "The shape of `url`").
     ["POST", /^\/projects$/, (m, body, path) => {
       const fields = {};
       // §6.26: `owner` names an organisation the caller may create projects in;
@@ -3552,10 +3659,8 @@ window.Maity = window.Maity || {};
       else if (ROUTE_WORDS.includes(body.slug)) fields.slug = "reserved";
       else if (fixtures()[body.slug + "/project.json"] || slugOfFull(space + "/" + body.slug)) fields.slug = "taken";
       if (!body.name || !body.name.trim()) fields.name = "string_too_short";
-      const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
-      if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
-        fields["repository.url"] = "not_a_configured_forge";
-      }
+      const url = body.repository ? repositoryUrl(String(body.repository.url || "")) : null;
+      if (body.repository && url === null) fields["repository.url"] = "not_a_repository_url";
       const preset = body.policy && body.policy.preset ? body.policy.preset : "hierarchical";
       if (!PRESETS[preset]) fields["policy.preset"] = "unknown";
       // §6.1, §6.21: the provider and the options; the old boolean alias is a
@@ -3585,7 +3690,7 @@ window.Maity = window.Maity || {};
         name: body.name, state: "build", state_note: null, state_changed_at: nowIso(),
         repository: url === null ? null : {
           url, default_branch: body.repository.default_branch || "main", required_check: body.repository.required_check ?? null,
-          forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null,
+          forge: forgeKind(url), probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null,
         },
         memory: { provider }, setup,
         policy: Object.assign({}, PRESETS[preset], {
@@ -3758,9 +3863,9 @@ window.Maity = window.Maity || {};
       }
       if ("repository" in body) {
         if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
-        const url = body.repository ? String(body.repository.url || "").replace(/\/+$/, "") : null;
-        if (url !== null && !/^https:\/\/github\.com\/[^/\s]+\/[^/\s]+$/.test(url)) {
-          fail(400, "invalid", "the request does not validate", path, { fields: { "repository.url": "not_a_configured_forge" } });
+        const url = body.repository ? repositoryUrl(String(body.repository.url || "")) : null;
+        if (body.repository && url === null) {
+          fail(400, "invalid", "the request does not validate", path, { fields: { "repository.url": "not_a_repository_url" } });
         }
         const same = p.repository && p.repository.url === url;
         // What the repository had, kept by its URL, comes back with it: the
@@ -3770,7 +3875,7 @@ window.Maity = window.Maity || {};
         p.repository = back ? Object.assign({}, back.repository, { owner_confirmed: false, confirmed_by: null })
           // A changed URL is unconfirmed again and read with the instance token alone (§11.4).
           : url ? (same ? Object.assign({}, p.repository)
-            : { url, default_branch: "main", forge: "github", probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
+            : { url, default_branch: "main", forge: forgeKind(url), probe_configured: false, probe_via: null, owner_confirmed: false, confirmed_by: null }) : null;
         if (p.repository) {
           // §6.1: left out on the same URL it stays; another URL starts without one.
           const named = body.repository && "required_check" in body.repository;
@@ -3841,6 +3946,9 @@ window.Maity = window.Maity || {};
         }
         if ("outside_roles" in body.policy && !(body.policy.outside_roles || []).every((r) => ["coder", "designer", "writer", "blue-team"].includes(r))) {
           fail(400, "invalid", "a role an outsider may not hold", path, { fields: { outside_roles: "role_not_allowed" } });
+        }
+        if ("max_placements" in body.policy && !(Number.isInteger(body.policy.max_placements) && body.policy.max_placements >= 0 && body.policy.max_placements <= 1000)) {
+          fail(400, "invalid", "max_placements is 0 to 1000", path, { fields: { "policy.max_placements": "out_of_range" } });
         }
         if ("member_agents_max" in body.policy && !(Number.isInteger(body.policy.member_agents_max) && body.policy.member_agents_max >= 0 && body.policy.member_agents_max <= 20)) {
           fail(400, "invalid", "member_agents_max is 0 to 20", path, { fields: { "policy.member_agents_max": "out_of_range" } });
@@ -5142,7 +5250,9 @@ window.Maity = window.Maity || {};
           fail(409, "namespace_owner", "the project's namespace owner stays an owner", path, { projects: [fullOf(m[1])] });
         }
       }
-      if ("role" in body && !HUB_ROLES.includes(body.role)) errors.role = "unknown";
+      // A project role is taken wherever a role is (§2.3), its base kept beside it.
+      const projectRole = (project(m[1], path).roles || []).find((r) => r.name === body.role) || null;
+      if ("role" in body && !HUB_ROLES.includes(body.role) && !projectRole) errors.role = "unknown";
       if (!errors.trust && !errors.role && ("trust" in body || "role" in body) && newRole === "proxy" && newTrust !== "admin") errors.role = "proxy_needs_admin";
       if (who.member.kind === "human" && trustIn(m[1]) !== "owner" && ("trust" in body || "role" in body)
         && ((["owner", "admin"].includes(newTrust) && newTrust !== target.trust) || (newRole === "proxy" && target.role !== "proxy") || (target.trust === "owner" && newTrust !== "owner"))) {
@@ -5184,6 +5294,8 @@ window.Maity = window.Maity || {};
         // A role change away from expert clears its fields (§6.2 "An expert's fields").
         if (target.role === "expert" && body.role !== "expert") Object.assign(target, { expert_for: null, expert_sources: [] });
         target.role = body.role;
+        if (projectRole) target.role_base = projectRole.base;
+        else delete target.role_base;
       }
       if ("reports_to" in body) target.reports_to = body.reports_to;
       if (applies("areas")) target.areas = [...new Set(body.areas)];
@@ -5310,7 +5422,72 @@ window.Maity = window.Maity || {};
     // A fixture join with expires_in_seconds expires that long after the
     // fixtures were first read, so an open one stays open.
     // §2.3 "Project roles": the project's own roles, read by every member.
-    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ builtin: BUILTIN_ROLES.map((r) => ({ ...r, scopes: r.scopes.slice() })), custom: (project(m[1], path).roles || []).slice() })],
+    ["GET", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => ({ builtin: BUILTIN_ROLES.map((r) => ({ ...r, scopes: r.scopes.slice() })), custom: (project(m[1], path).roles || []).slice(), version: project(m[1], path).roles_version || 0 })],
+    // PUT …/roles (§2.3): the whole list, by a human with project:admin, checked as
+    // project_roles.parse and routes/roles.py check it: the list, each entry's fields, a role in
+    // policy.outside_roles on a base an outsider may hold. A removal is refused while a membership
+    // or policy.outside_roles names the role; the hub's other uses (joins, invitations, cards,
+    // requests, placements, the check-in, substitutes, role memory) are not kept here. `outside` is
+    // reserved as §2.3 says.
+    // A new base moves its members. `base_version` is required and checked after the body and
+    // before a removal (§2.3 "Version."): a stale one is `conflict` without a `reason`; a list
+    // equal to the stored one keeps the version whatever it names.
+    ["PUT", /^\/projects\/([^/]+)\/roles$/, (m, body, path) => {
+      if (me().member.kind !== "human") fail(403, "forbidden", "humans only", path, { reason: "humans_only" });
+      if (!governing(mineIn(m[1]))) fail(403, "forbidden", "project:admin", path, { scope: "project:admin" });
+      const raw = body.custom;
+      if (!Array.isArray(raw)) fail(400, "invalid", "custom: not a list", path, { fields: { custom: "not_a_list" } });
+      if (raw.length > 12) fail(400, "invalid", "custom: too many", path, { fields: { custom: "too_many" } });
+      const bases = ["coder", "reviewer", "tester", "designer", "writer", "ops"];
+      const reserved = ["owner", "admin", "member", "outside", "guest", "team", "all", "proxy", "lead", "null", "none"];
+      const fields = {};
+      const seen = new Set();
+      raw.forEach((r, i) => {
+        const at = "custom[" + i + "]";
+        if (r === null || typeof r !== "object" || Array.isArray(r)) { fields[at] = "not_an_object"; return; }
+        Object.keys(r).forEach((key) => {
+          if (key === "guide") fields["custom[].guide"] = "moved";
+          else if (!["name", "base", "description"].includes(key)) fields[at + "." + key] = "unknown_field";
+        });
+        if (typeof r.name !== "string" || !/^[a-z][a-z0-9-]{1,23}$/.test(r.name)) fields[at + ".name"] = "format";
+        else if (BUILTIN_ROLES.some((x) => x.name === r.name) || reserved.includes(r.name)) fields[at + ".name"] = "reserved";
+        else if (seen.has(r.name)) fields[at + ".name"] = "duplicate";
+        else seen.add(r.name);
+        if (!bases.includes(r.base)) fields[at + ".base"] = "unknown";
+        const description = "description" in r ? r.description : "";
+        if (typeof description !== "string") fields[at + ".description"] = "format";
+        else if ([...description].length > 200) fields[at + ".description"] = "too_long";
+      });
+      if (Object.keys(fields).length) fail(400, "invalid", "invalid roles", path, { fields });
+      const outside = (project(m[1], path).policy || {}).outside_roles || ["coder"];
+      raw.forEach((r, i) => {
+        if (outside.includes(r.name) && !["coder", "designer", "writer", "blue-team", "expert"].includes(r.base)) {
+          fail(400, "invalid", "the role " + r.name + " is in policy.outside_roles", path, { fields: { ["custom[" + i + "].base"]: "outside_roles" } });
+        }
+      });
+      const given = body.base_version;
+      if (given === undefined || given === null) fail(400, "invalid", "name the roles' version you read", path, { fields: { base_version: "required" } });
+      if (!Number.isInteger(given) || given < 0) fail(400, "invalid", "base_version", path, { fields: { base_version: Number.isInteger(given) ? "greater_than_equal" : "int_type" } });
+      const proj = project(m[1], path);
+      const old = proj.roles || [];
+      const version = proj.roles_version || 0;
+      const same = raw.length === old.length && raw.every((r, i) => r.name === old[i].name && r.base === old[i].base && (r.description || "") === (old[i].description || ""));
+      if (same) return { custom: old.map((r) => ({ ...r })), version };
+      if (given !== version) fail(409, "conflict", "the roles changed since you read them; read them and decide again", path, { current_version: version, base_version: given });
+      const members = file(m[1], "members.json", path).items;
+      old.filter((r) => !raw.some((x) => x.name === r.name)).forEach((r) => {
+        const uses = [members.some((x) => x.role === r.name) ? "membership" : null, outside.includes(r.name) ? "outside_roles" : null].filter(Boolean);
+        if (uses.length) fail(409, "conflict", "the role " + r.name + " is still in use", path, { reason: "role_in_use", role: r.name, uses });
+      });
+      const next = raw.map((r) => {
+        const before = old.find((x) => x.name === r.name) || {};
+        return { name: r.name, base: r.base, description: r.description || "", guide: before.guide || "", guide_by: before.guide_by || null };
+      });
+      next.forEach((r) => members.filter((x) => x.role === r.name).forEach((x) => { x.role_base = r.base; }));
+      proj.roles = next;
+      proj.roles_version = version + 1;
+      return { custom: next.map((r) => ({ ...r })), version: version + 1 };
+    }],
     ["GET", /^\/projects\/([^/]+)\/joins$/, (m, body, path) => {
       const list = file(m[1], "joins.json", path);
       list.items.forEach((j) => {
@@ -5330,7 +5507,9 @@ window.Maity = window.Maity || {};
         const limit = (field) => fail(403, "forbidden", "not within the limits of bringing your own agent", path, { reason: "member_join_limit", field });
         if (body.agent && body.agent.id && !fixtures()["agents.json"].items.some((a) => a.id === body.agent.id && a.owner_id === me().member.id)) limit("agent");
         if (body.trust && !["member", "guest"].includes(body.trust)) limit("trust");
-        if (body.role && !MEMBER_ROLES.includes(body.role)) limit("role");
+        // A project role counts by its base; a name the project does not have is `invalid` below.
+        const base = body.role ? roleBaseIn(m[1], body.role, path) : null;
+        if (base !== null && !MEMBER_ROLES.includes(base)) limit("role");
         if (body.reports_to && body.reports_to !== me().member.id) limit("reports_to");
         if ((body.areas || []).length) limit("areas");
         if ((body.capabilities || []).length) limit("capabilities");
@@ -5343,6 +5522,8 @@ window.Maity = window.Maity || {};
           if (mine.size >= max) fail(403, "forbidden", "you hold as many agents here as the project allows", path, { reason: "member_agents_max", max });
         }
       }
+      // validate_assignment: a built-in role or one of the project's own (§2.3).
+      if (body.role != null && roleBaseIn(m[1], body.role, path) === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
       let agentId = body.agent && body.agent.id;
       if (!agentId) {
         if (!body.agent || !body.agent.handle) fail(400, "invalid", "agent needs an id or a handle", path, { fields: { agent: "required" } });
@@ -5730,7 +5911,7 @@ window.Maity = window.Maity || {};
         attachments: bindAttachments(m[1], body.attachments, last + 1, path) };
       c.items.push(msg);
       c.read[me().member.id] = msg.seq;
-      return msg;
+      return messageView(msg);
     }],
     // §8.5: a chat message redacted by a human in the room, the direct chat's
     // human party with events:admin, or blind in a closed group chat.
@@ -5837,8 +6018,10 @@ window.Maity = window.Maity || {};
         attachments: bindAttachments(m[1], body.attachments, last + 1, path),
       };
       conv.items.push(Object.assign({ seen_by_human: true }, msg));
-      return msg;
+      return messageView(msg);
     }],
+    ["PUT", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages\/(\d+)\/verdict$/, (m, body, path) => verdictRoute(m, body, path, "PUT")],
+    ["DELETE", /^\/projects\/([^/]+)\/conversations\/([^/]+)\/messages\/(\d+)\/verdict$/, (m, body, path) => verdictRoute(m, body, path, "DELETE")],
   ];
 
   function fromFixtures(method, fullPath, body, headers) {
@@ -5952,6 +6135,10 @@ window.Maity = window.Maity || {};
     // browser's clock is off the hub's, for judging expiry as the hub does.
     const served = res.headers && res.headers.get ? Date.parse(res.headers.get("Maity-Server-Time") || "") : NaN;
     if (!Number.isNaN(served)) skew = served - Date.now();
+    // Maity-Web-Version on every answer (docs/api.md §1.1): a newer dashboard deployed under
+    // this page offers a reload (js/new-version.js).
+    const web = res.headers && res.headers.get ? res.headers.get("Maity-Web-Version") : null;
+    if (web && M.newVersion) M.newVersion.seen(web);
     if (!res.ok) {
       let detail = res.statusText;
       let code = res.headers && res.headers.get ? res.headers.get("Maity-Error") : null;

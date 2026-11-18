@@ -113,6 +113,8 @@ def test_a_note_goes_to_the_owners_of_its_areas_and_is_an_event(
     [
         ({"type": "merge", "text": "x"}, {"type": "not_for_type"}),
         ({"type": "decision", "text": "x"}, {"type": "not_for_type"}),
+        ({"type": "jour_fixe", "text": "x", "to": "all"}, {"type": "not_for_type"}),
+        ({"type": "rename", "text": "x", "to": "all"}, {"type": "not_for_type"}),
         ({"type": "nonsense", "text": "x", "to": "all"}, {"type": "invalid"}),
         ({"text": "x"}, {"type": "required"}),
         ({"type": "note", "areas": ["/"]}, {"text": "required"}),
@@ -181,6 +183,41 @@ def test_to_all_reaches_everyone_and_never_wakes_the_poster(
     assert all(r["why"] == ["posted_to_all"] for r in by.values())
     assert by[owner.id]["wake"] is False
     assert all(by[a.id]["wake"] for a in team.values())
+
+
+@pytest.mark.parametrize(
+    ("value", "accepted"),
+    [
+        ("https://ci.example/run/1", True),
+        ("HTTPS://ci.example/run/1", True),  # the scheme in any case, from a post or a forge
+        ("http://ci.example/run/1", False),
+        ("https://ci.example/a b", False),
+        ("https://" + "x" * 2041, False),  # 2049 characters
+        (None, False),
+    ],
+)
+def test_one_https_rule_for_a_post_and_a_forge(value: Any, accepted: bool) -> None:
+    """§17.1's one absolute https URL of at most 2048 characters, the same for a manual
+    post's `url` and `deploy.log_url` and for a forge deployment's `log_url`."""
+    assert ticker.https_url(value) is accepted
+    assert ticker._https_or_none(value) == (value if accepted else None)
+
+
+def test_a_post_reads_the_members_once(
+    owner: flow.Human, team: dict[str, flow.Agent], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `to` check, the audience and the item share one read of the active members,
+    however many `member:` tokens the post names."""
+    calls: list[str] = []
+    read = ticker.members
+
+    def counted(conn: Any, project_id: str) -> Any:
+        calls.append(project_id)
+        return read(conn, project_id)
+
+    monkeypatch.setattr(ticker, "members", counted)
+    note(owner, to=[f"member:{a.id}" for a in team.values()], areas=None)
+    assert len(calls) == 1, calls
 
 
 def test_a_token_list_is_resolved_to_members(
@@ -260,6 +297,10 @@ def test_one_subscription_is_changed_by_what_it_adds_and_removes(
             {"follow.areas": "invalid"},
         ),
         ({"add": {"mute": {"types": ["merges"]}}}, {"mute.types": "invalid"}),
+        # audience `all` alone: following or muting them would change nothing (§17.8)
+        ({"add": {"follow": {"types": ["jour_fixe"]}}}, {"follow.types": "invalid"}),
+        ({"add": {"mute": {"types": ["rename"]}}}, {"mute.types": "invalid"}),
+        ({"remove": {"mute": {"types": ["rename"]}}}, {"mute.types": "invalid"}),
         (
             {"add": {"follow": {"areas": [f"a{n}/" for n in range(21)]}}},
             {"follow.areas": "too_many"},
@@ -272,6 +313,25 @@ def test_a_subscription_change_is_checked(
     response = owner.patch("/projects/maintainer/maity/ticker/subscription", body)
     assert response.status_code == 400
     assert response.json()["error"]["details"]["fields"] == fields
+
+
+def test_a_stored_type_that_no_longer_counts_can_still_be_removed(
+    owner: flow.Human, team: dict[str, flow.Agent], migrated: Engine
+) -> None:
+    agent = team["web"]
+    agent.patch(
+        "/projects/maintainer/maity/ticker/subscription", {"add": {"mute": {"types": ["note"]}}}
+    )
+    with events.transaction(migrated) as conn:
+        conn.execute(
+            update(t.ticker_subscription).values(mute={"areas": [], "types": ["note", "rename"]})
+        )
+    removed = agent.patch(
+        "/projects/maintainer/maity/ticker/subscription",
+        {"remove": {"mute": {"types": ["rename"]}}},
+    )
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["mute"]["types"] == ["note"]
 
 
 def test_the_change_is_read_by_the_member_and_the_human_owners_only(
@@ -860,6 +920,25 @@ def test_a_decisions_followers_are_listed_not_woken_and_only_if_they_may_read(
     by = {r["member_id"]: r for r in raw["payload"]["reasons"]}
     assert by[proxy.id]["why"] == ["follow:type:decision"] and by[proxy.id]["wake"] is False
     assert team["web"].id not in by, "a follower who may not read the request gets nothing"
+
+
+def test_the_listing_filters_by_every_item_type(owner: flow.Human, migrated: Engine) -> None:
+    with events.transaction(migrated) as conn:
+        project = conn.execute(select(t.project)).one()
+        for kind in ("jour_fixe", "rename"):
+            ticker.write(
+                conn,
+                project.id,
+                kind=kind,
+                text=f"a {kind}",
+                url=None,
+                audience=ticker.Audience(),
+                origin="hub",
+            )
+    note(owner, text="a note")
+    assert [i["text"] for i in listed(owner, "?type=jour_fixe")] == ["a jour_fixe"]
+    assert [i["text"] for i in listed(owner, "?type=rename")] == ["a rename"]
+    assert [i["text"] for i in listed(owner, "?type=jour_fixe,note")] == ["a note", "a jour_fixe"]
 
 
 def test_the_area_filter_looks_at_paths_too(owner: flow.Human, migrated: Engine) -> None:

@@ -410,3 +410,26 @@ def test_a_retried_transaction_spends_the_go_again(
     action = owner.get(f"{PROJECT}/requests/{request_id}").json()["action"]
     assert action["used_at"] is not None and action["used_seq"] is not None
     _refused(proxy.call("POST", TICKER, ITEM, on_request=request_id), "used")
+
+
+@pytest.mark.parametrize("change", [{"trust": "admin"}, {"active": None}])
+def test_a_go_counts_only_while_its_owner_still_stands(
+    owner: flow.Human, proxy: Proxy, migrated: Engine, change: dict[str, Any]
+) -> None:
+    request_id = _go(owner, proxy, method="POST", path=TICKER, query=None, body=ITEM)
+    project_id = _project(migrated)
+    # The owner who said go is demoted or leaves before the proxy makes the call.
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == owner.id, t.membership.c.project_id == project_id)
+            .values(change)
+        )
+    _refused(proxy.call("POST", TICKER, ITEM, on_request=request_id), "not_owner")
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == owner.id)
+            .values(trust="owner", active=True)
+        )
+    assert proxy.call("POST", TICKER, ITEM, on_request=request_id).status_code == 201

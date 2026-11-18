@@ -703,7 +703,56 @@ def test_userinfo_is_never_echoed(url: str) -> None:
 
 
 def test_safe_url_drops_userinfo_and_query() -> None:
-    assert hub.safe_url("https://u:p@h.example:8443/j/t?code=X") == "https://h.example:8443/j/t"
+    assert (
+        hub.safe_url("https://u:p@h.example:8443/j/t?code=X") == "https://h.example:8443/j/<token>"
+    )
+
+
+@pytest.mark.parametrize(
+    ("url", "shown"),
+    [
+        ("https://h.example/join/abc123", "https://h.example/join/<token>"),
+        ("https://h.example/api/v1/join/abc123/", "https://h.example/api/v1/join/<token>/"),
+        ("https://h.example/r/abc123", "https://h.example/r/<token>"),
+        ("https://h.example/i/abc123?x=1", "https://h.example/i/<token>"),
+        ("https://h.example/join/", "https://h.example/join/"),
+        ("https://h.example/projects/a/b", "https://h.example/projects/a/b"),
+        ("https://h.example/j/abc123", "https://h.example/j/<token>"),
+        ("https://h.example/invite/abc123", "https://h.example/invite/<token>"),
+        ("https://h.example/JOIN/abc123", "https://h.example/JOIN/<token>"),
+        ("https://h.example/jo%69n/abc123", "https://h.example/jo%69n/<token>"),
+        ("https://h.example/%256Aoin/abc123", "https://h.example/%256Aoin/<token>"),
+        ("https://h.example/join//abc123", "https://h.example/join//<token>"),
+        (
+            "https://h.example/api/v1/runners/pair/abc",
+            "https://h.example/api/v1/runners/pair/<token>",
+        ),
+        ("https://h.example/mail/verify/abc123", "https://h.example/mail/verify/<token>"),
+        ("https://h.example/mail/sign-in/abc123", "https://h.example/mail/sign-in/<token>"),
+        ("https://h.example/mail/register/abc123", "https://h.example/mail/register/<token>"),
+        ("http://127.0.0.1:1/SECRETtok123", "http://127.0.0.1:1/<token>"),
+        ("https://join.example/abc123/", "https://join.example/<token>/"),
+        ("http://127.0.0.1:9/skill", "http://127.0.0.1:9/skill"),
+        ("https://h.example/r/join/abc123", "https://h.example/r/<token>/<token>"),
+        ("https://join.example/Ab3_xY9-kLm0pQr7sTu2vW", "https://join.example/<token>"),
+        ("https://join.example/AbcDef-GhiJkl-MnoPqrs", "https://join.example/<token>"),
+        (
+            "https://h.example/api/v1/invitations/abc123",
+            "https://h.example/api/v1/invitations/<token>",
+        ),
+    ],
+)
+def test_safe_url_hides_the_token_of_a_link(url: str, shown: str) -> None:
+    assert hub.safe_url(url) == shown
+
+
+def test_a_join_to_an_unreachable_host_does_not_print_the_token(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    code = cli.main(["join", "http://127.0.0.1:1/SECRETtok123", "--code", "abc"])
+    assert code != 0
+    printed = capsys.readouterr()
+    assert "SECRETtok123" not in printed.out + printed.err
 
 
 @pytest.mark.parametrize(

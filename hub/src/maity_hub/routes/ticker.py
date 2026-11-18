@@ -13,7 +13,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import clock, events, idempotency, ticker
+from maity_hub import chat_request, clock, events, idempotency, ticker
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.deps import AnyCaller, engine_of
@@ -30,19 +30,10 @@ PAGE_MAX = 200
 # §17.6: at most 20 manual posts per membership per hour, of them 5 to everyone.
 POSTS = Limiter(20, 3600, name="routes.ticker.POSTS")
 POSTS_TO_ALL = Limiter(5, 3600, name="routes.ticker.POSTS_TO_ALL")
-URL_MAX = 2048
 TOKENS_MAX = 20
 AREAS_MAX = 20
 ENVIRONMENT_MAX = ticker.ENVIRONMENT_MAX
 TOKEN = re.compile(r"^(member|role|trust|area):\S{1,255}$")
-
-
-def _https(value: Any) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) <= URL_MAX
-        and re.fullmatch(r"https://[^\s]+", value, re.IGNORECASE) is not None
-    )
 
 
 def _text(value: Any) -> bool:
@@ -64,14 +55,15 @@ class PostIn(Strict):
 PER_TYPE = {"release_task_id": "release", "areas": "note", "deploy": "deploy"}
 
 
-def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
-    """§17.6's field rules, all at once; returns the release card for a release."""
+def _check(conn: Connection, mine: Membership, body: PostIn) -> tuple[Any, list[ticker.Member]]:
+    """§17.6's field rules, all at once; returns the release card for a release, and the
+    project's active members, read once for the `to` check and for the item."""
     given = body.model_fields_set
     errors: dict[str, str] = {}
     kind = body.type
     if kind is None:
         errors["type"] = "required"
-    elif kind in ("merge", "decision", "rename"):
+    elif kind in ("merge", "decision", "jour_fixe", "rename"):
         errors["type"] = "not_for_type"
     elif kind not in ("note", "deploy", "release"):
         errors["type"] = "invalid"
@@ -79,7 +71,7 @@ def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
         errors["text"] = "required"
     elif not _text(body.text):
         errors["text"] = "invalid"
-    if body.url is not None and not _https(body.url):
+    if body.url is not None and not ticker.https_url(body.url):
         errors["url"] = "invalid"
     to = body.to if "to" in given else "computed"
     if not (
@@ -136,17 +128,16 @@ def _check(conn: Connection, mine: Membership, body: PostIn) -> Any:
                 for k in ("sha", "version")
             ):
                 errors["deploy"] = "invalid"
-            elif deploy.get("log_url") is not None and not _https(deploy["log_url"]):
+            elif deploy.get("log_url") is not None and not ticker.https_url(deploy["log_url"]):
                 errors["deploy.log_url"] = "invalid"
     if errors:
         raise invalid(errors)
+    people = ticker.members(conn, mine.project.id)
     if isinstance(to, list):
         for token in to:
-            if token.startswith("member:") and not ticker.resolve(
-                ticker.members(conn, mine.project.id), token
-            ):
+            if token.startswith("member:") and not ticker.resolve(people, token):
                 raise invalid({"to": "invalid"}, f"{token} names no active member")
-    return card
+    return card, people
 
 
 def _charge(conn: Connection, mine: Membership, to_all: bool) -> None:
@@ -167,10 +158,9 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
         mine.require("ticker:post")
-        card = _check(conn, mine, body)
+        card, people = _check(conn, mine, body)
         to = body.to if "to" in body.model_fields_set else "computed"
         kind = body.type
-        people = ticker.members(conn, mine.project.id)
         facts: dict[str, Any] = {}
         key: str | None = None
         if kind == "note":
@@ -190,6 +180,12 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
                 "log_url": d.get("log_url"),
             }
         audience = ticker.manual_audience(conn, people, kind, to, facts.get("areas", []))
+        # Its own `to` reaches an agent of another owner only on that owner's yes (§9.6).
+        held = (
+            ticker.gate_manual(conn, mine, people, audience)
+            if to == "all" or isinstance(to, list)
+            else []
+        )
         if key is not None:
             found = ticker.existing(conn, mine.project.id, key)
             if found is not None:
@@ -210,7 +206,11 @@ def post_item(slug: str, body: PostIn, request: Request, caller: AnyCaller) -> J
             subject=("task", card.id) if card is not None else None,
             dedupe_key=key,
             facts=facts,
+            held=held,
+            people=people,
         )
+        if seq is not None and held:  # each held agent's owner is asked (§9.6, "The request")
+            chat_request.note_held_by(conn, mine, seq, "ticker", held)
         if seq is None:  # taken between the check and the write: the first item stands
             raise ApiError(
                 409,
@@ -317,7 +317,11 @@ def _load_subscription(conn: Connection, membership_id: str, _request: Request) 
     return _subscription_view(ticker.subscription_of(conn, int(membership_id)))
 
 
-idempotency.LOADERS["ticker_subscription"] = _load_subscription
+idempotency.register(
+    "ticker_subscription",
+    _load_subscription,
+    idempotency.in_project(idempotency.column_of(t.membership, key=int)),
+)
 
 
 @router.get("/projects/{owner}/{slug}/ticker/subscription")
@@ -372,7 +376,14 @@ def patch_subscription(
                 name = f"{side}.{kind}"
                 if set(add) & set(remove):
                     errors[name] = "invalid"
-                if kind == "types" and any(v not in ticker.FILTER_TYPES for v in add + remove):
+                # A value stored before it stopped counting (`rename`) can still be removed.
+                if kind == "types" and (
+                    any(v not in ticker.SUBSCRIPTION_TYPES for v in add)
+                    or any(
+                        v not in ticker.SUBSCRIPTION_TYPES and v not in current[side][kind]
+                        for v in remove
+                    )
+                ):
                     errors[name] = "invalid"
                 if kind == "areas" and any(not AREA.match(v) for v in add + remove):
                     errors[name] = "invalid"

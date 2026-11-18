@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import events, guide, merged, scopes
+from maity_hub import events, guide, merged, project_roles, scopes
 from maity_hub import tables as t
 from maity_hub.views import principal_id
 from tests import flow
@@ -21,6 +23,22 @@ LEGAL = {
 }
 
 
+CONTRACT = Path(__file__).parents[2] / "docs" / "api.md"
+
+
+def contract_reserved() -> list[str]:
+    """The names §2.3 lists as "none of the built-in roles, trusts or tokens (…)", read
+    from the contract, so a name added there and missing in the hub fails here."""
+    text = " ".join(CONTRACT.read_text(encoding="utf-8").split())
+    section = text.split("**Project roles.**", 1)[1]
+    listed = re.search(r"built-in roles, trusts or tokens \(([^)]*)\)", section)
+    assert listed, "§2.3 no longer lists the reserved names in the form this test reads"
+    return re.findall(r"`([^`]+)`", listed.group(1))
+
+
+RESERVED_IN_CONTRACT = contract_reserved()
+
+
 @pytest.fixture
 def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
     owner = flow.human(make_client, migrated)
@@ -29,9 +47,7 @@ def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
 
 
 def put(owner: flow.Human, custom: Any) -> Any:
-    return owner.client.put(
-        f"/api/v1{BASE}/roles", json={"custom": custom}, headers={"X-CSRF-Token": owner.csrf}
-    )
+    return flow.put_roles(owner, BASE, custom)
 
 
 def assign(owner: flow.Human, member_id: str, role: str) -> Any:
@@ -46,7 +62,7 @@ def test_the_list_is_put_whole_and_read_back(owner: flow.Human, migrated: Engine
         {**LEGAL, "guide": "", "guide_by": None},
         {"name": "translator", "base": "writer", "description": "", "guide": "", "guide_by": None},
     ]
-    assert response.json() == {"custom": expected}
+    assert response.json() == {"custom": expected, "version": 1}
     assert owner.get(f"{BASE}/roles").json()["custom"] == expected
     with migrated.connect() as conn:
         [changed] = conn.execute(
@@ -77,7 +93,7 @@ def test_a_stored_guide_stays_with_its_role_and_a_new_role_has_none(
         {**changed, "guide": "You check", "guide_by": "maintainer"},
         {"name": "translator", "base": "writer", "description": "", "guide": "", "guide_by": None},
     ]
-    assert response.json() == {"custom": expected}
+    assert response.json() == {"custom": expected, "version": 2}
     assert owner.get(f"{BASE}/roles").json()["custom"] == expected
     # Removed and put again, the role starts without a guide.
     assert put(owner, []).status_code == 200
@@ -115,6 +131,25 @@ def test_the_list_is_checked(owner: flow.Human, custom: Any, fields: dict[str, s
     assert response.json()["error"]["details"]["fields"] == fields
 
 
+def test_the_contracts_reserved_list_is_read() -> None:
+    """Guards the parametrization below against a parse that finds nothing."""
+    assert len(RESERVED_IN_CONTRACT) >= 11
+    assert {"owner", "outside", "none"} <= set(RESERVED_IN_CONTRACT)
+
+
+@pytest.mark.parametrize("name", RESERVED_IN_CONTRACT)
+def test_every_name_the_contract_reserves_is_refused(owner: flow.Human, name: str) -> None:
+    """§2.3: a project role named after a built-in role, trust or token is `invalid`,
+    `details.fields.name: "reserved"`."""
+    response = put(owner, [{"name": name, "base": "coder"}])
+    assert response.status_code == 400, response.text
+    error = response.json()["error"]
+    assert error["code"] == "invalid"
+    assert error["details"]["fields"] == {"custom[0].name": "reserved"}
+    # Refused by the hub's own list, not by a check that happens to catch it.
+    assert name in scopes.ROLES or name in project_roles.RESERVED
+
+
 def test_only_a_human_with_project_admin_puts_the_list(
     owner: flow.Human, make_client: ClientFactory
 ) -> None:
@@ -133,7 +168,7 @@ def test_the_list_shows_every_built_in_role_with_its_description_guide_and_scope
     # A guest reads it too, and sees the role's own scopes, not what its trust leaves it.
     guest = flow.agent(make_client, owner, trust="guest", role="coder")
     answer = guest.get(f"{BASE}/roles").json()
-    assert set(answer) == {"builtin", "custom"}
+    assert set(answer) == {"builtin", "custom", "version"}
     assert [r["name"] for r in answer["custom"]] == ["legal"]
     builtin = answer["builtin"]
     assert [r["name"] for r in builtin] == list(guide.DESCRIPTION)

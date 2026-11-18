@@ -215,6 +215,7 @@ discuss a new undertaking or commission with the owner before starting
 it; day-to-day work — reviews, merges, findings on existing cards —
 goes on. The owner overrides it per agent on the membership. The hub
 enforces nothing.
+Not built yet: see docs/api.md §19.4 / tsk-m80nbn1k7axh.
 
 **Reason:** the maintainer wants to brainstorm new ideas with his
 agents before they act on them, and other humans may want the same or

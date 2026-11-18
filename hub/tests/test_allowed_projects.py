@@ -226,7 +226,8 @@ def test_an_owner_of_the_runner_cannot_approve_a_proposal_the_list_no_longer_adm
     assert body["approval"]["status"] == "pending"
     allow(setup.owner, setup.agent.id, ["acme/elsewhere"])  # after the proposal was filed
     base = f"{PROJECT}/placements/{body['id']}"
-    answer = f"{PROJECT}/requests/{body['approval']['request_id']}/answer"
+    # the consent request is the runner owner's own (§15.6), answered on the personal route
+    answer = f"/requests/{body['approval']['request_id']}/answer"
     # acting on it by right approves it; so does the owner's go on the consent request
     for refused in (
         setup.owner.post(f"{base}/restart", {}),
