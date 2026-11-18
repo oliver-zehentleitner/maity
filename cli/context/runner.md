@@ -4015,3 +4015,37 @@ that host no card work is possible, so a warning would understate it.
 - Every failure of the probe as a refusal: a timeout, a launch error or a
   tool missing on the agents' PATH then claimed that sandboxed commands
   fail and blamed AppArmor on a host without the lock (review of #1949).
+
+## Claude Code's background-shell pressure reaper is disabled per placement
+
+**Id:** b1e8643a-320b-481c-9fea-97303c6d3177
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** incident card tsk-g28jgwgxab70 on the lab host; the Claude Code changelog entry for 2.1.193 (the reaper and its opt-out variable)
+**Revisit when:** Claude Code renames or drops `CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP`, or the interactive placement stops listening by running a background `maity wait`
+
+For every Claude Code placement the runner sets
+`CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP=1` in the start environment, so
+Claude Code's background-shell memory-pressure reaper does not kill the
+placement's background `maity wait`. It is set on the base environment both
+the interactive and the supervised launch inherit.
+
+**Reason:** on the lab host a low-memory event (not a kernel OOM) had Claude
+Code's own reaper — automatic memory-pressure reaping of idle background
+shell commands, added in Claude Code 2.1.193 — kill the `maity wait` of two
+interactive Claude Code placements. The sessions stayed `running` but stopped
+listening, and their leases expired. The variable is the documented opt-out.
+It is set unconditionally: older Claude Code ignores an unknown environment
+variable, so no version gate is needed. It is harmless in a headless
+(supervised) placement, where background tasks are already disabled
+(`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`) and there is no background shell to
+reap, so it is set uniformly for every placement rather than only the
+interactive one.
+
+**Rejected alternative:** detect that an interactive session is no longer
+listening and restart it (incident candidate 2). Deferred — the runner
+already restarts a session that goes quiet, and keeping the `maity wait`
+alive is the narrower fix; the detection-and-restart path is tracked as a
+separate item of the incident card.
