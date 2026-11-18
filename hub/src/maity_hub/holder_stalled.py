@@ -89,7 +89,7 @@ def _payload(
             {
                 "id": c.id,
                 "title": c.title,
-                "lease_until": clock.rfc3339(c.lease_until) if c.lease_until else None,
+                "lease_until": clock.rfc3339_or_none(c.lease_until),
             }
             for c in cards
         ],

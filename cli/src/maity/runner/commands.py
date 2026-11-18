@@ -35,6 +35,7 @@ from . import (
     targets,
     tools,
     trust,
+    workspace,
 )
 from .asuser import RUNNER, AsUser
 
@@ -395,6 +396,7 @@ def _check_harness(
     agent_path: str,
     as_user: AsUser = RUNNER,
     tools_dir: Path | None = None,
+    layout: str | None = None,
 ) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
@@ -427,6 +429,8 @@ def _check_harness(
         _check_claude_code(report, harness, as_user, agent_path, found.version)
     if harness.id == "antigravity":
         _check_antigravity(report, harness, as_user, agent_path)
+    if harness.id == "opencode":
+        _check_opencode(report, harness, layout)
     if harness.id == "codex":
         # The login of whoever runs the agents, as the adapter links it.
         own = None if as_user.user else os.environ.get("CODEX_HOME")
@@ -434,6 +438,35 @@ def _check_harness(
         login = Path(own or home / ".codex") / "auth.json"
         if not as_user.exists(login, "-f"):
             report.warn(f"harness codex: no login at {login}; agents would start without one")
+
+
+def _check_opencode(
+    report: Report, harness: config.Harness, layout: str | None = None, where: str = "",
+) -> None:  # fmt: skip
+    """opencode has no OS sandbox the runner switches on, so the deny/allow rules it writes
+    are model-steering, not a boundary: an opencode agent runs any command as the agents' OS
+    user. Under layout = "single" that user is the runner's own, so the agent can read the
+    runner's state, the other clones and logins. Every opencode placement is therefore
+    unsandboxed, so `require_sandbox = true` refuses it — an error, the way claude-code and
+    antigravity call `capabilities.sandbox_refused` when their sandbox is off; without it the
+    residual risk is a warning as before. Both fire on either backend (local through
+    `_check_harness`, each ssh host through `_check_host`) whenever the opencode check reaches
+    it — a missing binary or a failed `--version` errors out before this. Unlike agy's `sandbox
+    reported off`, this is not a diagnostic the runner might later clear: opencode never has a
+    runner-switched OS sandbox to report. An ssh host has no local layout, so it takes the
+    generic wording (docs/runners.md#opencode-grok, tsk-nynpvag9zvhh)."""
+    risk = (
+        "under layout single an agent can run any command as the runner's own user, including "
+        "reading the runner's state, the other clones and logins"
+        if layout == "single"
+        else "an agent can run any command as the agents' user"
+    )
+    line = f"{where}harness opencode: no OS sandbox; {risk}"
+    cite = " (docs/runners.md#opencode-grok, tsk-nynpvag9zvhh)"
+    if capabilities.sandbox_refused(harness, False, False):
+        report.error(line + ", and require_sandbox = true refuses them" + cite)
+    else:
+        report.warn(line + cite)
 
 
 def _check_antigravity(
@@ -525,6 +558,38 @@ def _check_agy_workspaces(report: Report, root: Path, as_user: AsUser, where: st
                 "is refused (workspace_in_repository); move the workspaces out of it"
             )
             return
+
+
+def _check_codex_home(report: Report, cfg: config.Config, as_user: AsUser = RUNNER) -> None:
+    """Codex's per-placement CODEX_HOME must lie under the workspaces root, which the codex
+    sandbox re-opens for the placement, not under a path it hides (the state directory): under
+    a hidden path Codex's own sandbox cannot create or run its per-command helper, so no
+    command runs and `maity resume` never starts (card tsk-hv7jbgy75zjt). The home sits inside
+    the placement scratch (adapters.codex_home), so codex must be a harness that gets one and
+    the workspaces root must not be inside the state directory; `check` reports either from the
+    local configuration before a placement starts, and does not confirm that the scratch is
+    created when a placement actually runs (a runtime fall-back to no scratch is beyond it)."""
+    if "codex" not in cfg.harnesses or cfg.local is None:
+        return
+    if "codex" not in workspace.SCRATCH_HARNESSES:  # a regression guard: no scratch, no home
+        report.error(
+            "harness codex: no scratch is carved for codex placements, so CODEX_HOME would fall "
+            "under the hidden state directory and Codex could run no command"
+        )
+        return
+    workspaces = cfg.local.workspaces.resolve() if as_user.here else cfg.local.workspaces
+    state_dir = cfg.state_dir.resolve() if as_user.here else cfg.state_dir
+    if workspaces == state_dir or state_dir in workspaces.parents:
+        report.error(
+            f"harness codex: the workspaces root {workspaces} is inside the state directory "
+            f"{state_dir}, which the codex sandbox hides; Codex's CODEX_HOME would be hidden and "
+            "no command could run. Move the workspaces out of the state directory"
+        )
+    else:
+        report.ok(
+            f"harness codex: CODEX_HOME lies in each placement's scratch under {workspaces}, "
+            "which the codex sandbox re-opens"
+        )
 
 
 def _check_claude_code(
@@ -692,6 +757,8 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                 _check_claude_hooks(report, as_user, f"{name}: ")
             if harness.id == "antigravity":
                 _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
+            if harness.id == "opencode":
+                _check_opencode(report, harness, where=f"{name}: ")
     root = target.workspaces
     probe_dir = root if as_user.exists(root, "-d") else root.parent
     if as_user.run(["test", "-w", str(probe_dir)]).returncode != 0:
@@ -762,9 +829,14 @@ def cmd_check(args: argparse.Namespace) -> int:
         else:
             report.ok("maity found on agent_path")
         for harness in cfg.harnesses.values():
-            _check_harness(report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir)
+            _check_harness(
+                report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir,
+                cfg.local.layout,
+            )  # fmt: skip
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
+        if "codex" in cfg.harnesses:
+            _check_codex_home(report, cfg, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
@@ -989,13 +1061,20 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
          *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
     ))  # fmt: skip
-    # Internal too: a placement's scratch made, measured or removed on the agents' side,
-    # every directory from the workspaces root opened without following a link (scratchop).
+    # Internal too: a placement's scratch made, measured or removed on the agents' side, and
+    # Codex's launch-time writes inside its per-placement home (codex), every directory from
+    # the workspaces root opened without following a link (scratchop). An ssh host runs these
+    # through its own `maity`, so the CLI reaches the same ops the module path does; `codex`
+    # takes the config.toml text on stdin, and `--auth` is only its auth.json link target.
     r = rsub.add_parser("scratchop")
-    r.add_argument("op", choices=scratchop.OPS)
+    r.add_argument("op", choices=(*scratchop.OPS, "codex"))
     r.add_argument("--under", required=True)
+    r.add_argument("--auth")  # codex only: the auth.json link target; left out for the others
     r.add_argument("path")
-    r.set_defaults(handler=lambda a: scratchop.main([a.op, "--under", a.under, a.path]))
+    r.set_defaults(handler=lambda a: scratchop.main(
+        ["codex", "--under", a.under, *(["--auth", a.auth] if a.auth else []), a.path]
+        if a.op == "codex" else [a.op, "--under", a.under, a.path]
+    ))  # fmt: skip
     # Internal too: what a pane's output goes through on an ssh host, holding its log to
     # limits.log_keep_bytes (logcap).
     r = rsub.add_parser("logcap")

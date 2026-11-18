@@ -10,6 +10,7 @@ from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import catalog, clock
 from maity_hub import tables as t
+from maity_hub.mail import text as mail_text
 from maity_hub.notifications import mailer
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -304,10 +305,10 @@ def test_nothing_without_complete_mail_settings(
 
 
 def test_defang() -> None:
-    assert mailer.defang("see http://x.io and me@example.org") == (
+    assert mail_text.defang("see http://x.io and me@example.org") == (
         "see http[:]//x[.]io and me@example[.]org"
     )
-    assert mailer.defang("version 1.2 stays") == "version 1.2 stays"
+    assert mail_text.defang("version 1.2 stays") == "version 1.2 stays"
 
 
 def test_a_digest_lists_fifty_and_counts_the_rest(migrated: Engine) -> None:
@@ -733,10 +734,10 @@ def test_the_subject_defangs_what_the_hub_did_not_write(
 
 
 def test_subject_line_is_one_defanged_line_cut_at_its_maximum() -> None:
-    line = mailer.subject_line("[Maity] p: go to\x85evil.example  " + "x" * 300)
+    line = mail_text.subject_line("[Maity] p: go to\x85evil.example  " + "x" * 300)
     assert line.startswith("[Maity] p: go to evil[.]example x")
-    assert len(line) == mailer.SUBJECT_MAX and line.endswith("…")
-    assert mailer.subject_line("[Maity] Ann: version 1.2") == "[Maity] Ann: version 1.2"
+    assert len(line) == mail_text.SUBJECT_MAX and line.endswith("…")
+    assert mail_text.subject_line("[Maity] Ann: version 1.2") == "[Maity] Ann: version 1.2"
 
 
 def _only_in_queue(engine: Engine, row_id: int) -> None:

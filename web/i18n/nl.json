@@ -449,10 +449,19 @@
   "board.claim.unclaimed": "Niet geclaimd",
   "board.closed.failed": "De gesloten kaarten konden niet worden gelezen: {reason}",
   "board.closed.loading": "De gesloten kaarten worden gelezen…",
+  "board.closed.more_failed": "Meer gesloten kaarten konden niet worden gelezen: {reason}",
+  "board.closed.more_loaded": {
+    "one": "{count} gesloten kaart geladen",
+    "other": "{count} gesloten kaarten geladen"
+  },
   "board.closed.recheck_failed": "Kon niet controleren of de gesloten kaarten tijdens het lezen zijn gewijzigd: {reason}",
   "board.closed.show_more": {
     "one": "Nog {count} gesloten kaart tonen",
     "other": "Nog {count} gesloten kaarten tonen"
+  },
+  "board.closed.show_more_loaded": {
+    "one": "Meer tonen ({count} geladen)",
+    "other": "Meer tonen ({count} geladen)"
   },
   "board.column.other": "Overig",
   "board.column.unknown": "Onbekende status",

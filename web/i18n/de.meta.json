@@ -1567,6 +1567,14 @@
     "en": "2ed9637177518fe0",
     "text": "f982f7015ef02ee6"
   },
+  "board.closed.more_failed": {
+    "en": "78a211d7681f0c96",
+    "text": "400a3a53f9d51273"
+  },
+  "board.closed.more_loaded": {
+    "en": "40937c0812598f97",
+    "text": "41b48c5f5146f80c"
+  },
   "board.closed.recheck_failed": {
     "en": "a778f95d9908435e",
     "text": "6259bda4c690f5ca"
@@ -1574,6 +1582,10 @@
   "board.closed.show_more": {
     "en": "9a777e4ebf5e3b6f",
     "text": "ee0da8b9cb64e19b"
+  },
+  "board.closed.show_more_loaded": {
+    "en": "dda1304e917dddb0",
+    "text": "89f07a48e49b95ef"
   },
   "board.column.other": {
     "en": "1f1260ddd48575a9",
@@ -13663,9 +13675,25 @@
     "en": "9c16c09f0c180580",
     "text": "9481c0fc3d0be934"
   },
+  "placements.new.model_choose": {
+    "en": "f2f74a48789861ab",
+    "text": "8a75bfc714c3ba21"
+  },
   "placements.new.model_default": {
     "en": "40f3fd78cdcd6185",
     "text": "7bde6abeb05fdba0"
+  },
+  "placements.new.model_missing": {
+    "en": "0858a0d530c7c91a",
+    "text": "d731bb6e806a4d2e"
+  },
+  "placements.new.model_named": {
+    "en": "30758792fe950469",
+    "text": "c632d671aa57d2bc"
+  },
+  "placements.new.no_model": {
+    "en": "d53c1b9f1c7cbdba",
+    "text": "c87133059e029ee4"
   },
   "placements.new.no_repository": {
     "en": "d3bdc52da501f2ad",

@@ -52,7 +52,7 @@ def request_counts(conn: Connection, mine: Membership) -> dict[str, Any]:
         "open": len(rows),
         "to_me": sum(1 for r in rows if inbox.addressed_to(conn, r, mine)),
         "by_priority": by_priority,
-        "oldest_open_at": clock.rfc3339(oldest) if oldest is not None else None,
+        "oldest_open_at": clock.rfc3339_or_none(oldest),
     }
 
 
@@ -155,9 +155,7 @@ def overview(
                 "server_time": clock.rfc3339(clock.now()),
                 "board": {
                     "counts": board_counts(conn, mine.project.id, closed_after),
-                    "closed_after": (
-                        clock.rfc3339(closed_after) if closed_after is not None else None
-                    ),
+                    "closed_after": clock.rfc3339_or_none(closed_after),
                 },
                 "requests": request_counts(conn, mine),
                 "reports": latest_reports(conn, mine.project.id, limit),

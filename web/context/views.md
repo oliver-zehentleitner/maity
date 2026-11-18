@@ -1458,8 +1458,8 @@ Renamed 2026-11-12: the tab is **Managed agents** on both pages (79438329), at t
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's
-**Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over)
+**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's, except the opencode model rule, the lead's decision (lotse) of 2026-11-18 on card tsk-sn90s6wzp9s7: fail closed on the model wherever opencode starts
+**Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over); for the opencode model rule: the hub refuses an opencode placement without a model itself, or every runner in use fails closed on the model (#1969), so the form need not hold it
 **See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
 
 Moved 2026-11-12 (79438329): the form is no longer in the list. It opens from **Join an agent** →
@@ -1516,6 +1516,35 @@ Listing every attached runner and letting the hub refuse: a choice that
 can only fail. Listing a runner that does not offer the repository as
 unavailable instead of leaving it out: the other runners the hub would
 refuse are left out too, and with none left the section says why.
+
+**OpenCode names its model here (2026-11-18, tsk-sn90s6wzp9s7).** For
+`opencode` the form offers only the models the runner advertises, with
+no "runner's default", and sends nothing until one is chosen; where the
+runner advertises no `models`, OpenCode is left out of the tools and a
+line under them says why. The reason: without `--model` opencode runs
+its own default, a model opencode hosts, so the clone's conversation
+would go to opencode's servers instead of the provider the runner names
+(docs/api.md §15.3, docs/runners.md "OpenCode (Grok)"). A runner with the
+fail-closed adapter of #1969 starts a model-less placement on its
+`default_model` and refuses one it cannot resolve (`harness_refused`,
+`model_unsupported`), but a runner on an older `maity` starts it with no
+`--model`, and the hub does not know which one it is. A named model is
+safe on both, so the form does not depend on the runner's version. The
+list `MODEL_NAMED` in `web/js/placements.js` holds the tools this applies
+to; the other tools keep the runner's default.
+Local mode follows the same rule: `maity runner opencode` starts only
+with `--model`, and without it exits 2 before the join link is redeemed
+(docs/api.md §15.13; not built yet, as local mode is not). The reason is concrete: on
+2026-11-18 two opencode reviewers ran with no model set, so on
+opencode's hosted model, and repository content went to opencode's
+servers. Fail closed on the model wherever opencode starts, the lead's
+decision (lotse), recorded 2026-11-18.
+Rejected: keeping "The runner's default" for OpenCode, since only the
+runner knows whether it resolves to a configured model; offering
+OpenCode without models and letting the runner refuse it, a choice that
+can only fail, against this entry's rule of offering what can start;
+a hub check, which would change the contract for every client and is a
+card of its own.
 
 ## Project settings are the project's last tab, not a panel from the gear menu
 
@@ -1996,6 +2025,10 @@ the same second as the newest one is recovered too. A pass of one page has
 no gap and ends the reading. After three passes that each followed a
 cursor, one list of every status in the window (`status=all` with the
 window, all its pages) is read instead and replaces the cards.
+Since tsk-d4anfsk1e94j the closed group is two reads, `done` and
+`cancelled`, one page of 50 each (b7b0a38f): six reads, not five. The one
+list of that fallback still holds every closed card of the window, so after
+it no closed page is left to read.
 What is guaranteed: every card that did not change during the reads is
 shown as its group read it, and every card that did is shown once, as the
 last pass, or the one list, has it. The one list has the gaps between its
@@ -4529,6 +4562,24 @@ While full, everything outside the chat is `inert`: no focus reaches the covered
 - A route of its own for the full screen (`…/chat/<id>/full`): a reload or a shared link would open a page with no way out but the button, and the router would draw the chat again on every switch.
 - A history entry without the layer: the router draws the view again on every back (js/app.js `route.listen`), so the chat would be read again and lose its scroll position.
 
+## A chat bubble takes up to 60% of its column, at most 60rem; up to a 960px column it keeps 36rem
+
+**Id:** 40f31221-2c21-486f-acf3-e3d553a4393d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-e305sjdqes86, owner's wish 2026-11-18 (in the chat's full screen on a desktop a bubble used about a third of the width and the middle third stayed empty; bubbles should take 50–60%); the implementing change's estimate of the widths from the stylesheet (15px body text, 16px rem), not measured in a browser
+**Revisit when:** the body's font size or the chat's full-screen layout changes, or the page's main column (1200px) grows so far that the page's chat column passes 960px
+**See:** views.md#on-a-phone-a-chat-shows-less-around-it-and-any-chat-can-take-the-whole-window — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-18
+
+A bubble (`.msg`, web/css/app.css) is `max-width: min(max(36rem, 60%), 60rem, 90%)` of the message column. Up to a 960px column, where 60% is no more than 36rem, that is the old `min(36rem, 90%)`. So a phone and the chat on the page are unchanged; the page's chat column stays under about 770px inside the 1200px main. Wider, as in full screen on a desktop, a bubble grows to 60% of the column, and from a 1600px column on it stops at 60rem: about 750px (60%) at 1280px, 960px (about half) at 1920px. It is one rule for every width, not one under `html.chat-full`, because the page's chat never reaches a column where the two would differ.
+
+**Reason:** the owner asked for 50–60% of the width on a desktop. The cap is in rem, not ch. The body's text is 15px and a `ch` there is about half of that, so 80ch is about 650–700px. That is barely more than the old 36rem (576px), and on a 1920px window a bubble would stay at about a third, the very thing the owner named. 60rem keeps a long line from running across the whole screen and still gives half of a 1920px window. The confirmed part is the wish (50–60% instead of about a third), which is the owner's. The 60rem cap and the arithmetic behind it are the implementing change's own reading and the owner has not confirmed them, so the entry is inferred.
+
+**Rejected alternatives:**
+- An 80ch cap, as the card's implementation note suggested ("e.g. ~80ch"): about 36% of a 1920px window, short of the owner's 50–60%.
+- A rule only under `html.chat-full`, as the card put it ("in full screen (and on wide screens)"): outside the full screen the column never passes 960px, so the rule would change nothing there; with it, a wide window's chat on the page would keep the narrow width for no reason if the page's column ever grew.
+
 ## The row of tabs has no New project tab; the tabs menu follows the tabs, a dragged tab's place is a line
 
 **Id:** 4ff40142-df78-4c11-8f0c-c0024adecd79
@@ -6497,7 +6548,7 @@ card asked for. Alternatives beyond that were not discussed.
 
 **Id:** e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** card tsk-a5pxwgkgr73e: the owner's feedback on deploy 6 (2026-11-10, the board one of two pages still over 1 s); the operators' per-call measurement of the board on rev 30 (2026-11-10: the five group reads start together and take 83–203 ms each; the closed group then pages serially, 4 pages of 200, about 0.9 s and 550 kB); the coordinator's go for this change the same day
 **See:** views.md#the-board-reads-its-column-groups-side-by-side — 145f0bf3-3024-414a-8026-19dad1960ff7 — as of 2026-11-10
@@ -6538,6 +6589,11 @@ draws the panel anew as before. A board left from a
 closed card finds that card now. A reload after a write
 supersedes the first read: an answer is drawn only if no later read's
 answer has been.
+
+The `Revisit when` above has come about with tsk-d4anfsk1e94j: the closed
+columns are now one page of 50 each, done and cancelled read apart, not a
+group that pages (b7b0a38f). The draw before them is kept as it is; whether it
+still earns its cost with a page of 50 has not been measured.
 
 **Reason:** on the maintainer's project the closed window was 783 cards,
 the largest group by far, and its pages follow each other through a
@@ -6612,32 +6668,53 @@ and the e2e step then needs no wait of its own.
   listener for clicks elsewhere and none was removed until such a click, so repeated refreshes stacked
   them on detached menus (review of #1654).
 
-## A closed column draws the 50 cards closed last; Show more draws the rest
+## A closed column reads and draws the 50 cards closed last; Show more reads the next 50
 
 **Id:** b7b0a38f-66a0-4224-82de-57e1300cc63a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10
+**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10; card tsk-d4anfsk1e94j: the board run measured by ops on 2026-11-12 (done column about 790 cards, its 3 follow-up pages one after another after the first, 546 kB in all), and the owner's choice of a first page of 50 with "Show more" on demand that says how many are loaded, req-aa0jka1xsfsy; the review of #1980 (a superseded page left the button disabled, reproduced in Chromium; the focus taken back from the board search; a refused cursor sent again)
 **See:** views.md#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow — e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7 — as of 2026-11-11
-**Revisit when:** the closed window or the hub's board shape changes, or a full redraw of the board is measured over about 200 ms again
+**See:** https://github.com/oliver-zehentleitner/maity — 7bad4e04-7132-4825-94c5-825301c20800 — as of 2026-11-18
+**Revisit when:** the closed window or the hub's board shape changes, the hub gives a closed column's total, or a full redraw of the board is measured over about 200 ms again
 
-The board still reads every card of the closed window (the entry above). The
-Done and Cancelled columns draw only the 50 cards closed last (by
-`closed_at`), in the column's own order, and a button below them shows how
-many more there are ("Show 11 more closed cards"). The column's count stays
-the whole number. The button draws that column whole for the rest of the
-board view, and the first card it added takes the focus, since the button is
-gone. A card the board is opened on (by its link, or coming back from it) is
-drawn wherever it stands, and a subtask folded under a parent with that
-parent, since it is found only under a drawn parent. A hub search's
-columns follow the same rule.
+Since tsk-d4anfsk1e94j the board no longer reads every card of the closed
+window. Done and Cancelled are each read as one page, `limit=50`, which the
+hub orders by `closed_at`, newest first (7bad4e04), and are drawn in the
+column's own order. Below each, **Show more (N loaded)** reads that column's
+next page of 50 with the cursor the hub handed out and adds it. It is there
+while the hub names a next page, disabled while that page is read, keeps the
+focus (after the last page, which takes it away, the first card that page
+added has it), and a live region says how many are loaded. The focus stays
+on Show more only where the click left it: a reader who moved it while the
+page was read (into the board search, a card's menu) keeps it there. A write
+whose reload is drawn while a page is read supersedes that page, which is
+dropped, and the button is enabled again with the reload's cursor (review of
+#1980). A Show more page the hub refuses as `invalid` (a cursor from before
+a hub release) reads the board again, each closed column from its first
+page, and then the page asked for with the fresh cursor, instead of offering
+the same cursor again: a closed cursor is bound to the list's filter
+fingerprint (hub/src/maity_hub/paging.py, `unclosed`), so the stored one can
+only fail again. A second refusal is said as a failure. The column's
+count is the cards loaded: the hub gives no total. A write that reads the
+board again reads each closed column with as many cards as it held (at most
+200, the hub's page), so it does not fold back what Show more loaded. A
+closed card the board is opened on that is not loaded opens in its panel,
+read by itself, as a card outside the window does. A hub search, whose
+results come whole, still draws the 50 closed last of each closed column
+and a button the rest ("Show 11 more closed cards").
 
 **Reason:** every redraw of the board (a filter change, each keystroke of
 the board search, a card's update) drew every closed card: with 783 a full
 redraw took about 640 ms (2.7 s on a CPU four times slower), with 100 about
-100 ms (0.44 s). The closed cards are the ones a reader works in least; the
-newest are the ones looked for.
+100 ms (0.44 s). Reading them all cost more still: the done column's pages
+followed one another through a keyset cursor, about 0.8 s and 546 kB after
+the first page. The closed cards are the ones a reader works in least; the
+newest are the ones looked for. The owner chose the first page of 50 with
+"Show more" on demand (req-aa0jka1xsfsy). Done and Cancelled are read apart
+because the hub orders a closed list by column first: one page of both would
+hold no cancelled card until every done card had been read.
 
 **Rejected alternatives:**
 - A leaner card shape for the board's list, without the largest fields: a
@@ -6646,6 +6723,22 @@ newest are the ones looked for.
   not only from the drawing, and changes what the board offers.
 - The first 50 in the column's order: that order is by rank and creation,
   so it would show old closed cards and hide the ones just closed.
+- Reading the whole closed window and drawing 50 of it (this entry before
+  tsk-d4anfsk1e94j): the drawing was fast, the read stayed serial.
+- Reading the follow-up pages in parallel once the cursor was short: a keyset
+  page needs the one before it, so they cannot start together; the owner's
+  choice removes the chain instead.
+- One page of `done,cancelled` together: the Cancelled column would stay empty
+  behind the done cards (above).
+- Offering the stored cursor again after an `invalid` refusal, as after any
+  failed page: it is bound to a fingerprint the hub no longer gives, so every
+  retry fails the same way (review of #1980).
+- Dropping Show more after an `invalid` refusal and asking the reader to
+  reload the page: the board can read the column again itself, keeping the
+  cards loaded.
+- Moving the focus to Show more on every page, wherever it stood (the first
+  version): it took the focus out of the board search or a card's menu the
+  reader had gone to while the page was read (review of #1980).
 
 ## Report is one small button where a reader sees the thing, one inline form for all, and the account's Reports tab is where its outcome shows
 

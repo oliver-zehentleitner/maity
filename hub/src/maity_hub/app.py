@@ -121,6 +121,7 @@ from maity_hub.routes import (
     placements,
     preferences,
     project_images,
+    project_limits,
     project_messages,
     projects,
     register_page,
@@ -632,6 +633,7 @@ def create_app(
     app.include_router(runners.router, prefix=prefix)
     app.include_router(runner.router, prefix=prefix)
     app.include_router(placements.router, prefix=prefix)
+    app.include_router(project_limits.router, prefix=prefix)
     app.include_router(ticker.router, prefix=prefix)
     app.include_router(memory.router, prefix=prefix)
     app.include_router(preferences.router, prefix=prefix)

@@ -5,11 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from maity_hub import clock
-
-
-def _ts(value: Any) -> str | None:
-    return clock.rfc3339(value) if value is not None else None
+from maity_hub.clock import rfc3339_or_none as ts
 
 
 def participants(round_row: Any, active: set[str]) -> list[dict[str, Any]]:
@@ -115,13 +111,13 @@ def full(
         "reason": round_row.reason,
         "skip_reason": round_row.skip_reason,
         "missed_slots": round_row.missed_slots,
-        "scheduled_for": _ts(round_row.scheduled_for),
-        "opened_at": _ts(round_row.opened_at),
-        "answers_close_at": _ts(round_row.answers_close_at),
+        "scheduled_for": ts(round_row.scheduled_for),
+        "opened_at": ts(round_row.opened_at),
+        "answers_close_at": ts(round_row.answers_close_at),
         "steps": round_row.steps,
-        "exchange_closed_at": _ts(round_row.exchange_closed_at),
-        "report_due_at": _ts(round_row.report_due_at),
-        "reported_at": _ts(round_row.reported_at),
+        "exchange_closed_at": ts(round_row.exchange_closed_at),
+        "report_due_at": ts(round_row.report_due_at),
+        "reported_at": ts(round_row.reported_at),
         "config": round_row.config,
         "moderator": round_row.moderator,
         "invited": round_row.invited,
@@ -166,10 +162,10 @@ def minimal(
         "id": round_row.id,
         "project": slug,
         "status": round_row.status,
-        "opened_at": _ts(round_row.opened_at),
-        "answers_close_at": _ts(round_row.answers_close_at),
-        "exchange_closed_at": _ts(round_row.exchange_closed_at),
-        "reported_at": _ts(round_row.reported_at),
+        "opened_at": ts(round_row.opened_at),
+        "answers_close_at": ts(round_row.answers_close_at),
+        "exchange_closed_at": ts(round_row.exchange_closed_at),
+        "reported_at": ts(round_row.reported_at),
         "participants": participants(round_row, active),
         "statement": _statement(round_row.statement, reader, set(readers)),
         "posts": _posts(round_row, reader, set(readers)),
