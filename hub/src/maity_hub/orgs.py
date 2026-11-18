@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, or_, select, update
 
-from maity_hub import avatars, clock, handle_register, handles, namespace, paths
+from maity_hub import avatars, clock, handle_register, handles, limits, namespace, paths
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
@@ -60,12 +60,12 @@ def last_owner(handle: str) -> ApiError:
     )
 
 
-def org_limit(limit: int, count: int) -> ApiError:
+def org_limit(limit: int, count: int, source: str = "instance") -> ApiError:
     return ApiError(
         409,
         "org_limit",
         "the human owns as many organisations as allowed",
-        {"limit": limit, "count": count},
+        {"limit": limit, "count": count, "source": source},
     )
 
 
@@ -313,6 +313,8 @@ def create(
     if errors:
         raise invalid(errors)
     conn.execute(select(t.human.c.id).where(t.human.c.id == human_id).with_for_update())
+    # `limit` is the instance's value; an override on the human's account comes first.
+    limit, source = limits.for_account(conn, "max_orgs_per_human", human_id, limit)
     if limit is not None:
         owned = int(
             conn.execute(
@@ -327,7 +329,7 @@ def create(
             ).scalar_one()
         )
         if owned >= limit:
-            raise org_limit(limit, owned)
+            raise org_limit(limit, owned, source)
     org_id = new_id("org")
     # A handle a human gave up stays theirs (§6.24): the register does not know aliases.
     handles.lock(conn, handles.HUMANS, handle)

@@ -30,6 +30,27 @@ class Origin:
     def tls(self) -> bool:
         return self.scheme == "https"
 
+    @property
+    def limit_key(self) -> str:
+        """The key of every limit per source address (§2.5): an IPv4 address as it is, an
+        IPv6 address as its /64, which one client usually holds whole; an IPv4-mapped IPv6
+        address as its IPv4. Anything else stays as it is. What is recorded or shown of the
+        caller (a session's address, a mail) stays `address`."""
+        return limit_key(self.address)
+
+
+def limit_key(address: str) -> str:
+    """`Origin.limit_key` of an address."""
+    try:
+        ip = ipaddress.ip_address(address)
+    except ValueError:
+        return address
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.IPv6Network((int(ip) >> 64 << 64, 64)))  # no zone, if any
+    return str(ip)
+
 
 def _values(scope: Scope, name: bytes) -> list[str]:
     """Every comma-separated value of every line of a header, in order: a proxy

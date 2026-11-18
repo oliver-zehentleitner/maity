@@ -1075,7 +1075,7 @@ than block every antigravity placement until that work lands.
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's acceptance on decision request req-kezp8rppfhn5 ("ship now, harden next"), 2026-11-17, after an independent review found opencode's command rules do not bound what an agent can run; the original offer decision req-g4d2cskx6zxv and the 2026-11-15 spike (opencode 5/5 green, the limit run passed, Grok reviews ran); maintainer order tsk-sn90s6wzp9s7
+**Source:** the owner's acceptance on decision request req-kezp8rppfhn5 ("ship now, harden next"), 2026-11-17, after an independent review found opencode's command rules do not bound what an agent can run; the original offer decision req-g4d2cskx6zxv and the 2026-11-15 spike (opencode 5/5 green, the limit run passed, Grok reviews ran); maintainer order tsk-sn90s6wzp9s7; #1963 review round 3 then made `runner check` refuse opencode under `require_sandbox`, like claude-code and antigravity
 **Revisit when:** the OS-level sandbox for opencode (tsk-nynpvag9zvhh) lands, so the harness runs confined, or the owner withdraws the accepted risk
 
 `opencode` is dropped from `config.NOT_OFFERED_YET`, which is now empty
@@ -1091,7 +1091,22 @@ read, write or reach. The mitigation is operational, not in the settings: run
 opencode's agents as a **separate OS user**, isolated from the runner and from
 the other harnesses, so the blast radius is that user's own files. This is
 stated plainly in docs/runners.md and the CLI README, without any bypass
-detail.
+detail. `maity runner check` also surfaces the residual risk, on both
+backends: the local one through `_check_harness`, each ssh host through
+`_check_host`. It keeps the `ok harness opencode` line and adds a
+`harness opencode: no OS sandbox` one whenever the opencode check reaches it
+— a missing binary or a failed `--version` errors out before it, so it is
+not literally unconditional. Because every opencode placement is unsandboxed,
+that line is an **error** under `require_sandbox = true` (the start is
+refused, the way claude-code and antigravity call
+`capabilities.sandbox_refused` when their sandbox is off) and a **warning**
+without it. Unlike agy's `sandbox reported off`, this is not a diagnostic the
+runner might later clear but a permanent property (opencode never has a
+runner-switched OS sandbox to report). Under `layout = "single"`, where the
+agents' user is the runner's own, the line spells out the concrete reach —
+any command as the runner's own user, including reading the runner's state,
+the other clones and logins; an ssh host has no local layout, so it takes the
+generic wording (an agent can run any command as the agents' user).
 
 **Reason:** the owner decided (req-kezp8rppfhn5, "ship now, harden next") that
 opencode should run now carrying this known residual risk rather than stay
@@ -4011,3 +4026,86 @@ placement ends without asking what in it matters.
   end is the placement's.
 - Its size in `workspace_outcome`: a new field for something the
   operator alone acts on; the lead kept the hub out of it.
+
+## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
+
+**Id:** 0f216e9d-1661-4887-a035-094efa301dfa
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's card tsk-5b5x3k5zvg7x after the Claude Code smoke test on an Ubuntu runner, 2026-11-18; reproduced on that host the same day
+**Revisit when:** Claude Code's Linux sandbox stops opening a second user namespace; the runner sets up the host's AppArmor itself (runner init); Ubuntu changes `bwrap-userns-restrict`
+
+On Linux and the local backend only, beside finding bwrap and socat, `check` runs `bwrap … -- unshare
+--user --map-root-user true` once as the agents' user and on their PATH, every command by its absolute
+path. Only a refused mapping (unshare's write to `/proc/self/uid_map`,
+`gid_map` or `setgroups` fails, read under `LC_ALL=C`) is an error. A probe
+that times out, does not start or fails otherwise is a warning that
+blames nothing, and so is a missing tool. Seatbelt (macOS) is not probed,
+and neither is an ssh host yet: there the lock goes undetected.
+
+**Reason:** Ubuntu's AppArmor profile `bwrap-userns-restrict` (seen on 26.04) lets
+bubblewrap start and takes every capability from what it starts. Claude
+Code's session then runs, and so does `maity`, which runs outside the
+sandbox, so the placement looks healthy. But every sandboxed command fails
+on the seccomp step's nested user namespace, a subagent's included. On
+that host no card work is possible, so a warning would understate it.
+
+**Rejected alternatives:**
+- Read `kernel.apparmor_restrict_unprivileged_userns` or look for the
+  profile file: what decides is the loaded profile's rules, and hosts
+  differ in both. Starting the same nesting is the only answer that does
+  not need to know why.
+- Start Claude Code itself in the check: it costs a model call and needs
+  the login, as with agy's sandbox.
+- Every failure of the probe as a refusal: a timeout, a launch error or a
+  tool missing on the agents' PATH then claimed that sandboxed commands
+  fail and blamed AppArmor on a host without the lock (review of #1949).
+
+## Claude Code's background-shell pressure reaper is disabled per placement
+
+**Id:** b1e8643a-320b-481c-9fea-97303c6d3177
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** confirmed
+**Source:** incident card tsk-g28jgwgxab70 on the lab host; the Claude Code changelog entry for 2.1.193 (the reaper and its opt-out variable)
+**Revisit when:** Claude Code renames or drops `CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP`, or the interactive placement stops listening by running a background `maity wait`
+
+For every Claude Code placement the runner sets
+`CLAUDE_CODE_DISABLE_BG_SHELL_PRESSURE_REAP=1` in the start environment, so
+Claude Code's background-shell memory-pressure reaper does not kill the
+placement's background `maity wait`. It is set on the base environment both
+the interactive and the supervised launch inherit.
+
+The variable turns Claude Code's memory-pressure stop off for every idle
+background shell of the placement, not only that `maity wait` — the accepted
+trade-off of the fix. The runner sets no memory bound of its own:
+`backend.local.memory_max` is refused as not enforced yet, and the shipped
+service unit sets no `MemoryMax` or ulimit, so under host memory pressure a
+placement's background shells are bounded only by the kernel OOM killer and
+the operator's own unit or cgroup limits. The reaper only ever stopped idle
+background shells, never the Claude Code process, so keeping the placement
+reachable is worth more than that stop; the lever against host memory
+pressure is the agent count per host. A memory-pressure warning or capacity
+guidance in the runner (incident candidate 3) is deferred, tracked with
+candidates 2/3 of the incident card.
+
+**Reason:** on the lab host a low-memory event (not a kernel OOM) had Claude
+Code's own reaper — automatic memory-pressure reaping of idle background
+shell commands, added in Claude Code 2.1.193 — kill the `maity wait` of two
+interactive Claude Code placements. The sessions stayed `running` but stopped
+listening, and their leases expired. The variable is the documented opt-out.
+It is set unconditionally: older Claude Code ignores an unknown environment
+variable, so no version gate is needed. It is harmless in a headless
+(supervised) placement, where background tasks are already disabled
+(`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`) and there is no background shell to
+reap, so it is set uniformly for every placement rather than only the
+interactive one.
+
+**Rejected alternative:** detect that an interactive session is no longer
+listening and restart it (incident candidate 2). Deferred — the runner
+already restarts a session that goes quiet, and keeping the `maity wait`
+alive is the narrower fix; the detection-and-restart path is tracked as a
+separate item of the incident card.

@@ -2620,6 +2620,26 @@ instance_setting = Table(
     **MYSQL_TABLE,
 )
 
+# The instance admin's limit for one project or one human account (§16.5.1): one row per
+# value set, on exactly one of the two; `value` a whole number or "unlimited". No row is
+# the instance's value or the default ceiling (§6.31). The row goes with its project or its
+# account.
+limit_override = Table(
+    "limit_override",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("project_id", "project.id", nullable=True),
+    _ref("human_id", "human.id", nullable=True),
+    Column("name", String(64), nullable=False),
+    Column("value", JSON_VALUE, nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    _ref("updated_by", "human.id"),
+    CheckConstraint("(project_id IS NULL) <> (human_id IS NULL)", name="one"),
+    UniqueConstraint("project_id", "name", name="uq_limit_override_project"),
+    UniqueConstraint("human_id", "name", name="uq_limit_override_human"),
+    **MYSQL_TABLE,
+)
+
 # A maintenance window (§16.12): at most one active or upcoming. A cancelled one keeps its row;
 # `settled_at` is when the deadlines that fell into it were moved, once, after its end.
 maintenance_window = Table(

@@ -302,7 +302,24 @@ def test_the_quota_the_closed_project_and_the_revoked_runner(
     placed(setup)
     other = flow.agent(make_client, setup.owner)
     over = place(setup, agent={"id": other.id})
-    assert (over.status_code, over.json()["error"]["details"]) == (409, {"max": 1})
+    assert (over.status_code, over.json()["error"]["details"]) == (
+        409,
+        {
+            "name": "max_placements",
+            "limit": 1,
+            "count": 1,
+            "max": 1,
+            "scope": "project",
+            "project": "maintainer/maity",
+            "source": "project",
+            "ceiling": {"value": 1000, "source": "default"},
+            "raise": {
+                "right": "project:admin",
+                "path": "/api/v1/projects/maintainer/maity",
+                "field": "policy.max_placements",
+            },
+        },
+    )
     setup.owner.patch(
         "/projects/maintainer/maity", {"policy": {"max_placements": 8}, "reason": "more"}
     )
@@ -627,6 +644,86 @@ def test_delete_closes_at_once_when_the_runner_never_acted(setup: Setup) -> None
     assert (
         setup.owner.delete(f"/projects/maintainer/maity/placements/{body['id']}").status_code == 200
     )
+
+
+def test_a_capacity_report_carries_the_runners_quota(setup: Setup) -> None:
+    body = placed(setup)
+    quota = {"scope": "target", "target": "local", "count": 4, "max": 4}
+    held = report(setup, body, 1, state="pending", reason="capacity", quota=quota)
+    assert held.status_code == 200, held.text
+    assert get(setup, body["id"])["reported"]["quota"] == {
+        "name": "max_agents",
+        "limit": 4,
+        "count": 4,
+        "max": 4,
+        "scope": "target",
+        "runner": setup.runner.id,
+        "target": "local",
+        "source": "runner",
+        "raise": {
+            "right": "runner_owner",
+            "path": None,
+            "field": "backend.ssh.hosts[].max_agents",
+        },
+    }
+    # Without `quota` (a runner from before it) the report is valid, and holds none.
+    assert report(setup, body, 2, state="pending", reason="capacity").status_code == 200
+    assert "quota" not in get(setup, body["id"])["reported"]
+
+
+def test_quota_goes_with_capacity_and_a_target_with_its_scope(setup: Setup) -> None:
+    body = placed(setup)
+    runner_wide = {"scope": "runner", "count": 2, "max": 2}
+    other = report(setup, body, 1, state="running", quota=runner_wide)
+    assert other.status_code == 400
+    assert other.json()["error"]["details"]["fields"] == {"quota": "only_with_capacity"}
+    named = {"scope": "runner", "target": "local", "count": 2, "max": 2}
+    assert (
+        report(setup, body, 1, state="pending", reason="capacity", quota=named).status_code == 400
+    )
+
+
+def test_a_lowered_ceiling_refuses_the_next_placement(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    admin = "/admin/projects/maintainer/maity/limits"
+    assert setup.owner.patch(admin, {"max_placements": 1}).status_code == 200
+    placed(setup)
+    other = flow.agent(make_client, setup.owner)
+    over = place(setup, agent={"id": other.id})
+    details = over.json()["error"]["details"]
+    assert (over.status_code, details["limit"], details["source"]) == (409, 1, "ceiling")
+    assert details["ceiling"] == {"value": 1, "source": "project_override"}
+    assert details["raise"] == {
+        "right": "instance:admin",
+        "path": f"/api/v1{admin}",
+        "field": "max_placements",
+    }
+    # The stored value stays as it was (§6.31).
+    assert setup.owner.get("/projects/maintainer/maity").json()["policy"]["max_placements"] == 8
+
+
+def test_the_placement_quota_names_the_project_by_its_current_name(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """§6.25, §6.31: a placement created through an old name of a renamed project meets
+    `placement_quota` with the project's current full name, never the alias it came by."""
+    setup.owner.patch(
+        "/projects/maintainer/maity", {"policy": {"max_placements": 1}, "reason": "one"}
+    )
+    placed(setup)
+    renamed = setup.owner.patch("/projects/maintainer/maity", {"slug": "maity-hub"})
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["aliases"] == ["maintainer/maity"]
+    other = flow.agent(make_client, setup.owner)
+    over = setup.owner.post(
+        "/projects/maintainer/maity/placements",
+        {"agent": {"id": other.id}, "runner": setup.runner.id, "harness": "claude-code"},
+    )
+    assert (over.status_code, over.json()["error"]["code"]) == (409, "placement_quota")
+    details = over.json()["error"]["details"]
+    assert details["project"] == "maintainer/maity-hub"
+    assert details["raise"]["path"] == "/api/v1/projects/maintainer/maity-hub"
 
 
 def test_delete_closes_on_the_runners_terminal_report(setup: Setup) -> None:

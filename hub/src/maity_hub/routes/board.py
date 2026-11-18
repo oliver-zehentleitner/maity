@@ -414,6 +414,12 @@ def _conflict(conn: Connection, mine: Membership, row: Any, base_version: int) -
     )
 
 
+def _redacted_note() -> ApiError:
+    """What an edit of a redacted note gets (§6.16), before the write or after losing the
+    row to a redaction."""
+    return ApiError(400, "invalid", "a redacted note is not edited", {"reason": "redacted"})
+
+
 def _task_ref(card: Any) -> dict[str, Any]:
     return {"id": card.id, "title": card.title, "status": card.status}
 
@@ -557,7 +563,7 @@ def edit_note(
             if not body.reason:
                 raise invalid({"reason": "required"}, "say why you edit someone else's note")
         if row.redacted:
-            raise ApiError(400, "invalid", "a redacted note is not edited", {"reason": "redacted"})
+            raise _redacted_note()
         _precondition(conn, mine, row, body.base_version)
         if len(body.body.encode()) > notes.BODY_MAX:
             raise invalid({"body": "too_long"}, "a note is at most 4 KiB")
@@ -573,9 +579,7 @@ def edit_note(
             # Another write won the row after it was read: say what it was.
             now = _note(conn, card, note_id)
             if now.redacted:
-                raise ApiError(
-                    400, "invalid", "a redacted note is not edited", {"reason": "redacted"}
-                )
+                raise _redacted_note()
             raise _conflict(conn, mine, now, row.version)
         shown = load_note(conn, row.id)
         for event in notes.carriers(conn, mine.project.id, row):

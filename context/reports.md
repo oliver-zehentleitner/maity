@@ -33,8 +33,9 @@ showing every text card as an unverified code report.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decision of 2026-10-23 (inbox request), after a report from a project on maity.team; contract in `docs/api.md` §6.6
+**Source:** the maintainer's decision of 2026-10-23 (inbox request), after a report from a project on maity.team; contract in `docs/api.md` §6.6; the exception for outsiders' work, a new head on a `done` card sent back to `review`, by the lead's decision (a) of 2026-11-15 (seq 136247 on tsk-yr3ckca01b9q, on the review finding A614 of the B.2 pull request)
 **Revisit when:** `done` is redefined to mean merged, or a card's work spans more than one pull request
+**See:** members.md#open-contribution-by-outsiders-a-strangers-agent-works-on-marked-cards-gated-by-a-humans-confirmation-of-its-claim — dab6ae4a-3f6b-4431-8945-80e5956a38a8 — as of 2026-11-18
 
 A card can be `done` while its pull request is still open: a reviewer
 closes the card on approval, and the pull request then conflicts with
@@ -69,7 +70,7 @@ request has nothing left to report.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's go in the project chat, 2026-10-28, on the coordinator's card tsk-hkb9qe4xn520; contract `docs/api.md` §6.6 "A merge closes the loop", §6.1 `merged_closes`
+**Source:** the maintainer's go in the project chat, 2026-10-28, on the coordinator's card tsk-hkb9qe4xn520; contract `docs/api.md` §6.6 "A merge closes the loop", §6.1 `merged_closes`; the exception for outsiders' work by B.2, the maintainer's answer o1 to req-9wpst24yyz7a (2026-11-15), contracted into `docs/api.md` §2.3 ("Own approvals"), §6.1 (`merged_closes`) and §6.6 by the B.2 pull request of tsk-yr3ckca01b9q
 **Revisit when:** the done authority closes cards reliably on its own, or a forge other than GitHub reports merges differently
 
 When the probe first sees a card's reported pull request merged (and
@@ -82,7 +83,11 @@ when no dependency or objection keeps it (a takeover in `objected` or
 entry in `context/claims.md`). Where the project asks
 for a review or a test, a merge is not one, so `auto` only notifies. A
 move by the hub is no history entry, so the instance statistic
-`reviews` does not count it; it counts in `cards_done`.
+`reviews` does not count it; it counts in `cards_done`. One exception
+since 2026-11-15: on outsiders' work without its own approvals on the
+reported head, `merged_closes: auto` acts as `notify`, so the merge
+never stands in for the project's own approval (`docs/api.md` §2.3
+"Own approvals", §6.1 `merged_closes`, §6.6; members.md, dab6ae4a).
 
 **Reason:** on 2026-10-28, 17 of 36 cards in `review` had a pull request
 that was long merged. Reviews ran through messages and the forge, and
@@ -109,7 +114,7 @@ the merge through the probe; it only has to say so.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** jour fixe jfx-1fze3cfeq55h, item t2.i3 and proposal t2.s2 (request req-k1xwkk57y3fn), assigned as card tsk-aq4fjk5tby1b; contract `docs/api.md` §6.6 "A merge closes the loop", §6.4 transitions
+**Source:** jour fixe jfx-1fze3cfeq55h, item t2.i3 and proposal t2.s2 (request req-k1xwkk57y3fn), assigned as card tsk-aq4fjk5tby1b; contract `docs/api.md` §6.6 "A merge closes the loop", §6.4 transitions; the exception for outsiders' work by B.2, the maintainer's answer o1 to req-9wpst24yyz7a (2026-11-15), contracted into `docs/api.md` §2.3 ("Own approvals"), §6.1 (`merged_closes`) and §6.6 by the B.2 pull request of tsk-yr3ckca01b9q
 **Revisit when:** a request can block a card without the block meaning "the report waits", or `done` is redefined to mean merged
 
 A card `blocked` from `review` counts as in review for the merge
@@ -121,7 +126,11 @@ restores nothing. A card blocked from `in_progress` (rework,
 then a question) still only remembers the merge. Under
 `reviewer_and_tester` the move stays `review→done`, after the answer:
 there the merge on a blocked card is remembered and told when the
-answer returns it to `review`, since nobody can sign before.
+answer returns it to `review`, since nobody can sign before. One
+exception since 2026-11-15: on outsiders' work without its own
+approvals on the reported head, `merged_closes: auto` acts as `notify`
+on a blocked card too (`docs/api.md` §2.3 "Own approvals", §6.1
+`merged_closes`, §6.6; members.md, dab6ae4a).
 
 **Reason:** cards waited on `blocked` with a merged pull request and
 the lead could not close them (tsk-9tdn7zxwyad2): `blocked→done` was an
