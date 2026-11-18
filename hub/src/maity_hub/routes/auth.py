@@ -104,7 +104,7 @@ def member_of(conn: Connection, human_id: str) -> dict[str, Any]:
 async def login(body: Login, request: Request) -> JSONResponse:
     anonymous.entry(request)
     origin = origin_of(request)
-    wait = LOGIN_BY_ADDRESS.hit(origin.address)
+    wait = await run_in_threadpool(LOGIN_BY_ADDRESS.hit, origin.address)  # off the loop
     if wait:
         raise rate_limited(wait)
     engine = engine_of(request)

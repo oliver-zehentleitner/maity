@@ -423,7 +423,8 @@ async def register_complete(token: str, request: Request) -> Response:
         cookie.encode("utf-8", "replace"), fields.get("form", "").encode("utf-8", "replace")
     ):
         raise ApiError(403, "csrf_mismatch", "the form is not the one the page gave")
-    wait = LOGIN_BY_ADDRESS.hit(origin_of(request).address)  # shared with the login (§2.7.3)
+    # Shared with the login (§2.7.3); off the loop.
+    wait = await run_in_threadpool(LOGIN_BY_ADDRESS.hit, origin_of(request).address)
     if wait:
         raise rate_limited(wait)
     result = await run_in_threadpool(_complete, request, token, fields)
