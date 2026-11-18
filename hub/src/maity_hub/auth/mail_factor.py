@@ -27,6 +27,7 @@ from maity_hub.mail import outbox
 from maity_hub.mail import settings as mail_settings
 from maity_hub.notifications import preferences
 from maity_hub.ratelimit import Limiter
+from maity_hub.text_language import text_language
 
 LIFETIME = timedelta(minutes=15)  # a mail-factor session's life, and the link's and code's
 PER_SESSION = 3  # mails one session may be sent, the first included
@@ -154,7 +155,7 @@ def send(
         raise rate_limited(left)
     BY_HUMAN.hit(row.human_id)  # after the update: the loser of a race has sent nothing
     human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
-    language = preferences.text_language(conn, row.human_id)
+    language = text_language(conn, row.human_id)
     link = (
         f"{hub.public_url.rstrip('/')}/sign-in/second-factor/email#{token}" if with_link else None
     )
@@ -246,7 +247,7 @@ def send_confirmation(conn: Connection, hub: Settings, row: Any, nonce: str) -> 
             mail_sent_at=clock.now(),
         )
     )
-    words = catalog.section("factor", preferences.text_language(conn, row.human_id))
+    words = catalog.section("factor", text_language(conn, row.human_id))
     outbox.enqueue(
         conn,
         kind="second_factor",

@@ -25,6 +25,7 @@ from maity_hub.deps import engine_of, settings_of
 from maity_hub.mail import address as addresses
 from maity_hub.notifications import preferences, tokens
 from maity_hub.notifications.preferences import KINDS
+from maity_hub.text_language import text_language
 
 page_router = APIRouter()
 
@@ -65,7 +66,7 @@ def _language(conn: Connection, request: Request, token: str) -> str:
     payload = tokens.read(settings_of(request).mail.signing_key, token)
     if payload is None:
         return "en"
-    return preferences.text_language(conn, str(payload.get("h")))
+    return text_language(conn, str(payload.get("h")))
 
 
 def _dead(conn: Connection, request: Request, words: dict[str, str], language: str) -> HTMLResponse:

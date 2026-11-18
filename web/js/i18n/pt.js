@@ -456,10 +456,19 @@ window.MAITY_I18N["pt"] = {
   "board.claim.unclaimed": "Não assumido",
   "board.closed.failed": "Não foi possível ler os cartões fechados: {reason}",
   "board.closed.loading": "Lendo os cartões fechados…",
+  "board.closed.more_failed": "Não foi possível ler mais cartões fechados: {reason}",
+  "board.closed.more_loaded": {
+    "one": "{count} cartão fechado carregado",
+    "other": "{count} cartões fechados carregados"
+  },
   "board.closed.recheck_failed": "Não foi possível verificar se os cartões fechados mudaram durante a leitura: {reason}",
   "board.closed.show_more": {
     "one": "Mostrar mais {count} cartão fechado",
     "other": "Mostrar mais {count} cartões fechados"
+  },
+  "board.closed.show_more_loaded": {
+    "one": "Mostrar mais ({count} carregado)",
+    "other": "Mostrar mais ({count} carregados)"
   },
   "board.column.other": "Outro",
   "board.column.unknown": "Status desconhecido",
