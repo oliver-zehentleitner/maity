@@ -178,7 +178,7 @@ default_model = "<provider>/<model>"
 
 **The runner advertises `sandbox: off`.** opencode has no OS sandbox the runner switches on, so the permission configuration above is not an OS boundary. Assume an opencode agent can run any command as the agents' OS user, so keep that user away from the runner's own state and from the other harnesses' clones and logins — a separate OS user for opencode's agents. The owner accepted this residual risk (`req-kezp8rppfhn5`); the planned fix is an OS-level sandbox for opencode, for example bubblewrap (`tsk-nynpvag9zvhh`).
 
-`maity runner check` warns about the missing OS sandbox on every host with opencode configured — the local backend and each ssh host — keeping the `ok harness opencode` line and adding a `warn harness opencode: no OS sandbox` one.
+`maity runner check` reports the missing OS sandbox for opencode on both backends — the local one and each ssh host, whose line carries a `<host>: ` prefix. A missing binary or a failed `--version` errors out first; otherwise `check` keeps the `ok harness opencode` line and adds a `harness opencode: no OS sandbox` one. Because every opencode placement is unsandboxed, `require_sandbox = true` under `[harness.opencode]` makes that an **error** (the start is refused, like claude-code and antigravity); without it, it is a **warning**.
 
 ## When an agent goes quiet
 
