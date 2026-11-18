@@ -12,10 +12,12 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
+from sqlalchemy.exc import OperationalError
 
-from maity_hub import clock, read_limits
+from maity_hub import clock, db, deps, read_limits
 from maity_hub import instance_settings as store
 from maity_hub import tables as t
+from maity_hub.auth import caller as auth_caller
 from maity_hub.config import ConfigError, Settings
 from maity_hub.routes import events as events_route
 from tests import factory, flow
@@ -214,24 +216,65 @@ def test_a_refused_read_writes_nothing(
 
 def test_a_transaction_run_again_counts_its_request_once() -> None:
     counter = read_limits.ReadCounter()
-    request, other = object(), object()
+    request: set[str] = set()
+    other: set[str] = set()
     assert counter.take("crd-a", 2, request, 10.0) == 0
     assert counter.take("crd-a", 2, request, 10.1) == 0  # the same request, run again
     assert counter._counts["crd-a"].current == 1
     assert counter.take("crd-a", 2, other, 10.2) == 0
-    assert counter.take("crd-a", 2, object(), 10.3) > 0
+    assert counter.take("crd-a", 2, request, 10.3) == 0  # again, after another read
+    assert counter._counts["crd-a"].current == 2
+    assert counter.take("crd-a", 2, set(), 10.4) > 0
+
+
+@pytest.mark.parametrize("meanwhile", [False, True])
+def test_a_retried_read_is_counted_once_while_other_reads_of_the_credential_run(
+    moment: Moment,
+    agent: factory.Agent,
+    client: Any,
+    make_client: ClientFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    meanwhile: bool,
+) -> None:
+    moment.to(30)
+    _reads(client, agent, LOW - 2)
+    other = make_client(max_reads_per_minute=LOW)  # another client of the same credential
+    authenticate, pause = auth_caller.authenticate, db._again_after  # deps calls the former
+    conflicts = [OperationalError("UPDATE …", {}, Exception(1213, "Deadlock found"))]
+    others: list[int] = []
+
+    def conflicting(*args: Any, **kwargs: Any) -> Any:
+        found = authenticate(*args, **kwargs)
+        if conflicts:  # the first run only, once its read is counted: it runs again
+            raise conflicts.pop()
+        return found
+
+    def paused(error: Any, attempt: int) -> float:
+        wait = pause(error, attempt)
+        if meanwhile:  # another read of the credential before the run again
+            others.append(_get(other, agent).status_code)
+        return wait
+
+    monkeypatch.setattr(deps, "authenticate", conflicting)
+    monkeypatch.setattr(db, "_again_after", paused)
+    got = _get(client, agent)
+    assert got.status_code == 200, got.text
+    assert (conflicts, others) == ([], [200] if meanwhile else [])
+    assert _count(agent.credential_id) == LOW - 1 + meanwhile
+    _reads(client, agent, 0 if meanwhile else 1)  # the reads that still fit, and no more
+    _refused(_get(client, agent))
 
 
 def test_credentials_not_read_for_two_windows_are_forgotten() -> None:
     counter = read_limits.ReadCounter()
     for n in range(20):
-        counter.take(f"crd-{n}", 10, object(), 1.0)  # window 0
-    counter.take("crd-0", 10, object(), 61.0)  # window 1: none of window 0 is stale yet
+        counter.take(f"crd-{n}", 10, set(), 1.0)  # window 0
+    counter.take("crd-0", 10, set(), 61.0)  # window 1: none of window 0 is stale yet
     assert len(counter) == 20
-    counter.take("crd-0", 10, object(), 125.0)  # window 2: window 0 is, 8 of it go per call
+    counter.take("crd-0", 10, set(), 125.0)  # window 2: window 0 is, 8 of it go per call
     assert len(counter) == 20 - read_limits.FORGET_PER_CALL
     for _ in range(2):
-        counter.take("crd-new", 1000, object(), 130.0)
+        counter.take("crd-new", 1000, set(), 130.0)
     assert set(counter._counts) == {"crd-0", "crd-new"}  # crd-0 still reaches window 2
 
 
@@ -240,7 +283,7 @@ def test_concurrent_reads_are_counted_exactly() -> None:
 
     def reads() -> None:
         for _ in range(500):
-            counter.take("crd-a", 100000, object(), 5.0)
+            counter.take("crd-a", 100000, set(), 5.0)
 
     threads = [threading.Thread(target=reads) for _ in range(8)]
     for thread in threads:

@@ -58,6 +58,9 @@ class RequestFacts:
     allow_plain_http: bool
     cli_install: str = DEFAULT_CLI_INSTALL
     request: object = field(default_factory=object)  # one per request, whatever runs again
+    # The credentials this request's read was counted for (§1.7 "Reads per credential"): one
+    # per request like `request`, so a run again of its transaction is not counted again.
+    reads_paid: set[str] = field(default_factory=set, compare=False)
     # MAITY_MAX_READS_PER_MINUTE as the environment set it (None: the admin's or the default),
     # and the route's pattern for the read limit's log line (§1.7 "Reads per credential").
     max_reads_env: int | str | None = None
@@ -162,7 +165,7 @@ def _count_read(conn: Connection, facts: RequestFacts, key: str) -> None:
             conn,
             key,
             env_value=facts.max_reads_env,
-            spender=facts.request,
+            paid=facts.reads_paid,
             method=facts.method.upper(),
             route=facts.route,
         )

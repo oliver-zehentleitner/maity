@@ -50,7 +50,6 @@ class _Count:
     window: int  # the index of the fixed window `current` counts in
     current: int
     previous: int
-    spender: object  # the request counted last: a transaction run again counts once
 
 
 class ReadCounter:
@@ -62,17 +61,20 @@ class ReadCounter:
         self._counts: OrderedDict[str, _Count] = OrderedDict()  # least recently read first
         self._lock = threading.Lock()
 
-    def take(self, key: str, limit: int, spender: object, now: float) -> int:
+    def take(self, key: str, limit: int, paid: set[str], now: float) -> int:
         """Count one read of `key` at `now` (seconds); 0 when it fits `limit`, else the seconds
-        until one more would fit, and the read is not counted. `spender` is the request: the
-        same request counted again (its transaction run again) is not counted twice."""
+        until one more would fit, and the read is not counted. `paid` is the request's own: the
+        keys it was counted for, kept across its transaction's runs, so a request run again is
+        not counted twice, also when other reads of the same key run meanwhile."""
         index = math.floor(now / self.seconds)
         elapsed = (now - index * self.seconds) / self.seconds
         with self._lock:
             self._forget(index)
+            if key in paid:
+                return 0
             count = self._counts.get(key)
             if count is None:
-                count = self._counts[key] = _Count(index, 0, 0, None)
+                count = self._counts[key] = _Count(index, 0, 0)
             elif count.window != index:
                 # The window moved on: the current count becomes the previous one, unless more
                 # than one window passed, when neither counts any more.
@@ -80,12 +82,10 @@ class ReadCounter:
                 count.current = 0
                 count.window = index
             self._counts.move_to_end(key)
-            if count.spender is spender:
-                return 0
             # A float's last digit does not refuse a read that fits exactly.
             if count.current + 1 + count.previous * (1 - elapsed) <= limit + 1e-9:
                 count.current += 1
-                count.spender = spender
+                paid.add(key)
                 return 0
             return estimate_wait(count.current + 1, count.previous, elapsed, 1, limit, self.seconds)
 
@@ -163,16 +163,17 @@ def take(
     key: str,
     *,
     env_value: object,
-    spender: object,
+    paid: set[str],
     method: str,
     route: str,
 ) -> None:
-    """Count one read of the credential `key`; `rate_limited` with `Retry-After` past the
-    instance's value, and one log line naming the route and a tag of the credential."""
+    """Count one read of the credential `key`, unless the request `paid` for it already;
+    `rate_limited` with `Retry-After` past the instance's value, and one log line naming the
+    route and a tag of the credential."""
     limit = instance_value(conn, env_value)
     if limit is None:
         return
-    wait = COUNTER.take(key, limit, spender, clock.now().timestamp())
+    wait = COUNTER.take(key, limit, paid, clock.now().timestamp())
     if wait:
         log.info(
             "read limit: %s %s credential=%s limit=%d retry_after=%d",

@@ -830,9 +830,11 @@ reason.
   minute cost no more memory than 60. Keys live in an ordered dict, least
   recently read first; each call forgets at most eight that no longer
   reach the estimate, because authentication runs on the event loop
-  (`NonceWindow` does the same). The request object of `RequestFacts`
-  marks what was counted, so a transaction run again (`retrying_async`)
-  does not count its request twice. A float's last digit may round
+  (`NonceWindow` does the same). `RequestFacts.reads_paid`, one per
+  request, holds the credentials its read was counted for, so a
+  transaction run again (`retrying_async`) does not count its request
+  twice, also when other reads of the same credential run meanwhile.
+  A float's last digit may round
   `Retry-After` up a second, never down.
 - **The instance's value is kept 30 seconds per process.** No statement
   per read: a read finds the value in memory, read again from the settings
