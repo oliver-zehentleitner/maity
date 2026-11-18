@@ -12,7 +12,7 @@ from maity_hub import cards, paging, ranks
 from maity_hub import tables as t
 from tests import flow
 from tests.conftest import ClientFactory
-from tests.statements import count_statements
+from tests.statements import listening
 
 TASK_KEYS = {
     "id",
@@ -374,15 +374,42 @@ def test_a_key_cursor_from_before_still_pages_the_closed_columns(
     assert [c["id"] for c in response.json()["items"]] == order[2:]
 
 
-def test_a_closed_page_reads_as_many_statements_for_3_cards_as_for_30(
+def test_a_closed_cursor_the_hub_did_not_give_is_refused(
     owner: flow.Human, migrated: Engine
 ) -> None:
-    path = "/projects/maintainer/maity/tasks?status=done,cancelled&limit=2"
+    """A naive time, another list's scope, or a cursor of another kind: 400, never a 500."""
     _closed_cards(owner, migrated, 3)
-    few = count_statements(migrated, lambda: owner.get(path), async_engines=False)
-    _closed_cards(owner, migrated, 27)
-    many = count_statements(migrated, lambda: owner.get(path), async_engines=False)
-    assert few == many
+    path = "/projects/maintainer/maity/tasks?status=done,cancelled&limit=1"
+    bound = paging.scope(
+        status="done,cancelled", kind=None, label=None, needs=None, holder=None,
+        assigned_to=None, area=None, parent=None, closed_after=None, order="board",
+    )  # fmt: skip
+    naive = paging._encode(["closed", 5, "2026-11-01T12:00:00", "tsk-x", bound])
+    other_scope = paging.closed_cursor(5, CLOSED_BASE, "tsk-x", "0" * 16)
+    for given in (naive, other_scope, paging.seq_cursor(3, bound)):
+        response = owner.get(f"{path}&cursor={given}")
+        assert response.status_code == 400, response.text
+        assert response.headers["Maity-Error"] == "invalid"
+
+
+def test_a_closed_page_reads_no_more_cards_than_it_shows(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """The database sorts the closed columns and hands back one card more than the page,
+    not the whole column: the card list's statement (the one ordered by the column's
+    `CASE`) carries the `LIMIT`. Before, it read all 30 cards for a page of 2."""
+    _closed_cards(owner, migrated, 30)
+    statements: list[str] = []
+
+    def heard(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
+        statements.append(statement)
+
+    with listening(migrated, heard, async_engines=False):
+        response = owner.get("/projects/maintainer/maity/tasks?status=done,cancelled&limit=2")
+    assert response.status_code == 200, response.text
+    assert len(response.json()["items"]) == 2
+    card_lists = [s for s in statements if "CASE card.status WHEN" in s]
+    assert len(card_lists) == 1 and "LIMIT" in card_lists[0], statements
 
 
 def _report(**overrides: Any) -> dict[str, Any]:

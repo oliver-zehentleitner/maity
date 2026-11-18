@@ -104,7 +104,10 @@ def unclosed(text: str, bound: str) -> tuple[int, datetime | None, str]:
             raise ValueError
         if not isinstance(row_id, str):
             raise ValueError
-        return position, (datetime.fromisoformat(iso) if iso is not None else None), row_id
+        at = datetime.fromisoformat(iso) if iso is not None else None
+        if at is not None and at.tzinfo is None:
+            raise ValueError  # the hub stores UTC only: a naive time is no cursor it gave
+        return position, at, row_id
     except (ValueError, TypeError):
         raise invalid({"cursor": "invalid"}) from None
 

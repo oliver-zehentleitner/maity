@@ -735,9 +735,8 @@ def list_tasks(
             return shown
 
         tag = paging.tag_of(cursor) if cursor is not None else None
-        if order == "board" and q is None and wanted and set(wanted) <= set(cards.CLOSED) and (
-            tag != "key"
-        ):
+        closed_only = bool(wanted) and set(wanted) <= set(cards.CLOSED)
+        if order == "board" and q is None and closed_only and tag != "key":
             # Closed columns only (the board's done group, tsk-d4anfsk1e94j): their order,
             # `closed_at` newest first and then the id (ranks.board_key), is one the
             # database keeps, so it sorts and pages here instead of every card of the
@@ -761,9 +760,7 @@ def list_tasks(
                         t.card.c.closed_at < at_closed,
                         and_(t.card.c.closed_at == at_closed, card_id > at_id),
                     )
-                query = query.where(
-                    or_(column > at_position, and_(column == at_position, within))
-                )
+                query = query.where(or_(column > at_position, and_(column == at_position, within)))
             # A card without `closed_at` sorts last in its column, as in board_key, on every
             # database: PostgreSQL would put NULL first in a descending order.
             query = query.order_by(
