@@ -12920,8 +12920,7 @@ GET /projects/{owner}/{slug}/limits
     "max_placements": { "limit": 8, "source": "default", "count": 3,
                         "ceiling": { "value": 1000, "source": "default" },
                         "editable": true, "raise": { "…": "" } },
-    "member_agents_max": { "limit": 3, "source": "default", "count": 1, "…": "" },
-    "max_open_claims": { "limit": null, "source": "default", "count": 2, "…": "" } },
+    "member_agents_max": { "limit": 3, "source": "default", "count": 1, "…": "" } },
   "agents": [
     { "member": "agt-23ghr1hc6qxx", "handle": "coder",
       "max_instances": { "limit": 3, "source": "agent_owner", "count": 3, "…": "" },
