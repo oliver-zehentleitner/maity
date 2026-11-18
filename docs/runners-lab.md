@@ -131,5 +131,6 @@ pull_requests = true
 | An OpenCode placement without a model runs OpenCode's own default model | both | tsk-kf2kp09d6qew |
 | Coders cannot build the project's dev venv or run its full checks in a placement | both | tsk-kshmb8vc92rr |
 | The clone check refuses the empty read-only `.git/config.lock` the Claude sandbox leaves behind | both | tsk-estwtzbae972, #1954 |
+| A supervised agent shows as offline or away on the team page while its placement runs ("where they run" is green) | both | tsk-hv7jbgy75zjt (note nte-w7bwz93q1vnx) |
 | Claude Code without its sandbox as an opt-in where the host cannot allow it | – | tsk-yp2bprwv9whv |
 | `runner check` does not probe the nested user namespace on ssh hosts | ssh backend | tsk-5b5x3k5zvg7x (follow-up) |
