@@ -26,9 +26,10 @@ end of the list above; the release is refused without the page
 (`tools/upgrade_page.py`, run by ci and by the release gate), and ci refuses a
 page the list does not link, since the docs site reaches the pages only from
 here. Only a list item of the plain form `- [<version>](<version>.md)`, on a
-line of its own, counts as a link. The page has these five sections, in this order, each as a second-level
-heading. A section that does not apply says `Nothing.`, so a reader can tell
-"nothing" from "forgotten". An HTML comment alone is no text.
+line of its own and at its very start, counts as a link. The page has these
+five sections, in this order, each as a second-level heading. A section that
+does not apply says `Nothing.`, so a reader can tell "nothing" from
+"forgotten". An HTML comment alone is no text.
 
 The release author lists every migration and every new or changed default
 since the last tag in "What happens by itself on upgrade"; the lead and ops

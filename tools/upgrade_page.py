@@ -17,15 +17,16 @@ alone is no text, since the rendered page shows nothing there.
 The page is read as CommonMark reads it, as far as headings and text go: a
 byte order mark at the start is dropped; a fenced code block opens with three
 or more backticks or tildes indented by at most three spaces and closes only
-with a run of the same character at least as long (an unclosed one runs to the
-end); a heading or an HTML comment inside it is code, not structure. A line
-indented by four columns or more (spaces, a tab counting to the next multiple
-of four) is an indented code block unless it continues paragraph text (the
-line before is a non-blank text line); code opens no fence and is no heading,
-and its content, comments too, counts as text. An HTML comment that starts a
-line opens a block up to its `-->` (or the end), and a heading inside it is no
-heading. Not followed: list items, so a line indented four columns inside one
-is read as code, a fence there too.
+with a run of the same character at least as long, indented at least as far
+as the opening one (an unclosed one runs to the end); a heading or an HTML
+comment inside it is code, not structure. A line indented by four columns or
+more (spaces, a tab counting to the next multiple of four) is an indented code
+block unless it continues paragraph text (the line before is a non-blank text
+line); code opens no fence and is no heading, and its content, comments too,
+counts as text. An HTML comment that starts a line opens a block up to its
+`-->` (or the end), and a heading inside it is no heading. Not followed: list
+items, so a line indented four columns inside one is read as code, a fence
+there too.
 
 `check` (ci, every pull request): the hub's version is the one in
 hub/pyproject.toml. Once CHANGELOG.md has that version's section (the release
@@ -35,19 +36,26 @@ tools/release_gate.py asks for the tagged version this way. `check` also asks,
 always, that docs/upgrade/README.md links every version page in docs/upgrade/:
 the docs site renders only that README (docs/nav.yml), so its links are the way
 a reader of the site finds the version pages. A page counts as linked only by
-a list line of the README: up to three spaces, `- ` (or `* `), then `[text]`
-with no `[`, `]`, backtick or backslash in the text and not starting with `!`,
-then at once `(dest)`, then anything. dest is the page's file name, with an
-optional `./` in front, an optional `#fragment` after, optionally inside
-`<...>`, so `- [0.1.0a9](<./0.1.0a9.md#top>)` names 0.1.0a9.md. A line in a
-fenced or indented code block or in an HTML comment block does not count, nor
-one with a backtick or `<!--` before its link closes; a comment opened inside
-a line hides no later line. Nothing else counts: no reference link, no link
+a list line of the README: at the start of the line (column 0, no space
+before it) `- ` (or `* `), then `[text]` with no `[`, `]`, `<`, backtick or
+backslash in the text (so no code span, raw HTML tag, comment or autolink opens
+there) and not starting with `!`, then at once `(dest)`, then anything. dest
+is the page's file name, with an optional `./` in front, an optional
+`#fragment` after, optionally inside `<...>`, so
+`- [0.1.0a9](<./0.1.0a9.md#top>)` names 0.1.0a9.md; dest has no backtick
+either. A line in a fenced or indented code block or in an HTML comment block
+does not count; a comment opened inside a line hides no later line. Nothing else counts: no reference link, no link
 inside a paragraph, no image. The grammar is one pattern, not a parser: a list
 line inside an HTML block other than a comment (a `<div>`) still counts, though
-CommonMark shows it as raw HTML; any form the rule does not know is refused,
-and the error message names the plain line `- [version](version.md)` to add.
-Standard library only.
+CommonMark shows it as raw HTML; any form the rule does not know is refused.
+Two known edges fail closed, on purpose: (1) a listing line right after a list
+item that opened a fence or a comment is refused, though CommonMark ends that
+fence or comment with the list item and shows the link; (2) a fence opened
+with leading spaces closes only on a fence indented at least as far, so one
+closed at column 0 (which CommonMark accepts) hides the rest of the file, its
+listing lines and headings too. For the README, the error message names the
+plain line `- [version](version.md)` to add; on a version page, a section so
+hidden is reported missing. Standard library only.
 """
 
 from __future__ import annotations
@@ -75,7 +83,7 @@ COMMENT_START = re.compile(r"^ {0,3}<!--")
 COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
 # The README's list line that links a version page: "- [text](dest)"; the module's docstring has the rules.
 LIST_LINK = re.compile(
-    r"^ {0,3}[-*] \[(?!!)[^\[\]`\\]+\]"
+    r"^[-*] \[(?!!)[^\[\]`\\<]+\]"
     r"\((?P<open><)?(?:\./)?(?P<name>[^\s()<>#`\\/]+)(?:#[^\s()<>`\\]*)?(?(open)>)\)"
 )
 
@@ -137,6 +145,7 @@ def lines(text: str) -> list[tuple[str, str]]:
     The module's docstring has the rules."""
     out: list[tuple[str, str]] = []
     fence: str | None = None  # the opening run of the open fence
+    fence_indent = 0  # the open fence's leading spaces
     comment = False
     paragraph = False  # the line before is paragraph text, which an indented line continues
     for line in text.splitlines():
@@ -147,6 +156,7 @@ def lines(text: str) -> list[tuple[str, str]]:
                 and closing.group(1)[0] == fence[0]
                 and len(closing.group(1)) >= len(fence)
                 and not closing.group(2).strip(" \t")
+                and indent(line) >= fence_indent  # a fence opened indented closes only as far in
             ):
                 # A fence line is no text of its own: an empty code block leaves a section empty.
                 fence = None
@@ -167,6 +177,7 @@ def lines(text: str) -> list[tuple[str, str]]:
         opening = FENCE.match(line)
         if opening and not (opening.group(1)[0] == "`" and "`" in opening.group(2)):
             fence = opening.group(1)
+            fence_indent = indent(line)
             paragraph = False
             continue
         heading = HEADING.match(line)
@@ -211,7 +222,7 @@ def links(text: str) -> set[str]:
     names = set()
     for kind, line in lines(text):
         found = LIST_LINK.match(line) if kind == "text" else None
-        if found and "`" not in found.group(0) and "<!--" not in found.group(0):
+        if found:
             names.add(found.group("name"))
     return names
 

@@ -160,6 +160,16 @@ class Problems(unittest.TestCase):
             (found,) = u.problems(root, "0.1.0a9")
             self.assertIn("lacks the section(s): ## The way back", found)
 
+    def test_a_fence_opened_indented_is_not_closed_at_column_0(self):
+        # Deliberate fail-closed edge: CommonMark closes "  ```" with a "```" at column 0, but
+        # the rule closes an indented fence only on one indented at least as far, so the rest
+        # stays code and the section after it is missing.
+        block = "  ```\nx\n```\n\n## The way back\n\nNothing.\n"
+        page = FULL.replace("## The way back\n\nNothing.\n", block)
+        with Tree(page=page) as root:
+            (found,) = u.problems(root, "0.1.0a9")
+            self.assertIn("lacks the section(s): ## The way back", found)
+
     def test_a_fence_indented_four_spaces_is_indented_code_and_text(self):
         # CommonMark: four spaces make an indented code block, not a fence; its line shows.
         page = FULL.replace("## The way back\n\nNothing.\n", "## The way back\n\n    ```\n")
@@ -274,7 +284,31 @@ class Listing(unittest.TestCase):
         self.accepted("# Upgrade pages\n\n- [0.1.0a9](<./0.1.0a9.md#x>)\n")
 
     def test_a_star_list_line_with_trailing_text_counts(self):
-        self.accepted("# Upgrade pages\n\n   * [0.1.0a9](0.1.0a9.md) (skip it)\n")
+        self.accepted("# Upgrade pages\n\n* [0.1.0a9](0.1.0a9.md) (skip it)\n")
+
+    # A1420: a list line starts at column 0, so a list item's fence or comment cannot fake one.
+    def test_a_list_line_inside_a_list_items_fence_does_not_count(self):
+        self.refused("# Upgrade pages\n\n- ```\n  - [0.1.0a9](0.1.0a9.md)\n  ```\n")
+        self.refused("# Upgrade pages\n\n1. ~~~\n   - [0.1.0a9](0.1.0a9.md)\n   ~~~\n")
+
+    def test_a_list_line_inside_a_list_items_comment_does_not_count(self):
+        self.refused("# Upgrade pages\n\n- <!--\n  - [0.1.0a9](0.1.0a9.md)\n  -->\n")
+
+    def test_a_list_line_inside_a_code_block_after_a_list_items_fence_does_not_count(self):
+        # CommonMark: the "```" at column 0 ends the list item and opens a code block that runs
+        # to the end. Here: it does not close the fence opened at two spaces, so the rest is code.
+        self.refused("# Upgrade pages\n\n- a\n  ```\n```\n- [0.1.0a9](0.1.0a9.md)\n")
+
+    def test_an_indented_list_line_does_not_count(self):
+        for pad in (" ", "  ", "   "):
+            for bullet in ("-", "*"):
+                with self.subTest(pad=pad, bullet=bullet):
+                    self.refused(f"# Upgrade pages\n\n{pad}{bullet} [0.1.0a9](0.1.0a9.md)\n")
+
+    def test_a_list_line_after_a_list_items_fence_is_refused(self):
+        # Deliberate fail-closed edge: CommonMark ends the fence with the list item and shows
+        # the link, but the list-line rule does not follow list items, so it is refused.
+        self.refused("# Upgrade pages\n\n- ```\n  - [0.1.0a9](0.1.0a9.md)\n  ```\n- [0.1.0a9](0.1.0a9.md)\n")
 
     # Forms a fuller recognizer accepted (9ecab5fe), refused by the list-line rule.
     def test_a_reference_link_does_not_count(self):
@@ -302,6 +336,18 @@ class Listing(unittest.TestCase):
 
     def test_a_comment_between_text_and_destination_does_not_count(self):
         self.refused("# Upgrade pages\n\n- [0.1.0a9]<!-- x -->(0.1.0a9.md)\n")
+
+    # A1421 nit-1: a raw HTML tag or an autolink opened in the link text spans the destination,
+    # so CommonMark renders no link; "<" in the link text is refused.
+    def test_a_tag_or_autolink_opened_in_the_link_text_does_not_count(self):
+        for line in (
+            '- [x <span title="](0.1.0a9.md)">](other.md)',
+            '- [x <span title="](0.1.0a9.md)">',
+            "- [x <http://a](0.1.0a9.md)>",
+            "- [x <http://e.org/](0.1.0a9.md)> y",
+        ):
+            with self.subTest(line=line):
+                self.refused(f"# Upgrade pages\n\n{line}\n")
 
     def test_an_escaped_bracket_does_not_count(self):
         self.refused("# Upgrade pages\n\n- \\[0.1.0a9](0.1.0a9.md)\n")
