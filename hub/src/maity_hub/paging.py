@@ -84,6 +84,41 @@ def unkey(
         raise invalid({"cursor": "invalid"}) from None
 
 
+def closed_cursor(position: int, closed_at: datetime | None, row_id: str, bound: str) -> str:
+    """A cursor after a closed card in §6.4's card order: its column's position, its
+    `closed_at` and its id. A closed card's place in its column follows from these alone
+    and no move changes it, so, unlike `key_cursor`, it needs no list of the ids shown and
+    keeps one size however long the column is (tsk-d4anfsk1e94j)."""
+    at = closed_at.isoformat() if closed_at is not None else None
+    return _encode(["closed", position, at, row_id, bound])
+
+
+def unclosed(text: str, bound: str) -> tuple[int, datetime | None, str]:
+    try:
+        tag, position, iso, row_id, given = _decode(text)
+        if tag != "closed" or given != bound:
+            raise ValueError
+        if not isinstance(position, int) or isinstance(position, bool):
+            raise ValueError
+        if iso is not None and not isinstance(iso, str):
+            raise ValueError
+        if not isinstance(row_id, str):
+            raise ValueError
+        return position, (datetime.fromisoformat(iso) if iso is not None else None), row_id
+    except (ValueError, TypeError):
+        raise invalid({"cursor": "invalid"}) from None
+
+
+def tag_of(text: str) -> str | None:
+    """The kind a tagged cursor names (`key`, `closed`, `seq`), or None for any other text;
+    the decode that follows still checks the whole cursor."""
+    try:
+        value = _decode(text)
+    except (ValueError, TypeError):
+        return None
+    return value[0] if isinstance(value, list) and value and isinstance(value[0], str) else None
+
+
 def seq_cursor(seq: int, bound: str) -> str:
     """After `seq` in the list's direction; `bound` ties it to a `scope`."""
     return _encode(["seq", seq, bound])
