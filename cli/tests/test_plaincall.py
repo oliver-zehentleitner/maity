@@ -770,6 +770,7 @@ BRACES_JOINED = [
     "{m,-}aity {r,-}unner status",
     "{l..m}aity {r..r}unner status",
     "{m,x}{a,x}ity {r,x}{u,x}nner status",
+    "{m..m..+1}aity {r..r..+1}unner status",
 ]
 
 
@@ -792,6 +793,7 @@ EXPANSIONS = [
     ("{a,{b}", ["{a,{b}"]),
     ("{,}", ["", ""]),
     ("{a..e..2}", ["a", "c", "e"]),
+    ("{a..e..+2}", ["a", "c", "e"]),
     ("{c..a}", ["c", "b", "a"]),
     ("{a..c..0}", ["a", "b", "c"]),
     ("{Z..a}", ["Z", "[", "\\", "]", "^", "_", "`", "a"]),
@@ -858,6 +860,76 @@ def test_braces_nested_deeper_than_the_stack_allows_refuse_the_line() -> None:
         assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
     finally:
         sys.setrecursionlimit(limit)
+
+
+# Words that hold an unquoted `{` and also a quoted or escaped `{`, `}` or `,`.
+MIXED_BRACES = [
+    "{mait,--for=\\}}y {--for=\\},runne}r status",
+    '{mait,--for="}"}y {--for="}",runne}r status',
+    "{mait,--for='}'}y {--for='}',runne}r status",
+    "{mait,--f=\\{}y {--f=\\{,runne}r status",
+    '{mait,--for="{"}y {--for="{",runne}r status',
+]
+
+
+@pytest.mark.parametrize("command", MIXED_BRACES)
+def test_a_word_with_unquoted_and_quoted_brace_characters_is_not_read(command: str) -> None:
+    assert plaincall.prefixed(command)
+    assert plaincall.calls_runner(command)
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+@pytest.mark.parametrize("command", MIXED_BRACES)
+def test_such_a_word_in_quoted_text_read_again_is_not_read(command: str) -> None:
+    line = "bash -c " + shlex.quote(command)
+    assert plaincall.prefixed(line)
+    assert plaincall.calls_runner(line)
+    assert plaincall.refusal(bash(line)) == plaincall.RUNNER_REFUSED
+
+
+@pytest.mark.parametrize(
+    "command", ["echo {a,'}'}", 'git diff -- cli/{src,"t,s"}', "echo {a,\\,b}", "ls {a,$'{'}"]
+)
+def test_such_a_word_refuses_the_line_whatever_it_names(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+SPLIT_MIXED = [
+    ("{a,'}'}", True),
+    ("{a,\\,b}", True),
+    ('x{a,b}"{"', True),
+    ("{a,b}", False),
+    ("'{a,b}'", False),
+    ("\\{a,b}", False),
+    ("@{u}", False),
+    ("{a,b}'x'", False),
+]
+
+
+@pytest.mark.parametrize(("word", "mixed"), SPLIT_MIXED)
+def test_the_split_marks_a_word_with_unquoted_and_quoted_brace_characters(
+    word: str, mixed: bool
+) -> None:
+    [(_, _, _, marked)] = plaincall._split(word)
+    assert marked is mixed
+
+
+def test_the_runner_reason_names_the_file_way_out_for_such_braces() -> None:
+    assert "quoted or escaped `{`, `}` or `,`" in plaincall.RUNNER_REFUSED
+    assert "such braces, goes in a file" in plaincall.RUNNER_REFUSED
+
+
+BRACE_PATHS = [
+    "pytest tests/test_{a,b}.py",
+    "git diff -- cli/{src,tests}",
+    "echo {1..1000}",
+    "echo {a..e..+2}",
+]
+
+
+@pytest.mark.parametrize("command", BRACE_PATHS)
+def test_brace_paths_and_ranges_without_both_words_pass(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is None
 
 
 # A first word that only starts with `maity`.

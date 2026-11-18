@@ -10,7 +10,8 @@ refused outright: an assignment to another name, a command word, a keyword, `!`,
 a subshell or a group before it, or `maity` by a path. A word counts as `maity` (and as
 `runner`) also once its backslashes and quotes are taken off (`_reads_as`), and a word that
 holds a `{` also as each part of it between `{`, `,` and `}` and as each word its brace
-expansion makes, up to `BRACE_LIMIT` words; a word that makes more is not read and counts as
+expansion makes, up to `BRACE_LIMIT` words; a word that makes more, or that holds an
+unquoted `{` beside a quoted or escaped `{`, `}` or `,` (`_split`), is not read and counts as
 both (`_names`). On any line, a word
 `maity` followed later by a word `runner`, as `calls_runner` splits words, is refused as well:
 those commands are the runner's own, and the runner never starts them through an agent's tool
@@ -71,9 +72,10 @@ RUNNER_REFUSED = (
     "the hook cannot read to the end (one that names `maity` and holds a comment, a heredoc "
     "or more than one line; a quote that never closes; `$'...'` text with a backslash or a "
     '`$"`; quoted text nested too deep; a word whose braces make more than '
-    f"{BRACE_LIMIT} words). Run "
+    f"{BRACE_LIMIT} words; a word that mixes unquoted braces with quoted or escaped `{{`, "
+    "`}` or `,`). Run "
     "each `maity` command on a line of its own, without a comment; text that holds both "
-    "words goes in a file in this clone, passed with `--body-file`."
+    "words, or such braces, goes in a file in this clone, passed with `--body-file`."
 )
 REFUSED = (
     "A `maity` command runs only as one plain call: nothing piped, chained, redirected, sent to "
@@ -124,15 +126,15 @@ def _placement(command: str) -> str | None:
         words = _split(command)
     except _Unreadable:
         return "held" if names_maity(command) else None
-    for index, (text, _, _) in enumerate(words):
-        if _is_maity(text):
+    for index, (text, _, _, mixed) in enumerate(words):
+        if _is_maity(text, mixed):
             before = words[:index]
             if text.lower() != "maity" or not all(
-                _ASSIGNMENT.match(command, at) for _, _, at in before
+                _ASSIGNMENT.match(command, at) for _, _, at, _ in before
             ):
                 return "prefixed"
             return "held"
-    if any(_maity_in_text(text, 1) for text, _, _ in words):
+    if any(_maity_in_text(text, 1) for text, _, _, _ in words):
         return "prefixed"
     return None
 
@@ -150,7 +152,9 @@ def _maity_in_text(text: str, depth: int) -> bool:
         words = _words(text)
     except _Unreadable:
         return names_maity(text)
-    return any(_is_maity(word) or _maity_in_text(word, depth + 1) for word, _ in words)
+    return any(
+        _is_maity(word, mixed) or _maity_in_text(word, depth + 1) for word, _, mixed in words
+    )
 
 
 def held(command: str) -> bool:
@@ -202,30 +206,35 @@ def plain(command: str) -> bool:
     return True
 
 
-def _is_maity(word: str) -> bool:
+def _is_maity(word: str, mixed: bool) -> bool:
     """Whether a word names `maity`: by any path, in any case, however its start is trimmed,
-    also as `_reads_as` takes it. A word in which `$'` is followed by a backslash counts
-    whatever it holds."""
+    also as `_names` takes it (`mixed` as `_split` says). A word in which `$'` is followed by
+    a backslash counts whatever it holds."""
     if re.search(r"\$'.*\\", word, re.DOTALL):
         return True
     return any(
         re.sub(r"^[^0-9A-Za-z]+", "", name.rsplit("/", 1)[-1]).lower() == "maity"
-        for name in _names(word)
+        for name in _names(word, mixed)
     )
 
 
-def _is_runner(word: str) -> bool:
-    """Whether a word is `runner`, in any case, also as `_names` takes it."""
-    return any(name.lower() == "runner" for name in _names(word))
+def _is_runner(word: str, mixed: bool) -> bool:
+    """Whether a word is `runner`, in any case, also as `_names` takes it (`mixed` as `_split`
+    says)."""
+    return any(name.lower() == "runner" for name in _names(word, mixed))
 
 
-def _names(word: str) -> tuple[str, ...]:
+def _names(word: str, mixed: bool) -> tuple[str, ...]:
     """The word as `_reads_as` takes it and, when that holds a `{`, each part of it between
     `{`, `,` and `}` and each word its brace expansion makes (`_expand`): a brace expansion
     may make a word of its own of each alternative, joined with the text around it. A word
-    whose expansion makes more than `BRACE_LIMIT` words is not read: it counts as `maity` and
-    as `runner`."""
+    whose expansion makes more than `BRACE_LIMIT` words is not read, nor one that is `mixed`,
+    one that holds an unquoted `{` and also a quoted or escaped `{`, `}` or `,`: the braces
+    `_expand` would find there, with the quotes taken off, are not the ones the shell expands.
+    Such a word counts as `maity` and as `runner`."""
     names = _reads_as(word)
+    if mixed:
+        return (*names, "maity", "runner")
     if "{" not in names[1]:
         return names
     expanded = _expand(names[1])
@@ -234,9 +243,10 @@ def _names(word: str) -> tuple[str, ...]:
     return (*names, *re.split(r"[{},]", names[1]), *expanded)
 
 
-# A letter range in braces, `{a..e}` or `{a..e..2}`. A number range is left as it is: each of
-# its words holds a digit, and neither `maity` nor `runner` does.
-_LETTER_RANGE = re.compile(r"([A-Za-z])\.\.([A-Za-z])(?:\.\.(-?[0-9]+))?")
+# A letter range in braces, `{a..e}`, `{a..e..2}` or `{a..e..+2}`: the step may carry a sign,
+# as in Bash 5.2. A number range is left as it is: each of its words holds a digit, and neither
+# `maity` nor `runner` does.
+_LETTER_RANGE = re.compile(r"([A-Za-z])\.\.([A-Za-z])(?:\.\.([-+]?[0-9]+))?")
 
 
 def _expand(word: str, limit: int = BRACE_LIMIT) -> list[str] | None:
@@ -290,7 +300,8 @@ def _expand(word: str, limit: int = BRACE_LIMIT) -> list[str] | None:
 
 def _letters(letter_range: re.Match[str]) -> list[str]:
     """The letters a letter range (`_LETTER_RANGE`) makes, as Bash makes them: every
-    character from the first to the last, either way, in steps of the increment's size."""
+    character from the first to the last, either way, in steps of the increment's size: its
+    sign does not count, and a step of 0 counts as 1."""
     first, last, step = letter_range.groups()
     a, b, size = ord(first), ord(last), max(abs(int(step or 1)), 1)
     return list(map(chr, range(a, b + 1, size) if a <= b else range(a, b - 1, -size)))
@@ -307,35 +318,46 @@ class _Unreadable(ValueError):
     not known."""
 
 
-def _words(line: str) -> list[tuple[str, bool]]:
-    """The line's words and whether each expands, as `_split` reads them."""
-    return [(text, expands) for text, expands, _ in _split(line)]
+def _words(line: str) -> list[tuple[str, bool, bool]]:
+    """The line's words, whether each expands and whether each is mixed, as `_split` reads
+    them."""
+    return [(text, expands, mixed) for text, expands, _, mixed in _split(line)]
 
 
-def _split(line: str) -> list[tuple[str, bool, int]]:
+def _split(line: str) -> list[tuple[str, bool, int, bool]]:
     """The line's words, split and unquoted by the rules below, each with whether it holds
     something the shell would still expand (`$`, a backtick, a glob, a brace), so that its
     final text is not known here; a word that starts with an unquoted `~` and holds no `/`
     counts as one too. Words end at unquoted spaces, tabs and operators; single quotes,
     double quotes, `$'...'` and backslashes are taken off; a backslash-newline joins the
-    lines; nothing is expanded. Each word comes with the index in the line where it starts. A
+    lines; nothing is expanded. Each word comes with the index in the line where it starts,
+    and with whether it is mixed: it holds an unquoted `{` and also a `{`, `}` or `,` that is
+    quoted or escaped, so that its braces are not known once the quotes are taken off. A
     `#` and a heredoc are read like any other text, so a line that holds them is not split as
     the shell splits it: `read_whole` refuses such a line when it names `maity`. Raises
     _Unreadable for a quote that is never closed, for `$'...'` text that holds a backslash,
     whose escapes the shell decodes and this split does not, and for an unquoted `$"`, Bash's
     locale quoting, whose text a translation may replace."""
-    words: list[tuple[str, bool, int]] = []
+    words: list[tuple[str, bool, int, bool]] = []
     chars: list[str] = []
-    started = expands = tilde = False
+    started = expands = tilde = brace = quoted_brace = False
     i, n, begin = 0, len(line), 0
 
     def end() -> None:
-        nonlocal chars, started, expands, tilde
+        nonlocal chars, started, expands, tilde, brace, quoted_brace
         if started:
             text = "".join(chars)
             # `~`, `~-`, `~+`, `~user` alone: the shell puts a directory in their place.
-            words.append((text, expands or (tilde and "/" not in text), begin))
-        chars, started, expands, tilde = [], False, False, False
+            tilde_alone = tilde and "/" not in text
+            words.append((text, expands or tilde_alone, begin, brace and quoted_brace))
+        chars, started, expands, tilde, brace, quoted_brace = [], False, False, False, False, False
+
+    def quoted(text: str) -> None:
+        """Take quoted or escaped `text` into the word."""
+        nonlocal started, quoted_brace
+        started = True
+        quoted_brace = quoted_brace or any(c in "{}," for c in text)
+        chars.append(text)
 
     def closing(start: int, escapes: bool) -> int:
         """The index of the `'` that closes the quote opened before `start`."""
@@ -354,8 +376,7 @@ def _split(line: str) -> list[tuple[str, bool, int]]:
             end()
         elif c == "\\":
             if i + 1 < n and line[i + 1] != "\n":
-                started = True
-                chars.append(line[i + 1])
+                quoted(line[i + 1])
             i += 1  # a backslash-newline is a line continuation: nothing
         elif c == "$" and i + 1 < n and line[i + 1] == '"':
             raise _Unreadable(line)  # $"...": Bash may translate it, so its text is not known
@@ -363,13 +384,12 @@ def _split(line: str) -> list[tuple[str, bool, int]]:
             end_at = closing(i + 2, escapes=True)  # $'...': the shell decodes its escapes
             if "\\" in line[i + 2 : end_at]:
                 raise _Unreadable(line)
-            started = expands = True
-            chars.append(line[i + 2 : end_at])
+            expands = True
+            quoted(line[i + 2 : end_at])
             i = end_at
         elif c == "'":
             end_at = closing(i + 1, escapes=False)
-            started = True
-            chars.append(line[i + 1 : end_at])
+            quoted(line[i + 1 : end_at])
             i = end_at
         elif c == '"':
             started = True
@@ -377,17 +397,18 @@ def _split(line: str) -> list[tuple[str, bool, int]]:
             while i < n and line[i] != '"':
                 if line[i] == "\\" and i + 1 < n and line[i + 1] in '$`"\\\n':
                     if line[i + 1] != "\n":
-                        chars.append(line[i + 1])
+                        quoted(line[i + 1])
                     i += 2
                     continue
                 expands = expands or line[i] in "$`"
-                chars.append(line[i])
+                quoted(line[i])
                 i += 1
             if i >= n:
                 raise _Unreadable(line)
         else:
             tilde = tilde or (c == "~" and not started)
             started = True
+            brace = brace or c == "{"
             expands = expands or c in _EXPANDS
             chars.append(c)
         i += 1
@@ -437,18 +458,18 @@ def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> boo
         return True  # not read to the end: refused, whatever it holds
     seen = _Seen() if seen is None else seen
     maity_here = False  # a `maity` word in this text: an expanding word after it counts
-    for text, expands in words:
-        if _is_runner(text) and (seen.maity or seen.open):
+    for text, expands, mixed in words:
+        if _is_runner(text, mixed) and (seen.maity or seen.open):
             return True
         if expands and maity_here:
             return True
-        if _is_maity(text) and _is_runner(text):
+        if _is_maity(text, mixed) and _is_runner(text, mixed):
             return True  # both words as alternatives of one brace, or a word not read
         if any(c in " \t" or c in _SEPARATORS for c in text) and (
             depth >= _NESTING or calls_runner(text, depth + 1, seen)
         ):
             return True  # past the depth limit, text that could be a command is refused
-        maity_here = maity_here or _is_maity(text)
+        maity_here = maity_here or _is_maity(text, mixed)
         seen.maity = seen.maity or maity_here
         seen.open = seen.open or expands
     return False

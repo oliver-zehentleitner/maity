@@ -14,8 +14,10 @@
   (`--body-file` is the way out). A word counts as `maity` or `runner`
   also once the backslashes and quotes in it are taken off, a word with
   a brace also as each of its alternatives and as each word its brace
-  expansion makes, a word whose braces make more than 256 words refuses
-  the line, and a line
+  expansion makes, as Bash expands unquoted braces; a word whose braces
+  make more than 256 words refuses the line, and so does a word that
+  mixes unquoted braces with quoted or escaped `{`, `}` or `,` (text with
+  such braces goes in a file, `--body-file`), and a line
   with `$'…'` text that holds a backslash or with `$"…"` is refused. A
   quoted or escaped first word before `maity` (`"[" maity status`)
   refuses the line like any other word before it.
