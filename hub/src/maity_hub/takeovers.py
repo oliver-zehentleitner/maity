@@ -72,7 +72,7 @@ def view(conn: Connection, row: Any) -> dict[str, Any]:
         "override": row.override,
         "outcome": row.outcome,
         "created_at": clock.rfc3339(row.created_at),
-        "closed_at": clock.rfc3339(row.closed_at) if row.closed_at else None,
+        "closed_at": clock.rfc3339_or_none(row.closed_at),
     }
 
 

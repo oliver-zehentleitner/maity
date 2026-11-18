@@ -1603,7 +1603,7 @@ def _lease_active(card: Any) -> ApiError:
         409,
         "lease_active",
         "the holder's lease has not expired",
-        {"lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None},
+        {"lease_until": clock.rfc3339_or_none(card.lease_until)},
     )
 
 
@@ -1884,7 +1884,7 @@ def assign(
                 "assigned_instance": card.assigned_instance,
                 "holder": principal_id(conn, card.claim_holder),
                 "instance": card.claim_instance,
-                "lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None,
+                "lease_until": clock.rfc3339_or_none(card.lease_until),
                 "project_state": mine.project.state,
                 "reason": None,
             },

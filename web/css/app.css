@@ -1170,8 +1170,12 @@ html.chat-full .chat-pane.chat-full-pane { position: fixed; inset: 0; z-index: 2
    height, and a grid's default (stretch) would share it out among few rows. */
 .messages { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; align-content: start; }
 
+/* A bubble is up to 60% of the message column, at least 36rem where the column allows, never
+   past 60rem or 90%: in a column up to 960px (the page's chat, a phone) that is the old
+   min(36rem, 90%); wider, as in full screen on a desktop, it grows to 60%, from 1600px on
+   60rem (tsk-e305sjdqes86, context/views.md). */
 .msg {
-  max-width: min(36rem, 90%);
+  max-width: min(max(36rem, 60%), 60rem, 90%);
   padding: 8px 12px;
   border-radius: var(--radius);
   background: var(--surface);

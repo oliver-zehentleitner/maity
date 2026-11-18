@@ -693,8 +693,19 @@ def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
     # .opencode/ directories bring agents, commands and plugins.
     env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}
-    model = ctx.placement.get("model")
-    chosen = ["--model", model] if model else []
+    # No model on the placement: fall back to the harness default (config validates it is one
+    # of `models`). Fail closed when the effective model is empty or not among `models`: with
+    # no `--model`, opencode runs its own default, a provider-`opencode`, opencode-hosted model,
+    # so the clone's content would go to opencode's servers instead of the configured provider
+    # (cli/context/runner.md, the opencode model fail-closed). Both modes below share `chosen`.
+    model = ctx.placement.get("model") or ctx.harness.default_model
+    if not model or model not in ctx.harness.models:
+        raise NotYet(
+            f"opencode model {model!r} is not among the configured models "
+            f"{ctx.harness.models!r}: refusing the start rather than letting opencode run its "
+            f"own default, which would send the conversation to opencode's servers"
+        )
+    chosen = ["--model", model]
     if ctx.placement.get("mode") == "interactive":
         prompt = START_PROMPT + _sandbox_prompt(ctx)
         return Launch([ctx.binary, str(ctx.clone), *chosen, "--prompt", prompt], env)
