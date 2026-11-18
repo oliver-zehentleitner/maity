@@ -1,20 +1,22 @@
 """The hook a placed Claude Code session runs before every tool call, under its sandbox.
 
-`maity` runs outside the sandbox (`excludedCommands`). This hook lets a command line that
-starts with `maity`, or whose words before a word `maity` are only variable assignments
-(`held`), through only when it is one plain call: words of letters, digits and
-`_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
-redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is refused before
-the command runs (cli/context/runner.md). Any other line in which `maity` is a word
-(`prefixed`) is refused outright: a command word, a keyword, `!`, a redirection, a subshell
-or a group before it, or `maity` by a path. On any line, a word `maity` followed later by a
-word `runner`, as `calls_runner` splits words, is refused as well: those commands are the
-runner's own, and the runner never starts them through an agent's tool call. A line that
-names `maity` anywhere (`names_maity`) is refused when it holds a comment, a heredoc or more
-than one line (`read_whole`), and any line is refused when its quotes never close or its
-quoted text is nested too deep: the hook does not read such lines to the end. A command the
-shell builds only from expansions or from input is not read. Any other tool call is left to
-the permission rules: the hook prints nothing and exits 0.
+`maity` runs outside the sandbox (`excludedCommands`). This hook lets a command line whose
+first word is `maity`, or whose words before a word `maity` are only assignments to the names
+`_ASSIGNMENT` allows (`held`), through only when it is one plain call: words of letters, digits
+and `_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
+redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is refused before the
+command runs (cli/context/runner.md). Any other line in which `maity` is a word (`prefixed`) is
+refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
+a subshell or a group before it, or `maity` by a path. A word counts as `maity` (and as
+`runner`) also once its backslashes and quotes are taken off (`_reads_as`). On any line, a word
+`maity` followed later by a word `runner`, as `calls_runner` splits words, is refused as well:
+those commands are the runner's own, and the runner never starts them through an agent's tool
+call. A line that names `maity` anywhere (`names_maity`) is refused when it holds a comment, a
+heredoc or more than one line (`read_whole`), and any line is refused when its quotes never
+close, when it holds `$'...'` text with a backslash, or when its quoted text is nested too
+deep: the hook does not read such lines to the end. A command the shell builds only from
+expansions or from input is not read. Any other tool call is left to the permission rules: the
+hook prints nothing and exits 0.
 
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
 stderr. Input it cannot read is refused too.
@@ -35,8 +37,10 @@ NOT_IN_DOUBLE_QUOTES = frozenset("$`!\n")
 # Leading characters a plain call may not hold, spaces and quotes are skipped before looking
 # for `maity`, so a line counts as a maity call however the harness trims it. A character a
 # plain word may hold (`/`, `.`, `:` and the rest of `UNQUOTED`) is not skipped: before
-# `maity` it makes a path or another command.
-_MAITY = re.compile(r"[^0-9A-Za-z_\-./:=@%+,~^#]*maity", re.IGNORECASE)
+# `maity` it makes a path or another command. After `maity` only a space, a tab, an operator
+# or the line's end may follow: anything else makes it part of a longer word, which the word
+# split reads (`_placement`).
+_MAITY = re.compile(r"[^0-9A-Za-z_\-./:=@%+,~^#]*maity(?=[ \t();<>|&\n]|\Z)", re.IGNORECASE)
 
 # Unquoted characters that end a word, besides spaces and tabs: the shell's operators.
 _SEPARATORS = frozenset("();<>|&\n")
@@ -65,22 +69,25 @@ REFUSED = (
 )
 PREFIX_REFUSED = (
     "A line in which `maity` is a word runs only as one plain `maity …` call at the start of "
-    "the line, after nothing but variable assignments: no other command, keyword, `!`, "
-    "redirection, subshell or group before it, and `maity` by its name, not by a path. Run "
+    "the line, after nothing but assignments to MAITY_*, NO_COLOR, LANG, LC_* or TZ: no "
+    "other assignment, command, keyword, `!`, redirection, subshell or group before it, and "
+    "`maity` by its name, not by a path. Run "
     "`maity …` at the start of the line; text that mentions `maity` goes in a file in this "
     "clone, passed with `--body-file`."
 )
 
 
-# A variable assignment as the shell takes it before a command: a name, unquoted, then `=` or
-# `+=`.
-_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")
+# The assignments that may stand before `maity`: an allowed name, unquoted, then `=`. An
+# assignment can pick the program the shell runs or load code into it (`PATH`, `LD_PRELOAD`,
+# `PYTHONPATH`, `BASH_ENV`, ...), so the names are allowed, not refused (context/runner.md);
+# `+=` is refused as well. The value is not judged here: `plain` refuses one that expands.
+_ASSIGNMENT = re.compile(r"(?:MAITY_[A-Z0-9_]+|NO_COLOR|LANG|LC_[A-Z0-9_]+|TZ)=")
 
 
 def _placement(command: str) -> str | None:
-    """Where `maity` stands on the line: "held" when the line starts with `maity`
-    (`_MAITY`), when every word before its first word `maity` (`_is_maity`) is a variable
-    assignment written unquoted and that word is `maity` alone (in any case, not by a path),
+    """Where `maity` stands on the line: "held" when the line's first word is `maity`
+    (`_MAITY`), when every word before its first word `maity` (`_is_maity`) is an assignment
+    `_ASSIGNMENT` allows and that word is `maity` alone (in any case, not by a path),
     or when a quote never closes on a line that names `maity`; "prefixed" when `maity` is a
     word after anything else, by a path, or a word of quoted text that holds spaces or
     operators, read again as a line (`_maity_in_text`); None when `maity` is no word of the
@@ -169,13 +176,31 @@ def plain(command: str) -> bool:
 
 
 def _is_maity(word: str) -> bool:
-    """Whether a word names `maity`: by any path, in any case, however its start is trimmed."""
-    name = word.rsplit("/", 1)[-1]
-    return re.sub(r"^[^0-9A-Za-z]+", "", name).lower() == "maity"
+    """Whether a word names `maity`: by any path, in any case, however its start is trimmed,
+    also as `_reads_as` takes it. A word in which `$'` is followed by a backslash counts
+    whatever it holds."""
+    if re.search(r"\$'.*\\", word, re.DOTALL):
+        return True
+    return any(
+        re.sub(r"^[^0-9A-Za-z]+", "", name.rsplit("/", 1)[-1]).lower() == "maity"
+        for name in _reads_as(word)
+    )
+
+
+def _is_runner(word: str) -> bool:
+    """Whether a word is `runner`, in any case, also as `_reads_as` takes it."""
+    return any(name.lower() == "runner" for name in _reads_as(word))
+
+
+def _reads_as(word: str) -> tuple[str, str]:
+    """The word, and the word with its backslashes, quotes and a `$` before a quote taken off,
+    as a shell that reads it again may take it."""
+    return word, re.sub(r"\$(?=['\"])|[\\'\"]", "", word)
 
 
 class _Unreadable(ValueError):
-    """A quote the line never closes: its words are not known."""
+    """A quote the line never closes, or `$'...'` text with a backslash: its words are not
+    known."""
 
 
 def _words(line: str) -> list[tuple[str, bool]]:
@@ -190,9 +215,10 @@ def _split(line: str) -> list[tuple[str, bool, int]]:
     counts as one too. Words end at unquoted spaces, tabs and operators; single quotes,
     double quotes, `$'...'` and backslashes are taken off; a backslash-newline joins the
     lines; nothing is expanded. Each word comes with the index in the line where it starts. A
-    `#` and a heredoc are read like any other text, so a line
-    that holds them is not split as the shell splits it: `read_whole` refuses such a line
-    when it names `maity`. Raises _Unreadable for a quote that is never closed."""
+    `#` and a heredoc are read like any other text, so a line that holds them is not split as
+    the shell splits it: `read_whole` refuses such a line when it names `maity`. Raises
+    _Unreadable for a quote that is never closed and for `$'...'` text that holds a
+    backslash, whose escapes the shell decodes and this split does not."""
     words: list[tuple[str, bool, int]] = []
     chars: list[str] = []
     started = expands = tilde = False
@@ -228,6 +254,8 @@ def _split(line: str) -> list[tuple[str, bool, int]]:
             i += 1  # a backslash-newline is a line continuation: nothing
         elif c == "$" and i + 1 < n and line[i + 1] == "'":
             end_at = closing(i + 2, escapes=True)  # $'...': the shell decodes its escapes
+            if "\\" in line[i + 2 : end_at]:
+                raise _Unreadable(line)
             started = expands = True
             chars.append(line[i + 2 : end_at])
             i = end_at
@@ -287,7 +315,7 @@ class _Seen:
 
 def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> bool:
     """Whether the line may run `maity runner`: a word `maity` (`_is_maity`) is followed
-    later on the line by a word `runner` (in any case), as `_words` splits them. Neither has
+    later on the line by a word `runner` (`_is_runner`), as `_words` splits them. Neither has
     to be the command word, and operators between them do not matter. A word that `_words`
     says the shell would still expand counts as `maity` before a later `runner` word, and as
     `runner` after a `maity` word in the same text.
@@ -303,7 +331,7 @@ def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> boo
     seen = _Seen() if seen is None else seen
     maity_here = False  # a `maity` word in this text: an expanding word after it counts
     for text, expands in words:
-        if text.lower() == "runner" and (seen.maity or seen.open):
+        if _is_runner(text) and (seen.maity or seen.open):
             return True
         if expands and maity_here:
             return True

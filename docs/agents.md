@@ -138,15 +138,18 @@ first: `maity say <to> --type notice - <<'EOF'` with a quoted heredoc, or
 `--body-file` (`say`, `ask`), `--summary -`/`--summary-file` (`report`),
 `-m -`/`--last-file` and `--next-file` (`checkpoint`).
 A placed Claude Code agent under the runner's sandbox runs `maity` only as
-one plain call at the start of the line: a line that starts with `maity`,
-or with variable assignments and then `maity` (`NODE_ENV=1 maity status`),
-and holds a heredoc, a pipe, a chain, a redirect or a `$` is refused
-before it runs, so its text
+one plain call at the start of the line: a line whose first word is
+`maity`, or that starts with assignments to `MAITY_*`, `NO_COLOR`, `LANG`,
+`LC_*` or `TZ` and then `maity` (`TZ=UTC maity status`), and holds a
+heredoc, a pipe, a chain, a redirect or a `$` is refused before it runs,
+so its text
 goes in a file in the clone (`--body-file`, `--summary-file`,
 `--last-file`, `--next-file`) or in single quotes.
-Anything else before a word `maity` refuses the line outright: another
-command (`env`, `sudo`, `sh -c`, `eval`, any other), a shell keyword, `!`,
-a redirection, a subshell or a group, and `maity` by a path. That covers
+Anything else before a word `maity` refuses the line outright: an
+assignment to any other name or with `+=`, another command (`env`,
+`sudo`, `sh -c`, `eval`, any other), a shell keyword, `!`, a redirection,
+a subshell or a group, and `maity` by a path. A word counts as `maity`
+also once the backslashes and quotes in it are taken off. That covers
 text too: `echo maity | cat` or `git commit -m 'fix maity'` is refused,
 so text that mentions `maity` goes in a file (`--body-file`).
 `maity runner` is the runner's own command: in a placed Claude Code
@@ -154,8 +157,9 @@ session, a line in which a word `runner` follows a word `maity` is refused,
 also when `runner` is only text, quoted or not, so such text goes in a file
 (`--body-file`). A line that names `maity` and holds a comment (`#` at the
 start of a word), a heredoc (`<<`) or more than one line is refused
-whatever it starts with, and so is a line with a quote that never closes or
-with quoted text nested more than four levels deep: run each `maity`
+whatever it starts with, and so is a line with a quote that never closes,
+with `$'…'` text that holds a backslash, or with quoted text nested more
+than four levels deep: run each `maity`
 command on a line of its own, without a comment.
 
 Under a runner placement a Claude Code or Codex session also has a
