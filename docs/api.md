@@ -22117,8 +22117,8 @@ same header and footer (§16.7.5).
   other than tab, newline and carriage return, nor a lone surrogate
   (one UTF-16 surrogate not part of a pair, which JSON may write as
   `\ud800`): one is `invalid` with
-  `details.fields.<path>: control_character`. So for the legal pages
-  (§16.7.1) and a project's `public_about` (§16.9).
+  `details.fields.<path>: control_character`. The same holds for the
+  legal pages (§16.7.1) and a project's `public_about` (§16.9).
 - **Body cap.** `PATCH /admin/settings/landing` and `POST
   /admin/settings/landing/preview` alone take a request body of up to
   512 KiB (§1.7's 64 KiB elsewhere); the stored setting is
