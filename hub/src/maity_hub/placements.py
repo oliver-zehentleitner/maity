@@ -736,14 +736,21 @@ def free_clone(
         n += 1
 
 
-def refuse_over_instances(conn: Connection, member: Any, *, adding: int) -> None:
-    """`instance_quota` when a placement would bring the membership past `max_instances`
-    (§15.5): its active instances, joined by hand or by a pickup, plus its active
-    placements that hold no live credential yet and will each start one, plus `adding`."""
+def refuse_over_instances(
+    conn: Connection, member: Any, *, adding: int, caller_id: str | None = None
+) -> None:
+    """`instance_quota` with the quota details (§6.31) when a placement would bring the
+    membership past `max_instances` in effect (§15.5), the same ceiling a join meets
+    (`instances.refuse_over_quota`): its active instances, joined by hand or by a pickup,
+    plus its active placements that hold no live credential yet and will each start one,
+    plus `adding`. The ceiling's value is shown to the agent profile's owner; `caller_id`
+    names the caller."""
+    from maity_hub import ceilings, instances
+
     live = select(t.credential.c.id).where(
         t.credential.c.membership_id == member.id, t.credential.c.revoked_at.is_(None)
     )
-    instances = conn.execute(
+    running = conn.execute(
         select(func.count())
         .select_from(t.credential)
         .where(t.credential.c.membership_id == member.id, t.credential.c.revoked_at.is_(None))
@@ -757,12 +764,21 @@ def refuse_over_instances(conn: Connection, member: Any, *, adding: int) -> None
             or_(t.placement.c.credential_id.is_(None), t.placement.c.credential_id.not_in(live)),
         )
     ).scalar_one()
-    if int(instances) + int(waiting) + adding > member.max_instances:
+    count = int(running) + int(waiting)
+    project = conn.execute(select(t.project).where(t.project.c.id == member.project_id)).one()
+    limit, owner = instances.max_instances_limit(conn, member, project)
+    if count + adding > limit.limit:
         raise ApiError(
             409,
             "instance_quota",
             "the agent runs as many instances as its rulebook allows",
-            {"max": member.max_instances},
+            ceilings.details(
+                limit,
+                count,
+                namespace.full_name(conn, project),
+                sees_ceiling=caller_id is not None and caller_id == owner,
+                member_id=member.agent_id,
+            ),
         )
 
 

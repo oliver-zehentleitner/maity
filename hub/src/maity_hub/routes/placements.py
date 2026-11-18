@@ -375,7 +375,12 @@ def create_placement(
             credential_id = pl.carried_credential(conn, member_id, runner.id, clone)
             member = conn.execute(select(t.membership).where(t.membership.c.id == member_id)).one()
             # A carried-over credential is an instance already; anything else starts one.
-            pl.refuse_over_instances(conn, member, adding=0 if credential_id else 1)
+            pl.refuse_over_instances(
+                conn,
+                member,
+                adding=0 if credential_id else 1,
+                caller_id=mine.principal_id if mine.kind == "human" else None,
+            )
         values = {
             **agent_values,
             **spec,
