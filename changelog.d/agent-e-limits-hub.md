@@ -22,3 +22,7 @@
   longer change it (§6.1).
 - hub: a runner's `capacity` report may say which limit holds the start (`quota`, §15.7);
   `maity runner` sends it in a later release.
+- hub, compatibility: `PATCH /admin/settings/limits` names a value outside its range with
+  the reason `out_of_range` instead of `invalid` (`details.fields.<field>`; the code stays
+  `invalid`), as the limits of one project or account do (§16.5). A client that matched the
+  reason `invalid` reads `out_of_range` now; the dashboard reads both for one release.

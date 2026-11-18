@@ -209,7 +209,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23) |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `out_of_range` for a value outside its range, the instance's limits (§16.5) and those of one project or account (§16.5.1) included, `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -21481,9 +21481,12 @@ naming it is `invalid`, `read_only`) and `0` under `unlimited`; so is
 `humans_at_org_limit` for `max_orgs_per_human`, and
 `owners_at_project_limit` for `max_projects_per_owner`, which take
 `null` and `unlimited` the same way. `max_aliases` takes `null` the same
-way and has no `unlimited` (`invalid`); `names_at_alias_limit` is
+way and has no `unlimited` (`invalid`, `out_of_range`); `names_at_alias_limit` is
 read-only. `max_starred_per_human` takes `null` the same way and has no
-`unlimited` (`invalid`). `max_attachment_storage_per_project` takes `null` and
+`unlimited` (`invalid`, `out_of_range`). A value outside its range is
+`invalid` with `details.fields.<field>: "out_of_range"`, the reason of
+§16.5.1. An older hub answered the reason `invalid` here; the dashboard
+reads both for one release. `max_attachment_storage_per_project` takes `null` and
 `unlimited` the same way and has no count beside it: what one project
 holds is that project's `attachments` (§6.1). `attachment_storage_used` is
 read-only too; it is the bytes §8.7 counts for `max_attachment_storage`,

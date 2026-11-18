@@ -208,7 +208,8 @@ def _answer(resolved: tuple[Any, str]) -> dict[str, Any]:
 
 def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> None:
     """All of the body or nothing; `invalid` names each refused field. `null` restores the
-    default (§16.2)."""
+    default (§16.2). A value outside its range is `out_of_range`, as on the limits of one
+    project or account (§16.5.1)."""
     errors: dict[str, str] = {}
     changes: dict[str, object] = {}
     for name, value in body.items():
@@ -221,7 +222,7 @@ def patch(conn: Connection, hub: Settings, body: dict[str, Any], by: str) -> Non
         elif value is None:
             changes[name] = None
         elif CHECKS[name](value) is None:
-            errors[name] = "invalid"
+            errors[name] = "out_of_range"
         else:
             changes[name] = value
     if errors:
