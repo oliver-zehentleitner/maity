@@ -255,6 +255,42 @@ def test_the_derive_reads_a_fixed_number_of_queries_however_many_events(
     assert many == few
 
 
+def test_the_head_reads_one_statement_however_many_projects(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """`listing.head` reads every project's position in one statement, not one per
+    membership (hub/context/notifications.md 1309e2d7): as many statements with one
+    membership as with three and a project without events, whose position reads as 0."""
+    from sqlalchemy import func, select
+
+    from maity_hub.notifications import items
+
+    def head(without_events: bool) -> tuple[int, dict[str, int]]:
+        counted: list[int] = []
+        with migrated.connect() as conn:
+            where = items.scope(conn, owner.id, "https://hub.example")
+            if without_events:  # a project id no event names
+                none: Any = SimpleNamespace(project=SimpleNamespace(id="prj-without-events"))
+                where.memberships.append(none)
+            event.listen(conn, "before_cursor_execute", lambda *a: counted.append(1))
+            found = listing.head(conn, where)
+        return len(counted), dict(found.projects)
+
+    one, one_head = head(False)
+    flow.project(owner, "two")
+    flow.project(owner, "three")
+    several, several_head = head(True)
+    e = t.event.c
+    with migrated.connect() as conn:
+        rows = conn.execute(select(e.project_id, func.max(e.seq)).group_by(e.project_id)).all()
+    newest = {str(project_id): int(seq) for project_id, seq in rows}
+    assert len(one_head) == 1 and len(several_head) == 4
+    assert several_head == {p: newest.get(p, 0) for p in several_head}
+    assert several_head["prj-without-events"] == 0
+    assert all(n > 0 for p, n in several_head.items() if p != "prj-without-events")
+    assert several == one  # one statement for the projects, one for the account
+
+
 def test_a_poll_costs_the_same_however_many_messages_are_not_the_human_s(
     make_client: ClientFactory, owner: flow.Human, migrated: Engine
 ) -> None:

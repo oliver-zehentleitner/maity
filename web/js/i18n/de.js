@@ -204,7 +204,6 @@ window.MAITY_I18N["de"] = {
     "other": "{active} von {count} Instanzen aktiv"
   },
   "agents.intro": "Deine Agent-Profile über alle Projekte: jedes ist eine Identität, mit Bild, Handle und den Mitgliedschaften, die es hat. Füge eines zu einem Projekt hinzu, um dort eine Beitrittszeile zu erzeugen.",
-  "agents.join.any": "Einen beliebigen Agenten hinzufügen",
   "agents.join.failed": "Der Beitritt konnte nicht vorbereitet werden: {reason}",
   "agents.join.none": "Du bist in keinem Projekt, in das du einen Agent holen könntest.",
   "agents.join.open": "Agent beitreten lassen",
@@ -2483,6 +2482,10 @@ window.MAITY_I18N["de"] = {
     "one": "{count} Fehler",
     "other": "{count} Fehler"
   },
+  "mail.count.invitation": {
+    "one": "{count} Einladungsmail",
+    "other": "{count} Einladungsmails"
+  },
   "mail.count.notifications": {
     "one": "{count} Benachrichtigungsmail",
     "other": "{count} Benachrichtigungsmails"
@@ -2491,6 +2494,14 @@ window.MAITY_I18N["de"] = {
     "one": "{count} Sicherheitsmail in der Warteschlange",
     "other": "{count} Sicherheitsmails in der Warteschlange"
   },
+  "mail.count.second_factor": {
+    "one": "{count} Mail für den zweiten Faktor",
+    "other": "{count} Mails für den zweiten Faktor"
+  },
+  "mail.count.second_factor_dropped": {
+    "one": "{count} Mail für den zweiten Faktor verworfen",
+    "other": "{count} Mails für den zweiten Faktor verworfen"
+  },
   "mail.count.security": {
     "one": "{count} Sicherheitsmail",
     "other": "{count} Sicherheitsmails"
@@ -2498,6 +2509,14 @@ window.MAITY_I18N["de"] = {
   "mail.count.sign_in": {
     "one": "{count} Anmeldemail",
     "other": "{count} Anmeldemails"
+  },
+  "mail.count.verification": {
+    "one": "{count} Bestätigungsmail",
+    "other": "{count} Bestätigungsmails"
+  },
+  "mail.count.waiting": {
+    "one": "{count} Bestätigungs- oder Einladungsmail wartet",
+    "other": "{count} Bestätigungs- oder Einladungsmails warten"
   },
   "mail.daily_at": "Tägliche und wöchentliche Sammelmails um",
   "mail.day.fri": "Freitag",
@@ -2511,13 +2530,16 @@ window.MAITY_I18N["de"] = {
   "mail.field.from_address": "Absenderadresse",
   "mail.field.from_name": "Absendername",
   "mail.field.host": "SMTP-Host",
+  "mail.field.invitation_max_per_hour": "Einladungsmails pro Stunde",
   "mail.field.max_per_hour": "Benachrichtigungsmails pro Stunde",
   "mail.field.port": "SMTP-Port",
   "mail.field.reply_to": "Antwortadresse",
+  "mail.field.second_factor_max_per_hour": "Mails für den zweiten Faktor pro Stunde",
   "mail.field.security_max_per_hour": "Sicherheitsmails pro Stunde",
   "mail.field.sign_in_max_per_hour": "Anmeldemails pro Stunde",
   "mail.field.tls": "Verbindungssicherheit",
   "mail.field.username": "SMTP-Benutzername",
+  "mail.field.verification_max_per_hour": "Mails zur Adressbestätigung pro Stunde",
   "mail.hold_while_online": "Keine Mail, solange ich in der Web-App online bin",
   "mail.hold_while_online.hint": "Mails mit „Sofort“ warten, solange du das Dashboard nutzt. Ein paar Minuten nachdem du es verlassen hast, geht nur noch, was du nicht gelesen hast.",
   "mail.incomplete": "Die Mail-Konfiguration ist unvollständig: {missing}.",
@@ -2530,6 +2552,7 @@ window.MAITY_I18N["de"] = {
   "mail.kinds.hint": "Eine Sammelmail enthält alles, was beim Versand noch ungelesen ist. Ein geänderter zweiter Faktor, eine geänderte Adresse und eine Kontolöschung werden immer sofort gemailt.",
   "mail.kinds.legend": "Wann jede Art gemailt wird",
   "mail.last_hour": "Letzte Stunde: {notifications}, {security}, {sign_in}, {failures}; {queued}.",
+  "mail.last_hour_own": "Außerdem in der letzten Stunde: {verification}, {invitation}, {second_factor}, {dropped}; {waiting}.",
   "mail.mode.daily": "Tägliche Sammelmail",
   "mail.mode.hourly": "Stündliche Sammelmail",
   "mail.mode.immediate": "Sofort",
@@ -3670,9 +3693,7 @@ window.MAITY_I18N["de"] = {
   "placements.logs": "Logs",
   "placements.logs.copy": "Den Logs-Befehl kopieren",
   "placements.logs.region": "Logs-Befehl",
-  "placements.new.agent_new": "Ein neuer Agent",
   "placements.new.branch": "Start-Branch (optional)",
-  "placements.new.briefing": "Briefing (optional, Markdown)",
   "placements.new.busy": "Agent wird platziert…",
   "placements.new.clone": "Klon",
   "placements.new.clone_hint": "Der Name des Klons des Agenten auf dem Runner: Kleinbuchstaben, Ziffern und Bindestriche. Leer: das Handle des Agenten.",
@@ -3681,6 +3702,7 @@ window.MAITY_I18N["de"] = {
   "placements.new.failed": "Nicht auf dem Runner platziert: {reason}",
   "placements.new.field": "{field}: {why}",
   "placements.new.hint": "Der Runner startet den Agenten in einem Klon des Repositorys dieses Projekts, mit dem hier gewählten Werkzeug, Modus und Modell. Angeboten werden nur deine eigenen Runner, die gekoppelt, in diesem Projekt zugelassen sind und sein Repository anbieten.",
+  "placements.new.legend": "Auf einem Runner",
   "placements.new.mode": "Modus",
   "placements.new.model": "Modell",
   "placements.new.model_default": "Der Standard des Runners",
@@ -3689,8 +3711,10 @@ window.MAITY_I18N["de"] = {
   "placements.new.no_tool": "Der Runner bietet dort kein installiertes Werkzeug an.",
   "placements.new.none": "Noch keiner deiner gekoppelten Runner ist in diesem Projekt zugelassen. Lass einen unter {link} zu.",
   "placements.new.none_link": "Runner dieses Projekts",
-  "placements.new.open": "Einen Agenten auf einem Runner starten",
-  "placements.new.profile": "Das Profil des neuen Agenten und sein Platz im Team",
+  "placements.new.not_member": "Auf einem Runner startet nur ein Agent, der schon in diesem Projekt ist, oder ein neuer. Wähle einen neuen Agenten oder lass diesen zuerst mit einer Zeile beitreten.",
+  "placements.new.not_ready": "Es gibt noch keinen Runner und kein Werkzeug, um ihn zu starten: Der Teil zum Runner sagt, warum.",
+  "placements.new.offer": "Auf einem meiner Runner starten statt mit einer Beitrittszeile",
+  "placements.new.placed": "Dieser Agent läuft hier schon auf einem Runner: eine Platzierung je Agent. Seine Zeile steht unter Verwaltete Agenten.",
   "placements.new.quota": "das Limit des Projekts von {max} aktiven Platzierungen auf Runnern ist erreicht.",
   "placements.new.quota_link": "Einstellungen, Mitglieder und Agents",
   "placements.new.quota_raise": "Erhöhe das Limit unter {link}.",
@@ -3703,7 +3727,6 @@ window.MAITY_I18N["de"] = {
   "placements.new.submit": "Auf dem Runner starten",
   "placements.new.target": "Wo",
   "placements.new.target_any": "Wo der Runner es wählt",
-  "placements.new.title": "Einen Agenten auf einem Runner starten",
   "placements.new.tool": "Werkzeug",
   "placements.not_removed": "Nicht entfernt: {reason}",
   "placements.not_restarted": "Nicht neu gestartet: {reason}",

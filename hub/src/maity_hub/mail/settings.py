@@ -44,7 +44,10 @@ VALUE_FIELDS = (
     "reply_to",
     "max_per_hour",
     "security_max_per_hour",
+    "verification_max_per_hour",
+    "invitation_max_per_hour",
     "sign_in_max_per_hour",
+    "second_factor_max_per_hour",
     "password_reset_max_per_hour",
     "registration_max_per_hour",
     "online_grace_minutes",
@@ -59,9 +62,18 @@ DEFAULTS: dict[str, object] = {
     "reply_to": None,
     "max_per_hour": 500,
     "security_max_per_hour": 100,
+    # Address verification mails (§18.4), a budget of their own: any account can ask for them,
+    # so they never hold up the security mail above. Over it they wait, as security mail does.
+    "verification_max_per_hour": 60,
+    # Invitation mails (§3.4), a budget of their own: any project's admins send them to any
+    # address, so they never hold up security mail either. Over it they wait.
+    "invitation_max_per_hour": 60,
     "sign_in_max_per_hour": 60,
+    # The mail factor's codes and links (§2.8.8), a budget of their own: no other kind of mail
+    # spends it, and it spends no other kind's.
+    "second_factor_max_per_hour": 60,
     # Reset mails (§2.10), a budget of their own: anonymous requests spend it, so it must stop
-    # nothing but reset mails, not the mail factor's, which `sign_in_max_per_hour` sends.
+    # nothing but reset mails.
     "password_reset_max_per_hour": 30,
     "registration_max_per_hour": 30,
     # How long after a human stopped being present their held mail still waits (§18.5).
@@ -205,12 +217,34 @@ def counters(conn: Connection) -> dict[str, int]:
             t.mail_outbox.c.status.in_(("waiting", "sending")),
         )
     ).scalar_one()
+    verification_queued = conn.execute(
+        select(func.count())
+        .select_from(t.mail_outbox)
+        .where(
+            t.mail_outbox.c.kind == "verification",
+            t.mail_outbox.c.status.in_(("waiting", "sending")),
+        )
+    ).scalar_one()
+    invitation_queued = conn.execute(
+        select(func.count())
+        .select_from(t.mail_outbox)
+        .where(
+            t.mail_outbox.c.kind == "invitation",
+            t.mail_outbox.c.status.in_(("waiting", "sending")),
+        )
+    ).scalar_one()
     return {
         "sent_last_hour": recent.get(("notification", "sent"), 0),
         "security_sent_last_hour": recent.get(("security", "sent"), 0),
         "security_queued": int(queued),
+        "verification_sent_last_hour": recent.get(("verification", "sent"), 0),
+        "verification_queued": int(verification_queued),
+        "invitation_sent_last_hour": recent.get(("invitation", "sent"), 0),
+        "invitation_queued": int(invitation_queued),
         "sign_in_sent_last_hour": recent.get(("sign_in", "sent"), 0),
         "sign_in_dropped_last_hour": recent.get(("sign_in", "dropped"), 0),
+        "second_factor_sent_last_hour": recent.get(("second_factor", "sent"), 0),
+        "second_factor_dropped_last_hour": recent.get(("second_factor", "dropped"), 0),
         "password_reset_sent_last_hour": recent.get(("password_reset", "sent"), 0),
         "password_reset_dropped_last_hour": recent.get(("password_reset", "dropped"), 0),
         "registration_sent_last_hour": recent.get(("registration", "sent"), 0),
@@ -334,6 +368,21 @@ store.register(
     ),
     store.Setting(
         "mail.sign_in_max_per_hour", _whole(1, MAX_PER_HOUR), DEFAULTS["sign_in_max_per_hour"]
+    ),
+    store.Setting(
+        "mail.verification_max_per_hour",
+        _whole(1, MAX_PER_HOUR),
+        DEFAULTS["verification_max_per_hour"],
+    ),
+    store.Setting(
+        "mail.invitation_max_per_hour",
+        _whole(1, MAX_PER_HOUR),
+        DEFAULTS["invitation_max_per_hour"],
+    ),
+    store.Setting(
+        "mail.second_factor_max_per_hour",
+        _whole(1, MAX_PER_HOUR),
+        DEFAULTS["second_factor_max_per_hour"],
     ),
     store.Setting(
         "mail.password_reset_max_per_hour",

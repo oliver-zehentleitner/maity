@@ -13,6 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Connection, Engine, select
+from starlette.concurrency import run_in_threadpool
 
 from maity_hub import catalog, clock, landing, link_frame, paths, render, write_guard
 from maity_hub import tables as t
@@ -80,7 +81,7 @@ def request_link(body: LinkRequest, request: Request, background: BackgroundTask
         if not silent:
             _enabled(conn, hub)
     origin = origin_of(request)
-    wait, allowed = LIMITS.take(body.address, origin.address)
+    wait, allowed = LIMITS.take(body.address, origin.limit_key)
     if wait:
         raise rate_limited(wait)
     pending = secrets.token_urlsafe(32)
@@ -251,7 +252,7 @@ def _cookies(response: Any, request: Request, sid: str, csrf: str, device: str |
 @router.post("/email-code")
 def redeem_code(body: CodeRequest, request: Request) -> JSONResponse:
     _anonymous(request)
-    wait = auth.LOGIN_BY_ADDRESS.hit(origin_of(request).address)
+    wait = auth.LOGIN_BY_ADDRESS.hit(origin_of(request).limit_key)
     if wait:
         raise rate_limited(wait)
     hub = settings_of(request)
@@ -356,6 +357,12 @@ async def complete_link(token: str, request: Request) -> Response:
     if request.headers.get("content-type", "").split(";")[0] != "application/x-www-form-urlencoded":
         raise forbidden(message="a sign-in needs a form")
     fields = parse_qs((await request.body()).decode("utf-8", errors="replace"))
+    # Off the event loop, as every sync transaction in an `async def` (hub/context/persistence.md,
+    # tests/test_no_sync_db_on_loop.py).
+    return await run_in_threadpool(_complete_link, token, request, fields)
+
+
+def _complete_link(token: str, request: Request, fields: dict[str, list[str]]) -> Response:
     given = fields.get("form", [])
     cookie = request.cookies.get(FORM_COOKIE)
     if not cookie or len(given) != 1 or not hmac.compare_digest(given[0].encode(), cookie.encode()):

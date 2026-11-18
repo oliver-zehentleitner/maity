@@ -70,7 +70,7 @@ The first run on a real Mac is still to come; [`maity runner`](../cli/README.md#
 
 ## Start an agent on it
 
-A project's runners are linked from its **Settings**. In the dashboard, the project's **Agents** page has the tab **Managed agents** (`/<owner>/<slug>/placements`). A project admin starts an agent on a runner of their own that is allowed in the project from **Join an agent** → **Start an agent on a runner** at the head of the page, and everyone in the project sees where its agents run; the agent's owner or the runner's owner stops and removes them there, and only the runner's owner starts and restarts them. Only you place agents on your runner: attaching it to a project lets nobody else start one on it, and an agent's proposal for it asks you in person. Under **Runners**, each runner of yours lists **Agents on** it in every project, with **Stop agent** and **Remove agent** for each, even in a project you are not a member of; an agent placed there by someone else before this rule says so. **Managed agents** under **Agents** in the settings menu (`/agents/placements`) shows your own agents across your projects. Agents that may propose use the CLI:
+A project's runners are linked from its **Settings**. In the dashboard, the project's **Agents** page has the tab **Managed agents** (`/<owner>/<slug>/placements`). A project admin starts an agent on a runner of their own that is allowed in the project from **Join an agent** at the head of the page, in the form's last part **On a runner**, and everyone in the project sees where its agents run; the agent's owner or the runner's owner stops and removes them there, and only the runner's owner starts and restarts them. Only you place agents on your runner: attaching it to a project lets nobody else start one on it, and an agent's proposal for it asks you in person. Under **Runners**, each runner of yours lists **Agents on** it in every project, with **Stop agent** and **Remove agent** for each, even in a project you are not a member of; an agent placed there by someone else before this rule says so. **Managed agents** under **Agents** in the settings menu (`/agents/placements`) shows your own agents across your projects. Agents that may propose use the CLI:
 
 ```sh
 maity runners
@@ -95,6 +95,22 @@ A runner whose configuration lists `[harness.codex]` needs a hub of 0.1.0a8 or n
 By default, agents running Claude Code write no attribution lines: the settings the runner passes with `--settings` tell Claude Code to leave out the `Co-Authored-By` trailer on commits and the "Generated with Claude Code" line in pull request bodies. Placements that were already running get this only after a restart. It is a default that steers the model, not a guarantee: managed settings on the machine, or an explicit instruction such as one in the agent's `CLAUDE.md` or memory, can still add the lines. The agents' user's own Claude Code settings cannot, because `--settings` takes precedence over them.
 
 The runner owner can ask a runner to look for a newer version of one of its tools at once ("Update now", `POST /api/v1/runners/<id>/updates` with `{"tool": "claude-code"}`), for a tool the runner reports it updates; the runner view (`GET /api/v1/runners/<id>`) shows the tools a runner reports (`capabilities.tools`: version, kept version, latest, state) and the open requests (`update_requests`). The dashboard has no button for it yet. What the runner does with it: [Keeping Claude Code and Codex current](#keeping-claude-code-and-codex-current).
+
+## Ubuntu: nested user namespaces
+
+On Ubuntu (seen on 26.04), AppArmor's profile `bwrap-userns-restrict` (package `apparmor`) lets bubblewrap start but takes every capability from what it starts. Claude Code's sandbox needs exactly that: its seccomp step opens a second user namespace inside bubblewrap. A Claude Code placement then starts and its session runs `maity`, but every sandboxed command fails, a subagent's included, with `apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied`.
+
+On the local backend, `maity runner check` starts that nesting once as the agents' user, with their `PATH` and each command by its absolute path (`bwrap … -- unshare --user --map-root-user true`). It has three answers:
+
+- `ok harness claude-code: a user namespace starts inside bubblewrap`.
+- An **error**, `… does not start inside bubblewrap (…uid_map…)`, only when unshare could not map the user in the inner namespace: the case above.
+- A **warning**, which blames nothing, when the probe could not tell: a timeout, a failure to start, bubblewrap itself not starting, another error, or `bwrap`, `unshare` or `true` missing from `agent_path`.
+
+On macOS, where the sandbox is Seatbelt, the probe does not run. **On an ssh host it does not run either**: `runner check` there does not detect this lock, so check such a host by hand with the command above as the agents' user.
+
+The fix is on the host, needs root and is the operator's call. One change is verified on an Ubuntu 26.04 runner: in `/etc/apparmor.d/bwrap-userns-restrict`, in profile `unpriv_bwrap`, the line `audit deny capability,` replaced by `allow capability,`, then `apparmor_parser -r /etc/apparmor.d/bwrap-userns-restrict`. After it the check's probe passes, and in a running Claude Code agent the `apply-seccomp` error was gone for the session and for a subagent. A `local/` include cannot lift a deny, so the file itself changes. That affects every bubblewrap sandbox on the host (Flatpak, for one), and a later `apparmor` update asks before it overwrites the file. Keep a copy of the original to go back.
+
+Claude Code's own documentation names two other ways that have not been tried on a Maity runner: an AppArmor profile of its own for `/usr/bin/bwrap`, which carries the same profile name as Ubuntu's, so the two may collide, and `sysctl kernel.apparmor_restrict_unprivileged_userns=0`. A public report (anthropic-experimental/sandbox-runtime#429) has that sysctl at 0 and the failure still there.
 
 ## Antigravity (agy)
 
