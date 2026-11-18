@@ -35,6 +35,7 @@ from . import (
     targets,
     tools,
     trust,
+    workspace,
 )
 from .asuser import RUNNER, AsUser
 
@@ -559,6 +560,38 @@ def _check_agy_workspaces(report: Report, root: Path, as_user: AsUser, where: st
             return
 
 
+def _check_codex_home(report: Report, cfg: config.Config, as_user: AsUser = RUNNER) -> None:
+    """Codex's per-placement CODEX_HOME must lie under the workspaces root, which the codex
+    sandbox re-opens for the placement, not under a path it hides (the state directory): under
+    a hidden path Codex's own sandbox cannot create or run its per-command helper, so no
+    command runs and `maity resume` never starts (card tsk-hv7jbgy75zjt). The home sits inside
+    the placement scratch (adapters.codex_home), so codex must be a harness that gets one and
+    the workspaces root must not be inside the state directory; `check` reports either from the
+    local configuration before a placement starts, and does not confirm that the scratch is
+    created when a placement actually runs (a runtime fall-back to no scratch is beyond it)."""
+    if "codex" not in cfg.harnesses or cfg.local is None:
+        return
+    if "codex" not in workspace.SCRATCH_HARNESSES:  # a regression guard: no scratch, no home
+        report.error(
+            "harness codex: no scratch is carved for codex placements, so CODEX_HOME would fall "
+            "under the hidden state directory and Codex could run no command"
+        )
+        return
+    workspaces = cfg.local.workspaces.resolve() if as_user.here else cfg.local.workspaces
+    state_dir = cfg.state_dir.resolve() if as_user.here else cfg.state_dir
+    if workspaces == state_dir or state_dir in workspaces.parents:
+        report.error(
+            f"harness codex: the workspaces root {workspaces} is inside the state directory "
+            f"{state_dir}, which the codex sandbox hides; Codex's CODEX_HOME would be hidden and "
+            "no command could run. Move the workspaces out of the state directory"
+        )
+    else:
+        report.ok(
+            f"harness codex: CODEX_HOME lies in each placement's scratch under {workspaces}, "
+            "which the codex sandbox re-opens"
+        )
+
+
 def _check_claude_code(
     report: Report,
     harness: config.Harness,
@@ -802,6 +835,8 @@ def cmd_check(args: argparse.Namespace) -> int:
             )  # fmt: skip
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
+        if "codex" in cfg.harnesses:
+            _check_codex_home(report, cfg, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
@@ -1026,13 +1061,20 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
          *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
     ))  # fmt: skip
-    # Internal too: a placement's scratch made, measured or removed on the agents' side,
-    # every directory from the workspaces root opened without following a link (scratchop).
+    # Internal too: a placement's scratch made, measured or removed on the agents' side, and
+    # Codex's launch-time writes inside its per-placement home (codex), every directory from
+    # the workspaces root opened without following a link (scratchop). An ssh host runs these
+    # through its own `maity`, so the CLI reaches the same ops the module path does; `codex`
+    # takes the config.toml text on stdin, and `--auth` is only its auth.json link target.
     r = rsub.add_parser("scratchop")
-    r.add_argument("op", choices=scratchop.OPS)
+    r.add_argument("op", choices=(*scratchop.OPS, "codex"))
     r.add_argument("--under", required=True)
+    r.add_argument("--auth")  # codex only: the auth.json link target; left out for the others
     r.add_argument("path")
-    r.set_defaults(handler=lambda a: scratchop.main([a.op, "--under", a.under, a.path]))
+    r.set_defaults(handler=lambda a: scratchop.main(
+        ["codex", "--under", a.under, *(["--auth", a.auth] if a.auth else []), a.path]
+        if a.op == "codex" else [a.op, "--under", a.under, a.path]
+    ))  # fmt: skip
     # Internal too: what a pane's output goes through on an ssh host, holding its log to
     # limits.log_keep_bytes (logcap).
     r = rsub.add_parser("logcap")
