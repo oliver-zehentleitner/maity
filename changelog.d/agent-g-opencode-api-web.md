@@ -8,7 +8,8 @@
   placement without a model means for it, and §15.13 that local mode
   refuses `opencode` without `--model` (exit 2) before anything reaches
   the hub, so the join link stays unspent (not built yet, as local mode
-  is not).
+  is not). `docs/runners.md` "OpenCode (Grok)" says the start form offers
+  OpenCode only with a model its runner names.
 
 ### Security
 
