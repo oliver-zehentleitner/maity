@@ -147,6 +147,48 @@ def test_the_answers_and_the_entries_they_wrote(
     assert (made["cause"], made["request_id"], made["by"]) == ("request", row.id, other.id)
 
 
+def test_an_answer_that_writes_no_entry_checks_its_reach_and_rules(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    """#1988, zxjn A1433: with no agent ticked, nothing reaches `create_allow`, so the reach and
+    the rules are checked before it; refused, the answer stores nothing in the history."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    other = other_human(make_client, migrated, "other")
+    theirs = flow.agent(make_client, other)
+    create(owner, theirs.id)
+    row = the_request(migrated, other.id)
+    foreign = answer(
+        other, row.id, reply_id="allow_day", chat_access={"agents": [], "their_agents": [theirs.id]}
+    )
+    assert foreign.status_code == 400, foreign.text
+    assert foreign.json()["error"]["details"]["fields"] == {"their_agents": "not_theirs"}
+    long = answer(
+        other, row.id, reply_id="allow_day", chat_access={"agents": [], "allowed": "x" * 1001}
+    )
+    assert long.status_code == 400, long.text
+    assert long.json()["error"]["details"]["fields"] == {"allowed": "format"}
+    assert rows(migrated, other.id) == 0 and the_request(migrated, other.id).id == row.id
+
+
+def test_a_write_rolled_back_leaves_no_item(
+    anna: flow.Human, ben: flow.Human, migrated: Engine
+) -> None:
+    """55bz A1432: the items are written in the write's own transaction."""
+    mine = profile(migrated, anna.id, "anna-a")
+    with pytest.raises(RuntimeError), migrated.begin() as conn:
+        chat_access.create_allow(conn, anna.id, {"agents": [mine], "owner_id": ben.id})
+        assert rows_in(conn, anna.id) == 1
+        raise RuntimeError("rolled back")
+    assert rows(migrated, anna.id) == 0
+
+
+def rows_in(conn: Any, human_id: str) -> int:
+    c = t.chat_access_history.c
+    query = select(func.count()).select_from(t.chat_access_history).where(c.human_id == human_id)
+    return int(conn.execute(query).scalar_one())
+
+
 def test_no_block_and_the_owners_withdrawal(make_client: ClientFactory, migrated: Engine) -> None:
     owner = flow.human(make_client, migrated)
     flow.project(owner)
