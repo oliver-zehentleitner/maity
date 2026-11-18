@@ -93,6 +93,7 @@ def _facts(method: str, raw_path: bytes) -> RequestFacts:
     return RequestFacts(
         method=method,
         raw_path=raw_path,
+        path=raw_path.decode("latin-1"),
         raw_query=b"",
         headers={},
         cookies={},

@@ -795,6 +795,14 @@ reason.
   A refused read so writes nothing at all, not even a statement that is
   rolled back. A bridge authenticates with its own credential before
   `bridges.carry` makes it the served agent, so its reads count as its own.
+- **What is a read is decided on the routed path.** `read_limits.counts`
+  takes `RequestFacts.path`, the decoded `scope["path"]` the router
+  matches, not the raw path: the server decodes every escape before
+  routing, so only the decoded path says which route a call reaches, and
+  §1.7 defines a read by the route. Counting every authenticated `GET` and
+  `HEAD` instead was not chosen: §1.7 limits reads of the API, and the
+  decoded path keeps that boundary. The isolation gate stays on the raw
+  path, compared byte for byte: there another spelling only refuses.
 - **`_cookie` checks the session before presence.** Before, the presence
   updates came first and a dead session matched no row; now the session
   and its human are read first, and an ended, expired or deleted

@@ -51,6 +51,7 @@ def facts_of(request: Request) -> RequestFacts:
     return RequestFacts(
         method=request.method,
         raw_path=request.scope.get("raw_path") or request.url.path.encode(),
+        path=request.scope.get("path", ""),
         raw_query=request.scope["state"].get("raw_query", b""),
         headers={k.lower(): v for k, v in request.headers.items()},
         cookies=dict(request.cookies),

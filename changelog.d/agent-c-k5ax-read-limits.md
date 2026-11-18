@@ -19,6 +19,8 @@
   key, or a key of the process without one), never the credential, its id
   or the session; count those lines before lowering the value. A project's
   own lower value (`policy.max_reads_per_minute`) follows later.
+- hub: a read is counted by the path the router matches, its percent-escapes
+  decoded (docs/api.md §1.7).
 
 ### Changed
 

@@ -40,7 +40,7 @@ CACHE_SECONDS = 30.0
 # pass over every key would hold every other request of the process.
 FORGET_PER_CALL = 8
 READ_METHODS = frozenset({"GET", "HEAD"})
-API_PREFIX = b"/api/v1/"
+API_PREFIX = "/api/v1/"
 TAG_PURPOSE = "logs.read_limit_tag"
 TAG_HEX = 12
 
@@ -151,9 +151,11 @@ def forget_instance_value() -> None:
         _cached[0] = None
 
 
-def counts(method: str, raw_path: bytes) -> bool:
-    """Whether a call is a read of the API (§1.7): `GET` or `HEAD` under `/api/v1/`."""
-    return method.upper() in READ_METHODS and raw_path.startswith(API_PREFIX)
+def counts(method: str, path: str) -> bool:
+    """Whether a call is a read of the API (§1.7): `GET` or `HEAD` under `/api/v1/`. `path` is
+    the decoded path the router matches (`scope["path"]`), not the raw one: the server decodes
+    every escape before routing, so a route reached under any spelling is the same read."""
+    return method.upper() in READ_METHODS and path.startswith(API_PREFIX)
 
 
 def take(

@@ -261,6 +261,31 @@ def test_writes_are_not_counted(moment: Moment, agent: factory.Agent, client: An
     assert _count(agent.credential_id) == LOW
 
 
+SPELLINGS = ("/%61pi/v1/me", "/api%2Fv1/me", "/api%2fv1/me")
+
+
+def test_a_read_counts_by_the_path_it_routes_to(
+    moment: Moment, owner: flow.Human, agent: factory.Agent, client: Any
+) -> None:
+    for spelling in SPELLINGS:  # each routes to `GET /api/v1/me` and counts as it
+        got = client.get(spelling, headers=_bearer(agent))
+        assert got.status_code == 200, (spelling, got.text)
+        assert got.request.url.raw_path == spelling.encode()  # sent as written, not normalised
+    assert _count(agent.credential_id) == len(SPELLINGS)
+    _reads(client, agent, LOW - len(SPELLINGS))
+    _refused(_get(client, agent))
+    for spelling in SPELLINGS:
+        refused = client.get(spelling, headers=_bearer(agent))
+        assert refused.request.url.raw_path == spelling.encode()
+        _refused(refused)
+    # A session the same way.
+    for _ in range(LOW):
+        if owner.get("/me").status_code == 429:
+            break
+    for spelling in SPELLINGS:
+        _refused(owner.client.get(spelling))
+
+
 def test_a_bridges_reads_count_against_its_own_credential(
     moment: Moment, owner: flow.Human, client: Any, migrated: Engine
 ) -> None:

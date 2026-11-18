@@ -48,7 +48,8 @@ class RequestFacts:
     """What authentication needs from a request, independent of the framework."""
 
     method: str
-    raw_path: bytes
+    raw_path: bytes  # as sent: what a signature covers and the isolation gate compares
+    path: str  # as the router matches it, decoded (`scope["path"]`): what the read limit counts
     raw_query: bytes
     headers: dict[str, str]  # lower-case names
     cookies: dict[str, str]
@@ -154,8 +155,9 @@ def _count_read(conn: Connection, facts: RequestFacts, key: str) -> None:
     """The read limit per credential (§1.7 "Reads per credential"): a `GET` or `HEAD` of the
     API counts against `key`, the credential's id or the session's hash; past the limit it is
     `rate_limited`. Called once the credential is known and before any side effect (§2.4), so
-    a refused read writes nothing; a write is not counted."""
-    if read_limits.counts(facts.method, facts.raw_path):
+    a refused read writes nothing; a write is not counted. Whether it is a read of the API is
+    decided on the path the router matches, so every spelling of a route counts as the route."""
+    if read_limits.counts(facts.method, facts.path):
         read_limits.take(
             conn,
             key,
