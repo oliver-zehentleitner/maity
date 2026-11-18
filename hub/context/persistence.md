@@ -680,7 +680,7 @@ The first batch is the page plus one, each next one twice the last, at most 1000
 (`SEARCH_BATCH_MAX`); `order=updated` reads each batch of keys with a keyset after the last
 key read. A card deleted between its key and its row is left out.
 
-The board's cursor (the entry above) is resolved among all cards of the filters, not only a
+The board's cursor ([the board's card order](#the-boards-card-order-is-sorted-in-python-not-by-the-database), 4e61c371) is resolved among all cards of the filters, not only a
 search's hits. Before, a search sorted only its hits, so when the last card shown stopped
 matching, the next page went on from the first card not shown, or the column's top, and a
 card between the two that began to match was skipped. Now the page goes on after the last
