@@ -16452,16 +16452,17 @@ feature) admits nobody either (the maintainer's rule of 2026-10-29).
 **History.** A human reads what happened to their own lists, and only
 their own, so as to audit their decisions (the maintainer's wish of
 2026-11-15, card tsk-v34cv43wvec3): `GET /me/chat-access/history`,
-newest first: in the reverse of the order the hub wrote the items, so
-the items of one write, which share their `at`, come in a fixed order
-too; paged (§1.4). Nobody else reads it, an
+newest first by `seq` descending, paged (§1.4) with `seq` as the
+cursor's key: `seq` is a number the hub counts up for each item it
+writes, so the items of one write, which share their `at`, come in a
+fixed order too. Nobody else reads it, an
 instance admin included; there is no view of everyone's entries. An
 item is one of two kinds.
 
 A change of an entry (`kind: "entry"`):
 
 ```json
-{ "id": "chh-0002", "at": "2026-11-18T10:00:00Z", "kind": "entry",
+{ "id": "chh-0002", "seq": 2, "at": "2026-11-18T10:00:00Z", "kind": "entry",
   "change": "changed", "list": "allow", "entry_id": "cha-0001", "entry_exists": true,
   "by": "hum-maintainer", "cause": "list", "request_id": null, "deny_id": null,
   "conversation": null,
@@ -16476,7 +16477,8 @@ A change of an entry (`kind: "entry"`):
               "allowed": "web and frontend, may work on it", "denied": "nothing about releases",
               "by": "hum-maintainer", "since": "2026-11-11T16:00:00Z" },
   "fields": ["duration", "until"],
-  "names": { "agt-a": "agent-a", "hum-guest": "guest" } }
+  "names": { "agt-a": { "handle": "agent-a", "deleted": false },
+             "hum-guest": { "handle": "guest", "deleted": false } } }
 ```
 
 - `change`: `created`, `changed` (a `PATCH`, or a narrowing by a deny
@@ -16519,22 +16521,25 @@ and none when it changes nothing; a `DELETE` of an entry that was not
 there gives none; a deny gives its own `created` and one item per allow
 entry it removed or narrowed; an entry narrowed and then deleted by the
 same write gives only its `deleted`. A replay of an `Idempotency-Key`
-(§1.5) gives none. The deletion of an account (§2.9) is several writes
-here: each of its agent profiles is deleted on its own (§6.3), then the
-entries naming the account go, so another owner's entry that names that
-side may get a `changed` for each such agent before its `deleted`.
+(§1.5) gives none. The deletion of an account (§2.9) is one write
+here, however many of its agent profiles it deletes: each entry of
+another owner it narrows or deletes gets one item, `changed` or
+`deleted` with `cause: "gone"`, and its `entry` or `before` is the
+entry as it was before the deletion began.
 
 An answer to the request to chat with the owner's agents (`kind:
 "answer"`):
 
 ```json
-{ "id": "chh-0003", "at": "2026-11-18T10:05:00Z", "kind": "answer",
+{ "id": "chh-0003", "seq": 3, "at": "2026-11-18T10:05:00Z", "kind": "answer",
   "by": "hum-maintainer", "request_id": "req-0001", "side": "hum-guest",
   "reply_id": "allow_day", "withdrawn": false,
   "agents": ["agt-a", "agt-b"], "their_human": false,
   "their_agents": null, "allowed": "web and frontend, may work on it", "denied": null,
   "entries": ["cha-0002"],
-  "names": { "agt-a": "agent-a", "agt-b": "agent-b", "hum-guest": "guest" } }
+  "names": { "agt-a": { "handle": "agent-a", "deleted": false },
+             "agt-b": { "handle": "agent-b", "deleted": false },
+             "hum-guest": { "handle": "guest", "deleted": false } } }
 ```
 
 - `reply_id` is the button: `allow_hour`, `allow_day`, `allow_week`,
@@ -16557,14 +16562,17 @@ An answer to the request to chat with the owner's agents (`kind:
   in the inbox by `request_id`; the request stays readable by its owner
   once closed (§7).
 
-`names` gives, in both kinds, the handle of every agent and human the
-item names (in `entry`, `before`, `side` and `agents`), as the profile or
-the account has it at the read. A deleted account is `null` there, as
-§2.9 shows a deleted person with `handle: null`, and so is a deleted
-agent profile (§6.3), whose handle its owner may give to a new agent;
-the ids stay, so the item still says which entry and which decision it
-was. The `handle` in `entry` and `before` is the same handle at the read,
-`null` for a deleted account, never the one stored at the write.
+`names` gives, in both kinds, every agent and human the item names (in
+`entry`, `before`, `side` and `agents`) as `{handle, deleted}`, as the
+profile or the account is at the read. A deleted account is `{"handle":
+null, "deleted": true}`, as §2.9 shows a deleted person, without
+exception, and so is a deleted agent profile (a tombstone with
+`deleted_at`, §6.3), whose handle its owner may give to a new agent.
+The ids stay, so the item still says which entry and which decision it
+was. The `handle` in `entry` and `before` is the one of `names` at the
+read, `null` for a deleted account: the hub applies this when it
+reads, never storing a handle with an item, and the export reads the
+same way.
 
 The history is kept as long as the account: at most the newest 10,000
 items per human, and a write beyond that deletes the oldest. It begins
