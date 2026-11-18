@@ -10,13 +10,24 @@ the new one, oldest first, before you upgrade
 those changes mean for your hub: what you have to set, what the upgrade does
 on its own and how to go back.
 
+## Versions
+
+Oldest first:
+
+- [0.1.0a6](0.1.0a6.md) (skip it: go from 0.1.0a5 straight to 0.1.0a7)
+- [0.1.0a7](0.1.0a7.md)
+- [0.1.0a8](0.1.0a8.md)
+- [0.1.0a9](0.1.0a9.md)
+
 ## How a page is written
 
-The release pull request adds the page for its version; the release is
-refused without it (`tools/upgrade_page.py`, run by ci and by the release
-gate). It has these five sections, in this order, each as a second-level
+The release pull request adds the page for its version and its line at the
+end of the list above; the release is refused without the page
+(`tools/upgrade_page.py`, run by ci and by the release gate), and ci refuses a
+page the list does not link, since the docs site reaches the pages only from
+here. The page has these five sections, in this order, each as a second-level
 heading. A section that does not apply says `Nothing.`, so a reader can tell
-"nothing" from "forgotten".
+"nothing" from "forgotten". An HTML comment alone is no text.
 
 The release author lists every migration and every new or changed default
 since the last tag in "What happens by itself on upgrade"; the lead and ops
