@@ -216,7 +216,9 @@ base it merges into (`git diff HEAD^1 HEAD`) and gates each suite on the
 paths it reads: the hub's suites on `hub/` and `docs/join-page.md` (the
 join page ships in the wheel), the image also on `deploy/Dockerfile*`,
 the join smoke and the browser test also on `cli/`, the dashboard on
-`web/`, the CLI on `cli/`, the Helm chart on `deploy/`. The changelog
+`web/`, the CLI on `cli/`, the Helm chart on `deploy/`, the vendored
+Keep the Why views (`web-vendor`) on `web/vendor/` and
+`web/tools/vendor_ktw.py`. The changelog
 check always runs; a change to the workflow runs everything; a push to
 main runs everything. A new push to a pull request cancels its older run.
 `ci-ok` is the one check to require: green when every suite passed or
@@ -1510,7 +1512,7 @@ for the newest run to finish.
   green run for as long as the streak lasts, and a deploy needs a green one.
 - A group per commit, as before: nothing is ever replaced, so a merge streak queues one run per merge.
 
-## Every CI job has a timeout, 90 minutes for the database jobs and 30 for the rest; a hang no longer holds main for six hours
+## Every job ci-ok waits for and the MariaDB run have a timeout, 90 minutes for the database jobs and 30 for the rest; a hang no longer holds main for six hours
 
 **Id:** 97f338fd-9f05-4376-ac74-1649931c9945
 **Type:** decision
@@ -1535,8 +1537,9 @@ the same evening.
 
 A timeout ends the job as `cancelled`, not `failure`, and the run shows as cancelled in the run list, like a run GitHub
 replaced while it waited; `ci-ok` counts only `success` and `skipped`, so it is red. In `hub-mariadb.yml` the report treats
-`cancelled` like `failure` and opens or comments on the `ci-red` issue, since nothing there cancels a running job; before, a
-hung MariaDB run ended without a word.
+`cancelled` like `failure` and opens or comments on the `ci-red` issue, since nothing there cancels a running job: a
+`cancelled` there is the job's timeout or a cancel by hand, and neither ends silently. Before, a hung MariaDB run ended
+without a word.
 
 **Rejected alternatives:**
 - A per-test timeout (`pytest-timeout`): names the hanging test, which the job timeout does not, but is a new dependency in the
@@ -1584,7 +1587,7 @@ depends on a human; the approval has to come from Oliver).
 **Evidence:** inferred
 **Source:** card tsk-80xk3tbhe2hc, from the jour fixe of 2026-11-03 (request req-tmx2jadxrqvt, adopted by the maintainer); the lead's message that a hang on #1225 ended as a silent 90-minute timeout (not checked here); the diagnosis run on #1255 (`-o faulthandler_timeout=300`, its stacks in `hub/context/testing.md`); the proof run on #1316, 2026-11-04
 **Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
-**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
+**See:** process.md#every-job-ci-ok-waits-for-and-the-mariadb-run-have-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
 
 `hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment (since 2026-11-10
 with `--durations=50` beside it, which lists the 50 slowest test phases: setup, call or teardown; 97f338fd). A test whose
@@ -1640,7 +1643,7 @@ value is the author's weighing, not measured against a real hang beyond #1255.
 **Evidence:** confirmed
 **Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; the first sharded run, ci 42909006763 on the pull request's first head (job start and end times of its three legs); `.github/workflows/ci.yml`, `hub/tests/conftest.py`
 **Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, the maintainer's runner gets more than one `pg` runner, or `hub-sqlite` gets the same matrix
-**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
+**See:** process.md#every-job-ci-ok-waits-for-and-the-mariadb-run-have-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
 
 `hub-postgresql` is a matrix of three legs. `MAITY_TEST_SHARD=k/n` makes `hub/tests/conftest.py`
 keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others are reported as

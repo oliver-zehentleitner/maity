@@ -376,17 +376,24 @@ def take_machine_lock(path: Path = LOCK_PATH, say=print, every: float = 60, paus
 HUB_ENV: dict[str, dict[str, str]] = {}
 
 
+def _hub_cli(env: dict[str, str], args: list[str], stdin: str | None, log) -> int:
+    """`maity-hub <args>` with `env`, `stdin` on its input; the command line and every output
+    are appended to the open file `log`. Its exit code, for the caller to judge."""
+    log.write(f"$ maity-hub {' '.join(args)}\n")
+    log.flush()
+    done = subprocess.run(
+        ["maity-hub", *args], env=env, input=stdin, text=True,
+        stdout=log, stderr=subprocess.STDOUT, check=False,
+    )  # fmt: skip
+    return done.returncode
+
+
 def hub_command(run: Run, args: list[str], stdin: str | None = None) -> None:
     """`maity-hub <args>` against the hub at run.base, with the environment it was started with;
-    the output goes to that hub's log directory as hub-command.log."""
+    the output goes to the run's artifacts directory as hub-command.log."""
     with open(run.artifacts / "hub-command.log", "a") as log:
-        log.write(f"$ maity-hub {' '.join(args)}\n")
-        log.flush()
-        done = subprocess.run(
-            ["maity-hub", *args], env=HUB_ENV[run.base], input=stdin, text=True,
-            stdout=log, stderr=subprocess.STDOUT, check=False,
-        )  # fmt: skip
-    if done.returncode != 0:
+        code = _hub_cli(HUB_ENV[run.base], args, stdin, log)
+    if code != 0:
         raise AssertionError(f"maity-hub {args[0]} failed: see hub-command.log")
 
 
@@ -425,18 +432,7 @@ def start_hub(
                 OWNER_PASSWORD + "\n",
             ),
         ):
-            log.write(f"$ maity-hub {' '.join(args)}\n")
-            log.flush()
-            done = subprocess.run(
-                ["maity-hub", *args],
-                env=env,
-                input=stdin,
-                text=True,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                check=False,
-            )
-            if done.returncode != 0:
+            if _hub_cli(env, args, stdin, log) != 0:
                 raise SystemExit(f"e2e: maity-hub {args[0]} failed:\n" + log_path.read_text())
         log.write("$ maity-hub serve\n")
         log.flush()
@@ -904,11 +900,8 @@ def main() -> int:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=not args.headed)
             try:
-                context = browser.new_context(viewport={"width": 1280, "height": 900})
-                context.set_default_timeout(TIMEOUT_MS)
                 expect.set_options(timeout=TIMEOUT_MS)  # expect() has its own 5-s default
-                page = context.new_page()
-                watch_page(run, page)
+                context, page = new_page(run, browser)
                 try:
                     scenario(run, page)
                     # Inside the same report: a failure in a later round shows its trace too (review of #997).
@@ -918,6 +911,7 @@ def main() -> int:
                     chat_height_views(run, browser)
                     chat_phone_views(run, browser)
                     chat_phone_head(run, browser)
+                    chat_bubble_width(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
                     account_tabs_layout(run, browser)
@@ -981,9 +975,7 @@ def scenario(run: Run, page: Page) -> None:
     # frame's other two: on in the frame, off in the signed-in dashboard (review of #1820).
     sections = "() => [...document.styleSheets].some((s) => (s.href || '').split('/').pop().split('?')[0] === 'public-sections.css' && !s.disabled)"
     assert page.evaluate(sections), "the sections' stylesheet is not on in the frame"
-    page.locator("#login-email").fill(OWNER_EMAIL)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    fill_sign_in(page, OWNER_EMAIL, OWNER_PASSWORD)
     expect(page.get_by_role("heading", name="No projects yet", exact=True)).to_be_visible()
     expect(page.locator("header .me")).to_contain_text("Owner")
     # Signed in, the frame is gone and its stylesheets off: landing.css would restyle the whole app.
@@ -2634,16 +2626,27 @@ def security_round(run: Run, browser, work: Path, artifacts: Path) -> None:
         run.base = first_base
 
 
-def signed_in_page(run: Run, browser):
-    """The first factor only: what comes next is the hub's to say."""
+def new_page(run: Run, browser):
+    """A fresh context at 1280 x 900 with the run's timeout, and its one page, watched."""
     context = browser.new_context(viewport={"width": 1280, "height": 900})
     context.set_default_timeout(TIMEOUT_MS)
     page = context.new_page()
     watch_page(run, page)
-    page.goto(run.base + "/")
-    page.locator("#login-email").fill(OWNER_EMAIL)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
+    return context, page
+
+
+def fill_sign_in(page: Page, email: str, password: str) -> None:
+    """Fill the sign-in form and press Sign in; what comes next is the caller's to check."""
+    page.locator("#login-email").fill(email)
+    page.locator("#login-password").fill(password)
     page.get_by_role("button", name="Sign in", exact=True).click()
+
+
+def signed_in_page(run: Run, browser, email: str = OWNER_EMAIL, password: str = OWNER_PASSWORD):
+    """The first factor only: what comes next is the hub's to say."""
+    context, page = new_page(run, browser)
+    page.goto(run.base + "/")
+    fill_sign_in(page, email, password)
     return context, page
 
 
@@ -2862,14 +2865,7 @@ def sign_in_with_totp(run: Run, browser, secret: str, used: int) -> None:
     """The second step of a sign-in (§2.8.2, tsk-73kkzr3x6exy): after the password the page
     asks for the app's code and nothing else, then the dashboard."""
     run.step("second hub: a sign-in asks for the app's code before anything else")
-    context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.set_default_timeout(TIMEOUT_MS)
-    page = context.new_page()
-    watch_page(run, page)
-    page.goto(run.base + "/")
-    page.locator("#login-email").fill(OWNER_EMAIL)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    context, page = signed_in_page(run, browser)
     step = page.locator("form.second-factor")
     expect(step).to_contain_text("Enter the code from your authenticator app")
     # Nobody is shown as signed in yet (the header keeps only the brand and the theme).
@@ -2933,10 +2929,7 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     run.step("second hub: an admin resets a person's two-factor sign-in, which that person confirms by mail")
     address, handle, password = "ada@e2e.example", "ada", "ada-e2e-password-1"
     owner.evaluate("""() => window.Maity.api.patch("/admin/settings/registration", { mode: "open", approval: "automatic" })""")
-    context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.set_default_timeout(TIMEOUT_MS)
-    page = context.new_page()
-    watch_page(run, page)
+    context, page = new_page(run, browser)
     page.goto(run.base + "/")
     page.evaluate(
         """([address, password]) => window.Maity.api.post("/auth/register", { address, password })""",
@@ -3008,9 +3001,7 @@ def reset_by_mail(run: Run, browser, catcher: MailCatcher, owner: Page) -> None:
     other.close()
 
     page.goto(run.base + "/")
-    page.locator("#login-email").fill(address)
-    page.locator("#login-password").fill(password)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    fill_sign_in(page, address, password)
     expect(page.get_by_role("heading", name="Set up two-factor sign-in", exact=True)).to_be_visible()
     # The page's own 401 once the sessions ended is what the reset does, not a problem here.
     run.problems = [p for p in run.problems if "answered 401" not in p]
@@ -3035,15 +3026,10 @@ def newest_mail(catcher: MailCatcher, to: str, seen: int, timeout: float = 20) -
 def password_sign_in(run: Run, browser, offers_link: bool):
     """A fresh context at the login page after the password, and its page: what follows is the
     hub's (a second step, or the dashboard). The page offers the mail's sign-in link, or not."""
-    context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.set_default_timeout(TIMEOUT_MS)
-    page = context.new_page()
-    watch_page(run, page)
+    context, page = new_page(run, browser)
     page.goto(run.base + "/")
     expect(page.get_by_role("button", name="Email me a sign-in link", exact=True)).to_have_count(1 if offers_link else 0)
-    page.locator("#login-email").fill(OWNER_EMAIL)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    fill_sign_in(page, OWNER_EMAIL, OWNER_PASSWORD)
     return context, page
 
 
@@ -3362,11 +3348,8 @@ def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None
         context.close()
 
         run.step("password reset: the link's page sets a new password, ends every session and signs nobody in")
-        context = browser.new_context(viewport={"width": 1280, "height": 900})
-        context.set_default_timeout(TIMEOUT_MS)
+        context, page = new_page(run, browser)
         contexts.append(context)
-        page = context.new_page()
-        watch_page(run, page)
         page.goto(link.group(1))
         form = page.locator("form.reset-form")
         expect(page.locator("article.reset-page h1")).to_have_text("Set a new password for Owner (owner)")
@@ -3398,9 +3381,7 @@ def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None
         signed.goto(run.base + "/account/notifications")
         expect(signed.locator("#login-email")).to_be_visible()
         # The new password signs in.
-        signed.locator("#login-email").fill(OWNER_EMAIL)
-        signed.locator("#login-password").fill(new_password)
-        signed.get_by_role("button", name="Sign in", exact=True).click()
+        fill_sign_in(signed, OWNER_EMAIL, new_password)
         expect(signed.locator("header .me")).to_contain_text("Owner")
         no_problems(run, "password reset: by mail")
 
@@ -3880,6 +3861,149 @@ def chat_phone_head(run: Run, browser) -> None:
                     expect(page.locator("html.chat-full")).to_have_count(0)
                     if phone:
                         run.shot(page, f"chat-head-{chat}-{scheme}")
+                    assert not errors, f"{where}: {errors}"
+                finally:
+                    context.close()
+
+
+# Two probe bubbles, one's own and someone else's, cloned from the chat's first ones and given a
+# long paragraph, a long URL and a code block with a long line; returns per probe its box, the
+# width its max-width allows (min(max(36rem, 60%), 60rem, 90%) of the message column), whether
+# the code scrolls in itself and whether the URL stays inside the bubble, and the page's sideways
+# overflow. A second call measures the probes already there.
+BUBBLE_MEASURE = """() => {
+  const list = document.querySelector('.chat-layout.open .chat-pane .messages');
+  if (!document.querySelector('.msg-probe')) {
+    const word = 'readable ';
+    const fill = (li, side) => {
+      li.classList.add('msg-probe'); li.classList.remove('grouped', 'seq-target'); li.dataset.probe = side;
+      li.querySelector('.md').innerHTML = '<p>' + word.repeat(120) + '</p><p><a href="https://example.org/">https://example.org/'
+        + 'a-long-path-without-a-single-space-'.repeat(8) + '</a></p><div class="md-code-box"><div class="md-code-frame">'
+        + '<pre class="md-code"><code>' + 'const line = "a code line longer than any bubble"; '.repeat(6) + '</code></pre></div></div>';
+      list.append(li);
+    };
+    const out = list.querySelector('.msg.out'), other = list.querySelector('.msg.in:not(.grouped)') || list.querySelector('.msg.in');
+    if (!out || !other) return { missing: [!out && 'out', !other && 'in'].filter(Boolean) };
+    fill(out.cloneNode(true), 'out'); fill(other.cloneNode(true), 'in');
+  }
+  const ls = getComputedStyle(list), rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  const column = list.clientWidth - parseFloat(ls.paddingLeft) - parseFloat(ls.paddingRight);
+  const allowed = Math.min(Math.max(36 * rem, 0.6 * column), 60 * rem, 0.9 * column);
+  const probes = Array.from(document.querySelectorAll('.msg-probe')).map((li) => {
+    const r = li.getBoundingClientRect(), s = getComputedStyle(li), pre = li.querySelector('pre'), a = li.querySelector('.md a');
+    const extra = s.boxSizing === 'border-box' ? 0 : parseFloat(s.paddingLeft) + parseFloat(s.paddingRight)
+      + parseFloat(s.borderLeftWidth) + parseFloat(s.borderRightWidth);
+    const link = a.getBoundingClientRect();
+    return { side: li.dataset.probe, left: r.left, right: r.right, width: r.width - extra, allowed,
+      codeScrolls: pre.scrollWidth > pre.clientWidth, linkInside: link.left >= r.left - 0.5 && link.right <= r.right + 0.5 };
+  });
+  return { column, allowed, probes, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+}"""
+
+
+def chat_bubble_width(run: Run, browser) -> None:
+    """The owner's wish for the full-screen chat on a desktop (tsk-e305sjdqes86), in fixture mode,
+    in a direct and a group chat, light and dark, at 1920 x 1080, 1280 x 800 and 390 x 844: a
+    bubble, one's own and someone else's, with a long paragraph, a long URL and a code block, is
+    as wide as min(max(36rem, 60%), 60rem, 90%) of the message column allows, on the page and in
+    full screen; in full screen on a desktop that is more than the old 36rem (at 1920 the 60rem
+    cap); at phone width it is the old 90%. The code scrolls in itself, the URL stays inside, the
+    page does not scroll sideways. Full screen left and opened again, and the window resized while
+    full, draw each side's bubble as wide as before and as a fresh load at that size, every stage
+    held to the rule as well."""
+    run.step("fixtures: chat bubbles up to 60% of the column in full screen, the old width on a phone and on the page")
+    index = (WEB / "index.html").as_uri()
+
+    def check(m: dict, where: str, phone: bool, full: bool) -> None:
+        assert not m.get("missing"), f"{where}: no bubble to clone on that side {m.get('missing')}"
+        assert m["sideways"] <= 0, f"{where}: the page scrolls {m['sideways']} px sideways"
+        sides = sorted(p["side"] for p in m["probes"])
+        assert sides == ["in", "out"], f"{where}: probes {sides}"
+        for p in m["probes"]:
+            at = f"{where}, {p['side']}"
+            assert abs(p["width"] - p["allowed"]) <= 1, f"{at}: the bubble is {p['width']:.1f} px, its max-width allows {p['allowed']:.1f} (column {m['column']:.1f})"
+            assert p["codeScrolls"] and p["linkInside"], f"{at}: code scrolls {p['codeScrolls']}, URL inside {p['linkInside']}"
+        if phone:
+            assert abs(m["allowed"] - 0.9 * m["column"]) <= 1, f"{where}: a phone's bubble is {m['allowed']:.1f}, not 90% of {m['column']:.1f}"
+        elif full:
+            assert m["allowed"] > 576 + 1 and m["allowed"] >= 0.5 * m["column"] - 1, f"{where}: {m['allowed']:.1f} of {m['column']:.1f} in full screen"
+
+    # The bubbles as drawn, side by side (own and other): the same rendered widths, not only the
+    # same computed rule (A1359 on #1972).
+    def same_widths(m: dict, first: dict, where: str, than: str) -> None:
+        drawn = {p["side"]: p["width"] for p in m["probes"]}
+        before = {p["side"]: p["width"] for p in first["probes"]}
+        assert sorted(drawn) == sorted(before) == ["in", "out"], f"{where}: sides {sorted(drawn)}, {than} {sorted(before)}"
+        for side in ("in", "out"):
+            assert abs(drawn[side] - before[side]) <= 1, f"{where}, {side}: the bubble is {drawn[side]:.1f} px, {than} {before[side]:.1f}"
+
+    for chat, kind in (("agt-a", ".chat-pane:not(.group-chat)"), ("cnv-0007", ".chat-pane.group-chat")):
+        for width, height in ((1920, 1080), (1280, 800), (390, 844)):
+            phone = width <= 720
+            for scheme in ("light", "dark"):
+                where = f"{chat} at {width}x{height}, {scheme}"
+                context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+                page = context.new_page()
+                errors: list[str] = []
+                page.on("pageerror", lambda err: errors.append(str(err)))
+                try:
+                    page.goto(f"{index}?lang=en#/maintainer/maity/chat/{chat}")
+                    pane = page.locator(f".chat-layout.open {kind}")
+                    pane.locator(".compose").wait_for()
+                    page.wait_for_timeout(300)
+                    on_page = page.evaluate(BUBBLE_MEASURE)
+                    check(on_page, f"{where}, on the page", phone, False)
+                    if not phone:
+                        assert abs(on_page["allowed"] - 576) <= 1, f"{where}, on the page: {on_page['allowed']:.1f}, not the old 36rem"
+                    toggle = pane.get_by_role("button", name="Read in full screen", exact=True)
+                    toggle.click()
+                    expect(page.locator("html.chat-full")).to_have_count(1)
+                    page.wait_for_timeout(200)
+                    full = page.evaluate(BUBBLE_MEASURE)
+                    check(full, f"{where}, full screen", phone, True)
+                    if width == 1920:
+                        assert abs(full["allowed"] - 960) <= 1, f"{where}, full screen: {full['allowed']:.1f}, not the 60rem cap"
+                    if not phone and chat == "cnv-0007":
+                        run.shot(page, f"chat-bubbles-full-{width}-{scheme}")
+                    # Left and opened again: the same widths.
+                    page.keyboard.press("Escape")
+                    expect(page.locator("html.chat-full")).to_have_count(0)
+                    page.wait_for_timeout(200)
+                    again = page.evaluate(BUBBLE_MEASURE)
+                    check(again, f"{where}, full screen left", phone, False)
+                    assert abs(again["allowed"] - on_page["allowed"]) <= 1, f"{where}, full screen left: {again['allowed']:.1f}, before {on_page['allowed']:.1f}"
+                    same_widths(again, on_page, f"{where}, full screen left", "on the page before")
+                    toggle.click()
+                    expect(page.locator("html.chat-full")).to_have_count(1)
+                    page.wait_for_timeout(200)
+                    reopened = page.evaluate(BUBBLE_MEASURE)
+                    check(reopened, f"{where}, full screen again", phone, True)
+                    assert abs(reopened["allowed"] - full["allowed"]) <= 1, f"{where}, full screen again: {reopened['allowed']:.1f}, first {full['allowed']:.1f}"
+                    same_widths(reopened, full, f"{where}, full screen again", "the first full screen")
+                    # Resized while full to the next size, compared with a fresh load there (below).
+                    if not phone:
+                        other = (1280, 800) if width == 1920 else (1920, 1080)
+                        page.set_viewport_size({"width": other[0], "height": other[1]})
+                        page.wait_for_timeout(300)
+                        resized = page.evaluate(BUBBLE_MEASURE)
+                        check(resized, f"{where}, full screen resized to {other[0]}x{other[1]}", False, True)
+                        load = browser.new_context(viewport={"width": other[0], "height": other[1]}, color_scheme=scheme)
+                        try:
+                            p2 = load.new_page()
+                            p2.goto(f"{index}?lang=en#/maintainer/maity/chat/{chat}")
+                            p2.locator(f".chat-layout.open {kind} .compose").wait_for()
+                            p2.wait_for_timeout(300)
+                            p2.locator(f".chat-layout.open {kind}").get_by_role("button", name="Read in full screen", exact=True).click()
+                            expect(p2.locator("html.chat-full")).to_have_count(1)
+                            p2.wait_for_timeout(200)
+                            loaded = p2.evaluate(BUBBLE_MEASURE)
+                        finally:
+                            load.close()
+                        check(loaded, f"{where}, a fresh load at {other[0]}x{other[1]} in full screen", False, True)
+                        same_widths(resized, loaded, f"{where}, full screen resized to {other[0]}x{other[1]}", "a fresh load")
+                        assert abs(resized["allowed"] - loaded["allowed"]) <= 1 and abs(resized["column"] - loaded["column"]) <= 1, (
+                            f"{where}, resized to {other[0]}x{other[1]}: {resized['allowed']:.1f} of {resized['column']:.1f}, a fresh load {loaded['allowed']:.1f} of {loaded['column']:.1f}"
+                        )
                     assert not errors, f"{where}: {errors}"
                 finally:
                     context.close()
@@ -5010,10 +5134,7 @@ def public_first_paint_round(run: Run, browser) -> None:
         ("/owner/agents/e2e-agent", "agent", "section.uhero"),
     )
     for path, kind, hero in pages:
-        context = browser.new_context(viewport={"width": 1280, "height": 900})
-        context.set_default_timeout(TIMEOUT_MS)
-        page = context.new_page()
-        watch_page(run, page)
+        context, page = new_page(run, browser)
         held: list = []
 
         def hold(route) -> None:
@@ -5085,15 +5206,8 @@ def report_pages_round(run: Run, browser) -> None:
     handle, name, address, password = REPORTER
     hub_command(run, ["owner", "create", "--handle", handle, "--display-name", name, "--email", address], password + "\n")
 
-    def fresh() -> tuple:
-        context = browser.new_context(viewport={"width": 1280, "height": 900})
-        context.set_default_timeout(TIMEOUT_MS)
-        page = context.new_page()
-        watch_page(run, page)
-        return context, page
-
     # A card with a page: the first one the public board links to.
-    context, page = fresh()
+    context, page = new_page(run, browser)
     page.goto(f"{run.base}/owner/e2e-alpha/board")
     card = page.locator("a[href*='/owner/e2e-alpha/tasks/tsk-']").first.get_attribute("href")
     card = "/" + card.split("://", 1)[-1].split("/", 1)[-1] if "://" in card else card
@@ -5115,7 +5229,7 @@ def report_pages_round(run: Run, browser) -> None:
         (card, "Report this card to the instance's admins"),
     )
     for path, button in pages:
-        context, page = fresh()
+        context, page = new_page(run, browser)
         page.goto(run.base + path)
         # The hub's stored page says **Report**; the dashboard's copy, where it stands in, its own words.
         link = page.locator("a[href^='/login?next='][href*='%3Freport']")
@@ -5124,9 +5238,7 @@ def report_pages_round(run: Run, browser) -> None:
         expected = "/login?next=" + urllib.parse.quote(path + "?report", safe="")
         assert href == expected or href.startswith(expected + "&"), f"{path}: Report links to {href!r}, not {expected!r}"
         link.click()
-        page.locator("#login-email").fill(address)
-        page.locator("#login-password").fill(password)
-        page.get_by_role("button", name="Sign in", exact=True).click()
+        fill_sign_in(page, address, password)
         expect(page).to_have_url(re.compile(re.escape(run.base + path + "?report") + "$"))
         # The form is open, named for what this page shows; its button hides while it is.
         expect(page.get_by_role("form", name=button, exact=True)).to_be_visible()
@@ -5136,11 +5248,9 @@ def report_pages_round(run: Run, browser) -> None:
 
     # Signed in: a person's view lists their agents under the projects, no tabs (§6.27, §16.9,
     # tsk-2t7efzj1p8zt), each linked to its page, which carries Report (#1719).
-    context, page = fresh()
+    context, page = new_page(run, browser)
     page.goto(run.base + "/login")
-    page.locator("#login-email").fill(address)
-    page.locator("#login-password").fill(password)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    fill_sign_in(page, address, password)
     expect(page.locator("header .me")).to_contain_text(name)
     page.goto(run.base + "/owner")
     expect(page.locator("nav.person-tabs")).to_have_count(0)
@@ -5547,13 +5657,27 @@ def profile_layout(run: Run, browser) -> None:
         # The view of this kind, not the one being left: after a route change the old view stays,
         # inert, until the new one is drawn (js/app.js render), so a check of "a hero" could read
         # the old page or a style mid-switch. The colour is waited for, as the page settles.
-        hero = seen.locator(f"section.view-visitor.profile-view[data-kind='{kind}']:not([inert]) section.uhero")
+        view = f"section.view-visitor.profile-view[data-kind='{kind}']:not([inert]) section.uhero"
+        hero = seen.locator(view)
         expect(hero.locator("h1")).to_be_visible()
         expect(hero).to_have_css("background-color", "rgb(11, 15, 20)")  # the dark zone
         expect(hero.locator("p.crumb")).to_have_text("Agent" if kind == "agent" else "Person")
         pic = hero.locator(".wrap > .av")
+        # .av-128 in public-sections.css, 96 px under its max-width: 760px. The size is waited for
+        # (tsk-5q7vxjm75t5v): the hero can be there before the picture has its size, and one read
+        # then saw 0 px on a page this check did not change. A picture that never gets the size
+        # still fails below: the wait gives up after the timeout and the read reports what it has.
+        want = 96 if width < 760 else 128
+        try:
+            seen.wait_for_function(
+                "([s, w]) => { const e = document.querySelector(s + ' .wrap > .av');"
+                " return !!e && Math.round(e.getBoundingClientRect().width) === w; }",
+                arg=[view, want],
+            )
+        except PlaywrightError:
+            pass  # the assertion below names the size
         side = pic.evaluate("e => Math.round(e.getBoundingClientRect().width)")
-        assert side == (96 if width < 760 else 128), f"{where}: the picture is {side} px"
+        assert side == want, f"{where}: the picture is {side} px"
         assert pic.evaluate("e => getComputedStyle(e).borderRadius") != "50%" if kind == "agent" else True, f"{where}: the agent's picture is round"
         stacked = hero.locator(".wrap").evaluate("e => getComputedStyle(e).flexDirection") == "column"
         assert stacked == (width < 760), f"{where}: the hero stacked is {stacked}"
@@ -7371,9 +7495,7 @@ def start_page_step(run: Run, page: Page) -> None:
         leaving = page.context.browser.new_context(viewport={"width": 1280, "height": 800}, locale="en-US")
         out = leaving.new_page()
         out.goto(f"{run.base}/login")
-        out.locator("#login-email").fill(OWNER_EMAIL)
-        out.locator("#login-password").fill(OWNER_PASSWORD)
-        out.get_by_role("button", name="Sign in", exact=True).click()
+        fill_sign_in(out, OWNER_EMAIL, OWNER_PASSWORD)
         expect(out.locator("header .me")).to_contain_text("Owner")
         out.goto(f"{run.base}/all")
         out.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
@@ -8377,9 +8499,7 @@ def change_password(run: Run, page: Page) -> None:
     other = page.context.browser.new_context()
     second = other.new_page()
     second.goto(run.base + "/")
-    second.locator("#login-email").fill(OWNER_EMAIL)
-    second.locator("#login-password").fill(OWNER_PASSWORD)
-    second.get_by_role("button", name="Sign in", exact=True).click()
+    fill_sign_in(second, OWNER_EMAIL, OWNER_PASSWORD)
     expect(second.locator("header .me")).to_contain_text("Owner")
 
     page.set_viewport_size({"width": 1280, "height": 900})
@@ -8417,9 +8537,8 @@ def change_password(run: Run, page: Page) -> None:
 
     page.locator("header").get_by_role("button", name=re.compile(r"^Your profile: ")).click()
     page.get_by_role("menuitem", name="Sign out", exact=True).click()
-    page.locator("#login-email").fill(OWNER_EMAIL)
-    page.locator("#login-password").fill(OWNER_PASSWORD)
-    page.get_by_role("button", name="Sign in", exact=True).click()
+    # The old password, refused below.
+    fill_sign_in(page, OWNER_EMAIL, OWNER_PASSWORD)
     expect(page.locator("main")).to_contain_text("wrong")
     # The refused old password is the point of this step.
     run.problems = [p for p in run.problems if "/api/v1/auth/login answered 401" not in p]

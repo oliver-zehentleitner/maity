@@ -30,3 +30,8 @@ def rfc3339(moment: datetime, *, millis: bool = False) -> str:
     if millis:
         return moment.strftime("%Y-%m-%dT%H:%M:%S.") + f"{moment.microsecond // 1000:03d}Z"
     return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def rfc3339_or_none(moment: datetime | None) -> str | None:
+    """`rfc3339(moment)`, or None for no moment: a nullable time as the API shows it."""
+    return rfc3339(moment) if moment is not None else None
