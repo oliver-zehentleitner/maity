@@ -678,7 +678,11 @@ reads `id`, `title`, `body` and `report` for one batch of keys at a time, and th
 whose own text did not match, and then of the page's cards so that `match` can name `note`.
 The first batch is the page plus one, each next one twice the last, at most 1000
 (`SEARCH_BATCH_MAX`); `order=updated` reads each batch of keys with a keyset after the last
-key read. A card deleted between its key and its row is left out.
+key read. A card deleted between its key and its row is left out. On PostgreSQL and MySQL
+under READ COMMITTED the key read and the row read are two statements, so a card can also
+change status between them. The page then shows its new status at its old place, and the
+cursor holds its old key. That is harmless: the next page sees a card that moved, and
+`_after`'s rules for a moved card apply.
 
 The board's cursor ([the board's card order](#the-boards-card-order-is-sorted-in-python-not-by-the-database), 4e61c371) is resolved among all cards of the filters, not only a
 search's hits. Before, a search sorted only its hits, so when the last card shown stopped
