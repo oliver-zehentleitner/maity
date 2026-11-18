@@ -111,6 +111,12 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
                 if human.terms_version is not None
                 else None
             ),
+            # §5.1, "Experiment notice": null until the person confirmed it.
+            "experiment_notice_understood_at": (
+                clock.rfc3339(human.experiment_notice_understood_at)
+                if human.experiment_notice_understood_at is not None
+                else None
+            ),
             # The human's own limit, with the reason other readers may not see (§6.12).
             "limit": limit_view(human),
             # Only while a moderation hold stands on the profile (§16.8).

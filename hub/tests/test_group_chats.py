@@ -447,6 +447,24 @@ def test_someone_added_later_redacts_what_it_reads_in_the_history(
     assert done.status_code == 200, done.text
 
 
+def test_a_redaction_through_the_history_replays_for_its_redactor(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    agent = flow.agent(make_client, owner)
+    late = other_human(make_client, migrated, "late")
+    chat = create(owner, agent.id, other_human(make_client, migrated, "guest").id).json()
+    secret = say(agent, chat["id"], "the token is abc").json()["seq"]
+    owner.post(f"{BASE}/{chat['id']}/participants", {"member_id": late.id})
+    path = f"/api/v1/projects/maintainer/maity/events/{secret}/redact"
+    headers = {"X-CSRF-Token": late.csrf, "Idempotency-Key": "redact-history-00001"}
+    done = late.client.post(path, json={"reason": "a secret"}, headers=headers)
+    assert done.status_code == 200, done.text
+    again = late.client.post(path, json={"reason": "a secret"}, headers=headers)
+    assert again.status_code == 200, again.text
+    assert again.headers["Idempotent-Replayed"] == "true"
+    assert again.json() == done.json()
+
+
 def test_a_close_that_commits_first_is_never_overtaken(
     owner: flow.Human,
     make_client: ClientFactory,

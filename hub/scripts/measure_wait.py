@@ -8,11 +8,11 @@ and one agent joined with the CLI, then reports three things:
 
 1. latency — from the moment the human's message is committed (its POST
    answered) to the moment `maity wait` exits with it, over N rounds;
-2. a proxy idle cut — `maity wait` through a TCP proxy that drops every
+2. one long-poll per credential — a second `maity wait` in the same clone
+   supersedes the first, which exits 6, while the second wakes normally;
+3. a proxy idle cut — `maity wait` through a TCP proxy that drops every
    connection after a few seconds, as a reverse proxy's idle timeout would;
-   the message comes after the first cut, and the wait must still wake on it;
-3. one long-poll per credential — a second `maity wait` in the same clone
-   supersedes the first, which exits 6, while the second wakes normally.
+   the message comes after the first cut, and the wait must still wake on it.
 
 Nothing here is mocked: the hub, the CLI and the proxy are separate processes
 talking HTTP over loopback.
@@ -38,6 +38,7 @@ from typing import Any
 
 PASSWORD = "measure owner password"
 OWNER_EMAIL = "owner@measure.example"
+PROJECT = "/projects/owner/measure"  # the project in the namespace of the human `owner` (§6.25)
 CUT_AFTER = 3.0  # seconds the proxy lets a connection live
 
 
@@ -145,7 +146,7 @@ def main() -> int:
         def joined(handle: str, via: str) -> tuple[Path, str]:
             created = human.call(
                 "POST",
-                "/projects/measure/joins",
+                f"{PROJECT}/joins",
                 {"agent": {"handle": handle, "display_name": handle}},
             )
             clone = work / handle
@@ -165,9 +166,7 @@ def main() -> int:
             return clone, created["agent_id"]
 
         def chat(agent_id: str, body: str) -> float:
-            human.call(
-                "POST", f"/projects/measure/conversations/{agent_id}/messages", {"body": body}
-            )
+            human.call("POST", f"{PROJECT}/conversations/{agent_id}/messages", {"body": body})
             return time.monotonic()  # the POST answered: the event is committed
 
         # 1. latency

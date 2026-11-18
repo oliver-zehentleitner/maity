@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, delete, insert, select, update
 
-from maity_hub import clock
+from maity_hub import clock, releases
 from maity_hub import tables as t
 from maity_hub.config import Settings
 from maity_hub.probe import Worker
@@ -139,14 +139,103 @@ def test_a_release_card_has_the_contract_shape(owner: flow.Human) -> None:
 
 
 @pytest.mark.parametrize(
-    "version", ["1.0", "01.0.0", "1.0.0+build", "v1.0.0", "1.0.0-", "1\u0660.0.0", "0.0.1-\u0661a"]
+    "version",
+    [
+        "0.1.0",
+        "0.1.0a0",
+        "0.1.0a4",
+        "0.1.0b1",
+        "0.1.0rc1",
+        "10.20.30rc12",
+        "1.0.0-rc.1",
+        "0.1.0-alpha.8",
+    ],
 )
-def test_a_version_is_semver(owner: flow.Human, version: str) -> None:
+def test_a_version_is_its_tags_semver_or_pep440(owner: flow.Human, version: str) -> None:
+    """\u00a76.7: the version as the tag carries it, echoed as given, never normalized."""
+    assert release(owner, version)["release"]["version"] == version
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "1.0",
+        "01.0.0",
+        "1.0.0+build",
+        "v1.0.0",
+        "1.0.0-",
+        "1\u0660.0.0",
+        "0.0.1-\u0661a",
+        # PEP 440 beyond the canonical X.Y.Z{a|b|rc}N, or spelled the way it would normalize
+        "0.1.0a",
+        "0.1.0rc",
+        "0.1.0A1",
+        "0.1.0alpha1",
+        "0.1.0.a1",
+        "0.1.0c1",
+        "0.1.0pre1",
+        "0.1.0a01",
+        "0.1.0.post1",
+        "0.1.0.dev1",
+        "0.1.0a1.post1",
+        "1!0.1.0",
+        "0.1.0+local",
+        "0.1.0a1+local",
+        "v0.1.0a1",
+        "0.1a1",
+        "0.1.0.0",
+        "0.1.0a\u06611",
+        "0.1.0a1 ",
+        "0.1.0a1\n",
+    ],
+)
+def test_a_version_is_semver_or_pep440(owner: flow.Human, version: str) -> None:
     response = owner.post(
         "/projects/maintainer/maity/tasks",
         {"title": "x", "kind": "release", "release": {"version": version}},
     )
-    assert response.json()["error"]["details"]["fields"] == {"release.version": "not_semver"}
+    assert response.json()["error"]["details"]["fields"] == {"release.version": "not_a_version"}
+
+
+def test_versions_are_compared_as_text(owner: flow.Human) -> None:
+    """\u00a76.7: `0.1.0-alpha.4` and `0.1.0a4` are two releases; each text exists once."""
+    semver = release(owner, "0.1.0-alpha.4")
+    cancelled = owner.patch(
+        f"/projects/maintainer/maity/tasks/{semver['id']}", {"status": "cancelled"}
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    pep440 = release(owner, "0.1.0a4")
+    assert pep440["release"]["version"] == "0.1.0a4" and pep440["id"] != semver["id"]
+    owner.patch(f"/projects/maintainer/maity/tasks/{pep440['id']}", {"status": "cancelled"})
+    again = owner.post(
+        "/projects/maintainer/maity/tasks",
+        {"title": "x", "kind": "release", "release": {"version": "0.1.0a4"}},
+    )
+    assert (again.status_code, again.json()["error"]["code"]) == (409, "version_exists")
+    assert again.json()["error"]["details"] == {"release": pep440["id"]}
+
+
+@pytest.mark.parametrize(
+    ("version", "final"),
+    [
+        ("0.1.0", True),
+        ("1.0.0", True),
+        ("10.20.30", True),
+        ("0.1.0a4", False),
+        ("0.1.0b1", False),
+        ("0.1.0rc1", False),
+        ("1.0.0-rc.1", False),
+        ("0.1.0-alpha.8", False),
+        ("1.0.0-0", False),
+        ("01.0.0", False),
+        ("1.0", False),
+        ("1.0.0 ", False),
+        ("1٠.0.0", False),
+    ],
+)
+def test_only_a_version_without_a_pre_release_is_final(version: str, final: bool) -> None:
+    """§6.1: only a final version's found tag marks the project released."""
+    assert releases.is_final(version) is final
 
 
 def test_one_release_in_flight_and_each_version_once(owner: flow.Human) -> None:
@@ -313,6 +402,21 @@ def test_the_checklist_is_edited_with_patch(owner: flow.Human, migrated: Engine)
         f"/projects/maintainer/maity/tasks/{card['id']}/checklist/chk-1", {"done": True}
     )
     assert missing.status_code == 404
+
+
+def test_a_tick_tells_task_updated_with_fields_and_no_history(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """§8.2: `task_updated` carries `fields`, their values and `history`; a tick writes no
+    history entry (§6.7, §6.15), so `history` is empty."""
+    card = release(owner)
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/checklist/chk-1"
+    assert owner.post(path, {"done": True}).status_code == 200
+    [told] = [e for e in _events(migrated, "task_updated") if e.payload.get("id") == card["id"]]
+    assert told.payload["fields"] == ["release"]
+    assert told.payload["history"] == []
+    assert told.payload["release"]["checklist"][0]["done"] is True
+    assert "project_state" in told.payload
 
 
 def test_only_a_releaser_or_the_holder_ticks(owner: flow.Human, make_client: ClientFactory) -> None:

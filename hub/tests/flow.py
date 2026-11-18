@@ -71,6 +71,9 @@ class Agent:
     def patch(self, path: str, json: Any = None) -> Any:
         return self.client.patch(f"/api/v1{path}", json=json, headers=self.auth | self.key())
 
+    def delete(self, path: str) -> Any:
+        return self.client.delete(f"/api/v1{path}", headers=self.auth | self.key())
+
     def resume(self, **body: Any) -> Any:
         return self.client.post(
             "/api/v1/me/resume", json={"client": "test", **body}, headers=self.auth
@@ -84,6 +87,17 @@ def human(make_client: ClientFactory, engine: Engine, handle: str = "maintainer"
     assert response.status_code == 200, response.text
     csrf = client.get("/api/v1/auth/session").json()["csrf_token"]
     return Human(client, csrf, human_id, handle)
+
+
+def put_roles(owner: Human, project_path: str, custom: Any) -> Any:
+    """`PUT …/roles` (§2.3) with the list's `version` as read just before, as `base_version`:
+    the call a client makes that read the list."""
+    version = owner.get(f"{project_path}/roles").json()["version"]
+    return owner.client.put(
+        f"/api/v1{project_path}/roles",
+        json={"custom": custom, "base_version": version},
+        headers={"X-CSRF-Token": owner.csrf},
+    )
 
 
 def project(owner: Human, slug: str = "maity", **body: Any) -> dict[str, Any]:

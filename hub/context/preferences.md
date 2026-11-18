@@ -139,3 +139,71 @@ set as given" means for the one that is not given.
   mode on would find it off after an upgrade; "on" meant both sides.
 - A note with no separator between sentences, or with the old semicolon wording: the sentences are
   the person's own words and each ends in its own full stop, so a space is all that joins them.
+
+## The experiment notice is confirmed once per person, holds nothing back, and is not a second consent at signup
+
+**Id:** e5b364ab-ba52-4e0f-b0b9-627b7e978b0b
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 0c1d77e2-c430-4588-ae46-e72ec7e6af47
+**Evidence:** confirmed
+**Source:** the owner's request on the card (2026-11-12) and the lead's go on the design (2026-11-13); contract in `docs/api.md` §2.7.1 step 5, §5.1 "Experiment notice", §5.3 table, §2.9
+**Revisit when:** the notice must be accepted before an agent can join, or it must be shown again after its text changes
+
+The notice says that Maity is an early public experiment and that a person's agents act with the
+rights the person gives them. The registration's completion page shows it above the button and stores
+nothing; the dashboard shows it with "Understood" on the join panel and on the runner's start until the
+person confirms it, and the form beside it stays usable. `human.experiment_notice_understood_at` holds
+the first confirmation and never goes back to null; accounts from before the column read null and so
+see it once too, whatever agents they already have.
+
+**Reason:** where it must be accepted, the terms carry the same paragraph and their one box accepts it,
+so signup asks for one consent, not two. A per-person time is what "only once" needs and what the export
+can show. Holding the form back would not keep anyone safe (an agent can be joined from the CLI or an API
+call the dashboard never sees) and would only add a click.
+
+**Rejected alternatives:**
+- A second checkbox on the completion page: two consents for one paragraph the terms already hold.
+- Blocking the join form until "Understood": the hub cannot enforce it for joins made outside the
+  dashboard, so it would only be a click in the dashboard.
+- Showing it only for a person's really first agent: a count over every project, and an account that
+  had agents before the notice existed would never see it.
+- Keeping the confirmation in the browser's storage: it would come back on every new device, and the
+  export could not hold it.
+
+The text lives twice, in the hub's `words/<lang>.json` for the registration page and in the
+dashboard's `web/i18n/<lang>.json`; `hub/tests/test_catalog.py` keeps the two equal in every
+language (clean-up audit, 2026-11-14). Rejected: the dashboard quoting the hub's text from `/me`, as
+the meat-proxy note does, since the registration page shows it to someone not yet signed in.
+
+## The experiment notice appears only at registration, like a forum's disclaimer
+
+**Id:** 0c1d77e2-c430-4588-ae46-e72ec7e6af47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's decision relayed by the lead (2026-11-14) on the clean-up card tsk-dc04hmpz837j, item 2; contract in `docs/api.md` §2.7.1 step 5 and §5.1 "Experiment notice"
+**Revisit when:** the notice must be accepted before an agent can join, must be shown again after its text changes, or a second place for it is asked for
+
+The registration's completion page shows the notice above its button, plainly, and stores nothing.
+The dashboard shows it nowhere: not on the join panel, not on the runner's start, and not where an
+agent first meets a stranger. Its web module, styles and catalog keys are gone, so the hub's
+`words/<lang>.json` (`register_page.experiment`) holds the one text; `hub/tests/test_catalog.py` checks
+that the dashboard's catalogs keep no `experiment.*` copy. `human.experiment_notice_understood_at` and
+the `PATCH /me` field stay for now: nothing in the hub or the dashboard sets or reads them except
+`GET /me`, the export and the deletion, and dropping the column needs a migration of its own.
+
+**Reason:** the notice is a disclaimer, read once where the account is made; repeating it beside the
+join forms until a click added a step without making anyone safer (joins from the CLI or the API never
+see the dashboard), and the stranger place was never built. One place also means one copy of the text,
+so the two catalogs cannot drift.
+
+**Rejected alternatives:**
+- Keeping the dashboard's "Understood" banner on the join panel and the runner's start (e5b364ab): a
+  second showing the owner did not want.
+- Showing it where an agent first meets a stranger (§9.6): never built; the firewall card closed
+  without it.
+- Keeping `experiment.notice` in the web catalogs unused, with the equality test: a copy with no
+  reader that still has to be translated and kept equal.
+- Dropping the column and the `PATCH /me` field in the same change: a migration and an API removal,
+  which need their own slot and the lead's go.

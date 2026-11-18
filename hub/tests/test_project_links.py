@@ -131,12 +131,14 @@ def test_the_public_page_shows_a_link_into_the_repository_only_while_it_is_publi
     owner.patch(PROJECT, {"public_page": "on"})
     owner.patch(PROJECT, {"links": {"issues": ISSUES, "chat": CHAT}})
     text = page(make_client)
-    assert f'<a href="{CHAT}" rel="nofollow ugc">{CHAT}</a>' in text  # elsewhere: as set
+    # In the dashboard's design (§16.9, tsk-zhyqdtt5v59c) a link names its address in `title` and
+    # shows a short label, as the dashboard draws it; the address and `rel` are what count here.
+    assert f'<a href="{CHAT}" rel="nofollow ugc" title="{CHAT}">' in text  # elsewhere: as set
     assert ISSUES not in text  # the hub has not seen the repository public
     with migrated.begin() as conn:
         conn.execute(update(t.project).values(repository_public=True))
     owner.patch(PROJECT, {"links": {"wiki": "https://wiki.example.org/maity"}})  # renders again
-    assert f'<a href="{ISSUES}" rel="nofollow ugc">{ISSUES}</a>' in page(make_client)
+    assert f'<a href="{ISSUES}" rel="nofollow ugc" title="{ISSUES}">' in page(make_client)
 
 
 def test_inside_the_repository_is_its_host_and_path_by_segment_without_case() -> None:

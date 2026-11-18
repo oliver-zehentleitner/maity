@@ -241,3 +241,89 @@ def test_a_body_a_person_extended_is_left_and_every_rewritten_event_is_announced
         assert len(set(notices)) == len(notices)  # each event announced once
     [note] = [r for r in rows if r.kind == "note_added"]
     assert note.payload["task"]["title"]["redacted"] is True and note.seq in notices
+
+
+def _title_copies(who: Any) -> list[dict[str, Any]]:
+    """The redacted `task.title` copies in the events `who` reads on `GET /events`."""
+    listed = who.get("/projects/maintainer/maity/events?after=0&limit=200")
+    assert listed.status_code == 200, listed.text
+    titles = [(e["payload"] or {}).get("task", {}).get("title") for e in listed.json()["items"]]
+    return [v for v in titles if isinstance(v, dict) and v.get("redacted") is True]
+
+
+def test_a_redacted_title_copied_into_events_shows_its_reason_per_reader(
+    round_: Round, make_client: ClientFactory
+) -> None:
+    """§20.8, §8.5: the `task.title` a redaction rewrites in `note_added`, `note_edited` and
+    `mentioned` shows its reason as the card's history does: to the human owners and admins
+    and the redactor, `null` to agents and every other reader."""
+    with round_.engine.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    ada = flow.human(make_client, round_.engine, "ada")  # a human admin: she redacts
+    factory.membership(round_.engine, project_id, "admin", human_id=ada.id)
+    bo = flow.human(make_client, round_.engine, "bo")  # a plain member, mentioned on the card
+    factory.membership(round_.engine, project_id, "member", human_id=bo.id)
+    [task_id] = report(round_, proposals=[decided(round_.owner)]).json()["tasks"]
+    path = f"/projects/maintainer/maity/tasks/{task_id}"
+    body = round_.owner.get(path).json()["body"] + "\n@bo"
+    assert round_.owner.patch(path, {"body": body}).status_code == 200
+    note = round_.owner.post(f"{path}/notes", {"body": "a note"})
+    assert note.status_code == 201, note.text
+    edited = round_.owner.patch(
+        f"{path}/notes/{note.json()['id']}", {"body": "an edited note", "base_version": 1}
+    )
+    assert edited.status_code == 200, edited.text
+    assert redact(ada, round_, "proposal:r1").status_code == 200
+    with round_.engine.connect() as conn:
+        rewritten = {
+            r.kind
+            for r in conn.execute(select(t.event)).all()
+            if isinstance((r.payload or {}).get("task"), dict)
+            and isinstance(r.payload["task"].get("title"), dict)
+        }
+    assert rewritten == {"mentioned", "note_added", "note_edited"}
+    readers: list[tuple[Any, str | None]] = [
+        (round_.owner, "a secret"),
+        (ada, "a secret"),  # an admin, and the redactor
+        (round_.lead, None),  # an agent with admin trust
+        (round_.member, None),
+        (bo, None),
+    ]
+    for who, seen in readers:
+        marks = _title_copies(who)
+        assert {m["reason"] for m in marks} <= {seen}, who
+        assert all(m["by"] == ada.id and m["at"] for m in marks), who
+    for who in (round_.owner, ada, bo):  # each reads at least one copy
+        assert _title_copies(who), who
+    assert any(_title_copies(who) for who in (round_.lead, round_.member))  # an agent reads one
+    for who in (round_.lead, round_.member, bo):
+        listed = who.get("/projects/maintainer/maity/events?after=0&limit=200").text
+        assert "a secret" not in listed
+
+
+def test_a_mention_of_a_redacted_title_reaches_a_plain_member_without_the_reason(
+    round_: Round, make_client: ClientFactory
+) -> None:
+    """§20.8: `mentioned` keeps a copy of the card's title; once redacted, the mentioned
+    member reads its tombstone without the reason, in the event and in the bell."""
+    with round_.engine.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    bo = flow.human(make_client, round_.engine, "bo")
+    factory.membership(round_.engine, project_id, "member", human_id=bo.id)
+    [task_id] = report(round_, proposals=[decided(round_.owner)]).json()["tasks"]
+    path = f"/projects/maintainer/maity/tasks/{task_id}"
+    body = round_.owner.get(path).json()["body"] + "\n@bo"
+    assert round_.owner.patch(path, {"body": body}).status_code == 200
+    assert redact(round_.owner, round_, "proposal:r1").status_code == 200
+    listed = bo.get("/projects/maintainer/maity/events?after=0&limit=200")
+    [mentioned] = [e for e in listed.json()["items"] if e["kind"] == "mentioned"]
+    title = mentioned["payload"]["task"]["title"]
+    assert title["redacted"] is True and title["by"] == round_.owner.id
+    assert title["reason"] is None and "a secret" not in listed.text
+    owners = round_.owner.get("/projects/maintainer/maity/events?after=0&limit=200").json()
+    copies = [e["payload"]["task"]["title"] for e in owners["items"] if e["kind"] == "mentioned"]
+    assert all(c["reason"] == "a secret" for c in copies)  # empty when not in its audience
+    bell = bo.get("/me/notifications")
+    assert bell.status_code == 200, bell.text
+    assert "mention" in [i["kind"] for i in bell.json()["items"]]
+    assert "a secret" not in bell.text and "'redacted'" not in bell.text

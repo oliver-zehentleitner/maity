@@ -480,6 +480,45 @@ def test_the_schedule_opens_skips_and_records_a_missed_slot(
     )
 
 
+def test_a_changed_schedule_opens_no_second_round_the_same_day(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
+) -> None:
+    """§20.1: a change of the schedule rests until 20 hours after the last round it opened,
+    so moving the time cannot open round after round."""
+    lead, member = team(owner, make_client)
+    daily_utc = {**DAILY, "timezone": "UTC"}
+    sid = series_id(owner)
+    path = f"{BASE}/jour-fixe/series/{sid}"
+    owner.patch(path, {**daily_utc, "reason": "t"})
+    next_at = datetime.fromisoformat(owner.get(f"{BASE}/jour-fixe").json()["series"][0]["next_at"])
+    now[0] = next_at + timedelta(seconds=30)
+    lead.get("/me")
+    member.get("/me")
+    worker.sweep(migrated)
+    with migrated.begin() as conn:
+        [first] = conn.execute(select(t.jour_fixe_round)).all()
+        conn.execute(update(t.jour_fixe_round).values(status="reported"))
+    assert first.status == "answering"
+    soon = (next_at + timedelta(hours=1)).strftime("%H:%M")
+    moved = owner.patch(path, {"time": soon, "reason": "again"})
+    assert moved.status_code == 200, moved.text
+    shown = datetime.fromisoformat(owner.get(f"{BASE}/jour-fixe").json()["series"][0]["next_at"])
+    assert shown == next_at + timedelta(days=1, hours=1)  # not within the rest
+    now[0] = next_at + timedelta(hours=1, seconds=30)
+    lead.get("/me")
+    member.get("/me")
+    worker.sweep(migrated)
+    with migrated.connect() as conn:
+        assert len(conn.execute(select(t.jour_fixe_round)).all()) == 1
+    now[0] = next_at + timedelta(days=1, hours=1, seconds=30)
+    lead.get("/me")
+    member.get("/me")
+    worker.sweep(migrated)
+    with migrated.connect() as conn:
+        rows = conn.execute(select(t.jour_fixe_round.c.status)).scalars().all()
+    assert sorted(rows) == ["answering", "reported"]  # the next day it opens again
+
+
 def test_an_archived_project_records_its_slot_as_project_closed(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, now: list[datetime]
 ) -> None:

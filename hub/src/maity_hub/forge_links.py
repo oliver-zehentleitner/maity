@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, insert, select, update
 
-from maity_hub import clock, forge, github_app, wakeups
+from maity_hub import clock, forge, github_app, wakeups, write_guard
 from maity_hub import tables as t
 from maity_hub.github_app import GitHubApp
 from maity_hub.ids import new_id
@@ -183,7 +183,16 @@ def shown(app: GitHubApp | None, row: Any) -> tuple[list[str], str | None]:
 
 def set_status(conn: Connection, link_id: str, status: str) -> None:
     """The status a mint found; a link that becomes `suspended` or `removed` writes the
-    human's account record (§11.4)."""
+    human's account record (§11.4). The human's account lock comes first, shared, before the
+    link's row: the record locks the human's row, and a deletion of the account takes the lock
+    exclusively before anything else, so the two run one after the other
+    (`write_guard.share`)."""
+    owner = conn.execute(
+        select(t.forge_link.c.human_id).where(t.forge_link.c.id == link_id)
+    ).scalar()
+    if owner is None:
+        return
+    write_guard.share(conn, owner)
     row = conn.execute(
         select(t.forge_link).where(t.forge_link.c.id == link_id).with_for_update()
     ).first()

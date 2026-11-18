@@ -280,3 +280,51 @@ policy yet.
 - Relying on the browsers' default policy
   (`strict-origin-when-cross-origin`): it is a default, not a promise,
   and an older or configured browser sends the whole path.
+
+## The middleware gives every HTML page the framing and opener headers, the shell its full policy, TLS answers HSTS
+
+**Id:** 0111050a-68d4-4e70-b690-2c96a30ddcc1
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-gk1kgz4gwpqe (from the security rounds of tsk-v9kheekgq115) and its implementation; contract `docs/api.md` §1.1, §2.5, §16.11; `hub/src/maity_hub/middleware.py`
+**See:** security.md#a-page-with-a-token-in-its-path-sends-no-referrer-its-outgoing-links-say-so-too — 4a01739c-d565-4384-b806-3662f935e0a5 — as of 2026-11-13
+
+The hub's middleware, which already put `default-src 'self'` on every
+HTML answer without a policy, is the one place for the rest: every HTML
+answer gets `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy:
+same-origin` and a `Permissions-Policy` that denies camera, microphone,
+geolocation, payment and USB, unless its route set the header. An HTML
+answer without a policy of its own (the app shell at every path) gets `default-src 'self'; frame-ancestors 'none'; base-uri
+'self'; form-action 'self'; object-src 'none'` and, unless the route
+chose one, `Referrer-Policy: same-origin`. Every answer that went out
+over TLS (the scheme decided from the trusted proxies, §2.5) carries
+`Strict-Transport-Security: max-age=<MAITY_HSTS_MAX_AGE>`, one year by
+default, `0` none, without `includeSubDomains`.
+
+**Reason:** the shell is one route that answers every path the hub does
+not own, so a header set per route would have missed some of them (the
+stored public page served inside the shell is a second code path); the
+middleware's existing fallback is already the shell's policy. HSTS from
+the hub reaches every deployment, whatever proxy or ingress terminates
+TLS, and it follows the scheme the request really arrived with, so a
+hub at home over plain HTTP never sends it. The referrer rule goes only
+with the default policy: the pages with a policy of their own (landing,
+legal, the pages with a token in their path) already chose their
+referrer behaviour, and the landing page's outgoing links were left as
+they were.
+
+**Rejected alternatives:**
+- `base-uri 'none'`, as on the hub's other pages: the shell carries its
+  own `<base href="/assets/">` (`shell.BASE`), which `'none'` would void.
+- The headers in `shell.py` per answer: two answer paths (the shell and
+  a stored page in the shell), and `/` answers the shell from a third
+  route; one place in the middleware covers them all.
+- `Referrer-Policy: same-origin` on every HTML page: it would change
+  the landing page's outgoing links, which no card asked for.
+- HSTS in the chart's Ingress annotations: specific to one controller
+  (ingress-nginx), the k3s path runs Traefik.
+- `includeSubDomains`: the hub does not own its host's siblings.
+
+**Alternatives for the default max-age:** one year was chosen without a
+recorded comparison (unknown).

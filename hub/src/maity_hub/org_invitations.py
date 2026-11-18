@@ -101,6 +101,21 @@ def _allowed(actor_role: str, role: str) -> None:
     raise orgs.org_role()
 
 
+def inviter_holds(conn: Connection, invitation: Any) -> bool:
+    """Whether the sender may still invite to the invitation's role (`_allowed`) with an
+    account not suspended (§6.26, §16.8): checked when the invited human says `go`."""
+    from maity_hub import moderation
+
+    role = orgs.role_of(conn, invitation.org_id, invitation.invited_by)
+    if role is None or moderation.suspended(conn, invitation.invited_by):
+        return False
+    try:
+        _allowed(role, invitation.role)
+    except ApiError:
+        return False
+    return True
+
+
 def create(
     conn: Connection, org: Any, actor_id: str, actor_role: str, handle: str, role: str
 ) -> dict[str, Any]:
@@ -327,6 +342,8 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
         raise _stale(s.request.id, "the organisation was deleted")
     if expired:  # the withdrawal that follows a stale `go` closes the row as `expired`
         raise _stale(s.request.id, "the invitation has expired")
+    if not inviter_holds(conn, invitation):
+        raise _stale(s.request.id, "the invitation's sender may no longer invite to this role")
     human_id = proposal["to"]
     closed = conn.execute(
         update(t.org_invitation)
