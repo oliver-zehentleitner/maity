@@ -1426,7 +1426,12 @@ def _rejoin_the_others(conn: Connection, placement: Any) -> list[str]:
 
 
 def _named_elsewhere(conn: Connection, placement: Any) -> bool:
-    """Another running placement names the credential: its clone still holds the file."""
+    """Another running placement names the credential: its clone still holds the file.
+
+    One active placement per credential (`uq_placement_credential_id_active`, one placement
+    per instance) means it cannot find a match while the reported placement is itself
+    active; it stays as a defensive check there. It does find one for a closed placement
+    whose successor took the credential over and runs on it."""
     p = t.placement.c
     found = conn.execute(
         select(p.id).where(
