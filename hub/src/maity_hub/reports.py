@@ -383,6 +383,12 @@ def target(
     if not isinstance(target_id, str) or not target_id or len(target_id) > 255:
         raise invalid({"target.id": "required"})
     project = given.get("project")
+    if jcs.has_lone_surrogate(target_id) or (
+        isinstance(project, str) and jcs.has_lone_surrogate(project)
+    ):
+        # The id and the project are the strings a lookup binds: no id or name holds a lone
+        # surrogate, and the SQL bind cannot encode it. Any other member is ignored.
+        raise not_found()
     if kind == "profile":
         shot = _profile(conn, caller, target_id, project, pages)
         from_page = shot.pop("project", None)
@@ -444,8 +450,6 @@ def create(
     given = body.get("target")
     if not isinstance(given, dict):
         raise invalid({"target": "required"})
-    if any(jcs.has_lone_surrogate(value) for value in given.values()):
-        raise not_found()  # no id or name holds one, and the SQL bind cannot encode it
     kind, target_id, project_id, snapshot = target(conn, caller, given, pages)
     account = account_of(conn, caller)
     now = clock.now()

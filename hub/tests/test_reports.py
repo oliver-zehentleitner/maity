@@ -152,6 +152,51 @@ def test_a_lone_surrogate_in_a_target_id_is_not_found(team: dict[str, Any], targ
     assert refused.json()["error"]["code"] == "not_found"
 
 
+def test_a_lone_surrogate_in_a_target_type_is_an_unknown_type(team: dict[str, Any]) -> None:
+    def sent(kind: bytes) -> Any:
+        body = b'{"target": {"type": "%s", "id": "x"}, "reason": "spam"}' % kind
+        return team["pat"].raw("POST", "/reports", body)
+
+    ordinary, refused = sent(b"team"), sent(b"card\\ud800")
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["code"] == "invalid"
+    fields = refused.json()["error"]["details"]["fields"]
+    assert fields == ordinary.json()["error"]["details"]["fields"] == {"target.type": "unknown"}
+
+
+def test_a_target_id_over_255_characters_is_required_with_a_lone_surrogate_too(
+    team: dict[str, Any],
+) -> None:
+    long = b"tsk-" + b"a" * 300
+    for target_id in (long, long + b"\\ud800"):
+        target = b'{"type": "card", "id": "%s", "project": "%s"}' % (target_id, PROJECT.encode())
+        refused = team["pat"].raw("POST", "/reports", b'{"target": %s, "reason": "spam"}' % target)
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["error"]["details"]["fields"] == {"target.id": "required"}
+
+
+def test_a_lone_surrogate_in_an_ignored_target_member_files_the_report(
+    team: dict[str, Any], migrated: Engine
+) -> None:
+    card = a_card(team, migrated).encode()
+    target = b'{"type": "card", "id": "%s", "project": "%s", "note": "\\ud800"}' % (
+        card,
+        PROJECT.encode(),
+    )
+    made = team["pat"].raw("POST", "/reports", b'{"target": %s, "reason": "spam"}' % target)
+    assert made.status_code == 201, made.text
+
+
+def test_a_lone_surrogate_in_a_target_project_is_not_found(
+    team: dict[str, Any], migrated: Engine
+) -> None:
+    card = a_card(team, migrated).encode()
+    target = b'{"type": "card", "id": "%s", "project": "maintainer/m\\ud800"}' % card
+    refused = team["pat"].raw("POST", "/reports", b'{"target": %s, "reason": "spam"}' % target)
+    assert refused.status_code == 404, refused.text
+    assert refused.json()["error"]["code"] == "not_found"
+
+
 def test_three_per_target_and_twenty_a_day(team: dict[str, Any], migrated: Engine) -> None:
     pat = team["pat"]
     card = {"type": "card", "id": a_card(team, migrated), "project": PROJECT}
