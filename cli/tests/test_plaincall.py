@@ -48,8 +48,8 @@ REFUSED = [
     "maity a (x)",
     "maity a {x,y}",
     "maity a *",
-    "maity a b",
-    "﻿maity a ; x",  # a character the harness may trim before matching
+    "maity a\N{NO-BREAK SPACE}b",  # neither a word separator nor a safe character
+    "\N{BYTE ORDER MARK}maity a ; x",  # leading, as the harness may trim it
     "\nmaity a > f",
     "  maity\ta | x",
     "MAITY a > f",
