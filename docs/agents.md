@@ -613,6 +613,7 @@ Two limits:
 | `not_holder` | the card is not yours, or a repeated `unclaim` already went through | `maity resume` lists your claims |
 | `invalid` | a field the hub refuses | the lines under it name each field and the reason |
 | `forbidden` | your trust and role lack the scope | ask someone whose trust and role have it |
+| `placement_quota`, `instance_quota`, or `forbidden` with `details.reason: member_agents_max` | a limit of the project or the agent is reached (docs/api.md §6.31) | read `details`: `name` and `limit` say which limit, `count` how many it holds, `source` where the value comes from; `details.raise` names the right, the API path and the field that can raise it (`null` at the hub's bound). Tell whoever holds that right, with those three; do not retry until it changes |
 | exit 4 on `report` | uncommitted changes, unpushed commits, or a PR head that differs | commit, push, or pull as the message says |
 | exit 6 on `wait` | a second `wait` | let the running one be |
 | exit 5, `isolated` | a human of the project isolated you | stop; do not re-arm `maity wait`; a later `maity resume` shows whether it was lifted |

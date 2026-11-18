@@ -75,7 +75,13 @@ def test_the_instance_limit_refuses_a_placement_at_its_creation(setup: Setup) ->
     # The joined clone is the one instance `max_instances: 1` allows.
     refused = place(setup)
     assert (refused.status_code, error(refused)) == (409, "instance_quota")
-    assert refused.json()["error"]["details"] == {"max": 1}
+    details = refused.json()["error"]["details"]
+    assert (details["max"], details["limit"], details["count"], details["source"]) == (
+        1,
+        1,
+        1,
+        "default",
+    )
     with setup.engine.connect() as conn:
         assert conn.execute(select(t.placement.c.id)).first() is None  # nothing created
 
@@ -87,6 +93,78 @@ def test_a_waiting_placement_counts_toward_the_limit(setup: Setup) -> None:
     assert (refused.status_code, error(refused)) == (409, "instance_quota")
     allow_instances(setup.engine, setup.agent.id, 3)
     assert place(setup).status_code == 201
+
+
+def test_the_limits_overview_counts_what_the_refusal_counts(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """§6.31, §15.5: the overview's `max_instances.count` is the count `instance_quota`
+    reports: the joined instance, a placement whose credential was revoked (it holds its
+    place until it closes) and a placement that waits for its first pickup."""
+    allow_instances(setup.engine, setup.agent.id, 3)
+    revoked = placed(setup)
+    started(setup, revoked, make_client)
+    with setup.engine.connect() as conn:
+        credential = conn.execute(
+            select(t.placement.c.credential_id).where(t.placement.c.id == revoked["id"])
+        ).scalar_one()
+    gone = setup.owner.post(f"/projects/maintainer/maity/credentials/{credential}/revoke", {})
+    assert gone.status_code == 200, gone.text
+    placed(setup)  # no credential yet
+    refused = place(setup)
+    assert (refused.status_code, error(refused)) == (409, "instance_quota")
+    count = refused.json()["error"]["details"]["count"]
+    assert count == 3
+    [row] = setup.owner.get("/projects/maintainer/maity/limits").json()["agents"]
+    assert row["member"] == setup.agent.id
+    assert row["max_instances"]["count"] == count
+
+
+def test_a_placement_meets_the_max_instances_ceiling(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    """§6.31, §15.5: a placement's creation counts against `max_instances` in effect, the
+    ceiling included, as a join does; the refusal carries the quota details, and only the
+    agent profile's owner reads the ceiling's value."""
+    allow_instances(setup.engine, setup.agent.id, 3)
+    limits = "/admin/projects/maintainer/maity/limits"
+    assert setup.owner.patch(limits, {"max_instances": 2}).status_code == 200
+    placed(setup)  # the joined clone and this one: the ceiling's 2
+    refused = place(setup)
+    assert (refused.status_code, error(refused)) == (409, "instance_quota")
+    details = refused.json()["error"]["details"]
+    assert (details["name"], details["limit"], details["max"], details["count"]) == (
+        "max_instances",
+        2,
+        2,
+        2,
+    )
+    assert (details["scope"], details["member"], details["source"]) == (
+        "member",
+        setup.agent.id,
+        "ceiling",
+    )
+    assert details["ceiling"] == {"value": 2, "source": "project_override"}
+    assert details["raise"] == {
+        "right": "instance:admin",
+        "path": "/api/v1/admin/projects/maintainer/maity/limits",
+        "field": "max_instances",
+    }
+    # An agent's proposal meets the same refusal, without the ceiling's value.
+    proposed = place(setup, admin_agent(make_client, setup), reason="a second pair of hands")
+    assert (proposed.status_code, error(proposed)) == (409, "instance_quota")
+    assert proposed.json()["error"]["details"]["ceiling"] == {"source": "project_override"}
+    # Raised to 3, the ceiling lets one more in; the stored 3 is the value in effect now,
+    # at the ceiling, so only the instance admin raises it further.
+    assert setup.owner.patch(limits, {"max_instances": 3}).status_code == 200
+    placed(setup)
+    again = place(setup)
+    assert (again.status_code, error(again)) == (409, "instance_quota")
+    details = again.json()["error"]["details"]
+    assert (details["limit"], details["count"], details["source"]) == (3, 3, "agent_owner")
+    assert details["raise"]["right"] == "instance:admin"
+    with setup.engine.connect() as conn:
+        assert len(conn.execute(select(t.placement.c.id)).all()) == 2
 
 
 def test_two_instances_on_one_runner_get_two_clones(
