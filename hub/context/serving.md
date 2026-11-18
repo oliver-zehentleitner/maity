@@ -808,11 +808,15 @@ reason.
   and its human are read first, and an ended, expired or deleted
   account's session sends no update. The presence update is sent only when
   that read says it is due (once a minute), which also drops the update
-  that matched nothing on every other call. When it writes, the session is
-  read again under the row locks the writes took, so the second-factor gate
-  and the pending check still decide on the session as it stands under
-  READ COMMITTED (#1540 review, `test_auth_statements`); that second read
-  costs one statement once a minute per session.
+  that matched nothing on every other call. Within `SEEN_EVERY` of the last
+  presence the call sends no update and takes no lock: the session read it
+  starts with says the session is alive, and the second-factor gate and
+  the pending check decide on that read. When presence is due, the call
+  updates the session, which locks its row, and reads the session again
+  under that lock, so the gate and the pending check decide on the session
+  as it stands under READ COMMITTED (#1540 review; `test_auth_statements`
+  makes presence due before it checks this); that second read costs one
+  statement once a minute per session.
 - **The count: in the process, two fixed windows.** One minute; the
   estimate is the current minute's count plus the previous one's weighted
   by what the sliding window still covers, the estimate the shared limits

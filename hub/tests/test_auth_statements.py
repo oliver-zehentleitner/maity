@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -77,6 +78,15 @@ def test_a_confirmation_committed_just_before_the_call_counts(
         )
     refused = owner.get(NOTIFICATIONS)
     assert refused.status_code == 403, refused.text  # unconfirmed: no standing
+    # Presence due again: within `SEEN_EVERY` the call writes, locks and reads nothing more,
+    # and the session read it starts with is the one it decides on. Due, it writes presence,
+    # takes the session's lock and reads the session again under it: the case at stake here.
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human_session)
+            .where(session.human_id == owner.id)
+            .values(last_seen_at=clock.now() - timedelta(minutes=2))
+        )
     fired: list[str] = []
 
     def confirm(_conn: Any, _cursor: Any, statement: str, *_: Any) -> None:
