@@ -147,16 +147,20 @@ for a personal hub are in [`docs/install/quickstart.md`](../docs/install/quickst
 The hub with PostgreSQL. From the repository root:
 
 ```sh
-(umask 077; printf 'Database password: '; stty -echo; read -r pw; stty echo; echo; printf 'MAITY_DB_PASSWORD=%s\n' "$pw" > deploy/.env)
+(umask 077; for v in MAITY_DB_PASSWORD MAITY_DB_OWNER_PASSWORD MAITY_DB_APP_PASSWORD; do
+   printf '%s=%s\n' "$v" "$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)"; done > deploy/.env)
 docker compose -f deploy/docker-compose.yml up --build
 ```
 
-The password is read without echo (`stty -echo`, so any POSIX shell) and written only to `deploy/.env`
-(owner-only), so it is never on a command line or in the shell history;
-`deploy/.env` is ignored by Git. Use only letters, digits and `-_.~` in the password, nothing
-else: Compose hands the same value to PostgreSQL as it is and to the hub
-inside a URL, so a character that needs percent-encoding cannot be right
-for both. Compose also interpolates `$` in `.env` values.
+The three database passwords are made at random and written only to `deploy/.env`
+(owner-only), so they are never on a command line or in the shell history;
+`deploy/.env` is ignored by Git. They belong to the superuser `maity`, the role
+`maity_owner` the migrations run as, and the role `maity_app` the hub runs as
+([`docs/install/README.md`, "Database roles"](../docs/install/README.md#database-roles); an
+installation from before the two roles moves to them as described there). A password of your
+own takes only letters, digits and `-_.~`, nothing else: Compose hands the same value to
+PostgreSQL as it is and to the hub inside a URL, so a character that needs percent-encoding
+cannot be right for both. Compose also interpolates `$` in `.env` values.
 
 The `migrate` service runs `maity-hub migrate` once and exits; the hub
 starts after it succeeded and reports healthy once `/api/v1/health`
@@ -242,6 +246,7 @@ All settings come from the environment.
 | `MAITY_DB_POOL_RECYCLE` | `1800` | Seconds after which a pooled connection is replaced when it is next taken, 0–86400; 0 never replaces. A connect that fails because the database host name does not resolve is tried once more after a short pause. |
 | `MAITY_DB_STATEMENT_TIMEOUT` | `30` | Seconds a statement may run on a PostgreSQL connection of the hub before the server cancels it (`statement_timeout`), 0–3600; 0 turns it off. Not set on `maity-hub migrate` and the other commands, nor on MariaDB or SQLite. |
 | `MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT` | `60` | Seconds a PostgreSQL connection of the hub may sit in an open transaction without a statement before the server ends it (`idle_in_transaction_session_timeout`), 0–3600; 0 turns it off. Same scope as above. |
+| `MAITY_DB_ALLOW_PRIVILEGED` | `0` | `1` lets `maity-hub serve` run on a PostgreSQL role that is a superuser or owns the hub's schema or one of its tables (also through a role it belongs to), with a warning at the start. Unset, such a role is refused at the start: the hub serves with a role that only reads and writes rows, and `maity-hub migrate` runs with the owner's ([Database roles](../docs/install/README.md#database-roles)). For an installation that has not moved to the two roles yet. Not checked on SQLite and MariaDB. |
 | `MAITY_DIRECT_DATABASE_URL` | unset | PostgreSQL only: the URL for the one connection per hub process that listens (`LISTEN`) for the wake-ups other replicas send, so a long-poll wakes when another replica writes. Set it when `MAITY_DATABASE_URL` goes through a pooler in transaction mode, which cannot hold a `LISTEN`; unset, the listener uses `MAITY_DATABASE_URL`. |
 | (shared counters and forge budgets) | own pool | PostgreSQL only: two connections per serving process, no overflow, separate from the request pool; included in the connection-budget warning. SQLite and MariaDB keep process-local counters. |
 | (the health check) | own connection | Not a setting. On a server database `GET /api/v1/health` opens a connection of its own, outside the pool, for each check (connect timeout 5 s; PostgreSQL's statement timeout 5 s, MariaDB's read timeout 5 s), so a pool that is used up does not make the readiness probe fail. SQLite has one engine. |

@@ -114,6 +114,7 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("MAITY_DB_POOL_RECYCLE", "database", "1800"),
     Entry("MAITY_DB_STATEMENT_TIMEOUT", "database", "30"),
     Entry("MAITY_DB_IDLE_IN_TRANSACTION_TIMEOUT", "database", "60"),
+    Entry("MAITY_DB_ALLOW_PRIVILEGED", "database", "0"),
     # processes
     Entry("MAITY_WORKERS", "processes", "1"),
     Entry("MAITY_REPLICAS", "processes", "1"),
