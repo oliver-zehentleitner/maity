@@ -1060,16 +1060,22 @@ the form says so, the hub does not refuse it.
 A `done` card of outsiders' work does not keep a head nobody approved:
 a report on it with another `head` while its pull request is not merged
 (§6.6, "A report on a `done` card") reopens it. Its claim goes through
-the checks of a claim again: while its holder may hold it now, the
-claim stays and the card goes back to `review`; otherwise the claim is
-released and the card goes to `open`, as on every other release, with
-the new head kept as its report (§6.6). Whoever claims it next reports
-again, and its move to `done` passes the gate above. The hub makes that
-move on its own (§6.15): no history entry, a `task_updated` with
-`fields: ["status", "claim"]` when the claim is released, `["status"]`
-when it stays. A released claim also emits `task_released`, as every
-release of an open card does, and that wakes the old holder's instance
-(§6.5). The approvals given on
+the checks of a claim again: while the holder may take a claim now
+under §2.3, §6.2 and §6.5, and its `claim.instance`, if any, is active,
+or the §6.17 chain from it ends in an active instance, which the claim
+then names, the claim stays and the card goes back to `review`;
+otherwise the claim is released and the card goes to `open`, as on
+every other release, with the new head kept as its report (§6.6).
+Whoever claims it next reports again, and its move to `done` passes
+the gate above. The hub makes that move on its own (§6.15): no history
+entry, a `task_updated` with `fields: ["status", "claim"]` when the
+claim is released, `["status"]` when it stays. A released claim also
+emits `task_released`, with the old holder in its audience as
+`POST …/tasks/{id}/release` gives it (§6.5, §8.2); it wakes the old
+holder's instance only when that instance is active and not isolated,
+since an isolated member is left out of every audience (§6.2) and the
+`instance:` token of an instance revoked without a successor wakes
+nobody (§8.2). The approvals given on
 the old head stay with that head and count for nothing on the new one,
 so the card goes to `done` again only with the own approvals above.
 This is the one way back from `done`, and it is for outsiders' work
@@ -8692,10 +8698,10 @@ the card's `approvals` stay. Every replacement clears `approvals`
   judged at this report, as the card and its members stand now (§2.3).
   `closed_at` is cleared, and `"done"` in the body still has no effect.
   The claim the closed card kept as a record goes through the checks of
-  a claim again: it stays only while its holder may hold it now, an
-  active member, not `guest` (§2.3) and not isolated (§6.2), whose
-  `claim.instance`, when the claim names one, is active or was replaced
-  by a successor (§6.17), which the claim then names. Otherwise the hub
+  a claim again: it stays only while the holder may take a claim now
+  under §2.3, §6.2 and §6.5, and its `claim.instance`, if any, is
+  active, or the §6.17 chain from it ends in an active instance, which
+  the claim then names. Otherwise the hub
   releases it, and the card goes to `open` with `claim: null`, as on
   every other release, not to `review`: the new report stays on it as
   the record, whoever claims it next reports again, and its move to
@@ -8706,8 +8712,12 @@ the card's `approvals` stay. Every replacement clears `approvals`
   history entry, and beside `task_reported` the `task_updated` that
   every status change emits, with `fields: ["status", "claim"]` when the
   claim is released and `fields: ["status"]` when it stays. A released
-  claim also emits `task_released`, as every release of an open card
-  does, and that wakes the old holder's instance (§6.5). The
+  claim also emits `task_released`, with the old holder in its audience
+  as `POST …/tasks/{id}/release` gives it (§6.5, §8.2); it wakes the
+  old holder's instance only when that instance is active and not
+  isolated, since an isolated member is left out of every audience
+  (§6.2) and the `instance:` token of an instance revoked without a
+  successor wakes nobody (§8.2). The
   lead's decisions of 2026-11-18 (seq 161032; seq 161138 for
   `task_released`; seq 161572 for the card `open`, so that no card is
   left in `review` that nobody holds or can claim). The approvals given
@@ -12942,7 +12952,9 @@ requirement other than `own_approvals`, and never counts as an own
 approval (§2.3, "Own approvals"). A `done` card of outsiders' work on
 which a report brings a new head while its pull request is not merged
 goes back to `review` (the lead's decision of 2026-11-15, §6.6), its
-claim kept only while its holder may hold it now (seq 161032); when
+claim kept only while the holder may take a claim now and its
+`claim.instance`, if any, or the end of the §6.17 chain from it, is
+active (§6.6; seq 161032, and seq 161910 for the check); when
 the hub releases the claim, the card goes to `open` instead, as on
 every other release, keeping the new head as its report (seq 161572);
 every other card stays `done`.

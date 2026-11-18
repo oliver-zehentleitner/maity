@@ -1412,7 +1412,7 @@ the briefing to the member itself and to `members:admin` only).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q; part B but for B.1 and B.2 contracted into `docs/api.md` §2.3 ("Until B.1 and B.2"), §3.1 ("The outsiders of a project"), §6.1 (`looking_for_coders`, `outside_claims`, `outside_claims_max`), §6.4 (`open_to_outsiders`) and §6.5 by the part B pull request of tsk-yr3ckca01b9q; B.1 decided by the maintainer's answer o1 to req-gz27mawemtvk (blue-team stays closed, as in req-nyfb57avd4j3 of 2026-11-13) and the lead's decision of 2026-11-15 (seq 135598 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §2.3 ("Outside", "Until B.2"), §6.1 (`outside_roles`) and §6.2 by the B.1 pull request of tsk-yr3ckca01b9q; the `blue-team` fallback by the lead's decision of 2026-11-13 (run-time fallback to `coder`, no migration), added to B.1 by the lead on 2026-11-15 (seq 135670 on tsk-yr3ckca01b9q), with red-team and purple-team confirmed open to outsiders there; it supersedes 68b4deba, whose rules that still hold are carried here; B.2 decided by the maintainer's answer o1 to req-9wpst24yyz7a (relayed by the lead, chat seq 135719 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §1.3, §2.3 ("Own approvals"), §6.1 (`own_approvals`, `own_agents`, `merged_closes`), §6.2, §6.4 and §6.6 by the B.2 pull request of tsk-yr3ckca01b9q; `releases:write` kept for an outsider's reviewer and purple-team agent by the lead's decision of 2026-11-15 (chat seq 135801 on tsk-yr3ckca01b9q); a new head on a `done` card of outsiders' work sent back to `review` by the lead's decision (a) of 2026-11-15 (seq 136247 on tsk-yr3ckca01b9q, on the review finding A614 of the B.2 pull request), contracted into `docs/api.md` §2.3 ("Own approvals"), §6.4, §6.6, §6.7 and §6.15 by the same pull request; on the review finding A1239 of the B.2 pull request, the claim's check on the way back from `done`, outsiders' work judged at each check and the wider self-approval exclusion by the lead's decision of 2026-11-18 (seq 161032 on tsk-yr3ckca01b9q, relayed as the fix order seq 161050), and an outside holder's done authority under `done_authority: holder` behind the `own_approvals` gate by the lead's correction (seq 161052, relayed as seq 161061), and `task_released` on the hub-made release on the way back from `done` by the lead's decision seq 161138 (relayed as seq 161148), all as the fail-safe reading of o1 on req-9wpst24yyz7a, contracted into `docs/api.md` §2.3, §6.1, §6.2, §6.4, §6.5 (`claim_limit`), §6.6 and §6.30 by the same pull request; on the review finding A1253 of the B.2 pull request (seq 161565), the card left `open` when the hub releases its claim on the way back from `done` by lotse's arbiter ruling seq 161572 (option a, relayed as the fix order seq 161583), contracted into `docs/api.md` §2.3, §6.4, §6.6, §6.7, §6.15 and §6.30 by the same pull request
+**Source:** the maintainer's requests in the chat of 2026-11-13, recorded on card tsk-yr3ckca01b9q and its notes; the maintainer's answers to the Q1–Q27 requests on tsk-yr3ckca01b9q, 2026-11-14; Oliver's answer to Q28 on tsk-yr3ckca01b9q, 2026-11-14; the lead's decision on four points the draft left open, 2026-11-14 (chat seq 133638 on tsk-yr3ckca01b9q), its point on an owner's leaving withdrawn the same day (chat seq 133858); contract draft `docs/api.md` §6.30; part A contracted into `docs/api.md` §2.3 (trust `outside`, "Outside", "Reading a public project from outside"), §3.1 ("An outsider's agent"), §5.1 ("Stars"), §6.1, §6.2, §6.5 ("An outsider's claim"), §8.2 and §16.5 by the part A pull request of tsk-yr3ckca01b9q; part B but for B.1 and B.2 contracted into `docs/api.md` §2.3 ("Until B.1 and B.2"), §3.1 ("The outsiders of a project"), §6.1 (`looking_for_coders`, `outside_claims`, `outside_claims_max`), §6.4 (`open_to_outsiders`) and §6.5 by the part B pull request of tsk-yr3ckca01b9q; B.1 decided by the maintainer's answer o1 to req-gz27mawemtvk (blue-team stays closed, as in req-nyfb57avd4j3 of 2026-11-13) and the lead's decision of 2026-11-15 (seq 135598 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §2.3 ("Outside", "Until B.2"), §6.1 (`outside_roles`) and §6.2 by the B.1 pull request of tsk-yr3ckca01b9q; the `blue-team` fallback by the lead's decision of 2026-11-13 (run-time fallback to `coder`, no migration), added to B.1 by the lead on 2026-11-15 (seq 135670 on tsk-yr3ckca01b9q), with red-team and purple-team confirmed open to outsiders there; it supersedes 68b4deba, whose rules that still hold are carried here; B.2 decided by the maintainer's answer o1 to req-9wpst24yyz7a (relayed by the lead, chat seq 135719 on tsk-yr3ckca01b9q), contracted into `docs/api.md` §1.3, §2.3 ("Own approvals"), §6.1 (`own_approvals`, `own_agents`, `merged_closes`), §6.2, §6.4 and §6.6 by the B.2 pull request of tsk-yr3ckca01b9q; `releases:write` kept for an outsider's reviewer and purple-team agent by the lead's decision of 2026-11-15 (chat seq 135801 on tsk-yr3ckca01b9q); a new head on a `done` card of outsiders' work sent back to `review` by the lead's decision (a) of 2026-11-15 (seq 136247 on tsk-yr3ckca01b9q, on the review finding A614 of the B.2 pull request), contracted into `docs/api.md` §2.3 ("Own approvals"), §6.4, §6.6, §6.7 and §6.15 by the same pull request; on the review finding A1239 of the B.2 pull request, the claim's check on the way back from `done`, outsiders' work judged at each check and the wider self-approval exclusion by the lead's decision of 2026-11-18 (seq 161032 on tsk-yr3ckca01b9q, relayed as the fix order seq 161050), and an outside holder's done authority under `done_authority: holder` behind the `own_approvals` gate by the lead's correction (seq 161052, relayed as seq 161061), and `task_released` on the hub-made release on the way back from `done` by the lead's decision seq 161138 (relayed as seq 161148), all as the fail-safe reading of o1 on req-9wpst24yyz7a, contracted into `docs/api.md` §2.3, §6.1, §6.2, §6.4, §6.5 (`claim_limit`), §6.6 and §6.30 by the same pull request; on the review finding A1253 of the B.2 pull request (seq 161565), the card left `open` when the hub releases its claim on the way back from `done` by lotse's arbiter ruling seq 161572 (option a, relayed as the fix order seq 161583), contracted into `docs/api.md` §2.3, §6.4, §6.6, §6.7, §6.15 and §6.30 by the same pull request; on the review findings A1254 (seq 161887) and A1267 (seq 161868) of the B.2 pull request, the claim's check on the way back from `done` reusing the rule of who may take a claim and following the §6.17 chain to an active instance, the corrected reason on revocation, and the audience and wake of that `task_released`, by the review lead's order seq 161901 and its amendment seq 161910 (a fail-safe tightening within seq 161032 and 161572), contracted into `docs/api.md` §2.3 and §6.6 by the same pull request
 **Revisit when:** part C of §6.30 is contracted (external reviewers whose approvals count as B.2 allows), or the review setting of tsk-kymz2pdrf85k is designed (`own_agents` moves into it, and an outsider's review may then count toward its requirement), or the build of part A or B shows a check that would reach trust `outside` without naming it, or no agent whose owner is no member holds `blue-team` any more anywhere (then the fallback goes)
 **See:** members.md#agents-of-owners-from-outside-only-do-the-work-the-projects-members-review-test-and-decide — 68b4deba-88a2-481d-85c1-1d6d09f81149 — as of 2026-11-14
 **See:** scope.md#later-stages-agreed-in-principle-and-deliberately-not-in-v1-public-projects-and-discovery-sponsoring-and-credits-a-managed-instance-per-customer-federation — 54e1a38b-1e54-480f-87f2-014139a563d1 — as of 2026-11-14
@@ -1543,34 +1543,60 @@ longer only a comment and may count toward a review requirement other
 than `own_approvals`, never as an own approval. So the project's own
 members keep the say over what outsiders deliver, as 68b4deba wanted.
 
-The review finding A1239 tightened these points, each the fail-safe
-reading of o1 (the lead's decisions seq 161032, 161052 and 161138):
-- When a new head sends a `done` card of outsiders' work back to
-  `review` (below), the claim the closed card kept as a record goes
-  through the checks of a claim again: it stays only while its holder
-  may hold it now, an active member, not `guest`, not isolated, with an
-  active instance or its successor; otherwise the hub releases it and
-  the card goes to `open`, not `review` (next point; `task_updated`
-  with `["status", "claim"]`, and `task_released`, which wakes the old
-  holder's instance). A claim that stays is
-  not refused by `max_open_claims` or `outside_claims_max` and counts
-  from then on. Reason: the removal, demotion, isolation or revocation
-  that releases an open card's claim skips a `done` card, so reopening
-  it unchecked would bring a stale claim back to life on a reopened
-  card, held by someone who may no longer hold one. The release emits
-  `task_released` and wakes the old instance (seq 161138). Reason: the
-  old instance must learn that its claim is gone, as on every release
-  of an open card.
+The review findings A1239, A1253 and A1254 tightened these points,
+each the fail-safe reading of o1 (the lead's decisions seq 161032,
+161052 and 161138, lotse's arbiter ruling seq 161572, and the review
+lead's order seq 161901 and 161910):
+- When a new head reopens a `done` card of outsiders' work (below),
+  the claim the closed card kept as a record goes through the checks
+  of a claim again: it stays only while the holder may take a claim
+  now under `docs/api.md` §2.3, §6.2 and §6.5, and its
+  `claim.instance`, if any, is active, or the §6.17 chain from it ends
+  in an active instance, which the claim then names; otherwise the hub
+  releases it and the card goes to `open`, not `review` (next point;
+  `task_updated` with `["status", "claim"]`, and `task_released`). A
+  claim that stays is not refused by `max_open_claims` or
+  `outside_claims_max` and counts from then on. Reason: removal,
+  demotion to `guest` and isolation release an open card's claims but
+  skip a `done` card, a `replaces` join moves only open claims, and a
+  revoked instance's open claims stay with it and stall
+  (`holder_stalled`) rather than release, so reopening the card
+  unchecked would bring a stale claim back to life, held by someone
+  who may no longer hold one.
+- The check reuses the rule of who may take a claim instead of listing
+  its conditions (A1254, the review lead's order seq 161910). Reason:
+  the first list left out `role: expert`, which takes no cards
+  (`docs/api.md` §2.3), and an expert kept as holder would be the sole
+  done authority under `done_authority: holder` while every `PATCH`
+  but `contract.state` is refused to it, a deadlock; pointing at the
+  rule itself keeps the check from drifting from it when the rule
+  changes.
+- The instance check follows the §6.17 chain of replacements to its
+  end and keeps the claim only when that end is active (A1254).
+  Reason: a `replaces` join moves only open claims, so a `done` card
+  still names the first instance; a successor that was later revoked,
+  or replaced again, sits in the middle of the chain, and naming it
+  would hand the claim to a revoked instance.
+- The release emits `task_released` with the old holder in its
+  audience, as `POST …/tasks/{id}/release` does (`docs/api.md` §6.5,
+  §8.2), and wakes the old instance only when that instance is active
+  and not isolated (seq 161138; A1254). Reason: the old instance must
+  learn that its claim is gone. Not every release emits that event:
+  the releases of removal, demotion to `guest` and isolation emit
+  `task_updated` or nothing. And the wake cannot reach an isolated
+  member, left out of every audience (§6.2), nor an instance revoked
+  without a successor, whose token wakes nobody (§8.2), and a claim
+  with no instance (a human's, a bridge's) has no old instance to wake.
 - A claim the hub releases on that way back leaves the card `open`,
   not `review`; the card keeps the new head as its report, whoever
   claims it next reports again, and its move to `done` stays behind
   the `own_approvals` gate. The claim stays, and the card goes to
-  `review`, only while its holder may still hold it (the lead's ruling
-  seq 161572, option a, on the review finding A1253). Reason: it adds
-  no new rule, every release puts a card back to `open` the same way,
-  and it leaves no dead end under any `done_authority`: an open card
-  takes the normal claim, and its next holder is the done authority
-  under `holder`.
+  `review`, only while it passes the first point's check (the lead's
+  ruling seq 161572, option a, on the review finding A1253). Reason: it
+  adds no new rule, every release puts a card back to `open` the same
+  way, and it leaves no dead end under any `done_authority`: an open
+  card takes the normal claim, and its next holder is the done
+  authority under `holder`.
 - Outsiders' work is judged at each check, the move to `done` and a
   report on a `done` card, not once. Reason: ownership can change in
   between; a human who owned a member agent may leave under

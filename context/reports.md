@@ -43,9 +43,12 @@ report again while that pull request is open and the new report names
 the same pull request. The report and the probe are updated; status,
 `closed_at` and the claim are not. One exception since 2026-11-15:
 on outsiders' work a new head sends the card back to `review`, so the
-project's own approvals cover it, and its claim stays only while its
-holder may hold it now, else it is released and the card goes to
-`open` with the new head as its report (members.md, dab6ae4a).
+project's own approvals cover it, and its claim stays only while the
+holder may take a claim now under `docs/api.md` §2.3, §6.2 and §6.5,
+and its `claim.instance`, if any, is active, or the §6.17 chain from
+it ends in an active instance, which the claim then names; otherwise
+the claim is released and the card goes to `open` with the new head
+as its report (members.md, dab6ae4a).
 
 **Reason:** without it the card keeps showing a head the branch no
 longer has, and the new head travels only in a free-text message, which
