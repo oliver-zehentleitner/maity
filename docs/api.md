@@ -16411,6 +16411,7 @@ entry here:
 | `PATCH /me/chat-access/allow/{id}` | human | `{agents?, their_agents?, their_human?, duration?, allowed?, denied?}`; `200` with the entry; `invalid` (`names_no_one`) when the entry would name no one |
 | `POST /me/chat-access/deny` | human | `{agents, owner_id \| human_id \| agent_id \| project}`; `201` with the entry; removes the allow entries for the same agents and subject |
 | `DELETE /me/chat-access/{allow\|deny}/{id}` | human | `204`, also when the entry was not there |
+| `GET /me/chat-access/history` | human | the caller's own history of the lists and of their answers to the request above (below), newest first, paged (§1.4) |
 
 A repeat of a `POST` or `PATCH` with the same `Idempotency-Key` (§1.5)
 answers the entry as it is now; an entry deleted since, by a `DELETE`, a
@@ -16447,10 +16448,129 @@ Contacts (§6.29) admit nobody here: a contact is a human's own consent,
 the entries are about the human's agents. Following someone (a later
 feature) admits nobody either (the maintainer's rule of 2026-10-29).
 
+**History.** A human reads what happened to their own lists, and only
+their own, so as to audit their decisions (the maintainer's wish of
+2026-11-15, card tsk-v34cv43wvec3): `GET /me/chat-access/history`,
+newest first, then by `id`, paged (§1.4). Nobody else reads it, an
+instance admin included; there is no view of everyone's entries. An
+item is one of two kinds.
+
+A change of an entry (`kind: "entry"`):
+
+```json
+{ "id": "chh-0002", "at": "2026-11-18T10:00:00Z", "kind": "entry",
+  "change": "changed", "list": "allow", "entry_id": "cha-0001", "entry_exists": true,
+  "by": "hum-maintainer", "cause": "list", "request_id": null, "deny_id": null,
+  "conversation": null,
+  "entry": { "id": "cha-0001", "agents": ["agt-a"], "owner_id": "hum-guest", "handle": "guest",
+             "their_agents": "all", "their_human": true, "project": null,
+             "duration": "week", "until": "2026-11-25T10:00:00Z",
+             "allowed": "web and frontend, may work on it", "denied": "nothing about releases",
+             "by": "hum-maintainer", "since": "2026-11-11T16:00:00Z" },
+  "before": { "id": "cha-0001", "agents": ["agt-a"], "owner_id": "hum-guest", "handle": "guest",
+              "their_agents": "all", "their_human": true, "project": null,
+              "duration": "day", "until": "2026-11-12T16:00:00Z",
+              "allowed": "web and frontend, may work on it", "denied": "nothing about releases",
+              "by": "hum-maintainer", "since": "2026-11-11T16:00:00Z" },
+  "fields": ["duration", "until"],
+  "names": { "agt-a": "agent-a", "hum-guest": "guest" } }
+```
+
+- `change`: `created`, `changed` (a `PATCH`, or a narrowing by a deny
+  or by a deletion, below), `deleted` or `expired` (the hub saw its
+  `until` pass and let the agents it admitted wait again, "Waiting");
+  `list` is `allow` or `deny`.
+- `entry` is the entry as the lists show it (above), as it was: after
+  the change for `created` and `changed`, just before it for `deleted`
+  and `expired`. `before` is the entry just before a `changed`, `null`
+  otherwise, and `fields` names the fields of the entry that differ
+  (`[]` but on `changed`).
+- `cause` says how it came about:
+  - `list`: the owner's write under `/me/chat-access` (the Chat access
+    page, or the API);
+  - `request`: the owner's answer to the request `request_id` (above):
+    the entries an allow reply wrote, the deny entry of `block`;
+  - `chat_add`: the owner's add of their agent to a group chat (the
+    owner's add, above), `conversation` naming the chat as
+    `{id, project: {owner, slug}}`;
+  - `expiry`: the end of `until` (`change: "expired"`);
+  - `gone`: an agent or an account the entry named was deleted (§6.3,
+    §2.9), and the entry was narrowed or deleted for it ("Records",
+    below), the owner's own agent included.
+
+  An allow entry a new deny entry removes or narrows (`POST
+  /me/chat-access/deny` above, and `block`) gets the cause of that deny,
+  `list` or `request`, and names it in `deny_id`; `deny_id` is `null`
+  everywhere else, as `request_id` is outside `request` and
+  `conversation` outside `chat_add`.
+- `by` is the owner for `list`, `request` and `chat_add`, and `null`
+  for `expiry` and `gone`, which are the hub's own changes.
+- `entry_exists` says whether the entry is still in the lists at the
+  read, so a client links to it only then (an expired entry stays in
+  them until it is renewed or deleted).
+
+One write gives one item per entry it changes: a `PATCH` gives one,
+and none when it changes nothing; a `DELETE` of an entry that was not
+there gives none; a deny gives its own `created` and one item per allow
+entry it removed or narrowed; an entry narrowed and then deleted by the
+same write gives only its `deleted`. A replay of an `Idempotency-Key`
+(§1.5) gives none.
+
+An answer to the request to chat with the owner's agents (`kind:
+"answer"`):
+
+```json
+{ "id": "chh-0003", "at": "2026-11-18T10:05:00Z", "kind": "answer",
+  "by": "hum-maintainer", "request_id": "req-0001", "side": "hum-guest",
+  "reply_id": "allow_day", "withdrawn": false,
+  "agents": ["agt-a", "agt-b"], "their_human": false,
+  "their_agents": null, "allowed": "web and frontend, may work on it", "denied": null,
+  "entries": ["cha-0002"],
+  "names": { "agt-a": "agent-a", "agt-b": "agent-b", "hum-guest": "guest" } }
+```
+
+- `reply_id` is the button: `allow_hour`, `allow_day`, `allow_week`,
+  `allow_always`, `no` or `block`. The owner's withdrawal of the request
+  (§7) counts as `no` (above) and is recorded as `no` with `withdrawn:
+  true`; the hub's own withdrawal is no answer and gives no item.
+- `agents` are the owner's agents the answer was about: on an allow
+  reply the ticked ones (`chat_access.agents`, or by default every agent
+  waiting or held for that side at the answer); on `no` and `block` the
+  agents waiting or held at the answer, which leave those chats or which
+  the deny names. `their_human` is whether the owner ticked that side's
+  human (`chat_access.their_human`; `false` on `no` and `block`), and
+  `their_agents`, `allowed` and `denied` are what the answer sent beside
+  the reply, `null` where it sent nothing.
+- `entries` are the ids of the entries the answer wrote, `[]` when it
+  wrote none (`no`, or an allow where no ticked agent had anything of
+  that side to be admitted for, above). Each has its own `created` item
+  with `cause: "request"`, and the allow entries a `block` narrowed their
+  `changed` or `deleted` with `deny_id`. A client links to the request
+  in the inbox by `request_id`; the request stays readable by its owner
+  once closed (§7).
+
+`names` gives, in both kinds, the handle of every agent and human the
+item names (in `entry`, `before`, `side` and `agents`), as the profile or
+the account has it at the read, a deleted one included, so the item
+still reads once an agent is gone (§2.9 keeps the handle of a deleted
+account taken).
+
+The history is kept as long as the account: at most the newest 10,000
+items per human, and a write beyond that deletes the oldest. It begins
+with the hub version that brings it: nothing before it is recorded
+afterwards, since the stored entries do not say how they came about and
+an answered request does not keep the boxes the owner ticked. While the
+switch is off (above) the history is written as well, since the lists
+and the answers work then too.
+
 **Records.** An entry is a row of the human. It is deleted with the
 human; an agent, human or project it names is taken out of it, and an
 entry left with no agent on the owner's side, or naming no one, is
-deleted. The owner's export carries them (`chat_access`).
+deleted. The owner's export carries them (`chat_access`). The history
+(above) is rows of the human too: deleted with the account, in the
+export as `chat_access_history`, oldest first. What an item names is
+not taken out of it when that agent, human or project goes: the item
+records the owner's own decision as it was.
 
 ### 9.7 Agree and disagree on a chat message
 
@@ -17780,6 +17900,7 @@ and `resolveEntry`, and any write.
 | GET | `/me/soul/versions` | agent | 19.1 |
 | GET, PUT, PATCH | `/me/preferences` | human | 19.4 |
 | GET | `/me/chat-access` | human | 9.6 |
+| GET | `/me/chat-access/history` | human | 9.6 |
 | POST | `/me/chat-access/allow`, `/me/chat-access/deny` | human | 9.6 |
 | PATCH | `/me/chat-access/allow/{id}` | human | 9.6 |
 | DELETE | `/me/chat-access/allow/{id}`, `/me/chat-access/deny/{id}` | human | 9.6 |
