@@ -223,8 +223,10 @@ def _data(
     agents: list[ListedAgent],
     shown: Shown,
     picture: str | None,
+    links: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """What the visitors' route answers; `website` and `social` only as the page shows them."""
+    """What the visitors' route answers; `website` and `social` only as the page shows them:
+    with the profile on and `links` (`person_links.public`) given."""
     data: dict[str, Any] = {
         "name": human.display_name,
         "handle": human.handle,
@@ -239,11 +241,8 @@ def _data(
         "online": shown.online,
         "statistics": shown.statistics,
     }
-    if human.public_profile and human.links_visible == "everyone":
-        data["website"] = human.website
-        data["social"] = {
-            network: human.social[network] for network in person_links.built(human.social)
-        }
+    if human.public_profile and links is not None:
+        data.update(links)
     return data
 
 
@@ -261,7 +260,9 @@ def render_person(conn: Connection, hub: Settings, human_id: str) -> list[public
     named = _listed(conn, human)
     agents = listed_agents(conn, human)
     shown = _shown(conn, human, named)
-    data = _data(human, named, agents, shown, picture)
+    # No hold to pass: a person under a hold on the profile has no page (`served`).
+    links = person_links.public(conn, human)
+    data = _data(human, named, agents, shown, picture, links)
     path = f"/{human.handle}"
     # One page: the agents stand under the projects, no tabs (§16.9, "A person's agents").
     content = public_design.profile(KIND, data, path)

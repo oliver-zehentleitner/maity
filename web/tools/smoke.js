@@ -2225,6 +2225,65 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     harness: "claude-code", mode: "interactive", model: null, workspace: { clone: "agent-f-web", branch: "main" } })
     && srBox().querySelectorAll("li.placement").length === 6 && text(srBox()).includes("Agent F on home-laptop"),
     "placements: a new profile is sent with its join fields, as in a join " + JSON.stringify(srMade[2]));
+  // OpenCode starts only on a model named in the placement (tsk-sn90s6wzp9s7): without `--model`
+  // opencode runs an opencode-hosted model. Offered with the runner's models and no "runner's
+  // default", never sent without one; left out, and said, where the runner names none.
+  {
+    const ocAll = win.Maity.api.getAll, ocPost = win.Maity.api.post;
+    let ocModels = ["xai/grok-4"];
+    win.Maity.api.getAll = (p) => (p !== "/projects/maintainer/maity/runners" ? ocAll(p) : ocAll(p).then((r) => {
+      const copy = JSON.parse(JSON.stringify(r));
+      for (const a of copy.items) {
+        for (const x of ((a.runner.capabilities || {}).harnesses || [])) {
+          if (x.id === "opencode") Object.assign(x, { version: "1.2.3", available: true, reason: null, models: ocModels });
+        }
+      }
+      return copy;
+    }));
+    const ocSent = [];
+    win.Maity.api.post = (p, b) => {
+      if (p !== "/projects/maintainer/maity/placements") return ocPost(p, b);
+      ocSent.push(b);
+      return Promise.reject(new win.Maity.api.ApiError("held", 409, p, "conflict", {}));
+    };
+    // What each select is described by: only the hints shown, so a screen reader is not read the
+    // model hint for another tool, nor a hidden line under the tools (review A1397).
+    const ocDesc = () => [byId("placement-new-tool").getAttribute("aria-describedby") || null,
+      byId("placement-new-model").getAttribute("aria-describedby") || null];
+    await srOpen();
+    const ocFirst = ocDesc();
+    expect(JSON.stringify(ocFirst) === JSON.stringify([null, null]),
+      "placements: with Claude Code first and OpenCode offered, neither select names a hint " + JSON.stringify(ocFirst));
+    byId("join-handle").value = "agent-oc"; byId("join-handle").dispatch("input"); byId("join-display").value = "Agent OC";
+    byId("placement-new-tool").value = "opencode"; byId("placement-new-tool").dispatch("change");
+    const ocOffer = [srOpts("placement-new-tool"), srOpts("placement-new-model"), byId("placement-new-model").required,
+      !byId("placement-new-model-hint").hidden, srPanel().querySelector(".placement-new-no-model").hidden, ocDesc()];
+    await srSubmit();
+    const ocRefused = [ocSent.length, srSaid()];
+    byId("placement-new-model").value = "xai/grok-4";
+    await srSubmit();
+    expect(JSON.stringify(ocOffer) === JSON.stringify([["Claude Code 2.1.308", "Codex 0.156.1", "OpenCode 1.2.3"], ["Choose a model", "xai/grok-4"], true, true, true,
+      [null, "placement-new-model-hint"]])
+      && ocRefused[0] === 0 && ocRefused[1] === "Not placed on the runner: OpenCode starts only on a model chosen here. Choose one of the runner's models."
+      && ocSent.length === 1 && ocSent[0].harness === "opencode" && ocSent[0].model === "xai/grok-4",
+      "placements: OpenCode is offered with the runner's models only, no runner's default, and is not sent until one is chosen "
+      + JSON.stringify([ocOffer, ocRefused, ocSent]));
+    byId("placement-new-tool").value = "claude-code"; byId("placement-new-tool").dispatch("change");
+    const ocBack = [srOpts("placement-new-model")[0], byId("placement-new-model").required, byId("placement-new-model-hint").hidden, ocDesc()];
+    expect(JSON.stringify(ocBack) === JSON.stringify(["The runner's default", false, true, [null, null]]),
+      "placements: another tool keeps the runner's default, needs no model and is not described by the model hint " + JSON.stringify(ocBack));
+    srCancel().click(); await tick();
+    ocModels = [];
+    await srOpen();
+    const ocNone = [srOpts("placement-new-tool"), text(srPanel().querySelector(".placement-new-no-model")), srPanel().querySelector(".placement-new-no-model").hidden,
+      srPanel().querySelector(".placement-new-no-model").id, ocDesc()];
+    expect(JSON.stringify(ocNone) === JSON.stringify([["Claude Code 2.1.308", "Codex 0.156.1"],
+      "Not offered here, since the runner names no model and each of these starts only on a named one: OpenCode.", false,
+      "placement-new-tool-no-model", ["placement-new-tool-no-model", null]]),
+      "placements: OpenCode is left out, and said so at the tool select, where its runner names no model " + JSON.stringify(ocNone));
+    srCancel().click(); await tick();
+    win.Maity.api.getAll = ocAll; win.Maity.api.post = ocPost;
+  }
   // A join line cancelled while its POST waits, the form opened anew and placed on a runner: the
   // old join's late refusal neither frees the newer button nor speaks in its status, and a
   // second submit sends nothing (A995 at #1919). The placement stays waiting; the panel is cancelled.
@@ -2651,7 +2710,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(laptop.includes("online") && laptop.includes("this machine") && laptop.includes("Allowed in maintainer/maity.")
     && laptop.includes("Claude Code 2.1.308 · kept to its command allowlist, in its OS sandbox · a session you can attach to (tmux); or woken by events, no open session (no tokens while idle)")
     && laptop.includes("0.156.1 · without a command allowlist, and its OS sandbox is off")
-    && laptop.includes("opencode is not installed on home-laptop")
+    && laptop.includes("OpenCode is not installed on home-laptop")
     && laptop.includes("Agents on home-laptop run as one user, oliver, and can see each other's files, as the runner itself does.")
     && laptop.includes("Credential rcrd-0002-0001"), "runners: a local runner in plain words, its tools and who can see what");
   const box = text(card("build-box"));

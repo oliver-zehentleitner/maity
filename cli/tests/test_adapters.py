@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from maity import __version__, clonecheck
-from maity.runner import adapters, config, loop, supervisor
+from maity.runner import adapters, config, loop, scratch, scratchop, supervisor
 from maity.runner.asuser import AsUser, Ssh
 
 PLACEMENT = {"id": "plc-0003", "mode": "interactive", "model": "opus"}
@@ -612,6 +612,7 @@ def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Codex runs maity inside its sandbox, which cannot write the runner's directory: git's own
     # repository stays in `.git/maity`, named so, never by leaving the variable out.
     assert launch.env[clonecheck.GIT_PRIVATE_ENV] == clonecheck.IN_CLONE
+    # No scratch on this context: CODEX_HOME falls back to the runner's directory, as before.
     assert codex_home.parent == ctx.agent_dir
     assert (codex_home / "auth.json").resolve() == (home / "codex" / "auth.json").resolve()
     assert (ctx.clone / ".git" / "maity").is_dir()
@@ -621,12 +622,173 @@ def test_codex_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert spec["env"]["CODEX_HOME"] == str(codex_home)
 
 
+def _effective_rule(filesystem: dict[str, str], path: Path) -> str | None:
+    """The rule the codex sandbox applies to `path`: that of the nearest ancestor of `path`
+    (or `path` itself) among the filesystem keys, the longest prefix winning; None if none
+    match."""
+    best: tuple[int, str] | None = None
+    for key, rule in filesystem.items():
+        anchor = Path(key)
+        if path == anchor or anchor in path.parents:
+            depth = len(anchor.parts)
+            if best is None or depth > best[0]:
+                best = (depth, rule)
+    return best[1] if best else None
+
+
+def test_codex_home_lies_in_the_reopened_scratch_not_the_hidden_state_dir(tmp_path: Path) -> None:
+    """The invariant the incident broke (card tsk-hv7jbgy75zjt): a codex placement's CODEX_HOME
+    is under no path the codex sandbox hides, and the profile re-opens (does not hide) the
+    placement's own codex-home, so Codex's per-command helper can be created and run. Red before
+    the fix, when CODEX_HOME sat in agent_dir under the hidden state directory."""
+    workspaces = tmp_path / "ws"
+    place_scratch = workspaces / "proj" / ".scratch" / "plc-0003"
+    place_scratch.mkdir(parents=True)
+    state_dir = tmp_path / "st"  # the fixture's agent_dir lives under it
+    ctx = context(
+        tmp_path, harness_id="codex", binary="/usr/bin/codex",
+        clone=workspaces / "proj" / "agent-3",
+        workspaces=workspaces, scratch=place_scratch, private=(state_dir,),
+        placement={**PLACEMENT, "mode": "supervised"},
+    )  # fmt: skip
+    home = Path(adapters.launch(ctx).env["CODEX_HOME"])
+    # Under no hidden path, and reachable: it lies under the workspaces root the sandbox
+    # re-opens for this placement.
+    assert not any(home == p or p in home.parents for p in ctx.private)
+    assert ctx.workspaces in home.parents
+    # The profile hides the workspaces root from other placements but re-opens this codex-home
+    # read: the sandboxed commands may read it and run the per-command helper under home/tmp,
+    # but may write nothing in it. Read also keeps it reachable so the helper stays runnable.
+    filesystem = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"]["filesystem"]
+    assert filesystem[str(ctx.workspaces)] == "none"
+    assert _effective_rule(filesystem, home) == "read"
+    assert _effective_rule(filesystem, home / "tmp") == "read"
+
+
+def test_a_placements_profile_hides_another_placements_codex_home(tmp_path: Path) -> None:
+    """A placement re-opens only its own scratch (and the codex-home inside it); another
+    placement's codex-home, under the shared workspaces root this profile hides, is not
+    reachable from it."""
+    workspaces = tmp_path / "ws"
+    mine = workspaces / "proj" / ".scratch" / "plc-0003"
+    mine.mkdir(parents=True)
+    ctx = context(
+        tmp_path, harness_id="codex", binary="/usr/bin/codex",
+        clone=workspaces / "proj" / "agent-3",
+        workspaces=workspaces, scratch=mine, private=(tmp_path / "st",),
+        placement={**PLACEMENT, "mode": "supervised"},
+    )  # fmt: skip
+    filesystem = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"]["filesystem"]
+    other = workspaces / "other" / ".scratch" / "plc-9999" / "codex-home"
+    assert _effective_rule(filesystem, other) == "none"
+    assert _effective_rule(filesystem, adapters.codex_home(ctx)) == "read"
+    assert _effective_rule(filesystem, adapters.codex_home(ctx) / "tmp") == "read"
+
+
+def test_without_a_scratch_codex_home_stays_in_the_runner_directory(tmp_path: Path) -> None:
+    """No workspaces root to carve (so no scratch): CODEX_HOME keeps today's location in the
+    runner's directory rather than crashing. `maity runner check` reports that case."""
+    ctx = context(tmp_path, harness_id="codex", binary="/usr/bin/codex",
+                  placement={**PLACEMENT, "mode": "supervised"})  # fmt: skip
+    assert adapters.codex_home(ctx) == ctx.agent_dir / "codex-home"
+    # The profile emits no codex-home rule to a hidden path when there is no scratch.
+    filesystem = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"]["filesystem"]
+    assert not any("codex-home" in key for key in filesystem)
+
+
+def _codex_scratch_context(tmp_path: Path) -> adapters.Context:
+    workspaces = tmp_path / "ws"
+    place_scratch = workspaces / "proj" / ".scratch" / "plc-0003"
+    return context(
+        tmp_path, harness_id="codex", binary="/usr/bin/codex",
+        clone=workspaces / "proj" / "agent-3",
+        workspaces=workspaces, scratch=place_scratch, private=(tmp_path / "st",),
+        placement={**PLACEMENT, "mode": "supervised"},
+    )  # fmt: skip
+
+
+def test_the_profile_gives_codex_home_and_its_control_files_read_not_write(tmp_path: Path) -> None:
+    """A sandboxed command may read Codex's control files but write none of them: codex-home,
+    its config.toml, any rules file, the auth.json link and the per-command helper under tmp
+    are `read`, never `write`. Red on bc753a79, where codex-home was granted `write` and a
+    sandboxed command could rewrite the configuration a later supervised restart reads."""
+    ctx = _codex_scratch_context(tmp_path)
+    ctx.scratch.mkdir(parents=True)  # type: ignore[union-attr]
+    filesystem = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"]["filesystem"]
+    home = adapters.codex_home(ctx)
+    for under_home in (home, home / "config.toml", home / "rules", home / "rules" / "x.rules",
+                       home / "auth.json", home / "tmp", home / "tmp" / "arg0-linux"):  # fmt: skip
+        assert _effective_rule(filesystem, under_home) == "read", under_home
+    assert not any(rule == "write" and "codex-home" in key for key, rule in filesystem.items())
+
+
+def test_the_launch_prep_refuses_a_codex_home_swapped_for_a_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real launch preparation (adapters driving a real scratch) writes Codex's control
+    files only below the scratch it holds open: a codex-home that is a link to a directory
+    outside the scratch is refused and nothing outside is written. Red on bc753a79, where the
+    plain writes resolved the parent normally and wrote through the link."""
+    ctx = _codex_scratch_context(tmp_path)
+    (tmp_path / "ws").mkdir()
+    scratch.make(ctx.scratch)  # type: ignore[arg-type]
+    login = tmp_path / "home" / "codex"
+    login.mkdir(parents=True)
+    (login / "auth.json").write_text("{}")
+    monkeypatch.setenv("CODEX_HOME", str(login))  # the operator's own login to link
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "config.toml").write_text("SENTINEL-config")
+    (victim / "auth.json").write_text("SENTINEL-auth")
+    (ctx.scratch / "codex-home").symlink_to(victim)  # type: ignore[operator]
+    with pytest.raises(scratchop.OnTheWay):
+        adapters.launch(ctx)
+    assert (victim / "config.toml").read_text() == "SENTINEL-config"
+    assert (victim / "auth.json").read_text() == "SENTINEL-auth"
+    assert (ctx.scratch / "codex-home").is_symlink()  # type: ignore[operator]
+
+
+def test_the_launch_prep_writes_land_inside_the_scratch_past_leaf_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real codex-home with a link planted at config.toml (a leaf): the launch prep replaces
+    it in place, the real config.toml lands inside the scratch, and the file the leaf link
+    pointed at outside the scratch is untouched. The leaf case stays safe."""
+    ctx = _codex_scratch_context(tmp_path)
+    (tmp_path / "ws").mkdir()
+    scratch.make(ctx.scratch)  # type: ignore[arg-type]
+    home = ctx.scratch / "codex-home"  # type: ignore[operator]
+    home.mkdir()
+    login = tmp_path / "home" / "codex"
+    login.mkdir(parents=True)
+    (login / "auth.json").write_text("{}")
+    monkeypatch.setenv("CODEX_HOME", str(login))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "c").write_text("keep-c")
+    (home / "config.toml").symlink_to(outside / "c")
+    adapters.launch(ctx)
+    assert (outside / "c").read_text() == "keep-c"  # the leaf link was not followed
+    assert not (home / "config.toml").is_symlink()
+    assert "approval_policy" in (home / "config.toml").read_text()
+    assert os.readlink(home / "auth.json") == str(login / "auth.json")
+
+
+OPENCODE_HARNESS = config.Harness(
+    "opencode", ("interactive", "supervised"), "interactive",
+    ("xai/grok-4.7", "opus"), "xai/grok-4.7",
+)  # fmt: skip
+
+
 def test_opencode_launch(tmp_path: Path) -> None:
-    ctx = context(tmp_path, harness_id="opencode", binary="/usr/bin/opencode",
+    # No model on the placement: the harness default (xai/grok-4.7) reaches opencode as
+    # `--model`, not opencode's own free default.
+    ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
                   placement={**PLACEMENT, "mode": "interactive", "model": None})  # fmt: skip
     launch = adapters.launch(ctx)
     assert launch.env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
-    assert launch.argv == ["/usr/bin/opencode", str(ctx.clone), "--prompt", adapters.START_PROMPT]
+    assert launch.argv == ["/usr/bin/opencode", str(ctx.clone), "--model", "xai/grok-4.7",
+                           "--prompt", adapters.START_PROMPT]  # fmt: skip
     settings = json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())
     rules = settings["permission"]
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
@@ -646,11 +808,35 @@ def test_opencode_launch(tmp_path: Path) -> None:
 
 
 def test_opencode_supervised(tmp_path: Path) -> None:
-    ctx = context(tmp_path, harness_id="opencode", binary="/usr/bin/opencode",
-                  placement={**PLACEMENT, "mode": "supervised"})  # fmt: skip
+    # A model-less supervised placement carries the harness default in both the first run and
+    # the continuation: interactive and supervised share `chosen`.
+    ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
+                  placement={**PLACEMENT, "mode": "supervised", "model": None})  # fmt: skip
     spec = json.loads(Path(adapters.launch(ctx).argv[-1]).read_text())
     assert spec["first"][:4] == ["/usr/bin/opencode", "run", "--dir", str(ctx.clone)]
     assert "--continue" in spec["again"] and "--continue" not in spec["first"]
+    assert spec["first"][4:6] == ["--model", "xai/grok-4.7"]
+    assert spec["again"][4:6] == ["--model", "xai/grok-4.7"]
+
+
+def test_opencode_refuses_a_model_that_is_not_configured(tmp_path: Path) -> None:
+    # Fail closed: a placement model outside the harness's `models` (here opencode's own free
+    # default) would send the conversation to opencode's servers, so the start is refused
+    # instead of carried as `--model`.
+    ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
+                  placement={**PLACEMENT, "model": "opencode/hy4-flash-free"})  # fmt: skip
+    with pytest.raises(adapters.NotYet):
+        adapters.launch(ctx)
+
+
+def test_opencode_refuses_when_no_model_can_be_resolved(tmp_path: Path) -> None:
+    # No placement model and no harness default (a harness configured without `models`): nothing
+    # safe to pass, so the start is refused rather than left to opencode's free default.
+    harness = config.Harness("opencode", ("interactive", "supervised"), "interactive")
+    ctx = context(tmp_path, harness=harness, binary="/usr/bin/opencode",
+                  placement={**PLACEMENT, "model": None})  # fmt: skip
+    with pytest.raises(adapters.NotYet):
+        adapters.launch(ctx)
 
 
 def test_codex_is_advertised_as_sandbox_confined(monkeypatch: pytest.MonkeyPatch) -> None:
