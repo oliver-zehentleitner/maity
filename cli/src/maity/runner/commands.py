@@ -1061,13 +1061,20 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
          *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
     ))  # fmt: skip
-    # Internal too: a placement's scratch made, measured or removed on the agents' side,
-    # every directory from the workspaces root opened without following a link (scratchop).
+    # Internal too: a placement's scratch made, measured or removed on the agents' side, and
+    # Codex's launch-time writes inside its per-placement home (codex), every directory from
+    # the workspaces root opened without following a link (scratchop). An ssh host runs these
+    # through its own `maity`, so the CLI reaches the same ops the module path does; `codex`
+    # takes the config.toml text on stdin, and `--auth` is only its auth.json link target.
     r = rsub.add_parser("scratchop")
-    r.add_argument("op", choices=scratchop.OPS)
+    r.add_argument("op", choices=(*scratchop.OPS, "codex"))
     r.add_argument("--under", required=True)
+    r.add_argument("--auth")  # codex only: the auth.json link target; left out for the others
     r.add_argument("path")
-    r.set_defaults(handler=lambda a: scratchop.main([a.op, "--under", a.under, a.path]))
+    r.set_defaults(handler=lambda a: scratchop.main(
+        ["codex", "--under", a.under, *(["--auth", a.auth] if a.auth else []), a.path]
+        if a.op == "codex" else [a.op, "--under", a.under, a.path]
+    ))  # fmt: skip
     # Internal too: what a pane's output goes through on an ssh host, holding its log to
     # limits.log_keep_bytes (logcap).
     r = rsub.add_parser("logcap")

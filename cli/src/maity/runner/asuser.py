@@ -274,6 +274,14 @@ class AsUser:
         done = self.run([*argv, str(home)], input=config_text)
         if done.returncode == scratchop.LINK:
             raise scratchop.OnTheWay(f"{home}: a link where codex-home must be; nothing written")
+        if done.returncode == 2:
+            # The op reaches an ssh host through its own `maity runner scratchop`. A host whose
+            # `maity` has no `codex` op (older than this) rejects the subcommand as an argument
+            # error (exit 2), distinct from LINK (4) and a genuine failure (1): refuse the
+            # placement, do not crash-loop it. The runner always builds a well-formed argv.
+            raise scratchop.Unsupported(
+                f"host maity too old for codex placements: {done.stderr.strip()[:200]}"
+            )
         if done.returncode != 0:
             raise OSError(f"codex home {home} failed: {done.stderr.strip()[:200]}")
 

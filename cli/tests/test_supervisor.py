@@ -21,6 +21,7 @@ from maity.runner import (
     config,
     restart,
     scratch,
+    scratchop,
     serve,
     supervisor,
     tmux,
@@ -2212,6 +2213,42 @@ def test_codex_without_its_sandbox_is_refused_where_the_grant_has_parts_it_leave
     network = config.RepositoryGrant(network=("pypi.org",))
     sup.cfg = replace(sup.cfg, repositories={"github.com/oliver-zehentleitner/maity": network})
     assert sup._refusal(placement(harness="codex"), sup.targets["local"]) is None
+
+
+def test_a_codex_host_too_old_for_the_launch_write_op_refuses_rather_than_crash_loops(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An ssh host whose `maity` has no codex op cannot anchor the home. The runner refuses the
+    placement with a clear reason instead of crash-looping it: the no-scratch fall-back would
+    return CODEX_HOME to the hidden state directory, the original incident. A generic failure
+    in the same place is still a crash loop, so the two stay distinct."""
+    sup, backend, _, _, logs = world
+    recorded(sup.cfg)
+    sup.targets["local"].sandbox["codex"] = True
+
+    def too_old(*a: Any, **k: Any) -> None:
+        raise scratchop.Unsupported("host maity too old for codex placements: invalid choice")
+
+    monkeypatch.setattr(scratch, "write_codex_home", too_old)
+    sup.update([placement(harness="codex")])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert (rec.state, rec.reason, rec.detail, rec.retry_at) == (
+        "failed", "harness_refused", "codex_host_too_old", None
+    )  # fmt: skip
+    assert rec.reason != "crash_loop" and not rec.crashes and backend.started == []
+    assert any("codex placement refused" in line for line in logs)
+
+    # A genuine failure in the same place is still counted and ends in a crash loop, so the
+    # refusal is not swallowing ordinary errors.
+    def broken(*a: Any, **k: Any) -> None:
+        raise OSError("disk gone while writing the home")
+
+    monkeypatch.setattr(scratch, "write_codex_home", broken)
+    sup.update([placement(harness="codex", generation=2)])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert rec.reason != "harness_refused" and (rec.state, rec.crashes) != ("failed", 0)
 
 
 def test_claude_code_is_not_told_what_codex_starts_without(world: Any) -> None:

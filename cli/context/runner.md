@@ -548,7 +548,7 @@ would read as a boundary when it is not one.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Verification:** corroborated — the placement, launch-write and sandbox-profile boundaries are read from `adapters.py` and `scratchop.py` and covered by unit tests (`tests/test_adapters.py`, `tests/test_scratchop.py`); a live Codex placement running with the read-only home is not yet observed and is still needed
+**Verification:** corroborated — the placement, launch-write and sandbox-profile boundaries are read from `adapters.py`, `scratchop.py` and `commands.py` and covered by unit tests (`tests/test_adapters.py`, `tests/test_scratchop.py`, the launch-write op through the `maity runner scratchop` CLI in `tests/test_commands.py`, and the too-old-host refusal in `tests/test_supervisor.py`); a live Codex placement running with the read-only home is not yet observed and is still needed
 **Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`
 **See:** runner.md — 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7 — as of 2026-11-18
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-18
@@ -579,6 +579,15 @@ restart reads. And the runner's own writes of those files go only to a
 descriptor opened without following a link from the workspaces root, the
 same anchor the scratch's make and removal use, so a `codex-home` swapped
 for a link is refused rather than followed out of the scratch.
+
+The runner writes those control files itself, so on an ssh host it runs the
+host's own `maity` to do it, the same way it makes and removes the scratch
+there — the launch-write op is reached through the `maity runner scratchop`
+CLI, not only the runner's internal module path. A host whose `maity`
+predates that op cannot anchor the home; the placement is then refused with
+a clear reason (the host's `maity` is too old for Codex placements) so the
+operator upgrades the host, rather than crash-looping the start or quietly
+falling back to the hidden state directory where no command would run.
 
 **Reason:** the codex sandbox hides the runner's state directory, and it
 hides a directory by mounting over it, so a path inside it (the old
@@ -615,10 +624,18 @@ writable surface and no write that leaves the scratch.
   unreviewed boundary. The cost: a placement without a scratch (a host whose
   `maity` cannot carve
   one) gets no re-opened home and falls back to the runner's directory,
-  where the sandbox hides it; `check` names that case.
+  where the sandbox hides it; `check` verifies the configuration before a
+  placement starts (Codex is given a scratch, the workspaces root is outside
+  the state directory), but a runtime fall-back to no scratch is beyond it.
 - Keep Codex's home in the clone or its `.git`: the work tree is the agent's
   to commit, and `.git/maity` is the denied credential directory; a home in
   either would be committed by accident or refused by the sandbox.
+- Fall back to no scratch when the host's `maity` is too old for the
+  launch-write op. That would put `CODEX_HOME` back under the hidden state
+  directory — the very incident on this card, where no command runs —
+  functionally broken while looking like a clean start. A placement that
+  cannot be anchored is refused with a reason the operator can act on
+  (upgrade the host) instead, so the breakage is named, not hidden.
 
 ## Codex reaches the operator's login through a link in its per-placement home
 

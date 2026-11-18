@@ -1160,6 +1160,16 @@ class Supervisor:
             with self.lock:
                 rec.retry_at = self.now() + PICKUP_RETRY
             return
+        except scratchop.Unsupported as old:
+            # An ssh host whose `maity` predates the codex launch-write op cannot anchor the
+            # home. The no-scratch fall-back would put CODEX_HOME back under the hidden state
+            # directory (the original incident: no command runs), so refuse the placement with
+            # a clear reason the operator can act on, rather than crash-looping it.
+            self.log(f"{p['id']}: codex placement refused: {old}")
+            with self.lock:
+                rec.enter(self.now(), "failed", "harness_refused", detail="codex_host_too_old",
+                          retry_at=None)  # fmt: skip
+            return
         except Exception as exc:  # noqa: BLE001 - a start task never dies leaving `starting`
             # Counted like a quick exit: a passing tmux hiccup is retried after the backoff,
             # a lasting one ends in crash_loop instead of a permanent wrong reason.

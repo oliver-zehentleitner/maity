@@ -5,6 +5,9 @@
   sandbox hides the state directory, so a Codex placement there could not run
   any command and `maity resume` never started; beside the scratch the sandbox
   re-opens it, while it stays hidden from every other placement.
+- cli: on the ssh backend the Codex launch writes reach a host through its own
+  `maity runner scratchop`; a host whose `maity` is too old for them refuses the
+  placement with a clear reason (upgrade the host) instead of failing in a loop.
 
 ### Added
 

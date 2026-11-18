@@ -45,6 +45,11 @@ class OnTheWay(OSError):
     """A name on the way is a link or not a directory: nothing was made or removed."""
 
 
+class Unsupported(OSError):
+    """An ssh host's `maity` has no `codex` op (older than this one): the caller turns this
+    into a clean placement refusal, not a crash loop, so the operator upgrades the host."""
+
+
 def supported() -> bool:
     """Whether this system opens a directory from another without following a link, removes a
     tree from a descriptor, and writes and links a name relative to one (not Windows)."""
@@ -213,8 +218,12 @@ def _write_leaf(dir_fd: int, name: str, text: str) -> None:
     of it and a link planted at the name is replaced, not followed."""
     temporary = f".{name}.{secrets.token_hex(6)}"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    # O_EXCL | O_NOFOLLOW: the open fails if the temporary name already exists (a foreign
+    # entry, or a link planted there), and only a name this call created is ours to unlink.
+    # So the cleanup sits past the open: a pre-existing entry at the name is never removed.
+    fd = os.open(temporary, flags, 0o600, dir_fd=dir_fd)
     try:
-        with os.fdopen(os.open(temporary, flags, 0o600, dir_fd=dir_fd), "w") as handle:
+        with os.fdopen(fd, "w") as handle:
             os.fchmod(handle.fileno(), 0o600)
             handle.write(text)
         os.replace(temporary, name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)

@@ -590,12 +590,16 @@ def outermost(paths: Sequence[Path], opened: Sequence[Path] = ()) -> tuple[Path,
 def codex_home(ctx: Context) -> Path:
     """Codex's per-placement CODEX_HOME. Inside the placement scratch (§15.5) when it has one,
     so it lies under the workspaces root the codex sandbox re-opens for this placement (and
-    hides from every other placement): there Codex's own sandbox can create and run its
-    per-command helper (`CODEX_HOME/tmp/arg0-linux`). Under the runner's state directory the
-    sandbox hides it (bwrap mounts over it), and then Codex runs no command at all, so
-    `maity resume` never starts (card tsk-hv7jbgy75zjt). Without a scratch (no workspaces root
-    to carve, or one that could not be made) it stays in the runner's directory as before;
-    `maity runner check` reports that case, since the sandbox would hide it there."""
+    hides from every other placement): there Codex's own sandbox can read and run its
+    per-command helper (`CODEX_HOME/tmp/arg0-linux`). The home is read-only to the session
+    (the runner writes its control files once, below), so the sandbox reads and executes the
+    helper, it does not create it. Under the runner's state directory the sandbox hides the
+    home (bwrap mounts over it), and then Codex runs no command at all, so `maity resume`
+    never starts (card tsk-hv7jbgy75zjt). Without a scratch (no workspaces root to carve, or
+    one that could not be made) it stays in the runner's directory as before, where the
+    sandbox hides it; `maity runner check` verifies from the local configuration that Codex is
+    given a scratch and the workspaces root is outside the state directory, but does not catch
+    a runtime fall-back to no scratch."""
     if ctx.scratch is not None:
         return ctx.scratch / "codex-home"
     return ctx.agent_dir / "codex-home"
@@ -642,8 +646,10 @@ def codex_config(ctx: Context) -> str:
         # restart reads. Read also keeps the home reachable (not hidden), so the helper stays
         # readable and runnable. The same single source builds the launch env's CODEX_HOME, so
         # the two never drift. Omitted when there is no scratch to carve: CODEX_HOME then stays
-        # in the runner's directory, which this profile hides, and `maity runner check` reports
-        # it before a placement starts.
+        # in the runner's directory, which this profile hides, and `maity runner check` verifies
+        # the configuration before a placement starts (Codex is given a scratch, the workspaces
+        # root is outside the state directory), though a runtime fall-back to no scratch is
+        # beyond what it catches.
         + (f'{json.dumps(str(codex_home(ctx)))} = "read"\n' if ctx.scratch is not None else "")
         + "\n"
         "[permissions.maity.network]\nenabled = true\n\n"

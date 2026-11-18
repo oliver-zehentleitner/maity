@@ -326,3 +326,36 @@ def test_through_sudo_or_ssh_a_link_on_the_way_is_its_own_answer(tmp_path: Path)
     assert not isinstance(failed.value, scratchop.OnTheWay)
     answer = Remote(0, '{"result": "removed", "bytes": 7}').scratch("remove", tmp_path / "ws", room)
     assert answer == {"result": "removed", "bytes": 7}
+
+
+def test_through_ssh_a_host_maity_too_old_for_the_codex_op_is_its_own_answer(
+    tmp_path: Path,
+) -> None:
+    """The codex launch-write reaches an ssh host through its own `maity runner scratchop
+    codex`. A host whose `maity` has no codex op rejects the subcommand as an argument error
+    (exit 2): that is turned into Unsupported, distinct from a LINK (OnTheWay) and a genuine
+    failure, so the caller refuses the placement rather than crash-looping it."""
+    import subprocess
+
+    from maity.runner.asuser import AsUser
+
+    class Remote(AsUser):
+        def __init__(self, code: int, err: str = "") -> None:
+            object.__setattr__(self, "user", "agents")
+            object.__setattr__(self, "answer", (code, err))
+
+        def run(self, argv: Any, env: Any = None, input: Any = None, cwd: Any = None,
+                timeout: float = 0) -> subprocess.CompletedProcess[str]:  # fmt: skip
+            code, err = self.answer  # type: ignore[attr-defined]
+            return subprocess.CompletedProcess(argv, code, "", err)
+
+    home = _home(tmp_path / "ws")
+    with pytest.raises(scratchop.Unsupported) as old:  # exit 2: the op is unknown on the host
+        Remote(2, "invalid choice: 'codex'").codex(tmp_path / "ws", home, "CONFIG", None)
+    assert not isinstance(old.value, scratchop.OnTheWay)
+    with pytest.raises(scratchop.OnTheWay):  # a link where codex-home must be, not too-old
+        Remote(scratchop.LINK).codex(tmp_path / "ws", home, "CONFIG", None)
+    with pytest.raises(OSError) as failed:  # a genuine failure stays an ordinary OSError
+        Remote(1, "boom").codex(tmp_path / "ws", home, "CONFIG", None)
+    assert not isinstance(failed.value, (scratchop.OnTheWay, scratchop.Unsupported))
+    Remote(0).codex(tmp_path / "ws", home, "CONFIG", None)  # 0: written, no raise
