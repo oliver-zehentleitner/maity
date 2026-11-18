@@ -273,7 +273,8 @@ def head(conn: Connection, where: Scope) -> Position:
     """Per project its highest visible `seq`, 0 without events, for the account its highest
     record. One statement for every membership, each project's `max(seq)` a correlated
     subquery: it stays the index's one-row lookup per project, where a `GROUP BY project_id`
-    reads every event row of the human's projects."""
+    reads every event row of the human's projects on SQLite and PostgreSQL
+    (hub/context/notifications.md 1309e2d7)."""
     project_ids = [mine.project.id for mine in where.memberships]
     projects = dict.fromkeys(project_ids, 0)
     if project_ids:
