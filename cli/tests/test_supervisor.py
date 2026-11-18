@@ -690,7 +690,7 @@ def test_a_failed_clone_logs_why_and_reports_only_the_code(
     assert (rec.state, rec.reason, rec.detail, rec.exit_code) == (
         "failed", "clone_failed", None, None
     )  # fmt: skip
-    assert "maity runs no git" not in repr(reports)
+    assert "maity runs no git" not in json.dumps(reports.sent)
 
 
 def test_a_workspaces_root_resolving_to_a_wildcard_path_logs_why(
@@ -712,7 +712,8 @@ def test_a_workspaces_root_resolving_to_a_wildcard_path_logs_why(
     why = next((line for line in lines if line.startswith("plc-0003: workspace_in_use: ")), None)
     assert why is not None, lines  # absent without the start-path handler's `why` logging
     assert "*" in why and "wildcard" in why and str(real) in why
-    assert "wildcard" not in repr(reports) and str(real) not in repr(reports)  # codes only
+    sent = json.dumps(reports.sent)
+    assert "wildcard" not in sent and str(real) not in sent  # codes only
 
 
 def test_a_layout_mismatch_on_an_owned_clone_logs_why(world: Any) -> None:
@@ -733,7 +734,7 @@ def test_a_layout_mismatch_on_an_owned_clone_logs_why(world: Any) -> None:
     why = next((line for line in lines if line.startswith("plc-0003: workspace_in_use: ")), None)
     assert why is not None, lines  # absent without the owned handler's `why` logging
     assert "recorded as a folder, not a clone" in why
-    assert "recorded as a folder" not in repr(reports)  # codes only
+    assert "recorded as a folder" not in json.dumps(reports.sent)  # codes only
 
 
 # What a session of the agent could leave behind for the next one, or for a person's git: each
@@ -753,7 +754,7 @@ def test_a_clone_with_a_planted_redirect_does_not_start(
     refuses it before the join and the harness; the report carries the codes, the log why.
     Nothing tries again: the clone stays as it is until someone looks at it."""
     sup, backend, reports, _, logs = world
-    sup.client = Pickups(PICKUP)
+    reports = sup.client = Pickups(PICKUP)  # the reports go to the pickup client the start uses
     calls = joining(monkeypatch)
     place = new_clone(sup.cfg)
     entry, text = PLANTED[planted]
@@ -770,7 +771,7 @@ def test_a_clone_with_a_planted_redirect_does_not_start(
     lines = [line for line in logs if line.startswith("plc-0003: ")]
     assert any(line.startswith("plc-0003: workspace_in_use: .git/") for line in lines), lines
     assert "plc-0003: failed workspace_in_use not_a_plain_clone (generation 1)" in lines
-    assert ".git/" not in repr(reports)
+    assert ".git/" not in json.dumps(reports.sent)
     assert (place.path / ".git" / entry).read_text() == text  # the runner deletes nothing
 
 
