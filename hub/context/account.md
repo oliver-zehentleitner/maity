@@ -297,3 +297,19 @@ same admin); the privacy statement's sentence is the owner's to add.
   or someone else's.
 - A per-row query for the address: the list's cost would grow with the
   page.
+
+## A human requests the account's deletion at most 3 times an hour
+
+**Id:** fb05e80a-d84a-4ab8-962a-d153f0eed5e1
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** docs/api.md §2.8.6, §2.9; tsk-q4zynccy5t0b and the lead's ruling on it, 2026-11-14; `hub/src/maity_hub/account_deletion.py` `PER_HUMAN`
+
+`POST /me/deletion` counts per human, 3 an hour; a fourth answers `rate_limited` with `Retry-After` and mails nothing. Only a request that passed every other check counts, the one that would mail. The confirmation stays security mail.
+
+**Reason:** each request replaces the last and mails the confirmation on the security budget, so one account asking in a loop could fill that budget. Its confirmation is about the account's security, so it keeps that budget; the limit bounds what one human can spend.
+
+**Rejected alternatives:**
+- A budget of its own for the deletion mail: it is security mail about the account, and a per-human limit already bounds it.
+- Counting refused requests too: a wrong handle or a missing address mails nothing, so it spends nothing.

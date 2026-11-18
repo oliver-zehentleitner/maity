@@ -26,7 +26,7 @@ from maity_hub import clock, events, namespace
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.db import retrying
-from maity_hub.errors import ApiError, invalid
+from maity_hub.errors import ApiError, invalid, not_found
 
 HEADER = "idempotency-key"
 RETENTION = timedelta(hours=24)
@@ -34,15 +34,103 @@ RETENTION = timedelta(hours=24)
 EXEMPT_PREFIXES = ("/api/v1/join/", "/api/v1/auth/")
 EXEMPT_PATHS = ("/api/v1/me/resume",)
 
-# resource type -> loader(conn, id, request) -> the resource as GET returns it; the
-# request gives a loader what its view needs from the app (settings, the forge reader)
+# loader(conn, id, request) -> the resource as GET returns it; the request gives a loader
+# what its view needs from the app (settings, the forge reader)
 Loader = Callable[[Connection, str, Request], dict[str, Any]]
-LOADERS: dict[str, Loader] = {}
+# may_see(conn, id, caller): whether the caller may still read the resource now, as a GET
+# of it would let them. A replay asks it before the loader runs (§1.5).
+Check = Callable[[Connection, str, Caller], bool]
+
+
+@dataclass(frozen=True)
+class Replay:
+    load: Loader
+    may_see: Check
+
+
+# resource type -> how a replay re-checks the caller and loads the resource
+LOADERS: dict[str, Replay] = {}
+
+
+def register(resource_type: str, load: Loader, may_see: Check) -> None:
+    """How a stored key of `resource_type` replays: `may_see` first, then `load`.
+
+    A replay passes the same read a fresh request would: the stored answer is the resource
+    as it is now, so a caller who lost access since (left the project, lost the right that
+    reads it) gets `not_found`, as their GET does."""
+    if resource_type in LOADERS:
+        raise RuntimeError(f"replay of {resource_type!r} registered twice")
+    LOADERS[resource_type] = Replay(load, may_see)
 
 
 def plain(load: Callable[[Connection, str], dict[str, Any]]) -> Loader:
     """A loader whose view needs nothing from the app."""
     return lambda conn, resource_id, _request: load(conn, resource_id)
+
+
+def own(_conn: Connection, _resource_id: str, _caller: Caller) -> bool:
+    """The caller's own record (their profile, preferences, lists, reports): the key is the
+    caller's, so the id it stored can only name what is theirs."""
+    return True
+
+
+def checked_by_route(_conn: Connection, _resource_id: str, _caller: Caller) -> bool:
+    """The route re-checks the caller itself before it replays (`replay_first` after its own
+    check), so the stored id needs no further look here."""
+    return True
+
+
+def is_caller(_conn: Connection, human_id: str, caller: Caller) -> bool:
+    """A human's own record stored by their id (`/me`, their preferences)."""
+    return caller.kind == "human" and caller.human_id == human_id
+
+
+def in_project(
+    project_of: Callable[[Connection, str], str | None],
+    may_read: Callable[[Connection, Any, str], bool] | None = None,
+) -> Check:
+    """A project's resource: the caller's active membership in it with `project:read`, as
+    its GET checks, and `may_read(conn, membership, id)` where that GET checks more."""
+
+    def may_see(conn: Connection, resource_id: str, caller: Caller) -> bool:
+        from maity_hub.access import membership  # access reads the caller, as this does
+
+        project_id = project_of(conn, resource_id)
+        if project_id is None:
+            return False
+        try:
+            mine = membership(conn, caller, namespace.name_of(conn, project_id))
+        except ApiError:
+            return False
+        if not mine.may("project:read"):
+            return False
+        return may_read is None or may_read(conn, mine, resource_id)
+
+    return may_see
+
+
+def the_project(_conn: Connection, project_id: str) -> str | None:
+    """A resource stored by its project's id (the project, its roles, images, webhook)."""
+    return project_id
+
+
+def column_of(
+    table: Any,
+    column: str = "project_id",
+    *,
+    by: str = "id",
+    key: Callable[[str], Any] = str,
+) -> Callable[[Connection, str], str | None]:
+    """The project of the row of `table` whose `by` is the stored id (`key` turns that into
+    the column's type): its `column`; None once it is gone."""
+
+    def project_of(conn: Connection, resource_id: str) -> str | None:
+        found: str | None = conn.execute(
+            select(table.c[column]).where(table.c[by] == key(resource_id))
+        ).scalar()
+        return found
+
+    return project_of
 
 
 @dataclass(frozen=True)
@@ -105,7 +193,7 @@ def run(
         try:
             with events.transaction(engine) as conn:
                 body_hash = fingerprint(conn, request) if key else ""
-                replay = _replay(conn, who, key, body_hash, request) if key else None
+                replay = _replay(conn, caller, key, body_hash, request) if key else None
                 if replay is not None:
                     return replay
                 # The action's own errors (a unique conflict included) propagate.
@@ -142,15 +230,15 @@ def replay_first(engine: Engine, request: Request, caller: Caller) -> JSONRespon
     if key is None:
         return None
     with engine.begin() as conn:
-        return _replay(conn, caller.idempotency_caller, key, fingerprint(conn, request), request)
+        return _replay(conn, caller, key, fingerprint(conn, request), request)
 
 
 def _replay(
-    conn: Connection, who: str, key: str, body_hash: str, request: Request
+    conn: Connection, caller: Caller, key: str, body_hash: str, request: Request
 ) -> JSONResponse | None:
     row = conn.execute(
         select(t.idempotency_key).where(
-            t.idempotency_key.c.caller == who,
+            t.idempotency_key.c.caller == caller.idempotency_caller,
             t.idempotency_key.c.idem_key == key,
             t.idempotency_key.c.created_at > clock.now() - RETENTION,
         )
@@ -165,7 +253,11 @@ def _replay(
         )
     body: dict[str, Any] = {}
     if row.resource_type is not None and row.resource_id is not None:
-        body = LOADERS[row.resource_type](conn, row.resource_id, request)
+        replay = LOADERS[row.resource_type]
+        # The read a fresh request would pass, before anything is loaded (§1.5).
+        if not replay.may_see(conn, row.resource_id, caller):
+            raise not_found()
+        body = replay.load(conn, row.resource_id, request)
     return respond(body, row.status_code, {"Idempotent-Replayed": "true"})
 
 

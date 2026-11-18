@@ -39,7 +39,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import Engine, event, insert  # noqa: E402
 from sqlalchemy.engine import make_url  # noqa: E402
 
-from maity_hub import clock  # noqa: E402
+from maity_hub import clock, namespace  # noqa: E402
 from maity_hub import tables as t  # noqa: E402
 from maity_hub.app import create_app  # noqa: E402
 from maity_hub.config import Settings, normalize_database_url  # noqa: E402
@@ -247,6 +247,8 @@ def main() -> int:
         downgrade(setup)
         migrate(setup)
         project_id = seed(setup, args.cards, args.members, args.events)
+        with setup.connect() as conn:
+            name = namespace.name_of(conn, project_id)  # `maintainer/measure` (§6.25)
         setup.dispose()
         if args.rtt_ms and not url.startswith("sqlite"):
             parsed = make_url(url)
@@ -261,23 +263,22 @@ def main() -> int:
         )
         login = factory.login_handle(client, "owner")
         assert login.status_code == 200, login.text
-        slug = "measure"
         paths = [
-            f"/projects/{slug}/tasks?status=all&limit=200",
-            f"/projects/{slug}/tasks?status=all&limit=50",
-            f"/projects/{slug}/members",
-            f"/projects/{slug}/events?after=0&limit=200",
+            f"/projects/{name}/tasks?status=all&limit=200",
+            f"/projects/{name}/tasks?status=all&limit=50",
+            f"/projects/{name}/members",
+            f"/projects/{name}/events?after=0&limit=200",
         ]
         dialect = make_url(url).get_backend_name()
         print(
             f"{dialect}, {args.cards} cards, {args.members} members, {args.events} events, "
             f"rtt {args.rtt_ms:g} ms, {args.rounds} rounds (project {project_id})"
         )
-        print(f"{'request':<48} {'items':>5} {'stmts':>6} {'median ms':>10} {'p95 ms':>8}")
+        print(f"{'request':<58} {'items':>5} {'stmts':>6} {'median ms':>10} {'p95 ms':>8}")
         for path in paths:
             row = measure(client, engine, path, args.rounds)
             print(
-                f"{row['path']:<48} {row['items']:>5} {row['statements']:>6g} "
+                f"{row['path']:<58} {row['items']:>5} {row['statements']:>6g} "
                 f"{row['median_ms']:>10.1f} {row['p95_ms']:>8.1f}"
             )
         engine.dispose()

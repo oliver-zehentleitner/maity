@@ -25,14 +25,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import admin, clock, languages
+from maity_hub import admin, catalog, clock, languages
 from maity_hub import tables as t
 from maity_hub.auth import passwords, sessions
-from maity_hub.errors import ApiError, invalid
+from maity_hub.auth.email_links import recipient_over
+from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
-from maity_hub.ratelimit import Attempt
+from maity_hub.ratelimit import Attempt, Limiter
 
 KINDS = ("inbox", "chat", "mention", "security", "invitation")
 MODES = ("immediate", "hourly", "daily", "weekly", "off")
@@ -40,8 +41,36 @@ DIGESTS = ("hourly", "daily", "weekly")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 CONTENT_KINDS = ("chat", "mention")
 VERIFY_FOR = timedelta(hours=24)
+# Verification mails (§18.4): 3 an hour and 10 a day per human, refused beyond; and per
+# recipient address, counted in asking accounts: an account's first mail to the address in a
+# window takes one of 3 places an hour and 10 a day, its further ones none (they are held by
+# its own limit); and at most 9 mails queued in any hour and 100 in any day from all accounts,
+# counted at the request, not at delivery, which two accounts at their own limits (6 an hour,
+# 20 a day) never reach. Not queued beyond, silently (`email_links.recipient_over`).
+VERIFY_BY_HUMAN_HOUR = Limiter(3, 3600, name="notifications.verify.human_hour")
+VERIFY_BY_HUMAN_DAY = Limiter(10, 86400, name="notifications.verify.human_day")
+VERIFY_BY_RECIPIENT_HOUR = Limiter(3, 3600, name="notifications.verify.recipient_hour")
+VERIFY_BY_RECIPIENT_DAY = Limiter(10, 86400, name="notifications.verify.recipient_day")
+VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS = Limiter(
+    1, 3600, name="notifications.verify.recipient_hour_accounts"
+)
+VERIFY_BY_RECIPIENT_DAY_ACCOUNTS = Limiter(
+    1, 86400, name="notifications.verify.recipient_day_accounts"
+)
+VERIFY_BY_RECIPIENT_MAILS_HOUR = Limiter(
+    9, 3600, name="notifications.verify.recipient_mails_hour", exact=True
+)
+VERIFY_BY_RECIPIENT_MAILS_DAY = Limiter(
+    100, 86400, name="notifications.verify.recipient_mails_day", exact=True
+)
 APPROVER_AGE = timedelta(hours=24)
 HELD_FOR = timedelta(days=7)
+# The requesting session's data kept with a pending address, cleared with it.
+NO_PENDING_ORIGIN: dict[str, Any] = {
+    "pending_browser": None,
+    "pending_os": None,
+    "pending_ip": None,
+}
 READ_ONLY = (
     "address_status",
     "verified_at",
@@ -56,13 +85,7 @@ _HHMM = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 DEFAULTS: dict[str, Any] = {
     "browser": {
         "enabled": False,
-        "kinds": {
-            "inbox": True,
-            "chat": True,
-            "mention": True,
-            "security": True,
-            "invitation": True,
-        },
+        "kinds": dict.fromkeys(KINDS, True),
     },
     "email": {
         "language": "en",
@@ -158,6 +181,16 @@ def row_of(conn: Connection, human_id: str, *, lock: bool = False) -> Any:
     except IntegrityError:  # a first write of the same human committed between our read and insert
         pass
     return conn.execute(query.with_for_update()).one()
+
+
+def verified_row(conn: Connection, human_id: str) -> Any:
+    """The human's settings row when it holds a verified address, else None."""
+    row = conn.execute(
+        select(t.notification_settings).where(t.notification_settings.c.human_id == human_id)
+    ).first()
+    if row is None or row.address_status != "verified" or row.address is None:
+        return None
+    return row
 
 
 _NONE = SimpleNamespace(
@@ -584,7 +617,9 @@ def apply_address(
 ) -> None:
     """Set the address to verify, or remove it. Setting it again, also the same one,
     sends a new link and voids the old one. A change or removal of the verified address
-    withdraws a pending deletion request (§2.9): its link went to that address."""
+    withdraws a pending deletion request (§2.9): its link went to that address. The
+    session's browser, system and IP address are kept with the pending address until it is
+    verified, replaced, voided or expired, for the notice to the old address."""
     from maity_hub import account_deletion
 
     now = clock.now()
@@ -603,6 +638,7 @@ def apply_address(
                 pending_address=None,
                 pending_nonce=None,
                 pending_expires_at=None,
+                **NO_PENDING_ORIGIN,
                 epoch=row.epoch + 1,
                 address_change=None,
                 updated_at=now,
@@ -612,6 +648,12 @@ def apply_address(
         if row.address is not None and row.address_status in ("verified", "disabled"):
             _tell_old_address(conn, human_id, row.address, None, session, public_url)
         return
+    # The human's own limits are told (`rate_limited`); nothing is changed then.
+    wait = VERIFY_BY_HUMAN_HOUR.blocked(human_id) or VERIFY_BY_HUMAN_DAY.blocked(human_id)
+    if wait:
+        raise rate_limited(wait)
+    VERIFY_BY_HUMAN_HOUR.hit(human_id)
+    VERIFY_BY_HUMAN_DAY.hit(human_id)
     nonce = secrets.token_hex(8)
     conn.execute(
         update(t.notification_settings)
@@ -620,6 +662,11 @@ def apply_address(
             pending_address=wanted,
             pending_nonce=nonce,
             pending_expires_at=now + VERIFY_FOR,
+            # Where the change was asked from, for the notice to the old address at its
+            # verification (§2.6.3, §18.4); a new request replaces it with its own.
+            pending_browser=session.browser,
+            pending_os=session.os,
+            pending_ip=session.ip,
             address_status=row.address_status if row.address else "pending",
             address=row.address,
             address_change=None,
@@ -638,20 +685,34 @@ def apply_address(
         },
     )
     link = f"{public_url}/mail/verify/{token}"
+    if _recipient_over(wanted, human_id):
+        return  # the address had its share: the link stays pending, no mail is sent
     # Never the handle, the name or projects: nobody confirmed this address yet (§18.4).
+    # The language is the human's own (§6.2); it names nobody.
+    words = catalog.section("mail", text_language(conn, human_id))
     outbox.enqueue(
         conn,
-        kind="security",
+        kind="verification",  # a budget of its own: security mail never waits behind it
         human_id=human_id,
         to=wanted,
         extra_headers={"_purpose": "verify"},
-        subject="[Maity] Confirm your address",
-        body=(
-            f"Someone asked to send Maity mail from {public_url} to {wanted}.\n\n"
-            f"Confirm the address: {link}\n\n"
-            "The link is valid for 24 hours. If you did not ask for this, ignore this mail.\n"
-        ),
+        subject=f"[Maity] {words['verify_subject']}",
+        body=words["verify_body"].format(url=public_url, address=wanted, link=link),
     )
+
+
+def _recipient_over(address: str, human_id: str) -> bool:
+    """Count one verification mail to `address`, asked by `human_id`, against the address's
+    hour and day in asking accounts; True when the address has no place left for it."""
+    limiters = (
+        VERIFY_BY_RECIPIENT_HOUR,
+        VERIFY_BY_RECIPIENT_DAY,
+        VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS,
+        VERIFY_BY_RECIPIENT_DAY_ACCOUNTS,
+        VERIFY_BY_RECIPIENT_MAILS_HOUR,
+        VERIFY_BY_RECIPIENT_MAILS_DAY,
+    )
+    return recipient_over(limiters, f"verify\0{addresses.normalized(address)}", human_id)
 
 
 def verify(
@@ -704,6 +765,12 @@ def verify(
     if taken is not None:
         return False
     previous = row.address if row.address_status in ("verified", "disabled") else None
+    # Where the change was asked from; none for a request older than the hub's keeping it
+    # (migration 20261115000000_address_where), whose notice leaves the line out.
+    kept = (row.pending_browser, row.pending_os, row.pending_ip)
+    origin = None
+    if any(value is not None for value in kept):
+        origin = SimpleNamespace(browser=kept[0], os=kept[1], ip=kept[2])
     try:
         with conn.begin_nested():
             conn.execute(
@@ -718,6 +785,7 @@ def verify(
                     pending_address=None,
                     pending_nonce=None,
                     pending_expires_at=None,
+                    **NO_PENDING_ORIGIN,
                     hard_failures=0,
                     disabled_at=None,
                     epoch=row.epoch + (1 if previous and previous != row.pending_address else 0),
@@ -731,7 +799,7 @@ def verify(
         from maity_hub import account_deletion
 
         account_deletion.withdraw(conn, owner, "address")  # §2.9
-        _tell_old_address(conn, owner, previous, row.pending_address, None, public_url)
+        _tell_old_address(conn, owner, previous, row.pending_address, origin, public_url)
     return True
 
 
@@ -848,7 +916,9 @@ def _tell_old_address(
     public_url: str,
 ) -> None:
     """The old address hears once that the address was changed or removed, whatever the
-    security mode says, and the account records it (§18.4)."""
+    security mode says, and the account records it (§18.4). `session` is where the change
+    was asked from: the session itself for a removal, the browser, system and IP address
+    kept with the pending address for a verified change; None leaves the line out."""
     masked = None
     if new is not None:
         local, _, domain = new.partition("@")
@@ -856,24 +926,29 @@ def _tell_old_address(
     records.write(
         conn, human_id, "email_address_changed", {"masked": masked, "removed": new is None}
     )
+    language = text_language(conn, human_id)
+    words, unknown = catalog.section("mail", language), catalog.section("notify", language)
     where = ""
     if session is not None:
-        browser = session.browser or "a browser"
-        system = session.os or "an unknown system"
-        where = f"\nFrom: {browser} on {system}, {session.ip or 'an unknown address'}"
-    change = f"was changed to {masked}" if masked else "was removed"
+        where = "\n" + words["address_from"].format(
+            browser=session.browser or unknown["a_browser"],
+            os=session.os or unknown["unknown_os"],
+            ip=session.ip or words["unknown_ip"],
+        )
+    body = words["address_changed_body" if masked else "address_removed_body"].format(
+        url=public_url,
+        masked=masked,
+        time=clock.rfc3339(clock.now()),
+        where=where,
+        sessions=f"{public_url}/account/sessions",
+    )
     outbox.enqueue(
         conn,
         kind="security",
         human_id=human_id,
         to=old,
-        subject="[Maity] Your sign-in address was changed",
-        body=(
-            f"The Maity address of your account at {public_url} {change} "
-            f"on {clock.rfc3339(clock.now())}.{where}\n\n"
-            "If this was not you, sign in and check your sessions: "
-            f"{public_url}/account/sessions\n"
-        ),
+        subject=f"[Maity] {words['address_subject']}",
+        body=body,
     )
 
 
@@ -899,6 +974,7 @@ def void_pending_address(conn: Connection, human_id: str) -> None:
             pending_address=None,
             pending_nonce=None,
             pending_expires_at=None,
+            **NO_PENDING_ORIGIN,
             updated_at=clock.now(),
         )
     )

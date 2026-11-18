@@ -15,6 +15,7 @@ from sqlalchemy import Connection, func, or_, select
 from maity_hub import avatars, cards, clock, inbox, views
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import invalid
 from maity_hub.namespace import ProjectRoute
@@ -143,7 +144,7 @@ def overview(
     closed_after: datetime | None = None,
     limit: int = Query(default=REPORTS_DEFAULT, ge=1, le=REPORTS_MAX),
 ) -> JSONResponse:
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         # After the membership: a stranger learns nothing, not even about its query (§1.3).

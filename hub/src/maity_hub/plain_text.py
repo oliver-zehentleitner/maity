@@ -20,8 +20,8 @@ def plain(value: str, keep: str = "") -> bool:
     return not any(unicodedata.category(ch) in NOT_PLAIN and ch not in keep for ch in value)
 
 
-ZWJ = "\u200d"  # zero-width joiner: joins emoji into one picture (👩‍💻)
-VS16 = "\ufe0f"  # variation selector 16: an emoji's picture form (❤️)
+ZWJ = "‍"  # zero-width joiner: joins emoji into one picture (👩‍💻)
+VS16 = "️"  # variation selector 16: an emoji's picture form (❤️)
 # An emoji character, for the two exceptions of a name. Python's `unicodedata` has no
 # Extended_Pictographic property, so: category So (pictographs, dingbats, regional indicators)
 # and the skin-tone modifiers U+1F3FB–U+1F3FF, which are Sk (§1.7.1).

@@ -13,7 +13,8 @@
     "public_presence": true,
     "public_stats": false,
     "public_agents": "public_projects",
-    "start_tabs": null
+    "start_tabs": null,
+    "experiment_notice_understood_at": null
   },
   "deletion": null,
   "projects": [

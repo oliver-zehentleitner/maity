@@ -1,26 +1,29 @@
 name: publish-image
 
 # The hub image, built from deploy/Dockerfile and pushed to
-# ghcr.io/oliver-zehentleitner/maity-hub: on a v* tag, or by hand from main
-# (workflow_dispatch). This file's `if` stops a run from any other ref before it
-# builds, and its environment `ghcr` is open only to main and v* tags (the
-# repository's environment settings). Both live in this file, which a branch can
-# change; what an operator relies on is the signature, whose certificate names
-# the ref, and the repository's rules on who may create v* tags.
+# ghcr.io/oliver-zehentleitner/maity-hub: on a v* tag, and only there. There is
+# no hand start: an image built from main would be signed as refs/heads/main,
+# which the documented check refuses, so it was never deployed (the
+# maintainer's decision req-ry02xngnedjq, 2026-11-16). A failed tag build is
+# re-run from its own run (Re-run jobs), which keeps the tag's ref.
+# This file's `if` stops a run from any other ref before it builds, and its
+# environment `ghcr` is open only to main and v* tags (the repository's
+# environment settings). Both live in this file, which a branch can change;
+# what an operator relies on is the signature, whose certificate names the ref,
+# and the repository's rules on who may create v* tags.
 # Before the push, the same build is loaded and checked: it starts, migrates an
-# empty SQLite database, and on a tag it reports the tag's version. The push
-# carries an SBOM and SLSA provenance as attestations. A second job signs the
-# pushed digest with cosign, keyless: the certificate names this workflow and the
-# ref it ran on, which is what an operator checks (deploy/helm/maity-hub/README.md);
-# only that job may request an OIDC token.
-# On a tag, the `gate` job first asks what release-hub.yml asks before the
-# package: ci passed on the tagged commit and hub-mariadb on the same hub files
-# (tools/release_gate.py, read-only). A tag without them builds nothing. A hand
-# start from main is not gated: it is the maintainer's own build of main.
+# empty SQLite database, and reports the tag's version. The push carries an
+# SBOM and SLSA provenance as attestations. A second job signs the pushed digest
+# with cosign, keyless: the certificate names this workflow and the ref it ran
+# on, which is what an operator checks (deploy/helm/maity-hub/README.md); only
+# that job may request an OIDC token. The documented check accepts only a v*
+# tag's signature: every deploy is a release.
+# The `gate` job first asks what release-hub.yml asks before the package: ci
+# passed on the commit and hub-mariadb on the same hub files
+# (tools/release_gate.py, read-only). A commit without them builds nothing.
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 # Nothing by default; each job below asks for what it needs.
 permissions: {}
@@ -31,7 +34,7 @@ concurrency:
 
 jobs:
   # On a v* tag, the release's standard before anything is built: ci-ok of the
-  # push to main for the commit, hub-mariadb on the same hub files.
+  # push to main for the tagged commit, hub-mariadb on the same hub files.
   gate:
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
@@ -53,16 +56,15 @@ jobs:
 
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: python tools/release_gate.py --sha "$GITHUB_SHA" --mariadb --wait-minutes 230
+        run: python tools/release_gate.py --sha "$GITHUB_SHA" --mariadb --upgrade-page --wait-minutes 230
 
   image:
     needs: gate
-    # Only a v* tag that passed the gate, or main (the gate skipped); a dispatch
-    # from another branch does nothing.
+    # Only a v* tag, and only after the gate passed; a skipped gate builds
+    # nothing.
     if: >-
-      always() &&
-      ((github.ref_type == 'tag' && startsWith(github.ref_name, 'v') && needs.gate.result == 'success') ||
-      (github.ref == 'refs/heads/main' && needs.gate.result == 'skipped'))
+      needs.gate.result == 'success' &&
+      github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
     runs-on: ubuntu-latest
     environment: ghcr
     permissions:
@@ -96,6 +98,10 @@ jobs:
             type=pep440,pattern={{major}}.{{minor}}
             type=sha,format=long,prefix=
 
+      # A release tag's build uses no build cache shared with other refs: no
+      # cache-from, no cache-to, and this build starts from nothing. The push
+      # below reuses only what this build left in the job's own builder, so the
+      # pushed layers are the ones just checked.
       - name: Build for the check
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -103,8 +109,7 @@ jobs:
           file: deploy/Dockerfile
           load: true
           tags: maity-hub:check
-          cache-to: type=gha,mode=max
-          cache-from: type=gha
+          no-cache: true
 
       - name: Check the image before it is pushed
         env:
@@ -138,7 +143,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
           sbom: true
           provenance: mode=max
 

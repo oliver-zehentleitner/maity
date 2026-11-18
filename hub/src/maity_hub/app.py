@@ -23,6 +23,7 @@ from maity_hub import (
     attachment_store,
     attachments,
     availability,
+    chat_gate,
     commitment,
     cross_owner,  # noqa: F401  (registers the cross-owner consent proposal)
     errors,
@@ -65,7 +66,7 @@ from maity_hub import (
 )
 from maity_hub import admin as instance_admin
 from maity_hub.auth import device_codes as codes
-from maity_hub.auth import known_sources, mail_factor
+from maity_hub.auth import known_sources, mail_factor, verifiers
 from maity_hub.auth import sign_in_settings as sign_in
 from maity_hub.compression import Compression
 from maity_hub.config import ConfigError, Settings
@@ -241,6 +242,16 @@ def check_startup(engine: Engine, settings: Settings) -> None:
                 "MAITY_SIGN_IN_SECOND_FACTOR=email needs complete, enabled mail settings"
             )
     check_secrets(engine, settings.secret_key)
+    _, plain = verifiers.check_at_startup(  # read only (§2.2)
+        engine, settings.secret_key, settings.seal_verifiers
+    )
+    # Refused here, not by locking agents out while serving: each would answer as an unknown
+    # credential (hub/context/credentials.md).
+    if settings.sealed_verifiers_only and plain:
+        raise ConfigError(
+            f"MAITY_SEALED_VERIFIERS_ONLY=1, but {plain} live credential verifier(s) are "
+            "stored unsealed; run `maity-hub seal-verifiers` first"
+        )
 
 
 def start_once(engine: Engine, settings: Settings) -> None:
@@ -272,6 +283,13 @@ def start_once(engine: Engine, settings: Settings) -> None:
         # A second factor the environment switched off is told, once (§2.8.5).
         source = sign_in.resolve(conn, settings)["second_factor"][1]
         sign_in.note_second_factor(conn, settings, "environment" if source == "env" else "admin")
+    # The agent firewall switched on (MAITY_AGENT_FIREWALL, §9.6, "The switch"): every open
+    # group chat judged once, with the owners' allow entries, and each owner whose agent waits
+    # asked; a no-op the second time and safe for pods starting together (`chat_gate.switch_on`).
+    chat_gate.configure(settings.agent_firewall)
+    if settings.agent_firewall:
+        settled = chat_gate.switch_on(engine)
+        log.info("agent firewall on: %d open group chats settled", settled)
 
 
 def check_web_dir(settings: Settings) -> None:
@@ -280,6 +298,88 @@ def check_web_dir(settings: Settings) -> None:
     web_dir = settings.web_dir
     if settings.web_dir_required and (web_dir is None or not web_dir.is_dir()):
         raise ConfigError(f"MAITY_WEB_DIR {web_dir} is not a directory")
+
+
+# Whether the hub's role on PostgreSQL may do more than read and write rows. "Its roles" are the
+# role itself and every role it is a member of (MEMBER, not USAGE: a member without INHERIT can
+# still SET ROLE to it). "The hub's schemas" are those holding an `alembic_version` table, where
+# the migrations put the hub's tables, and the current schema: not the current schema alone,
+# which a search_path can point anywhere or leave empty.
+_PRIVILEGED_ROLE = text("""
+    WITH mine AS (
+        SELECT r.oid, r.rolsuper FROM pg_roles r WHERE pg_has_role(current_user, r.oid, 'MEMBER')
+    ), hub AS (
+        SELECT c.relnamespace AS oid FROM pg_class c
+        WHERE c.relname = 'alembic_version' AND c.relkind IN ('r', 'p')
+        UNION
+        SELECT n.oid FROM pg_namespace n WHERE n.nspname = current_schema()
+    )
+    SELECT current_user AS name,
+           (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS rolsuper,
+           EXISTS (SELECT 1 FROM mine WHERE rolsuper) AS reaches_superuser,
+           EXISTS (SELECT 1 FROM hub) AS has_schema,
+           EXISTS (
+               SELECT 1 FROM hub h JOIN pg_namespace n ON n.oid = h.oid
+               WHERE n.nspowner IN (SELECT oid FROM mine)
+           ) AS owns_schema,
+           EXISTS (
+               SELECT 1 FROM hub h JOIN pg_class c ON c.relnamespace = h.oid
+               WHERE c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
+                 AND c.relowner IN (SELECT oid FROM mine)
+           ) AS owns_tables,
+           EXISTS (
+               SELECT 1 FROM hub h, mine m WHERE has_schema_privilege(m.oid, h.oid, 'CREATE')
+           ) AS creates
+    """)
+
+
+def privileged_role(engine: Engine) -> str | None:
+    """Why the database role of `engine` is more than the hub needs to serve, or None: on
+    PostgreSQL a role that is, or can switch to, a superuser; that owns a schema of the hub or
+    one of its tables; or that may create objects in such a schema. Each counts for the role
+    itself and for every role it is a member of, whether or not it inherits that role's rights.
+    The hub's schemas are those with an `alembic_version` table, and the current one; a
+    database with none is refused too, since the check could not say what the hub's role may do
+    there. Owning the schema is what migrations need, and they run under their own role
+    (`maity-hub migrate`, docs/install/README.md, "Database roles"). Other databases are not
+    checked: SQLite has no roles, and MariaDB has no owners, only grants
+    (hub/context/deploy-access.md)."""
+    if engine.dialect.name != "postgresql":
+        return None
+    with engine.connect() as conn:
+        row = conn.execute(_PRIVILEGED_ROLE).one()
+    if row.rolsuper:
+        return f"the database role {row.name!r} is a superuser"
+    if row.reaches_superuser:
+        return f"the database role {row.name!r} is a member of a superuser role"
+    if not row.has_schema:
+        return (
+            f"no schema of the hub to check the database role {row.name!r} against"
+            " (no alembic_version table, no current schema)"
+        )
+    if row.owns_schema:
+        return f"the database role {row.name!r} owns the hub's schema"
+    if row.owns_tables:
+        return f"the database role {row.name!r} owns tables of the hub's schema"
+    if row.creates:
+        return f"the database role {row.name!r} may create objects in the hub's schema"
+    return None
+
+
+def require_unprivileged_role(engine: Engine, settings: Settings) -> None:
+    """`ConfigError` when `maity-hub serve` would run on a role that can change the schema
+    (`privileged_role`), unless MAITY_DB_ALLOW_PRIVILEGED is set; then a warning. Checked by the
+    serving command, once, before the hub serves; `maity-hub migrate` does not ask."""
+    reason = privileged_role(engine)
+    if reason is None:
+        return
+    if settings.db_allow_privileged:
+        log.warning("%s; MAITY_DB_ALLOW_PRIVILEGED is set, so the hub serves with it", reason)
+        return
+    raise ConfigError(
+        f"{reason}: serve with a role that only reads and writes rows (docs/install/README.md, "
+        '"Database roles"), or set MAITY_DB_ALLOW_PRIVILEGED=1 until the roles are set up'
+    )
 
 
 def warn_on_connection_budget(engine: Engine, settings: Settings) -> None:
@@ -333,6 +433,12 @@ def create_app(
     shared_counts.configure(shared_engine)
     shared_budget.configure(shared_engine)
     known_sources.configure(settings.secret_key)  # the key of the sources' fingerprints (§2.1)
+    # Reads sealed verifiers with the key; seals new ones only with MAITY_SEAL_VERIFIERS, and
+    # refuses plain ones with MAITY_SEALED_VERIFIERS_ONLY (§2.2).
+    verifiers.configure(
+        settings.secret_key, settings.seal_verifiers, settings.sealed_verifiers_only
+    )
+    chat_gate.configure(settings.agent_firewall)  # MAITY_AGENT_FIREWALL (§9.6, "The switch")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:

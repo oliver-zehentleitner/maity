@@ -1,5 +1,5 @@
 """`maity-hub serve` and `maity-hub migrate`, the operator's account commands, the copy of the
-attachments into a bucket, and the load test's seed."""
+attachments into a bucket, the sealing of stored verifiers, and the load test's seed."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import asyncio
 import getpass
 import logging
 import os
-import re
 import sys
 from pathlib import Path
 from types import FrameType
@@ -42,11 +41,12 @@ from maity_hub.app import (
     check_web_dir,
     create_app,
     require_current_schema,
+    require_unprivileged_role,
     serving_engine,
     start_once,
     warn_on_connection_budget,
 )
-from maity_hub.auth import second_factor_reset
+from maity_hub.auth import second_factor_reset, verifiers
 from maity_hub.auth.passwords import MIN_LENGTH, hash_password
 from maity_hub.config import ConfigError, Settings, redact_database_url
 from maity_hub.db import current_revision, head_revision, make_engine, migrate
@@ -66,6 +66,16 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("serve", help="serve the API and the dashboard")
     commands.add_parser("migrate", help="bring the database schema to the current version")
+    seal = commands.add_parser(
+        "seal-verifiers",
+        help="seal the credentials' plain verifiers with MAITY_SECRET_KEY; only with "
+        "MAITY_SEAL_VERIFIERS=1, a second run seals nothing",
+    )
+    seal.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="only count the sealed and the plain verifiers; writes nothing, needs no setting",
+    )
     owner = commands.add_parser("owner", help="manage human accounts")
     owner_commands = owner.add_subparsers(dest="owner_command", required=True)
     create = owner_commands.add_parser(
@@ -137,6 +147,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "migrate":
         return _migrate(settings)
+    if args.command == "seal-verifiers":
+        return _seal_verifiers(settings, args.dry_run)
     if args.command == "owner":
         return _owner_create(settings, args.handle, args.display_name, args.email)
     if args.command == "second-factor":
@@ -286,14 +298,13 @@ def _loadtest_seed(settings: Settings, humans: int, out: Path) -> int:
     except (SQLAlchemyError, ImportError) as error:
         return _database_error(settings, error)
     try:
+        # sealed as the hub seals them
+        verifiers.configure(settings.secret_key, settings.seal_verifiers)
         made = loadtest.seed(engine, humans, out)
     except FileExistsError:
         return _fail(f"refused: {out} exists", EXIT_CONFIG)
     print(f"seeded {made} humans into {out}")
     return 0
-
-
-HANDLE = re.compile(r"[a-z0-9][a-z0-9-]{1,62}")
 
 
 def _read_password() -> str | None:
@@ -311,9 +322,9 @@ def _owner_create(
 ) -> int:
     """The account with its address as verified (docs/api.md §2.1): the password signs in
     by it, with no mail sent, on an instance that has none set up yet."""
-    if not HANDLE.fullmatch(handle):
+    if not handles.FORMAT.fullmatch(handle):  # the hub's one rule, 2 to 31 (§6.24)
         return _fail(
-            "--handle: lower-case letters, digits and '-', 2 to 63 characters", EXIT_CONFIG
+            "--handle: lower-case letters, digits and '-', 2 to 31 characters", EXIT_CONFIG
         )
     if paths.handle_reserved(handle):  # a first segment of the hub (§16.11), the first account too
         return _fail(f"the handle {handle!r} is reserved", EXIT_CONFIG)
@@ -488,7 +499,7 @@ def _migrate(settings: Settings) -> int:
             )
         before = current_revision(engine)
         try:
-            migrate(engine)
+            migrate(engine, secret_key=settings.secret_key)
         except SQLAlchemyError:
             # Where the run left the schema, after the last attempt (db.migrate): on PostgreSQL
             # the chain is one transaction and this is `before`; MariaDB commits per step.
@@ -509,6 +520,53 @@ def _migrate(settings: Settings) -> int:
     return 0
 
 
+def _seal_verifiers(settings: Settings, dry_run: bool = False) -> int:
+    """The explicit step that seals the verifiers written before sealing was switched on
+    (hub/context/credentials.md); no migration seals. Idempotent: a sealed row stays. Prints
+    `sealed N, already sealed M, plain left K` per table and in all; exit 1 when a plain row
+    is left after a real run (one written meanwhile). `--dry-run` only counts."""
+    key = settings.secret_key
+    if not dry_run and (not settings.seal_verifiers or key is None):
+        return _fail(
+            "refused: sealing is off; set MAITY_SEAL_VERIFIERS=1 and MAITY_SECRET_KEY first",
+            EXIT_CONFIG,
+        )
+    try:
+        engine = make_engine(settings.database_url)
+    except (SQLAlchemyError, ImportError) as error:
+        return _database_error(settings, error)
+    try:
+        require_current_schema(engine)
+        if dry_run or key is None:
+            counted = verifiers.count(engine)
+        else:
+            counted = verifiers.seal_and_count(engine, key)
+    except SchemaNotCurrentError as error:
+        return _fail(str(error), EXIT_FAILURE)
+    except SQLAlchemyError as error:
+        return _database_error(settings, error)
+    finally:
+        engine.dispose()
+    total = verifiers.Counted(
+        sealed=sum(c.sealed for c in counted.values()),
+        already=sum(c.already for c in counted.values()),
+        left=sum(c.left for c in counted.values()),
+    )
+    for name, line in (*counted.items(), ("total", total)):
+        print(
+            f"{name}: sealed {line.sealed}, already sealed {line.already}, plain left {line.left}"
+        )
+    if dry_run:
+        print("dry run: nothing written")
+        return 0
+    if total.left:
+        return _fail(
+            f"{total.left} plain verifier(s) left: written while this ran; run it again",
+            EXIT_FAILURE,
+        )
+    return 0
+
+
 def _default_handle() -> str:
     """The login name when it is a valid handle that no route of the hub uses (`admin` is
     one, §16.11), else `owner`."""
@@ -516,7 +574,9 @@ def _default_handle() -> str:
         login = getpass.getuser().lower()
     except (KeyError, OSError):  # no passwd entry, no LOGNAME
         return "owner"
-    return login if HANDLE.fullmatch(login) and not paths.handle_reserved(login) else "owner"
+    return (
+        login if handles.FORMAT.fullmatch(login) and not paths.handle_reserved(login) else "owner"
+    )
 
 
 def _read_email() -> str | None:
@@ -555,7 +615,7 @@ def _quickstart(
     new = unversioned
     try:
         if new:
-            migrate(engine)
+            migrate(engine, secret_key=settings.secret_key)
             print(f"maity-hub: schema empty -> {head_revision(engine)}")
         else:
             require_current_schema(engine)
@@ -593,6 +653,7 @@ def _serve(settings: Settings, banner: list[str] | None = None) -> int:
     try:
         engine = serving_engine(settings)
         require_current_schema(engine)
+        require_unprivileged_role(engine, settings)
         warn_on_connection_budget(engine, settings)
         app = create_app(settings, engine)
     except SchemaNotCurrentError as error:
@@ -629,6 +690,7 @@ def _serve_workers(settings: Settings, banner: list[str] | None) -> int:
         engine = serving_engine(serving.per_worker(settings))
         try:
             check_startup(engine, settings)
+            require_unprivileged_role(engine, settings)
             warn_on_connection_budget(engine, settings)
             start_once(engine, settings)
         finally:

@@ -34,6 +34,7 @@ def _fresh() -> Iterator[None]:
         registration_routes.BY_SOURCE,
         registration_routes.BY_PAIR_SHORT,
         registration_routes.BY_PAIR_DAY,
+        registration_routes.BY_ADDRESS_HOUR,
         registration_routes.BY_ADDRESS_DAY,
     ):
         limiter.reset()
@@ -612,6 +613,20 @@ def test_an_issuer_who_lost_the_authority_voids_it(
     assert accept(guest, token_of(made)).status_code == 404
 
 
+def test_a_suspended_issuers_invitation_admits_nobody(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    admin = member(make_client, migrated, "an-admin", "admin")
+    made = issue(admin)
+    with migrated.begin() as conn:  # suspended between issue and accept (§16.8)
+        conn.execute(
+            update(t.human).where(t.human.c.id == admin.id).values(suspended_at=clock.now())
+        )
+    guest = flow.human(make_client, migrated, "guest")
+    void = accept(guest, token_of(made))
+    assert (void.status_code, reason(void)) == (403, "invitation_void")
+
+
 def test_an_owner_invitation_needs_the_issuer_still_owner(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -805,7 +820,11 @@ def test_an_address_bound_invitation_is_mailed_when_mail_is_on(
     )
     assert made.status_code == 201, made.text
     [mail] = [r for r in outbox_rows(migrated) if r.recipient == "new@example.org"]
-    assert mail.kind == "security"  # the recipient's security budget (§3.4)
+    assert mail.kind == "invitation"  # a budget of its own, never security mail's (§16.2)
+    from maity_hub.mail import outbox
+
+    assert outbox.BUDGETS["invitation"] == "invitation_max_per_hour"
+    assert "invitation" not in outbox.DROPPED_OVER_BUDGET  # over it, queued like security mail
     assert mail.subject.startswith("[Maity] ") and "Maity" in mail.subject
     for shown in (made.json()["url"], "maintainer/maity", "member", "reviewer", "Hi!"):
         assert shown in mail.body, shown

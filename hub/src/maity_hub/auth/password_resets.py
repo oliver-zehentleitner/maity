@@ -18,7 +18,15 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.auth.email_links import digest, lock_human
+from maity_hub.auth.email_links import (
+    RECIPIENT_MAILS_PER_DAY,
+    RECIPIENT_MAILS_PER_HOUR,
+    RECIPIENT_PER_DAY,
+    RECIPIENT_PER_HOUR,
+    digest,
+    lock_human,
+    recipient_over,
+)
 from maity_hub.notifications import tokens
 from maity_hub.ratelimit import Limiter
 
@@ -158,30 +166,75 @@ def wrong_code(conn: Connection, human_id: str) -> int:
 class RequestLimits:
     """`POST /auth/password-reset`, as `POST /auth/email-link` (§2.6.4), in buckets of its own:
     only the source limit answers `429`; over the pair limits the answer stays `202` and nothing
-    is sent. Existing and unknown addresses take the same path."""
+    is sent, and so over the recipient's limit. Existing and unknown addresses take the same
+    path. `source` is the caller's `Origin.limit_key`."""
 
     def __init__(self) -> None:
         self.by_source = Limiter(10, 3600, name="auth.password_resets.by_source")
         self.pair_quarter = Limiter(3, 900, name="auth.password_resets.pair_quarter")
         self.pair_day = Limiter(10, 86400, name="auth.password_resets.pair_day")
+        self.recipient_hour = Limiter(
+            RECIPIENT_PER_HOUR, 3600, name="auth.password_resets.recipient_hour"
+        )
+        self.recipient_day = Limiter(
+            RECIPIENT_PER_DAY, 86400, name="auth.password_resets.recipient_day"
+        )
+        self.recipient_hour_networks = Limiter(
+            1, 3600, name="auth.password_resets.recipient_hour_networks"
+        )
+        self.recipient_day_networks = Limiter(
+            1, 86400, name="auth.password_resets.recipient_day_networks"
+        )
+        self.recipient_mails_hour = Limiter(
+            RECIPIENT_MAILS_PER_HOUR,
+            3600,
+            name="auth.password_resets.recipient_mails_hour",
+            exact=True,
+        )
+        self.recipient_mails_day = Limiter(
+            RECIPIENT_MAILS_PER_DAY,
+            86400,
+            name="auth.password_resets.recipient_mails_day",
+            exact=True,
+        )
 
     def take(self, address: str, source: str) -> tuple[int, bool]:
         wait = self.by_source.hit(source)
         if wait:
             return wait, False
-        key = digest(f"{source}\0{address.strip().casefold()}")
+        normalised = address.strip().casefold()
+        key = digest(f"{source}\0{normalised}")
         quarter = self.pair_quarter.hit(key)
         day = self.pair_day.hit(key)
-        return 0, not (quarter or day)
+        if quarter or day:
+            return 0, False
+        recipient = (
+            self.recipient_hour,
+            self.recipient_day,
+            self.recipient_hour_networks,
+            self.recipient_day_networks,
+            self.recipient_mails_hour,
+            self.recipient_mails_day,
+        )
+        return 0, not recipient_over(recipient, normalised, source)
 
 
 def password_changed(conn: Connection, human_id: str) -> None:
     """A new password, by `POST /auth/password` or a reset: the generation moves, so every
-    link made under the old one dies with it, and the open ones are voided now too."""
+    link made under the old one dies with it, and the open ones are voided now too. That
+    includes the link that lifts the daily second-factor cap (§2.8.6): the day's alert counts
+    as not written, so the next wrong code mails one under the new generation. The human's
+    row is updated before the day's, the order a wrong code's count takes too
+    (`second_factor._count_day`)."""
     conn.execute(
         update(t.human)
         .where(t.human.c.id == human_id)
         .values(password_generation=t.human.c.password_generation + 1)
+    )
+    conn.execute(
+        update(t.second_factor_day)
+        .where(t.second_factor_day.c.human_id == human_id)
+        .values(alerted=False)
     )
     void_human(conn, human_id)
 

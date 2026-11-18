@@ -285,9 +285,9 @@ This is not the explanation of the 32 MiB an hour seen in production: that is ab
 **Source:** hardening card tsk-ngx42j6r0jke (the maintainer, 2026-11-04; plan approved by the team lead); `.github/workflows/publish-image.yml`, `deploy/helm/maity-hub/README.md`
 **Revisit when:** the image is pushed with a token that only the `ghcr` environment holds, or the chart starts checking signatures itself
 
-`publish-image.yml` runs on a `v*` tag and by hand. Its build job stops
-unless the ref is a `v*` tag or `main`; the signing job runs only after
-it. Both run in the environment `ghcr`, which the repository's
+`publish-image.yml` runs on a `v*` tag alone (until 2026-11-16 also by
+hand from `main`, 5b3e0b46). Its build job stops unless the ref is a
+`v*` tag; the signing job runs only after it. Both run in the environment `ghcr`, which the repository's
 settings open to `main` and `v*` tags only; who may create or move those tags is a repository rule. Both
 the `if` and the environment are in the workflow file, so they keep
 this file from running elsewhere, not a changed copy of it on a branch:
@@ -297,6 +297,17 @@ itself asks for. After the push a second job, the only one with
 certificate names `publish-image.yml` and the ref the run was on.
 The chart README tells operators to check that identity with
 `cosign verify` before they pin a digest.
+
+**Since the maintainer's decision of 2026-11-14 (req-5x293t6ntn8q):** the identity the chart README checks is
+`refs/tags/v*` alone. A run from `main` still builds and signs, after
+the same gate as a tag, but its `refs/heads/main` signature is refused
+by that check, because every deploy is a release (9c3f6a1e).
+
+**Since the maintainer's decision of 2026-11-16 (req-ry02xngnedjq):**
+there is no run from `main` any more. `publish-image.yml` runs on a
+`v*` tag alone, and both jobs' `if` admit only a `v*` tag (5b3e0b46).
+The environment's list of refs is the repository's setting and is
+unchanged by that.
 
 **Reason:** the image is what every installation runs, so only
 reviewed code, on `main` or a release tag, should become one. What
@@ -317,6 +328,224 @@ registry alone.
   stored long-lived token; kept as a further step if needed.
 - A signing key stored as a secret: a long-lived key that can leak.
   Keyless needs none, and the identity is the workflow and ref.
+
+## The image is built without a build cache shared with other refs
+
+**Id:** 5b7e2c94-1d3a-4f6e-9a08-c2e71f4d8b36
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 1 (release chain hardening, 2026-11-13); `.github/workflows/publish-image.yml`
+**Revisit when:** `publish-image.yml` gains a trigger other than a `v*` tag, or a release build becomes too slow without a cache
+
+Builds for a release tag use no build cache shared with other refs
+(until 2026-11-16 also a hand-started run from `main`, 5b3e0b46).
+`publish-image.yml` runs only for a `v*` tag, so neither
+build step of its `image` job names `cache-from` or `cache-to`: the build
+for the check runs with `no-cache` in a builder that `setup-buildx-action`
+creates for the job, and the push build after it reuses only what that
+build left there. Nothing else in the workflow restores a cache: the
+`gate` job's `setup-python` has no `cache:`, and the Dockerfile has no
+cache mounts and installs with `pip --no-cache-dir`.
+
+**Reason:** an image that installations run should consist of what its
+own run built from the tagged commit, not of layers another ref's run
+stored. The push build keeps the job's own builder cache so that the
+pushed layers are the ones the check just ran, not a second build.
+
+**Rejected alternatives:**
+- A cache scope per ref (`scope=` on `type=gha`): a tag runs once, so a
+  scope of its own is never hit, and a hand start from main would still
+  share main's scope.
+- `no-cache` on the push build as well: a second build from nothing, so
+  the pushed image would not be the image the check ran.
+
+## A hand-started image build runs the same release gate as a tag build, and only a tag's signature is accepted
+
+**Id:** 9c3f6a1e-7b42-4d85-a0e9-3e5d8b17c4f2
+**Type:** decision
+**Status:** superseded
+**Superseded by:** 5b3e0b46-aa2f-47be-ac53-b7d5cc4b7a96
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 2 (release chain hardening, 2026-11-13); the maintainer's answer to req-5x293t6ntn8q, 2026-11-14, relayed by the team lead (every deploy is a `v*` release, the deploy description in this file stays, the identity drops `refs/heads/main`); `.github/workflows/publish-image.yml`, `tools/release_gate.py`, `tools/test_release_gate.py`, `deploy/helm/maity-hub/README.md`
+**Revisit when:** a deploy runs an image no tag built, or the gate starts needing something a hand start does not have (a tag, a version)
+**See:** https://github.com/oliver-zehentleitner/maity — ea58fdd2-6e3f-45df-ae48-4ce6825cafde — as of 2026-11-13
+**See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
+**See:** packaging.md#every-deploy-of-maityteam-is-a-release-a-version-bump-as-the-last-merge-then-the-maintainers-v-tag — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-16
+
+The `gate` job of `publish-image.yml` runs on a hand start from `main`
+as on a `v*` tag, and the `image` job needs it to have passed in both
+cases; a skipped gate no longer lets a build through.
+`tools/release_gate.py` needs only the full commit id: on a hand start
+that is the head of `main` the run started on, and it asks the same two
+things of it (ci-ok of the push to main, hub-mariadb on the same hub
+files), waiting while they still run.
+
+The documented signing identity, in the chart README's `cosign verify`,
+accepts only `refs/tags/v*`; `refs/heads/main` is no longer in it. A
+hand start from `main` still builds, signs and pushes, but the
+signature it gets is one the documented check refuses, so its image is
+not deployed. Of the two deploy descriptions that disagreed, the one in
+this file (1555765c: every deploy is a release built by the
+maintainer's tag) stays; the root context's overnight deploy entry,
+which deployed the image from the publish workflow on `main`, is
+superseded.
+
+**Reason:** the gate, because a commit should not become a signed image
+without the checks a release has, however the run was started; it needs
+no tag, so the hand start runs it unchanged. Dropping `heads/main`, by
+the maintainer's decision that every deploy is a release: with no deploy
+path left for an image built from `main`, accepting its signature would
+only widen what an operator trusts. The two together answer the card's
+point both ways.
+
+**Rejected alternatives:**
+- Keeping `heads/main` in the identity with the gate alone: chosen
+  first, while images built from `main` were still a documented deploy
+  path and it was open which deploy description stays; dropped once the
+  maintainer settled that every deploy is a release.
+- Leaving the hand start ungated as the maintainer's own build: a signed
+  image of an unchecked commit in the public registry.
+- Removing the hand start from `main` altogether: not part of the
+  maintainer's answer, so it stays; whether it is still wanted is left
+  to the maintainer's review of this change.
+
+## The image is built only for a v* tag; the hand start from main is removed
+
+**Id:** 5b3e0b46-aa2f-47be-ac53-b7d5cc4b7a96
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-ry02xngnedjq, 2026-11-16 ("remove it, only the `v*` tag"), card tsk-xz5rdgdy0srk; `.github/workflows/publish-image.yml`, `tools/test_release_gate.py`, `deploy/helm/maity-hub/README.md`
+**Revisit when:** a deploy needs an image no tag built, or a tag build has to be started again in a way a re-run of its own run cannot
+**See:** packaging.md#a-hand-started-image-build-runs-the-same-release-gate-as-a-tag-build-and-only-a-tags-signature-is-accepted — 9c3f6a1e-7b42-4d85-a0e9-3e5d8b17c4f2 — as of 2026-11-16
+**See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-16
+
+`publish-image.yml` has one trigger, a push of a `v*` tag; the
+`workflow_dispatch` trigger is gone. The `if` of the `gate` and the
+`image` job admit only a `v*` tag, no longer `refs/heads/main`, and the
+`image` job still needs the gate to have passed. The release gate is
+unchanged: it asks of the tagged commit what it asked before.
+`tools/test_release_gate.py` fails when the workflow gains another
+trigger, a `workflow_dispatch` or a branch, or when either job's `if`
+admits a branch.
+
+**Reason:** since 9c3f6a1e the documented `cosign verify` refuses an
+image signed as `refs/heads/main`, so a hand start from `main` built,
+signed and pushed an image that was never deployed. Removing the
+trigger leaves one way to an image, the one every deploy takes, and one
+fewer kind of signed image in the public registry that an operator must
+learn to refuse.
+
+**Rejected alternatives:**
+- Keeping `workflow_dispatch` but admitting it only on a `v*` tag ref
+  (a job `if` on `refs/tags/v`): a second way to start the same tag
+  build, with a run that differs only in its event. A failed tag build
+  is started again with "Re-run jobs" on its own run, which keeps the
+  tag's ref and commit, so nothing needs the dispatch.
+- Keeping the hand start from `main` with the gate (9c3f6a1e): its image
+  had no use once every deploy is a release.
+
+## The chart pulls by digest by default; a tag is an explicit opt-in
+
+**Id:** b62d9e4a-3c17-4a8f-9e50-d4a1f7c28b93
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 4 (release chain hardening, 2026-11-13); `deploy/helm/maity-hub/templates/_helpers.tpl`, `values.yaml`, `values.schema.json`, `README.md`, `deploy/helm/check.sh`, `deploy/helm/kind-smoke.sh`
+**Revisit when:** the chart gets an image other than the hub's, or installs need a moving tag on purpose (a channel)
+**See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
+**See:** packaging.md#every-deploy-of-maityteam-is-a-release-a-version-bump-as-the-last-merge-then-the-maintainers-v-tag — 1555765c-85df-41a5-9929-2ee3479ce1fc — as of 2026-11-13
+
+The chart's image is `repository@digest`, and `image.digest` is
+required. A tag is used only with `image.allowTag: true` and an
+explicit `image.tag` (and no digest); the chart's `appVersion` is no
+longer a default tag, so an install that sets neither stops at render
+with a message naming both ways. `appVersion` still names the version
+label when no tag is set. `values.yaml` no longer calls a tag
+immutable. Installs that already pin a digest (maity.team,
+`deploy/k3s-single/hub-values.yaml`) render the same; an install by
+tag or by the `appVersion` default has to set the digest, or opt in to
+the tag, at its next upgrade. `kind-smoke.sh` opts in, since its image
+is a local build loaded into kind, which has no registry digest.
+
+**Reason:** the signature an operator checks is for a digest, and a
+tag names whatever the registry points it at when the pod starts, so a
+default by tag would deploy bytes nobody checked. The `appVersion`
+default was the case where nobody chose a tag at all.
+
+**Rejected alternatives:**
+- Keeping the `appVersion` default behind the opt-in: the opt-in should
+  name the tag it pulls, not inherit one from the chart.
+- Removing the tag path entirely: a local or air-gapped build without a
+  registry digest (the kind smoke test) would have no way in.
+- A digest default in `values.yaml` per chart release: the chart would
+  need a bump for every image, and the digest exists only after the
+  workflow ran.
+
+## The deploy script verifies the image signature before it deploys a digest
+
+**Id:** 4e8b2d71-a6c3-4f19-8d5e-71b0c9e3a6d4
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-6zh891gy6cvz, point 3 (release chain hardening, 2026-11-13); `deploy/scripts/helm-upgrade.sh`, `deploy/scripts/test-helm-upgrade.sh`, `deploy/helm/maity-hub/README.md`
+**Revisit when:** the chart or the cluster checks signatures itself (an admission policy), the signing identity changes, or deploys stop going through `helm-upgrade.sh`
+**See:** packaging.md#the-image-is-published-only-from-main-and-v-tags-through-an-environment-and-signed-keyless — dd54e1f8-29a5-434e-abbe-f08d61d293fe — as of 2026-11-13
+**See:** packaging.md#the-image-is-built-only-for-a-v-tag-the-hand-start-from-main-is-removed — 5b3e0b46-aa2f-47be-ac53-b7d5cc4b7a96 — as of 2026-11-16
+
+`deploy/scripts/helm-upgrade.sh` renders the upgrade first
+(`helm upgrade --dry-run=client` with the caller's own arguments), takes every
+image it would run (an `image` key, also as a list item's first key or
+quoted, its value plain or quoted; an empty value is skipped), and requires
+each to be pinned by digest and to pass `cosign verify` with the issuer and
+identity regexp of the chart README's install step 2 (the stub test holds
+the script's issuer and identity equal to the README's). An image key in any
+other form (a flow mapping, a block scalar, an anchor or alias) stops the
+script: an image the check cannot read is not deployed. So does any
+mapping key, whatever it spells, that the reader cannot decode exactly: a
+quoted key that is not plain letters, digits and `._/-` (an escape such as
+`"\x69mage"` is the same key as `image` in YAML), a plain key with a
+backslash, a tag, anchor or alias (a merge key `<<: *x` too), an explicit
+`? ` key, or a quoted scalar or flow collection that does not end on its
+line. All of this
+happens before the dump (and its CronJob lookup), the migrate Job and the
+scale-down, so a refusal changes nothing. A missing cosign is a refusal
+too. `NO_SIGNATURE_CHECK=1`
+is the only way past the check, for an image someone built themselves,
+and the script prints a warning when it is set. The rendering stays a
+dry run: Helm takes the last `--dry-run` it is given, so a caller's
+`--dry-run=false` would make it the real upgrade before any image is
+checked. Every `--dry-run` among the caller's arguments is refused (exit 2)
+before anything runs, and the script puts its own `--dry-run=client` before
+and after the caller's arguments. The image reader covers containers,
+initContainers and ephemeralContainers in any key order, in hook workloads
+too; `test-helm-upgrade.sh` also runs real Helm 3 (when one is installed)
+against a loopback API stand-in that refuses writes.
+
+**Reason:** the README asked operators to verify before they pin a
+digest, but the script that deploys did not, so nothing held the
+deployed digest to the signature. Rendering with the same arguments
+finds the image exactly as Helm will, whether it comes from a values
+file, `--set` or `--reuse-values`. A tag is refused because the
+signature is for a digest and a tag can move between the check and the
+pull.
+
+**Rejected alternatives:**
+- Skipping the check silently when cosign is missing: a deploy host
+  without cosign would never check, and nobody would notice.
+- Taking the image from an extra argument or variable: it could differ
+  from what the values make Helm deploy.
+- Decoding YAML escapes in the awk reader, or a YAML parser (yq, PyYAML):
+  a decoder in awk is easy to get subtly wrong, and a parser is one more
+  tool on the deploy host. Refusing what the reader cannot decode is
+  exact, and the stock chart's rendering has no such key.
+- Only the script's own `--dry-run` last: a caller's flag that ends the
+  list waiting for a value would take it as its value. Only first: a
+  caller's later `--dry-run=false` wins. Hence both, and the refusal.
+- `helm template` for the rendering: it does not accept every
+  `helm upgrade` flag (`--reuse-values`, `--install`), so it would fail
+  or render something else for those calls.
 
 ## The hub is published to PyPI as `maity-hub` from the same `v*` tag as the image, built from a hashed lock
 
@@ -410,6 +639,7 @@ version to name, and the package path stays untested).
 **Source:** card tsk-9xqcg0n6f7g7 (the maintainer, 2026-11-10, from deploy 6 on, relayed by the team lead; the Helm `appVersion` in the same bump and redoing the fold before the final MERGE-READY set by the team lead); the maintainer's answer to req-k3acfg3wva0g, 2026-11-10 (fold the changelog at every release); the log of the `v0.1.0a1` run of publish-image (job 129086565903); `.github/workflows/publish-image.yml`; `hub/pyproject.toml`, `deploy/helm/maity-hub/Chart.yaml`, `hub/README.md` § Releases
 **Revisit when:** a deploy runs an image no tag built, the deploy stops being a manual step on the maintainer's command, or the hub reaches its beta and leaves the `0.1.0aN` pre-releases
 **See:** packaging.md#the-hub-is-published-to-pypi-as-maity-hub-from-the-same-v-tag-as-the-image-built-from-a-hashed-lock — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-10
+**See:** packaging.md#the-chart-pulls-by-digest-by-default-a-tag-is-an-explicit-opt-in — b62d9e4a-3c17-4a8f-9e50-d4a1f7c28b93 — as of 2026-11-14
 
 Until deploy 5, maity.team ran images built from main by commit, and
 only `0.1.0a1` was ever tagged. From deploy 6 on, every deploy also
@@ -422,6 +652,8 @@ through the same steps:
    `CHANGELOG.md` with `tools/changelog.py release <version>` in a commit of
    its own. That pull request is the last merge before the deploy, and the
    fold is redone on the newest main right before its final MERGE-READY.
+   Since 2026-11-15 it also adds the version's upgrade page and a docs pass
+   (process.md, eb6ffcd4-28b0-4413-bc51-db3ead6cefb5).
 2. ci passes on the push of that merge.
 3. The maintainer pushes `v<version>` on that commit, and nobody else
    pushes a `v*` tag. The tag builds the package and the image, gated as
@@ -429,17 +661,20 @@ through the same steps:
 4. Ops deploys the image that tag built.
 
 The deployment itself (manual approvals, the maintainer's command) does
-not change. The chart's `appVersion` follows the bump so that its default
-image tag names the image the release tag builds. It had stayed at
-`0.1.0.dev0`, which was never published. For that image to exist,
+not change. The chart's `appVersion` follows the bump, so `Chart.yaml`
+and the `app.kubernetes.io/version` label name the release. Until
+2026-11-13 it also gave the chart's default image tag, so that the
+default named the image the release tag builds; since then the chart
+pulls by digest and has no default tag (see b62d9e4a). It had stayed at
+`0.1.0.dev0`, which was never published. For that tagged image to exist,
 `publish-image.yml` tags the image with `type=pep440` rather than
 `type=semver`. The pinned metadata-action drops a PEP 440 pre-release such
 as `0.1.0a1` as invalid SemVer, so the
 `v0.1.0a1` run logged `v0.1.0a1 is not a valid semver` and pushed only
 the commit-SHA tag (found in the review of this change). The deploy of
-maity.team pins the image by digest, so the default tag only matters to a
-chart install that sets neither `image.tag` nor `image.digest`. The labels
-`app.kubernetes.io/version` show `appVersion` either way.
+maity.team pins the image by digest, so the default tag only mattered to
+a chart install that set neither `image.tag` nor `image.digest`. The
+`app.kubernetes.io/version` label shows `appVersion` unless a tag is set.
 
 **Reason:** this is the maintainer's decision; no reason beyond it was
 stated.

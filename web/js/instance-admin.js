@@ -11,7 +11,10 @@ window.Maity = window.Maity || {};
     ["from", () => M.t("mail.field.from_address"), "sender"], ["reply_to", () => M.t("mail.field.reply_to"), "email"],
     ["max_per_hour", () => M.t("mail.field.max_per_hour"), "number"],
     ["security_max_per_hour", () => M.t("mail.field.security_max_per_hour"), "number"],
+    ["verification_max_per_hour", () => M.t("mail.field.verification_max_per_hour"), "number"],
+    ["invitation_max_per_hour", () => M.t("mail.field.invitation_max_per_hour"), "number"],
     ["sign_in_max_per_hour", () => M.t("mail.field.sign_in_max_per_hour"), "number"],
+    ["second_factor_max_per_hour", () => M.t("mail.field.second_factor_max_per_hour"), "number"],
   ];
   const warnings = {
     smtp_password_in_database: () => M.t("mail.warning.password_in_database"),
@@ -124,6 +127,14 @@ window.Maity = window.Maity || {};
         sign_in: M.t("mail.count.sign_in", { count: current.sign_in_sent_last_hour || 0 }),
         failures: M.t("mail.count.failures", { count: current.failed_last_hour || 0 }),
         queued: M.t("mail.count.queued", { count: current.security_queued || 0 }),
+      })), h("p", { class: "muted mail-last-hour-own" }, M.t("mail.last_hour_own", {
+        // The kinds with a budget of their own (§16.2): verification and invitation mails wait
+        // over it, second-factor mails are dropped.
+        verification: M.t("mail.count.verification", { count: current.verification_sent_last_hour || 0 }),
+        invitation: M.t("mail.count.invitation", { count: current.invitation_sent_last_hour || 0 }),
+        second_factor: M.t("mail.count.second_factor", { count: current.second_factor_sent_last_hour || 0 }),
+        dropped: M.t("mail.count.second_factor_dropped", { count: current.second_factor_dropped_last_hour || 0 }),
+        waiting: M.t("mail.count.waiting", { count: (current.verification_queued || 0) + (current.invitation_queued || 0) }),
       })));
       drawTest();
     }
@@ -160,6 +171,43 @@ window.Maity = window.Maity || {};
       if (err.code === "schema_outdated") append(section, h("p", { class: "error" }, M.t("info.migration_required")),
         h("p", null, M.t("info.revision_line", { revision: (err.details || {}).revision || M.t("info.none"), head: (err.details || {}).head || unknown() })));
       else status.fail(M.t("info.read_failed"), err);
+    }
+    await settingsPart(section);
+  }
+  // §16.14: every MAITY_* setting, read-only, by group; a secret only as set or not set.
+  const SETTINGS_DOCS = "https://github.com/oliver-zehentleitner/maity/blob/main/";
+  const ADMIN_SECTIONS = { "2.6.6": () => M.t("admin.section.sign_in"), "16.2": () => M.t("admin.section.mail"),
+    "16.4": () => M.t("admin.section.registration"), "16.5": () => M.t("limits.section") };
+  const GROUPS = { address: () => M.t("instance.group.address"), database: () => M.t("instance.group.database"), processes: () => M.t("instance.group.processes"),
+    security: () => M.t("instance.group.security"), sign_in: () => M.t("instance.group.sign_in"), registration: () => M.t("instance.group.registration"),
+    mail: () => M.t("instance.group.mail"), agents: () => M.t("instance.group.agents"), limits: () => M.t("instance.group.limits"),
+    attachments: () => M.t("instance.group.attachments"), public_pages: () => M.t("instance.group.public_pages"), forge: () => M.t("instance.group.forge") };
+  async function settingsPart(section) {
+    append(section, h("h3", null, M.t("instance.settings_title")));
+    const status = M.statusLine(); append(section, status.el);
+    let value;
+    try { value = await M.api.get("/admin/instance"); }
+    catch (err) { status.fail(M.t("instance.read_failed"), err); return; }
+    append(section, h("p", { class: "hint" }, M.t("instance.settings_hint"), " ",
+      h("a", { href: SETTINGS_DOCS + value.docs, target: "_blank", rel: "noopener" }, M.t("instance.docs"))));
+    const col = { name: M.t("instance.column.name"), value: M.t("instance.column.value"), source: M.t("instance.column.source"), admin: M.t("instance.column.admin") };
+    const shown = (row) => row.secret ? (row.set ? M.t("instance.secret_set") : M.t("instance.secret_unset"))
+      : row.value === null ? h("span", { class: "muted" }, M.t("instance.unset")) : h("code", null, row.value);
+    const groups = [];
+    for (const row of value.settings || []) {
+      if (!groups.length || groups[groups.length - 1][0] !== row.group) groups.push([row.group, []]);
+      groups[groups.length - 1][1].push(row);
+    }
+    for (const [group, rows] of groups) {
+      const label = GROUPS[group] ? GROUPS[group]() : group;
+      append(section, h("h4", null, label), h("div", { class: "table-wrap", tabindex: "0", role: "region", "aria-label": label },
+        h("table", { class: "instance-settings card-table", role: "table", "aria-label": label },
+          h("thead", { role: "rowgroup" }, h("tr", { role: "row" }, [col.name, col.value, col.source, col.admin].map((t) => h("th", { scope: "col", role: "columnheader" }, t)))),
+          h("tbody", { role: "rowgroup" }, rows.map((row) => h("tr", { role: "row" },
+            h("th", { scope: "row", role: "rowheader", "data-label": col.name }, h("code", null, row.name)),
+            h("td", { role: "cell", "data-label": col.value }, shown(row)),
+            h("td", { role: "cell", "data-label": col.source }, row.source === "environment" ? M.t("instance.source.environment") : M.t("instance.source.default")),
+            h("td", { role: "cell", "data-label": col.admin }, row.admin && ADMIN_SECTIONS[row.admin] ? ADMIN_SECTIONS[row.admin]() : "—")))))));
     }
   }
   // Pages: a tab with sub-tabs, one at a time, as the sections above it are. `open`: what the

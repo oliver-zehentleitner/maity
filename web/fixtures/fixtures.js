@@ -18,6 +18,12 @@ window.MAITY_FIXTURES = {
       "source": "env",
       "value": "smtp.example.org"
     },
+    "invitation_max_per_hour": {
+      "source": "default",
+      "value": 60
+    },
+    "invitation_queued": 0,
+    "invitation_sent_last_hour": 0,
     "last_test": null,
     "max_per_hour": {
       "source": "default",
@@ -36,6 +42,12 @@ window.MAITY_FIXTURES = {
       "source": "default",
       "value": null
     },
+    "second_factor_dropped_last_hour": 0,
+    "second_factor_max_per_hour": {
+      "source": "default",
+      "value": 60
+    },
+    "second_factor_sent_last_hour": 0,
     "secret_key": {
       "set": true
     },
@@ -63,6 +75,12 @@ window.MAITY_FIXTURES = {
       "source": "default",
       "value": null
     },
+    "verification_max_per_hour": {
+      "source": "default",
+      "value": 60
+    },
+    "verification_queued": 0,
+    "verification_sent_last_hour": 0,
     "warnings": []
   },
   "admin-reports.json": {
@@ -3494,6 +3512,7 @@ window.MAITY_FIXTURES = {
         "kind": "human",
         "last_seen_at": "2026-10-21T13:40:00Z",
         "paused": null,
+        "placements": [],
         "presence": "online",
         "reports_to": null,
         "role": "coder",
@@ -3524,6 +3543,7 @@ window.MAITY_FIXTURES = {
         "owner_id": "hum-maintainer",
         "owner_preferences": false,
         "paused": null,
+        "placements": [],
         "presence": "online",
         "reports_to": "hum-maintainer",
         "role": "coder",
@@ -3587,6 +3607,15 @@ window.MAITY_FIXTURES = {
         "name": "maintainer/agent-b",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "placements": [
+          {
+            "desired": "running",
+            "id": "plc-0001",
+            "instance": "wle2",
+            "runner_name": "home-laptop",
+            "state": "running"
+          }
+        ],
         "presence": "online",
         "reports_to": "agt-a",
         "role": "coder",
@@ -3654,6 +3683,15 @@ window.MAITY_FIXTURES = {
           "reason": "Waiting for the API contract in docs/api.md.",
           "since": "2026-10-21T12:04:00Z"
         },
+        "placements": [
+          {
+            "desired": "stopped",
+            "id": "plc-0002",
+            "instance": "k3pa",
+            "runner_name": "home-laptop",
+            "state": "stopped"
+          }
+        ],
         "presence": "paused",
         "reports_to": "agt-a",
         "role": "coder",
@@ -3692,6 +3730,15 @@ window.MAITY_FIXTURES = {
         "name": "maintainer/agent-d",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "placements": [
+          {
+            "desired": "running",
+            "id": "plc-0003",
+            "instance": null,
+            "runner_name": "home-laptop",
+            "state": "failed"
+          }
+        ],
         "presence": "online",
         "reports_to": null,
         "role": "coder",
@@ -3729,6 +3776,15 @@ window.MAITY_FIXTURES = {
         "name": "maintainer/reviewer",
         "owner_id": "hum-maintainer",
         "paused": null,
+        "placements": [
+          {
+            "desired": "running",
+            "id": "plc-0004",
+            "instance": null,
+            "runner_name": "home-laptop",
+            "state": null
+          }
+        ],
         "presence": "offline",
         "reports_to": "agt-a",
         "role": "reviewer",
@@ -3759,6 +3815,7 @@ window.MAITY_FIXTURES = {
         "created_by": "hum-maintainer",
         "credential_id": "crd-b-0003",
         "desired": "running",
+        "foreign": false,
         "generation": 4,
         "harness": "claude-code",
         "id": "plc-0001",
@@ -3818,9 +3875,11 @@ window.MAITY_FIXTURES = {
         "created_by": "hum-maintainer",
         "credential_id": "crd-c-0002",
         "desired": "stopped",
+        "foreign": false,
         "generation": 2,
         "harness": "codex",
         "id": "plc-0002",
+        "logs_hint": "maity runner logs plc-0002",
         "mode": "supervised",
         "model": null,
         "project": "maintainer/maity",
@@ -3875,9 +3934,11 @@ window.MAITY_FIXTURES = {
         "created_by": "hum-maintainer",
         "credential_id": "crd-d-0001",
         "desired": "running",
+        "foreign": false,
         "generation": 3,
         "harness": "claude-code",
         "id": "plc-0003",
+        "logs_hint": "maity runner logs plc-0003",
         "mode": "supervised",
         "model": null,
         "project": "maintainer/maity",
@@ -3932,9 +3993,11 @@ window.MAITY_FIXTURES = {
         "created_by": "hum-maintainer",
         "credential_id": null,
         "desired": "running",
+        "foreign": false,
         "generation": 1,
         "harness": "claude-code",
         "id": "plc-0004",
+        "logs_hint": "maity runner logs plc-0004",
         "mode": "interactive",
         "model": null,
         "project": "maintainer/maity",
@@ -4131,6 +4194,7 @@ window.MAITY_FIXTURES = {
       "keep_the_why": "required",
       "keep_the_why_defaults": "adopt",
       "lease_seconds": 7200,
+      "max_placements": 8,
       "member_agents": "on",
       "member_agents_max": 3,
       "on_runner_revoke": "stop",
@@ -4211,6 +4275,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "consent",
         "created_at": "2026-10-21T13:20:00Z",
+        "held": [],
         "id": "req-0012",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -4264,6 +4329,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "consent",
         "created_at": "2026-10-21T12:48:00Z",
+        "held": [],
         "id": "req-0011",
         "ktw_ref": null,
         "needs_in_session": {
@@ -4314,6 +4380,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "decision",
         "created_at": "2026-10-21T11:30:00Z",
+        "held": [],
         "id": "req-0010",
         "ktw_ref": "context/join.md",
         "mentions": [
@@ -4393,6 +4460,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "decision",
         "created_at": "2026-10-21T10:05:00Z",
+        "held": [],
         "id": "req-0009",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -4444,6 +4512,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "info",
         "created_at": "2026-10-21T11:45:00Z",
+        "held": [],
         "id": "req-0013",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -4473,6 +4542,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "decision",
         "created_at": "2026-10-21T11:50:00Z",
+        "held": [],
         "id": "req-0014",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -4520,6 +4590,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "decision",
         "created_at": "2026-10-21T11:51:00Z",
+        "held": [],
         "id": "req-0015",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -4568,6 +4639,7 @@ window.MAITY_FIXTURES = {
         "class": "decision",
         "created_at": "2026-10-21T11:52:00Z",
         "filed_by": "hub",
+        "held": [],
         "id": "req-0016",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -6351,6 +6423,7 @@ window.MAITY_FIXTURES = {
     "member": {
       "aliases": [],
       "display_name": "Maintainer",
+      "experiment_notice_understood_at": null,
       "handle": "maintainer",
       "id": "hum-maintainer",
       "instance_admin": true,
@@ -6654,6 +6727,29 @@ window.MAITY_FIXTURES = {
   "people.json": {
     "items": [
       {
+        "agents": [
+          {
+            "avatar_url": "/api/v1/avatars/public/0f3c9a2b7d1e4c580f3c9a2b7d1e4c58",
+            "display_name": "Quiet Bot",
+            "handle": "quiet-bot",
+            "harness": null,
+            "model": null,
+            "page": null,
+            "roles": []
+          },
+          {
+            "avatar_url": null,
+            "display_name": "Trader <b>Bot</b>",
+            "handle": "trader-bot",
+            "harness": "harness-x",
+            "model": "model-one",
+            "page": "/wolfgang/agents/trader-bot",
+            "roles": [
+              "coder",
+              "reviewer"
+            ]
+          }
+        ],
         "aliases": [
           "wolf"
         ],
@@ -6684,6 +6780,7 @@ window.MAITY_FIXTURES = {
         "website": "https://example.org"
       },
       {
+        "agents": [],
         "aliases": [],
         "avatar_url": null,
         "display_name": "Anna",
@@ -6715,6 +6812,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "consent",
         "created_at": "2026-10-23T05:40:00Z",
+        "held": [],
         "id": "req-p001",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -6756,6 +6854,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "consent",
         "created_at": "2026-10-24T07:10:00Z",
+        "held": [],
         "id": "req-p002",
         "ktw_ref": null,
         "memory_proposal": {
@@ -6803,6 +6902,7 @@ window.MAITY_FIXTURES = {
         "class": "info",
         "created_at": "2026-10-29T09:10:00Z",
         "filed_by": "hub",
+        "held": [],
         "id": "req-r003",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -6833,6 +6933,7 @@ window.MAITY_FIXTURES = {
         "class": "info",
         "created_at": "2026-10-28T15:00:00Z",
         "filed_by": "hub",
+        "held": [],
         "id": "req-r002",
         "ktw_ref": null,
         "needs_in_session": null,
@@ -6970,11 +7071,27 @@ window.MAITY_FIXTURES = {
                 "supervised"
               ],
               "reason": null,
-              "sandbox": "off",
+              "sandbox": "on",
               "targets": [
                 "local"
               ],
               "version": "2.1.308"
+            },
+            {
+              "available": true,
+              "confinement": "sandbox",
+              "default_mode": "supervised",
+              "id": "codex",
+              "models": [],
+              "modes": [
+                "supervised"
+              ],
+              "reason": null,
+              "sandbox": "off",
+              "targets": [
+                "local"
+              ],
+              "version": "0.156.1"
             },
             {
               "available": false,
@@ -7047,7 +7164,7 @@ window.MAITY_FIXTURES = {
           "harnesses": [
             {
               "available": true,
-              "confinement": "allowlist",
+              "confinement": "sandbox",
               "default_mode": "supervised",
               "id": "codex",
               "models": [
@@ -7771,6 +7888,7 @@ window.MAITY_FIXTURES = {
         },
         "class": "consent",
         "created_at": "2026-10-21T13:05:00Z",
+        "held": [],
         "id": "req-0003",
         "ktw_ref": null,
         "needs_in_session": null,

@@ -10,6 +10,7 @@ unread requests of the small history (1000 by default, as in CI's job)."""
 
 from __future__ import annotations
 
+import contextvars
 import os
 import statistics
 import threading
@@ -149,8 +150,13 @@ def held_statements(engine: Engine, humans: list[flow.Human], seconds: int) -> f
     starts = [bell(h, limit=0)["next_after"] for h in humans]
 
     def hold() -> None:
+        # Each poller runs in a copy of the call's context, so `count_statements` counts its
+        # request as the call's own (a thread starts with an empty context).
         pollers = [
-            threading.Thread(target=lambda h=h, s=s: bell(h, after=s, wait=seconds))
+            threading.Thread(
+                target=contextvars.copy_context().run,
+                args=(lambda h=h, s=s: bell(h, after=s, wait=seconds),),
+            )
             for h, s in zip(humans, starts, strict=True)
         ]
         for poller in pollers:

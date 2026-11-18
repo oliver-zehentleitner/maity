@@ -13,7 +13,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field, field_validator
 from pydantic_core import PydanticCustomError
-from sqlalchemy import Connection, and_, false, insert, or_, select, update
+from sqlalchemy import Connection, and_, case, false, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import (
@@ -24,6 +24,7 @@ from maity_hub import (
     clock,
     contract_text,
     cover,
+    events,
     idempotency,
     instances,
     line,
@@ -44,6 +45,7 @@ from maity_hub.access import Membership, member_row, membership
 from maity_hub.auth.caller import Caller
 from maity_hub.board import history
 from maity_hub.board import links as card_links
+from maity_hub.db import read_transaction
 from maity_hub.deps import AnyCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found
 from maity_hub.events import Actor, emit, lock_project
@@ -201,7 +203,7 @@ def load_task(conn: Connection, card_id: str, request: Request) -> dict[str, Any
     return task_view(conn, card, reader_of(request), viewer)
 
 
-idempotency.LOADERS["task"] = load_task
+idempotency.register("task", load_task, idempotency.in_project(idempotency.column_of(t.card)))
 
 
 def _locked(conn: Connection, mine: Membership) -> Membership:
@@ -308,8 +310,8 @@ def _new_release(conn: Connection, mine: Membership, body: ReleaseIn | None) -> 
     mine.require("releases:write")
     if body is None:
         raise invalid({"release.version": "required"})
-    if not releases.SEMVER.fullmatch(body.version):
-        raise invalid({"release.version": "not_semver"})
+    if not releases.valid_version(body.version):
+        raise invalid({"release.version": "not_a_version"})
     taken = conn.execute(
         select(t.card.c.id).where(
             t.card.c.project_id == mine.project.id, t.card.c.release_version == body.version
@@ -535,13 +537,15 @@ def _revision(card: Any) -> int | None:
     return revision
 
 
-def _signatures(mine: Membership, card: Any, body: TaskPatch) -> dict[str, Any] | None:
+def _signatures(
+    conn: Connection, mine: Membership, card: Any, body: TaskPatch
+) -> dict[str, Any] | None:
     """The signatures after a `review→done` under `reviewer_and_tester`, else None."""
     if not (card.status == "review" and body.status == "done"):
         return None
     if not cards.two_signatures(mine.project):
         return None
-    return cards.sign(mine, card, body.approve, _revision(card))
+    return cards.sign(conn, mine, card, body.approve, _revision(card))
 
 
 def _check_label(label: str | None) -> None:
@@ -663,10 +667,11 @@ def list_tasks(
     cursor: str | None = None,
 ) -> JSONResponse:
     fg = reader_of(request)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         query = select(t.card).where(t.card.c.project_id == mine.project.id)
+        wanted: list[str] = []
         if status != "all":
             wanted = [s for s in status.split(",") if s]
             if any(s not in cards.STATUSES for s in wanted):
@@ -703,12 +708,18 @@ def list_tasks(
             **({"q": q} if q is not None else {}),
         )  # fmt: skip
         matched: dict[str, list[str]] = {}
+        # Notes written in the reader's hidden windows are not searched (§6.2, §6.4).
+        listable = (
+            events.outside_window_times(conn, mine.project.id, mine.row, t.card_note.c.created_at)
+            if q is not None
+            else None
+        )
 
         def matching(rows: Sequence[Any]) -> list[Any]:
             if q is None:
                 return list(rows)
             result = []
-            notes = card_search.note_bodies(conn, (row.id for row in rows))
+            notes = card_search.note_bodies(conn, (row.id for row in rows), listable)
             for row in rows:
                 hit = card_search.matches(row, q, notes[row.id])
                 if hit:
@@ -723,6 +734,47 @@ def list_tasks(
                     item["match"] = matched[item["id"]]
             return shown
 
+        tag = paging.tag_of(cursor) if cursor is not None else None
+        closed_only = bool(wanted) and set(wanted) <= set(cards.CLOSED)
+        if order == "board" and q is None and closed_only and tag != "key":
+            # Closed columns only (the board's done group, tsk-d4anfsk1e94j): their order,
+            # `closed_at` newest first and then the id (ranks.board_key), is one the
+            # database keeps, so it sorts and pages here instead of every card of the
+            # columns being read for each page. A `key` cursor given out before this path
+            # existed still goes on below.
+            positions = {s: cards.STATUSES.index(s) for s in wanted}
+            position = case(positions, value=t.card.c.status)
+            # The id breaks ties bytewise, as Python compares it: PostgreSQL compares text
+            # by its locale unless told otherwise (MySQL's tables are binary already,
+            # SQLite compares bytes).
+            card_id = t.card.c.id.collate("C") if conn.dialect.name == "postgresql" else t.card.c.id
+            if cursor is not None:
+                at_position, at_closed, at_id = paging.unclosed(cursor, bound)
+                if at_closed is None:
+                    within = and_(t.card.c.closed_at.is_(None), card_id > at_id)
+                else:
+                    within = or_(
+                        t.card.c.closed_at.is_(None),
+                        t.card.c.closed_at < at_closed,
+                        and_(t.card.c.closed_at == at_closed, card_id > at_id),
+                    )
+                query = query.where(
+                    or_(position > at_position, and_(position == at_position, within))
+                )
+            # A card without `closed_at` sorts last in its column, as in board_key, on every
+            # database: PostgreSQL would put NULL first in a descending order.
+            query = query.order_by(
+                position, t.card.c.closed_at.is_(None), t.card.c.closed_at.desc(), card_id
+            ).limit(limit + 1)
+            rows = conn.execute(query).all()
+            page = rows[:limit]
+            following = None
+            if len(rows) > limit:
+                last = page[-1]
+                following = paging.closed_cursor(
+                    positions[last.status], last.closed_at, last.id, bound
+                )
+            return JSONResponse({"items": views(page), "next_cursor": following})
         if order == "board":
             # The board's order (§6.4) is not one the database keeps: sorted here, a
             # project's cards at a time, and paged after the last item shown.
@@ -730,20 +782,26 @@ def list_tasks(
                 return ranks.board_key(cards.STATUSES, row)
 
             ordered = sorted(matching(conn.execute(query).all()), key=key)
-            if cursor is not None:
+            if tag == "closed":
+                ordered = _after_closed(ordered, paging.unclosed(cursor or "", bound), key)
+            elif cursor is not None:
                 ordered = _after(ordered, *paging.unkey(cursor, bound), key)
             shown = ordered[:limit]
             following = None
             if len(ordered) > limit:
-                last, column = shown[-1], key(shown[-1])[0]
-                in_column = [r.id for r in shown if key(r)[0] == column]
-                first_not_shown = ordered[limit]
-                following = paging.key_cursor(
-                    (last.id, key(last)),
-                    (first_not_shown.id, key(first_not_shown)),
-                    in_column,
-                    bound,
-                )
+                last, column_at = shown[-1], key(shown[-1])[0]
+                if last.status in cards.CLOSED:
+                    # A closed card keeps its place: no list of what was shown is needed.
+                    following = paging.closed_cursor(column_at, last.closed_at, last.id, bound)
+                else:
+                    in_column = [r.id for r in shown if key(r)[0] == column_at]
+                    first_not_shown = ordered[limit]
+                    following = paging.key_cursor(
+                        (last.id, key(last)),
+                        (first_not_shown.id, key(first_not_shown)),
+                        in_column,
+                        bound,
+                    )
             return JSONResponse({"items": views(shown), "next_cursor": following})
         if cursor is not None:
             after_at, after_id = paging.uncursor(cursor, bound)
@@ -762,6 +820,23 @@ def list_tasks(
             paging.cursor(page[-1].updated_at, page[-1].id, bound) if len(rows) > limit else None
         )
         return JSONResponse({"items": views(page), "next_cursor": next_cursor})
+
+
+def _after_closed(
+    ordered: list[Any],
+    anchor: tuple[int, datetime | None, str],
+    key: Callable[[Any], tuple[Any, ...]],
+) -> list[Any]:
+    """The cards after a closed card in the board's order. Its key is rebuilt from the
+    cursor as ranks.board_key builds it, so the page goes on there even when that card was
+    reopened meanwhile; a card closed again since sorts ahead of it, and the board's read
+    of the cards changed meanwhile brings it (web/js/board.js)."""
+    position, closed_at, card_id = anchor
+    was = (position, -closed_at.timestamp() if closed_at is not None else 0.0, card_id)
+    try:
+        return [r for r in ordered if key(r) > was]
+    except TypeError:  # a key of another shape: not a cursor this list gave
+        raise invalid({"cursor": "invalid"}) from None
 
 
 def _after(
@@ -793,7 +868,7 @@ def _after(
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}")
 def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
-    with engine_of(request).begin() as conn:
+    with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
         return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg, mine))
@@ -1120,7 +1195,7 @@ def patch_task(
             _require_assigner(conn, mine, new_assignee, card.assigned_to, card.claim_holder)
             availability.refuse_coordinator_out(conn, mine, "new assignments")
             if assigns_away and not cards.holds(mine, card):
-                takeovers.guard_move(conn, mine, card)
+                takeovers.guard_move(conn, mine, card, to=new_assignee)
             values["assigned_to"] = new_assignee
             if values["assigned_to"] != card.assigned_to:
                 # The new team's distribution decides, as on every assignment (§6.18).
@@ -1156,7 +1231,7 @@ def patch_task(
             if body.status == "done":
                 cards.refuse_open_dependencies(conn, card.id)
                 _refuse_unready(conn, card, fg, values.get("release_data"))
-            signed = _signatures(mine, card, body)
+            signed = _signatures(conn, mine, card, body)
             if signed is not None:
                 values["approvals"] = signed
             if card.status == "review" and body.status == "in_progress":
@@ -1745,7 +1820,7 @@ def assign(
         before = card
         if takes:
             # An agent takes a card only through a takeover while the lease runs (§6.19).
-            takeovers.guard_move(conn, mine, card)
+            takeovers.guard_move(conn, mine, card, to=assignee)
             if not _lease_expired(card):
                 raise ApiError(
                     409,
@@ -2008,7 +2083,7 @@ def report(
             closing = False
             if not (mine.may("tasks:review") and mine.may("tasks:test")):
                 empty = SimpleNamespace(approvals=None)
-                signatures = cards.sign(mine, empty, None, revision)
+                signatures = cards.sign(conn, mine, empty, None, revision)
         found = mentions.resolve(conn, mine.project.id, body.summary, "summary")
         now = clock.now()
         stored = {
@@ -2249,7 +2324,13 @@ def tick_checklist(
             mine.project.id,
             "task_updated",
             audience(conn, card),
-            {"id": card.id, "release": view["release"], "project_state": mine.project.state},
+            {
+                "id": card.id,
+                "fields": ["release"],
+                "release": view["release"],
+                "history": [],  # a tick writes no history entry (§6.15)
+                "project_state": mine.project.state,
+            },
             actor=caller.actor(mine.id),
             subject=("task", card.id),
         )

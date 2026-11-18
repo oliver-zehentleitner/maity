@@ -695,7 +695,7 @@ def test_max_age_below_30_does_not_bypass_the_forced_read_interval(
 ) -> None:
     """`?max_age=1` is held to one read per 30 s, like `0`."""
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     repo.files[".keep-the-why"] = kfile(f"{BASE}/s.json", "r")
     web.routes["/d/s.json"] = doc()
     flow.project(owner, "widget", repository={"url": REPO})
@@ -712,7 +712,7 @@ def test_forced_reads_within_30_s_answer_from_cache(
     owner: flow.Human, repo: Repo, web: Web, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     repo.files[".keep-the-why"] = kfile(f"{BASE}/s.json", "r")
     web.routes["/d/s.json"] = doc()
     flow.project(owner, "widget", repository={"url": REPO})
@@ -730,7 +730,7 @@ def test_a_failing_read_is_not_throttled(
     """With the RecursionError/TypeError above nothing is cached: every GET reads the whole
     family again, with no 30 s or 600 s bound."""
     now = [1000.0]
-    monkeypatch.setattr(ktw, "_now", lambda: now[0])
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
     one_member(repo, web, (200, b'{"state-json":2,"entries":[],"topics":5}', {}))
     flow.project(owner, "widget", repository={"url": REPO})
     for _ in range(5):

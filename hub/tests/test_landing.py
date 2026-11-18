@@ -366,6 +366,11 @@ def test_every_section_type_is_stored_as_written(owner: flow.Human) -> None:
             "pages.en.sections.0.handles",
             "invalid",
         ),
+        (  # 32 characters: longer than any human's handle
+            [{"type": "profiles", "enabled": True, "handles": ["a" * 32]}],
+            "pages.en.sections.0.handles",
+            "invalid",
+        ),
         (
             [{"type": "explore", "enabled": True, "projects": ["not-a-full-name"]}],
             "pages.en.sections.0.projects",

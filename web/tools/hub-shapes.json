@@ -184,6 +184,7 @@
      "avatar_source": "null",
      "avatar_url": "null",
      "display_name": "string",
+     "experiment_notice_understood_at": "null",
      "handle": "string",
      "id": "string",
      "instance_admin": "boolean",
@@ -527,7 +528,10 @@
       "sent_at": "string",
       "seq": "number",
       "to": "string",
-      "to_instance": "null"
+      "to_instance": "null",
+      "verdicts": {
+       "array": null
+      }
      }
     }
    }
@@ -598,7 +602,10 @@
       "sent_at": "string",
       "seq": "number",
       "to": "string",
-      "to_instance": "null"
+      "to_instance": "null",
+      "verdicts": {
+       "array": null
+      }
      }
     }
    }
@@ -808,6 +815,17 @@
         "state": "string"
        }
       },
+      "placements": {
+       "array": {
+        "object": {
+         "desired": "string",
+         "id": "string",
+         "instance": "null",
+         "runner_name": "string",
+         "state": "string"
+        }
+       }
+      },
       "presence": "string",
       "reports_to": "null",
       "role": "string",
@@ -907,6 +925,9 @@
       "forwarding": {
        "array": null
       },
+      "held": {
+       "array": null
+      },
       "holder": "string",
       "humans_only": "boolean",
       "id": "string",
@@ -969,7 +990,8 @@
    },
    "custom": {
     "array": null
-   }
+   },
+   "version": "number"
   }
  },
  "GET /projects/{project}/tasks": {
@@ -1346,6 +1368,9 @@
       "forwarding": {
        "array": null
       },
+      "held": {
+       "array": null
+      },
       "holder": "string",
       "humans_only": "boolean",
       "id": "string",
@@ -1642,6 +1667,9 @@
    "forwarding": {
     "array": null
    },
+   "held": {
+    "array": null
+   },
    "holder": "string",
    "humans_only": "boolean",
    "id": "string",
@@ -1817,6 +1845,9 @@
    "owner_preferences": "boolean",
    "paused": "null",
    "placement": "null",
+   "placements": {
+    "array": null
+   },
    "presence": "string",
    "reports_to": "null",
    "role": "string",
@@ -1872,6 +1903,9 @@
    "created_at": "string",
    "filed_by": "null",
    "forwarding": {
+    "array": null
+   },
+   "held": {
     "array": null
    },
    "holder": "string",
@@ -1931,7 +1965,10 @@
    "sent_at": "string",
    "seq": "number",
    "to": "string",
-   "to_instance": "null"
+   "to_instance": "null",
+   "verdicts": {
+    "array": null
+   }
   }
  },
  "POST /projects/{project}/conversations/{group}/messages": {
@@ -1952,7 +1989,10 @@
    "sent_at": "string",
    "seq": "number",
    "to": "string",
-   "to_instance": "null"
+   "to_instance": "null",
+   "verdicts": {
+    "array": null
+   }
   }
  },
  "POST /projects/{project}/tasks": {
