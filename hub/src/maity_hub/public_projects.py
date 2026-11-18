@@ -132,6 +132,17 @@ def served_among(conn: Connection, project_ids: Collection[str]) -> set[str]:
     }
 
 
+def public_for_outsiders(conn: Connection, project_ids: Collection[str]) -> set[str]:
+    """Of `project_ids`, those public for a reader who is no member: `served_among`, and none
+    at all while the instance serves no public pages (`MAITY_PUBLIC_PAGES` off, §16.9). Fail
+    closed, as ruled for the stars (hub/context/persistence.md c0e833f1). `served` itself does
+    not ask: most of its callers render pages, which happens only while pages are served, and
+    the others (`agent_owners.effective`, `landing_stats`) keep their own rules."""
+    if not public_pages.serving():
+        return set()
+    return served_among(conn, project_ids)
+
+
 def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
     """Who the page names (§16.9): every human member and every agent, by handle, whatever
     their profile says; an open project never only counts them. Active memberships only, in

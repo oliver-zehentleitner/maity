@@ -219,7 +219,10 @@ and for six. The points the contract left open, as the lead ruled them: an id th
 no project is `not_public`, so the answer does not say whether a private one exists; a
 member is an active membership as `access` reads it, so a removed member may star the
 project again; the hub deletes no project, so a project gone is only filtered out on the
-read. A membership drops its star where it is made (`invitations.admit`, which every
+read; and fail closed (the lead, 2026-11-18): with `MAITY_PUBLIC_PAGES` off nothing is
+public for an outsider, so `public_projects.public_for_outsiders` answers none, a star is
+`not_public` and a stored one is hidden, the rule the outsider read will share. A
+membership drops its star where it is made (`invitations.admit`, which every
 accepted invitation goes through, and `org_projects.keep_owner`); a project's creation
 needs no hook, since a new project cannot
 be starred yet. The export leaves hidden entries out: its full name is the current one,

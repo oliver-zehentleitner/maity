@@ -7,8 +7,9 @@ cannot name it and keeps it in its place, and it counts toward `max_starred_per_
 membership of the human drops an entry. Stars are private: no count, no event, no notice.
 
 Whether a project is public is `public_projects.served`, asked for every entry at once
-(`served_among`): `GET /me` reads the stars on every poll, so their cost does not grow with
-their number."""
+(`public_for_outsiders`): `GET /me` reads the stars on every poll, so their cost does not grow
+with their number. While the instance serves no public pages (`MAITY_PUBLIC_PAGES` off) no
+project is public: every stored entry is hidden and a `PATCH` naming one is `not_public`."""
 
 from __future__ import annotations
 
@@ -46,7 +47,7 @@ def _shown(conn: Connection, stored: list[str], members: Collection[str]) -> lis
     from maity_hub import public_projects  # the public pages' modules; `drop` needs none
 
     candidates = [entry for entry in stored if entry not in members]
-    public = public_projects.served_among(conn, candidates)
+    public = public_projects.public_for_outsiders(conn, candidates)
     return [entry for entry in candidates if entry in public]
 
 
@@ -125,7 +126,7 @@ def checked(conn: Connection, human_id: str, given: list[str] | None, bound: int
     members = _member_of(conn, human_id, [*stored, *given])
     if members & set(given):
         raise invalid({FIELD: "member"}, "a project you are a member of is a tab already")
-    public = public_projects.served_among(conn, [*stored, *given])
+    public = public_projects.public_for_outsiders(conn, [*stored, *given])
     if not set(given) <= public:
         raise invalid({FIELD: "not_public"}, "a project that is not public")
     shown = {entry for entry in stored if entry in public and entry not in members}

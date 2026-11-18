@@ -4,12 +4,13 @@ the human, bounded by `max_starred_per_human`."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock
+from maity_hub import clock, public_pages
 from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from tests import flow
@@ -19,6 +20,12 @@ from tests.test_invitations import accept, issue, token_of
 from tests.test_orgs import team
 
 LIMITS = "/admin/settings/limits"
+
+
+@pytest.fixture
+def make_client(make_client: ClientFactory) -> ClientFactory:
+    """Every hub here serves public pages: while it serves none, no project is public (§5.1)."""
+    return lambda **kw: make_client(**{"public_pages": True, **kw})
 
 
 @pytest.fixture
@@ -99,6 +106,25 @@ def test_each_refusal_names_its_reason_and_stores_nothing(
     assert _field(_star(reader, [alpha, mine])) == "member"
     assert _field(reader.patch("/me", {"starred": None})) == "required"
     assert _stored(migrated, reader.id) == [alpha]
+
+
+def test_without_public_pages_no_project_is_public_and_the_stars_wait(
+    migrated: Engine, settings: Settings, owner: flow.Human, reader: flow.Human
+) -> None:
+    """Fail closed (hub/context/persistence.md c0e833f1): with `MAITY_PUBLIC_PAGES` off nothing
+    is public for an outsider, so a star is refused as for a private project and a stored one is
+    hidden: kept, counted, left out of the read and the export."""
+    alpha, beta = _public(owner, "alpha"), _public(owner, "beta")
+    assert _star(reader, [alpha]).status_code == 200
+    public_pages.configure(replace(settings, public_pages=False))
+    assert _field(_star(reader, [alpha, beta])) == "not_public"
+    assert _starred(reader) == []
+    assert reader.get("/me/export").json()["account"]["starred"] == []
+    assert _stored(migrated, reader.id) == [alpha]
+    assert _star(reader, []).status_code == 200
+    assert _stored(migrated, reader.id) == [alpha]  # a hidden entry stays
+    public_pages.configure(replace(settings, public_pages=True))
+    assert _ids(reader) == [alpha]
 
 
 def test_only_a_human_stars(make_client: ClientFactory, owner: flow.Human) -> None:

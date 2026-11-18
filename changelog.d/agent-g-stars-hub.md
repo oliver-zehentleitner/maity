@@ -5,7 +5,8 @@
   in the order starred; `PATCH /me` `{"starred": [...]}` sets the whole list
   (`invalid` with `not_public`, `member`, `duplicate` or `too_many`; from an agent
   `forbidden`, `humans_only`). A starred project that is not public now is hidden
-  from the read and kept in its place; joining a project drops its star. The export
+  from the read and kept in its place, as is every star while `MAITY_PUBLIC_PAGES`
+  is off (no project is public then); joining a project drops its star. The export
   carries the stars, the account deletion clears them; nobody else sees them.
 - hub: `max_starred_per_human` (`MAITY_MAX_STARRED_PER_HUMAN`, default 100, 1–1000,
   no `unlimited`) under `/admin/settings/limits` and in the settings overview;

@@ -1138,7 +1138,9 @@ assignees (§8.2). The outsider reads the project's messages through
 claims only from the notices of §6.5, "An outsider's claim". The
 project stops being public only as a whole — made private, or any case
 of §16.9 "What is never served" — and from then on it is private to
-outsiders as any private project is. Without a session, and for a
+outsiders as any private project is. With public pages off
+(`MAITY_PUBLIC_PAGES` `off`, §16.9) no project is public, so nothing is
+readable from outside. Without a session, and for a
 project that is not public, every route answers `not_found` as before.
 
 **The manager.** The role `manager` leads a part of the organisation
@@ -4816,7 +4818,10 @@ the body gives (after the visible entry it followed, first when none
 did; when the body leaves that entry out, after the nearest earlier
 visible entry the body keeps, first when it keeps none), and drops it
 only when the human becomes a member or the project
-is deleted. A hidden entry counts toward the bound, and a `too_many`
+is deleted. With public pages off (`MAITY_PUBLIC_PAGES` `off`, §16.9)
+no project counts as public for stars: a `PATCH` naming one is
+`not_public`, and every stored entry is hidden. A hidden entry counts
+toward the bound, and a `too_many`
 carries `details.hidden`, the number of hidden entries. When the bound
 is lowered below what a human holds, the stars stay: a `PATCH` that
 adds no project is accepted at any length, one that adds a project
