@@ -1384,7 +1384,7 @@ module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-e2m6krwdk5rg (hardening from the security rounds, tsk-v9kheekgq115); the review of #1807 (maity-review-team-antigravity#na6z, seq 131769) moved the mark from projects to membership rows; `notifications/mailer.py` `subject_line`, `_memberships_of`, `mail/outbox.py` `_membership_ended`; tests in `tests/test_notification_mail.py` and `tests/test_mail_robustness.py`, each red without the change
+**Source:** card tsk-e2m6krwdk5rg (hardening from the security rounds, tsk-v9kheekgq115); the review of #1807 (seq 131769) moved the mark from projects to membership rows; `notifications/mailer.py` `subject_line`, `_memberships_of`, `mail/outbox.py` `_membership_ended`; tests in `tests/test_notification_mail.py` and `tests/test_mail_robustness.py`, each red without the change
 **Revisit when:** the defang helpers move to `mail/` (card tsk-xx108ajy287x), `mail_outbox` gets a project column, or a notification mail starts carrying items that rest on something other than a membership
 
 A subject that carries text the hub did not write (a project's name, an item's title with a

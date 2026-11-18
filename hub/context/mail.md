@@ -366,7 +366,7 @@ the inviter passes the link on; the account mails follow the same rule so the tw
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-tp97v64vpy5z, PR 4, as lotse#wtwy split it (2026-11-13): the registration link page and the maintenance page go into the door frame; `routes/register_page.py`, `render.door_document`. The reasons are this entry's reading of the sign-in link page's entry (email-links.md, 89e8318d)
+**Source:** card tsk-tp97v64vpy5z, PR 4, as the lead split it (2026-11-13): the registration link page and the maintenance page go into the door frame; `routes/register_page.py`, `render.door_document`. The reasons are this entry's reading of the sign-in link page's entry (email-links.md, 89e8318d)
 **Revisit when:** the dashboard takes the form over, the page needs a script, or the dashboard's `/login` gets the product line back
 
 `GET /mail/register/{token}`, its refusals and its dead-link page are drawn by

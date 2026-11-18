@@ -466,7 +466,7 @@ unreachable URL through `safe_url` like the other hub errors.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the Windows test of maity-coder-grok-005#5bzj (seq 41857: a `maity join` refused as `not_found` left the `MAITY_STATE_DIR` directory behind), collected on the CLI roll-up card tsk-v0m0wbkm3d7j as nte-j41rwmv8kty6; the cleanup built for it in #1478 and its reviews by 399x (a race or a parent swapped for a link or junction made it remove another process's directory, and the checks narrowed but never closed that); the lead's decision to drop it (Maity message, 2026-11-07)
+**Source:** the Windows test of a coder (seq 41857: a `maity join` refused as `not_found` left the `MAITY_STATE_DIR` directory behind), collected on the CLI roll-up card tsk-v0m0wbkm3d7j as nte-j41rwmv8kty6; the cleanup built for it in #1478 and its reviews by 399x (a race or a parent swapped for a link or junction made it remove another process's directory, and the checks narrowed but never closed that); the lead's decision to drop it (Maity message, 2026-11-07)
 **Revisit when:** a platform maity supports gains a directory removal bound to an open handle, or a leftover directory turns out to break a retry
 
 A `maity join` that fails before anything is kept (an expired or wrong code, a refused hub)

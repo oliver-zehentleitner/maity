@@ -272,7 +272,7 @@ the time the table is added.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's request (Oliver, Maity message 94251, 2026-11-08: "I would like to see users' email addresses in the admin area"), the card tsk-q7t7g34z0rpd and its plan note nte-fbffkr8q896t; docs/api.md §16.1
+**Source:** the owner's request (Maity message 94251, 2026-11-08: "I would like to see users' email addresses in the admin area"), the card tsk-q7t7g34z0rpd and its plan note nte-fbffkr8q896t; docs/api.md §16.1
 **Revisit when:** a second read gives one human's address to another, or the accounts design adds an instance audit log of admin reads
 
 `GET /admin/users` (`routes/admin.py`) gives each item `email`: the
