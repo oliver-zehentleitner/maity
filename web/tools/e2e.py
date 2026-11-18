@@ -7905,7 +7905,8 @@ def invitations_step(run: Run, page: Page) -> None:
         watch_page(run, guest)
         guest.goto(f"{run.base}/invite/{token}")
         card = guest.locator("article.invite")
-        expect(card).to_contain_text("Owner invites you to join E2E Alpha as member · reviewer.")
+        # The inviter by display name and handle (§3.4, invited_by.handle).
+        expect(card).to_contain_text("Owner (@owner) invites you to join E2E Alpha as member · reviewer.")
         expect(card.locator(".invite-note")).to_have_text("Welcome to the e2e project.")
         # A closed hub and no address: signing in is the one way in.
         expect(card.get_by_role("link", name="Create one", exact=True)).to_have_count(0)
