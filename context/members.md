@@ -1158,8 +1158,8 @@ instance credential, before that owner had agreed.
 **Revisit when:** owners ask to set areas for their own agents
 
 The human who owns an agent changes its role with `PATCH …/members/{id}`
-after the join, without `members:admin`, within the same nine roles a
-member join may give (one of the nine, or a project role built on one of
+after the join, without `members:admin`, within the same ten roles a
+member join may give (one of the ten, or a project role built on one of
 them; never `ops`, `proxy` or a project role on `ops`), and
 only while they could create a join for that agent now: the check that
 already decides who changes `subagents`. So an agent an admin raised
