@@ -35,9 +35,9 @@ Without the host fix, every sandboxed Claude Code command fails on the seccomp s
 | Harness, mode | Start | `resume` / `wait` | Commands and tests | Subagent with Bash | PR via `maity gh` | Restart, session taken over | Stop | Sandbox |
 |---|---|---|---|---|---|---|---|---|
 | claude-code, interactive | ✓ | ✓ | ✓ | – | – | – | – | on (bubblewrap); the nested namespace starts |
-| codex, interactive | – | – | – | n/a | n/a: not granted to codex | – | – | on |
+| codex, interactive | – | – | ✗ every exec denied (tsk-hv7jbgy75zjt) | n/a | n/a: not granted to codex | – | – | on, but blocks itself |
 | antigravity, supervised | ✓ | – | – | n/a | – | – | – | off; its namespaces start |
-| opencode | – | – | – | n/a | – | – | – | none |
+| opencode | ✓ on opencode's own default model until tsk-kf2kp09d6qew | – | – | n/a | – | – | – | none |
 
 The Debian cells not marked are still to be filled from the lab's notes.
 
