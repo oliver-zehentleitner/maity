@@ -1570,6 +1570,86 @@ read together with a downstream guard that catches the relevant case was
 judged enough to raise the recorded version now, with the full runtime
 confirmation left open under **Revisit when**.
 
+## A checked Claude Code version is raised only on the probe's output from a signed-in machine
+
+**Id:** 92a0cb54-1bff-4194-bc4f-695e67784432
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-nnmgvz773z5n, `maity runner check` on a runner with managed updates warning that 2.1.326 was not checked, 2026-11-17; the lead's decision (seq 152372) after a cloud session found it could build the sandbox and install 2.1.326 but had no model login it could use, 2026-11-17
+**See:** runner.md — 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6 — as of 2026-11-17
+**Revisit when:** a CI job with its own key runs the probe against each new release (the maintainer's decision, not taken); the probe's checks no longer match what the runner relies on in the sandbox entries above
+
+`cli/tests/claude_sandbox_probe.py` re-checks what the runner relies on in
+Claude Code's sandbox, for the installed version: prefixed `maity` calls
+stay inside it, the hook's refusal paths, the hook switches in managed and
+user settings, and the credentials and `.git` paths it hides. It starts
+from the runner's own launch (`adapters.launch`) and reads each result
+from the file system, not from what the model says. Someone runs it by
+hand on a machine where Claude Code is installed and signed in. Its
+counts go into the pull request and its full output to the lead.
+`capabilities.CHECKED` is raised in a later commit, only after the steps
+the bump rests on passed: at least the prefixed calls (`--only 1`). The
+bump's own entry names the steps that ran and those that did not.
+
+**Reason:** the earlier checks were `claude -p` runs in which the model
+made the probe calls, so a re-check needs a model login. The session that
+took the card could build the sandbox and install the new version, but
+had no login it could use. A script can be run by whoever has one.
+Because it is in the repository, the next version is checked the same
+way, and the steps are visible in review.
+
+**Rejected alternatives:**
+- A new key for the session that took the card: the lead does not create
+  credentials for this, and a session does not use its own harness login
+  for it.
+- Raising the version on a static read again, as for 2.1.325: the runtime
+  confirmation that entry left open would stay open.
+- A scheduled CI job against the newest release, and capping the runner's
+  managed updates at the last checked version: both need a key and a
+  workflow change, so they are the maintainer's decision, raised on the
+  card.
+
+## The hook passes a line only when it can tell what the line runs
+
+**Id:** 5dd6c8a0-c108-412b-ae18-afbdf9478b94
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-nnmgvz773z5n; the sandbox probe's run with Claude Code 2.1.326 on the agents' VM, 2026-11-17 (the particulars held to DM with the lead and the review lead); the lead's decision for two layers, not one, 2026-11-17; the reviews of #1931 (A1064, A1074, A1075, A1076), whose particulars were held to DM as well, and the lead's decision that the hook fails closed, 2026-11-17
+**See:** runner.md — 92a0cb54-1bff-4194-bc4f-695e67784432 — as of 2026-11-17
+**Revisit when:** the probe or a review shows a line that runs `maity` and passes the hook; Claude Code offers a documented way to run one exact command outside its sandbox
+
+The runner's `plaincall` hook decides on the words the shell runs, and it
+passes a line only when it can tell what every command in it runs. A line
+that may run `maity` other than as the plain first word, `env` in front
+among them, is refused, and so is a line the hook cannot vouch for. A
+line that only carries `maity` as data of another program, such as a
+commit message or a file's contents, is left to the permission rules.
+Some lines that would not run `maity` are refused as well, for instance
+an expansion handed to a program that runs other programs; an agent
+writes such a line out in full. An assignment in front of a command
+stays allowed, an expansion in its value included.
+
+**Reason:** the README promises two layers for a call with something in
+front of `maity`: the permission rules refuse it, and past them it stays
+in the sandbox. A re-check of 2.1.326 with the rules taken away found a
+prefix for which the second layer no longer held. The rules still refused
+it. The lead did not accept one layer, so the hook now refuses such lines
+itself, whatever the harness version does with them.
+
+**Rejected alternatives:**
+- Accepting the permission rules as the only layer for that prefix, and
+  saying so in the README: rejected by the lead.
+- Refusing every line that holds the word `maity`: agents that work on
+  this repository grep for it, commit messages and files they write name
+  it, and those lines run inside the sandbox anyway.
+- Deciding on the raw text of the line: the shell runs the words after
+  quoting and escapes, so the hook decides on those.
+- Refusing or pinning Claude Code 2.1.326 on the runners: the shipped
+  rules refused the call, and with the managed update no older version
+  was kept to pin to.
+
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 
 **Id:** 3edc329a-6a10-427d-a0a3-733127f14b20

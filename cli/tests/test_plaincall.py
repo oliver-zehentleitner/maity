@@ -54,6 +54,8 @@ REFUSED = [
     "  maity\ta | x",
     "MAITY a > f",
     "maity;x",  # stays in the sandbox anyway; refused all the same
+    "{ maity a; }",
+    "! maity a",
 ]
 ALLOWED = [
     "maity task show tsk-x",
@@ -67,9 +69,170 @@ ALLOWED = [
 NOT_DECIDED = [
     "git status | head",
     "make test && echo ok",
-    "FOO=1 maity a > f",  # starts with a variable: not a maity line for the hook
-    "env maity a > f",
     "echo maity > f",
+    "echo hi > maity",
+    "git commit -m 'fix the maity runner'",
+    "grep -rn maity src",
+    "cat docs/maity.md",
+    "env FOO=1 make test",
+    "timeout 60 pytest -q tests/test_maity.py",
+    "sh -c 'echo maity'",
+    "cd cli && python -m pytest -k maity",
+    "ls",
+    "grep -rn maity src | head",
+    "git commit -m \"$(cat <<'EOF'\nfix the maity runner\nmaity is fine\nEOF\n)\"",
+    "cat > body.md <<'EOF'\nmaity starts this line\nEOF",
+    "cat <<EOF\nmaity a\nEOF",
+    "python3 -m maity x",
+    "for f in a b; do echo $f; done",
+    "case $x in a) echo a;; esac",
+    "x=$(git rev-parse HEAD); echo $x",
+    "{ make test; }",
+    "echo '{a,b}'",
+    "git log --format='%H %s' -3",
+    "time -p pytest",
+    "env PYTHONPATH=$PWD/src pytest -q",
+    "git commit -F msg.txt",
+    "make test 2>&1 | tail -20",
+    "ls *.py",
+    "[ -f x ] && echo y",
+    "sudo apt-get install -y graphviz",
+    "nohup make serve &",
+    "python3 - <<'EOF'\nprint('maity')\nEOF",
+    "trap 'rm -f out.txt' EXIT",
+    "echo $((1+2))",
+    "diff <(git show HEAD:a) a",
+    "source .venv/bin/activate && pytest -q",
+    "while read -r line; do echo $line; done < list.txt",
+]
+# `maity` anywhere but as the line's first word: behind a variable, a wrapper, a shell or
+# another command. The wrappers come from the one list, plaincall.WRAPPERS.
+BEHIND = [
+    "FOO=1 maity a",
+    "FOO=1 maity a > f",
+    "env maity a",
+    "env maity a > f",
+    "/usr/bin/env maity a",
+    "env -i maity a",
+    "env -u HOME maity a",
+    "env VAR=x maity a",
+    "FOO=1 env maity a",
+    "e'n'v maity a",
+    "\\env maity a",
+    "ENV maity a",
+    "env.exe maity a",
+    "$'env' maity a",
+    "${E} maity a",
+    "env MAITY a",
+    "env /home/u/.local/bin/maity a",
+    "env maity.exe a",
+    "/home/u/.local/bin/maity a",
+    "./maity a",
+    "'maity' a",
+    "env 'maity' a",
+    "nice -n 5 env maity a",
+    "command maity a",
+    "command -p maity a",
+    "exec maity a",
+    "builtin maity a",
+    "nice maity a",
+    "timeout 5 maity a",
+    "nohup maity a",
+    "stdbuf -o0 maity a",
+    "xargs maity a",
+    "xargs -I{} maity a {}",
+    "time maity a",
+    "sudo -u x maity a",
+    "setsid maity a",
+    "sh -c 'maity a'",
+    "bash -lc 'echo hi; maity a'",
+    'nice sh -c "env maity a"',
+    "eval 'maity a'",
+    "if maity a; then true; fi",
+    "true && maity a",
+    "git status; maity a",
+    "echo x | maity a",
+    "git status\nmaity a",
+    "echo $(maity a)",
+    "echo `maity a`",
+    "cat <(maity a)",
+    "env 'unclosed maity a",
+    "env ma''ity x",
+    "env m''aity x",
+    'env "ma"ity x',
+    'env "ma""ity" x',
+    "env ma\\ity x",
+    "env m\\aity x",
+    "X=1 ma''ity x",
+    "env ma\\\nity x",
+    "env $'\\x6daity' x",
+    "ma''ity x",
+    "timeout 5 m[a]ity x",
+    "X=1 /usr/local/bin/ma?ty x",
+    "a=ma; b=ity; $a$b x",
+    "env mai{t,}y x",
+    "find . -maxdepth 0 -exec maity x \\;",
+    "ssh localhost maity x",
+    "alias m=maity; m x",
+    "env -- maity",
+    "nohup maity &",
+    "watch maity",
+    "xargs maity <f",
+    "bash <<EOF\nmaity x\nEOF",
+    "echo maity x | sh",
+    "cat <<EOF > f\n$(maity x)\nEOF",
+    "env --split-string=maity x",
+    "env -S 'maity x'",
+    "env ${M:-maity} x",
+    "\\maity x",
+    "for f in a; do env maity $f; done",
+    "time -p maity x",
+    "time -- maity x",
+    "time -p env maity x",
+    "time -p nohup maity x",
+    "if time -p maity x; then :; fi",
+    "function f { maity x; }; f",
+    "coproc NAME { maity x; }",
+    "env -Smaity x",
+    "env -S'maity x'",
+    "env '-Smaity x'",
+    "env --split-string='maity x'",
+    'env -S"maity x"',
+    "env -u X -S'maity x'",
+    "env -vS'maity x'",
+    "echo $[1<<2]\nmaity x",
+    "trap 'maity x' EXIT",
+    "env ma@(i)ty x",
+    "ma@(i)ty x",
+    "source <(echo maity x)",
+    ". <(echo maity x)",
+    "su -c'maity x'",
+    "'' ; env maity x",
+    '"" x; time maity x',
+    "eval \"ma''ity\"",
+    "bash -c \"ma''ity\"",
+    "printf '%s' mai ty | sh",
+    "source <(printf '%s' mai ty)",
+    "X='1' maity x",
+    'X="1" maity x',
+    "X=1'2' maity x",
+    "exec {fd}>f; maity x",
+    'echo ${x:-"}"} maity x',
+    "hash -p /usr/bin/maity ls; ls",
+    "cat x | bash",
+    "bash < script.sh",
+    "bash <<EOF\necho $(date)\nEOF",
+    "cat <<EOF\nmaity x",
+    "true; (( $(maity x) ))",
+    "echo $((1+$(maity x)))",
+]
+# Lines that may not run `maity` but that the hook refuses on purpose: an expansion handed to a
+# program that runs others, or `maity` named in its arguments.
+REFUSED_ON_PURPOSE = [
+    "timeout 60 $PYTHON -m pytest",
+    "git ls-files | xargs grep -n maity",
+    '"$VENV/bin/python" -m pytest',
+    "command -v maity",
 ]
 
 
@@ -81,6 +244,29 @@ def test_a_maity_line_that_is_not_one_plain_call_is_refused(command: str) -> Non
 @pytest.mark.parametrize("command", ALLOWED)
 def test_one_plain_maity_call_passes(command: str) -> None:
     assert plaincall.refusal(bash(command)) is None
+
+
+@pytest.mark.parametrize("command", BEHIND)
+def test_a_line_that_runs_maity_behind_something_is_refused(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.BEHIND
+
+
+def test_every_wrapper_on_the_list_is_refused_in_front_of_maity() -> None:
+    for wrapper in sorted(plaincall.WRAPPERS | plaincall.STRUCTURE):
+        # `{` and `!` start no word, so the line counts as a maity line that is not plain
+        expected = plaincall.REFUSED if wrapper in ("{", "!") else plaincall.BEHIND
+        assert plaincall.refusal(bash(f"{wrapper} maity a")) == expected, wrapper
+        assert plaincall.refusal(bash(f"{wrapper} make test")) is None, wrapper
+
+
+@pytest.mark.parametrize("command", REFUSED_ON_PURPOSE)
+def test_some_lines_are_refused_although_they_may_not_run_maity(command: str) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.BEHIND
+
+
+def test_an_empty_program_is_refused_inside_the_hook() -> None:
+    assert plaincall.behind("'' x") is True
+    assert plaincall.refusal(bash('"" ; ls')) == plaincall.BEHIND
 
 
 @pytest.mark.parametrize("command", NOT_DECIDED)
@@ -115,6 +301,8 @@ def test_the_hook_process_refuses_with_exit_2_and_the_reason_on_stderr() -> None
     done = run_hook(json.dumps(bash("maity a > f")).encode())
     assert done.returncode == 2 and done.stdout == ""
     assert done.stderr.strip() == plaincall.REFUSED
+    done = run_hook(json.dumps(bash("env maity task show tsk-x")).encode())
+    assert done.returncode == 2 and done.stderr.strip() == plaincall.BEHIND
     done = run_hook(json.dumps(bash("maity task show tsk-x")).encode())
     assert done.returncode == 0 and done.stdout == "" and done.stderr == ""
     assert run_hook(b"not json").returncode == 2
