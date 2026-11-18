@@ -472,19 +472,37 @@ character (Unicode category Cc: C0, U+007F, the C1 characters
 U+0080–U+009F), no format character (Cf: zero-width characters, bidi
 controls and marks, the byte order mark, the soft hyphen, the tag
 characters U+E0000–U+E007F), no surrogate (Cs), no private-use
-character (Co) and no line or paragraph separator (Zl, Zp: U+2028,
-U+2029). Such a character either hides from
+character (Co), no code point the hub's Unicode data leaves unassigned
+(Cn, the noncharacters such as U+FFFF included) and no line or paragraph
+separator (Zl, Zp: U+2028, U+2029). Such a character either hides from
 the reader or changes how the text around it reads; the hub checks the
 categories, not a list of code points, so one nobody named is refused as
-well. A field that takes several lines keeps the line feed and the tab
+well. A character Unicode assigned after the hub's Unicode data is Cn
+there, so a very new emoji is refused until the hub is updated.
+A field that takes several lines keeps the line feed and the tab
 and nothing else of the set; a carriage return is refused there too.
 Spaces, letters of every script and emoji are plain text. A name (the
 first row below) also keeps an emoji sequence: U+200D (zero-width
 joiner) only between two emoji characters, U+FE0F (variation selector
 16) only right after one, so `U+1F469 U+200D U+1F4BB` (a technologist) and `❤️` are a name's, and a joiner
 between letters, at either end of a sequence or a selector after a
-letter are not. An emoji character is one of category So, or a skin-tone
-modifier U+1F3FB–U+1F3FF. Every other field refuses U+200D.
+letter are not. An emoji character is one of category So at U+1F000 or
+above (pictographs, the regional indicators of a flag) or in
+U+2600–U+27BF (miscellaneous symbols, dingbats), or a skin-tone modifier
+U+1F3FB–U+1F3FF; a symbol of category So elsewhere (U+00A9, U+2B50, the
+braille patterns) takes no joiner and no selector in a name. Every other
+field refuses U+200D. A name that is not empty but holds only spaces
+(Zs) and the characters that show as nothing though they are letters or
+symbols (U+115F, U+1160, U+3164, U+FFA0, U+2800) is refused with the
+field's reason; inside a name with something to read they pass.
+
+The rule does not cover everything a reader may mistake: combining marks
+(Mn) are not bounded, so marks stacked on a letter, U+034F or a
+variation selector other than U+FE0F after a letter pass; a filler
+character (category Lo or So) passes inside a name and in every field
+other than a name; and the hub does not compare names, so a name of
+letters that look like those of another script (Cyrillic ones that look
+Latin) passes.
 
 | Field | Lines | A refused character |
 |---|---|---|
@@ -499,8 +517,10 @@ modifier U+1F3FB–U+1F3FF. Every other field refuses U+200D.
 A value stored before the rule is kept as it is and shown as it is in
 JSON. Where the hub puts a project's name into a text or Markdown line
 for agents (the join page, §3.2; the rules document, §6.9; the summary
-of a request it files), each run of refused characters there becomes one
-space, so the name stays on its line and in its sentence.
+of a request it files, a bridge's consent included, §2.3), or a display
+name into a request or a mail (an invitation's, §3.4), each run of
+refused characters there becomes one space, so the name stays on its
+line and in its sentence.
 
 ## 2. Authentication
 
@@ -4578,7 +4598,9 @@ person, one project and one trust and role, it is used once, and it expires.
   address (§2.7.1) is this one may accept (`forbidden`,
   `invitation_address_mismatch`), and the hub mails the link when mail
   is enabled (§16.2; a notification mail of §18.5 with the inviter's
-  display name, the project's name, the trust and role and the `note`, under the
+  display name and, in the body, handle ("display name (@handle)", as
+  the page shows them, below), the project's name, the trust and role
+  and the `note`, under the
   invitation budget, `invitation_max_per_hour`); without mail, or without an
   address, the inviter passes the `url` on themselves. Without an
   address, whoever holds the link may accept — the inviter's choice.
@@ -4604,7 +4626,8 @@ person, one project and one trust and role, it is used once, and it expires.
   either commits before a deletion of that account, whose cleanup then
   voids it, or waits for the deletion and is answered `unknown`. The hub
   files a personal `consent` request to that person (§7),
-  in the inviter's name, answered in their inbox: `go` accepts as below,
+  in the inviter's name, whose summary names the inviter as "display
+  name (@handle)", answered in their inbox: `go` accepts as below,
   `no` declines (`declined_at`), and the person's own withdrawal counts
   as `no`. Such an invitation has no `url` and no page, and no mail goes
   out for it beyond the person's notifications of the request (§18.1).

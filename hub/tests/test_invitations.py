@@ -828,6 +828,9 @@ def test_an_address_bound_invitation_is_mailed_when_mail_is_on(
     assert mail.subject.startswith("[Maity] ") and "Maity" in mail.subject
     for shown in (made.json()["url"], "maintainer/maity", "member", "reviewer", "Hi!"):
         assert shown in mail.body, shown
+    # By display name and handle, as the invitation page shows the inviter (§3.4).
+    assert " (@maintainer) invites you to the Maity project " in mail.body
+    assert "(@maintainer)" not in mail.subject
     assert "https://evil.example" not in mail.body and "evil[.]example" in mail.body  # §18.5
     unbound = owner.post("/projects/maintainer/maity/invitations", {})
     assert unbound.status_code == 201

@@ -4,16 +4,23 @@
   project's name, every display name, an invitation's note, a card link's
   URL and label, a person's website and a project's links, a review's
   subject and a human's preferences refuse control, format (zero-width,
-  direction, tag), surrogate and line-separator characters; a note and the
+  direction, tag), surrogate, unassigned (noncharacters included) and
+  line-separator characters; a note and the
   preferences keep the line feed and the tab, and a name keeps an emoji
   sequence (a zero-width joiner between two emoji, a variation selector
-  right after one). Each field answers with the
+  right after one; an emoji is a symbol of the emoji, miscellaneous-symbol
+  and dingbat blocks). A name of spaces and blank filler characters alone
+  is refused. Each field answers with the
   reason it already had (`control_character`, `not_a_url`, `format`); an
   invitation note's refused character is now `control_character` rather
   than `invalid`.
 - hub: where the hub writes a project's name into a text or Markdown line
   for agents (the join page, the rules document, the requests it files),
-  a name stored before the rule stays on one line.
+  or a display name into an invitation's request or mail, a name stored
+  before the rule stays on one line.
+- hub: an invitation's mail and the request of an invitation by handle
+  name the inviter as "display name (@handle)", as the invitation page
+  does; the mail's subject keeps the display name alone.
 
 ### Added
 
