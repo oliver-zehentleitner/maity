@@ -58,15 +58,32 @@ def cover_order(conn: Connection, project: Any, row: Any) -> list[Any]:
         )
     ).all()
     by_principal = {_principal(m): m for m in members}
+    handles: dict[str, str] = {}
+
+    def by_handle(agents: list[Any]) -> list[Any]:
+        # Every agent member's handle in one read, at the first expansion that needs it,
+        # not one read per agent and key.
+        if not handles:
+            ids = [m.agent_id for m in members if m.agent_id]
+            handles.update(
+                (str(i), str(h))
+                for i, h in conn.execute(
+                    select(t.agent_profile.c.id, t.agent_profile.c.handle).where(
+                        t.agent_profile.c.id.in_(ids)
+                    )
+                )
+            )
+        return sorted(agents, key=lambda m: handles[str(m.agent_id)])
+
     order: list[Any] = []
     for entry in availability.policy_of(row)["substitutes"]:
         if entry.startswith("role:"):
             role = entry.removeprefix("role:")
             agents = [m for m in members if m.agent_id and role in (m.role, counts_as(m.role_base))]
-            order += sorted(agents, key=lambda m: _handle(conn, m))
+            order += by_handle(agents)
         elif entry == "trust:admin":
             agents = [m for m in members if m.agent_id and in_admin_team(m.trust, m.role)]
-            order += sorted(agents, key=lambda m: _handle(conn, m))
+            order += by_handle(agents)
         elif entry in by_principal:
             order.append(by_principal[entry])
     seen: set[int] = set()
@@ -417,10 +434,16 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
     for_id, this_cover = _principal(row), clock.rfc3339(since)
     now = clock.now()
-    members_by_principal = {
-        _principal(m): m.id
+    # Read once: the moves below change cards and requests, never a membership.
+    members = {
+        _principal(m): m
         for m in conn.execute(select(t.membership).where(t.membership.c.project_id == project.id))
     }
+
+    def member_id(principal: str) -> int | None:
+        found = members.get(principal)
+        return None if found is None else found.id
+
     # per substitute: (kept, returned) card ids and request ids
     cards_of: dict[str, tuple[list[str], list[str]]] = {}
     requests_of: dict[str, tuple[list[str], list[str]]] = {}
@@ -434,7 +457,7 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
             continue
         kept, returned = cards_of.setdefault(cover["by"], ([], []))
         values: dict[str, Any] = {"cover": None}
-        if not still_with(card, members_by_principal.get(cover["by"])):
+        if not still_with(card, member_id(cover["by"])):
             # Reassigned or taken over since: the cover relation ended there, and a third
             # party's claim or assignment is never overwritten.
             conn.execute(update(t.card).where(t.card.c.id == card.id).values(**values))
@@ -442,7 +465,7 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
         takes_no_cards = (
             row.role == "expert" or row.trust == "guest" or row.isolated_since is not None
         )
-        if not gives_back(card, members_by_principal.get(cover["by"])) or takes_no_cards:
+        if not gives_back(card, member_id(cover["by"])) or takes_no_cards:
             # An expert, a guest or an isolated member takes no cards back (§2.3, §6.2):
             # the substitute keeps it.
             kept.append(card.id)
@@ -479,10 +502,6 @@ def end(conn: Connection, row: Any, actor: Actor | None) -> None:
         # An answered request was touched; an open one simply loses `cover`.
         (kept if request.status != "open" else returned).append(request.id)
         conn.execute(update(t.request).where(t.request.c.id == request.id).values(cover=None))
-    members = {
-        _principal(m): m
-        for m in conn.execute(select(t.membership).where(t.membership.c.project_id == project.id))
-    }
     covering = conn.execute(select(t.membership).where(t.membership.c.id == row.id)).one()
     substitutes = sorted(set(cards_of) | set(requests_of))
     if not substitutes and first is not None:  # nothing moved: the one told it started
@@ -536,15 +555,8 @@ def _assignment_cover(covered: Any, sub: Any) -> dict[str, Any]:
     }
 
 
-class _OpenCard:
-    """A new area-routed card: open, and not under a takeover (§6.4)."""
-
-    id = ""
-    status = "open"
-
-
 def routed(
-    conn: Connection, membership_id: int | None, card: Any | None = None
+    conn: Connection, membership_id: int | None, card: Any
 ) -> tuple[int | None, dict[str, Any] | None]:
     """Area routing while a cover runs (§6.12). Returns the assignee and the card's cover.
 
@@ -552,7 +564,11 @@ def routed(
     membership has ended, the cover itself runs on (`cover_by` stays who it started
     with) and the card goes to the first entry of the cover order, as it stands now,
     that is available, not itself covered, and may take the card. With no such entry
-    it goes to the covered member, as without cover."""
+    it goes to the covered member, as without cover.
+
+    `card` is the card that does not exist yet, as the caller states it: an empty `id`
+    (no takeover can be open on it) and the `status` it is created with, `proposed`
+    included, which `may_take_card` reads."""
     if membership_id is None:
         return None, None
     row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
@@ -568,10 +584,9 @@ def routed(
     # The substitute's membership has ended. The removal already took them out of every
     # `substitutes` list (`availability.drop_substitute`); walk what remains.
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
-    prospect = card if card is not None else _OpenCard()
     ready = available(conn, project, cover_order(conn, project, row), clock.now())
     for entry in ready:
-        if may_take_card(conn, project, prospect, entry):
+        if may_take_card(conn, project, card, entry):
             return entry.id, _assignment_cover(row, entry)
     return membership_id, None
 
