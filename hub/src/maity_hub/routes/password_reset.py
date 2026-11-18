@@ -28,6 +28,7 @@ from maity_hub.notifications import preferences, records
 from maity_hub.routes import auth
 from maity_hub.routes.auth import Strict
 from maity_hub.routes.email_sign_in import _anonymous
+from maity_hub.text_language import text_language
 
 router = APIRouter(prefix="/auth/password-reset")
 LIMITS = resets.RequestLimits()
@@ -154,7 +155,7 @@ def deliver(
         if issued is None:
             return
         token = resets.token(key, human_id, issued, human.password_generation, row.epoch)
-        language = preferences.text_language(conn, human_id)
+        language = text_language(conn, human_id)
         browser, system = sessions.describe(user_agent)
         words = catalog.section("password_reset", language)
         mail_only = (

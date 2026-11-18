@@ -33,6 +33,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
+from maity_hub.text_language import text_language
 from maity_hub.views import principal_id, ts
 
 TYPES = ("profile", "project", "message", "card")
@@ -466,10 +467,9 @@ def create(
         # The instance admin's personal request, open while the report is (§16.8, §7): ids
         # and kinds only, never the content; mailed by the `inbox` mode through its record.
         from maity_hub import catalog
-        from maity_hub.notifications import preferences
         from maity_hub.routes.requests import file_hub_report
 
-        words = catalog.section("notify", preferences.text_language(conn, admin))
+        words = catalog.section("notify", text_language(conn, admin))
         file_hub_report(conn, admin, report_id, words["reported"].format(reason=reason, type=kind))
     return {"id": report_id, "created_at": ts(now)}
 

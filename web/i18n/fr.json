@@ -449,10 +449,19 @@
   "board.claim.unclaimed": "Pas prise en charge",
   "board.closed.failed": "Impossible de lire les cartes fermées : {reason}",
   "board.closed.loading": "Lecture des cartes fermées…",
+  "board.closed.more_failed": "Impossible de lire plus de cartes fermées : {reason}",
+  "board.closed.more_loaded": {
+    "one": "{count} carte fermée chargée",
+    "other": "{count} cartes fermées chargées"
+  },
   "board.closed.recheck_failed": "Impossible de vérifier si les cartes fermées ont changé pendant leur lecture : {reason}",
   "board.closed.show_more": {
     "one": "Afficher {count} autre carte fermée",
     "other": "Afficher {count} autres cartes fermées"
+  },
+  "board.closed.show_more_loaded": {
+    "one": "Afficher plus ({count} chargée)",
+    "other": "Afficher plus ({count} chargées)"
   },
   "board.column.other": "Autre",
   "board.column.unknown": "Statut inconnu",

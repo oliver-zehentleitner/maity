@@ -34,6 +34,7 @@ from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import records, tokens
 from maity_hub.ratelimit import Attempt, Limiter
+from maity_hub.text_language import text_language
 
 KINDS = ("inbox", "chat", "mention", "security", "invitation")
 MODES = ("immediate", "hourly", "daily", "weekly", "off")
@@ -207,14 +208,6 @@ _NONE = SimpleNamespace(
 
 def preferences(conn: Connection, human_id: str) -> dict[str, Any]:
     return _merged(row_of(conn, human_id).preferences)
-
-
-def text_language(conn: Connection, human_id: str) -> str:
-    """The language of what the hub itself composes for this human (§6.2)."""
-    chosen = conn.execute(
-        select(t.human.c.interface_language).where(t.human.c.id == human_id)
-    ).scalar_one_or_none()
-    return languages.of_interface(chosen, preferences(conn, human_id)["email"]["language"])
 
 
 def set_language(conn: Connection, human_id: str, language: str) -> None:

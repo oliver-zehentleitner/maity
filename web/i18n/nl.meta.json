@@ -1567,6 +1567,14 @@
     "en": "2ed9637177518fe0",
     "text": "852fec750782ba36"
   },
+  "board.closed.more_failed": {
+    "en": "78a211d7681f0c96",
+    "text": "86f57a5716667ad9"
+  },
+  "board.closed.more_loaded": {
+    "en": "40937c0812598f97",
+    "text": "859084b908664124"
+  },
   "board.closed.recheck_failed": {
     "en": "a778f95d9908435e",
     "text": "54ba447a22b0172a"
@@ -1574,6 +1582,10 @@
   "board.closed.show_more": {
     "en": "9a777e4ebf5e3b6f",
     "text": "ad00943237bea527"
+  },
+  "board.closed.show_more_loaded": {
+    "en": "dda1304e917dddb0",
+    "text": "388d45fbb9e4879b"
   },
   "board.column.other": {
     "en": "1f1260ddd48575a9",
