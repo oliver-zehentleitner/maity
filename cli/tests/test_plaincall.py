@@ -417,7 +417,8 @@ def code_maity_names() -> set[str]:
     found: set[str] = set()
     for path in (SRC / "maity").rglob("*.py"):
         if path.name != "plaincall.py":
-            found.update(re.findall(r"[\"'](MAITY_[A-Z][A-Z0-9_]*)", path.read_text()))
+            text = path.read_text(encoding="utf-8")
+            found.update(re.findall(r"[\"'](MAITY_[A-Z][A-Z0-9_]*)", text))
     return found
 
 
@@ -437,7 +438,7 @@ def test_no_runner_trusted_name_is_on_the_allow_list() -> None:
 
 
 def test_every_maity_name_on_the_allow_list_is_read_by_maity_and_documented_for_agents() -> None:
-    docs = AGENTS_MD.read_text()
+    docs = AGENTS_MD.read_text(encoding="utf-8")
     for name in plaincall.ALLOWED_BEFORE_MAITY:
         if name.startswith("MAITY_"):
             assert name in code_maity_names(), name
