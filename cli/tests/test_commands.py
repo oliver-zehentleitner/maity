@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 import urllib.parse
 from pathlib import Path
 from typing import Any
 
 import fakehub
 import pytest
-from conftest import git
+from conftest import git, posix
 
 from maity import cli, state
+from maity.runner import scratchop
 
 P = "/api/v1/projects/oliver/maity"
 
@@ -1327,3 +1330,55 @@ def test_print_json_escapes_a_lone_surrogate_instead_of_crashing(
 ) -> None:
     cli._print_json({"body": json.loads('"a\\ud800b"')})
     assert json.loads(capsys.readouterr().out) == {"body": "a\ud800b"}
+
+
+class _Stdin:
+    """config.toml text on stdin, as the ssh backend passes it to the host's `maity`."""
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def read(self) -> str:
+        return self._text
+
+
+@posix
+@pytest.mark.skipif(not scratchop.supported(), reason="no descriptor-relative open here")
+def test_runner_scratchop_codex_reaches_the_op_through_the_cli_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ssh backend runs the launch-write op through the host's own `maity runner scratchop
+    codex`, so the CLI parser must route it to the same op the module path uses: config.toml
+    on stdin and the auth.json link land under the anchored home, and a codex-home swapped for
+    a link is still refused (no-follow), the whole way from argv through the top-level parser.
+    """
+    root = tmp_path / "ws"
+    root.mkdir()
+    scratch_dir = root / "maity" / ".scratch" / "plc-0003"
+    scratchop.make(str(root), str(scratch_dir))
+    home = scratch_dir / "codex-home"
+    login = tmp_path / "login" / "auth.json"
+    login.parent.mkdir(parents=True)
+    login.write_text("{}")
+
+    def run(argv: list[str], stdin: str) -> int:
+        args = cli.build_parser().parse_args(argv)
+        monkeypatch.setattr("sys.stdin", _Stdin(stdin))
+        handler: Any = args.handler
+        return int(handler(args))
+
+    code = run(
+        ["runner", "scratchop", "codex", "--under", str(root), "--auth", str(login), str(home)],
+        "CONFIG-TEXT",
+    )
+    assert code == 0
+    assert (home / "config.toml").read_text() == "CONFIG-TEXT"
+    assert stat.S_IMODE((home / "config.toml").stat().st_mode) == 0o600
+    assert os.readlink(home / "auth.json") == str(login)
+
+    # The no-follow refusal still fires when codex-home is swapped for a link out of the scratch.
+    home.rename(scratch_dir / "moved")
+    home.symlink_to(tmp_path)
+    code = run(["runner", "scratchop", "codex", "--under", str(root), str(home)], "CONFIG-TEXT")
+    assert code == scratchop.LINK  # a link where codex-home must be: nothing written through it
+    assert home.is_symlink()

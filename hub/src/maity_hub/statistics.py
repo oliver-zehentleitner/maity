@@ -17,7 +17,7 @@ from sqlalchemy import Connection, func, select
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.instances import ONLINE_SECONDS
+from maity_hub.seen import ONLINE
 
 MAX_DAYS, DEFAULT_DAYS = 90, 30
 CACHE_FOR = timedelta(hours=1)
@@ -35,7 +35,7 @@ SERIES = (
 
 def _day(value: Any) -> str:
     """A `func.date(...)` result as `YYYY-MM-DD`: a string on SQLite, a date elsewhere."""
-    return value.isoformat() if isinstance(value, date) else str(value)[:10]
+    return _as_date(value).isoformat()
 
 
 def _start_of(day: date) -> datetime:
@@ -70,9 +70,9 @@ def compute(conn: Connection, days: int) -> dict[str, Any]:
             t.credential.c.membership_id, t.credential.c.instance
         )
     ):
-        stamp = first if isinstance(first, datetime) else datetime.fromisoformat(str(first))
-        if stamp.replace(tzinfo=UTC) >= since:
-            add("new_instances", stamp.date())
+        day = _as_date(first)
+        if day >= window[-1]:  # on or after `since`, the window's first midnight
+            add("new_instances", day)
 
     humans = _humans_active(conn, active_since)
     for day, members in humans.items():
@@ -171,12 +171,9 @@ def _totals(conn: Connection, now: datetime) -> dict[str, int]:
     def count(query: Any) -> int:
         return int(conn.execute(query).scalar_one())
 
-    profiles = select(func.count()).select_from(t.agent_profile)
-    if "deleted_at" in t.agent_profile.c:  # a deleted profile is a tombstone (§6.3)
-        profiles = profiles.where(t.agent_profile.c.deleted_at.is_(None))
-    owners = select(func.count(func.distinct(t.agent_profile.c.owner_id)))
-    if "deleted_at" in t.agent_profile.c:
-        owners = owners.where(t.agent_profile.c.deleted_at.is_(None))
+    profile_alive = t.agent_profile.c.deleted_at.is_(None)  # a deleted one is a tombstone (§6.3)
+    profiles = select(func.count()).select_from(t.agent_profile).where(profile_alive)
+    owners = select(func.count(func.distinct(t.agent_profile.c.owner_id))).where(profile_alive)
     alive = t.human.c.deleted_at.is_(None)
     return {
         "humans": count(
@@ -220,7 +217,7 @@ def _online(conn: Connection, now: datetime) -> int:
     heard = listening.which((row.id for row in rows), conn)  # one read for all
     for row in rows:
         used = row.last_used_at
-        recent = used is not None and (now - used).total_seconds() <= ONLINE_SECONDS
+        recent = used is not None and now - used <= ONLINE
         if row.id in heard or recent:
             found += 1
     return found
@@ -261,6 +258,7 @@ def _returning(conn: Connection, active: dict[str, set[str]], today: date) -> di
 
 
 def _as_date(value: Any) -> date:
+    """A timestamp or a day as the database gives it (a string on SQLite) as its date."""
     stamp = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
     return stamp.date()
 

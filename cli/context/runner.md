@@ -542,11 +542,117 @@ operator's account. The operator docs say so.
 route. git's surface keeps growing, and a list that looks complete
 would read as a boundary when it is not one.
 
+## Codex's CODEX_HOME lives inside the placement scratch, not the runner's state directory
+
+**Id:** 9084b0ed-985d-41ea-906d-cd9cc6e18879
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Verification:** corroborated — the placement, launch-write and sandbox-profile boundaries are read from `adapters.py`, `scratchop.py` and `commands.py` and covered by unit tests (`tests/test_adapters.py`, `tests/test_scratchop.py`, the launch-write op through the `maity runner scratchop` CLI in `tests/test_commands.py`, and the too-old-host refusal in `tests/test_supervisor.py`); a live Codex placement running with the read-only home is not yet observed and is still needed
+**Source:** card tsk-hv7jbgy75zjt (a Codex placement's field report that its own sandbox denied the helper it must run, `permission_denied`, so no command ran); the review of the launch-write and sandbox-profile boundaries; the traced cause in `cli/src/maity/runner/adapters.py`; the reporting of the too-old-host refusal settled in the review of PR #1979
+**See:** runner.md — 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7 — as of 2026-11-18
+**See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-18
+**Revisit when:** a harness other than Codex needs a per-placement home, Codex stops keeping its per-command helper and session state under `CODEX_HOME`, a placement is given a home with no scratch to carry it, or the follow-up card adds a contract detail-code for the too-old-host refusal
+
+Each Codex placement's `CODEX_HOME` lies inside that placement's scratch
+(`adapters.codex_home`), under the workspaces root, rather than under the
+runner's state directory. The runner still writes `config.toml` there and
+links the operator's `~/.codex/auth.json` into it, not copied (carried from
+49caa654). The codex sandbox re-opens the placement's scratch, so the home
+inside it is reachable; every other placement hides the whole workspaces
+root, so this home — its login link and its session state — is hidden from
+them, exactly as the scratch is. Where there is no scratch to carry it (no
+workspaces root to carve), the home stays in the runner's directory, where
+the sandbox hides it. `maity runner check` verifies from the local
+configuration the parts it can see before a placement starts — that Codex is
+given a scratch and that the workspaces root is not inside the state
+directory — but it does not confirm that the scratch is created when a
+placement actually runs, nor read an ssh target's own paths, so a runtime
+fall-back to no scratch is beyond what it catches.
+
+Because the home sits in the agent-writable scratch, two boundaries are
+drawn explicitly. The sandboxed commands may read the home — its control
+files and the per-command helper they run — but may write nothing in it
+(`read`, not `write`): the runner writes those control files once before the
+session starts, and a session cannot rewrite the configuration a later
+restart reads. And the runner's own writes of those files go only to a
+descriptor opened without following a link from the workspaces root, the
+same anchor the scratch's make and removal use, so a `codex-home` swapped
+for a link is refused rather than followed out of the scratch.
+
+The runner writes those control files itself, so on an ssh host it runs the
+host's own `maity` to do it, the same way it makes and removes the scratch
+there — the launch-write op is reached through the `maity runner scratchop`
+CLI, not only the runner's internal module path. A host whose `maity`
+predates that op cannot anchor the home; the placement is then refused with
+a clear reason (the host's `maity` is too old for Codex placements) so the
+operator upgrades the host, rather than crash-looping the start or quietly
+falling back to the hidden state directory where no command would run.
+
+That refusal is reported as `harness_refused` with no detail, and the
+specific reason — the host's `maity` is too old for the codex launch-write
+op — goes to the runner's log only. `harness_refused`'s detail is a closed
+contract list (docs/api.md §15.7) with no code for this host-too-old case;
+an unknown detail makes the hub answer `invalid`, so the runner would
+re-send the rejected report every tick and the refusal would never be
+recorded. A contract detail-code for it is deferred to a follow-up card.
+`retry_at` stays unset, so the start still does not crash-loop and only a
+new generation retries.
+
+**Reason:** the codex sandbox hides the runner's state directory, and it
+hides a directory by mounting over it, so a path inside it (the old
+`CODEX_HOME`) has nowhere to be reached and Codex cannot create or run its
+per-command helper (`CODEX_HOME/tmp/arg0-linux`): every command failed and
+`maity resume` never started (the incident on this card). The placement's
+scratch already solves the same problem for a different directory — it sits
+under the hidden workspaces root and is re-opened for this placement while
+staying hidden from the others — so the home follows that precedent and
+inherits it. Under the workspaces root the home is reachable like the
+scratch and holds nothing of the runner's state or another placement's; its
+control files are written by the runner and read-only to the session, and
+the runner writes them without following a link, so the home adds no
+writable surface and no write that leaves the scratch.
+
+**Rejected alternatives:**
+- Re-open a home in place under the state directory. A subpath can be
+  re-opened under a hidden root — the clone and the scratch are, under the
+  workspaces root the profile keeps `none` while it names them back. The
+  state directory is different not because the re-open cannot be written but
+  because it holds the runner's secrets — the credential, the records, every
+  other placement's — and is kept wholly hidden: a readable hole into the
+  secret store for one home weighs worse than a home in the agent-facing
+  scratch, which holds no secret. So the home goes to the scratch.
+- A sibling per-placement directory under the workspaces root beside
+  `.scratch` (the card's wording). It would need its own secure
+  make-and-remove path run as the agents' user, and its own re-open rule in
+  the profile — each a new place the boundary could be gotten wrong — and it
+  would be left behind on every closed placement unless a second cleanup
+  matched the scratch's. Inside the scratch the home inherits the scratch's
+  already-reviewed re-open and its removal; its own launch writes are
+  anchored to the scratch root and its control files are read-only to the
+  session (above), so the surface it adds is the one named here, not a new
+  unreviewed boundary. The cost: a placement without a scratch (a host whose
+  `maity` cannot carve
+  one) gets no re-opened home and falls back to the runner's directory,
+  where the sandbox hides it; `check` verifies the configuration before a
+  placement starts (Codex is given a scratch, the workspaces root is outside
+  the state directory), but a runtime fall-back to no scratch is beyond it.
+- Keep Codex's home in the clone or its `.git`: the work tree is the agent's
+  to commit, and `.git/maity` is the denied credential directory; a home in
+  either would be committed by accident or refused by the sandbox.
+- Fall back to no scratch when the host's `maity` is too old for the
+  launch-write op. That would put `CODEX_HOME` back under the hidden state
+  directory — the very incident on this card, where no command runs —
+  functionally broken while looking like a clean start. A placement that
+  cannot be anchored is refused with a reason the operator can act on
+  (upgrade the host) instead, so the breakage is named, not hidden.
+
 ## Codex reaches the operator's login through a link in its per-placement home
 
 **Id:** 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 9084b0ed-985d-41ea-906d-cd9cc6e18879
 **Evidence:** inferred
 **Source:** runner design v2 §6.1 and §6.2 (a `CODEX_HOME` per placement); implementation of runner slice R5b, 2026-10-22; whether Codex rewrites `auth.json` on a token refresh is unverified (the design marks it *verify*)
 **Revisit when:** a real Codex run shows the link replaced by a file, or the operator's login going stale while an agent's stays fresh
@@ -1123,6 +1229,38 @@ real boundary. Rejected because the owner chose to accept the residual risk
 and offer the harness now, with the separate-OS-user mitigation, rather than
 block every opencode placement until that work lands.
 
+## The opencode adapter fails closed on the model
+
+**Id:** 7c23704d-d02f-4cbf-80ca-494119f8fa5c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-kf2kp09d6qew after the first live opencode test found a model-less placement running opencode's own free default (provider `opencode`, `hy4-flash-free`) instead of the configured `xai/grok-4.7`
+**See:** runner.md#opencode-grok-is-offered-its-command-rules-are-not-a-security-boundary — a94f2e01-c227-4d4f-baeb-d88c5f0d3c86 — as of 2026-11-18
+**Revisit when:** opencode routes a placement's model somewhere other than `--model`, or a provider other than the configured one becomes acceptable
+
+`_opencode` takes the effective model from the placement, or the harness
+`default_model` when the placement names none, and passes it as `--model`. A
+model that is empty or not among the harness `models` refuses the start
+(`NotYet`, surfaced as `harness_refused`) instead of launching.
+
+**Reason:** a provider-`opencode` model is opencode-hosted (the command-rules
+constraint above), so running one sends the clone's conversation — the
+repository's content — to opencode's servers rather than to the configured
+provider (the operator's xAI access). With no `--model`, opencode picks its
+own free default, a provider-`opencode` model, so a model-less placement
+leaked data silently. The effective model must therefore be one the operator
+configured, and `default_model` (validated to be one of `models`) is the
+fallback when a placement names none. Fail closed because the leak is silent:
+a wrong model still runs and still answers, so a warning-and-continue would
+let the data leave before anyone read the warning.
+
+**Rejected alternative:** fall back to `default_model` but let an unknown or
+missing model through with a warning (what opencode does on its own, minus the
+log). Rejected because the harm — repository content reaching opencode's
+servers — happens on the start itself, not later, so only refusing the start
+prevents it.
+
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
 **Id:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908
@@ -1585,8 +1723,10 @@ With `layout = "agent_user"`, every command for the agents runs as
 explicitly. That covers the tmux server and its sessions, the clone, the
 join, the supervised loop, `gc`'s git and its revocation check, and stopping
 a process group. Everything the agents' side needs (tmux socket and
-configuration, logs, the harness settings and Codex's home) lives under
-`~<agent_user>/.maity-runner/` and is written as that user. The runner's
+configuration, logs and the harness settings) lives under
+`~<agent_user>/.maity-runner/` and is written as that user; Codex's own
+`CODEX_HOME` is the exception — it lives in the placement scratch under the
+workspaces root, not here (9084b0ed). The runner's
 state directory, its credential and its records stay the runner user's
 alone. Commands for the agents never get the runner's terminal (stdin is
 `/dev/null`), and the clone runs without any login prompt. Harness
@@ -2392,7 +2532,7 @@ message says are no boundary.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13)
+**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13); card tsk-estwtzbae972 (an empty `.git/config.lock` the sandbox holds to keep `.git/config` unwritable, which refused a placement's own `maity report`/`checkpoint`; the lock's mechanism confirmed by `test_adapters.py` and `test_session_identity.py`, which leave an empty `config.lock`), 2026-11-18; PR #1954 review, 2026-11-18, correcting the reason: git never reads, adopts or commits a pre-existing `config.lock` (it writes `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL` and renames only that one into place), so refusing a non-empty lock is a fail-safe default — accept only the known-inert placeholder shape — not a guard against git applying the lock
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
 **Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity` or leaves other entries in a clone, or puts anything in the ones it leaves, maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
@@ -2482,16 +2622,42 @@ list without having been seen: it is the same guard, and the check
 should not hang on which of the listed paths one release happens to
 make. With anything in them, `modules/` is refused as submodules and
 `worktrees/` as worktrees, as before. Empty means an empty regular
-file or directory: a link, a FIFO, a socket or a device anywhere in
-`.git` is refused, under any name, and so is a directory in `.git` that
+file or directory: a symbolic link, a FIFO, a socket or a device anywhere
+in `.git` is refused, under any name, and so is a directory in `.git` that
 cannot be listed, since unlisted it would look empty. Any of them with
-something in it is refused as before. This
+something in it is refused as before. A known boundary: the check reads
+each entry by type and size, not by ownership or link count, so a 0-byte
+hard link to a file outside the clone passes in a placeholder's place the
+same as an empty regular file would — a hard link is a regular file to
+`lstat`, and git never reads these placeholders (it never reads
+`config.lock`, an empty `config.worktree` is read only under an
+`extensions.worktreeConfig` the check refuses, and an empty `alternates`
+names no store), so a 0-byte hard link in their place changes nothing git
+does. This is an accepted, understood boundary, not a hole. This
 holds for every maity user, not only the runner. Empty, they change
 nothing git does: an empty `config.worktree` is not even read without
 an `extensions.worktreeConfig` the configuration check refuses, an
 empty `alternates` names no object store, and an empty `remotes/` names
 no remote, and empty `glab-cli/`, `modules/` and `worktrees/` hold no
-glab configuration, no submodule and no linked worktree.
+glab configuration, no submodule and no linked worktree. The check also
+accepts, while empty, a `config.lock`: Claude Code's sandbox holds an
+empty, read-only `.git/config.lock` so that `.git/config` stays
+unwritable — it is the lockfile git makes to write `.git/config`, and
+holding it means every such write fails ("could not lock config file"),
+which is how a sandboxed session is kept from changing `.git/config`
+(seen in `test_adapters.py` and `test_session_identity.py`, which leave
+an empty `config.lock` for the sandbox that "keeps `.git/config`
+unwritable"). git never reads, adopts or commits a pre-existing
+`config.lock`: it writes `.git/config` through a lock it creates itself
+with `O_CREAT|O_EXCL` and renames only that one into place, so the lock's
+content never reaches `.git/config`, and blocking git's own writes is the
+lock's only effect — one that does not matter in a sandboxed clone.
+Without accepting the empty lock, a placement whose session ran sandboxed
+refused its own `maity report` and `checkpoint` over it (tsk-estwtzbae972).
+A non-empty `config.lock` is refused as before — not because git would
+apply it, but as a fail-safe default: the check accepts only the shape
+the sandbox is known to leave, an empty regular file at that path, and
+content is not a form the sandbox ever creates.
 
 **Reason:** under the runner, maity's git runs outside the agent's
 sandbox for Claude Code (inside it for Codex), in a clone whose
@@ -2516,6 +2682,17 @@ every call can run that way.
 - Accepting those names whatever they hold: a `config.worktree` or an
   `alternates` with content changes what git reads. Only the empty ones
   are known to be the sandbox's.
+- Deleting the sandbox's `config.lock` before a start: as with the other
+  placeholders, the runner changes nothing in an agent's clone, and the
+  sandbox makes the lock again on the next session.
+- Accepting any `config.lock` content (tolerating a non-empty lock): git
+  never reads, adopts or commits a pre-existing `config.lock` (it writes
+  `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL`
+  and renames only that one into place), so content in the lock is not
+  configuration git would apply; but content is not a form the sandbox
+  creates either, so tolerating it would widen the check past the
+  known-inert placeholder shape for no gain. The empty lock is the only
+  form accepted, a fail-safe default.
 - Passing maity's own environment on to git: a variable set on the
   command line that starts maity names programs for git as well as the
   configuration does.
@@ -2997,8 +3174,10 @@ do, and hid that the cause was the shape of its own command.
 **Rejected alternatives:**
 - Making the credential readable inside the sandbox: repository code an
   allowed build or test command runs could then read it (ea36c196).
-- Rewriting the agent's command in a hook: hooks are switched off for
-  placements (`--setting-sources user`), and the harness owns the command.
+- Rewriting the agent's command in a hook: the harness owns the command.
+  Hooks do run in a sandboxed placement, but the runner's own hook only
+  refuses a line that is more than one plain `maity` call (63492c65); it
+  does not rewrite it.
 
 ## A placed Claude Code agent's `maity` line is one plain call, held to that by a hook
 

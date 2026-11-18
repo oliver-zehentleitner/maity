@@ -1155,10 +1155,38 @@ class Supervisor:
                 rec.enter(self.now(), "failed", refused.reason, detail=refused.detail,
                           exit_code=refused.exit_code)  # fmt: skip
             return
+        except adapters.NotYet as refused:
+            # A fail-closed adapter refusal (opencode's model guard): a clean harness_refused,
+            # not a crash-loop-counted start failure, since retrying cannot fix a model that is
+            # not among the harness's configured ones.
+            self.log(f"{name}: {refused}")
+            with self.lock:
+                rec.enter(self.now(), "failed", "harness_refused", detail="model_unsupported")
+            return
         except Retry as again:
             self.log(f"{name}: {again}; trying again in {PICKUP_RETRY:.0f} s")
             with self.lock:
                 rec.retry_at = self.now() + PICKUP_RETRY
+            return
+        except scratchop.Unsupported as old:
+            # An ssh host whose `maity` predates the codex launch-write op cannot anchor the
+            # home. The no-scratch fall-back would put CODEX_HOME back under the hidden state
+            # directory (the original incident: no command runs), so refuse the placement with
+            # a clear reason the operator can act on, rather than crash-looping it.
+            #
+            # The reason goes to the runner's log only. `harness_refused`'s detail is a closed
+            # contract list (docs/api.md §15.7) with no code for this; an unknown detail makes
+            # the hub answer `invalid`, so the runner would re-send the rejected report every
+            # tick and the refusal would never be recorded. The report therefore carries no
+            # detail (a contract detail-code is deferred to a follow-up card). `retry_at` stays
+            # None, so the start still does not crash-loop and only a new generation retries.
+            # `old` carries the host's own message, the host version among it when it names one.
+            self.log(
+                f"{p['id']}: codex placement refused: the host's maity is too old for the "
+                f"codex launch-write op: {old}"
+            )
+            with self.lock:
+                rec.enter(self.now(), "failed", "harness_refused", retry_at=None)
             return
         except Exception as exc:  # noqa: BLE001 - a start task never dies leaving `starting`
             # Counted like a quick exit: a passing tmux hiccup is retried after the backoff,
@@ -1180,6 +1208,8 @@ class Supervisor:
             rec.resume = False
             rec.binary = context.binary
         self.log(f"{name}: started generation {p['generation']}")
+        if harness.id == "opencode":  # name the model in effect: the placement's, or the default
+            self.log(f"{name}: opencode model {p.get('model') or harness.default_model}")
         found = (view or GateView.of(target, harness.id)).found  # the version that started
         warning = capabilities.unchecked(harness.id, found.version if found else None)
         if warning is not None:

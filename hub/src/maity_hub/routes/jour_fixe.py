@@ -329,7 +329,7 @@ def overview(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
                 continue
             entry = _shown(conn, row, mine, seen)
             slot = rounds.next_at(row, now)
-            entry["next_at"] = clock.rfc3339(slot) if slot is not None else None
+            entry["next_at"] = clock.rfc3339_or_none(slot)
             if seen == "full":
                 running, last = rounds.current(conn, row.id), _last_reported(conn, row.id)
                 running, last = (

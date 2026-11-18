@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import stat
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,10 @@ pytestmark = [
 
 def _room(root: Path) -> Path:
     return root / "maity" / ".scratch" / "plc-0003"
+
+
+def _home(root: Path) -> Path:
+    return _room(root) / "codex-home"
 
 
 def test_made_with_tmp_measured_and_removed(tmp_path: Path) -> None:
@@ -182,6 +187,120 @@ def test_the_size_counts_a_link_not_what_it_points_to(tmp_path: Path) -> None:
     assert isinstance(found["bytes"], int) and found["bytes"] < 64 * 1024
 
 
+def test_codex_writes_the_control_files_anchored_in_the_home(tmp_path: Path) -> None:
+    """config.toml (0600) and the auth.json link land inside a codex-home made 0700 under the
+    scratch; the leaf names are reached from the workspaces root without following a link."""
+    root = tmp_path / "ws"
+    root.mkdir()
+    room = _room(root)
+    scratchop.make(str(root), str(room))
+    login = tmp_path / "login" / "auth.json"
+    login.parent.mkdir(parents=True)
+    login.write_text("{}")
+    assert scratchop.codex(str(root), str(_home(root)), "CONFIG", str(login)) == {
+        "result": "written"
+    }
+    home = _home(root)
+    assert home.is_dir() and stat.S_IMODE(home.stat().st_mode) == 0o700
+    assert (home / "config.toml").read_text() == "CONFIG"
+    assert stat.S_IMODE((home / "config.toml").stat().st_mode) == 0o600
+    assert home.joinpath("auth.json").is_symlink()
+    assert os.readlink(home / "auth.json") == str(login)
+
+
+def test_codex_without_a_login_links_no_auth(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    scratchop.make(str(root), str(_room(root)))
+    scratchop.codex(str(root), str(_home(root)), "CONFIG", None)
+    assert (_home(root) / "config.toml").read_text() == "CONFIG"
+    assert not (_home(root) / "auth.json").exists()
+
+
+def test_codex_refuses_a_codex_home_that_is_a_directory_link(tmp_path: Path) -> None:
+    """codex-home replaced by a link to a directory outside the scratch: the no-follow open of
+    the leaf fails, the whole operation is refused, and nothing outside it is written."""
+    root = tmp_path / "ws"
+    root.mkdir()
+    room = _room(root)
+    scratchop.make(str(root), str(room))
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "config.toml").write_text("keep")
+    (victim / "auth.json").write_text("keep")
+    (room / "codex-home").symlink_to(victim)
+    login = tmp_path / "login" / "auth.json"
+    login.parent.mkdir(parents=True)
+    login.write_text("{}")
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.codex(str(root), str(_home(root)), "CONFIG", str(login))
+    assert (victim / "config.toml").read_text() == "keep"
+    assert (victim / "auth.json").read_text() == "keep"
+    assert (room / "codex-home").is_symlink()
+
+
+def test_codex_replaces_a_leaf_link_without_following_it(tmp_path: Path) -> None:
+    """A link planted at config.toml or auth.json (a leaf) is replaced, not followed: the file
+    it pointed at outside the scratch is left untouched, the real files land in the home."""
+    root = tmp_path / "ws"
+    root.mkdir()
+    scratchop.make(str(root), str(_room(root)))
+    home = _home(root)
+    home.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "c").write_text("keep-c")
+    (outside / "a").write_text("keep-a")
+    (home / "config.toml").symlink_to(outside / "c")
+    (home / "auth.json").symlink_to(outside / "a")
+    login = tmp_path / "login" / "auth.json"
+    login.parent.mkdir(parents=True)
+    login.write_text("{}")
+    scratchop.codex(str(root), str(home), "CONFIG", str(login))
+    assert (outside / "c").read_text() == "keep-c"  # the leaf link was not followed
+    assert (outside / "a").read_text() == "keep-a"
+    assert not (home / "config.toml").is_symlink()
+    assert (home / "config.toml").read_text() == "CONFIG"
+    assert os.readlink(home / "auth.json") == str(login)
+
+
+def test_codex_refuses_a_link_on_the_way_to_the_scratch(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    room = _room(root)
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "plc-0003").mkdir(parents=True)
+    room.parent.mkdir(parents=True)  # <root>/maity/.scratch
+    (room).symlink_to(elsewhere / "plc-0003")
+    with pytest.raises(scratchop.OnTheWay):
+        scratchop.codex(str(root), str(_home(root)), "CONFIG", None)
+
+
+def test_codex_answers_in_one_line_and_says_link_by_its_exit_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    scratchop.make(str(root), str(_room(root)))
+    monkeypatch.setattr("sys.stdin", _Stdin("CONFIG"))
+    assert scratchop.main(["codex", "--under", str(root), str(_home(root))]) == 0
+    assert capsys.readouterr().out.strip() == '{"result": "written"}'
+    assert (_home(root) / "config.toml").read_text() == "CONFIG"
+    (_home(root)).rename(_room(root) / "moved")
+    (_home(root)).symlink_to(tmp_path)
+    monkeypatch.setattr("sys.stdin", _Stdin("CONFIG"))
+    assert scratchop.main(["codex", "--under", str(root), str(_home(root))]) == scratchop.LINK
+    assert '"result": "link"' in capsys.readouterr().out
+    assert scratchop.main(["codex", "--under", str(root)]) == 2  # no HOME operand
+
+
+class _Stdin:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def read(self) -> str:
+        return self._text
+
+
 def test_through_sudo_or_ssh_a_link_on_the_way_is_its_own_answer(tmp_path: Path) -> None:
     import subprocess
 
@@ -207,3 +326,36 @@ def test_through_sudo_or_ssh_a_link_on_the_way_is_its_own_answer(tmp_path: Path)
     assert not isinstance(failed.value, scratchop.OnTheWay)
     answer = Remote(0, '{"result": "removed", "bytes": 7}').scratch("remove", tmp_path / "ws", room)
     assert answer == {"result": "removed", "bytes": 7}
+
+
+def test_through_ssh_a_host_maity_too_old_for_the_codex_op_is_its_own_answer(
+    tmp_path: Path,
+) -> None:
+    """The codex launch-write reaches an ssh host through its own `maity runner scratchop
+    codex`. A host whose `maity` has no codex op rejects the subcommand as an argument error
+    (exit 2): that is turned into Unsupported, distinct from a LINK (OnTheWay) and a genuine
+    failure, so the caller refuses the placement rather than crash-looping it."""
+    import subprocess
+
+    from maity.runner.asuser import AsUser
+
+    class Remote(AsUser):
+        def __init__(self, code: int, err: str = "") -> None:
+            object.__setattr__(self, "user", "agents")
+            object.__setattr__(self, "answer", (code, err))
+
+        def run(self, argv: Any, env: Any = None, input: Any = None, cwd: Any = None,
+                timeout: float = 0) -> subprocess.CompletedProcess[str]:  # fmt: skip
+            code, err = self.answer  # type: ignore[attr-defined]
+            return subprocess.CompletedProcess(argv, code, "", err)
+
+    home = _home(tmp_path / "ws")
+    with pytest.raises(scratchop.Unsupported) as old:  # exit 2: the op is unknown on the host
+        Remote(2, "invalid choice: 'codex'").codex(tmp_path / "ws", home, "CONFIG", None)
+    assert not isinstance(old.value, scratchop.OnTheWay)
+    with pytest.raises(scratchop.OnTheWay):  # a link where codex-home must be, not too-old
+        Remote(scratchop.LINK).codex(tmp_path / "ws", home, "CONFIG", None)
+    with pytest.raises(OSError) as failed:  # a genuine failure stays an ordinary OSError
+        Remote(1, "boom").codex(tmp_path / "ws", home, "CONFIG", None)
+    assert not isinstance(failed.value, (scratchop.OnTheWay, scratchop.Unsupported))
+    Remote(0).codex(tmp_path / "ws", home, "CONFIG", None)  # 0: written, no raise
