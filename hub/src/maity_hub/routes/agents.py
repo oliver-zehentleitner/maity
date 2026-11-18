@@ -93,6 +93,9 @@ def create_profile(
     """A new profile of `owner_id`; `agent_limit` at `limit` profiles that are not deleted
     (§16.5, None for no limit). The owner's row is locked for the count, so two creations
     at `limit − 1` give one profile and one `agent_limit`, whichever endpoint they came by.
+    `placement` is the exchange of a placement's pickup code, a link already issued: §16.5
+    gates only `POST /agents` and a join that names a new handle, so it skips the whole
+    gate, an override on the owner's account included, and is never counted.
     `invalid` when the handle is the handle or an alias of another of their profiles (a
     deleted profile's are free, §6.3), or an active placement will create one with it
     (§6.24) unless `placement`: this is that placement's pickup. A display name with a
@@ -100,6 +103,27 @@ def create_profile(
     carried it (§1.7)."""
     if not one_line(display_name):
         raise invalid({"display_name": "control_character"})
+    if not placement:
+        _refuse_over_agents(conn, owner_id, limit)
+    handles.ensure_free(conn, owner_id, handle, exclude="placement" if placement else None)
+    agent_id = new_id("agent")
+    conn.execute(
+        insert(t.agent_profile).values(
+            id=agent_id,
+            owner_id=owner_id,
+            handle=handle,
+            display_name=display_name,
+            git_name=git.name if git else None,
+            git_email=git.email if git else None,
+            created_at=clock.now(),
+        )
+    )
+    avatars.store_generated(conn, agent_id)  # an agent always has a picture (§6.10)
+    return agent_id
+
+
+def _refuse_over_agents(conn: Connection, owner_id: str, limit: int | None) -> None:
+    """`agent_limit` when `owner_id` holds `limit` profiles or more (§16.5)."""
     # `limit` is the instance's value; an override on the owner's account comes first.
     limit, source = limits.for_account(conn, "max_agents_per_human", owner_id, limit)
     if limit is not None:
@@ -116,21 +140,6 @@ def create_profile(
         )
         if count >= limit:
             raise limits.agent_limit(limit, count, source)
-    handles.ensure_free(conn, owner_id, handle, exclude="placement" if placement else None)
-    agent_id = new_id("agent")
-    conn.execute(
-        insert(t.agent_profile).values(
-            id=agent_id,
-            owner_id=owner_id,
-            handle=handle,
-            display_name=display_name,
-            git_name=git.name if git else None,
-            git_email=git.email if git else None,
-            created_at=clock.now(),
-        )
-    )
-    avatars.store_generated(conn, agent_id)  # an agent always has a picture (§6.10)
-    return agent_id
 
 
 @router.get("/agents")

@@ -34,7 +34,11 @@ for the operator always the project's admin route, never the account route.
 human row `FOR UPDATE`, the order `write_guard` and the account deletion keep. It then deletes
 and inserts one row per field. `PATCH /admin/settings/limits` answers a value outside its
 range with the reason `out_of_range`, as the per-project and per-account routes do; the
-dashboard reads `invalid` too for one release.
+dashboard reads `invalid` too for one release. An account override of `max_agents_per_human`
+gates only what §16.5 gates, so the exchange of an issued placement code is never counted
+against it (`create_profile` with `placement` skips the gate): the runner that exchanges it
+may be someone else's, and a refusal there would tell the runner's owner the creator's
+override and profile count.
 
 **Reason:** the defaults protect an instance that serves strangers, and an override must not
 change anything for anybody else (`context/scope.md` 7d8669c6). The project override comes
