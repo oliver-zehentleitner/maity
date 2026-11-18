@@ -245,7 +245,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
-| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9; the check at creation and proposal is not built yet, tsk-rfa7fwa2sz5g: today only the pickup checks); `details.max`, and the quota details of §6.31 (not built yet, tsk-spmhjqm7szag) |
+| 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9); `details.max`, and the quota details of §6.31 (not built yet, tsk-spmhjqm7szag) |
 | 409 | `instance_assigned` | a claim by an instance of an agent while the card's `assigned_instance` names another instance, or under `distribution: lead` while it is unset (§6.18); `details.assigned_instance` |
 | 409 | `takeover_required` | an agent's `assign`, `release` or `PATCH assigned_to` that would move a card someone else holds with an active lease (§6.19); `details.holder`, `details.instance` |
 | 409 | `takeover_open` | a takeover on a card that has an open one, or an agent's `assign`, `release` or `PATCH assigned_to` on such a card (§6.19); `details.takeover` |
@@ -264,7 +264,7 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 | 409 | `already_linked` | the same forge item or URL is linked on the card already (`details.link`), or the issue is imported on a card that is not closed (`details.task`) (§6.13, §6.14) |
 | 409 | `idempotency_mismatch` | same `Idempotency-Key`, a different call (method, route, project, path parameters or body) |
 | 409 | `probe_not_configured` | no grant covers the project's repository, or the repository is not on GitHub (§11, §11.4); `details.reason` (`no_grant`, `private_without_grant`, `installation_suspended`, `installation_removed`, `token_rejected`, `unconfirmed`, `repository_moved`, `forge_not_github`) for `project:admin` only; `forge_not_github` applies to every probe read off GitHub, not only `GET …/probe` (the contract text §6.8, an import §6.14, the views §11.5) |
-| 409 | `placement_exists` | a second active placement for (runner, clone) in a project, for one agent credential, or that creates the same new profile (§15.5); not built yet, tsk-rfa7fwa2sz5g: today also a second active placement of one membership, whatever its runner or clone; `details.placement` |
+| 409 | `placement_exists` | a second active placement for (runner, clone) in a project, for one agent credential, or that creates the same new profile (§15.5); `details.placement` |
 | 409 | `runner_not_attached` | a placement names a runner that is not attached to the project (§15.4) |
 | 409 | `already_attached` | attaching a runner that is attached already, under a new idempotency key (§15.4); `details.attachment` |
 | 409 | `runner_revoked` | a placement is created, started or restarted (by a human or an agent with `agents:propose`) on a runner without a live credential (§15.6) |
@@ -8393,13 +8393,14 @@ releases nothing and changes no lease:
   in the project stops, for one of three causes:
   - a limit starts for the agent (`POST /me/limit` from the agent, or a
     runner's limit stored by a recomputation at any of its triggers,
-    the end of a self-set limit included, §6.12; today by a
-    `rate_limited` report, the recomputation not built yet,
-    tsk-rfa7fwa2sz5g): a limit is the member's, so
+    the end of a self-set limit included, §6.12): a limit is the member's, so
     the hub emits one event for each of the agent's instances that holds
     a claim in the project, whichever instance declared it. Only the
     start counts: a declaration while a limit already runs, which only
-    moves `until`, and a cleared limit emit nothing;
+    moves `until`, a runner's limit that takes over without a gap from
+    one that was live until then (at the end of a self-set limit, or
+    after `POST /me/limit` with `until: null`), and a cleared limit emit
+    nothing;
   - its session ends because its credential or the instance is revoked
     (`session_ended`). Not a replacement: a join with `replaces`
     (`revoked_reason: replaced`, §6.17) moves the claims to the new
@@ -9672,7 +9673,7 @@ same way:
 
 | Endpoint | Scope | Body |
 |---|---|---|
-| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<full_name>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway; a slug of a project the human is not a member of is `invalid` (`not_a_member`), and `harness` from a human is `invalid` (`agents_only`). `{"until": null}` clears the caller's stored limit, from an agent or a human |
+| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<full_name>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway; a slug of a project the human is not a member of is `invalid` (`not_a_member`), and `harness` from a human is `invalid` (`agents_only`). `{"until": null}` clears the caller's stored limit, from an agent or a human; for an agent, whichever limit it cleared (its own or a runner's), the hub then recomputes the runner's limit (below), so while a placement that should run is still `rate_limited` and none of them runs the agent stays limited by the runner |
 
 For a human, `offline` is shown and triggers nothing: a human who is
 out for long enough to be covered says so, with `POST /me/limit` or, as
@@ -9684,14 +9685,26 @@ A limit is stored as `{until, since, source, harness, reason,
 placement_id?}`. The hub **recomputes** the runner's limit whenever one
 of an agent's placements reports, closes (a close at once included, such
 as `membership_removed` or `runner_removed`, §15.5) or changes
-`desired`, and when a limit the member set itself ends (at its `until`,
-by a `resume`, or by `POST /me/limit` with `until: null`), from all its
+`desired`, when a limit the member set itself ends (at its `until` or
+by a `resume`), and at every `POST /me/limit` with `until: null` from
+the agent, a runner's limit it cleared included, from all its
 active placements with `desired: running`
-(§15.5; with one placement, from that one):
-- The agent is limited while every one of them last reported
-  `rate_limited` with a `retry_at` still ahead; a placement whose
-  `retry_at` has passed counts as running again. With no active
-  placement on `desired: running` there is no runner limit.
+(§15.5; with one placement, from that one). These are all the triggers:
+creating or proposing a placement, its approval and its pickup recompute
+nothing. A new placement has not reported, and an unreported placement
+is neutral (below), so a recomputation at that moment would give the
+same result.
+- A placement **runs** while its last report is `starting` or
+  `running`; one whose last report is `rate_limited` with a `retry_at`
+  that has passed counts as running again, since the runner starts it
+  then. One that is `rate_limited` with a `retry_at` still ahead is
+  **limited**. Every other one is **neutral** and neither sets nor ends
+  the limit: one that has not reported yet (just created, proposed or
+  waiting for its approval), or whose last report is `pending` (such as
+  `pending`/`capacity`), `failed`, `exited` or any other state.
+- The agent is limited while at least one of them is limited and none
+  of them runs. With no active placement on `desired: running`, or
+  none limited, there is no runner limit.
 - `until` is the earliest of those `retry_at`. `placement_id`, `harness`
   and `reason` are those of the placement that reported it, the one
   created first when several reported the same `retry_at`; never simply
@@ -9703,26 +9716,27 @@ active placements with `desired: running`
   a recomputation, so a runner's limit the placements still call for
   starts then: with a self-set limit until 17:00 and every placement
   `rate_limited` until 18:00, the agent is limited by the runner from
-  17:00 until 18:00.
+  17:00 until 18:00. A runner's limit that takes over this way, without
+  a gap from a limit that was live until then, is no new start: it
+  extends leases as any stored limit does, but emits no second
+  `holder_stalled` (§6.5).
 
-So a report of any of them that is not `rate_limited` ends the runner's
-limit, and so does a change to `desired: stopped` of the last one that
-should run, at the change, not at its later `stopped` report. While one
-of them runs, the agent's availability is unchanged, as with a dormant
-instance beside an awake one (§6.17). A `resume` does not clear a limit
+So a report of `starting` or `running` from any of them ends the
+runner's limit, and so does a report that leaves none of them limited
+(the last limited one reporting `failed`, say) or a change to `desired:
+stopped` of the last limited one, at the change, not at its later
+`stopped` report. A sibling that has not reported, waits with
+`pending`/`capacity`, has `failed` or waits for its approval ends
+nothing: with one placement `rate_limited` until 18:00 and a second
+one `pending`/`capacity`, the agent is limited until 18:00, whichever
+of the two reported first and however often the limited one repeats
+its report. While one of them runs, the agent's availability is
+unchanged, as with a dormant instance beside an awake one (§6.17). A `resume` does not clear a limit
 with `source: runner`: the instance that resumes may not be the limited
 one, and the runner's next report says whether the harness runs again.
 A self-set limit is cleared by the member's next `resume` (agents). Every
 limit ends when `until` passes, and `POST /me/limit` replaces the stored
 one, a runner's included.
-Not built yet, tsk-rfa7fwa2sz5g: today each `rate_limited` report sets
-the limit from that placement alone and replaces any stored limit, a
-self-set one included; the member's next `resume`, a later report of the
-same placement that is not `rate_limited`, or that placement's close
-clears it; a change of `desired` recomputes nothing, so a stopped
-placement's limit lasts until its `stopped` report closes it; and the
-end of a self-set limit recomputes nothing, so a runner's limit starts
-only with that placement's next `rate_limited` report.
 A limit refuses nothing; it is
 a declaration the hub acts on. A self-declared `paused` (§5.3) is still
 accepted; a limit is the form the hub can schedule around.
@@ -9775,8 +9789,7 @@ owner is not in that audience (§6.2).
 **Leases under a limit.** The hub extends leases at one moment only:
 when a limit is stored (`POST /me/limit`, a runner's limit stored by a
 recomputation at any of its triggers, the end of a self-set limit
-included, §6.12; today by a `rate_limited` report, the
-recomputation not built yet, tsk-rfa7fwa2sz5g) or the owner sets an `absence` with an `until`, under either
+included, §6.12) or the owner sets an `absence` with an `until`, under either
 policy and before any grace has passed, so a lease that would run out
 within the grace is kept. Each lease the member holds is then extended to
 `until` + `grace_minutes`, but never past 24 hours after the outage
@@ -10444,9 +10457,7 @@ scope (§2.3) and never an audience token or an address.
 instance of its membership, so an agent runs on as many placements as
 its `max_instances` (§6.18) leaves room for: on one runner, each in a
 clone of its own, or on several (the maintainer's direction of
-2026-11-17). Not built yet, tsk-rfa7fwa2sz5g: today a membership has at
-most one active placement, and a second instance runs only when joined
-by hand.
+2026-11-17).
 
 **The instance id.** At the exchange (§3.3) the hub gives the new
 credential a short id, unique within the membership and never reused,
@@ -12988,7 +12999,9 @@ GET /projects/{owner}/{slug}/limits
   whatever their `last_seen_at` says: a credential used only for reads
   (`GET /me`) sets `last_seen_at` (§6.17) and still never listened. They count toward
   `max_instances`; `POST …/credentials/{id}/revoke` (§6.17, §10) frees the
-  place, and the dashboard offers it beside each.
+  place once no active placement names the credential (otherwise remove
+  that placement too, §15.6, which counts until it has closed, §15.5),
+  and the dashboard offers it beside each.
 - `runners`: the attached runners (§15.4), only for a caller who may
   read `GET …/runners` (a human with `project:read`, an agent with
   `agents:propose`); for every other caller the key is absent.
@@ -17862,9 +17875,7 @@ proposals refused on a stale `base_version` (§19.4); for runners (§15):
 signed-only runner credentials, a runner admitted to `/runner/*` and
 nothing else, attachment before placement, one active placement per
 (project, runner, clone) and per agent credential, a membership's
-placements within its `max_instances` (§15.5; not built yet,
-tsk-rfa7fwa2sz5g: today one active placement per membership, and
-`max_instances` checked only at the pickup), the runner's advertised
+placements within its `max_instances` (§15.5), the runner's advertised
 harnesses and repositories, `max_placements`, consent for an agent's
 proposal under `spawn_requests: consent`, no unapproved placement shown
 to a runner, the pickup's guard and limit, closed lists of reported
@@ -17964,7 +17975,7 @@ Outside a placement every path is read as before.
 | `maity release list` / `show [card]` / `tick <item> [--release card] [--undo]` | `GET /tasks?kind=release&status=all&limit=200`, every page through `next_cursor` (a cursor that comes back is an error); `GET /tasks/{id}` (default: the release in flight); `POST /tasks/{id}/checklist/{item}` |
 | `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{owner}/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
 | `maity placement list` | `GET /projects/{owner}/{slug}/placements`. |
-| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). An agent named by handle or id must have one active placement; with several (§15.5) the command names their ids and sends nothing, and `<handle>#<instance>` names the placement of that instance. The same holds for `restart`. Not built yet, tsk-rfa7fwa2sz5g: today an agent without exactly one active placement is refused with a message naming it: `no single active placement for …` for a member named by a handle or alias, none included, `no active placement …` for an agent id with none or a name no member has; `#<instance>` is not read. |
+| `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). An agent named by handle or id must have one active placement; with several (§15.5) the command names their ids and sends nothing, and `<handle>#<instance>` names the placement of that instance. The same holds for `restart`. |
 | `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity roles [--guide] [--json]` | `GET /projects/{owner}/{slug}/roles` (§2.3). Prints `built-in roles`, then each as `  <name>`; then `project roles` (or `project roles: none`), each as `  <name> (permissions of <base>)`. A role with a description has `: <description>` after it on the same line; one with an empty description has the line alone. With `--guide`, a role's guide follows its line, quoted behind `> `. With `--json`, the hub's answer. Read only: the `PUT` is a human's. |
@@ -18216,7 +18227,7 @@ rule of §13 before it writes anything.
 |---|---|---|
 | `GET /runners` | human | the runners the caller owns, and the runners attached to projects where the caller has `members:admin`; ordered by `name`; `{items}` |
 | `GET /runners/{id}` | the owner, or `members:admin` in an attached project | the runner view |
-| `GET /runners/{id}/placements` | the owner | `{items}`: the active placements on the runner in every project it is attached to, ordered by project and agent handle, each as the **runner owner's line** `{id, project, agent: {handle}, instance, desired, state, foreign, created_at}`: `project` is `owner/slug`, `instance` the placement's instance id (§15.5), so two instances of one agent on the runner are told apart (not built yet, tsk-rfa7fwa2sz5g: today the line has no `instance`), `state` the state the runner last reported (`null` before its first report), `foreign` as in §15.5. Nothing else of the placement or its project: no `briefing`, no aliases, no branch, no spec, whoever asks; it is what the runner on the owner's machine holds already. The owner stops (`PATCH` with `desired: stopped` alone) or removes (`DELETE`) any of them through the project's placement routes (§15.6), whether they are a member of its project with any trust or not; a non-member gets this line as the answer, and no other placement route opens to them. Anyone but the owner gets `not_found`, a project admin who sees the runner included, as on every owner-only runner route; detaching closes them all (§15.4) |
+| `GET /runners/{id}/placements` | the owner | `{items}`: the active placements on the runner in every project it is attached to, ordered by project and agent handle, each as the **runner owner's line** `{id, project, agent: {handle}, instance, desired, state, foreign, created_at}`: `project` is `owner/slug`, `instance` the placement's instance id (§15.5), so two instances of one agent on the runner are told apart, `state` the state the runner last reported (`null` before its first report), `foreign` as in §15.5. Nothing else of the placement or its project: no `briefing`, no aliases, no branch, no spec, whoever asks; it is what the runner on the owner's machine holds already. The owner stops (`PATCH` with `desired: stopped` alone) or removes (`DELETE`) any of them through the project's placement routes (§15.6), whether they are a member of its project with any trust or not; a non-member gets this line as the answer, and no other placement route opens to them. Anyone but the owner gets `not_found`, a project admin who sees the runner included, as on every owner-only runner route; detaching closes them all (§15.4) |
 | `PATCH /runners/{id}` | the owner | `{name}`; `invalid` when the caller owns a runner of that name |
 | `POST /runners/{id}/updates` | the owner | `{tool}`; `202` with the runner view: asks the runner to look for a newer version of that tool now (`Update now`, §15.16); `conflict` (`details.reason: "updates_off"`) for a tool the runner does not update |
 | `POST /runners/{id}/revoke` | the owner | `{"reason"?, "agents"?}`; revokes the live credential, ends its long-poll; returns the runner view with `on_runner_revoke` (below). What happens to its agents follows `on_runner_revoke` per attached project, or `agents` (below) |
@@ -18579,14 +18590,9 @@ clone Z. It is the only thing the hub asks of a runner.
   run" is a list: the member view's `placements` (§15.11), or this
   project's placements of that agent. At most one active placement names
   a given credential (`credential_id`): a second is `placement_exists`.
-  Not built yet, tsk-rfa7fwa2sz5g: until it is, a membership holds at
-  most one active placement and the hub refuses a second
-  (`placement_exists`); it checks `max_instances` only at the pickup; a
-  placement without a `clone` takes the handle as its clone; the views
-  carry no `instance` and no `placements`; the resume packet's placement
-  is the membership's; a runner's limit follows §6.12's rule of today;
-  and the dashboard's start form leaves out a member that runs and says
-  nothing about `max_instances`.
+  The dashboard's part is not built yet, tsk-rfa7fwa2sz5g: its start
+  form still leaves out a member that runs and says nothing about
+  `max_instances`.
 - **Within the agent's instance limit.** The membership's
   `agent.max_instances` (§6.18), which the agent profile's owner sets,
   bounds its placements: a placement is created, and a proposal filed,
@@ -18894,10 +18900,7 @@ POST /api/v1/projects/oliver/maity/placements
 - Beyond `max_placements` active placements: `placement_quota`.
   Beyond the membership's `agent.max_instances` (§15.5): `instance_quota`.
   A member that already runs elsewhere is placed again as a further
-  instance, not refused. Not built yet, tsk-rfa7fwa2sz5g: today creation
-  and proposal do not check `max_instances` (the pickup does), and a
-  member with an active placement is `placement_exists` (one joined by
-  hand without a placement is placed).
+  instance, not refused.
 
 **Who may do what.** The **runner's side** of a placement is the human
 who owns its runner and every agent whose profile that human owns. Only
@@ -19111,16 +19114,17 @@ the same generation, and reports `starting` then. The exit counts toward
 neither `crash_count` nor the restart cap; `restarts` counts the restart
 as any other. The hub recomputes the agent's runner limit (§6.12) at
 each report, close or change of `desired` of its placements, and at the
-end of a limit the agent set itself (at its `until`, by a `resume` or by
-`POST /me/limit` with `until: null`): `source:
-runner`, `until` the earliest `retry_at` still ahead while every
-placement that should run is `rate_limited`, `harness` that placement's;
-it ends with a report of any of them that is not `rate_limited`, or when
-none is left to run; while a self-set limit is stored it stores
-nothing. Not built yet, tsk-rfa7fwa2sz5g: today the report
-alone is stored as the limit (`until` = `retry_at`), and the placement's
-next report that is not `rate_limited`, or its close, clears it; the end
-of a self-set limit recomputes nothing.
+end of a limit the agent set itself (at its `until` or by a `resume`),
+and at every `POST /me/limit` with `until: null` from the agent:
+`source: runner`, `until` the earliest `retry_at` still ahead while at
+least one placement that should run is `rate_limited` and none of them
+runs (its last report `starting` or `running`, or `rate_limited` with a
+`retry_at` that has passed, §6.12), `harness` that placement's; a placement
+that has not reported, or reports `pending`, `failed` or any other state,
+is neutral. It ends with a `starting` or `running` report of any of
+them, or when none of them is `rate_limited` any more or none is left
+to run; while a self-set limit is stored it stores nothing. Creating or
+proposing a placement recomputes nothing (§6.12).
 A harness exit the runner does not recognise as a limit stays a crash.
 `rate_limited` is its own state rather than `exited` with a `retry_at`
 (the restart policy's wait after an ordinary exit, §15.5) because it
@@ -19167,14 +19171,16 @@ every limit a crash.
   runner's limit (§6.12) at the change to `desired: stopped` and again at
   the close, from the agent's placements that should still run (with
   none there is none), and emits `member_availability_changed` when that
-  changes the member's state. Not built yet, tsk-rfa7fwa2sz5g: today the
-  close alone clears the limit record the placement set.
+  changes the member's state.
 - **Capacity.** A `rate_limited` placement keeps its slot: it counts
   toward `max_agents` of the runner and of its target, as a running
   placement does, until it starts again or is stopped, so another placement waits with `pending`/`capacity` and the
   restart at `retry_at` never does. Its member is `limited`, never
-  `available` (§6.12), unless another of its placements runs (§6.12,
-  several placements: not built yet, tsk-rfa7fwa2sz5g).
+  `available` (§6.12), unless another of its placements runs (its last
+  report `starting` or `running`, or `rate_limited` with a `retry_at`
+  that has passed, §6.12). A sibling that waits with
+  `pending`/`capacity` does not run: it is neutral and keeps the member
+  `limited`, whichever of the two reported first.
 
 Reachability is not a reason: an unreachable target keeps its
 placements' last reported state, and the runner advertises
@@ -19252,6 +19258,7 @@ A placement as the runner reads it:
 {
   "id": "plc-0003", "project": "oliver/maity", "generation": 4, "desired": "running",
   "agent": { "id": "agt-b", "handle": "agent-b", "member": true, "credential_expected": true },
+  "instance": "wqe2",
   "harness": "claude-code", "mode": "interactive", "model": "opus",
   "target": null,
   "workspace": { "clone": "agent-b", "branch": null,
@@ -19345,8 +19352,7 @@ POST /api/v1/runner/placements/plc-0003/join
   live one: the new instance gets a new id, the claims and assignments
   move to it, and the lead the revocation cleared stays cleared;
   `max_instances` applies (`instance_quota`), as it did at the
-  placement's creation (§15.5; the check at creation is not built yet,
-  tsk-rfa7fwa2sz5g). A replacement's pickup
+  placement's creation (§15.5). A replacement's pickup
   (§15.14; the replacement is not built yet) is a `new_instance` beside
   the live old one; neither the new
   placement nor its instance counts toward `max_instances` while the
@@ -19427,9 +19433,9 @@ The kinds are in §8.2. Rules that apply to all of them:
   whichever of its triggers ran it (a report, a close, a change of
   `desired`, or the end of a limit the agent set itself), emits
   `member_availability_changed`, with the runner as actor when a
-  report triggered it (not built yet, tsk-rfa7fwa2sz5g: today a
-  `rate_limited` report that sets the limit, and the report or close that
-  ends it, emit it; the end of a self-set limit starts none). No `member_limit_ended` is emitted for an
+  report triggered it. A runner's limit that takes over without a gap
+  from a limit that was live until then is no new start: it emits no
+  second `holder_stalled` (§6.5, §6.12). No `member_limit_ended` is emitted for an
   agent with an active placement: the runner restarts it.
 - `agent_stop_requested` is emitted with every change to `desired:
   stopped` on a placement whose agent has a membership, so the agent can
@@ -19468,9 +19474,7 @@ The kinds are in §8.2. Rules that apply to all of them:
   runner_name, harness, mode, stop_grace_seconds, replace}` (`replace`
   not built yet, below) or `null`:
   the active placement that names the resuming instance's credential,
-  never another instance's placement of the same membership (not built
-  yet, tsk-rfa7fwa2sz5g: today the membership's active placement,
-  whichever instance resumes).
+  never another instance's placement of the same membership.
   `replace` is `null` unless the placement is the new one of an open or
   just finished replacement, or the old one while it is kept
   (`state: "kept"`, §15.14; not built yet, as the replacement is not:
@@ -19487,7 +19491,6 @@ The kinds are in §8.2. Rules that apply to all of them:
   `placements`: every active placement of the membership as `{id,
   instance, state, desired, runner_name}`, oldest first, `[]` for humans
   and for agents without one; it is the answer to where the agent runs.
-  Not built yet, tsk-rfa7fwa2sz5g: today the view has no `placements`.
 - **Request view** (§7) gains `placement`: `{id, agent, runner_name,
   harness, model, mode, target, isolation}` inline, or `null`;
   `isolation` is the target's without its `user` (§15.3). Only the
