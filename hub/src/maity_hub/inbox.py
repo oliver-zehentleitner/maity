@@ -92,6 +92,23 @@ def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     return originally_addressed(conn, request, mine)
 
 
+def open_requests(conn: Connection, membership_id: int) -> int:
+    """Open requests addressed to this membership: `GET …/requests` with `to=me` (§7),
+    through the listing's own rule so that the two cannot drift."""
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).one()
+    project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    mine = Membership(project, row, "agent" if row.agent_id else "human")
+    open_rows = conn.execute(
+        select(t.request).where(
+            t.request.c.project_id == row.project_id,
+            t.request.c.status == "open",
+            # A personal request is never addressed to a membership (§7): not read here.
+            t.request.c.personal.is_(False),
+        )
+    ).all()
+    return sum(1 for r in open_rows if addressed_to(conn, r, mine))
+
+
 def held_back(request: Any, principal: str | None) -> bool:
     """`to` reached this agent of another owner without its owner's yes when the request was
     filed (§7, §9.6): the request is not its to read, find or answer, whatever that owner
