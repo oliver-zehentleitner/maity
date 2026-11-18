@@ -88,7 +88,9 @@ def test_the_value_is_bytes_from_one_gib_to_one_pib_or_unlimited(admin: flow.Hum
     for bad in (GIB - 1, PIB + 1, 0, True, 1.5, "lots", [GIB]):
         refused = admin.patch(PATH, {"max_attachment_storage": bad})
         assert refused.status_code == 400, bad
-        assert refused.json()["error"]["details"]["fields"] == {"max_attachment_storage": "out_of_range"}
+        assert refused.json()["error"]["details"]["fields"] == {
+            "max_attachment_storage": "out_of_range"
+        }
     read_only = admin.patch(PATH, {"attachment_storage_used": 1})
     assert read_only.json()["error"]["details"]["fields"] == {
         "attachment_storage_used": "read_only"
