@@ -666,15 +666,17 @@ def set_agent_limit(
     reason: str | None,
     placement_id: str | None,
     actor: Actor | None,
+    continues: bool = False,
 ) -> None:
     """Store, replace or (`until` None) clear an agent membership's limit, announce what it
-    changes and, when stored, hold its leases."""
+    changes and, when stored, hold its leases. `continues`: the limit takes over without a
+    gap from one that just ended (§6.12), so it is no start and stalls no holder again."""
     now = clock.now()
     lock_project(conn, row.project_id)  # the lock the expiry reads under
     running = conn.execute(
         select(t.membership.c.limit_until).where(t.membership.c.id == row.id)
     ).scalar()
-    starts = until is not None and until > now and not _live(running, now)
+    starts = until is not None and until > now and not _live(running, now) and not continues
     values: dict[str, Any] = (
         {
             "limit_until": until,
@@ -759,25 +761,60 @@ def absence_changed(conn: Connection, project: Any, until: datetime | None, acto
 def runner_reported(
     conn: Connection, placement: Any, state: str, retry_at: datetime | None, actor: Actor
 ) -> None:
-    """A placement's report (§15.7): `rate_limited` stores the agent's limit with
-    `source: runner`; a later report of the same placement that is not clears it."""
-    row = conn.execute(
-        select(t.membership).where(t.membership.c.id == placement.membership_id)
-    ).first()
+    """A placement's report (§15.7, §6.12): the runner's limit computed again, with this
+    report standing for the placement's state (it may not be stored yet)."""
+    limited = retry_at if state == "rate_limited" else None
+    recompute_runner_limit(conn, placement.membership_id, actor, (placement.id, state, limited))
+
+
+def recompute_runner_limit(
+    conn: Connection,
+    membership_id: int | None,
+    actor: Actor | None,
+    reporting: tuple[str, str, datetime | None] | None = None,
+    continues: bool = False,
+) -> None:
+    """The runner's limit of an agent from every active placement of it with `desired:
+    running` (§6.12), after a report, a close, a change of `desired` or the end of a limit
+    the agent set itself (at its `until`, by a resume, or by `POST /me/limit` with
+    `until: null`); creating or proposing a placement recomputes nothing, since a new one
+    has not reported and is neutral. The agent is limited while at least one of them last
+    reported `rate_limited` with a `retry_at` still ahead and none of them runs (last
+    report `starting` or `running`, or `rate_limited` with its `retry_at` passed), until
+    the earliest of those `retry_at`; the record names the placement that reported it, the
+    one created first on a tie. A placement that has not reported, or last reported
+    anything else (`pending`, `failed`, …), is neutral. Otherwise the runner's limit ends.
+    One that runs keeps the agent available, as an awake instance beside a dormant one
+    does. A recomputation creates, changes or clears only a limit with
+    `source: runner`: while one the agent declared itself (`POST /me/limit`) is stored,
+    it stores nothing, and that limit ends as a self-set limit does. `continues`: a
+    limit was live until this moment, so a runner's limit stored now is no new start."""
+    if membership_id is None:
+        return
+    row = conn.execute(select(t.membership).where(t.membership.c.id == membership_id)).first()
     if row is None or row.active is not True:
         return
-    if state == "rate_limited" and retry_at is not None:
-        set_agent_limit(
-            conn,
-            row,
-            retry_at,
-            source="runner",
-            harness=placement.harness,
-            reason="quota",
-            placement_id=placement.id,
-            actor=actor,
-        )
-    elif row.limit_placement_id == placement.id:
+    if row.limit_source != "runner" and _live(row.limit_until, clock.now()):
+        return  # the agent's own limit: never replaced or cleared by a runner's (§6.12)
+    found = _all_limited(conn, row.id, reporting)
+    if found is not None:
+        until, by = found
+        if (row.limit_until, row.limit_placement_id) != (until, by.id):
+            set_agent_limit(
+                conn,
+                row,
+                until,
+                source="runner",
+                harness=by.harness,
+                reason="quota",
+                placement_id=by.id,
+                actor=actor,
+                continues=continues,
+            )
+        return
+    if row.limit_placement_id is not None:
+        # One that should run runs, or none is limited any more: the runner's limit ends. A
+        # limit the agent declared itself (`source: self`) names no placement and stays.
         set_agent_limit(
             conn,
             row,
@@ -788,26 +825,61 @@ def runner_reported(
             placement_id=None,
             actor=actor,
         )
+
+
+def _all_limited(
+    conn: Connection,
+    membership_id: int,
+    reporting: tuple[str, str, datetime | None] | None,
+) -> tuple[datetime, Any] | None:
+    """When at least one active placement of the membership with `desired: running` is
+    `rate_limited` with a `retry_at` still ahead and none of them runs, the earliest
+    `retry_at` and the placement that named it, the one created first on a tie; otherwise
+    None, also when none should run (§6.12, variant (a) of tsk-rfa7fwa2sz5g). `reporting`:
+    a placement's id, the state of the report it just made and its `retry_at` (None when
+    that report is not `rate_limited`). A placement runs when its last report is `starting`
+    or `running`, or `rate_limited` with a `retry_at` that has passed (the runner starts it
+    again then). Every other one is neutral and neither sets nor ends the limit: one that
+    has not reported (just created, proposed, waiting for its approval), or that last
+    reported `pending` (`capacity` among others), `failed`, `exited`, `hung`, …"""
+    rows = conn.execute(
+        select(t.placement)
+        .where(
+            t.placement.c.membership_id == membership_id,
+            t.placement.c.active.is_(True),
+            t.placement.c.desired == "running",
+        )
+        .order_by(t.placement.c.created_at, t.placement.c.id)
+    ).all()
+    now = clock.now()
+    earliest: tuple[datetime, Any] | None = None
+    for p in rows:
+        state: str | None
+        at: datetime | None
+        if reporting is not None and p.id == reporting[0]:
+            state, at = reporting[1], reporting[2]
+        else:
+            reported = p.reported or {}
+            state = reported.get("state")
+            stored = reported.get("retry_at")
+            at = None
+            if state == "rate_limited" and isinstance(stored, str):
+                at = datetime.fromisoformat(stored)  # stored by `clock.rfc3339`
+        if state in ("starting", "running"):
+            return None  # it runs: the runner's limit ends
+        if state != "rate_limited":
+            continue  # neutral: not reported yet, pending, failed, …
+        if at is None or at <= now:
+            return None  # rate-limited, but runs again: its `retry_at` has passed
+        if earliest is None or at < earliest[0]:  # strictly: a tie keeps the older one
+            earliest = (at, p)
+    return earliest
 
 
 def placement_closed(conn: Connection, placement: Any, actor: Actor | None) -> None:
-    """A closed placement takes the limit it set with it (§15.7, Stopping)."""
-    if placement.membership_id is None:
-        return
-    row = conn.execute(
-        select(t.membership).where(t.membership.c.id == placement.membership_id)
-    ).first()
-    if row is not None and row.limit_placement_id == placement.id:
-        set_agent_limit(
-            conn,
-            row,
-            None,
-            source="runner",
-            harness=None,
-            reason=None,
-            placement_id=None,
-            actor=actor,
-        )
+    """A closed placement no longer counts: the runner's limit is computed again from the
+    agent's other placements (§15.7, Stopping; §6.12)."""
+    recompute_runner_limit(conn, placement.membership_id, actor)
 
 
 # --- the sweep ----------------------------------------------------------------------------
@@ -868,7 +940,30 @@ def end_limit(conn: Connection, project: Any, row: Any) -> bool:
             },
             subject=("member", row.agent_id),
         )
+    if row.limit_source != "runner":
+        # The end of the agent's own limit recomputes the runner's (§6.12): a rate limit
+        # every placement still reports takes over now, not at the next report, and
+        # without a gap, so it is no new start.
+        recompute_runner_limit(conn, row.id, None, continues=True)
     return True
+
+
+def clear_agent_limit(conn: Connection, row: Any, actor: Actor | None) -> None:
+    """`POST /me/limit` with `until: null` from an agent: the stored limit, its own or a
+    runner's, is cleared, and the runner's is recomputed (§6.12), so a rate limit every
+    placement still reports stays or takes over without a gap. Announced once, as it
+    ends up."""
+    now = clock.now()
+    lock_project(conn, row.project_id)
+    was_live = _live(
+        conn.execute(
+            select(t.membership.c.limit_until).where(t.membership.c.id == row.id)
+        ).scalar(),
+        now,
+    )
+    conn.execute(update(t.membership).where(t.membership.c.id == row.id).values(**NO_LIMIT))
+    recompute_runner_limit(conn, row.id, actor, continues=was_live)
+    reconcile_ids(conn, [row.id], actor)
 
 
 def expire_limits(conn: Connection, project_id: str) -> None:
