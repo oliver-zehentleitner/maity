@@ -294,3 +294,35 @@ def test_a_review_file_under_the_agy_scratch_is_accepted_and_one_outside_is_refu
     with pytest.raises(cli.UsageError, match="not a file in this clone"):
         cli._read_text_file(str(outside), "--review-file")
     assert SECRET not in capsys.readouterr().out.encode()  # nothing of it was read out
+
+
+@posix
+@walks
+def test_the_agy_scratch_root_is_resolved_so_a_symlinked_temp_dir_still_reads(
+    placed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The shared temp directory is a link on some hosts (macOS `/tmp` -> `/private/tmp`).
+    tmp_scratch_of resolves the root, so the recorded scratch path has no link on the way and
+    the session's own `--review-file` read (which walks it from `/` refusing any link) works;
+    the unresolved spelling, through the link, is refused — which is why resolving matters."""
+    from maity.runner import workspace
+
+    real, link = tmp_path / "real-tmp", tmp_path / "linked-tmp"
+    real.mkdir()
+    link.symlink_to(real)
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", link)
+    leaf = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+    recorded = workspace.tmp_scratch_of(os.getuid(), leaf)
+    assert link not in recorded.parents and real in recorded.parents  # resolved, no link
+    recorded.mkdir(parents=True)
+    private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{recorded}\n")
+    (recorded / "review.json").write_bytes(b'{"verdict": "approve"}')
+    assert cli._read_text_file(str(recorded / "review.json"), "--review-file") == (
+        '{"verdict": "approve"}'
+    )
+    # Had the runner recorded the unresolved (symlinked) spelling, the read would be refused.
+    through_link = link / f"maity-scratch-{os.getuid()}" / leaf
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{through_link}\n")
+    with pytest.raises(cli.UsageError):
+        cli._read_text_file(str(through_link / "review.json"), "--review-file")

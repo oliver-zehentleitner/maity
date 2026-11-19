@@ -275,10 +275,10 @@ class AsUser:
 
     def tmp_scratch(self, op: str, path: Path) -> dict[str, Any]:
         """A placement's `/tmp` scratch (agy) made, measured or removed on the agents' side
-        (scratchop.tmp_run): the per-uid parent and the per-placement leaf opened without
-        following a link and checked owned 0700 by the uid the agents run as (os.getuid there).
-        scratchop.OnTheWay for a link, a foreign-owned directory, or a leaf that already exists;
-        OSError when it fails otherwise."""
+        (scratchop.tmp_run): the per-user parent (kept unlistable) and the per-placement leaf
+        opened without following a link and checked owned by the uid the agents run as (os.getuid
+        there). scratchop.OnTheWay for a link, a directory another user holds, or a leaf that
+        already exists; OSError when it fails otherwise."""
         if self.direct:
             return scratchop.tmp_run(op, str(path))
         done = self.run([*self.runner_module("scratchop"), f"tmp{op}", str(path)])

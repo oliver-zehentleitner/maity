@@ -137,6 +137,11 @@ FOLDER_PROMPT_WITHIN = 180.0
 UNCONFINED_REPORTED = ("claude-code", "antigravity")
 KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
+# The unguessable leaf names the runner chose for each agy `/tmp` scratch (workspace layout):
+# the parent is unlistable and the name is random, so the runner cannot rediscover a leaf by
+# listing — it keeps the names here to find each placement's own scratch again for removal on
+# close and across a runner restart. Its own file, not the clone's, which the agent can write.
+TMP_NAMES_FILE = "tmp_scratch.json"
 APPROVED_FILE = "approved.json"
 LOGS = "logs"
 # The agent-side state the runner reads after a join (its member id): far below this.
@@ -347,6 +352,8 @@ class Supervisor:
     # whose scratch is gone since this service started (§15.5).
     closed_placements: list[dict[str, Any]] = field(default_factory=list)
     scratch_cleared: set[str] = field(default_factory=set)
+    # placement id -> the unguessable leaf name of its agy `/tmp` scratch (TMP_NAMES_FILE).
+    scratch_names: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -397,11 +404,24 @@ class Supervisor:
             if isinstance(data, dict):
                 known = {k: v for k, v in data.items() if k in Record.__dataclass_fields__}
                 self.records[pid] = Record(**known)
+        names = state.load_state(self.cfg.state_dir, name=TMP_NAMES_FILE)
+        self.scratch_names = {
+            pid: leaf for pid, leaf in names.items()
+            if isinstance(pid, str) and isinstance(leaf, str)
+        }  # fmt: skip
 
     def save(self) -> None:
         with self.lock:
             data = {pid: asdict(r) for pid, r in self.records.items()}
         state.save_state(self.cfg.state_dir, data, name=ACTUAL_FILE)
+        self._save_scratch_names()
+
+    def _save_scratch_names(self) -> None:
+        """Persist the agy `/tmp` scratch leaf names (TMP_NAMES_FILE): written as soon as one is
+        chosen or cleared, so a crash never leaves the runner unable to find a leaf to remove."""
+        with self.lock:
+            names = dict(self.scratch_names)
+        state.save_state(self.cfg.state_dir, names, name=TMP_NAMES_FILE)
 
     # --- the loop --------------------------------------------------------------------------
 
@@ -507,9 +527,9 @@ class Supervisor:
                     )
                 except workspace.Refused:
                     break
-                except scratchop.OnTheWay:  # never followed; logged once
-                    self.log(f"{p['id']}: scratch left on {target.name}: a directory on the "
-                             "way to it is a link")  # fmt: skip
+                except scratchop.OnTheWay as exc:  # a link, a foreign-owned or wrong-shaped
+                    self.log(f"{p['id']}: scratch left on {target.name}: "  # name; logged once
+                             f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
                     continue
                 except (OSError, subprocess.SubprocessError) as exc:
                     self.log(f"{p['id']}: scratch not removed on {target.name}: {exc}")
@@ -522,6 +542,9 @@ class Supervisor:
             if done:
                 with self.lock:
                     self.scratch_cleared.add(p["id"])
+                    had_name = self.scratch_names.pop(p["id"], None) is not None
+                if had_name:  # its recorded leaf is gone with it
+                    self._save_scratch_names()
 
     def _measure(self, desired: list[dict[str, Any]], now: float) -> None:
         """The sizes of each placement's clone and scratch on its target, at most every
@@ -1295,6 +1318,7 @@ class Supervisor:
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         found = view.found
         private = self._private(target, place)
+        tmp_parent = self._tmp_scratch_parent(target, harness)
         return adapters.Context(
             placement=p,
             harness=harness,
@@ -1320,16 +1344,31 @@ class Supervisor:
             resume=resume,
             git=self.cfg.git,
             scratch=scratch,
+            tmp_scratch_parent=tmp_parent,
         )
+
+    def _tmp_scratch_parent(self, target: Target, harness: config.Harness) -> Path | None:
+        """The agy per-user `/tmp` scratch parent to hide from this placement's sandbox, or None.
+        A non-agy placement does not use that parent and may run as the same user as an agy one,
+        so the parent is hidden from it; an agy placement owns it and is not given it here. None
+        where there is no local `/tmp` scratch (an ssh host, or no uid)."""
+        if workspace.scratch_in_tmp(harness.id) or not target.as_user.here:
+            return None
+        try:
+            uid = target.as_user.uid()
+        except OSError:
+            return None
+        return workspace.TMP_SCRATCH_ROOT.resolve() / f"maity-scratch-{uid}"
 
     def _scratch(self, p: dict[str, Any], harness: config.Harness, target: Target) -> Path | None:
         """The placement's scratch, made as the agents' user with `tmp` in it (§15.5); None
         for a harness that gets none (workspace.SCRATCH_HARNESSES). A restart or an adoption
-        finds it as it was. Through a link the agents made the runner makes nothing, and a
-        scratch it cannot make (a host whose `maity` has no `scratchop` yet) is none either:
-        the session then starts without one, and the log says why. agy's scratch goes under
-        `/tmp` instead of beside the clone (`_tmp_scratch`), its sandbox being unable to write
-        there."""
+        finds the beside-clone scratch as it was; agy's `/tmp` scratch is emptied and remade
+        with a fresh name at every start, so nothing in it survives a restart (`_tmp_scratch`).
+        Through a link the agents made the runner makes nothing, and a scratch it cannot make
+        (a host whose `maity` has no `scratchop` yet) is none either: the session then starts
+        without one, and the log says why. agy's scratch goes under `/tmp` instead of beside the
+        clone, its sandbox being unable to write there."""
         if harness.id not in workspace.SCRATCH_HARNESSES:
             return None
         if workspace.scratch_in_tmp(harness.id):
@@ -1346,44 +1385,61 @@ class Supervisor:
         return path
 
     def _tmp_scratch(self, p: dict[str, Any], target: Target) -> Path | None:
-        """agy's scratch under `/tmp` (workspace.tmp_scratch_of), owned 0700 by the uid agy
-        runs as: its sandbox makes the beside-clone `.scratch` read-only, so the scratch goes
-        to the host-shared writable `/tmp` instead. It is removed and remade fresh at each
-        start, so nothing carries across a restart; None when the uid is unknown (an ssh host)
-        or a level is a link or a foreign-owned directory, the session then starting without
-        one."""
+        """agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of),
+        owned by the uid agy runs as: its sandbox makes the beside-clone `.scratch` read-only,
+        so the scratch goes to the host-shared writable location instead. Any earlier leaf of
+        this placement is removed and a leaf with a fresh, unguessable name is made, so nothing
+        carries across a restart and the parent stays unlistable; the chosen name is recorded
+        (TMP_NAMES_FILE) so the session and the supervisor find this placement's own scratch
+        again. None when the uid is unknown (an ssh host) or a level is a link or a directory
+        another user holds, the session then starting without one."""
         try:
             uid = target.as_user.uid()
         except OSError as exc:
             self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
+        with self.lock:
+            old = self.scratch_names.get(p["id"])
+        if old is not None:  # a prior run's leaf: the agy scratch is made fresh each start
+            try:
+                scratch.tmp_remove(workspace.tmp_scratch_of(uid, old), target.as_user)
+            except (scratchop.OnTheWay, OSError, subprocess.SubprocessError, workspace.Refused):
+                pass  # left behind at most; a fresh leaf is still made below
+        leaf = secrets.token_hex(16)
         try:
-            path = workspace.tmp_scratch_of(uid, p["id"])
+            path = workspace.tmp_scratch_of(uid, leaf)
         except workspace.Refused:
             return None
         try:
-            scratch.tmp_remove(path, target.as_user)  # a prior run's: made fresh per placement
             scratch.tmp_make(path, target.as_user)
-        except scratchop.OnTheWay:
-            self.log(f"{p['id']}: no scratch: {path} is a link, foreign-owned, or already there")
+        except scratchop.OnTheWay as exc:
+            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
         except (OSError, subprocess.SubprocessError) as exc:
             self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
+        with self.lock:
+            self.scratch_names[p["id"]] = leaf
+        self._save_scratch_names()  # durable before the session is told its scratch
         return path
 
     def _scratch_location(self, p: dict[str, Any], target: Target) -> tuple[Path, bool] | None:
         """Where a placement's scratch is on `target` and whether it is the `/tmp` one (agy):
-        beside the clone, or under `/tmp` for a harness whose sandbox cannot write there. None
-        when the `/tmp` one cannot be worked out (an ssh host has no uid for it).
-        workspace.Refused for a bad token."""
-        harness = self.cfg.harnesses.get(p.get("harness") or "")
-        if harness is not None and workspace.scratch_in_tmp(harness.id):
+        beside the clone, or under the shared temp directory for a harness whose sandbox cannot
+        write beside the clone. Decided from the placement's own recorded harness, not an active
+        config entry, so a placement closed after its harness was taken out of the configuration
+        is still swept. None when the `/tmp` one cannot be worked out (an ssh host has no uid, or
+        no leaf name was recorded for this placement). workspace.Refused for a bad token."""
+        if workspace.scratch_in_tmp(p.get("harness") or ""):
             try:
                 uid = target.as_user.uid()
             except OSError:
                 return None
-            return workspace.tmp_scratch_of(uid, p["id"]), True
+            with self.lock:
+                leaf = self.scratch_names.get(p["id"])
+            if leaf is None:
+                return None
+            return workspace.tmp_scratch_of(uid, leaf), True
         return workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host), False
 
     def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:

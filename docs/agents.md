@@ -153,7 +153,10 @@ evidence, a clone of another head, a venv. An agy reviewer writes its
 review there and names it with
 `maity say --type review_result --review-file "$MAITY_SCRATCH/review.json" …`.
 Delete it once you have reported. The runner removes the whole scratch when the placement
-closes, and nothing in it counts as unsaved work. maity reads a file you
+closes, and nothing in it counts as unsaved work. An agy scratch does not survive a
+restart: the runner empties it and remakes it fresh at every start, so do not rely on
+anything you left in it carrying across a restart; the beside-clone scratch of a Claude
+Code or Codex session does carry across one. maity reads a file you
 name there (`--body-file` and the others) on the same terms as in the
 clone, and only when no directory on the way to it is a link. To check out another head, clone your clone into the scratch
 rather than adding a worktree: the runner refuses a clone with

@@ -685,6 +685,28 @@ def test_a_placements_profile_hides_another_placements_codex_home(tmp_path: Path
     assert _effective_rule(filesystem, adapters.codex_home(ctx) / "tmp") == "read"
 
 
+def test_the_agy_shared_tmp_parent_is_hidden_from_a_non_agy_sandbox(tmp_path: Path) -> None:
+    """The agy per-user `/tmp` scratch parent is hidden from a non-agy placement's sandbox, so
+    it cannot reach another placement's scratch there: Codex names it `none`, and Claude Code
+    denies both reading and writing it."""
+    parent = tmp_path / "shared-tmp" / "maity-scratch-1002"
+    # Codex: the parent is among the profile's hidden (`none`) roots.
+    codex = context(
+        tmp_path, harness_id="codex", binary="/usr/bin/codex",
+        clone=tmp_path / "ws" / "proj" / "agent-3", workspaces=tmp_path / "ws",
+        private=(tmp_path / "st",), tmp_scratch_parent=parent,
+        placement={**PLACEMENT, "mode": "supervised"},
+    )  # fmt: skip
+    filesystem = tomllib.loads(adapters.codex_config(codex))["permissions"]["maity"]["filesystem"]
+    assert filesystem[str(parent)] == "none"
+    assert _effective_rule(filesystem, parent / "maity-anything") == "none"
+    # Claude Code: the parent is denied both read and write.
+    claude = adapters.claude_settings(
+        context(tmp_path / "c", sandbox=True, tmp_scratch_parent=parent)
+    )["sandbox"]["filesystem"]
+    assert str(parent) in claude["denyRead"] and str(parent) in claude["denyWrite"]
+
+
 def test_without_a_scratch_codex_home_stays_in_the_runner_directory(tmp_path: Path) -> None:
     """No workspaces root to carve (so no scratch): CODEX_HOME keeps today's location in the
     runner's directory rather than crashing. `maity runner check` reports that case."""

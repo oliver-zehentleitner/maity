@@ -36,6 +36,7 @@ from . import config
 from .asuser import RUNNER, AsUser
 from .scratchop import SCRATCH as SCRATCH  # defined there: it runs with `-I`
 from .scratchop import SCRATCH_ID as SCRATCH_ID
+from .scratchop import TMP_LEAF as TMP_LEAF
 from .scratchop import TOKEN as TOKEN
 
 # A project as the hub names it since the namespace (§6.25): `<owner>/<slug>`.
@@ -53,11 +54,13 @@ FOLDER, CLONE = "folder", "clone"  # the layouts, as the record names them
 SCRATCH_HARNESSES = ("stub", "claude-code", "codex", "antigravity")
 # agy's sandbox makes the workspace (and the beside-clone `.scratch`) read-only, so its scratch
 # cannot sit beside the clone as the others' do; it goes under `/tmp`, the host-shared writable
-# location, in a per-uid parent `maity-scratch-<uid>` owned 0700 by the user agy runs as
-# (scratchop.tmp_make, context/instances.md).
+# location, in a per-user parent `maity-scratch-<uid>` owned by the user agy runs as and kept
+# unlistable, with an unguessable per-placement leaf inside it (scratchop.tmp_make,
+# cli/context/runner.md).
 TMP_SCRATCH_HARNESSES = ("antigravity",)
 # Deliberate: the host-shared writable location is where agy can write. The hijack risk `/tmp`
-# carries is met in scratchop.tmp_make (per-uid parent, 0700, owner-checked, no-follow).
+# carries is met in scratchop.tmp_make (an unlistable per-user parent, an unguessable
+# per-placement leaf, owner-checked, no-follow).
 TMP_SCRATCH_ROOT = Path("/tmp")  # noqa: S108
 _lock = threading.Lock()
 
@@ -141,15 +144,20 @@ def scratch_in_tmp(harness_id: str) -> bool:
     return harness_id in TMP_SCRATCH_HARNESSES
 
 
-def tmp_scratch_of(uid: int, placement_id: str) -> Path:
+def tmp_scratch_of(uid: int, leaf: str) -> Path:
     """The placement's scratch under `/tmp` for a harness whose sandbox cannot write the
-    beside-clone `.scratch` (agy): `<TMP_SCRATCH_ROOT>/maity-scratch-<uid>/<placement id>`,
-    owned 0700 by `uid`, the user the agents run as. The per-uid parent keeps every host user's
-    scratches apart; the leaf is made fresh per placement and checked owned by `uid` at every
-    level (scratchop.tmp_make). Not resolved: the runner reaches it only from the root down."""
-    if not SCRATCH_ID.match(placement_id):
+    beside-clone `.scratch` (agy): `<TMP_SCRATCH_ROOT resolved>/maity-scratch-<uid>/<leaf>`,
+    owned by `uid`, the user the agents run as. `leaf` is the unguessable name the runner chose
+    for this placement (not the placement id), recorded so the session and the supervisor find
+    the same scratch again. The per-user parent keeps every host user's scratches apart and is
+    kept unlistable; the leaf is made fresh per placement and checked owned by `uid` at every
+    level (scratchop.tmp_make). The root is resolved — unlike the beside-clone root, which the
+    runner only ever reaches from the root down, this path is also recorded for the session's
+    own `--review-file` read, which walks it from `/` refusing any symlink on the way, so a
+    `/tmp` that is itself a link (macOS) must be resolved before it is recorded."""
+    if not TMP_LEAF.match(leaf):
         raise Refused("workspace_in_use", "workspace_unrecorded")
-    return TMP_SCRATCH_ROOT / f"maity-scratch-{uid}" / placement_id
+    return TMP_SCRATCH_ROOT.resolve() / f"maity-scratch-{uid}" / leaf
 
 
 def locate(root: Path, project: str, clone: str, host: str = "", folder: bool = False) -> Workspace:

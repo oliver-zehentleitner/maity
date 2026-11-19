@@ -215,6 +215,10 @@ class Context:
     # The placement's scratch (§15.5), made by the supervisor; None where the harness gets none
     # (workspace.SCRATCH_HARNESSES).
     scratch: Path | None = None
+    # The agy per-user `/tmp` scratch parent, hidden from this (non-agy) placement's sandbox so
+    # it cannot reach another placement's scratch there; None for an agy placement, which owns
+    # that parent, and where there is no local `/tmp` scratch (an ssh host, no uid).
+    tmp_scratch_parent: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -325,6 +329,12 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
 # --- Claude Code ------------------------------------------------------------------------------
 
 
+def _shared_tmp(ctx: Context) -> list[str]:
+    """The agy per-user `/tmp` scratch parent to hide from this placement's sandbox, as a list
+    for a deny rule; empty for an agy placement (which owns it) or where there is none."""
+    return [str(ctx.tmp_scratch_parent)] if ctx.tmp_scratch_parent is not None else []
+
+
 def claude_settings(ctx: Context) -> dict[str, Any]:
     """The grant (§6.1): maity, git, the repository's own allow list, and file tools inside
     the clone and the placement's scratch only. Absolute paths take a double slash in Claude
@@ -372,9 +382,13 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # signs with it, runs outside.
             # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
             # re-open its credential as well, and that order is unverified here.
-            "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private)],
+            # The agy per-user `/tmp` scratch parent is hidden from read and write alike, so a
+            # placement that is not its owner cannot reach another placement's scratch there.
+            "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private),
+                                        *_shared_tmp(ctx)],
                            "denyWrite": [f"{git}/maity",
-                                         *(f"{git}/{name}" for name in GIT_PROTECTED)],
+                                         *(f"{git}/{name}" for name in GIT_PROTECTED),
+                                         *_shared_tmp(ctx)],
                            # Commands write the placement's scratch besides the clone (§15.5).
                            **({"allowWrite": [str(ctx.scratch)]}
                               if ctx.scratch is not None else {})},
@@ -617,7 +631,10 @@ def codex_config(ctx: Context) -> str:
     # stays readable, since the agent's `maity` runs inside the sandbox. Every directory
     # opened again below (the clone, the scratch) keeps a hidden path inside it listed.
     reopened = (ctx.clone, *((ctx.scratch,) if ctx.scratch is not None else ()))
-    roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private),
+    # The agy per-user `/tmp` scratch parent is hidden too (its own scratch sits beside the
+    # clone, so Codex has no need to reach `/tmp`'s scratch of another placement of this user).
+    shared = (ctx.tmp_scratch_parent,) if ctx.tmp_scratch_parent is not None else ()
+    roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private, *shared),
                       opened=reopened)  # fmt: skip
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
     return (

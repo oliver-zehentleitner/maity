@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -3064,6 +3065,17 @@ def test_a_new_generation_does_not_resume_the_hung_session(
 # --- the scratch (§15.5) ---------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _restore_modes(tmp_path: Path) -> Any:
+    """Some agy scratch tests leave an unlistable (0300) per-user parent behind by design; widen
+    every directory at teardown so pytest's cleanup of its temporary directory can remove it."""
+    yield
+    for root, dirs, _files in os.walk(tmp_path, topdown=True):
+        for name in dirs:  # top-down: widening a directory lets os.walk then descend into it
+            with contextlib.suppress(OSError):
+                os.chmod(os.path.join(root, name), 0o700)
+
+
 def scratch_of(sup: supervisor.Supervisor, pid: str = "plc-0003") -> Path:
     assert sup.cfg.local is not None
     return sup.cfg.local.workspaces.resolve() / "maity" / ".scratch" / pid
@@ -3180,14 +3192,18 @@ def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(
     shared_tmp.mkdir()  # the host-shared writable location ('/tmp') exists already
     monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
     agy = config.Harness("antigravity", ("supervised",), "supervised")
-    room = sup._scratch(placement(), agy, target)
-    assert room == workspace.tmp_scratch_of(target.as_user.uid(), "plc-0003")
-    assert room.parent == tmp_path / "shared-tmp" / f"maity-scratch-{target.as_user.uid()}"
+    room = sup._scratch(placement(harness="antigravity"), agy, target)
+    # The leaf name is the unguessable one the runner chose, recorded for this placement, not
+    # the placement id.
+    leaf = sup.scratch_names["plc-0003"]
+    assert room == workspace.tmp_scratch_of(target.as_user.uid(), leaf)
+    assert room is not None and room.name != "plc-0003"
+    assert room.parent == (shared_tmp / f"maity-scratch-{target.as_user.uid()}").resolve()
     import stat as _stat
 
     assert room is not None and (room / "tmp").is_dir()
-    assert _stat.S_IMODE(room.stat().st_mode) == 0o700
-    assert _stat.S_IMODE(room.parent.stat().st_mode) == 0o700
+    assert _stat.S_IMODE(room.stat().st_mode) == 0o700  # the leaf is private
+    assert _stat.S_IMODE(room.parent.stat().st_mode) == 0o300  # the parent is unlistable
 
 
 def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
@@ -3204,16 +3220,88 @@ def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
     assert room is not None
     (room / "tmp" / "review.json").write_bytes(b"x" * 2000)  # a prior run's leftovers
     again = sup._scratch(placement(harness="antigravity"), agy, target)  # a restart
-    assert again == room and (room / "tmp").is_dir()
-    assert not (room / "tmp" / "review.json").exists()  # made fresh, nothing carried across
-    # The per-uid parent is outside the workspaces root, so the closed-placement sweep removes
-    # the `/tmp` scratch by its own path, not beside the clone.
+    # A restart removes the old leaf and makes one with a fresh, unguessable name, so nothing
+    # carries across and the old path is gone.
+    assert again is not None and again != room and not room.exists()
+    assert (again / "tmp").is_dir() and not (again / "tmp" / "review.json").exists()
+    assert sup.scratch_names["plc-0003"] == again.name
+    # The per-user parent is outside the workspaces root, so the closed-placement sweep removes
+    # the `/tmp` scratch by the recorded leaf name, not beside the clone.
+    sup.closed([{"id": "plc-0003", "project_id": "maity", "active": False,
+                 "closed_reason": "deleted", "harness": "antigravity"}])  # fmt: skip
+    sup._clear_scratch(set(), set(sup.targets))
+    assert not again.exists() and "plc-0003" in sup.scratch_cleared
+    assert "plc-0003" not in sup.scratch_names  # its recorded leaf is gone with it
+    (entry,) = scratch.removals(sup.cfg.state_dir, 10)
+    assert entry["path"] == str(again) and entry["why"] == "closed"
+
+
+def test_two_agy_placements_get_different_unguessable_leaf_names(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, *_ = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+    first = sup._scratch(placement(n=3, harness="antigravity"), agy, target)
+    second = sup._scratch(placement(n=4, harness="antigravity"), agy, target)
+    assert first is not None and second is not None
+    # Different placements of the same user get different names, neither a placement id.
+    assert first.name != second.name
+    assert first.name not in ("plc-0003", "plc-0004") and second.name != "plc-0004"
+    assert sup.scratch_names == {"plc-0003": first.name, "plc-0004": second.name}
+    # Each resolves to its own recorded scratch; the parent is shared.
+    assert sup._scratch_location(placement(n=3, harness="antigravity"), target) == (first, True)
+    assert first.parent == second.parent
+
+
+def test_the_recorded_agy_leaf_name_survives_a_runner_restart(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, reports, clock, logs = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+    room = sup._scratch(placement(harness="antigravity"), agy, target)
+    assert room is not None
+    sup.save()  # the leaf name is persisted
+    # A fresh supervisor (the runner restarted) reads the recorded names back.
+    other = supervisor.Supervisor(
+        sup.cfg, backend, reports, logs.append, sup.probes, now=clock, rand=lambda: 0.5
+    )
+    other.targets = sup.targets
+    other.load()
+    assert other.scratch_names == {"plc-0003": room.name}
+    p = placement(harness="antigravity")
+    assert other._scratch_location(p, target) == (room, True)
+    other.closed([{"id": "plc-0003", "project_id": "maity", "active": False,
+                   "closed_reason": "deleted", "harness": "antigravity"}])  # fmt: skip
+    other._clear_scratch(set(), set(other.targets))
+    assert not room.exists() and "plc-0003" in other.scratch_cleared
+
+
+def test_a_closed_agy_placement_is_swept_after_its_harness_leaves_config(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sweep decides from the placement's own recorded harness, not an active config entry,
+    so a placement closed after antigravity was taken out of the configuration is still swept."""
+    sup, *_ = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    sup.cfg.harnesses["antigravity"] = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+    room = sup._scratch(placement(harness="antigravity"), sup.cfg.harnesses["antigravity"], target)
+    assert room is not None and room.exists()
+    del sup.cfg.harnesses["antigravity"]  # antigravity is taken out of the configuration
     sup.closed([{"id": "plc-0003", "project_id": "maity", "active": False,
                  "closed_reason": "deleted", "harness": "antigravity"}])  # fmt: skip
     sup._clear_scratch(set(), set(sup.targets))
     assert not room.exists() and "plc-0003" in sup.scratch_cleared
-    (entry,) = scratch.removals(sup.cfg.state_dir, 10)
-    assert entry["path"] == str(room) and entry["why"] == "closed"
 
 
 def test_the_agy_scratch_is_none_where_the_uid_is_unknown(

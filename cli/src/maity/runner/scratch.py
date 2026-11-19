@@ -66,9 +66,10 @@ def write_codex_home(
 
 
 def tmp_make(path: Path, as_user: AsUser = RUNNER) -> None:
-    """The agy scratch at `path` under `/tmp`, with `tmp` in it, owned 0700 by the user the
-    agents run as (scratchop.tmp_make). scratchop.OnTheWay when a level is a link, a
-    foreign-owned directory, or a leaf that already exists; OSError otherwise."""
+    """The agy scratch at `path` under `/tmp`, with `tmp` in it, owned by the user the agents
+    run as, under an unlistable per-user parent (scratchop.tmp_make). scratchop.OnTheWay when a
+    level is a link, a directory another user holds, or a leaf that already exists; OSError
+    otherwise."""
     as_user.tmp_scratch("make", path)
 
 

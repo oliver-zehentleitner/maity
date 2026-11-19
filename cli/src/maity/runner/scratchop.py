@@ -32,9 +32,20 @@ from collections.abc import Callable, Iterator, Sequence
 from pathlib import PurePath
 
 OPS = ("make", "size", "remove")
-# agy's scratch under `/tmp` (workspace.tmp_scratch_of): a per-uid parent `maity-scratch-<uid>`
-# and a per-placement leaf, each owned 0700 by that uid.
+# agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of): a per-user
+# parent `maity-scratch-<uid>`, kept unlistable (TMP_PARENT_MODE) so only its owner can reach a
+# name inside it, and a per-placement leaf with an unguessable name the runner chooses at
+# random (TMP_LEAF), owned private by that user (TMP_LEAF_MODE).
 TMP_PARENT = re.compile(r"^maity-scratch-([0-9]+)$")
+# The per-placement leaf's name: an unguessable token the runner chose (secrets.token_hex), not
+# the placement id, so another placement of the same user cannot name it. The parent being
+# unlistable, the name can neither be listed nor guessed.
+TMP_LEAF = re.compile(r"^[0-9a-f]{32,64}$")
+# The per-user parent: writable and traversable by its owner, never listable (no read bit), so
+# a placement of the same user can reach its own leaf (it knows the name) but cannot enumerate
+# the others'. The leaf and all the runner makes in it stay private (0700).
+TMP_PARENT_MODE = 0o300
+TMP_LEAF_MODE = 0o700
 TMP_OPS = ("make", "size", "remove")
 # A clone's or project's name as the runner takes it (workspace.locate).
 TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
@@ -44,6 +55,9 @@ SCRATCH = ".scratch"
 SCRATCH_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")  # a placement id, as the supervisor takes it
 LINK = 4  # the exit code for a link (or no directory) on the way: nothing was done
 _FOLDER = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
+# A path descriptor opens a directory without needing read or search on it (O_PATH, Linux), so
+# a 0000 directory a build tool left can still be reached, checked to be ours and widened.
+_PATH_FD = getattr(os, "O_PATH", 0)
 
 
 class OnTheWay(OSError):
@@ -153,18 +167,22 @@ def remove(under: str, path: str) -> dict[str, object]:
         return {"result": "missing"}
 
 
-def _remove_in(parent: int, name: str) -> dict[str, object]:
+def _remove_in(parent: int, name: str, uid: int | None = None) -> dict[str, object]:
     """The directory `name` in the open `parent` removed, with its size before: measured and
     emptied through the one descriptor opened for it; `name` is checked against that
     directory just before it is removed (after the check, at most an empty directory of the
-    same name could be removed instead, never content)."""
+    same name could be removed instead, never content). `uid`, when given (the shared-temp
+    scratch), is the user the leaf must belong to: it is checked owned by that user, but its
+    mode is not required, so an agent that widened its own leaf cannot block its own cleanup."""
     try:
         fd = _step(parent, name, None)
     except FileNotFoundError:
         return {"result": "missing"}
     try:
+        if uid is not None:
+            _verify_dir(fd, name, uid)
         before = _size(fd)
-        _empty(fd)
+        _empty(fd, uid)
         held = os.fstat(fd)
         found = os.stat(name, dir_fd=parent, follow_symlinks=False)
         if (found.st_dev, found.st_ino) != (held.st_dev, held.st_ino):
@@ -175,21 +193,91 @@ def _remove_in(parent: int, name: str) -> dict[str, object]:
     return {"result": "removed", "bytes": before}
 
 
-def _empty(fd: int) -> None:
-    """Everything under the open directory `fd` removed, deepest first, each level reached
-    from the one above it without following a link (a link is removed, never entered)."""
-    for _top, dirs, files, top_fd in os.fwalk(".", dir_fd=fd, topdown=False,
-                                              follow_symlinks=False):  # fmt: skip
-        for entry in files:
+def _widen(fd: int, uid: int | None) -> None:
+    """Give the owner read, write and search on the open directory `fd`, so a mode that denies
+    them (a read-only or unsearchable directory a build tool leaves behind, for example a 0555
+    module cache or a 0000 directory) does not block emptying it. Only a directory this `uid`
+    owns is touched (when `uid` is given); a beside-clone scratch, under the runner's trusted
+    root, passes `uid` None and every directory it holds is the agents' own."""
+    found = os.fstat(fd)
+    if uid is not None and found.st_uid != uid:
+        return
+    if stat.S_IMODE(found.st_mode) & 0o700 != 0o700:
+        with contextlib.suppress(OSError):
+            os.fchmod(fd, stat.S_IMODE(found.st_mode) | 0o700)
+
+
+def _open_below(parent_fd: int, name: str, uid: int | None) -> int:
+    """An open descriptor for the directory `name` in `parent_fd`, never following a link, even
+    when its mode denies opening it for reading (a 0000 directory): such a one is reached by a
+    path descriptor, which needs no permission, checked to be a directory this `uid` owns, and
+    widened to its owner, then opened normally."""
+    try:
+        return _open_nofollow(parent_fd, name, uid)
+    except OSError as exc:
+        if exc.errno not in (errno.EACCES, errno.EPERM) or not _PATH_FD:
+            raise
+    pfd = os.open(name, _PATH_FD | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW, dir_fd=parent_fd)
+    try:
+        found = os.fstat(pfd)
+        if not stat.S_ISDIR(found.st_mode) or (uid is not None and found.st_uid != uid):
+            raise OnTheWay(f"{name} is not a directory this user owns; left as it is")
+        os.chmod(f"/proc/self/fd/{pfd}", stat.S_IMODE(found.st_mode) | 0o700)
+    finally:
+        os.close(pfd)
+    return _open_nofollow(parent_fd, name, uid)
+
+
+_Frame = tuple[int, "str | None", int, "Iterator[str]"]
+
+
+def _scan(parent_fd: int, name: str | None, fd: int, uid: int | None) -> _Frame:
+    """A removal frame for the open directory `fd`: its owner's access is restored, its files
+    are unlinked now (a link among them removed, never entered), and the frame keeps its
+    subdirectory names for the loop to descend. `name` is None for the root, whose `fd` the
+    caller keeps open."""
+    _widen(fd, uid)
+    subdirs: list[str] = []
+    for entry in os.listdir(fd):
+        try:
+            found = os.lstat(entry, dir_fd=fd)
+        except FileNotFoundError:
+            continue
+        if stat.S_ISDIR(found.st_mode):
+            subdirs.append(entry)
+        else:
             with contextlib.suppress(FileNotFoundError):
-                os.unlink(entry, dir_fd=top_fd)
-        for entry in dirs:
-            try:
-                os.rmdir(entry, dir_fd=top_fd)
-            except NotADirectoryError:  # a link to a directory: the link goes
-                os.unlink(entry, dir_fd=top_fd)
-            except FileNotFoundError:
-                pass
+                os.unlink(entry, dir_fd=fd)
+    return (parent_fd, name, fd, iter(subdirs))
+
+
+def _empty(fd: int, uid: int | None = None) -> None:
+    """Everything under the open directory `fd` removed, deepest first, each level reached from
+    the one above it without following a link (a link is removed, never entered). The owner's
+    access is restored on every directory before its entries go, so a mode that denies write or
+    search does not leave the scratch undeletable; an explicit stack, not recursion, so a very
+    deep tree cannot overflow. Only directories this `uid` owns are touched when `uid` is
+    given."""
+    stack: list[_Frame] = [_scan(-1, None, fd, uid)]
+    while stack:
+        parent_fd, name, directory, subdirs = stack[-1]
+        child = next(subdirs, None)
+        if child is None:
+            stack.pop()
+            if name is not None:
+                os.close(directory)
+                with contextlib.suppress(FileNotFoundError):
+                    os.rmdir(name, dir_fd=parent_fd)
+            continue
+        try:
+            child_fd = _open_below(directory, child, uid)
+        except FileNotFoundError:
+            continue
+        try:
+            stack.append(_scan(directory, child, child_fd, uid))
+        except BaseException:
+            os.close(child_fd)
+            raise
 
 
 def codex(under: str, home: str, config_text: str, auth_target: str | None) -> dict[str, object]:
@@ -247,15 +335,18 @@ def _link_leaf(dir_fd: int, name: str, target: str) -> None:
     os.symlink(target, name, dir_fd=dir_fd)
 
 
-# --- agy's scratch under `/tmp` (workspace.tmp_scratch_of) ------------------------------------
+# --- agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of) ----------
 #
-# `/tmp` is shared with every user on the host, so a scratch there is made and read with the
-# anti-hijack discipline the beside-clone scratch does not need: the per-uid parent and the
-# per-placement leaf are each opened without following a link and checked to be a plain
-# directory owned 0700 by the uid the agents run as (os.getuid where the op runs). A link, a
-# foreign-owned directory, or a leaf that already exists is refused (OnTheWay), never written
-# through. Inside a 0700 directory of that uid nothing foreign can sit, so once the parent is
-# checked the leaf and all below it are this placement's to measure or remove.
+# The shared temp directory is writable by every user on the host, so a scratch there is made
+# and read with the anti-hijack discipline the beside-clone scratch does not need: the per-user
+# parent and the per-placement leaf are each opened without following a link and checked to be
+# a directory owned by the user the agents run as (os.getuid where the op runs). A link, a
+# directory another user holds, or a leaf that already exists is refused (OnTheWay), never
+# written through. The parent is kept unlistable (TMP_PARENT_MODE): its owner may reach a name
+# inside it but cannot list the names, and the leaf's name is one the runner chose at random
+# (TMP_LEAF), so another placement of the same user can neither enumerate nor guess it. The
+# leaf is private (TMP_LEAF_MODE) and made fresh (never reused); inside it nothing foreign can
+# sit, so once the parent is checked the leaf and all below it are this placement's alone.
 
 
 def _uid(uid: int | None) -> int:
@@ -270,49 +361,115 @@ def _uid(uid: int | None) -> int:
 
 
 def _tmp_parts(path: str, uid: int) -> tuple[str, str, str]:
-    """`<root>/maity-scratch-<uid>/<placement id>` split into (root, parent, leaf), checked:
-    the parent names this uid and the leaf is a placement id."""
+    """`<root>/maity-scratch-<uid>/<leaf>` split into (root, parent, leaf), validated as
+    `_below` validates a beside-clone scratch: `path` is absolute with no `..`, the parent
+    names exactly this uid (its canonical spelling, so a leading-zero uid is refused), the leaf
+    is an unguessable name the runner chose (TMP_LEAF), and the root is a real directory that is
+    its own realpath (so a relative, traversing or symlinked root is refused). A path that is
+    not exactly `<real root>/maity-scratch-<uid>/<leaf>` is refused before anything is opened."""
     pure = PurePath(path)
+    if not pure.is_absolute() or ".." in pure.parts:
+        raise OSError(f"{path} is not an absolute scratch path without '..'")
     parent, leaf = pure.parent.name, pure.name
     match = TMP_PARENT.fullmatch(parent)
-    if match is None or int(match.group(1)) != uid:
-        raise OSError(f"{path} is not a /tmp scratch parent for uid {uid}")
-    if not SCRATCH_ID.fullmatch(leaf):
-        raise OSError(f"{path} does not end in a placement's scratch")
-    return str(pure.parent.parent), parent, leaf
+    if match is None or match.group(1) != str(uid):
+        raise OSError(f"{path} is not a shared-temp scratch parent for uid {uid}")
+    if not TMP_LEAF.fullmatch(leaf):
+        raise OSError(f"{path} does not end in a placement's scratch leaf")
+    root = str(pure.parent.parent)
+    if root in ("", os.sep) or os.path.realpath(root) != root:
+        raise OSError(f"{path} is not under a real (non-symlinked) root")
+    return root, parent, leaf
 
 
-def _open_nofollow(dir_fd: int, name: str) -> int:
+def _open_nofollow(dir_fd: int, name: str, uid: int | None = None) -> int:
     """`name` in `dir_fd` opened as a directory without following a link; OnTheWay for a link
-    or a non-directory, FileNotFoundError when it is missing."""
+    or a non-directory, FileNotFoundError when it is missing. When opening is denied and `uid`
+    is given, the name is a directory another user holds (its mode keeps us out): that is said
+    as OnTheWay, so the operator sees a name clash rather than a bare permission error."""
     try:
         return os.open(name, _FOLDER | os.O_NOFOLLOW, dir_fd=dir_fd)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR, errno.EMLINK):
+            raise OnTheWay(f"{name} is a link or not a directory; nothing done") from None
+        if exc.errno in (errno.EACCES, errno.EPERM) and uid is not None:
+            try:
+                found = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+            except OSError:
+                found = None
+            if found is not None and stat.S_ISDIR(found.st_mode) and found.st_uid != uid:
+                raise OnTheWay(
+                    f"{name} is held by another user (uid {found.st_uid}, not uid {uid}); not used"
+                ) from None
+        raise
+
+
+def _open_pathfd(dir_fd: int, name: str) -> int:
+    """`name` in `dir_fd` opened as a path descriptor (O_PATH) without following a link, so a
+    directory that denies reading it (the unlistable per-user parent, 0300) can still be opened
+    and used as a directory reference for the names inside it. OnTheWay for a link or a
+    non-directory, FileNotFoundError when it is missing. A foreign-owned one opens here (O_PATH
+    needs no permission) and is caught by the owner check that follows (`_verify_dir`), so a
+    name another user holds is named as a clash, not a bare permission error."""
+    try:
+        return os.open(name, _PATH_FD | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW,
+                       dir_fd=dir_fd)  # fmt: skip
     except OSError as exc:
         if exc.errno in (errno.ELOOP, errno.ENOTDIR, errno.EMLINK):
             raise OnTheWay(f"{name} is a link or not a directory; nothing done") from None
         raise
 
 
-def _verify_owned(fd: int, name: str, uid: int) -> None:
-    """OnTheWay unless the open directory `fd` is a plain directory owned 0700 by `uid`."""
+def _chmod_fd(fd: int, mode: int, *, path_fd: bool) -> None:
+    """Set the open directory `fd` to `mode`. An O_PATH descriptor cannot be `fchmod`'d, so it
+    is reached by its `/proc/self/fd` entry, which resolves to the same inode."""
+    if path_fd:
+        os.chmod(f"/proc/self/fd/{fd}", mode)
+    else:
+        os.fchmod(fd, mode)
+
+
+def _verify_dir(fd: int, name: str, uid: int) -> None:
+    """OnTheWay unless the open `fd` is a directory owned by `uid` (its mode is not checked
+    here: a read or remove does not require a particular mode, only that it is ours)."""
     found = os.fstat(fd)
-    if (not stat.S_ISDIR(found.st_mode) or found.st_uid != uid
-            or stat.S_IMODE(found.st_mode) != 0o700):  # fmt: skip
-        raise OnTheWay(f"{name} is not a directory owned only by uid {uid}; not used")
+    if not stat.S_ISDIR(found.st_mode):
+        raise OnTheWay(f"{name} is not a directory; not used")
+    if found.st_uid != uid:
+        raise OnTheWay(
+            f"{name} is held by another user (uid {found.st_uid}, not uid {uid}); not used"
+        )
 
 
-def _tmp_dir(dir_fd: int, name: str, uid: int, *, fresh: bool) -> int:
-    """The directory `name` in `dir_fd`, made 0700 when missing, opened without following a
-    link and checked owned 0700 by `uid`. `fresh`: it must not already exist (a per-placement
-    leaf is never reused, so a planted or left-over one is refused)."""
+def _verify_mode(fd: int, name: str, mode: int) -> None:
+    """OnTheWay unless the open directory `fd` is exactly `mode`."""
+    if stat.S_IMODE(os.fstat(fd).st_mode) != mode:
+        raise OnTheWay(f"{name} is not mode {mode:#o} as a scratch must be; not used")
+
+
+def _tmp_dir(
+    dir_fd: int, name: str, uid: int, mode: int, *, fresh: bool, path_fd: bool = False
+) -> int:
+    """The directory `name` in `dir_fd`, created `mode` when missing, opened without following
+    a link and checked owned by `uid` and set to exactly `mode`. `fresh`: it must not already
+    exist (the per-placement leaf and the `tmp` in it are never reused, so a planted or
+    left-over one is refused). A directory that exists and this uid owns but whose mode differs
+    (a per-user parent an earlier placement left, or one widened since) is brought to `mode`
+    only after its ownership is confirmed, so the owner's layout is normalised, never another's.
+    `mode` is set explicitly because mkdir is subject to the umask. `path_fd`: the directory is
+    unlistable (0300, the per-user parent), so it is opened as a path descriptor and still used
+    as a directory reference for the names inside it."""
     try:
-        os.mkdir(name, 0o700, dir_fd=dir_fd)
+        os.mkdir(name, mode, dir_fd=dir_fd)
     except FileExistsError:
         if fresh:
             raise OnTheWay(f"{name} already exists; a scratch is made fresh, not reused") from None
-    fd = _open_nofollow(dir_fd, name)
+    fd = _open_pathfd(dir_fd, name) if path_fd else _open_nofollow(dir_fd, name, uid)
     try:
-        _verify_owned(fd, name, uid)
+        _verify_dir(fd, name, uid)
+        if stat.S_IMODE(os.fstat(fd).st_mode) != mode:
+            _chmod_fd(fd, mode, path_fd=path_fd)
+        _verify_mode(fd, name, mode)
     except BaseException:
         os.close(fd)
         raise
@@ -321,43 +478,49 @@ def _tmp_dir(dir_fd: int, name: str, uid: int, *, fresh: bool) -> int:
 
 @contextlib.contextmanager
 def _tmp_parent(root: str, parent: str, uid: int) -> Iterator[int | None]:
-    """The per-uid scratch parent `parent` under `root`, opened without following a link and
-    checked owned 0700 by `uid`; None when it is not there. Never created here: size and
-    remove make no parent."""
+    """The per-user scratch parent `parent` under `root`, opened as a path descriptor (it is
+    unlistable, 0300) without following a link and checked owned by `uid`; None when it is not
+    there. Its mode is not required here (a read or remove must work on a parent an agent has
+    widened or narrowed); only ownership is. Never created here: size and remove make no
+    parent."""
     base_fd = os.open(root, _FOLDER)
     try:
         try:
-            fd = _open_nofollow(base_fd, parent)
+            fd = _open_pathfd(base_fd, parent)
         except FileNotFoundError:
             yield None
             return
     finally:
         os.close(base_fd)
     try:
-        _verify_owned(fd, parent, uid)
+        _verify_dir(fd, parent, uid)
         yield fd
     finally:
         os.close(fd)
 
 
 def tmp_make(path: str, uid: int | None = None) -> dict[str, object]:
-    """The agy scratch at `path` under `/tmp` with `tmp` in it: a per-uid parent, created or
-    adopted when already this uid's own 0700 directory, and a per-placement leaf made fresh.
-    A link, a foreign-owned directory, or a leaf that already exists is refused (OnTheWay)."""
+    """The agy scratch at `path` under the shared temp directory with `tmp` in it: a per-user
+    parent, created or adopted when already this uid's own (and brought to the unlistable
+    TMP_PARENT_MODE), and a per-placement leaf made fresh (TMP_LEAF_MODE) with a fresh `tmp`
+    inside it. A link, a directory another user holds, or a leaf (or `tmp`) that already exists
+    is refused (OnTheWay), never written through."""
     if not supported():
         raise OSError("this system cannot open a directory without following links")
     uid = _uid(uid)
     root, parent, leaf = _tmp_parts(path, uid)
     base_fd = os.open(root, _FOLDER)
     try:
-        parent_fd = _tmp_dir(base_fd, parent, uid, fresh=False)
+        parent_fd = _tmp_dir(base_fd, parent, uid, TMP_PARENT_MODE, fresh=False, path_fd=True)
     finally:
         os.close(base_fd)
     try:
-        leaf_fd = _tmp_dir(parent_fd, leaf, uid, fresh=True)
+        leaf_fd = _tmp_dir(parent_fd, leaf, uid, TMP_LEAF_MODE, fresh=True)
         try:
-            with contextlib.suppress(FileExistsError):
-                os.mkdir("tmp", 0o700, dir_fd=leaf_fd)
+            # The `tmp` in the leaf is made with the same fresh, no-follow, owner-and-mode
+            # discipline, so a sibling of the same user that planted a link or a wrong-mode
+            # directory at `<leaf>/tmp` between the leaf's creation and here is refused.
+            os.close(_tmp_dir(leaf_fd, "tmp", uid, TMP_LEAF_MODE, fresh=True))
         finally:
             os.close(leaf_fd)
     finally:
@@ -367,7 +530,8 @@ def tmp_make(path: str, uid: int | None = None) -> dict[str, object]:
 
 def tmp_size(path: str, uid: int | None = None) -> dict[str, object]:
     """The bytes under the agy scratch at `path`; `missing` when the parent or the leaf is not
-    there. The parent is checked owned 0700 by `uid` before the leaf is measured."""
+    there. The parent and the leaf are each checked owned by `uid` before the leaf is
+    measured."""
     if not supported():
         raise OSError("this system cannot open a directory without following links")
     uid = _uid(uid)
@@ -376,10 +540,11 @@ def tmp_size(path: str, uid: int | None = None) -> dict[str, object]:
         if parent_fd is None:
             return {"result": "missing"}
         try:
-            fd = _open_nofollow(parent_fd, leaf)
+            fd = _open_nofollow(parent_fd, leaf, uid)
         except FileNotFoundError:
             return {"result": "missing"}
         try:
+            _verify_dir(fd, leaf, uid)
             return {"result": "size", "bytes": _size(fd)}
         finally:
             os.close(fd)
@@ -387,8 +552,9 @@ def tmp_size(path: str, uid: int | None = None) -> dict[str, object]:
 
 def tmp_remove(path: str, uid: int | None = None) -> dict[str, object]:
     """The agy scratch at `path` removed, with its size before; `missing` when there is none.
-    The parent is checked owned 0700 by `uid`; the leaf and all below it are then removed from
-    the parent's descriptor as `remove` does (`_remove_in`)."""
+    The parent is checked owned by `uid`; the leaf is checked owned by `uid` (its mode is not
+    required) and then it and all below it are removed from the parent's descriptor as `remove`
+    does (`_remove_in`)."""
     if not supported():
         raise OSError("this system cannot open a directory without following links")
     uid = _uid(uid)
@@ -396,7 +562,7 @@ def tmp_remove(path: str, uid: int | None = None) -> dict[str, object]:
     with _tmp_parent(root, parent, uid) as parent_fd:
         if parent_fd is None:
             return {"result": "missing"}
-        return _remove_in(parent_fd, leaf)
+        return _remove_in(parent_fd, leaf, uid=uid)
 
 
 def tmp_run(op: str, path: str) -> dict[str, object]:
