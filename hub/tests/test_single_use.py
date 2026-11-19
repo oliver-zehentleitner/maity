@@ -151,11 +151,12 @@ def test_use_is_single_use(conn: Connection, kind: tuple[single_use.Kind, Any]) 
 
 def test_use_refuses_an_expired_row(conn: Connection, kind: tuple[single_use.Kind, Any]) -> None:
     links = kind[0]
-    start = clock.now()
     issued = issue(conn, kind)
     assert issued is not None
-    clock.set_source(lambda: start + links.lifetime)
-    assert not single_use.use(conn, links, row(conn, links, issued[0]))
+    nonce, expires = issued
+    # At the row's own expiry (the moment `issue` returned): `use` needs `expires_at > now`.
+    clock.set_source(lambda: expires)
+    assert not single_use.use(conn, links, row(conn, links, nonce))
 
 
 def test_void_human_voids_only_that_human_s_open_rows(
