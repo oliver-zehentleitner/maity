@@ -5,7 +5,9 @@
   Before, every page read every matching request in full and sorted it in Python. Held, covered,
   jour fixe and (for a proxy) proposal requests are still decided by the listing's Python rule,
   reading only the columns it needs. The order, the items and the cursors are unchanged, and a
-  cursor handed out before keeps working.
+  cursor handed out before keeps working. A request that changes while a page is read is
+  decided again on its full read: the page may then hold fewer than `limit` items, rarely
+  none with a `next_cursor`, and its cursor is built from the rows it keeps.
 
 ### Fixed
 

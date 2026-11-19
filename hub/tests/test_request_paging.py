@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Connection, Engine, insert, select, update
 
-from maity_hub import clock
+from maity_hub import clock, inbox
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.db import read_transaction
@@ -369,7 +369,7 @@ def test_a_request_that_changes_between_the_statements_is_listed_once(
                     if change == "answer":  # decided again on the row read in full
                         assert changed not in ids, where
                     # The last item's place as it is now; a page a row left on the full read
-                    # is shorter and keeps the cursor of the keys.
+                    # is shorter, its cursor at the last row it keeps.
                     if page["next_cursor"] is not None and len(ids) == limit:
                         last = conn.execute(select(t.request).where(r.id == ids[-1])).one()
                         key = _key(_entries(conn, [last])[0], sort)
@@ -535,6 +535,227 @@ def test_the_rows_read_in_full_are_decided_again(
         assert changed not in listed, where
         for item in page["items"]:
             assert item == listed.get(item["id"]), where
+
+
+def _six_asked(make_client: ClientFactory, migrated: Engine) -> flow.Human:
+    """Six open requests to the owner from two agents, across the priorities: the owner's
+    `to=all` lists them all, in an order of its own for every sort."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    askers = [flow.agent(make_client, owner) for _ in range(2)]
+    made = [asked(askers[n % 2], to="owner", title=f"Which {n}?")["id"] for n in range(6)]
+    with migrated.begin() as conn:
+        for n, request_id in enumerate(made):
+            priority = inbox.PRIORITIES[n % len(inbox.PRIORITIES)]
+            conn.execute(
+                update(t.request).where(t.request.c.id == request_id).values(priority=priority)
+            )
+    return owner
+
+
+def _set_status(conn: Connection, ids: Iterable[str], status: str) -> None:
+    conn.execute(update(t.request).where(t.request.c.id.in_(list(ids))).values(status=status))
+
+
+def _hide_on_full_read(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated: Engine,
+    own_connection: bool,
+    choose: Callable[[list[str]], list[str]],
+) -> set[str]:
+    """Between the key reads and the full read, the requests `choose` picks of the page's ids
+    leave the listing (answered), on the listing's connection or committed from another one.
+    The set of every id hidden so far."""
+    hidden: set[str] = set()
+    original = requests_route._read_in_full
+
+    def hooked(conn: Connection, ids: list[str], listed: list[Any]) -> list[Any]:
+        chosen = [i for i in choose(ids) if i not in hidden]
+        hidden.update(chosen)
+        if chosen and own_connection:
+            _set_status(conn, chosen, "answered")
+        elif chosen:
+            with migrated.begin() as other:
+                _set_status(other, chosen, "answered")
+        return original(conn, ids, listed)
+
+    monkeypatch.setattr(requests_route, "_read_in_full", hooked)
+    return hidden
+
+
+def _cursor_names(cursor: str | None, hidden: set[str]) -> set[str]:
+    """The hidden ids a cursor's `k` holds."""
+    if cursor is None:
+        return set()
+    raw = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+    return {value for value in raw["k"] if value in hidden}
+
+
+def _paged_once(
+    migrated: Engine,
+    mine: Membership,
+    sort: str,
+    limit: int,
+    cursor: str | None,
+    own_connection: bool,
+) -> dict[str, Any]:
+    """The owner's `to=all` page: on a connection rolled back after, or in a read transaction
+    while another connection commits (`_hide_on_full_read`)."""
+    if own_connection:
+        with migrated.connect() as conn:
+            page = Listing(conn, mine, "all", sort, "open").paged(limit, cursor)
+            conn.rollback()
+            return page
+    with read_transaction(migrated) as conn:
+        return Listing(conn, mine, "all", sort, "open").paged(limit, cursor)
+
+
+def _rest(listing: Listing, limit: int, cursor: str | None, hidden: set[str]) -> list[str]:
+    """The ids of every page from `cursor` on; no cursor names a hidden request."""
+    shown: list[str] = []
+    for _ in range(len(listing.entries) + 5):
+        if cursor is None:
+            return shown
+        page = listing.paged(limit, cursor)
+        assert not _cursor_names(page["next_cursor"], hidden), cursor
+        shown += [item["id"] for item in page["items"]]
+        cursor = page["next_cursor"]
+    raise AssertionError("no last page")
+
+
+@pytest.mark.parametrize("own_connection", [True, False], ids=["same_connection", "committed"])
+def test_a_pages_cursor_is_built_from_the_rows_it_keeps(
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    own_connection: bool,
+) -> None:
+    """The page's last row leaves the listing between the key reads and the full read: the
+    cursor names a row the page keeps, and the walk from it lists every request the listing
+    holds after the change once. `committed` on SQLite reads one snapshot: the page is the one
+    from before the change."""
+    owner = _six_asked(make_client, migrated)
+    who = person(migrated, owner.id)
+    for sort in SORTS:
+        for limit in (1, 2):
+            with migrated.connect() as conn:
+                mine = _membership(conn, who)
+                before = Listing(conn, mine, "all", sort, "open")
+                boundary = before.oracle(limit, None)["items"][-1]["id"]
+                before_ids = [e["id"] for e in before.entries]
+
+            def choose(ids: list[str], boundary: str = boundary) -> list[str]:
+                return [boundary] if boundary in ids else []
+
+            hidden = _hide_on_full_read(monkeypatch, migrated, own_connection, choose)
+            where = (sort, limit, own_connection)
+            page = _paged_once(migrated, mine, sort, limit, None, own_connection)
+            assert hidden == {boundary}, where
+            if own_connection or migrated.dialect.name != "sqlite":
+                assert not _cursor_names(page["next_cursor"], hidden), where
+            with migrated.connect() as conn:
+                if own_connection:
+                    _set_status(conn, hidden, "answered")
+                after = Listing(conn, mine, "all", sort, "open")
+                shown = [i["id"] for i in page["items"]]
+                shown += _rest(after, limit, page["next_cursor"], hidden)
+                if not own_connection and migrated.dialect.name == "sqlite":
+                    assert shown == before_ids, where
+                else:
+                    assert shown == [e["id"] for e in after.entries], where
+                    assert boundary not in shown, where
+                conn.rollback()
+            monkeypatch.undo()
+            if not own_connection:
+                with migrated.begin() as conn:
+                    _set_status(conn, hidden, "open")
+
+
+@pytest.mark.parametrize("own_connection", [True, False], ids=["same_connection", "committed"])
+def test_a_page_whose_rows_all_drop_reads_on(
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    own_connection: bool,
+) -> None:
+    """Every row of a page (the first, then the second) leaves the listing between the key
+    reads and the full read: the page reads on to the requests after them and is the page the
+    listing gives after the change; the walk lists each request it holds once."""
+    owner = _six_asked(make_client, migrated)
+    who = person(migrated, owner.id)
+    limit = 2
+    for sort in SORTS:
+        for at_page in (0, 1):
+            with migrated.connect() as conn:
+                mine = _membership(conn, who)
+                before = Listing(conn, mine, "all", sort, "open")
+                cursor = before.oracle(limit, None)["next_cursor"] if at_page else None
+                before_page = before.oracle(limit, cursor)
+            calls: list[list[str]] = []
+
+            def choose(ids: list[str], calls: list[list[str]] = calls) -> list[str]:
+                calls.append(ids)
+                return ids if len(calls) == 1 else []  # the target page's first full read
+
+            hidden = _hide_on_full_read(monkeypatch, migrated, own_connection, choose)
+            where = (sort, at_page, own_connection)
+            page = _paged_once(migrated, mine, sort, limit, cursor, own_connection)
+            assert hidden == {i["id"] for i in before_page["items"]}, where
+            with migrated.connect() as conn:
+                if own_connection:
+                    _set_status(conn, hidden, "answered")
+                after = Listing(conn, mine, "all", sort, "open")
+                if not own_connection and migrated.dialect.name == "sqlite":
+                    assert page == before_page, where
+                else:
+                    assert page == after.oracle(limit, cursor), where
+                    assert not _cursor_names(page["next_cursor"], hidden), where
+                    shown = [i["id"] for i in page["items"]]
+                    shown += _rest(after, limit, page["next_cursor"], hidden)
+                    expected = [e["id"] for e in after.entries]
+                    if cursor is not None:  # the walk began after the first page
+                        expected = expected[expected.index(shown[0]) :] if shown else []
+                        assert len(expected) == len(after.entries) - limit, where
+                    assert shown == expected, where
+                conn.rollback()
+            monkeypatch.undo()
+            if not own_connection:
+                with migrated.begin() as conn:
+                    _set_status(conn, hidden, "open")
+
+
+def test_a_walk_whose_rows_keep_dropping_ends(
+    make_client: ClientFactory, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every row read in full leaves the listing just before: each call reads on
+    `READ_ON_ROUNDS` times, then answers an empty page with the cursor it was called with (a
+    place before every request on the first page), and the walk ends once nothing is left."""
+    owner = _six_asked(make_client, migrated)
+    who = person(migrated, owner.id)
+    for sort in SORTS:
+        for limit, start_after_first in ((1, False), (2, False), (1, True)):
+            hidden = _hide_on_full_read(monkeypatch, migrated, True, lambda ids: ids)
+            where = (sort, limit, start_after_first)
+            with migrated.connect() as conn:
+                listing = Listing(conn, _membership(conn, who), "all", sort, "open")
+                cursor = listing.oracle(1, None)["next_cursor"] if start_after_first else None
+                calls = 0
+                while True:
+                    calls += 1
+                    assert calls <= 6, where
+                    page = listing.paged(limit, cursor)
+                    assert page["items"] == [], where
+                    assert not _cursor_names(page["next_cursor"], hidden), where
+                    if page["next_cursor"] is None:
+                        break
+                    # The bound was reached: the cursor the call was given, or the start.
+                    start = _next_cursor(sort, requests_route._start_key(sort))
+                    assert page["next_cursor"] == (cursor or start), where
+                    assert len(hidden) % (requests_route.READ_ON_ROUNDS * limit) == 0, where
+                    cursor = page["next_cursor"]
+                assert len(hidden) == 6 - int(start_after_first), where
+                conn.rollback()
+            monkeypatch.undo()
 
 
 # Handles a locale collation orders apart from their bytes: it may pass over `-` (`a-cd` after

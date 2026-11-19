@@ -320,7 +320,9 @@ List endpoints take `limit` (default 50, maximum 200) and `cursor`
 { "items": [ ... ], "next_cursor": "..." }
 ```
 
-`next_cursor` is `null` on the last page. Lists are ordered as stated per
+`next_cursor` is `null` on the last page. A page may hold fewer items
+than `limit`, rarely none, while `next_cursor` is set; follow the cursor
+until it is `null`. Lists are ordered as stated per
 endpoint; a cursor is valid for one ordering and one filter set. The
 events endpoint uses `after=<seq>` instead of a cursor (§8).
 `GET /me/notifications` takes, beside `cursor`, an `after` position

@@ -1027,13 +1027,15 @@ def _decided(
     assert target is not None
     # A member id alone also names the instance addresses of its team: the team reads them.
     whole_team = target.kind == "member" and target.instance is None
-    return [
+    addressed = [
         r
         for r in rows
         if (replace(inbox.addressee_of(r), instance=None) if whole_team else inbox.addressee_of(r))
         == target
-        and inbox.may_read(conn, r, mine)
     ]
+    # One read of the owner's rounds for all of them, as `listed_to_all` does.
+    alone = inbox.owners_alone(conn, addressed) if mine.may("requests:answer") else set()
+    return [r for r in addressed if inbox.may_read(conn, r, mine, alone)]
 
 
 def relayed(rows: Sequence[Any], mine: Membership) -> list[Any]:
@@ -1171,6 +1173,13 @@ def _key_shaped(key: Any, sort: str) -> bool:
 LEFTOVER_BATCH_MAX = 1000
 # What `_decided` reads of a leftover request beyond `request_sql.DECIDED_BY`: the address.
 _ADDRESS = ("to_profile", "to_human", "to_instance")
+# The rounds a page reads on past keys whose rows all fail when read in full (`_project_page`).
+READ_ON_ROUNDS = 3
+# `_start_key`'s place before every request: times outside any request's, within every
+# database's range, and an id no request needs.
+_START_LATEST = "9999-12-31T23:59:59+00:00"
+_START_EARLIEST = "1000-01-01T00:00:00+00:00"
+_START_ID = "req-"
 
 
 @dataclass(frozen=True)
@@ -1274,28 +1283,43 @@ def _project_page(
     """`_page(_sorted(_entries(_filtered(…))))` with the database ordering and limiting: the
     listing's keys after the cursor (`_listing_keys`), and only the page's rows read in full,
     and decided again by the listing's own filters and `_decided` (`_redecided`): a request
-    gone since its key was read, or one the listing no longer holds, is left out."""
+    gone since its key was read, or one the listing no longer holds, is left out.
+    The cursor is built from the last row the page keeps. A page that keeps none reads on
+    past its keys, up to `READ_ON_ROUNDS` times, and then answers an empty page with the
+    cursor it was called with (`_start_key` on the first page)."""
     listing = _listing(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
     after_key = _cursor_key(cursor, sort) if cursor is not None else None
     if listing is None:
         return {"items": [], "next_cursor": None}
     order = _order(conn, sort)
-    after = _sql_key(sort, after_key) if after_key is not None else None
-    merged = _listing_keys(conn, listing, order, after, limit)
-    page = merged[:limit]
-    ids = [row.id for row in page]
-    found: dict[str, Any] = {}
-    if ids:
+    position = _sql_key(sort, after_key) if after_key is not None else None
+    for _ in range(READ_ON_ROUNDS):
+        merged = _listing_keys(conn, listing, order, position, limit)
+        page = merged[:limit]
+        if not page:
+            return {"items": [], "next_cursor": None}
         # The rows read in full are decided again, with the same filters and the same rule:
         # on PostgreSQL each statement reads its own snapshot (READ COMMITTED), and a row may
-        # have changed since its key was read. One that fails now is left out; the page may
-        # come out shorter, its cursor stays the keys' (3c9e5a71).
-        full = _read_in_full(conn, ids, listing.where)
+        # have changed since its key was read. One that fails now is left out, and the cursor
+        # is built from the last row the page keeps (3c9e5a71).
+        full = _read_in_full(conn, [row.id for row in page], listing.where)
         found = {row.id: row for row in _redecided(conn, listing, full)}
-    return {
-        "items": request_views(conn, [found[i] for i in ids if i in found]),
-        "next_cursor": _cursor_of(order, page[-1]) if len(merged) > limit else None,
-    }
+        shown = [row for row in page if row.id in found]
+        if shown:
+            # More may follow the last row kept: keys past the page, or rows left out after it,
+            # which the next page reads afresh.
+            more = len(merged) > limit or shown[-1] is not page[-1]
+            return {
+                "items": request_views(conn, [found[row.id] for row in shown]),
+                "next_cursor": _cursor_at(sort, order.key(shown[-1])) if more else None,
+            }
+        if len(merged) <= limit:  # no key after the rows left out: nothing more is listed
+            return {"items": [], "next_cursor": None}
+        position = order.key(page[-1])  # every row left out: read on past them
+    # No row kept in `READ_ON_ROUNDS` rounds: the position this call started from, which the
+    # next call reads afresh.
+    start = cursor if cursor is not None else _next_cursor(sort, _start_key(sort))
+    return {"items": [], "next_cursor": start}
 
 
 @dataclass(frozen=True)
@@ -1372,8 +1396,7 @@ def _listing_keys(
     them with it, until it holds the page plus one. Both merged in order are the result."""
     r = t.request.c
     mine, to, target = listing.mine, listing.to, listing.target
-    where = list(listing.where)
-    since = [order.after(after)] if after is not None else []
+    since =[order.after(after)] if after is not None else []
     if to == "me":
         visible = [request_sql.addressed(mine)]
     elif to == "all":
@@ -1388,15 +1411,17 @@ def _listing_keys(
         conn.execute(
             select(*keys)
             .select_from(order.source)
-            .where(*where, *plain, *visible, *since)
+            .where(*listing.where, *plain, *visible, *since)
             .order_by(*order.ordered())
             .limit(limit + 1)
         ).all()
     )
+    bound = []
     if len(taken) > limit:  # nothing after A's last key can be on this page
-        where.append(not_(order.after(order.key(taken[-1]))))
+        bound.append(not_(order.after(order.key(taken[-1]))))
     decided_by = [r[name] for name in (*request_sql.DECIDED_BY, *_ADDRESS)] + keys[3:]
-    leftover = select(*decided_by).select_from(order.source).where(*where, not_(and_(*plain)))
+    leftover = select(*decided_by).select_from(order.source)
+    leftover = leftover.where(*listing.where, *bound, not_(and_(*plain)))
     # By id: under READ COMMITTED a request can change between the statements. One that got a
     # `cover` after A read it as plain is read again by B; the later read wins, as its key is
     # the request's newer place and the rule that now decides it is B's (3c9e5a71).
@@ -1414,10 +1439,17 @@ def _listing_keys(
     return sorted(rows.values(), key=order.key, reverse=order.descending)[: limit + 1]
 
 
-def _cursor_of(order: _Order, row: Any) -> str:
-    """The cursor after `row`, in `_key`'s shape: the time as text."""
-    *head, at, row_id = order.key(row)
-    return _next_cursor(order.sort, [*head, at.isoformat(), row_id])
+def _cursor_at(sort: str, key: tuple[Any, ...]) -> str:
+    """A cursor at `_Order.key`'s `key`, in `_key`'s shape: the time as text."""
+    *head, at, row_id = key
+    return _next_cursor(sort, [*head, at.isoformat(), row_id])
+
+
+def _start_key(sort: str) -> list[Any]:
+    """A cursor's `k` before every request in `sort`'s order: it names no request."""
+    if sort == "date":  # newest first
+        return [_START_LATEST, _START_ID]
+    return [0 if sort == "priority" else "", _START_EARLIEST, _START_ID]
 
 
 def _all_redecided(
@@ -1578,7 +1610,7 @@ def _all_page(
         )
     )
     page = merged[:limit]
-    next_cursor = _cursor_of(order, page[-1][0]) if len(merged) > limit else None
+    next_cursor = _cursor_at(sort, order.key(page[-1][0])) if len(merged) > limit else None
     source = {row.id: n for row, n in page}
     extras = {row.id: None if n is None else listings[n][1] for row, n in page}
     decided = _all_redecided(conn, caller, listings, source, status, class_, asked_by)

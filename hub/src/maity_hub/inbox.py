@@ -168,7 +168,10 @@ def owners_alone(conn: Connection, requests: Iterable[Any]) -> set[str]:
     return found
 
 
-def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
+def may_read(
+    conn: Connection, request: Any, mine: Membership, alone: set[str] | None = None
+) -> bool:
+    """`alone`: `owners_alone` read already for a batch holding `request`, else read here."""
     # Restated in SQL for a request `request_sql.plain` lets through by `request_sql.may_read`.
     if is_asker(request, mine):
         return True
@@ -177,7 +180,9 @@ def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
     # `originally_addressed`: it follows what it passed on.
     if addressed_to(conn, request, mine) or originally_addressed(conn, request, mine):
         return True
-    return mine.may("requests:answer") and not owners_alone(conn, [request])
+    if not mine.may("requests:answer"):
+        return False
+    return request.id not in (owners_alone(conn, [request]) if alone is None else alone)
 
 
 def needs_a_human(request: Any, mine: Membership) -> str | None:
