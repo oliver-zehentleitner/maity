@@ -15939,6 +15939,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const viView = () => main.querySelector("section.view-visitor");
   // What a visitor can press: nothing but the Report control (§16.8, tsk-7ze5w6ymf7bw).
   const viPress = () => viView().querySelectorAll("button, input, select, textarea").filter((e) => !e.classList.contains("report-open"));
+  // The stored public page is a visitor's, read without a session: a signed-in reader who is no member
+  // gets the project's member views instead (the owner, 2026-11-19; the outsider's block below).
+  let viOut = true;
+  const viOutGet = win.Maity.api.get;
+  win.Maity.api.get = (p) => (viOut && (p === "/auth/session" || p === "/me") ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : viOutGet(p));
   await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "board" && viAsked[0] === "/public/pages/stranger/tool/board"
     && text(viView()).includes("A <b>card</b>") && text(viView()).includes("A member")
@@ -15952,47 +15957,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }
   await go("#/stranger/tool/team"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "team" && viAsked.includes("/public/pages/stranger/tool/team")
-    && text(viView()).includes("(sam)") && text(viView()).includes("2 ×")
+    && text(viView()).includes("Sam")
     && viView().querySelectorAll("a.view-tab").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/team") && a.getAttribute("aria-current") === "page"),
-    "visitor: the Team page is at /team, its people listed and its tab current");
+    "visitor: the Team page is at /team, its people listed and its tab current " + JSON.stringify(viView() && text(viView()).slice(0, 200)));
   await go("#/stranger/tool/tasks/tsk-1"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "card" && viAsked.includes("/public/pages/stranger/tool/tasks/tsk-1")
-    && text(viView()).startsWith("A <b>card</b>") && text(viView().querySelector(".about")).includes("Steps") && text(viView()).includes("An agent")
+    && text(viView()).includes("A <b>card</b>") && text(viView()).includes("Steps")
     && !viView().querySelector("img") && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || ""))
-    && viView().querySelectorAll("a.view-tab").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/board") && a.getAttribute("aria-current") === "page") && !viPress().length,
-    "visitor: a card's own page, its Markdown drawn without raw HTML, the project's tabs above it, and nothing to press");
-  // Report what the page shows (§16.8, tsk-7ze5w6ymf7bw), named as the page names it; ?report opens the form.
-  {
-    const rpPost = win.Maity.api.post, rpSent = [];
-    win.Maity.api.post = (p, body) => { if (p === "/reports") rpSent.push(body); return rpPost(p, body); };
-    const rpOpen = () => viView().querySelector("button.report-open");
-    const rpSend = async (reason) => {
-      rpOpen().click(); await tick();
-      const f = viView().querySelector("form.report-form");
-      f.querySelector("select").value = reason;
-      f.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-    };
-    const rpCardLabel = rpOpen() && rpOpen().getAttribute("aria-label");
-    const rpCounts = [viView().querySelectorAll(".report-open").length];
-    await rpSend("spam");
-    const rpCardSent = viView().querySelector(".report-sent");
-    const rpTargets = [];
-    for (const [hash, kind] of [["#/stranger/tool", "project"], ["#/stranger/agents/overview", "agent"]]) {
-      await go(hash); for (let k = 0; k < 4; k++) await tick();
-      if (viView() && rpOpen()) { rpCounts.push(viView().querySelectorAll(".report-open").length); await rpSend("other"); rpTargets.push(kind); }
-    }
-    win.Maity.api.post = rpPost;
-    expect(rpCardLabel === "Report this card to the instance's admins" && rpCardSent && rpCardSent.querySelector("a").getAttribute("href").endsWith("/account/reports")
-      && JSON.stringify(rpSent.map((b) => b.target)) === JSON.stringify([{ type: "card", id: "tsk-1", project: "stranger/tool" }, { type: "project", id: "stranger/tool" },
-        { type: "profile", id: "stranger/overview" }])
-      && rpSent[0].reason === "spam" && !("text" in rpSent[0]) && JSON.stringify(rpCounts) === "[1,1,1]",
-      "report: a public card, project and agent each send their public name, and the sent line links Your account → Reports " + JSON.stringify([rpCardLabel, rpTargets, rpSent.map((b) => b.target)]));
-    await go("#/stranger/tool?report"); for (let k = 0; k < 6; k++) await tick();
-    const rpAsked = viView() && viView().querySelector("form.report-form");
-    expect(rpAsked && rpOpen().hidden && rpOpen().getAttribute("aria-expanded") === "true",
-      "report: ?report on a public page opens the form at once (the sign-in link's way back) " + JSON.stringify([!!viView(), !!rpAsked, rpOpen() && rpOpen().hidden]));
-    await go("#/stranger/tool/tasks/tsk-1"); for (let k = 0; k < 4; k++) await tick();
-  }
+    && !viPress().length,
+    "visitor: a card's own page, its Markdown drawn without raw HTML, and nothing to press " + JSON.stringify(viView() && text(viView()).slice(0, 200)));
+  // Signed in, a public card, project and agent are reported from the outsider's member views (the block below).
   const viNotes = viView().querySelectorAll("li").filter((li) => li.getAttribute("data-note"));
   expect(viNotes.length === 2 && text(viNotes[0]).includes("A member") && text(viNotes[0]).includes("note") && !viNotes[0].querySelector("img")
     && text(viNotes[1]).includes("Removed.") && text(viNotes[1]).includes("dismissed") && !text(viNotes[0]).includes("open"),
@@ -16001,15 +15975,22 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && !text(viNotes[1]).includes("edited"), "visitor: an edited note says who edited it, when and why, the reason as text; a removed one no mark " + JSON.stringify(text(viNotes[0])));
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "project" && text(viView()).includes("Sam")
-    && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || "")) && text(viView()).includes("Cards done: 3")
+    && !viView().querySelectorAll("a").some((a) => /javascript:/.test(a.getAttribute("href") || ""))
     && !text(viView()).includes("Pull requests merged"),
-    "visitor: the overview, no unsafe link and no counter the hub left empty");
-  expect(text(viView()).includes("Recently") && text(viView()).includes("#1 <b>merged</b>") && text(viView()).includes("Decided: tsk-1")
-    && viView().querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/s/t/pull/1")
-    && text(viView()).includes("Humans online: 1") && text(viView()).includes("Agents online: 2") && !viView().querySelector("b"),
-    "visitor: the overview's snapshot, the ticker as text with a merge's link, and who is online");
+    "visitor: the overview, no unsafe link and no counter the hub left empty " + JSON.stringify(viView() && text(viView()).slice(0, 300)));
+  {
+    // The figures band draws its numbers in <b>; a <b> from the hub's text would be one of these words.
+    const viSnap = [text(viView()).includes("Decided: tsk-1"), viView().querySelectorAll("a").some((a) => a.getAttribute("href") === "https://github.com/s/t/pull/1"),
+      !viView().querySelectorAll("b").some((b) => ["merged", "title", "one", "x"].includes(text(b)))];
+    expect(viSnap.every(Boolean), "visitor: the overview's snapshot, the ticker as text with a merge's link, no markup from the hub's text " + JSON.stringify(viSnap));
+  }
+  viOut = false;
+  win.Maity.api.get = viOutGet;
+  await win.Maity.api.get("/auth/session");
   // §16.13, "Where it is": a public address the dashboard draws ends with the product line; a
   // stored public page the hub put into <main> stands without it, the next view has it again.
+  // Signed in, an agent's public page is such an address (a project's is its member views).
+  await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(productLine.querySelectorAll("a").length === 5, "product line: under a public address the dashboard draws");
   // From the framed sign-in to a public address: the frame stays (the visitor's page stands in it too, tsk-tp97v64vpy5z),
   // its footer in the product line's place.
@@ -16099,16 +16080,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "product line: from the framed sign-in to a public address, the frame stays, its footer in the line's place " + viFramed + JSON.stringify(viAfter));
   main.hasAttribute = (k) => k in main.attrs;
   main.setAttribute("data-public-page", "");
-  await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+  await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(!productLine.querySelectorAll("a").length, "product line: not under a stored public page the hub served");
   await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   expect(productLine.querySelectorAll("a").length === 5, "product line: back with the next view");
   delete main.hasAttribute;
-  expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
-  // The outsider's dashed tab and the starred tabs (tsk-kqn8zhptf06k A1; docs/api.md §5.1 "Stars", §6.30 Q2;
+  // The outsider's dashed tab and the starred tabs (tsk-kqn8zhptf06k A1; docs/api.md §2.3, §5.1 "Stars", §6.30 Q2;
   // web/context/views.md f461c919): a public project one is no member of is a dashed tab for the browser
-  // session, kept in sessionStorage; a starred one is a dashed tab among one's tabs, after start_tabs.
+  // session, kept in sessionStorage; a starred one is a dashed tab among one's tabs, after start_tabs. The tab
+  // opens the project's member views, Overview, Board, Team and Why, with what an outsider may not do left out,
+  // read from the member routes the hub opens to an outsider (#2001; Why's routes pending a contract addition
+  // there), which the fixture hub answers as it does; never the stored public page (the owner, 2026-11-19).
   {
     const M_ = win.Maity;
     const ssStore = {}, lsStore = {};
@@ -16131,30 +16114,168 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const otRefusal = (why, extra) => () => Promise.reject(new M_.api.ApiError("refused", 400, "/me", "invalid", Object.assign({ fields: { starred: why } }, extra || {})));
     const otPatches = [];
     const otRealPatch = M_.api.patch;
-    const otRecord = (path, body) => { otPatches.push([path, body]); return otRealPatch(path, body); };
+    // Every write under the project, and every report sent: an outsider writes nothing there.
+    const otWrites = [], rpSent = [];
+    const otPost = M_.api.post, otPut = M_.api.put, otDel = M_.api.del;
+    const otWrote = (method, p) => { if (String(p).startsWith("/projects/stranger")) otWrites.push(method + " " + p); };
+    M_.api.post = (p, b) => { otWrote("POST", p); if (p === "/reports") rpSent.push(b); return otPost(p, b); };
+    M_.api.put = (...a) => { otWrote("PUT", a[0]); return otPut(...a); };
+    M_.api.del = (...a) => { otWrote("DELETE", a[0]); return otDel(...a); };
+    const otRecord = (path, body) => { otWrote("PATCH", path); otPatches.push([path, body]); return otRealPatch(path, body); };
     M_.api.patch = otRecord;
-    await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+    // The member routes an outsider reads (#2001's `OUTSIDE_READS`), and Why's two, pending a contract addition there.
+    const OT_READS = /^\/projects\/stranger\/tool(\/members(\/[^/?]+)?|\/tasks(\/[^/?]+(\/history|\/notes)?)?|\/logo|\/banner|\/keep-the-why\/(export|bodies))?(\?.*)?$/;
+    const otFrom = viAll.length, otPublicFrom = viAsked.length;
+    const otViews = () => (header.querySelector("nav.views") ? header.querySelector("nav.views").querySelectorAll("a") : []);
+    const otShown = () => otViews().map((a) => [text(a), (a.getAttribute("href") || "").replace(/^#/, ""), a.getAttribute("aria-current") === "page"]);
+    const otStar = () => (otTab("stranger/tool") && otTab("stranger/tool").parentNode.querySelector(".tab-star")) || null;
+    const rpSend = async (box, reason) => {
+      box.querySelector("button.report-open").click(); await tick();
+      const f = box.querySelector("form.report-form");
+      f.querySelector("select").value = reason;
+      f.dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
+    };
+    // The project's own address is its Overview, the dashed tab current.
+    await go("#/stranger/tool"); for (let k = 0; k < 6; k++) await tick();
     const tool = otTab("stranger/tool");
-    expect(tool && tool.getAttribute("aria-current") === "page" && text(tool).includes("Tool") && text(tool).includes("not a member")
+    expect(M_.route.current().path === "/stranger/tool/overview" && main.querySelector("section.view-overview") && !viView()
+      && tool && tool.getAttribute("aria-current") === "page" && text(tool).includes("Tool") && text(tool).includes("not a member")
       && otLinks()[otLinks().length - 1] === tool && !otLinks().some((a) => a !== tool && a.getAttribute("aria-current"))
-      && !tool.getAttribute("data-project") && !tool.attrs.draggable && !otNav().querySelector(".tab-star")
-      && (tool.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool",
-      "outsider: a public project one is no member of is a dashed tab after the member tabs, the current one, with no star yet");
-    expect(otSession() === "stranger/tool" && !Object.keys(lsStore).some((k) => k.includes("outsider")) && !(lsStore[LOCAL] || "").includes("stranger"),
-      "outsider: the dashed tab is kept in sessionStorage, not in localStorage " + JSON.stringify([ssStore, Object.keys(lsStore)]));
-    // Another page of the project is the same tab; another public project a tab of its own.
-    await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
-    viPages["/public/pages/stranger/other"] = Object.assign({}, viPages["/public/pages/stranger/tool"], { path: "/stranger/other",
-      data: Object.assign({}, viPages["/public/pages/stranger/tool"].data, { name: "Other", full_name: "stranger/other" }) });
-    await go("#/stranger/other"); for (let k = 0; k < 4; k++) await tick();
-    expect(otSession() === "stranger/tool,stranger/other" && otTab("stranger/other").getAttribute("aria-current") === "page"
-      && !otTab("stranger/tool").getAttribute("aria-current") && text(otTab("stranger/tool")).includes("Tool"),
-      "outsider: each public project opened gets its own dashed tab, the board page no second one " + otSession());
-    delete viPages["/public/pages/stranger/other"];
-    // A move to All projects keeps them for the session; a fresh browser session has none.
+      && !tool.getAttribute("data-project") && !tool.attrs.draggable
+      && (tool.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool/overview",
+      "outsider: a public project one is no member of is a dashed tab after the member tabs, linking to its Overview, which is drawn with the tab current "
+      + JSON.stringify([M_.route.current().path, tool && tool.getAttribute("href"), !!viView()]));
+    expect(otStar() && otStar().getAttribute("aria-pressed") === "false" && otStar().getAttribute("aria-label") === "Star Tool" && otStar().getAttribute("title") === "Star Tool",
+      "outsider: this session's dashed tab carries an empty star of its own, the project's id known from its view");
+    expect(otSession() === "stranger/tool" && JSON.parse(ssStore[SESSION])[0].id === TOOL && !Object.keys(lsStore).some((k) => k.includes("outsider")) && !(lsStore[LOCAL] || "").includes("stranger"),
+      "outsider: the dashed tab is kept in sessionStorage with the project's id, not in localStorage " + JSON.stringify([ssStore, Object.keys(lsStore)]));
+    expect(JSON.stringify(otShown()) === JSON.stringify([["Overview", "/stranger/tool/overview", true], ["Board", "/stranger/tool/board", false],
+      ["Team", "/stranger/tool/team", false], ["Why", "/stranger/tool/why", false]]),
+      "outsider: the views are Overview, Board, Team and Why, no other " + JSON.stringify(otShown()));
+    {
+      const ov = main.querySelector("section.view-overview");
+      const counts = ov.querySelectorAll("ul.overview-counts li").map((li) => li.getAttribute("data-status") + ":" + text(li.querySelector(".n")));
+      expect(!ov.querySelector("nav.overview-tabs") && text(ov).includes("3 cards") && counts.includes("open:1") && counts.includes("in_progress:1") && counts.includes("done:1")
+        && !text(ov).includes("Waiting for you") && !text(ov).includes("Latest reports") && text(ov).includes("1 human, 2 agents") && !text(ov).includes(" online"),
+        "outsider: the Overview is its Summary, the board counted from the cards they read (the security card not among them), no requests, reports or presence "
+        + JSON.stringify(counts));
+    }
+    // Report the project from its Overview (§16.8); ?report on its address opens the form there (the sign-in link's way back).
+    await rpSend(main.querySelector("section.view-overview"), "spam");
+    await go("#/stranger/tool?report"); for (let k = 0; k < 8; k++) await tick();
+    {
+      const ov = main.querySelector("section.view-overview");
+      const open = ov && ov.querySelector("button.report-open");
+      expect(M_.route.current().path === "/stranger/tool/overview" && ov && ov.querySelector("form.report-form") && open && open.hidden && open.getAttribute("aria-expanded") === "true",
+        "report: ?report on a public project's address opens the form on the outsider's Overview " + M_.route.current().path);
+    }
+    // Board: the cards they read, no write control.
+    await go("#/stranger/tool/board"); for (let k = 0; k < 6; k++) await tick();
+    {
+      const bd = main.querySelector("section.view-board");
+      const cards = bd ? bd.querySelectorAll("article").map((a) => a.getAttribute("data-card")).filter(Boolean) : [];
+      expect(bd && cards.includes("tsk-t001") && cards.includes("tsk-t002") && !cards.includes("tsk-t004") && !text(main).includes("A hidden security fix")
+        && otShown()[1][2] && otTab("stranger/tool").getAttribute("aria-current") === "page" && !viView(),
+        "outsider: the Board draws the cards they read, its tab and the dashed tab current, the not-done security card absent " + JSON.stringify(cards));
+      expect(!btn(main, "New card") && !bd.querySelector(".card-actions") && !bd.querySelector("article.movable") && !bd.querySelectorAll("article").some((a) => a.attrs.draggable),
+        "outsider: the Board has no write control: no New card, no .card-actions (Move, Assign, Order), no draggable card");
+    }
+    // A card's panel: its notes and history read, no Watch, no Add a note; Report stays.
+    await go("#/stranger/tool/tasks/tsk-t001"); for (let k = 0; k < 8; k++) await tick();
+    {
+      const panel = main.querySelector("aside.card-panel");
+      const notes = panel ? panel.querySelectorAll("li.card-note") : [];
+      const label = panel && panel.querySelector("button.report-open") && panel.querySelector("button.report-open").getAttribute("aria-label");
+      expect(panel && text(panel).includes("Parse the config file") && notes.length === 1 && text(notes[0]).includes("The format is TOML.")
+        && !panel.querySelector("button.card-watch") && !panel.querySelector("form.card-note-form") && !panel.querySelector(".card-actions")
+        && label === "Report this card to the instance's admins",
+        "outsider: a card's panel shows its notes, with no Watch (button.card-watch), no Add a note (form.card-note-form), no .card-actions; Report stays " + label);
+      await rpSend(panel, "other");
+      const sent = panel.querySelector(".report-sent");
+      expect(sent && sent.querySelector("a").getAttribute("href").endsWith("/account/reports"), "report: the sent line links Your account → Reports");
+    }
+    await go("#/stranger/tool/tasks/tsk-t004"); for (let k = 0; k < 8; k++) await tick();
+    expect(!text(main).includes("A hidden security fix") && !text(main).includes("the hole, in detail") && !viView(),
+      "outsider: the not-done security card is not found at its own address, its text nowhere");
+    // Team: the members they read, no presence, no write control.
+    await go("#/stranger/tool/team"); for (let k = 0; k < 6; k++) await tick();
+    {
+      const rows = main.querySelectorAll("tr.member").map((tr) => tr.getAttribute("data-member"));
+      const heads = main.querySelectorAll("th").map(text);
+      expect(rows.join() === "hum-sam,agt-tool-bot,agt-tool-mine" && otShown()[2][2] && !heads.includes("Presence") && !viView(),
+        "outsider: the Team lists the members they read, its tab current, no presence column " + JSON.stringify([rows, heads]));
+      expect(!main.querySelector("a.members-invite-user") && !byId("members-mine") && !main.querySelector("a.member-chat") && !btn(main, "Manage")
+        && !main.querySelector("nav.team-tabs") && !main.querySelectorAll("a").some((a) => (a.getAttribute("href") || "").endsWith("/stranger/tool/agents")),
+        "outsider: the Team has no write control: no Invite user, no Only my agents, no Chat, no Manage (their own agent's neither), no Organisation tab, no way to join an agent");
+    }
+    await go("#/stranger/tool/team/agt-tool-mine"); for (let k = 0; k < 6; k++) await tick();
+    {
+      const tabs = main.querySelectorAll("a.member-tab").map(text);
+      expect(JSON.stringify(tabs) === '["Cards"]' && !main.querySelector("a.member-chat") && !main.querySelector(".member-actions-menu") && text(main).includes("Helper"),
+        "outsider: a member's page offers Cards alone, no Chat and no Actions, their own agent's too " + JSON.stringify(tabs));
+    }
+    // Why: the project's export (its routes pending a contract addition in #2001), and nothing to write.
+    await go("#/stranger/tool/why"); for (let k = 0; k < 15; k++) await tick();
+    {
+      const why = main.querySelector("section.view-why");
+      const pressed = why ? why.querySelectorAll("button, input, select, textarea, form").map((e) => e.tagName + ":" + text(e)) : null;
+      expect(why && text(why).includes("overview page") && otShown()[3][2] && otTab("stranger/tool").getAttribute("aria-current") === "page" && !viView()
+        && viAll.slice(otFrom).includes("/projects/stranger/tool/keep-the-why/export"),
+        "outsider: Why draws the project's export, its tab and the dashed tab current " + JSON.stringify([!!why, why && text(why).slice(0, 80)]));
+      expect(JSON.stringify(pressed) === JSON.stringify(["BUTTON:Read again"]), "outsider: Why has no write control, Read again (a read in this page) alone " + JSON.stringify(pressed));
+    }
+    // A view an outsider does not read is not found, never the public page; Overview's other tabs are its Summary.
+    {
+      const before = viAsked.length, wrong = [];
+      for (const at of ["inbox", "settings", "chat", "organisation"]) {
+        await go("#/stranger/tool/" + at); for (let k = 0; k < 6; k++) await tick();
+        if (!main.querySelector("section.view-unknown") || viView() || text(main).includes("A tool for tools.")) wrong.push(at);
+      }
+      expect(!wrong.length && viAsked.length === before,
+        "outsider: inbox, settings, chat and organisation are not found, never the public page " + JSON.stringify([wrong, viAsked.slice(before)]));
+      for (const at of ["overview/project", "overview/swarm"]) {
+        await go("#/stranger/tool/" + at); for (let k = 0; k < 6; k++) await tick();
+        expect(M_.route.current().path === "/stranger/tool/overview" && main.querySelector("section.view-overview") && !viView(),
+          "outsider: /" + at + " is replaced by the Overview's Summary " + M_.route.current().path);
+      }
+    }
+    {
+      const reads = viAll.slice(otFrom).filter((p) => p.startsWith("/projects/stranger"));
+      expect(reads.length && reads.every((p) => OT_READS.test(p)) && !otWrites.length && viAsked.length === otPublicFrom,
+        "outsider: every read of the project is a member route an outsider reads, nothing is written there, no public page is read "
+        + JSON.stringify([reads.filter((p) => !OT_READS.test(p)), otWrites, viAsked.slice(otPublicFrom)]));
+    }
+    // An agent's public page stays its page, signed in too, and reports by its global name.
+    await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
+    if (viView() && viView().querySelector("button.report-open")) await rpSend(viView(), "other");
+    expect(JSON.stringify(rpSent.map((b) => b.target)) === JSON.stringify([{ type: "project", id: "stranger/tool" }, { type: "card", id: "tsk-t001", project: "stranger/tool" },
+      { type: "profile", id: "stranger/overview" }]) && rpSent[0].reason === "spam" && !("text" in rpSent[0]),
+      "report: signed in, a public project (its Overview), card (its panel) and agent each send their name " + JSON.stringify(rpSent.map((b) => b.target)));
+    // The empty star on this session's tab (§5.1): PATCH /me with `starred` whole, the project's id last; a refusal says why.
+    await go("#/stranger/tool/board"); for (let k = 0; k < 6; k++) await tick();
+    M_.api.patch = otRefusal("not_public");
+    otStar().click(); for (let k = 0; k < 3; k++) await tick();
+    expect(otStar() && otStar().getAttribute("aria-pressed") === "false" && otSaid() === "Tool is not starred: the project is not public" && otSession() === "stranger/tool",
+      "outsider: a refused star is said, the tab stays this session's own, unstarred " + otSaid());
+    M_.api.patch = otRecord;
+    otStar().click(); for (let k = 0; k < 4; k++) await tick();
+    {
+      const sent = otPatches.slice();
+      expect(sent.length === 1 && sent[0][0] === "/me" && JSON.stringify(sent[0][1]) === JSON.stringify({ starred: [TOOL] })
+        && otTab("stranger/tool").classList.contains("starred") && otStar().getAttribute("aria-pressed") === "true" && otTab("stranger/tool").getAttribute("data-project") === TOOL
+        && otTab("stranger/tool").attrs.draggable === "true" && otTab("stranger/tool").getAttribute("aria-current") === "page"
+        && otSaid() === "Tool is starred; its tab stays in your row" && (await M_.api.get("/me")).member.starred.map((s) => s.id).join() === TOOL,
+        "outsider: the empty star sends PATCH /me {starred: [...existing, id]}, and the tab is a starred one, still current " + JSON.stringify([sent, otSaid()]));
+    }
+    // Unstarred again from the tab: this session's own tab, its empty star back.
+    otStar().click(); for (let k = 0; k < 4; k++) await tick();
+    expect(otStar() && otStar().getAttribute("aria-pressed") === "false" && !otTab("stranger/tool").classList.contains("starred") && otSession() === "stranger/tool",
+      "outsider: unstarred again, the tab is this session's own with its empty star");
+    otPatches.length = 0;
+    // A move to All projects keeps it for the session; a fresh browser session has none.
     await go("#/all"); for (let k = 0; k < 3; k++) await tick();
-    expect(otTab("stranger/tool") && otTab("stranger/other") && !otTab("stranger/tool").getAttribute("aria-current")
-      && otLinks()[0].getAttribute("aria-current") === "page", "outsider: the dashed tabs stay on All projects, which is current");
+    expect(otTab("stranger/tool") && !otTab("stranger/tool").getAttribute("aria-current")
+      && otLinks()[0].getAttribute("aria-current") === "page", "outsider: the dashed tab stays on All projects, which is current");
     Object.keys(ssStore).forEach((k) => { delete ssStore[k]; });
     await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 3; k++) await tick();
     expect(!otNav().querySelector("a.outsider") && otIds() === MA + "," + SA, "outsider: a fresh browser session starts without the dashed tabs, the member tabs kept");
@@ -16209,7 +16330,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await otRealPatch("/me", { starred: [TOOL] });
     starOf().click(); for (let k = 0; k < 3; k++) await tick();
     expect(otPatches.length === 1 && otPatches[0][0] === "/me" && JSON.stringify(otPatches[0][1]) === JSON.stringify({ starred: [] })
-      && starredTab() && !starredTab().classList.contains("starred") && !otNav().querySelector(".tab-star") && otSession() === "stranger/tool"
+      && starredTab() && !starredTab().classList.contains("starred") && starOf() && starOf().getAttribute("aria-pressed") === "false" && otSession() === "stranger/tool"
       && otSaid() === "stranger/tool is no longer starred; its tab stays until you close it",
       "starred: the star's button sends starred without the project and leaves an unstarred dashed tab for the session " + JSON.stringify(otPatches));
     // The fixture hub's refusals, as hub/stars.py's.
@@ -16231,23 +16352,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
   }
   expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");
-  // The member Overview's own address (§6.20's badge links there) shows the public overview at that
-  // address, its Overview tab current (§16.9, the maintainer's decision of 2026-11-01); its swarm tab is
-  // the members' alone, a non-member is taken to the overview.
+  // Without a session, the member Overview's own address (§6.20's badge links there) shows the public
+  // overview at that address, its Overview tab current (§16.9, the maintainer's decision of 2026-11-01).
+  // Signed in, it is the outsider's member Overview (the block above).
   const viOverview = (label) => {
     const tab = viView() && viView().querySelectorAll("a.view-tab").find((a) => a.getAttribute("aria-current") === "page");
     expect(viView() && viView().getAttribute("data-kind") === "project" && viAsked[viAsked.length - 1] === "/public/pages/stranger/tool"
       && tab && (tab.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool" && !text(main).includes("You are not a member"),
       label + " " + JSON.stringify([viView() && viView().getAttribute("data-kind"), viAsked.slice(-2), tab && tab.getAttribute("href")]));
   };
-  for (const at of ["overview", "overview/project"]) {
-    await go("#/stranger/tool/" + at); for (let k = 0; k < 4; k++) await tick();
-    viOverview("visitor: signed in, /" + at + " of a public project one is no member of is its public overview");
-    expect(win.Maity.route.current().path === "/stranger/tool/" + at, "visitor: signed in, /" + at + " keeps its address");
-  }
-  await go("#/stranger/tool/overview/swarm"); for (let k = 0; k < 4; k++) await tick();
-  viOverview("visitor: signed in, a non-member's /overview/swarm shows the public overview");
-  expect(win.Maity.route.current().path === "/stranger/tool/overview", "visitor: signed in, a non-member's /overview/swarm is replaced by /overview");
   // An agent may be named `overview`: its page is its own, not a project's overview.
   await go("#/stranger/agents/overview"); for (let k = 0; k < 4; k++) await tick();
   expect(viView() && viView().getAttribute("data-kind") === "agent" && viAsked[viAsked.length - 1] === "/public/pages/stranger/agents/overview",

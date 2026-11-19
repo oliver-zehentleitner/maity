@@ -18275,6 +18275,14 @@
     "en": "cf003902fae432f0",
     "text": "0154b9114551545f"
   },
+  "tabs.star": {
+    "en": "ee6e629a98dc66cd",
+    "text": "2473ffca3944f627"
+  },
+  "tabs.star_failed": {
+    "en": "6dabc29ec91be16e",
+    "text": "b54e62e93d2c5763"
+  },
   "tabs.star_refused.duplicate": {
     "en": "7b81af33a1c1d982",
     "text": "2273bd65b818fa2b"
@@ -18294,6 +18302,10 @@
   "tabs.star_refused.too_many_hidden": {
     "en": "4caf1d14d04ed698",
     "text": "b3dda20006da9694"
+  },
+  "tabs.starred_now": {
+    "en": "a894db587912930d",
+    "text": "aa818ee8a834f22b"
   },
   "tabs.unstar": {
     "en": "35927f42380e942f",

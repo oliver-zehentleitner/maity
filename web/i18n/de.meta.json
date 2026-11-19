@@ -19091,6 +19091,14 @@
     "en": "cf003902fae432f0",
     "text": "512c0eed071cc99c"
   },
+  "tabs.star": {
+    "en": "ee6e629a98dc66cd",
+    "text": "c203d321fcc848ef"
+  },
+  "tabs.star_failed": {
+    "en": "6dabc29ec91be16e",
+    "text": "c5bb12a1e66d7be6"
+  },
   "tabs.star_refused.duplicate": {
     "en": "7b81af33a1c1d982",
     "text": "aa90b11cc153a1b2"
@@ -19110,6 +19118,10 @@
   "tabs.star_refused.too_many_hidden": {
     "en": "4caf1d14d04ed698",
     "text": "0859fb022225d54c"
+  },
+  "tabs.starred_now": {
+    "en": "a894db587912930d",
+    "text": "ffbde103034924ee"
   },
   "tabs.unstar": {
     "en": "35927f42380e942f",

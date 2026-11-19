@@ -164,7 +164,8 @@ window.Maity = window.Maity || {};
     const reporting = M.report && ctx.me && ctx.me.kind === "human" && ctx.slug ? M.report.control({ type: "card", id: c.id, project: ctx.slug }, "card") : null;
     const box = h("aside", { class: "card-panel", "aria-labelledby": "card-panel-title" },
       h("div", { class: "card-panel-head" }, h("span", { class: "card-id" }, c.id),
-        h("span", { class: "card-panel-actions" }, watchButton, reporting ? reporting.button : null,
+        // An outsider (§2.3) watches nothing (…/watch is a member's); the report stays theirs.
+        h("span", { class: "card-panel-actions" }, ctx.outsider ? null : watchButton, reporting ? reporting.button : null,
           h("button", { type: "button", class: "small card-panel-close", onclick: () => close() }, M.t("cardpanel.close")))),
       watchStatus.el,
       reporting ? reporting.slot : null,
@@ -175,7 +176,7 @@ window.Maity = window.Maity || {};
         : h("p", { class: "muted" }, M.t("cardpanel.description.none")),
       (c.links || []).length ? [h("h3", null, M.t("cardpanel.links")), h("ul", { class: "card-links" }, c.links.map(linkItem))] : null,
       // The restricted text (§6.4): a box for a member in the set alone, read when the card opens.
-      M.restricted ? M.restricted.cardBox(ctx, c) : null,
+      M.restricted && !ctx.outsider ? M.restricted.cardBox(ctx, c) : null,
       h("h3", null, M.t("cardpanel.notes")), notesBox,
       updatesBox,
       h("h3", null, M.t("cardpanel.history")), historyBox);
@@ -188,8 +189,9 @@ window.Maity = window.Maity || {};
     // is the end of it; a closed project takes no edit, a removal still.
     const closed = () => !!(ctx.project && ctx.project.state === "archived");
     const mine = (n) => !!(ctx.me && n.author && n.author.member_id === ctx.me.id);
-    const mayEdit = (n) => !removedNote(n) && !closed() && (mine(n) || !!ctx.canAdmin);
-    const mayRemove = (n) => !removedNote(n) && !!ctx.canAdmin;
+    // An outsider (§2.3) edits and removes no note, not even one of their own from before.
+    const mayEdit = (n) => !ctx.outsider && !removedNote(n) && !closed() && (mine(n) || !!ctx.canAdmin);
+    const mayRemove = (n) => !ctx.outsider && !removedNote(n) && !!ctx.canAdmin;
     const reading = () => notesList.getAttribute("aria-busy") === "true";
     const noteItem = (id) => Array.from(notesBox.querySelectorAll("li.card-note")).find((li) => li.getAttribute("data-note") === id);
     // After an edit, removal or post, the focus moves on only when it is still where
@@ -397,7 +399,8 @@ window.Maity = window.Maity || {};
       append(clear(notesList), list.length
         ? h("ul", { class: "card-note-list" }, rows)
         : h("p", { class: "muted" }, M.t("cardpanel.notes.none")), removeStatus.el);
-      if (closed()) {
+      // An outsider (docs/api.md §2.3) reads the notes and adds none.
+      if (closed() || ctx.outsider) {
         if (noteFormEl) noteFormEl.remove();
         noteFormEl = null;
       } else if (!noteFormEl) {
@@ -484,7 +487,7 @@ window.Maity = window.Maity || {};
     async function updates() {
       const run = ++updatesRun; // a read still on its way when the watch changes draws nothing
       clear(updatesBox);
-      if (!watching) return;
+      if (!watching || ctx.outsider) return;
       try {
         const page = await M.api.get(ctx.base + "/messages?type=update&limit=" + UPDATES_PAGE);
         if (run !== updatesRun) return;

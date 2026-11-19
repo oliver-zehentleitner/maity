@@ -57,8 +57,9 @@ window.Maity = window.Maity || {};
     store(key(me), JSON.stringify(value));
   }
 
-  // This session's outsider tabs, in the order opened: `[{full_name, name}]`, named by the full
-  // name, since the public page a non-member reads carries no project id (docs/api.md §16.9).
+  // This session's outsider tabs, in the order opened: `[{full_name, name, id}]`, named by the
+  // full name, the address they were opened at; `id` is the project view's (docs/api.md §2.3),
+  // what starring sends, null in a tab kept before any view of it was read.
   const sessionKept = (me) => "outsider." + me.id;
   function readOutsiders(me) {
     const mem = kept[sessionKept(me)] || [];
@@ -129,6 +130,9 @@ window.Maity = window.Maity || {};
     const taken = (full) => ctx.projects.some((p) => p.full_name === full) || starred.some((s) => s.full_name === full);
     return tabs.concat(readOutsiders(ctx.me).filter((t) => !taken(t.full_name)).map((t) => outsiderRow(t, false)));
   }
+  // The tabs that have a place the row moves: the member and starred ones (this session's own
+  // stay last, after them).
+  const placed = (ctx) => row(ctx).filter((p) => !p.outsider || p.starred);
   // The starred projects whose tab is closed in this browser (the tabs menu opens them again).
   function starredClosed(ctx) {
     if (!managed(ctx)) return [];
@@ -143,20 +147,22 @@ window.Maity = window.Maity || {};
     write(ctx.me, { open: on ? (s.open.includes(id) ? s.open : rest.concat(id)) : rest, known: s.known });
   }
 
-  // A public project opened by a human who is no member (app.js, the visiting path): its
-  // starred tab opens again where it is closed, else it is a tab for this session, last.
+  // A public project opened by a human who is no member (app.js, the outsider's project view,
+  // `{full_name, name, id}` from its project view): its starred tab opens again where it is
+  // closed, else it is a tab for this session, last.
   function visit(ctx, project) {
     if (!managed(ctx) || !project || ctx.projects.some((p) => p.full_name === project.full_name)) return;
-    const starred = starredRows(ctx).find((s) => s.full_name === project.full_name);
+    const starred = starredRows(ctx).find((s) => s.full_name === project.full_name || (project.id && s.id === project.id));
     if (starred) {
       if (!isOpen(ctx, starred.id)) setOpen(ctx, starred.id, true);
       return;
     }
+    const entry = { full_name: project.full_name, name: project.name || null, id: project.id || null };
     const list = readOutsiders(ctx.me);
     const at = list.findIndex((t) => t.full_name === project.full_name);
-    if (at < 0) writeOutsiders(ctx.me, list.concat({ full_name: project.full_name, name: project.name || null }));
-    else if (project.name && list[at].name !== project.name) {
-      list[at] = { full_name: project.full_name, name: project.name };
+    if (at < 0) writeOutsiders(ctx.me, list.concat(entry));
+    else if ((entry.name && list[at].name !== entry.name) || (entry.id && list[at].id !== entry.id)) {
+      list[at] = { full_name: entry.full_name, name: entry.name || list[at].name || null, id: entry.id || list[at].id || null };
       writeOutsiders(ctx.me, list);
     }
   }
@@ -174,8 +180,19 @@ window.Maity = window.Maity || {};
       : ctx.me.starred.filter((s) => s.id !== row.id);
     const outsiders = readOutsiders(ctx.me);
     if (!outsiders.some((t) => t.full_name === row.full_name)) {
-      writeOutsiders(ctx.me, outsiders.concat({ full_name: row.full_name, name: row.name !== row.full_name ? row.name : null }));
+      writeOutsiders(ctx.me, outsiders.concat({ full_name: row.full_name, name: row.name !== row.full_name ? row.name : null, id: row.id || null }));
     }
+    ctx.me.starred = now;
+    return now;
+  }
+  // Stars this session's tab of a project (§5.1): `starred` again whole, the project's id last.
+  // The answer's list is the row's from then on: the project is a starred tab, appended where
+  // this browser had not known it (state's `known` rule). A refusal changes nothing.
+  async function star(ctx, row) {
+    const list = (Array.isArray(ctx.me.starred) ? ctx.me.starred : []).map((s) => s.id).filter((id) => id !== row.id).concat(row.id);
+    const answer = await M.api.patch("/me", { starred: list });
+    const now = answer && answer.member && Array.isArray(answer.member.starred) ? answer.member.starred
+      : (Array.isArray(ctx.me.starred) ? ctx.me.starred : []).concat({ id: row.id, full_name: row.full_name });
     ctx.me.starred = now;
     return now;
   }
@@ -234,5 +251,5 @@ window.Maity = window.Maity || {};
     store(filterKey(me), on ? "1" : null);
   }
 
-  M.tabs = { open, row, starredClosed, isOpen, setOpen, visit, closeOutsider, unstar, move, moveBefore, inStart, startWith, keepAsStart, onlyOpen, setOnlyOpen, managed };
+  M.tabs = { open, row, placed, starredClosed, isOpen, setOpen, visit, closeOutsider, unstar, star, move, moveBefore, inStart, startWith, keepAsStart, onlyOpen, setOnlyOpen, managed };
 })(window.Maity);

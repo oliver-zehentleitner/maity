@@ -20,18 +20,23 @@ window.Maity = window.Maity || {};
   // watch: the event kinds that change what the view shows; one arriving
   // from someone else offers a reload. The inbox follows the open counts,
   // the chat reads its own messages.
+  // outsider: the view is one of those a signed-in human who is no member of a public project
+  // reads there (docs/api.md §2.3; the owner, 2026-11-19: no separate view for outsiders, the
+  // member views with what they may not do left out; web/context/views.md f461c919). Each such
+  // route is switched on here alone, Why's included, whose reads wait for a contract addition
+  // of the hub's outsider read (#2001); every other route is not found for an outsider.
   const NAV = [
     { route: "inbox", get label() { return M.t("nav.inbox"); } },
     // Redrawn in place on task_*, request_*, probe_observed and member_* (js/overview.js).
-    { route: "overview", get label() { return M.t("nav.overview"); } },
-    { route: "board", get label() { return M.t("nav.board"); }, watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
+    { route: "overview", get label() { return M.t("nav.overview"); }, outsider: true },
+    { route: "board", get label() { return M.t("nav.board"); }, outsider: true, watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
     // The whole contract (js/contract.js, §6.8): opened from the overview's
     // Contract row and a contract card's section; its tab is the overview's.
     { route: "contract", get label() { return M.t("nav.contract"); }, tab: false, current: "overview" },
     // One card (/<owner>/<slug>/tasks/<id>, an id's link, js/ids.js): the board
     // with that card marked; its tab is the board's.
-    { route: "tasks", view: "board", get label() { return M.t("nav.board"); }, tab: false, current: "board", watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
-    { route: "team", view: "members", get label() { return M.t("nav.members"); }, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
+    { route: "tasks", view: "board", get label() { return M.t("nav.board"); }, tab: false, current: "board", outsider: true, watch: /^task_/, get changed() { return M.t("nav.board.changed"); } },
+    { route: "team", view: "members", get label() { return M.t("nav.members"); }, outsider: true, watch: /^(member_|session_|credential_)/, get changed() { return M.t("nav.members.changed"); } },
     // The Team page's Organisation tab (js/org.js); its tab in the row is Members'.
     { route: "organisation", get label() { return M.t("nav.organisation"); }, tab: false, current: "team" },
     // One's own agents in the project (js/agents-page.js), the component of
@@ -55,7 +60,8 @@ window.Maity = window.Maity || {};
     // linked from the project's Settings, no tab of its own (the maintainer, 2026-10-31).
     { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
-    { route: "why", get label() { return M.t("nav.why"); } },
+    // For an outsider too (the owner, 2026-11-19): `outsider: false` takes it out of their nav.
+    { route: "why", get label() { return M.t("nav.why"); }, outsider: true },
     // What the agents and members have written down (js/memory.js, §19, tsk-6tqytgmcp17p).
     { route: "memory", get label() { return M.t("nav.memory"); } },
     // The jour fixe (js/jour-fixe.js, §20): its rounds, one round at jour-fixe/<id>;
@@ -67,7 +73,7 @@ window.Maity = window.Maity || {};
     // one's own at settings/mine for every human member.
     { route: "settings", get label() { return M.t("nav.settings"); }, when: (ctx) => ctx.canAdmin || ctx.me.kind === "human" },
   ];
-  const offered = (ctx, item) => (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
+  const offered = (ctx, item) => (!ctx.outsider || item.outsider === true) && (!item.admin || ctx.canAdmin) && (!item.when || item.when(ctx));
 
   // docs/api.md §6.1; moving to launch is the owner's go.
   const STATES = ["plan", "build", "review", "launch", "archived"];
@@ -1516,19 +1522,21 @@ window.Maity = window.Maity || {};
     // project is in the "+" menu, so the tabs menu stands right after the tabs (tsk-hp9gq9rmrdq2).
   }
 
-  // A public project the human is no member of (docs/api.md §5.1 "Stars"): a dashed tab that
-  // opens its public page, current while that page is shown. A starred one keeps its place
-  // among the tabs (dragged and moved as they are) and carries a filled star whose button
-  // takes the star off; this session's own tab has no star yet, since starring needs the
-  // project's id, which the public page does not carry (A2 of tsk-kqn8zhptf06k). The star is
-  // a button beside the link, not inside it: a link holds no other control.
+  // A public project the human is no member of (docs/api.md §2.3, §5.1 "Stars"): a dashed tab
+  // that opens the project's member views, its Overview first, with what an outsider may not do
+  // left out (the owner, 2026-11-19), current while one of them is shown. A starred one keeps
+  // its place among the tabs (dragged and moved as they are) and carries a filled star whose
+  // button takes the star off; this session's own tab carries an empty star that stars it, once
+  // the project's view gave its id. The star is a button beside the link, not inside it: a
+  // link holds no other control.
   function outsiderTab(ctx, p) {
     const movable = !!p.starred;
     const link = h("a", {
-      href: "/" + M.api.projectPath(p.full_name),
+      href: projectLink(p.full_name, "overview"),
       class: "outsider" + (p.starred ? " starred" : ""),
-      "aria-current": ctx.visiting === p.full_name ? "page" : null,
-      "data-project": p.id || null,
+      "aria-current": ctx.scope === "project" && ctx.outsider && ctx.slug === p.full_name ? "page" : null,
+      // Only a starred tab has a place among the tabs the row moves (this session's own stay last).
+      "data-project": p.starred ? p.id : null,
       "data-outsider": p.full_name,
       draggable: movable ? "true" : null,
       title: p.starred ? M.t("tabs.outsider_starred", { name: p.full_name }) : M.t("tabs.outsider", { name: p.full_name }),
@@ -1542,14 +1550,16 @@ window.Maity = window.Maity || {};
     projectMark(p.full_name, p.full_name.split("/").pop(), null, "small"),
     p.name,
     h("span", { class: "visually-hidden" }, ", " + outsiderSaid(p)));
-    if (!p.starred) return link;
+    // This session's tab of a project whose id no view of it has given yet: nothing to star.
+    if (!p.starred && !p.id) return link;
+    const said = p.starred ? M.t("tabs.unstar", { name: p.name }) : M.t("tabs.star", { name: p.name });
     const star = h("button", {
       type: "button",
-      class: "tab-star",
-      "aria-pressed": "true",
-      "aria-label": M.t("tabs.unstar", { name: p.name }),
-      title: M.t("tabs.unstar", { name: p.name }),
-      onclick: () => unstarTab(ctx, p),
+      class: "tab-star" + (p.starred ? "" : " unstarred"),
+      "aria-pressed": p.starred ? "true" : "false",
+      "aria-label": said,
+      title: said,
+      onclick: () => (p.starred ? unstarTab(ctx, p) : starTab(ctx, p)),
     }, M.icons.star(14));
     return h("span", { class: "outsider-tab" }, link, star);
   }
@@ -1575,14 +1585,36 @@ window.Maity = window.Maity || {};
       if (link) link.focus();
       tabsSaid(M.t("tabs.unstarred", { name: p.name }));
     }, (err) => {
-      const fields = err && err.code === "invalid" && err.details && err.details.fields;
-      const why = fields && fields.starred;
-      const hidden = err && err.details && Number(err.details.hidden) > 0 ? Number(err.details.hidden) : 0;
-      const reason = why === "too_many" && hidden ? M.t("tabs.star_refused.too_many_hidden", { hidden })
-        : Object.prototype.hasOwnProperty.call(STAR_REFUSED, why || "") ? STAR_REFUSED[why]()
-        : (err && err.message) || "";
-      tabsSaid(M.t("tabs.unstar_failed", { name: p.name, reason }));
-      if (why === "member" && ctx.refreshCounts) ctx.refreshCounts().catch(() => {});
+      const refused = starRefused(err);
+      tabsSaid(M.t("tabs.unstar_failed", { name: p.name, reason: refused.reason }));
+      if (refused.why === "member" && ctx.refreshCounts) ctx.refreshCounts().catch(() => {});
+    });
+  }
+  // A refused `starred` list (§5.1): its field's reason, and the reason in words.
+  function starRefused(err) {
+    const fields = err && err.code === "invalid" && err.details && err.details.fields;
+    const why = fields && fields.starred;
+    const hidden = err && err.details && Number(err.details.hidden) > 0 ? Number(err.details.hidden) : 0;
+    const reason = why === "too_many" && hidden ? M.t("tabs.star_refused.too_many_hidden", { hidden })
+      : Object.prototype.hasOwnProperty.call(STAR_REFUSED, why || "") ? STAR_REFUSED[why]()
+      : (err && err.message) || "";
+    return { why, reason };
+  }
+  // The empty star on this session's own tab: `starred` again whole with the project's id last
+  // (§5.1); the tab is then a starred one among the tabs. A refusal leaves the tab unstarred and
+  // says why; refused as `member`, /me is read again, as for the unstar.
+  function starTab(ctx, p) {
+    M.tabs.star(ctx, p).then(() => {
+      renderSwitcher(ctx);
+      tabsChanged(ctx);
+      const nav = document.getElementById("header").querySelector("nav.switcher");
+      const link = nav && Array.from(nav.querySelectorAll("a")).find((a) => a.getAttribute("data-outsider") === p.full_name);
+      if (link) link.focus();
+      tabsSaid(M.t("tabs.starred_now", { name: p.name }));
+    }, (err) => {
+      const refused = starRefused(err);
+      tabsSaid(M.t("tabs.star_failed", { name: p.name, reason: refused.reason }));
+      if (refused.why === "member" && ctx.refreshCounts) ctx.refreshCounts().catch(() => {});
     });
   }
 
@@ -1633,7 +1665,7 @@ window.Maity = window.Maity || {};
       if (!id || id === targetId) return;
       e.preventDefault();
       const after = dragTab.pastMiddle(e);
-      const order = M.tabs.row(ctx).map((p) => p.id);
+      const order = M.tabs.placed(ctx).map((p) => p.id);
       const before = after ? order[order.indexOf(targetId) + 1] || null : targetId;
       if (M.tabs.moveBefore(ctx, id, before)) tabsMoved(ctx, id);
     },
@@ -1655,7 +1687,7 @@ window.Maity = window.Maity || {};
   function tabsMoved(ctx, id) {
     renderSwitcher(ctx);
     tabsChanged(ctx);
-    const order = M.tabs.row(ctx).filter((p) => p.id);
+    const order = M.tabs.placed(ctx);
     const at = order.findIndex((p) => p.id === id);
     const nav = document.getElementById("header").querySelector("nav.switcher");
     const link = nav && Array.from(nav.querySelectorAll("a")).find((a) => a.getAttribute("data-project") === id);
@@ -1684,7 +1716,7 @@ window.Maity = window.Maity || {};
         const open = M.tabs.open(ctx);
         const closed = ctx.projects.filter((p) => !open.includes(p)).sort((a, b) => a.name.localeCompare(b.name));
         // The places a move counts: the member and starred tabs (this session's own stay last).
-        const placed = M.tabs.row(ctx).filter((p) => p.id).map((p) => p.id);
+        const placed = M.tabs.placed(ctx).map((p) => p.id);
         const at = current ? placed.indexOf(current.id) : -1;
         // The dashed tabs after the projects, marked as such: the open ones in the row's order,
         // then the starred ones closed here. Closing one hides it in this browser and sends
@@ -2072,15 +2104,17 @@ window.Maity = window.Maity || {};
 
   // §6.25: a full name that is no project of one's own may be an alias (a
   // rename, a transfer), which the hub answers with the current full name.
-  // Null where nothing moved: the view says what it says.
-  async function movedTo(where, me) {
+  // Null where nothing moved: the view says what it says. An outsider (§2.3) reads the project
+  // view too, and follows its current name to the same view there.
+  async function movedTo(where, me, outsider) {
     if (where.scope !== "project" || me.projects.some((p) => p.full_name === where.slug)) return null;
     const view = await M.api.get("/projects/" + M.api.projectPath(where.slug)).catch(() => null);
-    return view && view.full_name && view.full_name !== where.slug && me.projects.some((p) => p.full_name === view.full_name)
+    return view && view.full_name && view.full_name !== where.slug && (outsider || me.projects.some((p) => p.full_name === view.full_name))
       ? projectLink(view.full_name, where.route, ...where.args) : null;
   }
 
-  async function loadContext(where, me, kept) {
+  // `outsider`: the reader is a signed-in human and no member of the project (§2.3).
+  async function loadContext(where, me, kept, outsider) {
     const ctx = {
       me: me.member,
       // A deletion waiting for its mail (§2.9) stands beside the member in GET /me.
@@ -2129,6 +2163,7 @@ window.Maity = window.Maity || {};
     };
     if (where.scope !== "project") return ctx;
     const mine = me.projects.find((p) => p.full_name === where.slug);
+    if (!mine && outsider) return outsiderContext(ctx, where, kept);
     if (!mine) {
       throw new M.api.ApiError(M.t("error.not_member", { slug: where.slug }), 404, "/me", "not_found");
     }
@@ -2156,6 +2191,40 @@ window.Maity = window.Maity || {};
     ctx.project = project;
     ctx.eventCursor = head.cursor;
     ctx.keptProject = { slug: where.slug, project, members };
+    return withMembers(ctx, members.items);
+  }
+
+  // A public project's member views for a signed-in human who is no member of it (§2.3; the
+  // owner, 2026-11-19; web/context/views.md f461c919): the project and its members, read through
+  // the member routes the hub opens to an outsider, and nothing else; no event feed (`…/events`
+  // is a member's), so no head is read and the views offer no reload on events. No trust, no
+  // role: every control keyed on a right is left out, and the views leave out what is keyed on
+  // `ctx.outsider`. The project is a dashed tab of this browser session, or its starred tab, and
+  // the current one (js/tabs.js visit).
+  async function outsiderContext(ctx, where, kept) {
+    ctx.slug = where.slug;
+    ctx.outsider = true;
+    ctx.trust = null;
+    ctx.role = null;
+    ctx.canAdmin = false;
+    ctx.isOwner = false;
+    ctx.base = "/projects/" + M.api.projectPath(where.slug);
+    ctx.link = (view, ...rest) => projectLink(where.slug, view, ...rest);
+    const known = kept && kept.slug === where.slug ? kept : null;
+    // A project the hub does not let them read (not public, or no such one, which it answers
+    // alike, §2.3) is what it was before: not one of theirs, said as a member's error is.
+    const notMine = (err) => {
+      if (err && err.status === 404) throw new M.api.ApiError(M.t("error.not_member", { slug: where.slug }), 404, err.path || ctx.base, "not_found");
+      throw err;
+    };
+    const [project, members] = await Promise.all([
+      known ? known.project : M.api.get(ctx.base).catch(notMine),
+      known ? known.members : M.api.get(ctx.base + "/members").catch(notMine),
+    ]);
+    ctx.project = project;
+    ctx.eventCursor = null;
+    ctx.keptProject = { slug: where.slug, project, members };
+    M.tabs.visit(ctx, { full_name: where.slug, name: project.name, id: project.id });
     return withMembers(ctx, members.items);
   }
 
@@ -2266,7 +2335,8 @@ window.Maity = window.Maity || {};
     // updates what counts as seen.
     ctx.markSeen = () => { seen = openNow(); };
 
-    if (where.scope !== "project") return;
+    // An outsider reads no event feed of the project (§2.3): its views read on their own.
+    if (where.scope !== "project" || ctx.outsider) return;
     ctx.onEvents((events) => {
       const theirs = events.filter((e) => !(e.actor && e.actor.member_id === ctx.me.id));
       const texts = [];
@@ -2639,24 +2709,35 @@ window.Maity = window.Maity || {};
         M.route.go(next || (me.projects.length === 1 ? projectLink(me.projects[0].full_name, "inbox") : "/all"), { replace: true });
         return;
       }
-      // Someone else's project may have a public page (§16.9): the reader sees it, read-only,
-      // under their own header. Asked first: a stranger's address touches no member route.
-      if (where.scope === "project" && !me.projects.some((p) => p.full_name === where.slug) && M.visitor) {
-        // `project` ({full_name, name}) where the page is a project's: it is a dashed tab of this
-        // browser session, or its starred tab, and the current one (js/tabs.js visit).
-        const head = async (project) => {
+      // A project the reader is no member of. An agent's page (/<owner>/agents/<handle>, no
+      // project: `agents` is never a slug) is its public page (§16.9), read-only under the
+      // reader's own header, asked first: it touches no member route.
+      const stranger = where.scope === "project" && !me.projects.some((p) => p.full_name === where.slug);
+      if (stranger && where.slug.split("/")[1] === "agents" && M.visitor) {
+        const head = async () => {
           const own = await loadContext({ scope: "all" }, me);
           own.projectViews = await projectViews(me);
-          // The page shown is another project's, none of "All projects": nothing there is current.
-          own.visiting = project ? project.full_name : true;
-          if (project) M.tabs.visit(own, project);
+          // The page shown is none of "All projects": nothing there is current.
+          own.visiting = true;
           if (seq === renderSeq) renderHeader(own, null);
         };
         if (await M.visitor.page(main, null, where, wherePath, { signedIn: true, head, live: () => seq === renderSeq })) return;
         if (seq !== renderSeq) return;
       }
+      // Any other project: its member views, as far as the hub lets an outsider read them (§2.3;
+      // the owner, 2026-11-19: no separate view for outsiders, and never the stored public page
+      // inside them, not even where the read fails, which says so as any failed page does). The
+      // boot's bundle reads a project's parts for members only (§5.4): the outsider's reads go to
+      // their own routes.
+      const outsider = stranger && where.slug.split("/")[1] !== "agents" && me.member && me.member.kind === "human";
+      if (outsider && primed) M.api.unprime(primed);
+      // The project's own address is its Overview for an outsider, who has no inbox there.
+      if (outsider && M.route.current().path.split("/").filter(Boolean).length === 2) {
+        M.route.go(projectLink(where.slug, "overview") + (M.route.current().query.toString() ? "?" + M.route.current().query.toString() : ""), { replace: true });
+        return;
+      }
       // An earlier address of a project (a rename, a transfer) leads to its current one.
-      const moved = await movedTo(where, me);
+      const moved = await movedTo(where, me, outsider);
       if (seq !== renderSeq) return;
       if (moved) { M.route.go(moved, { replace: true }); return; }
       // A public page's Report signs a reader in and comes back with `?report` (§16.9, §16.8). A member
@@ -2674,7 +2755,7 @@ window.Maity = window.Maity || {};
       // notice (watch), and the counts stay as /me has them.
       // The project's own reads are kept only for a switch inside the same project.
       keptSlug = reuse && reuse.project && where.scope === "project" && reuse.project.slug === where.slug ? where.slug : null;
-      const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null), projectViews(me),
+      const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null, outsider), projectViews(me),
         M.notify.read().catch((err) => { notifyError = err; })]);
       ctx = loaded;
       // The boot's reads are done: a part nobody asked for (a window read a minute ago) is dropped.
