@@ -121,9 +121,16 @@ def unclosed(text: str, bound: str) -> tuple[int, datetime | None, str]:
 
 def _id_shaped(row_id: str) -> bool:
     """Whether `row_id` could be a card's id: no longer than the id column, no NUL
-    (PostgreSQL refuses one in text). The hub's ids are not parsed (ids.py), so this is
-    no pattern: a longer or NUL-bearing id would only reach the database as an error."""
-    return 0 < len(row_id) <= ID and "\x00" not in row_id
+    (PostgreSQL refuses one in text), and encodable as UTF-8: JSON carries a lone
+    surrogate (`"\\ud800"`), which a driver cannot encode to bind it. The hub's ids are not parsed
+    (ids.py), so this is no pattern: such an id would only reach the database as an error."""
+    if not 0 < len(row_id) <= ID or "\x00" in row_id:
+        return False
+    try:
+        row_id.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def tag_of(text: str) -> str | None:
