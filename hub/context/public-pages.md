@@ -627,7 +627,11 @@ public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, 
   `not_found` does (checked, not changed, and tested).
 - A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
   (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
-  notes; a member reads it as before.
+  notes; a member reads it as before. A card under a moderation hold likewise (`unheld_clause`, `outside_shown`,
+  the `moderation.hold` the Board and the card page read), and no hidden card's id is in another card's view
+  (`public_cards.outside_views`, called once by `views.task_views` for an `OutsideReader`: `depends_on`,
+  `ships_with`, `related`, `parent`, the `children` counts and a release's pull requests, groups and blockers,
+  with one query for the hidden ids of a page; the lead's rulings 6 and 7, 2026-11-19).
 - An allow-list of the project view's keys (`OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from
   outside until it is named; never `repository`, `settings` beyond `language` (`role_rules`), `memory` or
   `setup`, and the links as the public page shows them.
