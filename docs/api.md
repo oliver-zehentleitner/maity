@@ -245,7 +245,7 @@ always encodes.
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also a pull request watch whose `head` is not the pull request's head now (`details.reason: head_changed`, `details.head`, §11.6; not built yet) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9), each against `max_instances` in effect, its ceiling included (§6.31); `details.max`, and the quota details of §6.31 |
@@ -260,6 +260,7 @@ always encodes.
 | 409 | `org_last_owner` | demoting, removing or the leaving of an organisation's last owner, or the deletion of their account (§6.26, §2.9); `details.orgs`, the organisations' handles |
 | 409 | `org_limit` | `POST /orgs` while the caller is an owner of as many organisations as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1) |
 | 409 | `claim_limit` | a claim, or an admin's claim on another's behalf, while the member who would hold it holds as many claims in the project as its `max_open_claims` allows (§6.1, §6.5); `details.limit`, `details.count`, and the quota details of §6.31. The code itself is not built yet (tsk-ybc2ma72dzvq): today no claim is refused for a count |
+| 409 | `watch_limit` | a new pull request watch (§11.6; not built yet) while the calling instance holds `max_pr_watches_per_instance` watches in the project, or the project `max_pr_watches_per_project` (§16.5); `details.scope` (`instance` or `project`), `details.limit`, `details.count` |
 | 409 | `project_limit` | `POST /projects`, or a transfer filed, moved or answered `go` (§6.25, §6.26), into a namespace — a human's or an organisation's — that holds as many projects as the instance allows (§16.5); `details.limit`, `details.count`, `details.source` (`instance` or `account_override`, §16.5.1) |
 | 409 | `last_instance_admin` | a deletion of their own account by the instance's last admin (§2.9) |
 | 409 | `admin_address_required` | removing the instance admin's verified address, filed or approved (§18.4): the admin's password sign-in needs it (§2.1) |
@@ -13775,6 +13776,7 @@ learns its content.
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat but a waiting agent (§9.6), in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
 | `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time, changes only its `name` or is cleared to `null` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
+| `pr_watched` (not built yet, §11.6) | `instance:<member>#<id>` of every instance whose watch on the pull request the reading tells, at write time; readable as any instance-addressed event; wakes those instances | `{pr, head_sha, pr_state, required_check, reason}`, `reason` `check_done`, `head_changed`, `merged`, `closed` or `ended` (§11.6); subject the pull request, actor `null` |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
 | `agent_stop_requested` | `member:<the placement's agent>` | `placement_id`, `grace_seconds`, `by` |
@@ -16942,8 +16944,9 @@ carry `required_check`. Only the project's own
 repository is read, as everywhere here. Errors: `probe_not_configured`,
 `probe_unavailable` (with the last observation in `details.last` when one
 exists). The same reads feed `report.observed`,
-`release.pull_requests` and the forge links on cards (§6.13, read
-through the forge's issue endpoint for `kind: issue`), in the background after a report and on the
+`release.pull_requests`, the forge links on cards (§6.13, read
+through the forge's issue endpoint for `kind: issue`) and the watched
+pull requests (§11.6), in the background after a report and on the
 hub's own interval; an observation that changes what a card shows emits
 `probe_observed`, which wakes only where §8.2 says; one that changes a
 commit link emits `link_observed` (§6.13). With the change ticker enabled the probe also reads
@@ -17657,7 +17660,10 @@ same source and the same budget, and only for cards that are not closed
 keeps the last complete observation with its `observed_at`, and a
 `required_check` or an `ahead` is never derived from a partial read
 (§6.13). In particular a missing check read is never `missing`, and a
-missing branch read is never `ahead: false`.
+missing branch read is never `ahead: false`. A watched pull request
+(§11.6) adds no source and no budget either: its reads go through the
+project's source like every probe read, and while that budget is spent
+a watch tells nothing, rather than a `required_check` it did not read.
 
 **Follow-up: organisations.** Maity's organisations (§6.26) and the
 forge's are not linked here. An installation of the App on a forge
@@ -17958,6 +17964,118 @@ Out of scope here: private repositories of other owners and a member's
 or owner's token for them (step 2 of the card), `family`, `memberState`
 and `resolveEntry`, and any write.
 
+### 11.6 Watching a pull request's checks
+
+Not built yet (tsk-rhgzcjqcfb9s). An agent that waits for a pull
+request's CI asks the hub to watch it, and `maity wait` returns when
+something it acts on changed: the required check finished, the head
+moved, the pull request merged or closed. Without it the agent polls
+the forge itself, on a token of its own; the probe reads a pull request
+on its own only after a report, and then tells only the card's holder
+(§6.6).
+
+```
+PUT    /projects/{owner}/{slug}/pulls/{number}/watch     {"head"?: "<40 hex>"}
+DELETE /projects/{owner}/{slug}/pulls/{number}/watch
+GET    /projects/{owner}/{slug}/pulls/watches
+```
+
+Scope `project:read`, agents only: the watcher is the calling instance
+(§6.17), so two instances of one agent, or the review lead and the
+author, watch the same pull request apart. A human's call is
+`forbidden` (`details.reason: agents_only`). `{number}` is a pull
+request of the project's own repository, as every probe read (§11).
+
+- **`PUT`** creates the caller's watch on the pull request, or keeps the
+  one it has. Before it stores anything it reads the pull request as
+  `GET …/probe?pr=` does, cache and forced-read floor included (§11,
+  §11.4): a number the forge does not have is `not_found`, a pull
+  request that is `merged` or `closed` is `invalid`
+  (`details.fields.number: "not_open"`), and the probe's own errors
+  answer as there (`probe_not_configured`, `probe_unavailable`). With
+  `head` (the full 40 hex sha, else `invalid`) the watch is on that head
+  alone; a `head` that is not the pull request's head now is `409
+  conflict` (`details.reason: head_changed`, `details.head` the current
+  one). Without `head` the watch follows the pull request across pushes.
+  A `PUT` on a watch the caller has replaces its `head` with the body's
+  (none when absent) and counts as a change for the idle end (below).
+  Answers the watch, `201` when new, `200` when kept.
+- **`DELETE`** ends the caller's watch; idempotent, `204`.
+- **`GET …/pulls/watches`** lists the caller's watches in this project,
+  oldest first, as `{items}` (at most `max_pr_watches_per_instance`, so
+  not paged).
+
+```json
+{ "pr": 212, "head": null, "created_at": "2026-11-19T10:02:00Z",
+  "changed_at": "2026-11-19T10:02:00Z", "ends_at": "2026-11-20T10:02:00Z",
+  "last": { "pr_state": "open", "head_sha": "d91e294c…40 hex",
+            "required_check": { "name": "ci-ok", "status": "pending" },
+            "observed_at": "2026-11-19T10:02:00Z" } }
+```
+
+`head` is the head the watch was put on, or `null`. `changed_at` is
+the watch's last change: its `PUT`, or the last `pr_watched` it was told.
+`ends_at` is `changed_at` plus `pr_watch_idle_hours` as the setting
+stands at the read. `last` is the reading the watch was last compared
+with, `required_check` as §6.6 gives it.
+
+**Limits.** Two instance settings of §16.5, which the instance admin
+may change: `max_pr_watches_per_instance` (default 10) and
+`max_pr_watches_per_project` (default 50, every instance of every member
+together). A new watch beyond either is `watch_limit` (409,
+`details.scope` `instance` or `project`, `details.limit`,
+`details.count`); keeping or changing an existing one is never refused.
+
+**The event.** `pr_watched` `{pr, head_sha, pr_state, required_check,
+reason}` goes to the watching instances only (§8.2) and wakes each of
+them, so `maity wait` returns it. It is a kind of its own, because
+`probe_observed` belongs to a card's report. Its actor is `null` (the
+hub), its subject the pull request (`{type: "pull_request", id:
+"212"}`). `reason` is one of:
+
+| `reason` | When |
+|---|---|
+| `check_done` | `required_check.status` left `pending` (to `success`, `failure`, `cancelled` or `missing`, §6.6) on the watched head |
+| `head_changed` | the pull request's head is not the one of `last` |
+| `merged` | the pull request was observed `merged` |
+| `closed` | the pull request was observed closed unmerged |
+| `ended` | `pr_watch_idle_hours` passed since `changed_at` |
+
+One reading tells each watch at most one `pr_watched`: `merged` or
+`closed` before `head_changed` before `check_done`. A reading that
+changes none of these tells nothing. `unknown` is no change: a check
+that could not be read is never `check_done` (§11.4). With no
+`required_check` named in the project (§6.1) `check_done` never comes.
+
+**The end.** A watch ends after its `merged`, `closed` or `ended`, after
+its `head_changed` when it named a `head`, on `DELETE`, and with its
+instance (revoked, replaced, §6.17) or the membership. Only the first
+three tell the watcher. An ended watch counts against no limit.
+
+**How the hub learns, within the budget.**
+
+- **A forge event first.** A verified webhook delivery of `check_suite`
+  `completed`, or `pull_request` `synchronize`, `reopened` or `closed`
+  (§17.4), makes the hub read the watched pull requests it names (by
+  number, or by the suite's head sha) through the probe. The body is a
+  trigger, never a fact. The forced-read floor of 30 seconds per pull
+  request (§11.4) folds the several suites of one head into one or two
+  reads.
+- **The sweep as the fallback.** The probe's sweep, every 5 minutes,
+  also reads every watched pull request whose `last` is missing or has
+  `required_check.status` `pending` or `unknown`, beside the reports it
+  reads again. Without webhook events a watch hears of its check within
+  one sweep.
+- **The same budget.** A watch reads through the project's source and
+  its budget (§11.4, **Rate limits**); it adds no source. While that
+  budget is spent the watch keeps `last` and tells nothing, and the
+  sweep after the reset reads it again.
+
+The alternative of reporting earlier, so that `probe_observed` (§6.6)
+does the job, was rejected as the only answer: it reaches only the
+card's holder, not a review lead or a lead who waits on another
+member's pull request, and nothing before the first report.
+
 ## 12. Endpoint index
 
 | Method | Path | Scope | § |
@@ -18111,6 +18229,8 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/resolve` | `tasks:admin` / creator | 6.16 |
 | POST | `/projects/{owner}/{slug}/tasks/{id}/notes/{note_id}/redact` | `events:admin` | 6.16 |
 | GET | `/projects/{owner}/{slug}/probe` | `project:read` | 11 |
+| PUT, DELETE | `/projects/{owner}/{slug}/pulls/{number}/watch` (not built yet, §11.6) | `project:read`, agents only | 11.6 |
+| GET | `/projects/{owner}/{slug}/pulls/watches` (not built yet, §11.6) | `project:read`, agents only | 11.6 |
 | GET | `/projects/{owner}/{slug}/limits` | `project:read` | 6.31 |
 | GET, POST | `/runners/enrollments` | human | 15.2 |
 | DELETE | `/runners/enrollments/{id}` | the creator | 15.2 |
@@ -22003,6 +22123,9 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): the instance admin may set another value for one project (§16.5.1); an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_READS_PER_MINUTE` | `max_reads_per_minute` | 1000 | reads one credential may make per minute once the caller is signed in (§1.7 "Reads per credential"); a project may set a lower value for its agents (§6.1; not built yet, tsk-ybc2ma72dzvq): an integer 60–100000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_PR_WATCHES_PER_INSTANCE` | `max_pr_watches_per_instance` | 10 | pull request watches one agent instance may hold in one project (§11.6; not built yet): an integer 1–100, no `unlimited`, with the same spelling and environment rules as `max_aliases` |
+| `MAITY_MAX_PR_WATCHES_PER_PROJECT` | `max_pr_watches_per_project` | 50 | pull request watches one project may hold, all its instances together (§11.6; not built yet): an integer 1–1000, no `unlimited`, with the same spelling and environment rules as `max_aliases` |
+| `MAITY_PR_WATCH_IDLE_HOURS` | `pr_watch_idle_hours` | 24 | hours after which a pull request watch with no change ends with `ended` (§11.6; not built yet): an integer 1–168, no `unlimited`, with the same spelling and environment rules as `max_aliases` |
 
 ```json
 { "max_agents_per_human": { "value": 100, "source": "default" },
@@ -22017,7 +22140,10 @@ values with the source rules of §16.2, as in §16.4.
   "max_attachment_storage_per_project": { "value": 1073741824, "source": "default" },
   "max_reads_per_minute": { "value": 1000, "source": "default" },
   "max_attachment_storage": { "value": "unlimited", "source": "default" },
-  "attachment_storage_used": 734003200 }
+  "attachment_storage_used": 734003200,
+  "max_pr_watches_per_instance": { "value": 10, "source": "default" },
+  "max_pr_watches_per_project": { "value": 50, "source": "default" },
+  "pr_watch_idle_hours": { "value": 24, "source": "default" } }
 ```
 
 `null` keeps the meaning of §16.2 here too: a `PATCH` with
@@ -22039,6 +22165,9 @@ holds is that project's `attachments` (§6.1). `attachment_storage_used` is
 read-only too; it is the bytes §8.7 counts for `max_attachment_storage`,
 under every value, `unlimited` included. `max_reads_per_minute` takes
 `null` and `unlimited` the same way and has no count beside it.
+`max_pr_watches_per_instance`, `max_pr_watches_per_project` and
+`pr_watch_idle_hours` take `null` the same way, have no `unlimited`
+(`invalid`, `out_of_range`) and no count beside them.
 
 - **What it gates.** Two creations: `POST /agents`, and
   `POST /projects/{owner}/{slug}/joins` when it names a new handle and so
@@ -22098,6 +22227,17 @@ under every value, `unlimited` included. `max_reads_per_minute` takes
   `rate_limited` with `Retry-After`. It is the ceiling for every project:
   a project's own value can only be lower (§6.1). Writes, and calls
   without a credential, are not counted here.
+- **What the pull request watch values gate** (§11.6; not built yet).
+  `max_pr_watches_per_instance` and `max_pr_watches_per_project` gate a
+  new watch alone (`PUT …/pulls/{number}/watch` without one), as
+  `watch_limit` (409, `details.scope` `instance` or `project`,
+  `details.limit`, `details.count`); keeping or changing a watch is not
+  refused. `pr_watch_idle_hours` sets when a watch with no change ends,
+  read when the hub checks the watch, so a new value applies to the
+  watches that exist too. The defaults are the owner's decision of
+  2026-11-12 (10, 50, 24 hours); they are settings rather than
+  constants so that the instance admin can change them. A watch adds
+  forge reads to the project's source (§11.4), which these values bound.
 - **Lowering a value** never deletes or pauses anything: an owner over the
   new value keeps every profile, organisation or project and creates (or
   receives) no new one until they are under it again (the tolerant rule
@@ -22106,6 +22246,8 @@ under every value, `unlimited` included. `max_reads_per_minute` takes
   deletions bring the instance's or the project's total under it (§8.7).
   An id over a lowered `max_aliases` keeps every alias, and all of
   them resolve (§6.24); only a rename that would add one more is refused.
+  An instance or a project over a lowered watch value keeps its watches
+  until they end (§11.6); only a new one is refused.
   `humans_at_limit` and `humans_at_org_limit` count the humans at or over
   each value, `owners_at_project_limit` the namespace owners (humans and
   organisations), `names_at_alias_limit` the humans, organisations,
@@ -24878,12 +25020,21 @@ POST /api/v1/projects/{owner}/{slug}/forge/webhook
   answers the same, so the path tells nobody whether a project exists.
   The join host answers it `not_found` (§1.1).
 - Accepted forge events: `ping`; `pull_request` with action `closed`;
-  `deployment_status`. Anything else is answered `202` and ignored. The
+  `deployment_status`; and, for watched pull requests only (§11.6),
+  `check_suite` with action `completed` and `pull_request` with action
+  `synchronize` or `reopened`. Anything else is answered `202` and
+  ignored. The
   body is a trigger, never a fact: for `pull_request` the hub reads the
   pull request through the probe and announces what the probe observes;
   for `deployment_status` it reads the deployment and its status the
   same way. A body that claims a merge the probe does not see writes
-  nothing.
+  nothing. A `check_suite` or `pull_request` delivery that names a
+  watched pull request (by number, or by the suite's head sha) makes the
+  probe read it for its watches (§11.6), whether the ticker is enabled
+  or not; one that names none writes nothing. The forge sends
+  `check_suite` and `pull_request` only when the webhook (or the App) is
+  subscribed to them; without them the sweep alone carries the watches,
+  up to 5 minutes late.
 - The body cap is 1 MiB here (forge payloads exceed §1.7's 64 KiB),
   declared by exactly one `Content-Length`: a missing or repeated one, or
   one over the cap, is `payload_too_large` for every slug, before the hub
@@ -24920,7 +25071,9 @@ POST /api/v1/projects/{owner}/{slug}/forge/webhook
   on the merge that delivery named.
 - Without a probe (`probe_configured: false`), or with the ticker not
   enabled, a verified delivery is answered `202` and writes nothing: the
-  hub announces only what it observed itself.
+  hub announces only what it observed itself. The one exception is a
+  delivery for a watched pull request with the probe configured, which
+  queues its read whatever the ticker says (above, §11.6).
 
 | Endpoint | Scope | Notes |
 |---|---|---|

@@ -19,6 +19,7 @@ METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
 NOT_ROUTED = {
     ("DELETE", "/projects/{}/{}/outsiders/{}"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("DELETE", "/projects/{}/{}/outsiders/{}/block"),  # no route yet: tsk-yr3ckca01b9q, outsiders
+    ("DELETE", "/projects/{}/{}/pulls/{}/watch"),  # no route yet: tsk-rhgzcjqcfb9s, PR watches
     ("DELETE", "/projects/{}/{}/tasks/{}/objection-hold"),  # no route yet: tsk-4xqfxezvz0dh
     ("DELETE", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("GET", "/agents/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
@@ -31,6 +32,7 @@ NOT_ROUTED = {
     ("GET", "/projects/{}/{}/contribution"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("GET", "/projects/{}/{}/members/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/projects/{}/{}/outsiders"),  # no route yet: tsk-yr3ckca01b9q, outsiders
+    ("GET", "/projects/{}/{}/pulls/watches"),  # no route yet: tsk-rhgzcjqcfb9s, PR watches
     ("GET", "/projects/{}/{}/tasks/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("GET", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
     ("PATCH", "/me/briefings"),  # no route yet: tsk-k0k3jzrkpza2, briefings
@@ -48,6 +50,7 @@ NOT_ROUTED = {
     ("POST", "/projects/{}/{}/tasks/{}/claim/decline"),  # no route yet: tsk-yr3ckca01b9q, outsiders
     ("POST", "/runner/placements/{}/usage"),  # no route yet: tsk-m6sq1g0xwwn5, usage
     ("PUT", "/me/soul"),  # no route yet: tsk-k0k3jzrkpza2, the agent's soul
+    ("PUT", "/projects/{}/{}/pulls/{}/watch"),  # no route yet: tsk-rhgzcjqcfb9s, PR watches
     ("PUT", "/runner/placements/{}/handover"),  # no route yet: tsk-j9e0yapj21wj
 }
 
