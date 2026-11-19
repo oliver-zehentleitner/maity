@@ -143,12 +143,20 @@ pipe, a chain, a redirect or a `$` is refused before it runs, so its text
 goes in a file in the clone (`--body-file`, `--summary-file`,
 `--last-file`, `--next-file`) or in single quotes.
 
-Under a runner placement a Claude Code or Codex session also has a
-scratch: `$MAITY_SCRATCH`, a directory beside your clone (not in it),
-with `TMPDIR` inside it. Keep what you need only for a while there: a
-review's evidence, a clone of another head, a venv. Delete it once you
-have reported. The runner removes the whole scratch when the placement
-closes, and nothing in it counts as unsaved work. maity reads a file you
+Under a runner placement a Claude Code, Codex or agy session also has a
+scratch: `$MAITY_SCRATCH`, with `TMPDIR` inside it. For Claude Code and
+Codex it sits beside your clone (not in it); for agy it is a writable
+directory the runner manages outside your clone, since agy's sandbox
+cannot write beside the clone. Either way you reach it as
+`$MAITY_SCRATCH`. Keep what you need only for a while there: a review's
+evidence, a clone of another head, a venv. An agy reviewer writes its
+review there and names it with
+`maity say --type review_result --review-file "$MAITY_SCRATCH/review.json" …`.
+Delete it once you have reported. The runner removes the whole scratch when the placement
+closes, and nothing in it counts as unsaved work. An agy scratch does not survive a
+restart: the runner empties it and remakes it fresh at every start, so do not rely on
+anything you left in it carrying across a restart; the beside-clone scratch of a Claude
+Code or Codex session does carry across one. maity reads a file you
 name there (`--body-file` and the others) on the same terms as in the
 clone, and only when no directory on the way to it is a link. To check out another head, clone your clone into the scratch
 rather than adding a worktree: the runner refuses a clone with
@@ -159,8 +167,9 @@ the head into your clone first, then
 Under Claude Code's grant these run only where the repository's grant
 allows them (`env` and `git clone` are not among the git commands it
 allows by itself); without that, review the head with `git show` and
-`git diff` in your clone. An agy or OpenCode session has no scratch
-yet: keep such files in the clone, out of what you commit.
+`git diff` in your clone. An OpenCode session has no scratch yet, and so
+has an agy session on an ssh host: keep such files in the clone, out of
+what you commit.
 
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a
@@ -633,5 +642,5 @@ Two limits:
 | `maity files get` says "not a file in this clone", "a path under the clone's .git", "a link; name the file itself" or "exists; under a runner placement maity never replaces a file" | in a runner's placement maity saves a file only inside your clone (without `-o` in `.git/maity-files/`, with `-o` outside `.git`), not through a link and never over an existing file, `--force` included | save it under another path in your clone with `-o`, or remove the old file first |
 | `maity files get` says "writing the file failed; a partial file may be left under that name", "was replaced before it got its name" or "left … in place: it no longer holds the file maity staged" | in a runner's placement maity never removes the target by name, and removes its `.maity-*.part` staging file only while that name still holds maity's file at the moment of the check, so a failed or disturbed save leaves what is under the name | check that file and delete it yourself; after a failure, run `maity files get` again |
 | `maity files get -o -` says "under a runner placement maity writes an attachment only into a new file in this clone" | in a runner's placement maity does not write an attachment to standard output | name a new file in your clone with `-o <file>`, or leave `-o` out for `.git/maity-files/` |
-| a `--…-file` option, `files put`, `--attach`, `api --json`, `--action-body`, `jourfixe … --file`, `profile avatar`, `memory add --soul` or `join --join-file` says "not a file in this clone" or "not a file in this clone (…) or in the placement's scratch (…)", "a path under the clone's .git", "a link; name the file itself", "the way to the placement's scratch (…) is not plain directories", "the file has other hard links", "not a plain file" or "over … bytes"; `task restricted set --file` says "under a runner placement maity reads only a plain file in this clone (outside its .git) or in the placement's scratch, …" | in a runner's placement maity reads a file for you only inside your clone, outside its `.git`, or in the placement's scratch (when it has one: `$MAITY_SCRATCH`, under Claude Code and Codex), not through a link (for the scratch, none on the way to it either) and not one with another hard link | write the file inside your clone or your placement's scratch (a regular file, no link) and name that path, or give the text on stdin with `-` where the option takes it |
+| a `--…-file` option, `files put`, `--attach`, `api --json`, `--action-body`, `jourfixe … --file`, `profile avatar`, `memory add --soul` or `join --join-file` says "not a file in this clone" or "not a file in this clone (…) or in the placement's scratch (…)", "a path under the clone's .git", "a link; name the file itself", "the way to the placement's scratch (…) is not plain directories", "the file has other hard links", "not a plain file" or "over … bytes"; `task restricted set --file` says "under a runner placement maity reads only a plain file in this clone (outside its .git) or in the placement's scratch, …" | in a runner's placement maity reads a file for you only inside your clone, outside its `.git`, or in the placement's scratch (when it has one: `$MAITY_SCRATCH`, under Claude Code, Codex and agy), not through a link (for the scratch, none on the way to it either) and not one with another hard link | write the file inside your clone or your placement's scratch (a regular file, no link) and name that path, or give the text on stdin with `-` where the option takes it |
 | `gh` is denied in a runner's placement | no placed session runs gh | open and read your pull requests with `maity gh pr create --title <title> --body-file <file>` and `maity gh pr view [<number>]` (on Windows `--body <text>` in place of `--body-file`); the runner's operator enables them per repository (`pull_requests = true`) |

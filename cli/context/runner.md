@@ -647,6 +647,107 @@ writable surface and no write that leaves the scratch.
   cannot be anchored is refused with a reason the operator can act on
   (upgrade the host) instead, so the breakage is named, not hidden.
 
+## agy's scratch lives under the host's shared temp directory, not beside the clone
+
+**Id:** 8ec06e26-42b6-47b7-9f23-2bad37da3dfa
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Verification:** corroborated — the make/read/remove discipline, the owner, mode and no-follow checks, the per-user parent owned 0700, the hiding of that parent from the sandboxed Codex and Claude Code placements, the end-to-end `--review-file` read through a production-made scratch, and the clean removal of a scratch holding read-only or unsearchable directories are covered by unit tests (`tests/test_scratchop.py`, the supervisor lifecycle in `tests/test_supervisor.py`, and the review-file read through the recorded scratch in `tests/test_placed_reads.py`); a live agy placement posting a `review_result` with the scratch is not yet observed and is still needed
+**Source:** card tsk-bbhcekjk2mgm and the dispatcher's approved design; the finding that agy's sandbox makes the workspace and the beside-clone `.scratch` read-only while the host's shared temp directory is writable from inside the sandbox, confirmed by a reviewer's live probe; the ownership question resolved by the dispatcher
+**See:** runner.md — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-19
+**Revisit when:** agy's sandbox gains a writable beside-clone location, a harness other than agy needs a scratch its sandbox cannot write beside the clone, or the per-user temp parent is given a cleanup for stale placements
+
+An antigravity placement gets a scratch like Claude Code and Codex, so an
+agy reviewer can write its `review_result` file, but not beside the clone:
+agy's sandbox makes the workspace — and the beside-clone `.scratch` — read
+only, so a scratch there could not be written. It goes under the host's
+shared temporary directory instead, in a per-user parent
+(`maity-scratch-<uid>`) with the per-placement directory inside it. The
+runner records that path — the parent is resolved first, so a shared temp
+directory that is itself a link does not break the session's own read — and
+the session reaches it as `MAITY_SCRATCH`, with `TMPDIR` inside it, exactly as
+for the beside-clone scratch; `maity`'s read of `--review-file` finds it
+through the recorded-scratch path it already had (an absolute path outside the
+clone, no link on the way), so that read needs no change.
+
+The scratch is owned by, and reachable only to, the user agy runs as — the
+runner's own user in the `single` layout, the agents' user in `agent_user` —
+because a shared temp directory is writable by every user on the host and the
+sandbox runs as that user. It is created the same way the scratch and the
+Codex launch-writes are, as that user (`AsUser`), so the directory the runner
+makes is owned by the user that must write it. The anti-hijack checks verify
+ownership against that same user's id: the per-user parent and the
+per-placement directory are each opened without following a link and must be
+a directory owned by that id; the per-placement directory is private and made
+fresh at every start (an earlier one removed first, a new one then created,
+refusing one that is already there), so nothing carries across a restart and a
+directory planted by anyone else is refused rather than used or written
+through. The per-user parent is owned 0700 by that user and the per-placement
+directory is given a random name the runner chooses (not the placement id),
+recorded with the placement so the session and the runner find the same one
+again; the random name keeps a user's own placements from colliding and is not
+a secret. The runner creates the per-user parent before a placement whose
+sandbox hides it (Claude Code or Codex) starts, so the deny path that
+placement's sandbox is given is a real directory rather than a missing path a
+placeholder would stand in for; a placement that hides nothing is given no
+parent and has none made for it. Removing a scratch restores the owner's access on each directory first,
+so one holding a read-only or unsearchable directory a build tool left (a
+module cache, say) is still deleted and does not pile up. `repo/` stays
+read-only and the plain-call stdin rule for `maity` is unchanged. On an ssh
+host, whose remote user's id the runner does not hold, the scratch is not made
+and the placement runs without one.
+
+The residual risk is accepted knowingly. The scratch is separated against
+other host users — the per-user parent and the leaf are owned 0700 by the user
+agy runs as, so another host user cannot enter them — and against the
+sandboxed Codex and Claude Code placements of that same user, whose sandbox is
+told to hide the per-user parent so they cannot reach a scratch under it. It is
+NOT separated against another agy placement, nor against an unsandboxed
+placement, of the same host user: a shared temp directory is, by the agy
+sandbox's own premise, writable by that user, and nothing here keeps one such
+placement out of another's scratch. The 0700 mode gives only ordinary own-user
+file permissions and the random leaf name only avoids collisions between a
+user's placements; neither is relied on to separate one same-user placement
+from another. This same-user exposure is accepted until each placement runs as
+its own user (per-placement `agent_user` separation, the owner's pending
+`req-ynkndnybr9z3`). The runner's reach into the parent also rests on the
+shared temp directory's sticky and setgid bits (the root is opened without a
+no-follow guard, as its being outside any per-placement control allows): a
+host that does not set those bits on its shared temp directory weakens that
+assumption, which is why the location is the conventional sticky shared temp
+directory and not an arbitrary one.
+
+**Reason:** the recorded-scratch machinery already draws the boundary this
+needs — a placement-owned writable directory the runner records, that
+`maity` reads a named file in through descriptors without following a link,
+removed when the placement ends — and reusing it means `--review-file` needs
+no new code path and the agy scratch inherits the same, already-reviewed
+read, lifecycle and `MAITY_SCRATCH`/`TMPDIR` export. The host's shared temp
+directory is chosen because it is the one location the runner controls that
+is writable from inside agy's sandbox: the sandbox exposes it as writable
+while keeping the workspace and the beside-clone scratch read-only, so a
+directory the runner creates there is visible and writable to the agy
+session. The ownership rule follows from the two layouts both having to hold:
+in `single` agy runs as the runner's user, so a 0700 directory owned by that
+user is both safe and writable; in `agent_user` agy runs as a separate user,
+so the directory must be owned by *that* user to be writable, and the check
+must verify ownership against the user the runner created it as, not blindly
+the runner's. Creating it through `AsUser` makes the two layouts one code
+path, and the owner check reads back the id it was created as.
+
+**Rejected alternatives:**
+- Give agy the beside-clone `.scratch` like Claude Code and Codex. Its
+  sandbox makes that location read-only, so the session could not write the
+  scratch at all — the reason agy had none before.
+- Teach `--review-file` a runner-named, placement-owned writable path of its
+  own, without the full scratch machinery. It would need its own make,
+  record, read-with-no-follow and removal rules — each a new place the
+  boundary could be gotten wrong — to end at the same contract the recorded
+  scratch already provides, and it would give the session no `MAITY_SCRATCH`
+  or `TMPDIR` for a review's other leftovers. Reusing the scratch gives one
+  reviewed boundary and one lifecycle instead of a second, narrower one.
+
 ## Codex reaches the operator's login through a link in its per-placement home
 
 **Id:** 49caa654-c3ad-44c0-bdfd-3274aa2ddfa7
