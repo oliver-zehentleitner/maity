@@ -16,7 +16,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from .. import hub, onboarding, state
+from .. import clonecheck, hub, onboarding, state
 from . import (
     adapters,
     capabilities,
@@ -36,6 +36,7 @@ from . import (
     tools,
     trust,
     workspace,
+    worktree,
 )
 from .asuser import RUNNER, AsUser
 
@@ -1031,6 +1032,27 @@ def _installer(command: Any) -> Any:
     return handler
 
 
+# --- worktree-prune --------------------------------------------------------------------------
+
+
+def cmd_worktree_prune(args: argparse.Namespace) -> int:
+    """The supervisor's git-free prune of a Claude Code subagent's leftover worktree under a
+    clone's `.claude/worktrees/`, run on the agents' side on placement start
+    (worktree.prune_orphans, AsUser.worktree_prune). Internal, the supervisor's own: refused for a
+    placed agent, which cannot redirect it at another path, and needs `--repo` to name the clone.
+    There is no in-session remover; a placed agent's leftover is cleared when the placement next
+    starts."""
+    if clonecheck.PLACEMENT_ENV in os.environ:  # empty-string-safe: a placed session is placed
+        raise Refused(
+            "`maity runner worktree-prune` is the runner's placement-start hygiene, not a placed "
+            "agent's to call; a leftover worktree is cleared when the placement next starts"
+        )
+    if not args.repo:
+        raise Refused("`maity runner worktree-prune` needs --repo to name the clone to prune")
+    print(json.dumps(worktree.prune_orphans(args.repo)))
+    return 0
+
+
 # --- parser ----------------------------------------------------------------------------------
 
 
@@ -1075,6 +1097,15 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["codex", "--under", a.under, *(["--auth", a.auth] if a.auth else []), a.path]
         if a.op == "codex" else [a.op, "--under", a.under, a.path]
     ))  # fmt: skip
+    # Internal (no `help`, so not listed): the supervisor's own git-free prune of a Claude Code
+    # subagent's leftover worktree under the clone's `.claude/worktrees/` on placement start, so
+    # the clone reads as plain again (worktree). The runner runs no git in an existing clone, so
+    # this removes by file operations only; it is refused for a placed agent, which cannot
+    # redirect it at another path. An ssh host runs it through its own `maity`.
+    r = rsub.add_parser("worktree-prune")
+    r.add_argument("--repo", help=argparse.SUPPRESS)  # supervisor only: the clone to prune
+    r.set_defaults(handler=cmd_worktree_prune)
+
     # Internal too: what a pane's output goes through on an ssh host, holding its log to
     # limits.log_keep_bytes (logcap).
     r = rsub.add_parser("logcap")

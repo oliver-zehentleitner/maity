@@ -1161,6 +1161,28 @@ class Supervisor:
                 with self.lock:  # stopped or moved on while the task was queued
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
+            # A Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/`
+            # would read as unsupported and refuse the start (worktree, §15.5): clear it first, by
+            # file operations only (the runner runs no git in an existing clone). Only this agent's
+            # own existing clone is touched — `workspace.owned` refuses a clone another agent or a
+            # person holds before anything is pruned — and a worktree pointing elsewhere is left,
+            # so a planted redirect still refuses the start. Gated on either a `.claude/worktrees`
+            # directory or a `.git/worktrees` registration, so a stale entry left without its
+            # working tree is still cleared; a restart's prune discards uncommitted work in the
+            # leftover worktree, since there is no in-session save.
+            if as_user.exists(place.repo) and (
+                as_user.exists(place.repo / ".claude" / "worktrees", "-d")
+                or as_user.exists(place.repo / ".git" / "worktrees", "-d")
+            ):
+                workspace.owned(self.cfg, place, owner, p["id"])
+                try:
+                    pruned = as_user.worktree_prune(place.repo)
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    self.log(f"{p['id']}: worktree prune skipped: {exc}")
+                else:
+                    if pruned.get("removed"):
+                        where = ", ".join(str(w) for w in pruned["removed"])
+                        self.log(f"{p['id']}: cleared leftover worktree(s): {where}")
             workspace.prepare(
                 self.cfg, place, p["workspace"].get("repository") or "", owner, p["id"],
                 p["workspace"].get("branch"), as_user,
