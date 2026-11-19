@@ -164,6 +164,23 @@ def test_an_edit_keeps_the_body_rules(owner: flow.Human) -> None:  # noqa: F811
     assert edit(owner, card, posted, body="x", reason="r" * 501).status_code == 400
 
 
+def test_an_edit_with_a_lone_surrogate_is_refused_and_one_with_an_emoji_is_not(
+    owner: flow.Human,  # noqa: F811
+) -> None:
+    card = task(owner)
+    posted = note(owner, card).json()
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes/{posted['id']}"
+
+    def body(text: bytes) -> bytes:
+        return b'{"body": "' + text + b'", "base_version": %d}' % posted["version"]
+
+    refused = owner.raw("PATCH", path, body(b"half \\udfff a pair"))
+    assert fields_of(refused) == {"body": "string_unicode"}  # the model's, never a 500
+    edited = owner.raw("PATCH", path, body(b"\\ud83d\\ude42 and \xf0\x9f\x99\x82"))
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["body"] == "🙂 and 🙂"
+
+
 def test_a_redacted_notes_reason_reaches_only_owners_admins_and_the_redactor(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine  # noqa: F811
 ) -> None:

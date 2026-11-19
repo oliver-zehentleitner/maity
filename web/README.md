@@ -351,12 +351,16 @@ too.
    panel needs (the roles, the card's notes and history, its updates and
    restricted text where they apply), closed there it reads nothing, and
    neither reads the list or the members again): cards by status (`proposed` to
-   `cancelled`, closed ones of the last 14 days; read as five column
-   groups side by side, each following its own pages, then the cards
-   changed during those reads, newest first; Done and Cancelled each draw
-   the 50 cards closed last, and a button the rest, while the column's count
-   stays the whole number; the card the board is opened on is drawn
-   wherever it stands, with the cards it is folded under), with claim holder,
+   `cancelled`, closed ones of the last 14 days; the four open column
+   groups read side by side, each following its own pages, Done and
+   Cancelled each one page of the 50 cards closed last (`limit=50`), then
+   the cards changed during those reads, newest first; under Done and
+   Cancelled a **Show more (N loaded)** button reads that column's next page
+   of 50 with the hub's cursor, disabled while it reads and gone after the
+   last page, and the column's count is the cards loaded; a closed card
+   not loaded yet that the board is opened on opens in its panel, read by
+   itself; a hub search's Done and Cancelled draw the 50 closed last of
+   what it found, and a button the rest), with claim holder,
    lease and expiry, assignment, dependencies and ships-with, checkpoint
    and report — a code report's why (§6.23) as a link to its entry's
    file at the reported head on the forge with the entry's id beside it,

@@ -19,7 +19,7 @@ from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from maity_hub.mail import address as addresses
 from maity_hub.routes import registration as routes
-from tests import factory, flow
+from tests import factory, flow, stored_keys
 from tests.conftest import ClientFactory
 
 SIGNING = base64.b64encode(b"s" * 32).decode()
@@ -445,6 +445,27 @@ def test_many_sources_get_an_address_few_mails_and_every_answer_alike(
         answers.append((answered.status_code, answered.json()))
     assert answers == [(202, {"expires_in": 86400})] * 12
     assert len(SENT) == 5  # the address's hour: five networks, whichever they are
+
+
+def test_the_registration_s_counts_keep_the_address_only_as_its_keyed_fingerprint(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client = open_hub(make_client, migrated)
+    counted = (
+        routes.BY_PAIR_SHORT,
+        routes.BY_PAIR_DAY,
+        routes.BY_ADDRESS_HOUR,
+        routes.BY_ADDRESS_DAY,
+        routes.BY_ADDRESS_HOUR_NETWORKS,
+        routes.BY_ADDRESS_DAY_NETWORKS,
+        routes.BY_ADDRESS_MAILS_HOUR,
+        routes.BY_ADDRESS_MAILS_DAY,
+    )
+    for limiter in counted:
+        limiter.reset()
+    assert register(client, "  ADA@example.com  ").status_code == 202
+    assert len(SENT) == 1
+    stored_keys.assert_keyed(migrated, counted, "ada@example.com")
 
 
 def test_two_networks_asking_again_and_again_leave_the_owner_a_mail(

@@ -169,6 +169,9 @@ class Settings:
     # MAITY_MAX_ALIASES (§16.5, §6.24): the aliases one human, organisation, agent profile or
     # project may hold, 1–8 and never `unlimited`; None leaves it to the instance admin.
     max_aliases: int | None = None
+    # MAITY_MAX_READS_PER_MINUTE (§16.5, §1.7): reads one credential may make per minute, 60 to
+    # 100000, or `unlimited`; None leaves it to the instance admin.
+    max_reads_per_minute: int | str | None = None
     # MAITY_PUBLIC_PAGES (`on`/`off`, §16.9): whether the hub serves public pages at all;
     # MAITY_PUBLIC_PAGES_RENDER (`on_change`/`interval`) and MAITY_PUBLIC_PAGES_INTERVAL_HOURS
     # (1–24) say when a page is rendered again.
@@ -320,6 +323,7 @@ class Settings:
                 env, "MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT", 1024**2, 1024**5
             ),
             max_aliases=parse_alias_limit(env),
+            max_reads_per_minute=parse_limit(env, "MAITY_MAX_READS_PER_MINUTE", 60, 100000),
             agent_firewall=parse_choice(env, "MAITY_AGENT_FIREWALL", ("on", "off"), "off") == "on",
             route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
             public_page_limit=parse_rate(env, "MAITY_PUBLIC_PAGE_LIMIT", (60, 60)),

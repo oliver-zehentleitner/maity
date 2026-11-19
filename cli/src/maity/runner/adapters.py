@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import __version__, clonecheck, ghpr, proc
-from . import config, stub, trust
+from . import config, scratch, stub, trust
 from .asuser import AsUser
 
 START_PROMPT = (
@@ -215,6 +215,12 @@ class Context:
     # The placement's scratch (§15.5), made by the supervisor; None where the harness gets none
     # (workspace.SCRATCH_HARNESSES).
     scratch: Path | None = None
+    # The agy per-user `/tmp` scratch parent, hidden from this placement's sandbox so it cannot
+    # reach another placement's scratch there; set only for a placement whose sandbox hides it
+    # (workspace.TMP_SCRATCH_PARENT_HIDERS: Claude Code, Codex). None for an agy placement, which
+    # owns that parent, for one that hides nothing, and where there is no local `/tmp` scratch (an
+    # ssh host, no uid).
+    tmp_scratch_parent: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -271,8 +277,8 @@ def launch(ctx: Context) -> Launch:
     # (an empty record also clears one a former grant left).
     ctx.as_user.write(records / ghpr.PULL_REQUESTS, pull_requests_record(ctx))
     # Where maity also reads a file the agent names (inclone): its scratch, or nowhere.
-    scratch = f"{ctx.scratch}\n" if ctx.scratch is not None else ""
-    ctx.as_user.write(records / clonecheck.SCRATCH_RECORD, scratch)
+    scratch_record = f"{ctx.scratch}\n" if ctx.scratch is not None else ""
+    ctx.as_user.write(records / clonecheck.SCRATCH_RECORD, scratch_record)
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
@@ -325,6 +331,12 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
 # --- Claude Code ------------------------------------------------------------------------------
 
 
+def _shared_tmp(ctx: Context) -> list[str]:
+    """The agy per-user `/tmp` scratch parent to hide from this placement's sandbox, as a list
+    for a deny rule; empty for an agy placement (which owns it) or where there is none."""
+    return [str(ctx.tmp_scratch_parent)] if ctx.tmp_scratch_parent is not None else []
+
+
 def claude_settings(ctx: Context) -> dict[str, Any]:
     """The grant (§6.1): maity, git, the repository's own allow list, and file tools inside
     the clone and the placement's scratch only. Absolute paths take a double slash in Claude
@@ -372,9 +384,13 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # signs with it, runs outside.
             # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
             # re-open its credential as well, and that order is unverified here.
-            "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private)],
+            # The agy per-user `/tmp` scratch parent is hidden from read and write alike, so a
+            # placement that is not its owner cannot reach another placement's scratch there.
+            "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private),
+                                        *_shared_tmp(ctx)],
                            "denyWrite": [f"{git}/maity",
-                                         *(f"{git}/{name}" for name in GIT_PROTECTED)],
+                                         *(f"{git}/{name}" for name in GIT_PROTECTED),
+                                         *_shared_tmp(ctx)],
                            # Commands write the placement's scratch besides the clone (§15.5).
                            **({"allowWrite": [str(ctx.scratch)]}
                               if ctx.scratch is not None else {})},
@@ -588,6 +604,24 @@ def outermost(paths: Sequence[Path], opened: Sequence[Path] = ()) -> tuple[Path,
     return tuple(p for p in unique if not any(hidden_by(p, q) for q in unique))
 
 
+def codex_home(ctx: Context) -> Path:
+    """Codex's per-placement CODEX_HOME. Inside the placement scratch (§15.5) when it has one,
+    so it lies under the workspaces root the codex sandbox re-opens for this placement (and
+    hides from every other placement): there Codex's own sandbox can read and run its
+    per-command helper (`CODEX_HOME/tmp/arg0-linux`). The home is read-only to the session
+    (the runner writes its control files once, below), so the sandbox reads and executes the
+    helper, it does not create it. Under the runner's state directory the sandbox hides the
+    home (bwrap mounts over it), and then Codex runs no command at all, so `maity resume`
+    never starts (card tsk-hv7jbgy75zjt). Without a scratch (no workspaces root to carve, or
+    one that could not be made) it stays in the runner's directory as before, where the
+    sandbox hides it; `maity runner check` verifies from the local configuration that Codex is
+    given a scratch and the workspaces root is outside the state directory, but does not catch
+    a runtime fall-back to no scratch."""
+    if ctx.scratch is not None:
+        return ctx.scratch / "codex-home"
+    return ctx.agent_dir / "codex-home"
+
+
 def codex_config(ctx: Context) -> str:
     """`config.toml` in the placement's own CODEX_HOME (§6.1): Codex's sandbox with the
     workspace profile, the clone's `.git` writable (commits need it), no approvals asked,
@@ -599,7 +633,10 @@ def codex_config(ctx: Context) -> str:
     # stays readable, since the agent's `maity` runs inside the sandbox. Every directory
     # opened again below (the clone, the scratch) keeps a hidden path inside it listed.
     reopened = (ctx.clone, *((ctx.scratch,) if ctx.scratch is not None else ()))
-    roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private),
+    # The agy per-user `/tmp` scratch parent is hidden too (its own scratch sits beside the
+    # clone, so Codex has no need to reach `/tmp`'s scratch of another placement of this user).
+    shared = (ctx.tmp_scratch_parent,) if ctx.tmp_scratch_parent is not None else ()
+    roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private, *shared),
                       opened=reopened)  # fmt: skip
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
     return (
@@ -620,7 +657,21 @@ def codex_config(ctx: Context) -> str:
         f"{json.dumps(str(ctx.clone / '.git' / 'hooks'))} = \"read\"\n"
         f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n"
         # The placement's scratch (§15.5), under the hidden workspaces root, opened again.
-        + (f'{json.dumps(str(ctx.scratch))} = "write"\n' if ctx.scratch is not None else "") + "\n"
+        + (f'{json.dumps(str(ctx.scratch))} = "write"\n' if ctx.scratch is not None else "")
+        # Codex's own CODEX_HOME sits inside that writable scratch (codex_home), so the profile
+        # names it read, not write: a sandboxed command may read the home — its config.toml,
+        # any rules file, the auth.json link, and the per-command helper under tmp, which it
+        # also runs — but may write nothing there. The runner writes those control files once
+        # before the session starts; the session cannot rewrite the configuration a later
+        # restart reads. Read also keeps the home reachable (not hidden), so the helper stays
+        # readable and runnable. The same single source builds the launch env's CODEX_HOME, so
+        # the two never drift. Omitted when there is no scratch to carve: CODEX_HOME then stays
+        # in the runner's directory, which this profile hides, and `maity runner check` verifies
+        # the configuration before a placement starts (Codex is given a scratch, the workspaces
+        # root is outside the state directory), though a runtime fall-back to no scratch is
+        # beyond what it catches.
+        + (f'{json.dumps(str(codex_home(ctx)))} = "read"\n' if ctx.scratch is not None else "")
+        + "\n"
         "[permissions.maity.network]\nenabled = true\n\n"
         "[permissions.maity.network.domains]\n" + domains
         # Nobody answers a headless run: the question tool is not offered (cli/context/runner.md).
@@ -630,15 +681,25 @@ def codex_config(ctx: Context) -> str:
 
 def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
-    home = ctx.agent_dir / "codex-home"
-    ctx.as_user.write(home / "config.toml", codex_config(ctx))
+    home = codex_home(ctx)
+    config_text = codex_config(ctx)
     # The login of whoever runs the agents (the operator, or the agents' user), linked so
     # that a token refresh lands in the original; a link left from an earlier launch that
-    # points elsewhere, or nowhere, is replaced (AsUser.link).
+    # points elsewhere, or nowhere, is replaced. Linked only when there is a login to link.
     own = None if not ctx.as_user.direct else os.environ.get("CODEX_HOME")
     login = Path(own or ctx.as_user.home() / ".codex") / "auth.json"
-    if ctx.as_user.exists(login, "-f"):
-        ctx.as_user.link(login, home / "auth.json")
+    auth = login if ctx.as_user.exists(login, "-f") else None
+    if ctx.scratch is not None:
+        # The home sits in the agent-writable scratch: its control files are written to a
+        # descriptor opened without following a link from the workspaces root, so a codex-home
+        # swapped for a link is refused, never written through, out of the scratch.
+        scratch.write_codex_home(home, config_text, auth, ctx.as_user)
+    else:
+        # No scratch to carve: the home stays in the runner's own directory, below no
+        # agent-writable parent, so the plain writes are safe there.
+        ctx.as_user.write(home / "config.toml", config_text)
+        if auth is not None:
+            ctx.as_user.link(auth, home / "auth.json")
     ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     env = {**env, "CODEX_HOME": str(home)}
     model = ctx.placement.get("model")

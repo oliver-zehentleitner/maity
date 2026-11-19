@@ -17,7 +17,7 @@ from maity_hub.auth import password_resets, second_factor
 from maity_hub.instance_settings import put
 from maity_hub.notifications import mailer
 from maity_hub.routes import password_reset
-from tests import factory, flow
+from tests import factory, flow, stored_keys
 from tests.concurrency import finished, race, waiting
 from tests.conftest import ClientFactory
 from tests.test_email_sign_in import setup
@@ -239,6 +239,28 @@ def test_many_sources_get_an_address_few_mails_and_every_answer_alike(
         answers.append((answered.status_code, answered.json()))
     assert answers == [(202, {"expires_in": 1800})] * 12
     assert len(resets(migrated)) == 5  # the address's hour: five networks, whichever they are
+
+
+def test_the_reset_s_counts_keep_the_address_only_as_its_keyed_fingerprint(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    client, _ = setup(make_client, migrated)
+    limits = password_reset.LIMITS
+    counted = (
+        limits.pair_quarter,
+        limits.pair_day,
+        limits.recipient_hour,
+        limits.recipient_day,
+        limits.recipient_hour_networks,
+        limits.recipient_day_networks,
+        limits.recipient_mails_hour,
+        limits.recipient_mails_day,
+    )
+    for limiter in counted:
+        limiter.reset()
+    assert ask(client, "  ADA@example.com  ").status_code == 202
+    assert len(resets(migrated)) == 1
+    stored_keys.assert_keyed(migrated, counted, "ada@example.com")
 
 
 def test_two_networks_asking_again_and_again_leave_the_owner_a_link(

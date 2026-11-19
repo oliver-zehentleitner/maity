@@ -417,8 +417,13 @@ def start_hub(
         MAITY_WEB_DIR=str(WEB),
         MAITY_ATTACHMENT_DIR=str(attachments),
         MAITY_PUBLIC_PAGES="on",
-        **(extra or {}),
+        # A test browser session reads far faster than a person: no read limit per credential,
+        # unless `extra` sets one (read_limit_round).
+        MAITY_MAX_READS_PER_MINUTE="unlimited",
     )
+    # After the defaults, so `extra` overrides one: in the dict() call above a key named twice
+    # was a TypeError before the hub started.
+    env.update(extra or {})
     HUB_ENV[base] = env
     log_path = logs / log_name
     with open(log_path, "w") as log:  # the hub keeps its own copy of the descriptor
@@ -925,6 +930,7 @@ def main() -> int:
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
                     password_reset_round(run, browser, work, artifacts)
+                    read_limit_round(run, browser, work, artifacts)
                 except Exception:
                     report_failure(list(run.recent), base, artifacts)
                     # What the page itself said before the step failed: its errors explain more than a missing element.
@@ -3453,6 +3459,145 @@ def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None
         run.base = first_base
 
 
+# Reads of /api/v1/me from inside the page, with its session cookie (a read needs no CSRF header),
+# until the first refusal: then the session's budget is spent. At most 200, so a hub that never
+# refuses fails the step instead of holding it; any answer but 200 and 429 ends it at once.
+BURN_READS_JS = """async () => {
+  for (let i = 1; i <= 200; i++) {
+    const r = await fetch("/api/v1/me", { credentials: "same-origin" });
+    if (r.status === 429) return { reads: i, status: 429, retry: r.headers.get("Retry-After"), body: await r.json() };
+    if (r.status !== 200) return { reads: i, status: r.status, body: await r.text() };
+  }
+  return null;
+}"""
+
+# One read of /api/v1/me at a time, polled by wait_for_function: true once one answers 200, that
+# is once the counter takes a read of this session again. Synchronous, so the poll never mistakes
+# a pending promise for a truthy answer.
+READS_AGAIN_JS = """() => {
+  if (!window.__e2eReading) {
+    window.__e2eReading = true;
+    fetch("/api/v1/me", { credentials: "same-origin" })
+      .then((r) => { window.__e2eReadStatus = r.status; }, () => {})
+      .finally(() => { window.__e2eReading = false; });
+  }
+  return window.__e2eReadStatus === 200;
+}"""
+
+# The Retry-After a refused session must carry before a load counts on it (read_limit_round).
+REFUSED_FOR_AT_LEAST = 10
+
+
+def read_limit_round(run: Run, browser, work: Path, artifacts: Path) -> None:
+    """The refused read (§1.7 "Reads per credential") as the reader sees it, on a hub of its own
+    with the lowest read limit it takes (60 a minute): `rate_limited` through js/errors.js to
+    the page that could not load. Every other hub of this run reads without a limit (start_hub)."""
+    home = work / "read-limit-hub"
+    home.mkdir()
+    port = free_port()
+    first_base = run.base
+    run.base = f"http://127.0.0.1:{port}"
+    run.step(f"read limit hub on {run.base}: a session past 60 reads a minute sees the page that could not load")
+    log_name = "hub-read-limit.log"
+    hub = start_hub(home, artifacts, port, {"MAITY_MAX_READS_PER_MINUTE": "60"}, log_name)
+    contexts = []
+    # Why each load below is refused, without a sleep (hub/src/maity_hub/read_limits.py
+    # ReadCounter.take, ratelimit.estimate_wait):
+    # - The counter's key is the session's hash (auth/caller.py `_cookie`): each sign-in is a
+    #   credential with counts of its own, and nothing an earlier session read counts for it.
+    # - A refused read is not counted (take returns before `current += 1`). Once the burn is
+    #   refused, a read of the session fits again only when time alone makes room: the previous
+    #   minute's weight falling within this minute, or this minute rolling over.
+    # - Retry-After is ceil(T) of exactly that T (estimate_wait solves current + 1 + previous *
+    #   (1 - elapsed) <= limit for the elapsed it needs). Retry-After >= REFUSED_FOR_AT_LEAST
+    #   (10) means every read of that session is refused for more than 9 s after the burn.
+    # - A load decides on its first counted reads: GET /bootstrap (js/api.js prime, one read; a
+    #   `rate_limited` answers the whole bundle, routes/bootstrap.py WHOLE), then GET
+    #   /auth/session on its own route, whose 429 reaches pageFailed (js/app.js render). The
+    #   view's own reads run only after /auth/session and /me answered; a refusal there would
+    #   show errorBox instead, which is the case this rules out.
+    # So a load fails only if the hub takes its GET /auth/session more than 9 s after the burn,
+    # where it takes about a second. A burn with a shorter Retry-After is not used: it ended in
+    # the last seconds of a minute, or the session's reads straddled a minute's start and that
+    # minute's weight frees a slot about every second. The round then waits, as a condition, until
+    # that session reads again, which is early in a minute (1 s after its start in the first case,
+    # at most about 10 s after the burn in the second), and signs in once more: that session's
+    # reads all fall in that minute, previous = 0, and its Retry-After is ceil(seconds left + 1),
+    # at least 10 unless the two sign-ins with their burns took more than about 40 s.
+    try:
+
+        def refused_session(what: str):
+            """A new session, signed in, its reads spent, refused for more than 9 s from now."""
+            for attempt in (1, 2):
+                context, page = sign_in(run, browser)
+                contexts.append(context)
+                burned = page.evaluate(BURN_READS_JS)
+                assert burned, f"{what}: 200 reads of /api/v1/me without a refusal: the read limit does not hold"
+                assert burned["status"] == 429, (
+                    f"{what}: GET /api/v1/me answered {burned['status']} on read {burned['reads']}, "
+                    f"neither 200 nor 429: {burned['body']}"
+                )
+                assert burned["body"]["error"]["code"] == "rate_limited", burned
+                assert burned["retry"] and int(burned["retry"]) >= 1, burned
+                retry = int(burned["retry"])
+                if retry >= REFUSED_FOR_AT_LEAST:
+                    return page, burned
+                assert attempt == 1, (
+                    f"{what}: a session signed in early in a minute still answered Retry-After {retry}, "
+                    f"under {REFUSED_FOR_AT_LEAST}"
+                )
+                page.wait_for_function(READS_AGAIN_JS, polling=250, timeout=TIMEOUT_MS)
+                context.close()
+            raise AssertionError(f"{what}: no refused session")
+
+        page, burned = refused_session("English")
+        hub_message = burned["body"]["error"]["message"]
+        page.goto(run.base + "/all")
+        failed = page.locator("main .page-failed")
+        reason = page.locator("main .page-failed-reason")
+        expect(failed).to_be_visible()
+        # In English the hub's own message stands (js/errors.js): the title is the page's, the
+        # details hold the status, the code and the hub's words. A closed <details> counts too.
+        expect(page.locator("main .page-failed-title")).to_have_text("Maity couldn't load this page")
+        expect(reason).to_contain_text("HTTP 429 rate_limited")
+        expect(reason).to_contain_text(hub_message)
+        run.shot(page, "read-limit-failed-1280")
+        run.a11y(page, "read limit: the page that could not load")
+
+        # Another language takes errors.js's words for the code, from its catalog, in place of the
+        # hub's English: the mapping `rate_limited` → error.rate_limited, read from de.json. On a
+        # session of its own: the screenshot and the axe pass above take seconds of the first one's.
+        de = json.loads((WEB / "i18n" / "de.json").read_text())
+        page, _ = refused_session("German")
+        failed = page.locator("main .page-failed")
+        reason = page.locator("main .page-failed-reason")
+        page.goto(run.base + "/all?lang=de")
+        expect(page.locator("html")).to_have_attribute("lang", "de")
+        expect(failed).to_be_visible()
+        expect(page.locator("main .page-failed-title")).to_have_text(de["page.failed.other"])
+        expect(reason).to_contain_text("HTTP 429 rate_limited")
+        expect(reason).to_contain_text(de["error.rate_limited"])
+        expect(reason).not_to_contain_text(hub_message)
+
+        # The refusal came from the limit per credential, not from an ingress or a route limit:
+        # the hub's one INFO line per refusal (read_limits.take).
+        logged = (artifacts / log_name).read_text()
+        assert re.search(
+            r"read limit: GET /api/v1/\S+ credential=[0-9a-f]{12} limit=60 retry_after=\d+", logged
+        ), f"no read limit line in {log_name}"
+        # The refusals were asked for here; the browser's console line for each is exempt already.
+        run.problems = [p for p in run.problems if not re.fullmatch(r"GET /api/v1/\S+ answered 429", p)]
+        no_problems(run, "read limit")
+    finally:
+        for c in contexts:
+            try:
+                c.close()
+            except Exception:
+                pass
+        stop_hub(hub)
+        run.base = first_base
+
+
 def fixture_views(run: Run, browser) -> None:
     """Views whose richer states the hub here cannot reach, in fixture mode (file://):
     the Why view with the published maity.dev family, one part failing, the root unreadable."""
@@ -5543,6 +5688,32 @@ def stored_page_layout(run: Run, browser) -> None:
             context.close()
 
 
+def settle(seen: Page, check: str, arg) -> None:
+    """Wait until `check`, a function of `arg` run in the page, is true, before a read whose
+    assertion follows. A layout or colour read once can see the view before the frame's
+    stylesheets apply to it: the shell's stored page stands until the dashboard draws over it, an
+    old view until the new one is drawn (tsk-5q7vxjm75t5v, tsk-z4ps7cg7ve25). The check looks the
+    element up again on each poll and tests the exact quantity the assertion reads. It gives up
+    after the timeout without failing: the read after it then names what it found."""
+    try:
+        seen.wait_for_function(check, arg=arg)
+    except PlaywrightError:
+        pass  # the assertion after it names the value
+
+
+def settle_columns(seen: Page, selector: str, n: int) -> None:
+    """`settle` for a grid's number of columns, as the checks read it."""
+    settle(seen, "([s, n]) => { const e = document.querySelector(s);"
+           " return !!e && getComputedStyle(e).gridTemplateColumns.split(' ').length === n; }", [selector, n])
+
+
+# The frame's sheets as the checks list them, and the page no wider than the window: waited for
+# too, since a late or switched stylesheet changes both (tsk-z4ps7cg7ve25).
+SHEET_ON = ("(name) => [...document.styleSheets].filter(s => !s.disabled)"
+            ".map(s => (s.href || '').split('/').pop().split('?')[0]).includes(name)")
+NOT_WIDER = "() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0"
+
+
 def visitor_layout(run: Run, browser) -> None:
     """A public page the dashboard draws for a visitor, in the frame of §16.7.5 as the sign-in and
     the stored pages are (tsk-tp97v64vpy5z, PR 3): the landing page's header and footer around it,
@@ -5572,13 +5743,21 @@ def visitor_layout(run: Run, browser) -> None:
                 # The approved mockup's project page (tsk-9482zxza3gs3): the landing's dark hero, the
                 # figures band on the Overview, the views as a bar across the whole window under them;
                 # at 390 px the hero stacked, three figures a row, the bar scrolling sideways.
-                hero = seen.locator("section.phero")
+                # The view of this kind, not the one being left or the shell's stored page. Its colour
+                # (.hero in landing.css) and, on a phone, its one column (public-sections.css) are
+                # waited for before each is read once (tsk-z4ps7cg7ve25): a visible h1 proves neither.
+                scope = f'section.view-visitor.public-view[data-kind="{kind}"]:not([inert])'
+                view = f"{scope} section.phero"
+                hero = seen.locator(view)
+                settle(seen, "([s, c]) => { const e = document.querySelector(s);"
+                       " return !!e && getComputedStyle(e).backgroundColor === c; }", [view, "rgb(11, 15, 20)"])
                 assert hero.evaluate("e => getComputedStyle(e).backgroundColor") == "rgb(11, 15, 20)", f"{where}: the hero is not the dark zone"
                 expect(hero.locator(".pmark")).to_have_text("E")
                 expect(hero.locator("p.crumb")).to_have_text("owner / e2e-alpha")
-                bar = seen.locator("nav.ptabs")
+                bar = seen.locator(f"{scope} nav.ptabs")
                 expect(bar.locator('a[aria-current="page"]')).to_have_count(1)
                 assert bar.evaluate("e => e.getBoundingClientRect().width") == width, f"{where}: the tab bar is not as wide as the window"
+                settle(seen, SHEET_ON, "public-sections.css")
                 sheets = seen.evaluate("[...document.styleSheets].filter(s => !s.disabled).map(s => (s.href || '').split('/').pop().split('?')[0])")
                 assert "public-sections.css" in sheets, f"{where}: {sheets}"
                 if kind == "project":
@@ -5586,17 +5765,22 @@ def visitor_layout(run: Run, browser) -> None:
                     # "Try it" is the header's own call to action, there only where the header has one.
                     offered = seen.locator("header.site-header a.btn.btn-primary").count()
                     expect(hero.locator("div.cta a.btn.btn-primary")).to_have_count(offered)
-                    figures = seen.locator("section.band .stats5")
+                    # The grids' columns (.stats5, .mgrid in public-sections.css, fewer under its
+                    # max-width: 760px) are waited for in this view before each is read once.
+                    grid = f"{scope} section.band .stats5"
+                    figures = seen.locator(grid)
                     expect(figures.locator(".stat").first).to_be_visible()
+                    settle_columns(seen, grid, 3 if width < 760 else 5)
                     columns = figures.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
                     assert columns == (3 if width < 760 else 5), f"{where}: {columns} figure columns"
                     assert bar.evaluate("e => e.getBoundingClientRect().top") >= figures.evaluate("e => e.getBoundingClientRect().bottom") - 1, f"{where}: the bar is not under the band"
                     # The team as cards under the bar (part 2): four a row, one on a phone; each card's
                     # picture or letter, name and @handle.
-                    team = seen.locator("section.team-cards")
+                    team = seen.locator(f"{scope} section.team-cards")
                     expect(team.locator("a.mcard").first).to_be_visible()
                     expect(team.locator("a.mcard .mc-t small").first).to_have_text(re.compile(r"^@"))
                     expect(team.locator("a.mcard .av").first).to_be_visible()
+                    settle_columns(seen, f"{scope} section.team-cards .mgrid", 1 if width < 760 else 4)
                     cards = team.locator(".mgrid").evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
                     assert cards == (1 if width < 760 else 4), f"{where}: {cards} card columns"
                     assert team.evaluate("e => e.getBoundingClientRect().top") >= bar.evaluate("e => e.getBoundingClientRect().bottom") - 1, f"{where}: the team is not under the bar"
@@ -5609,7 +5793,11 @@ def visitor_layout(run: Run, browser) -> None:
                     assert tab.evaluate("e => e.getBoundingClientRect().top") >= bar.evaluate("e => e.getBoundingClientRect().bottom") - 1, f"{where}: the board is not under the bar"
                     assert tab.evaluate("e => e.getBoundingClientRect().width") == width, f"{where}: the board's section is not as wide as the window"
                 if width < 760:
+                    settle(seen, "(s) => { const e = document.querySelector(s + ' nav.ptabs .wrap');"
+                           " return !!e && getComputedStyle(e).overflowX === 'auto'; }", scope)
                     assert bar.locator(".wrap").evaluate("e => getComputedStyle(e).overflowX") == "auto", f"{where}: the bar does not scroll"
+                    settle(seen, "(s) => { const e = document.querySelector(s + ' .wrap');"
+                           " return !!e && getComputedStyle(e).gridTemplateColumns.split(' ').length === 1; }", view)
                     assert hero.locator(".wrap").evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length") == 1, f"{where}: the hero is not stacked"
                 expect(seen.locator("header.site-header")).to_be_visible()
                 expect(seen.locator("footer.site-footer")).to_be_visible()
@@ -5618,6 +5806,7 @@ def visitor_layout(run: Run, browser) -> None:
                 if width >= 960:
                     expect(sign_in).to_be_visible()
                 assert f"next=%2Fowner%2Fe2e-alpha" in (sign_in.get_attribute("href") or ""), f"{where}: {sign_in.get_attribute('href')}"
+                settle(seen, NOT_WIDER, None)
                 wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
                 assert wide <= 0, f"{where}: {wide} px wider than the window"
                 assert not refused, f"{where}: {refused[:2]}"
@@ -5657,7 +5846,8 @@ def profile_layout(run: Run, browser) -> None:
         # The view of this kind, not the one being left: after a route change the old view stays,
         # inert, until the new one is drawn (js/app.js render), so a check of "a hero" could read
         # the old page or a style mid-switch. The colour is waited for, as the page settles.
-        view = f"section.view-visitor.profile-view[data-kind='{kind}']:not([inert]) section.uhero"
+        scope = f"section.view-visitor.profile-view[data-kind='{kind}']:not([inert])"
+        view = f"{scope} section.uhero"
         hero = seen.locator(view)
         expect(hero.locator("h1")).to_be_visible()
         expect(hero).to_have_css("background-color", "rgb(11, 15, 20)")  # the dark zone
@@ -5668,40 +5858,50 @@ def profile_layout(run: Run, browser) -> None:
         # then saw 0 px on a page this check did not change. A picture that never gets the size
         # still fails below: the wait gives up after the timeout and the read reports what it has.
         want = 96 if width < 760 else 128
-        try:
-            seen.wait_for_function(
-                "([s, w]) => { const e = document.querySelector(s + ' .wrap > .av');"
-                " return !!e && Math.round(e.getBoundingClientRect().width) === w; }",
-                arg=[view, want],
-            )
-        except PlaywrightError:
-            pass  # the assertion below names the size
+        settle(seen, "([s, w]) => { const e = document.querySelector(s + ' .wrap > .av');"
+               " return !!e && Math.round(e.getBoundingClientRect().width) === w; }", [view, want])
         side = pic.evaluate("e => Math.round(e.getBoundingClientRect().width)")
         assert side == want, f"{where}: the picture is {side} px"
         assert pic.evaluate("e => getComputedStyle(e).borderRadius") != "50%" if kind == "agent" else True, f"{where}: the agent's picture is round"
+        # The column on a phone (.uhero .wrap under public-sections.css's max-width: 760px) is waited
+        # for on its own (tsk-z4ps7cg7ve25): the picture's wait saw its rule at one moment, and on
+        # #1983 the read after it still found a row. The picture's size proves nothing later.
+        settle(seen, "([s, col]) => { const e = document.querySelector(s + ' .wrap');"
+               " return !!e && (getComputedStyle(e).flexDirection === 'column') === col; }", [view, width < 760])
         stacked = hero.locator(".wrap").evaluate("e => getComputedStyle(e).flexDirection") == "column"
         assert stacked == (width < 760), f"{where}: the hero stacked is {stacked}"
         expect(seen.locator("nav.person-tabs, nav.ptabs")).to_have_count(0)
-        projects = seen.locator("section.profile-projects .pgrid")
+        # The grids' columns (.pgrid, .mgrid, .stats4 in public-sections.css, fewer under its
+        # max-width: 760px) are each waited for too, in this view: a visible card proves no
+        # stylesheet, and probe A of tsk-z4ps7cg7ve25 read "1 project columns" with the sheet off.
+        grid = f"{scope} section.profile-projects .pgrid"
+        projects = seen.locator(grid)
         expect(projects.locator("a.pcard").first).to_be_visible()
+        settle_columns(seen, grid, 1 if width < 760 else 3)
         got = {"stacked": stacked, "projects": projects.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")}
         assert got["projects"] == (1 if width < 760 else 3), f"{where}: {got['projects']} project columns"
         if kind == "person":
-            agents = seen.locator("section.profile-agents .mgrid")
+            grid = f"{scope} section.profile-agents .mgrid"
+            agents = seen.locator(grid)
             expect(agents.locator("a.mcard[href='/owner/agents/e2e-agent']")).to_be_visible()
+            settle_columns(seen, grid, 1 if width < 760 else 4)
             got["agents"] = agents.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
             assert got["agents"] == (1 if width < 760 else 4), f"{where}: {got['agents']} agent columns"
         else:
             expect(hero.locator("p.owner a[href='/owner']")).to_be_visible()
             expect(hero.locator("dl.facts dt").first).to_be_visible()
-            band = seen.locator("section.band .stats4")
+            grid = f"{scope} section.band .stats4"
+            band = seen.locator(grid)
             expect(band.locator(".stat").first).to_be_visible()
+            settle_columns(seen, grid, 2 if width < 760 else 4)
             got["figures"] = band.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
             assert got["figures"] == (2 if width < 760 else 4), f"{where}: {got['figures']} figure columns"
+        settle(seen, SHEET_ON, "public-sections.css")
         sheets = seen.evaluate("[...document.styleSheets].filter(s => !s.disabled).map(s => (s.href || '').split('/').pop().split('?')[0])")
         assert "public-sections.css" in sheets, f"{where}: {sheets}"
         expect(seen.locator("header.site-header")).to_be_visible()
         expect(seen.locator("footer.site-footer")).to_be_visible()
+        settle(seen, NOT_WIDER, None)
         wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
         assert wide <= 0, f"{where}: {wide} px wider than the window"
         return got
@@ -8027,7 +8227,8 @@ def invitations_step(run: Run, page: Page) -> None:
         watch_page(run, guest)
         guest.goto(f"{run.base}/invite/{token}")
         card = guest.locator("article.invite")
-        expect(card).to_contain_text("Owner invites you to join E2E Alpha as member · reviewer.")
+        # The inviter by display name and handle (§3.4, invited_by.handle).
+        expect(card).to_contain_text("Owner (@owner) invites you to join E2E Alpha as member · reviewer.")
         expect(card.locator(".invite-note")).to_have_text("Welcome to the e2e project.")
         # A closed hub and no address: signing in is the one way in.
         expect(card.get_by_role("link", name="Create one", exact=True)).to_have_count(0)

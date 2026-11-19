@@ -604,6 +604,31 @@ def test_workspace_in_use_takes_its_details(setup: Setup, detail: str) -> None:
     assert get(setup, body["id"])["reported"]["detail"] == detail
 
 
+@pytest.mark.parametrize(
+    ("state", "reason", "detail"),
+    [
+        ("failed", "workspace_in_use", "workspace_in_repository"),
+        ("failed", "workspace_in_use", "workspace_not_bare"),
+        ("failed", "harness_refused", "target_unknown"),
+        ("exited", "network", None),
+        ("exited", "context_full", None),
+        ("failed", "context_full", None),
+        ("failed", "auth", None),
+        ("failed", "harness_config", None),
+    ],
+)
+def test_the_codes_the_contract_listed_before_the_hub_are_taken(
+    setup: Setup, state: str, reason: str, detail: str | None
+) -> None:
+    """§15.7 named these before the hub took them; a runner that sent one got `invalid`
+    (tsk-m1mkmx0ncckr). test_placement_codes.py keeps the lists equal from now on."""
+    body = placed(setup)
+    taken = report(setup, body, 1, state=state, reason=reason, detail=detail)
+    assert taken.status_code == 200, taken.text
+    reported = get(setup, body["id"])["reported"]
+    assert (reported["state"], reported["reason"], reported["detail"]) == (state, reason, detail)
+
+
 @pytest.mark.parametrize(("state", "detail"), [("exited", "idle"), ("failed", "tool")])
 def test_hung_takes_its_details(setup: Setup, state: str, detail: str) -> None:
     """§15.14: a runner that ended a silent run reports `hung` (tsk-cbz655mvt4ss)."""

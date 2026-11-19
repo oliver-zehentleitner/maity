@@ -205,7 +205,10 @@ read bodies (`curl -D -` with `-o`) still sees why a call failed:
 
 `code` is stable and machine-readable, `message` is for a log or a human,
 `details` is an object whose keys depend on the code (may be `{}`). A
-`message` never quotes the request body.
+`message` never quotes the request body. A client's key in a
+`details.fields` path that holds a lone surrogate (JSON accepts one, UTF-8
+cannot encode it) is shown as its `\uXXXX` escape text, so the answer
+always encodes.
 
 | HTTP | `code` | When |
 |---|---|---|
@@ -396,14 +399,14 @@ the hub records it on the session.
 | Request body | 64 KiB; the landing page's settings 256 KiB (§16.7); the sign-in and sign-up pages' settings 512 KiB (§16.7.4); an uploaded logo or banner 1 MiB (§11.2), an uploaded avatar 1 MiB and 4096 pixels on a side (§6.10), an uploaded attachment 10 MiB (§8.7), a replacement's sealed transcript 64 MiB (§15.14, not built yet). On the join host (§1.1) every body is held to 64 KiB, whatever its path takes on the public host. A body that may be larger than 64 KiB on a route that takes a caller is read only once the credential filter has checked the query and the caller has passed the checks of §2 that need no body, the ones §8.7 lists; a call that fails one gets that refusal with its body unread. The forge webhook takes no caller: it has its own limit and is checked by its signature (§17.4) |
 | Time to send a request body | 120 seconds, all of it, from when the hub starts to read it; then `request_timeout` (§1.3). A replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet) has 30 minutes, about 300 kbit/s for 64 MiB |
 | Requests to one route | none beyond the route's own limits by default; the general limit per client address is the ingress's, and a signed-in caller's reads have the limit per credential below. `MAITY_ROUTE_LIMITS` sets limits on single routes of the API, each `<METHOD> <route> = <count>/<seconds>` with the route as `/api/v1/openapi.json` lists it (`GET /api/v1/projects/{owner}/{slug}/events = 300/60`), counted per client address (§2.5) in each hub process. Past one the call is `rate_limited` with `Retry-After` before its body is read or its caller looked up. A route the document does not list with that method stops the hub at its start, and a change takes a restart |
-| Reads per credential | `max_reads_per_minute` per credential, default 600: the instance's value (§16.5), or for an agent's credential its project's if that is lower (§6.1). A read is a `GET` or `HEAD` of the API (`/api/v1/…`) by a caller with a credential: an agent's credential (§2.2), a runner's (§15.1) or a human's session (§2.1); a bridge's call with `Maity-For` (§2.3) counts against the bridge's own credential. An agent's credential takes its project's value, every other credential the instance's. The events long-poll counts once per call. Counted per credential in each hub process, as `MAITY_ROUTE_LIMITS`. The check runs once the credential is known and before the side effects of §2.4, so a refused read renews nothing; past the limit the read is `rate_limited` with `Retry-After`, the seconds until the window has room for one more. Writes do not count; a call without a credential keeps the limits of the rows around this one and the ingress's |
+| Reads per credential | `max_reads_per_minute` per credential, default 1000: the instance's value (§16.5), or for an agent's credential its project's if that is lower (§6.1; the project's value is not built yet, tsk-ybc2ma72dzvq: today every credential takes the instance's). A read is a `GET` or `HEAD` of the API (`/api/v1/…`, the path as the hub routes it, its percent-escapes decoded) by a caller with a credential: an agent's credential (§2.2), a runner's (§15.1) or a human's session (§2.1); a bridge's call with `Maity-For` (§2.3) counts against the bridge's own credential. An agent's credential takes its project's value, every other credential the instance's. The events long-poll counts once per call, when it arrives, however long it is held and however often the hub looks again while it waits (§8.3): a `maity wait` loop asks once per answer, at most once a second while every poll answers at once, and its `Retry-After` is kept (§13). `GET /bootstrap` counts once for all its parts (§5.4). The window is one minute, sliding: the count of the current minute plus the previous minute's, weighted by how much of it the window still covers. Counted per credential in each hub process, as `MAITY_ROUTE_LIMITS`; the instance's value is read again at most every 30 seconds, at once in the process that changes it. The check runs once the credential is known and before the side effects of §2.4, so a refused read renews nothing and writes no presence; past the limit the read is `rate_limited` with `Retry-After`, the seconds until the window has room for one more, and the hub writes one line to its log naming the route and a short tag of the credential, never the credential, its id or the session. Writes do not count; a call without a credential keeps the limits of the rows around this one and the ingress's |
 | Open claims per caller | `max_open_claims` per member and project, default `null`, no cap (§6.1, §6.5); then `claim_limit`; not built yet, tsk-ybc2ma72dzvq: today the hub caps no claims |
 | Public page and badge reads | 60 per minute per client address each by default, `MAITY_PUBLIC_PAGE_LIMIT` and `MAITY_BADGE_LIMIT` as `<count>/<seconds>` (§6.20, §16.9) |
 | Avatar changes | 10 `PUT` or `DELETE` per hour per account or profile, all its credentials together (§6.10) |
 | Handle changes | 3 per 24 hours per account or profile; at most `max_aliases` aliases per id, default 3, at most 8 (§6.24, §16.5) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
 | `title` fields | 200 characters |
-| Names (a project's `name`, an agent profile's `display_name`, also as `agent.display_name` of a join or a placement that creates the profile) | 200 characters, one line: a control or line-break character (Unicode categories Cc, Zl and Zp: C0, U+007F, C1 such as U+0085, U+2028, U+2029) is `invalid` with `details.fields.<field>: "control_character"`; a name may reach a mail's header (§18.5) |
+| Names (a project's `name`, an agent profile's `display_name`, also as `agent.display_name` of a join or a placement that creates the profile) | 200 characters, plain text (§1.7.1): a character the rule refuses is `invalid` with `details.fields.<field>: "control_character"`; a name may reach a mail's header (§18.5) |
 | A card's restricted text (§6.4) | 1000 characters, plain text; 200 cards per project with one; at most 200 member ids in the setting's list (§6.1) |
 | Restricted text writes (§6.4) | 20 `PUT` or `DELETE` that change a text per membership per hour, 10 `PUT` that change a text per card per hour (`DELETE` exempt), then `rate_limited`; at most one `restricted_changed` notification per card and human in 10 minutes, and one for the set per human and project in 10 minutes |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB, counted as 16 384 characters (code points), not bytes |
@@ -464,6 +467,75 @@ the hub records it on the session.
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
 and the inbox bounded; what does not fit goes into the repository.
+
+#### 1.7.1 Plain text
+
+Names and short texts follow one rule. A plain text holds no control
+character (Unicode category Cc: C0, U+007F, the C1 characters
+U+0080–U+009F), no format character (Cf: zero-width characters, bidi
+controls and marks, the byte order mark, the soft hyphen, the tag
+characters U+E0000–U+E007F), no surrogate (Cs), no private-use
+character (Co), no code point the hub's Unicode data leaves unassigned
+(Cn, the noncharacters such as U+FFFF included) and no line or paragraph
+separator (Zl, Zp: U+2028, U+2029). Such a character either hides from
+the reader or changes how the text around it reads; the hub checks the
+categories, not a list of code points, so one nobody named is refused as
+well. A character Unicode assigned after the hub's Unicode data is Cn
+there, so a very new emoji is refused until the hub is updated.
+A field that takes several lines keeps the line feed and the tab
+and nothing else of the set; a carriage return is refused there too.
+Spaces, letters of every script and emoji are plain text. A name (the
+first row below) also keeps an emoji sequence: U+200D (zero-width
+joiner) only between two emoji characters, U+FE0F (variation selector
+16) only right after one, so `U+1F469 U+200D U+1F4BB` (a technologist) and `❤️` are a name's, and a joiner
+between letters, at either end of a sequence or a selector after a
+letter are not. An emoji character, the only one a joiner stands
+between, is one of category So at U+1F000 or above (pictographs, the
+regional indicators of a flag), in U+2600–U+27BF (miscellaneous
+symbols, dingbats) or in U+2B00–U+2BFF (miscellaneous symbols and
+arrows: `⭐`, `⬛`), or a skin-tone modifier U+1F3FB–U+1F3FF. U+FE0F asks
+for a character's emoji presentation, so it also stands after a symbol
+that has a text and an emoji form: an emoji character, any character of
+category So in U+2000–U+2BFF except the braille patterns U+2800–U+28FF
+(`™️`, `⌚️`), and U+00A9 and U+00AE (`©️`, `®️`). Such a pair may be
+followed by a joiner and an emoji character. A keycap is a name's too: a
+digit, `#` or `*`, then U+FE0F, then U+20E3 (combining enclosing
+keycap), as in `1️⃣`; U+FE0F after a digit, `#` or `*` only with U+20E3
+right after it, and U+20E3 only in such a sequence, so `1` with U+FE0F
+alone, `1` with U+20E3 alone and a bare U+20E3 are refused in a name. A symbol of category So
+elsewhere, a braille pattern included, takes neither, so `U+2800 U+FE0F`
+and `U+00A9 U+200D U+00A9` are refused in a name. Every other field
+refuses U+200D. A name that is not empty but holds only spaces
+(Zs) and the characters that show as nothing though they are letters or
+symbols (U+115F, U+1160, U+3164, U+FFA0, U+2800) is refused with the
+field's reason; inside a name with something to read they pass.
+
+The rule does not cover everything a reader may mistake: combining marks
+(Mn) are not bounded, so marks stacked on a letter, U+034F or a
+variation selector other than U+FE0F after a letter pass; a filler
+character (category Lo or So) passes inside a name and in every field
+other than a name; and the hub does not compare names, so a name of
+letters that look like those of another script (Cyrillic ones that look
+Latin) passes.
+
+| Field | Lines | A refused character |
+|---|---|---|
+| A project's `name`, an agent profile's, a human's and an organisation's `display_name` (§1.7, §2.7.4, §6.26) | one | `details.fields.<field>: "control_character"`; a human's at registration as §2.7.4 says; an organisation's `details.fields.display_name: "invalid"` (§6.26) |
+| An invitation's `note` (§3.4) | several | `details.fields.note: "control_character"` |
+| A card link's `url`, `forge_url` and `label` (§6.13) | one | `url` `not_a_url`, `forge_url` `not_a_forge_url`, `label` `control_character` |
+| A person's `website`, a project's `links` (§16.9, §6.11) | one | `details.fields.website: "format"`, a link's as §6.11 says |
+| A review's `subject` (§8.4) | one | `details.fields["review.subject"]: "format"` |
+| A bridge's `purpose` (§2.3) | one | as §2.3 says |
+| A human's preferences, written or proposed (§19.4) | several | `details.fields.markdown: "control_character"` |
+
+A value stored before the rule is kept as it is and shown as it is in
+JSON. Where the hub puts a project's name into a text or Markdown line
+for agents (the join page, §3.2; the rules document, §6.9; the summary
+of a request it files, a bridge's consent included, §2.3), or a display
+name into a request or a mail (an invitation's, §3.4; a notification
+mail's subject and body, §18.5), each run of
+refused characters there becomes one space, so the name stays on its
+line and in its sentence.
 
 ## 2. Authentication
 
@@ -2843,8 +2915,7 @@ mentions find a human by it and a project's owner is named by it (§6.25);
 compared as written, it is lower case by the syntax. It is never a
 reserved first segment (§16.11), nor a name the operator lists for the
 instance token while it is no handle and no alias (§11.4): `invalid`,
-`details.fields.handle: "reserved"`. `display_name` is 1–64 characters, no control
-or line-break character (Unicode Cc, Zl, Zp, as §1.7's names). A taken handle is the completion page's error "This handle is
+`details.fields.handle: "reserved"`. `display_name` is 1–64 characters of plain text (§1.7.1). A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
 password, and counted in the completion limit (§2.7.3). The human
 renames it later themselves; the old handle stays theirs as an alias
@@ -4546,7 +4617,9 @@ person, one project and one trust and role, it is used once, and it expires.
   address (§2.7.1) is this one may accept (`forbidden`,
   `invitation_address_mismatch`), and the hub mails the link when mail
   is enabled (§16.2; a notification mail of §18.5 with the inviter's
-  display name, the project's name, the trust and role and the `note`, under the
+  display name and, in the body, handle ("display name (@handle)", as
+  the page shows them, below), the project's name, the trust and role
+  and the `note`, under the
   invitation budget, `invitation_max_per_hour`); without mail, or without an
   address, the inviter passes the `url` on themselves. Without an
   address, whoever holds the link may accept — the inviter's choice.
@@ -4572,7 +4645,8 @@ person, one project and one trust and role, it is used once, and it expires.
   either commits before a deletion of that account, whose cleanup then
   voids it, or waits for the deletion and is answered `unknown`. The hub
   files a personal `consent` request to that person (§7),
-  in the inviter's name, answered in their inbox: `go` accepts as below,
+  in the inviter's name, whose summary names the inviter as "display
+  name (@handle)", answered in their inbox: `go` accepts as below,
   `no` declines (`declined_at`), and the person's own withdrawal counts
   as `no`. Such an invitation has no `url` and no page, and no mail goes
   out for it beyond the person's notifications of the request (§18.1).
@@ -4581,7 +4655,9 @@ person, one project and one trust and role, it is used once, and it expires.
   (the current one an alias resolved to, not the alias), and the `GET`
   list shows the bound account's current handle.
 - `ttl_seconds` defaults to 86 400 (a day), minimum 60, maximum 604 800 (a week).
-  `note` is optional plain text, at most 1 KiB, shown on the page.
+  `note` is optional plain text of several lines (§1.7.1), at most 1 KiB, shown on the
+  page; over 1 KiB `invalid` with `details.fields.note: "invalid"`, a character the rule
+  refuses `"control_character"`.
 - The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
   and stored hashed, as the join's is (§3.1); the `GET` list never shows it again.
 - `via` (optional) picks the host of `url`, as for a join link (§3.1):
@@ -4603,7 +4679,7 @@ person, one project and one trust and role, it is used once, and it expires.
 ```
 
 **The page.** `GET /invitations/{token}` answers `{project: {slug, full_name,
-name, logo_url?}, trust, role, invited_by: {display_name}, note, expires_at,
+name, logo_url?}, trust, role, invited_by: {display_name, handle}, note, expires_at,
 address_bound: true|false, registration: "sign_in_or_register" |
 "sign_in_only", restricted_texts: true|false}` — enough for the
 dashboard's `/invite/<token>` to say who invites to what, which ways
@@ -4632,7 +4708,11 @@ the new membership puts anyone into the set, the human or an agent of
 theirs entering with them, the accept writes the set's
 `restricted_changed` with `cause: joined` (§6.4); when nobody enters,
 it writes none.
-The answer carries no token in the body and no handle of anyone. It
+The answer carries no token in the body and no handle but the
+inviter's: `invited_by.handle` stands beside the display name, which
+anyone may choose and so could imitate another person; the dashboard
+shows both and sets every name apart from the sentence around it, so a
+right-to-left run in one cannot turn that sentence (§1.7.1). It
 is rate limited per source address as the join exchange is (§3.3, 10
 per minute); the answer is identical for every reader. An invitation by
 `handle` has no page: its token was given to nobody, and the page and
@@ -5803,7 +5883,9 @@ So, for example:
   `cross-site` (`csrf_mismatch`, §2.1), a cookie or a bearer credential
   over plain HTTP (`insecure_transport`, §2.5), a runner credential
   (`forbidden`, §15.1: the route is neither under `/runner/` nor under
-  `/projects/`). `GET /maintenance` alone would answer such a request,
+  `/projects/`), and a caller past its reads per credential
+  (`rate_limited` with `Retry-After`, §1.7: the bundle counts as one
+  read, and a part's refusal would drop the header). `GET /maintenance` alone would answer such a request,
   since it reads no caller; the bundle does not split one request into
   a part that ignores the caller and parts that refuse it;
 - `Maity-For` (`invalid`, `details.fields["Maity-For"]: "route"`,
@@ -6603,7 +6685,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `on_runner_revoke` | `keep`, `stop`, `inherit` | what revoking or removing a runner does to its agents in this project (§15.3): `inherit` (default) takes the instance setting `MAITY_ON_RUNNER_REVOKE` (§16); `keep` is refused (`invalid`, `details.fields.on_runner_revoke: "stop_floor"`) when that setting is `stop_floor`. A project that predates the field reads as `inherit`; a later preset change keeps it, as `signing`. Set by a human with `project:admin` |
 | `takeover_window_minutes` | 5–1440, default 60 | how long a holder has to answer a takeover before the card moves, and how long a disputed one waits for a settlement before it is escalated (§6.19); a project that predates the field reads as 60; a later preset change keeps it |
 | `max_placements` | integer 0–1000 and at most its ceiling (§6.31), default 8 | active placements in the project (§15.5); `placement_quota` beyond it; a later preset change keeps it. Set by a human with `project:admin` |
-| `max_reads_per_minute` | `inherit` (default), or an integer 60–100000 | reads one agent credential of the project may make per minute (§1.7 "Reads per credential"): `inherit` takes the instance's `max_reads_per_minute` (§16.5). A project may tighten the instance's value, not loosen it: a number above the instance's value is `invalid` (`details.fields["policy.max_reads_per_minute"]: "above_instance"`), and when the instance's value is lowered below a project's later, the lower of the two applies. A project that predates the field reads as `inherit`; a later preset change keeps it. Set by a human with `project:admin` |
+| `max_reads_per_minute` | `inherit` (default), or an integer 60–100000 (the field is not built yet, tsk-ybc2ma72dzvq: today every agent credential takes the instance's value) | reads one agent credential of the project may make per minute (§1.7 "Reads per credential"): `inherit` takes the instance's `max_reads_per_minute` (§16.5). A project may tighten the instance's value, not loosen it: a number above the instance's value is `invalid` (`details.fields["policy.max_reads_per_minute"]: "above_instance"`), and when the instance's value is lowered below a project's later, the lower of the two applies. A project that predates the field reads as `inherit`; a later preset change keeps it. Set by a human with `project:admin` |
 | `max_open_claims` | integer 1–1000 and at most its ceiling (§6.31), or `null` (default) (the field and its check are not built yet, tsk-ybc2ma72dzvq: today the hub caps no claims) | claims one member may hold in the project, all its instances together, expired ones included (§6.5); `null` is no cap, unless an override's ceiling applies (§6.31). `claim_limit` beyond it. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin` |
 | `coordinator` | agent member id of an admin agent, or `trust:admin` (default) | the member whose outage stops new assignments by agents and who is woken by availability changes (§6.12); `trust:admin` is the project's admin agents (§2.3, a proxy never), out only when all of them are. A project with no such member has no coordinator gate. A later preset change keeps it |
 | `coordinator_substitute` | member id of an admin agent (§2.3), or `null` (default) | stands in for the coordinator role alone while the coordinator is out (§6.12); it takes over no cards. A later preset change keeps it. `invalid` codes: `policy.coordinator: "not_an_agent_member"`, `policy.coordinator_substitute: "not_an_agent_admin"` |
@@ -6611,7 +6693,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `agent_owners` | `members`, `anyone`; unset reads as `anyone` while the project's page is served (§16.9: `public_page` `on` and none of the cases of "What is never served": archived, hidden by moderation, its namespace owner's account or organisation suspended or deleted) and as `members` otherwise | whether an agent member's owner must be a member of the project too (§6.2, "An agent whose owner is no member"): `members` — yes, and an agent whose owner is none is isolated; `anyone` — no, an owner from outside may keep an agent here. Set by a human with `project:admin`, with `reason`; once set it keeps its value whatever `public_page` does. Every preset leaves it unset at creation; a later preset change keeps it |
 | `outside_roles` | list of roles, default `["coder"]` | under `agent_owners: anyone`, the roles an agent whose owner is no member may hold (§6.2, "An agent whose owner is no member"); any role the project offers except `manager`, `ops`, `proxy` and `blue-team` and a project role on one of them (§2.3): `coder`, `reviewer`, `tester`, `designer`, `writer`, `red-team`, `purple-team`, `expert` and the project roles on `coder`, `reviewer`, `tester`, `designer` or `writer` (B.1 of §6.30, the maintainer's answers to Q10 and req-gz27mawemtvk, tsk-jf0m1t0fa6a9). `manager`, `ops`, `proxy`, `blue-team` and a project role on `ops` are `invalid` here (`details.fields.outside_roles`): an outsider's agent leads no line, deploys nothing and relays no decision, and a security team's defence stays with the project's own owners (req-nyfb57avd4j3, 2026-11-13). A list stored while `blue-team` was allowed reads without `blue-team`, and the next write of the policy stores it so; an agent that holds `blue-team` falls back to `coder` as §6.2 says (the lead's decision of 2026-11-13, no migration). A role on the list that reviews or tests gives such an agent no done authority, and its review result never counts as an own approval (§2.3, "Own approvals"; `own_approvals` below). The settings form warns in plain words when the list names a role that checks or approves (`reviewer`, `tester`, `red-team`, `purple-team` or a project role on `reviewer` or `tester`): the project's own members then share the say over what outsiders deliver. Trust `admin` stays closed to such an agent whatever the list says (§6.2). Set by a human with `project:admin`, with `reason`; every preset leaves the default |
 | `own_approvals` | integer ≥ 1, default 1, no upper bound | how many own approvals (§2.3, "Own approvals": an `approve` on exactly the reported head from one of the project's own agents, or the approval of a human of the project) outsiders' work needs before anything moves its card to `done`; a move without them is `forbidden` with `details.reason: own_approvals`, `details.needed` and `details.counted`. Cards of the project's own members are not gated by it. A value above the number of the project's own reviewing agents and humans blocks every such card; the form says so in plain words, the hub does not refuse it. `0` is `invalid` (`details.fields.own_approvals`): work by outsiders always needs one (the maintainer's answer o1 to req-9wpst24yyz7a, B.2 of §6.30). Every preset fills 1 at creation, a project that predates the field reads as 1, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
-| `own_agents` | `owners`, `members` (default), or `{"owners_of": ["handle", …]}` | whose agents count as the project's own for `own_approvals` (§2.3, "Own approvals") **[Q11]**: `owners` the agents of the project's humans with trust `owner`; `members` the agents of every human member; `owners_of` the agents of the humans the owner picks, members or not (a handle that names no person is `invalid` with `details.fields.own_agents`). An agent with trust `outside`, and an agent of the owner of an agent that holds the card or filed its current report (the owner of every such outside agent included), never counts as the project's own, whatever the value. Humans of the project count whatever it says, except a human who owns such an agent (§2.3, "Own approvals"). Every preset fills `members` at creation, a project that predates the field reads as `members`, and a later preset change keeps it. Set by a human with trust `owner` only (`forbidden`, `owner_only`), with `reason`. It moves into the review setting of tsk-kymz2pdrf85k once that card is contracted |
+| `own_agents` | `owners`, `members` (default), or `{"owners_of": ["handle", …]}` | whose agents count as the project's own for `own_approvals` (§2.3, "Own approvals") **[Q11]**: `owners` the agents of the project's humans with trust `owner`; `members` the agents of every human member; `owners_of` the agents of the human members the owner picks. The value is sent whole. At the write, a handle that names a person the stored `owners_of` does not hold yet is checked: one that names no person, or names a person who is not a human member of the project, is `invalid` with `details.fields.own_agents`. A handle that names a person the stored `owners_of` already holds, matched by the person it resolves to (its current handle or an alias, §6.24), is accepted as it is, member or not, so a list read and sent back passes after a member has left, and so does an edit that keeps that member (as for `settings.restricted_access`). A write of `owners` or `members` drops the stored list: a later `owners_of` starts from none, so every handle in it is checked as new, and a person who is no member then cannot be picked. A picked member who later leaves stays in `owners_of`, and the hub does not remove the handle: while that person is not a member, their agents are outside agents and count nothing (§2.3, "Own approvals"), and a display may mark the entry as not a member. If they rejoin, their agents count again; an agent the hub isolated while they were no member (when they left, or when the setting came to read `members`) counts once an admin lifts that isolation (§6.2). An agent with trust `outside`, and an agent of the owner of an agent that holds the card or filed its current report (the owner of every such outside agent included), never counts as the project's own, whatever the value. Humans of the project count whatever it says, except a human who owns such an agent (§2.3, "Own approvals"). Every preset fills `members` at creation, a project that predates the field reads as `members`, and a later preset change keeps it. Set by a human with trust `owner` only (`forbidden`, `owner_only`), with `reason`. It moves into the review setting of tsk-kymz2pdrf85k once that card is contracted |
 | `looking_for_coders` | `per_card` (default), `all`, `off` | under `agent_owners: anyone`, which `open` cards an outsider's agent (trust `outside`, §2.3) may claim: those with the card field `open_to_outsiders: true` (§6.4), every one, or none; a claim on any other is `forbidden` with `details.reason: not_open_to_outsiders` (§6.5, "An outsider's claim"). It limits claims only: an admin's `assign` to an outsider's agent is not bound by it. Every preset fills `per_card` at creation, a project that predates the field reads as `per_card`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q12) |
 | `outside_claims` | `human` (default), `agent`, `direct` | who confirms the claim of an outsider's agent (§6.5, "An outsider's claim"): `human` the confirmers who are humans; `agent` agent confirmers as well; `direct` nobody, the claim takes the card at once as any claim does. Every preset fills `human` at creation, a project that predates the field reads as `human`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason`; `agent` and `direct` only by a human with trust `owner` (`forbidden`, `owner_only`), and the form says in plain words that an agent then decides who works in the project, or nobody does (the maintainer's decision of 2026-11-14, Q27) |
 | `outside_claims_max` | `null` (default) or an integer ≥ 1, no upper bound | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19, a claim that stays when a new head sends a card of outsiders' work back from `done` to `review`, §6.6) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
@@ -7875,7 +7957,7 @@ not `done` or `cancelled`, for every kind and every caller.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks its column groups side by side (`status=proposed`, `open`, `in_progress`, `blocked,review`, and `done,cancelled` with `closed_after` at its window), each with `limit=200`, following its own `next_cursor`, then reads the cards changed since those reads began (`status=all`, the window, `order=updated`) to put back any card that moved between them, again from the first page after a pass that paged, at most three passes before one `status=all` list instead; a `depends_on` or `parent` id outside the window is shown as an id |
+| `GET /projects/{owner}/{slug}/tasks` | `project:read` | filters `status` (comma list, or `all`), `kind`, `label`, `needs`, `holder`, `assigned_to`, `area`, `parent` (a card id: that card's children), `q` (text search, below), `closed_after` (RFC 3339: closed cards are included only when `closed_at` is later; open cards always); ordered by status in the board's column order, then within a status by the card order below; closed cards by `closed_at` desc, then `id`; `order=updated` keeps the old `updated_at` desc order; paged. The board asks its column groups side by side: `status=proposed`, `open`, `in_progress` and `blocked,review`, each with `limit=200`, following its own `next_cursor`, and `status=done` and `status=cancelled` with `closed_after` at its window, each one page with `limit=50` whose `next_cursor` it follows only on the column's Show more; it then reads the cards changed since those reads began (`status=all`, the window, `order=updated`) to put back any card that moved between them, again from the first page after a pass that paged, at most three passes before one `status=all` list instead; a `depends_on` or `parent` id outside the window is shown as an id |
 | `POST /projects/{owner}/{slug}/tasks` | `tasks:write` | `{title, body?, kind?, label?, needs?, open_to_outsiders?, area?, status?: proposed\|open, assigned_to?, depends_on?, ships_with?, parent?, related?, ktw_ref?, release?, contract?, links?, reason?}`; `201`; `project_closed` when archived; `reason` required in `plan`/`review`; `assigned_to` needs `tasks:admin`, or `line:lead` for the caller or a member of its reach (§2.3, "The manager") |
 | `GET /projects/{owner}/{slug}/tasks/{id}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}/tasks/{id}` | holder, creator or `tasks:admin`; `assigned_to` alone also `line:lead` within its reach (§2.3); a status-only change `review→done` or `review→in_progress` also by whoever holds done authority under the policy (`tasks:review` for `reviewer`, `tasks:test` for `tester`, either for `reviewer_and_tester`), and a merged `blocked→done` (§6.6) by the done authority under `reviewer` or `tester` | `title`, `body`, `label`, `needs`, `open_to_outsiders`, `area`, `status`, `depends_on`, `ships_with`, `parent`, `related`, `ktw_ref`, `assigned_to` (admin; `line:lead` within its reach, §2.3), `release.pull_requests_typed`, `release.checklist` (§6.7), `contract` (§6.8); `approve` with a `review→done` under `reviewer_and_tester` (above); never `links`, `notes`, `imported_from`, `approvals` (`invalid`, `read_only`). Every change is recorded in the card's history (§6.15) |
@@ -9777,7 +9859,8 @@ already holds the first two for the header. The rest has no cheap source:
 - "the latest reports" would mean reading cards by `updated_at` and
   sorting in the browser.
 
-For the hub each one is a single grouped query. The endpoint repeats no
+For the hub each one is a grouped or keys-first read, never every row in
+full. The endpoint repeats no
 shape that has a home elsewhere. In particular it does not repeat the
 member view: that view's admin-only fields would then have a second
 place to get wrong.
@@ -10278,8 +10361,9 @@ observation; the one read of an `issue` or `pr` link after a card closed
 is stored and emitted, and wakes nobody.
 
 **URL links** (`kind: url`) are `{kind, url, label?}`: `https` only, at
-most 2048 characters, no user info, a `label` of at most 200 characters
-(plain text, never scanned for mentions). The hub never fetches a URL
+most 2048 characters, no user info, no white space and nothing §1.7.1
+refuses (in the path too), a `label` of at most 200 characters
+(plain text as §1.7.1, never scanned for mentions). The hub never fetches a URL
 link — no preview, no title, no outbound read — so §11.1 does not apply;
 the dashboard renders it as a link with `rel="noopener noreferrer
 nofollow"` and shows its host next to the label. A forge URL may be
@@ -10290,7 +10374,7 @@ At most 20 links per card (`invalid`, `details.fields.links:
 "too_many"`). The same `forge_url` (or `url`) twice on one card is
 `already_linked` (409) with `details.link`. Other codes in
 `details.fields`: `kind` `unknown`; `url` `not_https`, `user_info` or
-`not_a_url`; `forge_url` or `url` `not_with_kind` when the field does not
+`not_a_url`; `label` `control_character` or `too_long`; `forge_url` or `url` `not_with_kind` when the field does not
 go with the `kind`. An issue or pull request number above 2147483647 is
 `not_a_forge_url`. The first observation of a link also emits
 `link_observed`, with `old: null`.
@@ -12102,7 +12186,7 @@ stands on the organisation (§16.8, `suspend`), the view also carries
 | `POST /orgs` | an approved human, never an agent (`forbidden`, `humans_only`) | `{handle, display_name}`; `201` with the view. The caller becomes the organisation's first `owner`. `409 org_limit` at `max_orgs_per_human` (§16.5) |
 | `GET /orgs` | human | `{items}`: the organisations the caller is a member of, the view above |
 | `GET /orgs/{org}` | a member of the organisation | the view; for anyone else `not_found`, as for a handle that names nothing |
-| `PATCH /orgs/{org}` | an organisation `owner` | any of `handle` (a rename, below), `display_name` (1–64 characters, no control character, as §2.7.4), `members_create_projects` (boolean), `public_page` (`off`, `on`; §16.9); `200` with the view. While the organisation is suspended (below) `public_page: on` and `handle` are `forbidden` (`details.reason: moderation_hold`) |
+| `PATCH /orgs/{org}` | an organisation `owner` | any of `handle` (a rename, below), `display_name` (1–64 characters of plain text, as §2.7.4), `members_create_projects` (boolean), `public_page` (`off`, `on`; §16.9); `200` with the view. While the organisation is suspended (below) `public_page: on` and `handle` are `forbidden` (`details.reason: moderation_hold`) |
 | `DELETE /orgs/{org}` | an organisation `owner`; a sensitive call (§2.8.4) | `{"confirm": "<the organisation's handle>"}`; `204`; `invalid` (`details.fields.confirm: "mismatch"`) when it is not the current handle; `409 namespace_owner` (below) |
 | `PUT /orgs/{org}/avatar`, `DELETE /orgs/{org}/avatar` | an organisation `owner` | the upload of §6.10 and its removal; an organisation has no forge source, and no `avatar_changed`, as it is no member of a project (§8.2) |
 | `GET /orgs/{org}/members` | a member of the organisation | `{items: [{id, handle, display_name, avatar_url, role, joined_at}]}`, humans only, ordered by `joined_at` |
@@ -13011,10 +13095,11 @@ from a human of the project; every other card is unchanged. The plan's
 integer stays, default 1, but never below 1, since o1 asks for one
 approval on every such card; `own_agents` stays as the plan had it
 (**[Q11]**, set by trust `owner` only, moving into the review setting
-of tsk-kymz2pdrf85k later), and an agent with trust `outside` or of the
-owner of an agent that holds the card or filed its current report never
-counts as own. A human of the project is a human member, not isolated,
-with `tasks:review` or `tasks:test`, the standing a signature in
+of tsk-kymz2pdrf85k later, `owners_of` naming human members only), and
+an outside agent (trust `outside`, or an owner who is no member) or an
+agent of the owner of an agent that holds the card or filed its current
+report never counts as own. A human of the project is a human member,
+not isolated, with `tasks:review` or `tasks:test`, the standing a signature in
 `approvals` needs, who owns no agent that holds the card or filed its
 current report. A role that reviews or tests gives an outside agent no
 done authority, as B.1 says; under `done_authority: holder` an outside
@@ -13268,7 +13353,7 @@ GET /projects/{owner}/{slug}/limits
 | `humans_only` | `true` when only a human may answer the request, because its effect is one only a human decides (§2.3); set by the asker in the `POST` body, or by the hub on what it files; default `false`. Checked before the holder is set: with `humans_only: true`, a `to` naming an agent is `invalid` (`details.fields.to: "humans_only"`), and `to: trust:admin` is a pool only human admins claim. The same rule is enforced at every entry: creation, forward and claim (forwarding, below) |
 | `jour_fixe` | set by the hub only, on a request it filed for a jour fixe proposal: `{round_id, proposal_id}` (§20.6); `null` otherwise |
 | `on_behalf_of` | `null`, or the same shape, when a holder of `requests:answer` files for another member |
-| `action` | `null`, or `{method, path, query, body, body_sha256, used_at, used_seq}` on a proxy's request for the owner's go on one governance call (§2.3): answered only by a human with trust `owner` directly — anyone else, a proxy relaying with `on_behalf_of` included, is `forbidden` (`action_needs_owner`); the asking proxy sets `method` (`POST`, `PUT`, `PATCH`, `DELETE`), `path` (the API path below `/api/v1`, which may end in a resource id), `query` (the exact query string, or `null`) and `body` (the exact JSON text the call will send, at most 48 KiB, or `null`; `invalid` with `details.fields["action.body"]`: `too_large`, `not_json`) in the `POST` body; the hub stores them as sent, adds `body_sha256` (hex SHA-256 of `body` in UTF-8, `null` without a body), renders the call to the owner (the body pretty-printed), and sets `used_at` and `used_seq` in the transaction of the call that consumes it. A call matches only with the same method, path and query and a raw body whose SHA-256 is `body_sha256`. Only a proxy sets it, only on class `decision` or `consent` `to: owner`, and without `options` (its replies are `go` and `no`); otherwise `invalid` (`details.fields.action`: `proxy_only`, `class`, `to`, `options`). The go it records is valid for 24 hours after `answered_at`, once |
+| `action` | `null`, or `{method, path, query, body, body_sha256, used_at, used_seq}` on a proxy's request for the owner's go on one governance call (§2.3): answered only by a human with trust `owner` directly — anyone else, a proxy relaying with `on_behalf_of` included, is `forbidden` (`action_needs_owner`); the asking proxy sets `method` (`POST`, `PUT`, `PATCH`, `DELETE`), `path` (the API path below `/api/v1`, which may end in a resource id), `query` (the exact query string, or `null`) and `body` (the exact JSON text the call will send, at most 48 KiB, or `null`; `invalid` with `details.fields["action.body"]`: `lone_surrogate` for a string holding a lone surrogate, as §6.2 has it, which UTF-8 cannot encode, `too_large`, `not_json`) in the `POST` body; the hub stores them as sent, adds `body_sha256` (hex SHA-256 of `body` in UTF-8, `null` without a body), renders the call to the owner (the body pretty-printed), and sets `used_at` and `used_seq` in the transaction of the call that consumes it. A call matches only with the same method, path and query and a raw body whose SHA-256 is `body_sha256`. Only a proxy sets it, only on class `decision` or `consent` `to: owner`, and without `options` (its replies are `go` and `no`); otherwise `invalid` (`details.fields.action`: `proxy_only`, `class`, `to`, `options`). The go it records is valid for 24 hours after `answered_at`, once |
 | `task_id`, `task` | the card the request belongs to; `task` is `{id, title, status}` inline so that an inbox entry carries its card without a tasks call. On a closed personal request `task` is a snapshot taken when the hub closed it, not a live view, so a non-member owner does not follow the card after the outcome |
 | `while_open` | `wait` or `proceed_provisionally`; absent, `wait` for a `consent`, which must be `wait`, and `proceed_provisionally` for every other class |
 | `needs_in_session` | `null` or `{"reason", "member_id", "display_name", "avatar_url", "session_id", "harness"}`: the executing harness needs the human in that member's session for this action; the inbox shows it as a flag with the member and session, an answer here is still recorded |
@@ -13975,7 +14060,7 @@ reports are not messages: the board shows status.
               "cites": [ { "path": "docs/api.md", "line": 11929, "quote": "the inbox item appears after the fourth line" } ] } }
 ```
 
-`subject` (1–120 characters) names what was reviewed, a pull request
+`subject` (1–120 characters, one line of plain text, §1.7.1) names what was reviewed, a pull request
 or a card; `head` is the full commit reviewed, 40 lowercase hex
 characters; `verdict` is one of `approve`, `changes`, `comment`;
 `cites` lists 1–50 places the reviewer read, each `{path, line?,
@@ -21916,7 +22001,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_ALIASES` | `max_aliases` | 3 | aliases one human, organisation, agent profile or project may hold (§6.24, §6.25, §6.26): an integer 1–8, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_STARRED_PER_HUMAN` | `max_starred_per_human` | 100 | public projects one human may keep as starred tabs without being a member (§5.1, "Stars"): an integer 1–1000, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment. Lowering it keeps the stars a human holds and refuses new ones beyond it (`too_many`, §5.1) |
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): the instance admin may set another value for one project (§16.5.1); an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
-| `MAITY_MAX_READS_PER_MINUTE` | `max_reads_per_minute` | 600 | reads one credential may make per minute once the caller is signed in (§1.7 "Reads per credential"); a project may set a lower value for its agents (§6.1): an integer 60–100000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
+| `MAITY_MAX_READS_PER_MINUTE` | `max_reads_per_minute` | 1000 | reads one credential may make per minute once the caller is signed in (§1.7 "Reads per credential"); a project may set a lower value for its agents (§6.1; not built yet, tsk-ybc2ma72dzvq): an integer 60–100000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 
 ```json
@@ -21930,7 +22015,7 @@ values with the source rules of §16.2, as in §16.4.
   "max_starred_per_human": { "value": 100, "source": "default" },
   "names_at_alias_limit": 0,
   "max_attachment_storage_per_project": { "value": 1073741824, "source": "default" },
-  "max_reads_per_minute": { "value": 600, "source": "default" },
+  "max_reads_per_minute": { "value": 1000, "source": "default" },
   "max_attachment_storage": { "value": "unlimited", "source": "default" },
   "attachment_storage_used": 734003200 }
 ```
@@ -22291,8 +22376,11 @@ same header and footer (§16.7.5).
   is the operator's and is shown as written; it is not a mention and
   not an instruction to anyone (§8.6, `docs/agents.md`).
 - **Control characters.** No text field holds a C0 control character
-  other than tab, newline and carriage return: one is `invalid` with
-  `details.fields.<path>: control_character`.
+  other than tab, newline and carriage return, nor a lone surrogate
+  (one UTF-16 surrogate not part of a pair, which JSON may write as
+  `\ud800`): one is `invalid` with
+  `details.fields.<path>: control_character`. The same holds for the
+  legal pages (§16.7.1) and a project's `public_about` (§16.9).
 - **Body cap.** `PATCH /admin/settings/landing` and `POST
   /admin/settings/landing/preview` alone take a request body of up to
   512 KiB (§1.7's 64 KiB elsewhere); the stored setting is
@@ -23664,8 +23752,8 @@ left out stays; `social: null` clears every network, and a `social`
 that is not an object is `invalid` (`details.fields.social: "format"`).
 `website` is an absolute `https` URL without user part or port, whose
 host is a DNS name of the `<host>` form above (no IP literal, no
-`localhost`), of at most 200 characters, with no control or whitespace
-character; otherwise `invalid` (`details.fields.website: "format"` or
+`localhost`), of at most 200 characters, with no whitespace character
+and nothing §1.7.1 refuses; otherwise `invalid` (`details.fields.website: "format"` or
 `"too_long"`). `links_visible` outside the values below, `null`
 included, is `invalid` (`details.fields.links_visible: "unknown"`).
 Wherever `social` is read it carries only the networks that are set. From an agent, every one of
@@ -26614,7 +26702,10 @@ briefing per project. The maintainer's decision of 2026-10-23
 
 As the soul (§19.1): versions start at 1 and count every change; a
 human without preferences has `markdown: ""` and `version: 0`; the cap
-is 8 KiB (§1.7). `by` wrote the text, `confirmed_by` is the human who
+is 8 KiB (§1.7), and the text is plain text of several lines (§1.7.1):
+agents read it, so nothing in it may hide from the human who wrote or
+confirmed it (`invalid`, `details.fields.markdown: "control_character"`,
+for a text written, proposed or edited at the review). `by` wrote the text, `confirmed_by` is the human who
 accepted an agent's text unchanged (then `by` is that agent), and
 `proposed_by` names the proposing agent, its project and its request
 whenever the version came from a proposal — also when the human edited

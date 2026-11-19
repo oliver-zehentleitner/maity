@@ -21,6 +21,7 @@ from maity_hub import (
     attachment_store,
     clock,
     events,
+    jcs,
     moderation,
     namespace,
     public_people,
@@ -33,6 +34,7 @@ from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.forge import Forge
 from maity_hub.ids import new_id
+from maity_hub.text_language import text_language
 from maity_hub.views import principal_id, ts
 
 TYPES = ("profile", "project", "message", "card")
@@ -382,6 +384,12 @@ def target(
     if not isinstance(target_id, str) or not target_id or len(target_id) > 255:
         raise invalid({"target.id": "required"})
     project = given.get("project")
+    if jcs.has_lone_surrogate(target_id) or (
+        isinstance(project, str) and jcs.has_lone_surrogate(project)
+    ):
+        # The id and the project are the strings a lookup binds: no id or name holds a lone
+        # surrogate, and the SQL bind cannot encode it. Any other member is ignored.
+        raise not_found()
     if kind == "profile":
         shot = _profile(conn, caller, target_id, project, pages)
         from_page = shot.pop("project", None)
@@ -436,8 +444,10 @@ def create(
     reason, text = body.get("reason"), body.get("text")
     if reason not in REASONS:
         raise invalid({"reason": "unknown"})
-    if text is not None and (not isinstance(text, str) or len(text.encode()) > TEXT_MAX):
-        raise invalid({"text": "too_long" if isinstance(text, str) else "not_text"})
+    if text is not None and (not isinstance(text, str) or jcs.has_lone_surrogate(text)):
+        raise invalid({"text": "not_text"})  # a lone surrogate is no text UTF-8 can encode
+    if text is not None and len(text.encode()) > TEXT_MAX:
+        raise invalid({"text": "too_long"})
     given = body.get("target")
     if not isinstance(given, dict):
         raise invalid({"target": "required"})
@@ -466,10 +476,9 @@ def create(
         # The instance admin's personal request, open while the report is (§16.8, §7): ids
         # and kinds only, never the content; mailed by the `inbox` mode through its record.
         from maity_hub import catalog
-        from maity_hub.notifications import preferences
         from maity_hub.routes.requests import file_hub_report
 
-        words = catalog.section("notify", preferences.text_language(conn, admin))
+        words = catalog.section("notify", text_language(conn, admin))
         file_hub_report(conn, admin, report_id, words["reported"].format(reason=reason, type=kind))
     return {"id": report_id, "created_at": ts(now)}
 
