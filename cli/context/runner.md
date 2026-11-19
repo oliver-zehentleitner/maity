@@ -2824,6 +2824,83 @@ every call can run that way.
 - A copy of the check in the CLI beside the runner's: two lists of
   allowed keys drift apart.
 
+## A placement's leftover subagent worktree is removed, not tolerated, and only when it is the clone's own
+
+**Id:** a01035af-a4c1-4ab7-83a7-91670439fa50
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-gqk2gdxb4g73, 2026-11-19 (a Claude Code subagent's worktree-isolation leaves a git worktree at `.claude/worktrees/agent-<id>` inside the placement's clone, which registers its admin data so the clone reads as unsupported — "Worktrees are" — and refuses `maity report` and the next start before git runs; inside the harness sandbox the agent can remove neither the worktree nor `.claude/worktrees/*`, a protected path, so without help a session is stuck until a person cleans the host; a current Claude Code empties the worktree registration at session start, but a worktree a subagent makes mid-session lasts that session); the dispatcher's decision to remove rather than tolerate (option (a) over (b)), 2026-11-19
+**See:** runner.md#under-the-runner-maitys-own-git-runs-only-in-the-runners-clone-and-only-while-it-is-plain — b4a8030d-3b24-4b76-81cc-a84b0ca84c11 — as of 2026-11-19
+**Verification:** corroborated
+**Revisit when:** the clone check starts tolerating a present worktree, a harness places a subagent's worktree somewhere other than the clone's own `.claude/worktrees/`, in-session self-service clearing of a leftover worktree is required, or the runner starts running git in an existing clone for anything
+
+The clone check stays strict: a present worktree is unsupported, and the
+check is not widened to tolerate one. The leftover is removed instead, by
+one path only — the supervisor's prune on every placement (re)start — scoped
+to this clone's own `.claude/worktrees/` and leaving a worktree that points
+anywhere else exactly where it is.
+
+The supervisor clears a leftover on every placement (re)start, before the
+clone check would refuse it, and only after it has confirmed the clone is
+this agent's own (a clone another agent or a person holds hits the in-use
+refusal untouched, before anything is pruned). It runs no git — the runner
+runs no git in an existing clone, which would run the agent's code as the
+runner — so it removes by file operations only, each directory opened from
+the one above without following a link, touching only a registration whose
+working tree is, by name, this clone's own `.claude/worktrees/<id>`: the
+working-tree directory itself, or a registration left dangling once that
+working tree is gone, which has nothing to lose. A link on the way, a
+non-directory planted in the working tree's place, and a registered worktree
+pointing out of the clone, are all left — the last keeps a planted redirect
+refusing the start. Having no git it cannot read whether a leftover holds
+uncommitted changes, so a restart's prune discards whatever is in the
+leftover worktree, including work a
+subagent did not merge; there is no in-session save, and a leftover found at
+a start is a past session's, with nobody to ask.
+
+When the clone check refuses over a worktree under `.claude/worktrees/`, the
+refusal tells the operator a restart clears it — but only when there is such
+a leftover to clear: a worktree pointing elsewhere is genuinely unsupported
+and offers no way out.
+
+**Reason:** keeping the check strict and removing the worktree is narrower
+than tolerating a present one. A worktree changes where git reads — its own
+`HEAD` and index, a per-worktree configuration the main configuration does
+not have — so tolerating one would reopen across worktrees exactly what the
+check closes for the main clone. Pruning at placement start needs no git and
+runs before the agent session, so no git ever runs in a clone that still
+holds a worktree's agent-influenceable metadata. What makes the removal safe
+is its scope: only a registration whose working tree is, by name, directly
+under this clone's `.claude/worktrees/` is touched — its working-tree
+directory, or a dangling registration whose working tree is already gone and
+so has nothing to lose — with no link followed on the way; a link or a
+non-directory in that place, and anything else, is left.
+
+**Rejected alternatives:**
+- Tolerating a present worktree in the clone check: relax the check so a
+  `.git/worktrees` with content, or a per-worktree configuration, no longer
+  refuses. Rejected because that widens what git may read for every clone
+  and every command, across worktrees whose own `HEAD`, index and
+  per-worktree configuration the main check never saw — the opposite of the
+  strict posture the check exists for. Removing the one leftover keeps the
+  check as it is.
+- An agent-callable in-session remover that runs `git worktree` against the
+  clone while the session is live, keeping uncommitted work behind an
+  explicit `--force`. Rejected before the freeze: it would run git inside a
+  clone that still holds a worktree's agent-influenceable metadata — a
+  surface the runner has not taken on, since the whole clone check exists so
+  maity runs no git in a clone an agent wrote. Pruning at placement start
+  needs no git and runs before the agent starts, so the leftover is cleared
+  without ever running git in such a clone. The cost is that a restart
+  discards the subagent's uncommitted work, which is acceptable for a
+  leftover a past session left with nobody to ask; a live, work-preserving
+  self-service remover is left for later, if in-session self-service is ever
+  required.
+- The supervisor running git to clear the worktree: that is git in an
+  existing clone, which runs the agent's code as the runner — the invariant
+  the whole clone check rests on.
+
 ## maity takes the clone's `.git` only as the directory the runner recorded
 
 **Id:** e44249f8-15d0-4104-8940-5ff48decd412

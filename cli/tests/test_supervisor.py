@@ -734,6 +734,136 @@ def test_a_clone_with_a_planted_redirect_does_not_start(
     assert (place.path / ".git" / entry).read_text() == text  # the runner deletes nothing
 
 
+def test_a_leftover_subagent_worktree_is_cleared_on_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Claude Code subagent's worktree left under `.claude/worktrees/` would read as
+    unsupported and refuse the start; the supervisor clears it first, by file operations only,
+    and the start proceeds."""
+    sup, backend, _, _, logs = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    (place.path / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.records["plc-0003"].reason is None
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+    assert not admin.exists() and not (place.path / ".claude" / "worktrees" / "agent-x").exists()
+    assert any("cleared leftover worktree" in line for line in logs)
+
+
+def test_a_stale_worktree_registration_without_its_working_tree_is_cleared_on_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `.git/worktrees/<name>` left without its `.claude/worktrees/` working tree still reads
+    as unsupported; the start-prune clears the dangling registration even though the working tree
+    is gone, and the start proceeds."""
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)  # the registration, but no .claude/worktrees working tree
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.records["plc-0003"].reason is None
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+    assert not admin.exists()
+
+
+def test_a_foreign_workspace_with_a_leftover_is_refused_before_pruning(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clone another agent holds is refused (workspace_in_use) before anything is pruned: the
+    start-prune only ever touches this agent's own clone, so a leftover in a foreign one is left
+    exactly where it is."""
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    (place.path / ".git").mkdir(parents=True)
+    (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
+    workspace.record(sup.cfg.state_dir, place, "intruder", "other-plc")  # another agent's clone
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    (place.path / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    settle(sup)
+    assert sup.records["plc-0003"].reason == "workspace_in_use"
+    assert backend.started == []
+    assert admin.exists()  # not pruned: ownership is refused first
+    assert (place.path / ".claude" / "worktrees" / "agent-x").exists()
+
+
+def test_a_start_prune_that_times_out_is_logged_and_the_start_goes_on(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A start-prune that times out (its op runs over sudo or on an ssh host) is caught and
+    logged skipped, and the start still proceeds — the leftover simply waits for a later restart.
+    Pins the `subprocess.TimeoutExpired` catch: without it the timeout would crash the start."""
+    from maity.runner import asuser
+
+    sup, backend, _, _, logs = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    (place.path / ".git" / "worktrees").mkdir(parents=True)  # gates the prune block on
+
+    def timeout(self: Any, repo: Path) -> dict[str, Any]:
+        raise subprocess.TimeoutExpired(cmd="worktree-prune", timeout=1)
+
+    monkeypatch.setattr(asuser.AsUser, "worktree_prune", timeout)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.records["plc-0003"].reason is None  # the timeout did not fail the start
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+    assert any("worktree prune skipped" in line for line in logs)
+
+
+def test_start_refuses_a_foreign_clone_before_the_prune_touches_it(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Driving `_start` straight at a clone another agent holds (so it is not refused earlier in
+    `_launch`): ownership is checked before the start-prune runs, so the foreign clone's leftover
+    is left exactly where it is. This pins the order — were the prune to run first, it would clear
+    a clone this agent does not hold."""
+    from maity.runner import targets
+
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    assert sup.cfg.local is not None
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    (place.path / ".git").mkdir(parents=True)
+    (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
+    workspace.record(sup.cfg.state_dir, place, "intruder", "other-plc")  # another agent's clone
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    (place.path / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+
+    p = placement(agent=NEW)
+    sup.update([p])  # desired, so `_start` does not stop as unwanted
+    target = targets.local(sup.cfg, sup.probes, backend)
+    rec = supervisor.Record(generation=p["generation"], since=sup.now())
+    harness = sup.cfg.harnesses[p["harness"]]
+    name = tmux.session_name(p["project_id"], p["workspace"]["clone"])
+    view = supervisor.GateView.of(target, harness.id)
+    sup._start(p, rec, place, name, harness, p["agent"], target=target, view=view)
+
+    assert rec.reason == "workspace_in_use"
+    assert backend.started == []
+    assert admin.exists()  # ownership refused before the prune: the foreign leftover is left
+    assert (place.path / ".claude" / "worktrees" / "agent-x").exists()
+
+
 def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
