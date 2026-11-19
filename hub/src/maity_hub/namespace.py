@@ -39,7 +39,8 @@ class ProjectRoute(APIRoute):
 
     A route under `/api/v1/projects/{owner}/{slug}` that is not one of `access.OUTSIDE_READS`
     for the request's method first passes `access.gate`: a public project's outsider is
-    answered `not_found` there, before FastAPI reads the body or the query (§2.3)."""
+    answered `not_found` there, before FastAPI reads the body or the query (§2.3), an owner of
+    an agent or a runner in it too unless the route is one of `access.OWNER_CALLS` (§1.3)."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         inner = super().get_route_handler()
@@ -48,6 +49,7 @@ class ProjectRoute(APIRoute):
         below = self.path.startswith(access.API_PROJECT + "/")
         project_route = self.path == access.API_PROJECT or below
         readable = frozenset(m for m, p in access.OUTSIDE_READS if p == self.path)
+        owned = frozenset(m for m, p in access.OWNER_CALLS if p == self.path)
 
         async def handler(request: Request) -> Response:
             params = request.scope.get("path_params") or {}
@@ -56,7 +58,7 @@ class ProjectRoute(APIRoute):
                 params["slug"] = f"{params.pop('owner')}/{params['slug']}"
                 request.scope["path_params"] = params
             if project_route and request.method not in readable:
-                await access.gate(request)
+                await access.gate(request, request.method in owned)
             return await inner(request)
 
         return handler

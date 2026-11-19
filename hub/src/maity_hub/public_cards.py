@@ -17,7 +17,7 @@ import hashlib
 from collections.abc import Collection
 from typing import Any
 
-from sqlalchemy import Connection, or_, select
+from sqlalchemy import Connection, func, or_, select
 
 from maity_hub import clock, moderation, namespace, public_design, public_pages, render
 from maity_hub import tables as t
@@ -32,6 +32,14 @@ def shown(card: Any) -> bool:
     """Whether the card itself may stand on a public page: a `security` card only once it is
     done (§16.9). The project and the hold are checked by the caller."""
     return (card.label or "").lower() != "security" or card.status == "done"
+
+
+def shown_clause() -> Any:
+    """`shown` as a condition on `card`, for a query of cards: what the Board's columns leave
+    out (`public_project_views.board_rows`), and what a public project's outsider does not
+    read through the member routes either (§2.3)."""
+    c = t.card.c
+    return or_(c.status == "done", c.label.is_(None), func.lower(c.label) != "security")
 
 
 def _gone_agent(conn: Connection, membership_id: int) -> bool:

@@ -218,6 +218,9 @@ def test_the_allow_list_the_marker_and_the_reader_agree(make_client: ClientFacto
     for method, path in access.OUTSIDE_READS:
         assert method == "GET", path
         assert (method, path) in routes, (method, path)
+    # The owner calls of §1.3 are routes the app has, and none is an outsider's read.
+    assert access.OWNER_CALLS <= set(routes)
+    assert not access.OWNER_CALLS & access.OUTSIDE_READS
     for (method, path), route in routes.items():
         source = inspect.getsource(route.endpoint)
         reads = "access.reader(" in source
@@ -325,11 +328,14 @@ def test_an_outsiders_write_with_a_bad_body_is_not_found_before_validation(
     assert unknown.status_code == 400, unknown.text  # unchanged: the gate passes it
 
 
-def test_an_agents_owner_outside_the_project_passes_the_gate_as_before(
+def test_an_agents_owner_outside_the_project_passes_the_gate_on_the_owner_calls_alone(
     world: World, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    """An owner whose agent is a member keeps the calls §1.3 lists for them: the gate passes
-    them, and the route answers as it always did (their agent's briefings, §6.2)."""
+    """An owner whose agent is a member keeps the calls §1.3 lists for them
+    (`access.OWNER_CALLS`): the gate passes them there, and the route answers as it always
+    did (their agent's briefings, §6.2; a malformed body on their agent's membership is the
+    route's `invalid`). Every other route of the project answers them `not_found` before its
+    body is read, as it answers any outsider, a write with a bad body included."""
     with migrated.begin() as conn:
         conn.execute(
             update(t.agent_profile)
@@ -340,6 +346,105 @@ def test_an_agents_owner_outside_the_project_passes_the_gate_as_before(
     assert world.outsider.get(path).status_code == 200
     stranger = flow.human(make_client, migrated, "stranger")
     assert (stranger.get(path).status_code, stranger.get(path).json()) == (404, NOT_FOUND)
+    headers = {**_as(world.outsider), "Content-Type": "application/json"}
+    passed = world.outsider.client.patch(
+        f"/api/v1{P}/members/{world.agent.id}", content=b"{not json", headers=headers
+    )
+    assert (passed.status_code, passed.json()["error"]["code"]) == (400, "invalid"), passed.text
+    tasks = f"/api/v1{P}/tasks"
+    for body in ({"title": "A card"}, {"title": 5}):
+        refused = world.outsider.client.post(tasks, json=body, headers=headers)
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (body, refused.text)
+    refused = world.outsider.client.post(tasks, content=b"{not json", headers=headers)
+    assert (refused.status_code, refused.json()) == (404, NOT_FOUND), refused.text
+    open_to_them = access.OUTSIDE_READS | access.OWNER_CALLS
+    for method, template in _project_routes(world.outsider.client.app):
+        if (method, template) in open_to_them:
+            continue
+        answer = _call(world.outsider.client, method, _fill(template, world.params), headers)
+        assert (answer.status_code, answer.json()) == (404, NOT_FOUND), (method, template)
+
+
+# --- not-done security cards, as on the Board ---------------------------------------------------
+
+
+def test_a_not_done_security_card_is_hidden_from_an_outsider_as_on_the_public_board(
+    world: World, migrated: Engine
+) -> None:
+    """`public_cards.shown`, the public Board's and card page's rule (§16.9): a card labelled
+    `security` (any case) is left out of every list an outsider reads, and its card, history
+    and notes answer `not_found`, until it is `done`; a member reads it as before."""
+    writer = _membership_of(migrated, world.project_id, human_id=world.owner.id)
+    secret = factory.card(
+        migrated, world.project_id, writer, title="Secret hole", label="Security"
+    )
+    fixed = factory.card(
+        migrated,
+        world.project_id,
+        writer,
+        title="Fixed hole",
+        label="security",
+        status="done",
+        closed_at=clock.now(),
+    )
+
+    def listed(who: flow.Human, query: str) -> set[str]:
+        answer = who.get(f"{P}/tasks{query}")
+        assert answer.status_code == 200, (query, answer.text)
+        return {item["id"] for item in answer.json()["items"]}
+
+    for query in ("", "?order=updated", "?status=open", "?status=done", "?label=Security"):
+        assert secret not in listed(world.outsider, query), query
+    for query in ("", "?order=updated", "?status=done"):
+        assert fixed in listed(world.outsider, query), query
+    assert {secret, fixed} <= listed(world.owner, "")
+    for card_id, hidden in ((secret, True), (fixed, False)):
+        for tail in ("", "/history", "/notes"):
+            path = f"{P}/tasks/{card_id}{tail}"
+            outside = world.outsider.get(path)
+            if hidden:
+                assert (outside.status_code, outside.json()) == (404, NOT_FOUND), path
+            else:
+                assert outside.status_code == 200, (path, outside.text)
+            assert world.owner.get(path).status_code == 200, path
+
+
+# --- a stranger's bad body: a private project answers as an unknown one -------------------------
+
+
+@pytest.mark.parametrize("body", [{"title": 5}, b"{not json"])
+def test_a_bad_body_answers_a_stranger_to_a_private_project_as_to_an_unknown_one(
+    world: World, make_client: ClientFactory, migrated: Engine, body: Any
+) -> None:
+    """The gate leaves strangers to a private project alone because nothing tells the project
+    from an unknown one: the body is validated before the route reads the membership, for
+    both alike, so a human gets the same `invalid` and an agent of another project the same
+    answer (§1.3). A member's bad body is `invalid` too."""
+    flow.project(world.owner, "other")
+    elsewhere = flow.agent(make_client, world.owner, slug="other")
+    _page(migrated, world.project_id, on=False)
+    url = f"/api/v1{P}/tasks"
+    unknown_url = url.replace("/maintainer/maity", "/maintainer/nothere")
+
+    def send(client: TestClient, headers: dict[str, str], target: str) -> Any:
+        headers = {**headers, "Content-Type": "application/json"}
+        if isinstance(body, bytes):
+            return client.request("POST", target, content=body, headers=headers)
+        return client.request("POST", target, json=body, headers=headers)
+
+    callers = (
+        (world.outsider.client, _as(world.outsider), "a human"),
+        (elsewhere.client, elsewhere.auth | elsewhere.key(), "an agent of another project"),
+    )
+    for client, headers, who in callers:
+        private = send(client, headers, url)
+        unknown = send(client, headers, unknown_url)
+        assert (private.status_code, private.json()) == (unknown.status_code, unknown.json()), who
+        assert private.status_code in (400, 404), (who, private.text)
+    human = send(world.outsider.client, _as(world.outsider), url)
+    assert (human.status_code, human.json()["error"]["code"]) == (400, "invalid"), human.text
+    member = send(world.owner.client, _as(world.owner), url)
+    assert (member.status_code, member.json()["error"]["code"]) == (400, "invalid"), member.text
 
 
 # --- what the reads show ----------------------------------------------------------------------
