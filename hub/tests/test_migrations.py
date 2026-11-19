@@ -1885,3 +1885,34 @@ def test_sealed_verifiers_only_widens_and_the_downgrade_opens_sealed_rows(engine
         )
     downgrade(engine, before, secret_key=key)
     assert stored() == plain
+
+
+def test_the_access_history_downgrade_drops_the_table_with_rows_and_returns(
+    migrated: Engine,
+) -> None:
+    """20261118180000 down and up again with a row stored: the table goes with its index. On
+    MariaDB the index (human_id, n) is the one the foreign key on `human_id` uses, so dropping
+    it alone first was refused (error 1553, issue #1993)."""
+    from sqlalchemy import func, inspect, select
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    revision = "20261118180000_access_history"
+    anna = factory.human(migrated, "anna")
+    with migrated.begin() as conn:
+        conn.execute(
+            t.chat_access_history.insert().values(
+                id="cah-migration", human_id=anna, kind="entry", data={}, at=clock.now()
+            )
+        )
+    downgrade(migrated, _before(migrated, revision))
+    assert current_revision(migrated) == _before(migrated, revision)
+    assert "chat_access_history" not in inspect(migrated).get_table_names()
+    migrate(migrated)
+    assert current_revision(migrated) == head_revision(migrated)
+    indexes = {i["name"] for i in inspect(migrated).get_indexes("chat_access_history")}
+    assert "ix_chat_access_history_human" in indexes
+    with migrated.connect() as conn:
+        assert conn.execute(select(func.count()).select_from(t.chat_access_history)).scalar() == 0
