@@ -628,7 +628,8 @@ compares bytes. Its cursor (`paging.closed_cursor`) holds only the last card's c
 position, `closed_at` and id, bound to the list's filters: at most about 120 characters
 by its encoding, whatever the page size. A malformed cursor is refused as `invalid`: a
 time without a zone or out of range in UTC, a position that is no column of the board,
-an id longer than the id column or with a NUL. The cursor is not signed, so an edited one
+an id longer than the id column, with a NUL, or that does not encode as UTF-8 (a lone
+surrogate, which JSON carries). The cursor is not signed, so an edited one
 that is well formed is taken; it shows only cards the caller may read anyway, since the
 read rights are checked before the cursor. A page of the whole board that ends on a
 closed card hands out the same cursor, and the Python-sorted path then goes on after that
