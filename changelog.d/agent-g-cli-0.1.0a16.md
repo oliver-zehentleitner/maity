@@ -18,4 +18,7 @@
   run (#1949). The clone check tolerates the sandbox's empty
   `.git/config.lock` (#1954). The advertised running count survives a
   reconnect (#1950). Plain-call hook docs and test inputs are corrected
-  (#1973).
+  (#1973). `maity placement stop` and `restart` take an
+  `<agent>#<instance>` and refuse an agent that runs on several
+  placements, naming their ids; `maity placement list` shows
+  `<handle>#<instance>` (#1938).
