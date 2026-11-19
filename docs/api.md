@@ -9859,7 +9859,8 @@ already holds the first two for the header. The rest has no cheap source:
 - "the latest reports" would mean reading cards by `updated_at` and
   sorting in the browser.
 
-For the hub each one is a single grouped query. The endpoint repeats no
+For the hub each one is a grouped or keys-first read, never every row in
+full. The endpoint repeats no
 shape that has a home elsewhere. In particular it does not repeat the
 member view: that view's admin-only fields would then have a second
 place to get wrong.

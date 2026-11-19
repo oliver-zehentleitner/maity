@@ -1003,18 +1003,11 @@ def _filtered(
                 )
             except ApiError:
                 return []
-    rows = conn.execute(query).all()
-    if mine.role_base == "proxy":
-        # The project's consent to a bridge across owners is a human's own answer: a proxy
-        # neither lists nor relays it (§2.3, §7).
-        rows = [r for r in rows if (r.proposal or {}).get("kind") != bridges.PROJECT_KIND]
+    rows = relayed(conn.execute(query).all(), mine)
     if to == "me":
         return [r for r in rows if inbox.addressed_to(conn, r, mine)]
-    if to == "all":
-        if mine.may("requests:answer"):
-            alone = inbox.owners_alone(conn, rows)
-            return [r for r in rows if r.id not in alone or inbox.may_read(conn, r, mine)]
-        return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
+    if to == "all":  # restated in SQL by `routes/overview.py` `request_counts`
+        return listed_to_all(conn, mine, rows)
     target = _parse_to(conn, mine, to)
     # A member id alone also names the instance addresses of its team: the team reads them.
     whole_team = target.kind == "member" and target.instance is None
@@ -1025,6 +1018,27 @@ def _filtered(
         == target
         and inbox.may_read(conn, r, mine)
     ]
+
+
+def relayed(rows: Sequence[Any], mine: Membership) -> list[Any]:
+    """The project's consent to a bridge across owners is a human's own answer: a proxy
+    neither lists nor relays it (§2.3, §7)."""
+    if mine.role_base != "proxy":
+        return list(rows)
+    return [r for r in rows if (r.proposal or {}).get("kind") != bridges.PROJECT_KIND]
+
+
+def listed_to_all(conn: Connection, mine: Membership, rows: list[Any]) -> list[Any]:
+    """`to=all` (§7): a holder of `requests:answer` sees every request but one from an
+    owner's round it may not read; anyone else what it asked and what is addressed to it.
+
+    `routes/overview.py` `request_counts` restates this in SQL for the requests without
+    `held`, `cover`, `jour_fixe` (and, for a proxy, `proposal`), and hands the others to
+    this function: a change here is a change there."""
+    if mine.may("requests:answer"):
+        alone = inbox.owners_alone(conn, rows)
+        return [r for r in rows if r.id not in alone or inbox.may_read(conn, r, mine)]
+    return [r for r in rows if inbox.is_asker(r, mine) or inbox.addressed_to(conn, r, mine)]
 
 
 def _sorted(views: list[dict[str, Any]], sort: str) -> list[dict[str, Any]]:
