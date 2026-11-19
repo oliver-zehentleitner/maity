@@ -1138,3 +1138,47 @@ to every address; a loud failure shows a path that forgot `prepare`.
 - `RequestLimits.take` and `recipient_over` taking a connection and the address: every unit test
   of the limits would need a database and a pepper, for a key they treat as an opaque string.
 - Reusing `known_sources.fingerprint` (purpose `sign_in.known_source`): one key for two uses.
+
+## Single-use mail links have one implementation, the table a parameter
+
+**Id:** 3b8e5f21-9c47-4d6a-b0e3-71a2c9d84f56
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pfjwgw5e94k1 (item 1 of the clean-up audit tsk-f5sdcgr7vzj0); `hub/src/maity_hub/auth/single_use.py`; tests in `test_single_use.py`, each for `email_sign_in` and `password_reset`, and the limiters' names pinned in `test_request_limits_keep_their_names`
+**Revisit when:** a third kind of mailed single-use link comes, or one of the two needs a step of its own inside issuing, using or voiding that a column to clear cannot express
+
+`auth/single_use.py` holds, once, what the sign-in link (`email_sign_in`) and the password reset
+(`password_reset`) share: the human row lock (`lock_human`), issuing (`start`: under that lock,
+None when a newer row from the same source exists or the request outlived a row's life, else
+the earlier unused row from that source is voided; `add`: the new row; `issue`: both with a
+fresh nonce), `use`, `void_human`, `void_open`, and `RequestLimits(prefix)` with the recipient's
+limits (`recipient_over`, `RECIPIENT_*`). A `Kind` names the table, a row's life and the columns
+a spent row clears with `used_at`: `email_sign_in` clears `code_mac`, so a used or voided link's
+code dies with it. The statements, their order and the locks are those the two modules had.
+`email_links` keeps the code, its MAC, the per-day count of wrong codes, `live` and the mail,
+and draws the code between `start` and `add`, as before; `password_resets` keeps the token,
+`live`, the password generation and the wrong codes at resets. Both keep their former names as
+thin wrappers or re-exports (`RequestLimits` a subclass that passes `auth.email_links` or
+`auth.password_resets`), so callers, tests and their monkeypatches are unchanged, and
+`single_use` imports neither module. Nothing changes for users.
+
+**Reason:** the two modules held the same issue, use and void code and the same nine limiters,
+so a fix to one (a lock, a condition of single use) could miss the other on a security path.
+The limiters' names key the shared counts (`rate_count`): built from the same prefix, they stay
+exactly as they were, so no count starts again; the test pins every name. The audit's claim
+that use and the voids differ only in the table did not hold: the sign-in row also clears
+`code_mac`, hence `Kind.cleared`. `live` stays in each module, as the two read a row by
+different keys (a nonce hash or a browser's pending value; a token's nonce and human).
+
+**Rejected alternatives:**
+- One `issue` with a callback for the kind's columns: the sign-in code is drawn (and the day's
+  row read or written) after the void and before the insert, and also returned; a callback
+  hides that step and its statement. `start` and `add` keep it visible in `email_links.issue`.
+- Updating every caller to `single_use` and deleting the old names: a larger diff on a security
+  path for no change in behaviour, and the conftest finds the limiters through the routes'
+  `LIMITS` either way.
+- Clearing `code_mac` chosen by the table's columns rather than named in `Kind`: implicit, and a
+  later column of that name in another table would be cleared unasked.
+- `RequestLimits` taking a full name per limiter: nine strings per path to keep in step, where
+  one prefix cannot drift.
