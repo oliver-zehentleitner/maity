@@ -713,6 +713,47 @@ read, except to name its `match` when it is shown.
 - Keeping only the hits in the board's sorted list for the cursor (the first cut of this
   change): it skipped a card that began to match between two pages, as above.
 
+## The overview reads its reports keys first and counts open requests in one grouped statement, with a Python leftover
+
+**Id:** TODO
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ybc2ma72dzvq item 3 ("Overview: the latest reports and the request counts come from SQL with a limit and grouping"), option A approved by the manager, no migration, 2026-11-19; `hub/tests/test_load_overview.py` for the numbers
+**Revisit when:** the database's sort on `report->>'reported_at'` dominates the overview's time, or the held, covered and jour fixe requests stop being a few
+**See:** persistence.md — b7d3e9a2-5c41-4f86-9e2d-3a7c1f05b8e4 — as of 2026-11-19
+
+`GET …/overview` (`routes/overview.py`) selects only the ids of the latest reported cards,
+ordered by `coalesce(report["reported_at"].as_string(), '')`, `updated_at` and `id`, all
+descending, with `LIMIT`, and reads the shown columns of those cards only, put back in that
+order. The coalesce keeps a report without `reported_at` last on every engine. The request
+counts are one `GROUP BY priority` statement over the "plain" open requests: no `held`, no
+`cover` and, where they change the answer, no `jour_fixe` (for a holder of
+`requests:answer`) and no `proposal` (for a proxy). Its `where` restates
+`routes/requests.py` `listed_to_all`, and `_addressed_sql` restates `inbox.addressed_to`
+in plain columns. Every other open request is read with only the columns the Python rule
+needs and decided by `relayed`, `listed_to_all` and `inbox.addressed_to` unchanged, then
+added to the counts. Each side names the other in a comment.
+
+**Reason:** the overview read every reported card's whole report and every open request's
+full row, to sort and count them in Python, so its memory and time grew with the project
+(4.2 MB at 1000 cards and requests, 12.6 MB at 3000, on SQLite) for a response of at most
+50 reports and four numbers. The keys and the grouped count stay at about 0.4 MB at both
+sizes. What is held, covered or filed from a jour fixe round depends on a JSON list or on
+another table (`jour_fixe_round.config`). Restating that in SQL would mean JSON containment,
+so those few go through the rule the listing uses. A mistake there would then show as a
+leftover that grew, not as a wrong count. The test against `_filtered` covers every
+caller kind.
+
+**Rejected alternatives:**
+- The whole visibility in SQL with JSON containment for `held`, `cover.by` and the round's
+  circle: each database has its own syntax (`@>` on PostgreSQL, `JSON_CONTAINS` on MySQL,
+  `json_each` on SQLite), and the rule would have a second, dialect-split copy.
+- A functional index on `report->>'reported_at'`, or a `reported_at` column on the card:
+  the first is not portable across the three engines, the second needs a migration.
+  Deferred unless the numbers show the database's sort dominating.
+- Keeping the Python path: the rows read grow with the project, not with the response.
+
 
 ## Admin-set instance settings in one table with a registry in code, admin-set secrets sealed in a table of their own
 
