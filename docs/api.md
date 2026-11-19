@@ -13776,7 +13776,7 @@ learns its content.
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat but a waiting agent (§9.6), in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
 | `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time, changes only its `name` or is cleared to `null` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
-| `pr_watched` (not built yet, §11.6) | `instance:<member>#<id>` of every instance whose watch on the pull request the reading tells, at write time; readable as any instance-addressed event; wakes those instances | `{pr, head_sha, pr_state, required_check, reason}`, `reason` `check_done`, `head_changed`, `merged`, `closed` or `ended` (§11.6); subject the pull request, actor `null` |
+| `pr_watched` (not built yet, §11.6) | `instance:<member>#<id>` of every instance whose watch on the pull request the reading tells, at write time; readable as any instance-addressed event; wakes those instances | `{pr, head_sha, pr_state, checks, required_check, reason}`, `reason` `check_done` (on the required check, or with none named on every check suite of the head), `head_changed`, `merged`, `closed` or `ended` (§11.6); subject the pull request, actor `null` |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
 | `agent_stop_requested` | `member:<the placement's agent>` | `placement_id`, `grace_seconds`, `by` |
@@ -18008,7 +18008,7 @@ request of the project's own repository, as every probe read (§11).
 ```json
 { "pr": 212, "head": null, "created_at": "2026-11-19T10:02:00Z",
   "changed_at": "2026-11-19T10:02:00Z", "ends_at": "2026-11-20T10:02:00Z",
-  "last": { "pr_state": "open", "head_sha": "d91e294c…40 hex",
+  "last": { "pr_state": "open", "head_sha": "d91e294c…40 hex", "checks": "pending",
             "required_check": { "name": "ci-ok", "status": "pending" },
             "observed_at": "2026-11-19T10:02:00Z" } }
 ```
@@ -18017,7 +18017,7 @@ request of the project's own repository, as every probe read (§11).
 the watch's last change: its `PUT`, or the last `pr_watched` it was told.
 `ends_at` is `changed_at` plus `pr_watch_idle_hours` as the setting
 stands at the read. `last` is the reading the watch was last compared
-with, `required_check` as §6.6 gives it.
+with, `checks` as §11 gives it and `required_check` as §6.6 gives it.
 
 **Limits.** Two instance settings of §16.5, which the instance admin
 may change: `max_pr_watches_per_instance` (default 10) and
@@ -18026,8 +18026,8 @@ together). A new watch beyond either is `watch_limit` (409,
 `details.scope` `instance` or `project`, `details.limit`,
 `details.count`); keeping or changing an existing one is never refused.
 
-**The event.** `pr_watched` `{pr, head_sha, pr_state, required_check,
-reason}` goes to the watching instances only (§8.2) and wakes each of
+**The event.** `pr_watched` `{pr, head_sha, pr_state, checks,
+required_check, reason}` goes to the watching instances only (§8.2) and wakes each of
 them, so `maity wait` returns it. It is a kind of its own, because
 `probe_observed` belongs to a card's report. Its actor is `null` (the
 hub), its subject the pull request (`{type: "pull_request", id:
@@ -18035,7 +18035,7 @@ hub), its subject the pull request (`{type: "pull_request", id:
 
 | `reason` | When |
 |---|---|
-| `check_done` | `required_check.status` left `pending` (to `success`, `failure`, `cancelled` or `missing`, §6.6) on the watched head |
+| `check_done` | `required_check.status` left `pending` (to `success`, `failure`, `cancelled` or `missing`, §6.6) on the watched head; with no `required_check` named in the project (`required_check: null`, §6.1), every check suite of the watched head is complete: the summary `checks` of the pull request read (§11) left `pending` (to `success` or `failure`) |
 | `head_changed` | the pull request's head is not the one of `last` |
 | `merged` | the pull request was observed `merged` |
 | `closed` | the pull request was observed closed unmerged |
@@ -18045,7 +18045,12 @@ One reading tells each watch at most one `pr_watched`: `merged` or
 `closed` before `head_changed` before `check_done`. A reading that
 changes none of these tells nothing. `unknown` is no change: a check
 that could not be read is never `check_done` (§11.4). With no
-`required_check` named in the project (§6.1) `check_done` never comes.
+`required_check` named in the project (§6.1) `check_done` still comes,
+once, when every check suite of the watched head is complete: the
+summary `checks` (§11) leaves `pending` for `success` or `failure`, the
+same rule `checks` follows everywhere (a `cancelled` run counts as
+`failure` there, §6.6). `checks` `none` (no run yet) and `unknown` are
+no change, so a head whose suites have not started yet tells nothing.
 
 **The end.** A watch ends after its `merged`, `closed` or `ended`, after
 its `head_changed` when it named a `head`, on `DELETE`, and with its
@@ -18063,9 +18068,17 @@ three tell the watcher. An ended watch counts against no limit.
   reads.
 - **The sweep as the fallback.** The probe's sweep, every 5 minutes,
   also reads every watched pull request whose `last` is missing or has
-  `required_check.status` `pending` or `unknown`, beside the reports it
-  reads again. Without webhook events a watch hears of its check within
-  one sweep.
+  `required_check.status` `pending` or `unknown`, and, with no
+  `required_check` named, whose `last` has `checks` `pending`, `none` or
+  `unknown`, until every check suite of the head is complete; beside the
+  reports it reads again. Without webhook events a watch hears of its
+  check within one sweep.
+- **The gap without webhook events.** The sweep does not read a watch
+  whose check is done. Without `check_suite` and `pull_request`
+  deliveries (§17.4), a later push, merge or close after `check_done` is
+  therefore missed until the watch ends with `ended` after
+  `pr_watch_idle_hours` (24 by default). A watcher that needs those
+  without the webhook asks again (`GET …/probe?pr=`, §11).
 - **The same budget.** A watch reads through the project's source and
   its budget (§11.4, **Rate limits**); it adds no source. While that
   budget is spent the watch keeps `last` and tells nothing, and the
