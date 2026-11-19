@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import heapq
 import json
 import logging
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from itertools import islice
 from types import SimpleNamespace
 from typing import Any, Literal, cast
 
@@ -1102,10 +1104,15 @@ def _page(
     next_cursor = _next_cursor(sort, _key(page[-1], sort)) if len(views) > limit else None
     if render is not None:
         page = render(page)
-    for view in page:
+    return {"items": _shown(page), "next_cursor": next_cursor}
+
+
+def _shown(views: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The page's views without what only sorted them."""
+    for view in views:
         view.pop("_asker_handle", None)
         view.pop("_created", None)
-    return {"items": page, "next_cursor": next_cursor}
+    return views
 
 
 def _next_cursor(sort: str, key: list[Any]) -> str:
@@ -1264,14 +1271,62 @@ def _project_page(
     limit: int,
     cursor: str | None,
 ) -> dict[str, Any]:
-    """`_page(_sorted(_entries(_filtered(…))))` with the database ordering and limiting.
+    """`_page(_sorted(_entries(_filtered(…))))` with the database ordering and limiting: the
+    listing's keys after the cursor (`_listing_keys`), and only the page's rows read in full,
+    and decided again by the listing's own filters and `_decided` (`_redecided`): a request
+    gone since its key was read, or one the listing no longer holds, is left out."""
+    listing = _listing(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
+    after_key = _cursor_key(cursor, sort) if cursor is not None else None
+    if listing is None:
+        return {"items": [], "next_cursor": None}
+    order = _order(conn, sort)
+    after = _sql_key(sort, after_key) if after_key is not None else None
+    merged = _listing_keys(conn, listing, order, after, limit)
+    page = merged[:limit]
+    ids = [row.id for row in page]
+    found: dict[str, Any] = {}
+    if ids:
+        # The rows read in full are decided again, with the same filters and the same rule:
+        # on PostgreSQL each statement reads its own snapshot (READ COMMITTED), and a row may
+        # have changed since its key was read. One that fails now is left out; the page may
+        # come out shorter, its cursor stays the keys' (3c9e5a71).
+        full = _read_in_full(conn, ids, listing.where)
+        found = {row.id: row for row in _redecided(conn, listing, full)}
+    return {
+        "items": request_views(conn, [found[i] for i in ids if i in found]),
+        "next_cursor": _cursor_of(order, page[-1]) if len(merged) > limit else None,
+    }
 
-    Statement A reads the keys of the plain requests the caller sees after the cursor, the
-    page plus one. Statement B reads the other requests after the cursor, up to A's last key
-    when A filled its page, a batch at a time with the columns `_decided` needs, and decides
-    them with it, until it holds the page plus one. Both merged in order are the page's keys;
-    only those rows are read in full, and decided again by the same filters and `_decided`:
-    a request gone since its key was read, or one the listing no longer holds, is left out."""
+
+@dataclass(frozen=True)
+class _Listing:
+    """One membership's listing with its filters read and `to` parsed (`_listing`): what
+    `_listing_keys` pages. `where` is the listing's own filters (project, not personal,
+    `status`, `class`, `asked_by`), which the full read applies again (`_read_in_full`)."""
+
+    mine: Membership
+    where: tuple[Any, ...]
+    to: str
+    target: inbox.Addressee | None
+
+
+def _redecided(conn: Connection, listing: _Listing, rows: Sequence[Any]) -> list[Any]:
+    """The `rows`, read in full with `listing.where`, that `listing` still holds by `_decided`."""
+    return _decided(conn, listing.mine, relayed(rows, listing.mine), listing.to, listing.target)
+
+
+def _listing(
+    conn: Connection,
+    mine: Membership,
+    *,
+    status: str,
+    class_: str | None,
+    asked_by: str | None,
+    to: str,
+) -> _Listing | None:
+    """`_filtered`'s filters for `mine`, `to` parsed and refused as there (`_parse_to`). None
+    when `asked_by` names no member: nothing is listed and `to` is not read, as in
+    `_filtered`."""
     r = t.request.c
     _check_status(status)
     where = [r.project_id == mine.project.id, r.personal.is_(False)]
@@ -1279,7 +1334,6 @@ def _project_page(
         where.append(r.status.in_([s for s in status.split(",") if s]))
     if class_ is not None:
         where.append(r["class"] == class_)
-    asker_known = True
     if asked_by is not None:
         if asked_by == "me":
             where.append(r.asked_by == mine.id)
@@ -1287,13 +1341,39 @@ def _project_page(
             try:
                 where.append(r.asked_by == member_row(conn, mine.project.id, asked_by).id)
             except ApiError:
-                asker_known = False  # nothing is listed: `to` is not read, as in `_filtered`
-    target = None if not asker_known or to in ("me", "all") else _parse_to(conn, mine, to)
-    after_key = _cursor_key(cursor, sort) if cursor is not None else None
-    if not asker_known:
-        return {"items": [], "next_cursor": None}
-    order = _order(conn, sort)
-    after = [order.after(_sql_key(sort, after_key))] if after_key is not None else []
+                return None
+    target = None if to in ("me", "all") else _parse_to(conn, mine, to)
+    return _Listing(mine, tuple(where), to, target)
+
+
+def _key_columns(order: _Order) -> list[Any]:
+    """What `_Order.key` reads of a row: the id, the priority, the time and, for `agent`, the
+    asker's handle."""
+    r = t.request.c
+    keys: list[Any] = [r.id, r.priority, r.created_at]
+    if order.sort == "agent":
+        keys.append(order.columns[0].label("asker_handle"))
+    return keys
+
+
+def _listing_keys(
+    conn: Connection,
+    listing: _Listing,
+    order: _Order,
+    after: tuple[Any, ...] | None,
+    limit: int,
+) -> list[Any]:
+    """The keys (`_key_columns`) of the first `limit + 1` requests of one membership's
+    listing after `after` (`_sql_key`), in `order`.
+
+    Statement A reads the keys of the plain requests the caller sees after the cursor, the
+    page plus one. Statement B reads the other requests after the cursor, up to A's last key
+    when A filled its page, a batch at a time with the columns `_decided` needs, and decides
+    them with it, until it holds the page plus one. Both merged in order are the result."""
+    r = t.request.c
+    mine, to, target = listing.mine, listing.to, listing.target
+    where = list(listing.where)
+    since = [order.after(after)] if after is not None else []
     if to == "me":
         visible = [request_sql.addressed(mine)]
     elif to == "all":
@@ -1303,15 +1383,12 @@ def _project_page(
         whole_team = target.kind == "member" and target.instance is None
         visible = [request_sql.addressed_as(target, whole_team), request_sql.may_read(mine)]
     plain = request_sql.plain(mine)
-    keys: list[Any] = [r.id, r.priority, r.created_at]
-    if sort == "agent":
-        keys.append(order.columns[0].label("asker_handle"))
-    listed = list(where)  # the listing's own filters, without the bound on A's last key
+    keys = _key_columns(order)
     taken = list(
         conn.execute(
             select(*keys)
             .select_from(order.source)
-            .where(*where, *plain, *visible, *after)
+            .where(*where, *plain, *visible, *since)
             .order_by(*order.ordered())
             .limit(limit + 1)
         ).all()
@@ -1326,33 +1403,167 @@ def _project_page(
     kept: dict[str, Any] = {}
     for size in _leftover_batches(limit):
         batch = list(
-            conn.execute(leftover.where(*after).order_by(*order.ordered()).limit(size)).all()
+            conn.execute(leftover.where(*since).order_by(*order.ordered()).limit(size)).all()
         )
         decided = _decided(conn, mine, relayed(batch, mine), to, target)
         kept.update((row.id, row) for row in decided)
         if len(kept) > limit or len(batch) < size:
             break
-        after = [order.after(order.key(batch[-1]))]
+        since = [order.after(order.key(batch[-1]))]
     rows = {row.id: row for row in taken} | kept
-    merged = sorted(rows.values(), key=order.key, reverse=order.descending)[: limit + 1]
+    return sorted(rows.values(), key=order.key, reverse=order.descending)[: limit + 1]
+
+
+def _cursor_of(order: _Order, row: Any) -> str:
+    """The cursor after `row`, in `_key`'s shape: the time as text."""
+    *head, at, row_id = order.key(row)
+    return _next_cursor(order.sort, [*head, at.isoformat(), row_id])
+
+
+def _full_rows(conn: Connection, ids: list[str]) -> list[Any]:
+    """The requests `ids` in full, in that order; one gone since its key was read is left
+    out."""
+    if not ids:
+        return []
+    found = {row.id: row for row in _read_in_full(conn, ids, ())}
+    return [found[i] for i in ids if i in found]
+
+
+def _personal_keys(
+    conn: Connection,
+    caller: Caller,
+    order: _Order,
+    after: tuple[Any, ...] | None,
+    limit: int,
+    *,
+    status: str,
+    class_: str | None,
+    asked_by: str | None,
+    to: str,
+) -> list[Any]:
+    """`_personal_inbox` paged: the keys (`_key_columns`) of the first `limit + 1` personal
+    requests in the caller's inbox after `after`, in `order`. They are read in order, a batch
+    at a time with what `_personal_inbox` decides by, and decided as it does."""
+    if to not in ("me", "all"):
+        return []  # addressed to the caller, never to a member, role or the owner
+    r = t.request.c
+    # Addressed to the caller, or a cross-owner `reports_to` request they asked as an owner
+    # outside the project (§7), as `_personal_inbox` reads them.
+    where: list[Any] = [
+        r.personal.is_(True),
+        (r.to_human == caller.human_id) | (r.asked_by_human == caller.human_id),
+    ]
+    if status != "all":
+        where.append(r.status.in_([s for s in status.split(",") if s]))
+    if class_ is not None:
+        where.append(r["class"] == class_)
+    keys = _key_columns(order)
+    decided_by = [*keys, r.to_human, r.proposal, r.asked_by, r.asked_by_human]
+    query = select(*decided_by).select_from(order.source).where(*where)
+    since = [order.after(after)] if after is not None else []
+    kept: list[Any] = []
+    for size in _leftover_batches(limit):
+        batch = list(conn.execute(query.where(*since).order_by(*order.ordered()).limit(size)))
+        kept += [
+            row
+            for row in batch
+            if (row.to_human == caller.human_id or _is_cross_owner(row))
+            and (asked_by is None or _asker_matches(conn, row, caller, asked_by))
+        ]
+        if len(kept) > limit or len(batch) < size:
+            break
+        since = [order.after(order.key(batch[-1]))]
+    return kept[: limit + 1]
+
+
+def _all_page(
+    conn: Connection,
+    caller: Caller,
+    *,
+    status: str,
+    class_: str | None,
+    asked_by: str | None,
+    to: str,
+    sort: str,
+    limit: int,
+    cursor: str | None,
+) -> dict[str, Any]:
+    """`GET /requests`: `_page(_sorted(_all_entries(…)))` with the database ordering and
+    limiting. Each membership's listing gives its first page plus one after the cursor
+    (`_listing_keys`), the personal inbox its own (`_personal_keys`); merged by key, the first
+    page plus one are the page's keys, and only those rows are read in full. A project whose
+    `to` is no address there is left out, as before (`_all_entries`)."""
+    listings: list[tuple[_Listing, dict[str, Any]]] = []
+    for project in _member_projects(conn, caller):
+        full_name = namespace.full_name(conn, project)
+        mine = membership(conn, caller, full_name)
+        if not mine.may("project:read"):
+            continue
+        try:
+            listing = _listing(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
+        except ApiError as error:
+            if error.code == "invalid" and "to" in error.details.get("fields", {}):
+                continue  # that member is not in this project
+            raise
+        if listing is not None:
+            inline = {
+                "slug": project.slug,
+                "full_name": full_name,
+                "name": project.name,
+                "state": project.state,
+            }
+            listings.append((listing, {"project": inline}))
+    after_key = _cursor_key(cursor, sort) if cursor is not None else None
+    order = _order(conn, sort)
+    after = _sql_key(sort, after_key) if after_key is not None else None
+    streams: list[list[tuple[Any, dict[str, Any] | None]]] = [
+        [(row, extra) for row in _listing_keys(conn, listing, order, after, limit)]
+        for listing, extra in listings
+    ]
+    personal = _personal_keys(
+        conn, caller, order, after, limit, status=status, class_=class_, asked_by=asked_by, to=to
+    )
+    streams.append([(row, None) for row in personal])
+    merged = list(
+        islice(
+            heapq.merge(*streams, key=lambda kept: order.key(kept[0]), reverse=order.descending),
+            limit + 1,
+        )
+    )
     page = merged[:limit]
-    next_cursor = None
-    if len(merged) > limit:  # `_key`'s shape: the time as text
-        *head, at, row_id = order.key(page[-1])
-        next_cursor = _next_cursor(sort, [*head, at.isoformat(), row_id])
-    ids = [row.id for row in page]
-    found: dict[str, Any] = {}
-    if ids:
-        # The rows read in full are decided again, with the same filters and the same rule:
-        # on PostgreSQL each statement reads its own snapshot (READ COMMITTED), and a row may
-        # have changed since its key was read. One that fails now is left out; the page may
-        # come out shorter, its cursor stays the keys' (3c9e5a71).
-        full = _read_in_full(conn, ids, listed)
-        found = {row.id: row for row in _decided(conn, mine, relayed(full, mine), to, target)}
-    return {
-        "items": request_views(conn, [found[i] for i in ids if i in found]),
-        "next_cursor": next_cursor,
-    }
+    next_cursor = _cursor_of(order, page[-1][0]) if len(merged) > limit else None
+    extras = {row.id: extra for row, extra in page}
+    rows = _full_rows(conn, [row.id for row, _ in page])
+    project_inline: dict[str, Any] = {}
+    org_inline: dict[str, Any] = {}
+
+    def extra_of(row: Any) -> dict[str, Any]:
+        found = extras[row.id]
+        if found is not None:
+            return found
+        # A personal request, member of its project or not (§7), as `_personal_inbox` has it.
+        if row.project_id and row.project_id not in project_inline:
+            project_inline[row.project_id] = _project_inline(conn, row.project_id)
+        if row.org_id and row.org_id not in org_inline:
+            org_inline[row.org_id] = _org_inline_of(conn, row.org_id)
+        return {
+            "project": project_inline[row.project_id] if row.project_id else None,
+            "org": org_inline[row.org_id] if row.org_id else None,
+        }
+
+    # `_entries`' shape for `_render`; the handle has sorted already and is not shown.
+    entries = [
+        {
+            "id": row.id,
+            "priority": row.priority,
+            "_created": row.created_at,
+            "_asker_handle": "",
+            "_row": row,
+            **extra_of(row),
+        }
+        for row in rows
+    ]
+    return {"items": _shown(_render(conn)(entries)), "next_cursor": next_cursor}
 
 
 def _asker_handles(conn: Connection, rows: list[Any]) -> dict[str, str]:
@@ -1498,35 +1709,66 @@ def list_all_requests(
     _check_sort(sort)
     _check_status(status)
     with read_transaction(engine_of(request)) as conn:
-        projects = conn.execute(
+        return JSONResponse(
+            _all_page(
+                conn,
+                caller,
+                status=status,
+                class_=class_,
+                asked_by=asked_by,
+                to=to,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+            )
+        )
+
+
+def _member_projects(conn: Connection, caller: Caller) -> list[Any]:
+    """The projects of the human's active memberships, for `GET /requests`."""
+    return list(
+        conn.execute(
             select(t.project)
             .join(t.membership, t.membership.c.project_id == t.project.c.id)
             .where(t.membership.c.human_id == caller.human_id, t.membership.c.active.is_(True))
         ).all()
-        views: list[dict[str, Any]] = []
-        for project in projects:
-            mine = membership(conn, caller, namespace.full_name(conn, project))
-            if not mine.may("project:read"):
-                continue
-            try:
-                rows = _filtered(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
-            except ApiError as error:
-                if error.code == "invalid" and "to" in error.details.get("fields", {}):
-                    continue  # that member is not in this project
-                raise
-            inline = {
-                "slug": project.slug,
-                "full_name": namespace.full_name(conn, project),
-                "name": project.name,
-                "state": project.state,
-            }
-            views += _entries(conn, rows, _in_project(inline))
-        # Personal requests, member of their project or not (§7). The project listings
-        # above never contain them.
-        views += _personal_inbox(
-            conn, caller, status=status, class_=class_, asked_by=asked_by, to=to
-        )
-        return JSONResponse(_page(_sorted(views, sort), sort, limit, cursor, _render(conn)))
+    )
+
+
+def _all_entries(
+    conn: Connection,
+    caller: Caller,
+    *,
+    status: str,
+    class_: str | None,
+    asked_by: str | None,
+    to: str,
+) -> list[dict[str, Any]]:
+    """`GET /requests` as the readable rule, and `_all_page`'s test oracle with `_sorted`
+    and `_page`: every listed request of every membership (`_filtered`), a project whose `to`
+    is no address there left out, and the personal inbox (`_personal_inbox`)."""
+    views: list[dict[str, Any]] = []
+    for project in _member_projects(conn, caller):
+        mine = membership(conn, caller, namespace.full_name(conn, project))
+        if not mine.may("project:read"):
+            continue
+        try:
+            rows = _filtered(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
+        except ApiError as error:
+            if error.code == "invalid" and "to" in error.details.get("fields", {}):
+                continue  # that member is not in this project
+            raise
+        inline = {
+            "slug": project.slug,
+            "full_name": namespace.full_name(conn, project),
+            "name": project.name,
+            "state": project.state,
+        }
+        views += _entries(conn, rows, _in_project(inline))
+    # Personal requests, member of their project or not (§7). The project listings above
+    # never contain them.
+    views += _personal_inbox(conn, caller, status=status, class_=class_, asked_by=asked_by, to=to)
+    return views
 
 
 @router.get("/projects/{owner}/{slug}/requests/{request_id}")

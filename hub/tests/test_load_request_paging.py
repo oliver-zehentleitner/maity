@@ -9,7 +9,9 @@ agent's `to=me`, then a walk through every page of the owner's `to=all` at `limi
 on a hub without the change too: it sets nothing the older hub does not know. The checks are
 what holds on both: every read answers 200 with the pages the listing's own rule gives, and one
 page sends at most `STATEMENTS_MAX` statements, whatever the seed. The times and the memory are
-printed, not checked, since on a shared machine they are noise."""
+printed, not checked, since on a shared machine they are noise. `test_all_requests_timing` does
+the same for `GET /requests`, a human in three projects of `MAITY_LOAD_UNIT` requests each,
+against `ALL_STATEMENTS_MAX`."""
 
 from __future__ import annotations
 
@@ -21,12 +23,12 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, insert, select
 
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.test_overview import jour_fixe_rounds, listed_open, person, seed_requests
+from tests.test_overview import Person, jour_fixe_rounds, listed_open, person, seed_requests
 
 pytestmark = pytest.mark.load
 
@@ -37,6 +39,9 @@ SORTS = ("priority", "date", "agent")
 PAGE = 50
 # Per page, whatever UNIT is; the walk at 200 sends this per page it reads.
 STATEMENTS_MAX = 25
+# `GET /requests` per page for a caller in three projects: O(projects), whatever UNIT is
+# (40 on the old path, 33 to 35 paged in SQL, at 1000 requests per project on SQLite).
+ALL_STATEMENTS_MAX = 45
 
 
 def _statements(engine: Engine, call: Callable[[], Any]) -> int:
@@ -76,22 +81,22 @@ def _timed(call: Callable[[], Any], rounds: int) -> list[float]:
     return times
 
 
-def _read(who: Any, params: dict[str, Any]) -> Callable[[], Any]:
-    return lambda: who.get(f"{PROJECT}/requests", params=params)
+def _read(who: Any, params: dict[str, Any], path: str = f"{PROJECT}/requests") -> Callable[[], Any]:
+    return lambda: who.get(path, params=params)
 
 
 class _Walk:
     """Every page of a list, one call after the other; `pages` counts the last walk's."""
 
-    def __init__(self, who: Any, params: dict[str, Any]) -> None:
-        self.who, self.params, self.pages = who, params, 0
+    def __init__(self, who: Any, params: dict[str, Any], path: str = f"{PROJECT}/requests") -> None:
+        self.who, self.params, self.path, self.pages = who, params, path, 0
         self.ids: list[str] = []
 
     def __call__(self) -> Any:
         cursor, self.pages, self.ids = None, 0, []
         while True:
             params = {**self.params, **({"cursor": cursor} if cursor else {})}
-            response = self.who.get(f"{PROJECT}/requests", params=params)
+            response = self.who.get(self.path, params=params)
             if response.status_code != 200:
                 return response
             body = response.json()
@@ -163,3 +168,85 @@ def test_request_list_timing(make_client: ClientFactory, migrated: Engine) -> No
         over_budget.append(("owner_all_walk_200", statements))
     print(f"\nLOAD request list: {shown}")
     assert not over_budget, f"STATEMENTS_MAX {STATEMENTS_MAX} exceeded: {over_budget}"
+
+
+def _members_of(engine: Engine, project_id: str) -> list[Person]:
+    m = t.membership.c
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(m.id, m.agent_id, m.human_id).where(m.project_id == project_id).order_by(m.id)
+        ).all()
+    return [Person(row.id, row.agent_id or row.human_id) for row in rows]
+
+
+def test_all_requests_timing(make_client: ClientFactory, migrated: Engine) -> None:
+    """`GET /requests` for a human in three projects of `MAITY_LOAD_UNIT` requests each: the
+    owner of one, a member of the second, a proxy in the third. Per sort the first and the
+    second page of `to=all`, then a walk through every page at `limit=200`."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    agent = flow.agent(make_client, owner)
+    flow.agent(make_client, owner, role="reviewer")
+    bob = factory.human(migrated, "bob")
+    with migrated.connect() as conn:
+        alpha: str = conn.execute(select(t.project.c.id)).scalar_one()
+    template = agent.post(
+        f"{PROJECT}/requests", {"class": "decision", "title": "Which?", "to": "owner"}
+    )
+    assert template.status_code == 201, template.text
+    projects = [alpha]
+    for slug, role in (("beta", "member"), ("gamma", "proxy")):
+        project_id = factory.project(migrated, slug, owner_id=bob)
+        factory.membership(migrated, project_id, "owner", human_id=bob)
+        factory.membership(migrated, project_id, role, human_id=owner.id)
+        factory.agent(migrated, project_id, bob)
+        factory.agent(migrated, project_id, bob, "reviewer")
+        projects.append(project_id)
+    with migrated.begin() as conn:
+        row = conn.execute(select(t.request).where(t.request.c.id == template.json()["id"])).one()
+        templates = [row.id]
+        for project_id in projects[1:]:
+            copy = {**row._mapping, "id": f"req-tpl{project_id[-8:]}", "project_id": project_id}
+            conn.execute(insert(t.request).values(copy))
+            templates.append(copy["id"])
+    mine = []
+    for n, (project_id, template_id) in enumerate(zip(projects, templates, strict=True)):
+        people = _members_of(migrated, project_id)
+        rounds = jour_fixe_rounds(migrated, project_id)
+        seed_requests(migrated, template_id, people, rounds, UNIT, first=n * UNIT, every=100)
+        mine += [p for p in people if p.principal == owner.id]
+    listed = {r.id for who in mine for r in listed_open(migrated, who, "all")}
+    assert len(listed) > 2 * PAGE
+    reads: dict[str, Callable[[], Any]] = {}
+    for sort in SORTS:
+        params = {"to": "all", "sort": sort, "limit": PAGE}
+        first = owner.get("/requests", params=params).json()
+        assert len(first["items"]) == PAGE and first["next_cursor"], sort
+        second = {**params, "cursor": first["next_cursor"]}
+        reads[f"all_{sort}_p1"] = _read(owner, params, "/requests")
+        reads[f"all_{sort}_p2"] = _read(owner, second, "/requests")
+    walk = _Walk(owner, {"to": "all", "limit": 200}, "/requests")
+    walk()
+    assert set(walk.ids) == listed and len(walk.ids) == len(listed)
+    shown: dict[str, Any] = {"engine": migrated.dialect.name, "requests": 3 * UNIT}
+    over_budget = []
+    for name, call in reads.items():
+        sent = _statements(migrated, call)
+        shown[name] = {
+            "statements": sent,
+            "peak_kib": _peak_kib(call),
+            "p50_p95_ms": _quantiles(_timed(call, ROUNDS)),
+        }
+        if sent > ALL_STATEMENTS_MAX:
+            over_budget.append((name, sent))
+    statements = _statements(migrated, walk)
+    shown["all_walk_200"] = {
+        "pages": walk.pages,
+        "statements": statements,
+        "peak_kib": _peak_kib(walk),
+        "p50_p95_ms": _quantiles(_timed(walk, max(1, ROUNDS // 4))),
+    }
+    if statements > ALL_STATEMENTS_MAX * walk.pages:
+        over_budget.append(("all_walk_200", statements))
+    print(f"\nLOAD all requests: {shown}")
+    assert not over_budget, f"ALL_STATEMENTS_MAX {ALL_STATEMENTS_MAX} exceeded: {over_budget}"

@@ -763,8 +763,8 @@ caller kind.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-ybc2ma72dzvq item 4 (keyset paging in SQL for the request lists), the design note approved by the manager as slice (a), the project's list only, 2026-11-19; `hub/tests/test_load_request_paging.py` for the numbers
-**Revisit when:** `GET /requests` across projects gets the same paging (slice b), or held, covered, jour fixe and proxy-proposal requests stop being a few, or the database's sort on the `CASE` rank or the asker's handle dominates a page's time
+**Source:** card tsk-ybc2ma72dzvq item 4 (keyset paging in SQL for the request lists), the design note approved by the manager as slice (a), the project's list, and slice (b), `GET /requests` across projects, 2026-11-19; `hub/tests/test_load_request_paging.py` for the numbers
+**Revisit when:** held, covered, jour fixe and proxy-proposal requests stop being a few, or the database's sort on the `CASE` rank or the asker's handle dominates a page's time, or a human's memberships grow so many that a statement per project per page matters
 **See:** persistence.md#the-overview-reads-its-reports-keys-first-and-counts-open-requests-in-one-grouped-statement-with-a-python-leftover — 8d41e6b2-57ca-4f93-b0d8-2e6a9c15f374 — as of 2026-11-19
 
 `GET /projects/{owner}/{slug}/requests` (`routes/requests.py` `_project_page`) splits the
@@ -791,6 +791,12 @@ expression mirroring `_asker_handles` for the agent sort, and text compared byte
 handed out before still pages, and a `k` of the wrong shape is `invalid` instead of a 500.
 `_filtered`, `_sorted` and `_page` stay as the readable rule, and `test_request_paging.py`
 holds the new path to them page by page.
+
+`GET /requests` (`_all_page`) merges by key one such stream per membership (`_listing_keys`,
+the page plus one each) and the personal inbox read the same way (`_personal_keys`), then
+reads the page's rows in full; a project whose `to` is no address there is skipped, as
+before. It sends a few statements per project per page, as the old path did. `_all_entries`
+stays as its readable rule, and `test_requests_all_paging.py` holds it to that.
 
 **Reason:** the old list read every matching request in full and sorted it in Python on every
 page, so a page's memory grew with the project, and the dashboard's walk at 200 paid that per
