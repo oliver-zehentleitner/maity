@@ -285,6 +285,28 @@ class AsUser:
         if done.returncode != 0:
             raise OSError(f"codex home {home} failed: {done.stderr.strip()[:200]}")
 
+    def worktree_prune(self, repo: Path) -> dict[str, Any]:
+        """Clear a Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/`
+        on placement start (worktree.prune_orphans), by file operations only, never git: the
+        runner runs no git in an existing clone. For the runner's own user it runs in-process;
+        through sudo or on an ssh host the op runs there (`maity runner worktree-clean
+        --prune-start --repo`) and prints one JSON line. OSError when it fails."""
+        from . import worktree
+
+        if self.direct:
+            return worktree.prune_orphans(str(repo))
+        argv = [*self.maity, "runner", "worktree-clean", "--prune-start", "--repo", str(repo)]
+        done = self.run(argv, env=self.module_env())
+        if done.returncode != 0:
+            raise OSError(f"worktree prune {repo} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"worktree prune {repo}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"worktree prune {repo}: no answer")
+        return answer
+
     def terminate(self, pid: int) -> None:
         """SIGTERM to a process group of the agents' side."""
         if self.direct:

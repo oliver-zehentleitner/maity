@@ -732,6 +732,28 @@ def test_a_clone_with_a_planted_redirect_does_not_start(
     assert (place.path / ".git" / entry).read_text() == text  # the runner deletes nothing
 
 
+def test_a_leftover_subagent_worktree_is_cleared_on_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Claude Code subagent's worktree left under `.claude/worktrees/` would read as
+    unsupported and refuse the start; the supervisor clears it first, by file operations only,
+    and the start proceeds."""
+    sup, backend, _, _, logs = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    (place.path / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.records["plc-0003"].reason is None
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+    assert not admin.exists() and not (place.path / ".claude" / "worktrees" / "agent-x").exists()
+    assert any("cleared leftover worktree" in line for line in logs)
+
+
 def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

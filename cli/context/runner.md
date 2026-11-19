@@ -2723,6 +2723,84 @@ every call can run that way.
 - A copy of the check in the CLI beside the runner's: two lists of
   allowed keys drift apart.
 
+## A placement's leftover subagent worktree is removed, not tolerated, and only when it is the clone's own
+
+**Id:** a01035af-a4c1-4ab7-83a7-91670439fa50
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-gqk2gdxb4g73, 2026-11-19 (a Claude Code subagent's worktree-isolation leaves a git worktree at `.claude/worktrees/agent-<id>` inside the placement's clone, which registers its admin data so the clone reads as unsupported — "Worktrees are" — and refuses `maity report` and the next start before git runs; inside the harness sandbox the agent can remove neither the worktree nor `.claude/worktrees/*`, a protected path, so without help a session is stuck until a person cleans the host; a current Claude Code empties the worktree registration at session start, but a worktree a subagent makes mid-session lasts that session); the dispatcher's decision to remove rather than tolerate (option (a) over (b)), 2026-11-19
+**See:** runner.md#under-the-runner-maitys-own-git-runs-only-in-the-runners-clone-and-only-while-it-is-plain — b4a8030d-3b24-4b76-81cc-a84b0ca84c11 — as of 2026-11-19
+**Verification:** corroborated
+**Revisit when:** the clone check starts tolerating a present worktree, a harness places a subagent's worktree somewhere other than the clone's own `.claude/worktrees/`, the runner needs to clear a leftover that holds uncommitted work without a person present, or the runner starts running git in an existing clone for anything
+
+The clone check stays strict: a present worktree is unsupported, and the
+check is not widened to tolerate one. The leftover is removed instead, by
+two paths, both scoped to this clone's own `.claude/worktrees/` and both
+leaving a worktree that points anywhere else exactly where it is.
+
+A placed agent clears its own clone with the op `maity runner
+worktree-clean`. It runs from inside the session, where maity runs outside
+the harness sandbox as the clone's owner and so has the rights the sandbox
+denies the agent's own `git`/`rm`. It runs `git worktree remove` and
+`git worktree prune` through a pinned git: the git the runner recorded, the
+clone's configuration checked a plain clone's first (no key that names a
+program for git), hooks and fsmonitor off on the command line, no system or
+global configuration — so git starts no program the agent chose, though it
+reads the clone's own `.git`. It keeps a worktree that has uncommitted
+changes and says to pass `--force` to discard it, since a subagent
+sometimes leaves work the parent has not merged.
+
+The supervisor clears a leftover on every placement (re)start, before the
+clone check would refuse it, as a hygiene step. It runs no git — the runner
+runs no git in an existing clone, which would run the agent's code as the
+runner — so it removes by file operations only, each directory opened from
+the one above without following a link. Having no git it cannot read
+whether a leftover holds uncommitted changes, so it always clears an
+in-scope one: the work-preserving guard is the agent op's, for the session
+that is still running, and a leftover found at a start is a past session's,
+with nobody to ask. A directory under `.claude/worktrees/` reached through a
+link, and a registered worktree pointing out of the clone, are both left —
+the latter keeps a planted redirect refusing the start, as before.
+
+When the clone check refuses over a worktree under `.claude/worktrees/`, the
+refusal names the op and its `--force` caveat, but only when there is such a
+leftover to clear: a worktree pointing elsewhere is genuinely unsupported
+and offers no way out.
+
+**Reason:** keeping the check strict and removing the worktree is narrower
+than tolerating a present one. A worktree changes where git reads — its own
+`HEAD` and index, a `config.worktree` the main configuration does not have —
+so tolerating one would reopen across worktrees exactly what the check
+closes for the main clone. What makes removal safe is the scope: only a
+working tree that resolves, with no link on the way, under this clone's
+`.claude/worktrees/` is touched; anything else is left; and the live op
+keeps uncommitted work behind an explicit `--force`. The op can run git
+where maity's automatic git cannot run at all because it is invoked on
+purpose, once, and still pins git so the invocation itself starts no agent
+program.
+
+**Rejected alternatives:**
+- Tolerating a present worktree in the clone check (option (b)): relax the
+  check so a `.git/worktrees` with content, or a `config.worktree`, no
+  longer refuses. Rejected because that widens what git may read for every
+  clone and every command, across worktrees whose own `HEAD`, index and
+  per-worktree configuration the main check never saw — the opposite of the
+  strict posture the check exists for. Removing the one leftover keeps the
+  check as it is.
+- The agent op removing the worktree by `rm` without git: `git worktree
+  remove` refuses a worktree with uncommitted changes on its own, which is
+  the work-preserving guard; a bare `rm` would discard that work silently
+  and leave the registration dangling.
+- The supervisor's start prune honouring the uncommitted-changes guard:
+  checking for changes needs git, which the runner must not run in an
+  existing clone. A start-time leftover belongs to a session that has
+  ended, with nobody to ask, so it is cleared; the live guard stays with
+  the agent op.
+- The supervisor running the same `git worktree remove` the agent op runs:
+  that is git in an existing clone, which runs the agent's code as the
+  runner — the invariant the whole clone check rests on.
+
 ## maity takes the clone's `.git` only as the directory the runner recorded
 
 **Id:** e44249f8-15d0-4104-8940-5ff48decd412

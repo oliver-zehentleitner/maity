@@ -1122,6 +1122,20 @@ class Supervisor:
                 with self.lock:  # stopped or moved on while the task was queued
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
+            # A Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/`
+            # would read as unsupported and refuse the start (worktree, §15.5): clear it first,
+            # by file operations only (the runner runs no git in an existing clone). Gated on the
+            # directory Claude Code makes, so a plain start does no extra work; a worktree
+            # pointing elsewhere is left, so a planted redirect still refuses the start.
+            if as_user.exists(place.repo / ".claude" / "worktrees", "-d"):
+                try:
+                    pruned = as_user.worktree_prune(place.repo)
+                except OSError as exc:
+                    self.log(f"{p['id']}: worktree prune skipped: {exc}")
+                else:
+                    if pruned.get("removed"):
+                        where = ", ".join(str(w) for w in pruned["removed"])
+                        self.log(f"{p['id']}: cleared leftover worktree(s): {where}")
             workspace.prepare(
                 self.cfg, place, p["workspace"].get("repository") or "", owner, p["id"],
                 p["workspace"].get("branch"), as_user,

@@ -225,14 +225,24 @@ def _inspect(
     entries = config_entries(data, git)
     if entries is None:
         return Finding("its .git/config cannot be parsed"), []
+    bad = _bad_config_key(entries)
+    if bad is not None:
+        return bad, []
+    return None, entries
+
+
+def _bad_config_key(entries: list[tuple[str, str | None]]) -> Finding | None:
+    """The first key a plain clone's `.git/config` does not have, or None: checked by section,
+    subsection and key against GIT_ALLOWED, the one reading the whole check and the worktree
+    cleanup share, so they never drift apart."""
     for name, _ in entries:
         section, _, rest = name.partition(".")
         subsection, _, key = rest.rpartition(".")
         if key not in GIT_ALLOWED.get(("named" if subsection else None, section), ()):
             # A section may be named by a URL (`[url "https://tok@…"]`): shown without a token.
             shown = onboarding.inline(without_userinfo(name))
-            return Finding(f"its .git/config sets {shown}", name, setting=True), []
-    return None, entries
+            return Finding(f"its .git/config sets {shown}", name, setting=True)
+    return None
 
 
 def unsupported(finding: Finding) -> str | None:
@@ -440,6 +450,52 @@ def _within(path: Path, directory: Path) -> bool:
     return path == directory or directory in path.parents
 
 
+# Where Claude Code places a subagent's isolated worktree inside a clone (behaviour only):
+# `<clone>/.claude/worktrees/<id>`. git registers each under `.git/worktrees/<name>/`, whose
+# `gitdir` file names the worktree's `.git` file; its parent is the worktree's working tree.
+CLAUDE_WORKTREES = (".claude", "worktrees")
+
+
+def _gitdir_working_tree(admin: Path) -> Path | None:
+    """The working tree a `.git/worktrees/<name>` registers (the parent of what its `gitdir`
+    file names), read as a plain file without following a link, or None."""
+    try:
+        if (admin / "gitdir").is_symlink():
+            return None
+        target = (admin / "gitdir").read_bytes()[:4096].decode("utf-8", "replace").strip()
+    except OSError:
+        return None
+    if not target or not os.path.isabs(target):
+        return None
+    return Path(target).parent
+
+
+def _under_claude_worktrees(root: Path, working_tree: Path) -> bool:
+    """Whether `working_tree` is, by name, `<root>/.claude/worktrees/<id>`: the lexical test
+    that decides whether a registered worktree is the kind the cleanup op owns. The op itself
+    opens the path without following a link before it touches anything (worktree.py); this names
+    which ones it will try, and leaves every worktree pointing elsewhere alone."""
+    try:
+        rest = working_tree.relative_to(root).parts
+    except ValueError:
+        return False
+    return len(rest) == 3 and rest[:2] == CLAUDE_WORKTREES
+
+
+def _has_claude_worktree(root: Path) -> bool:
+    """Whether the clone has at least one registered worktree whose working tree is under its
+    own `.claude/worktrees/` — the leftover the cleanup op can clear. Read-only, no git."""
+    try:
+        names = os.listdir(root / ".git" / "worktrees")
+    except OSError:
+        return False
+    for name in names:
+        working = _gitdir_working_tree(root / ".git" / "worktrees" / name)
+        if working is not None and _under_claude_worktrees(root, working):
+            return True
+    return False
+
+
 # The configuration keys maity passes on to git from the clone's own, under the runner: what
 # report and the checks read (remotes, upstreams, who commits) and how the work tree is read.
 # The repository's layout (`core.bare`, the format) is maity's, never the clone's.
@@ -525,13 +581,27 @@ def placement_git(cwd: Path) -> Iterator[Pinned | None]:
             shutil.rmtree(private, ignore_errors=True)
 
 
+# The agent-callable op that clears a Claude Code subagent's leftover worktree (commands.py,
+# worktree.py). Named in the worktrees refusal so a placed agent can unstick its own clone.
+WORKTREE_CLEAN_OP = "maity runner worktree-clean"
+
+
 def _refusal(root: Path, finding: Finding) -> str:
     """Why maity runs no git in the runner's clone, and how to go on, where there is a way."""
     said = f"the clone {root} is not a plain clone: {finding.reason}."
     feature = unsupported(finding)
     if feature is not None:
-        return (f"{said} {feature} not supported under the runner yet, so maity runs no git"
-                " in this clone while that is set up")  # fmt: skip
+        message = (f"{said} {feature} not supported under the runner yet, so maity runs no git"
+                   " in this clone while that is set up")  # fmt: skip
+        # A worktree a Claude Code subagent left under the clone's own `.claude/worktrees/` is
+        # the one case with a way out: the agent can clear it from outside the sandbox.
+        if _has_claude_worktree(root):
+            message += (
+                f" A worktree left under .claude/worktrees/ (a Claude Code subagent's) can be"
+                f" cleared with `{WORKTREE_CLEAN_OP}`, which keeps a worktree that has"
+                " uncommitted changes unless you pass --force to discard it"
+            )
+        return message
     if finding.setting:
         key = onboarding.inline(without_userinfo(finding.item))
         return (f"{said} Under the runner maity's git runs only in a clone configured as"
@@ -557,6 +627,63 @@ def _passed_on(entries: list[tuple[str, str | None]], missing: Path) -> dict[str
         env[f"GIT_CONFIG_KEY_{i}"] = name
         env[f"GIT_CONFIG_VALUE_{i}"] = value
     return env
+
+
+@contextlib.contextmanager
+def worktree_git(root: Path) -> Iterator[Pinned]:
+    """A pinned git for the agent-invoked worktree cleanup (worktree.py), the one maity command
+    that must run `git worktree` against the clone's own `.git` — not a private copy — to clear a
+    leftover a Claude Code subagent left under `.claude/worktrees/`.
+
+    Unlike `placement_git` this does not refuse a clone that has worktrees: clearing them is the
+    point. Every other guard still holds. The `.git` is the directory the runner recorded
+    (`opened_clone`); the git is the one the runner recorded (`_recorded_git`), never one the
+    agent put on PATH; the clone's `.git/config` must be a plain clone's, with no key that names
+    a program for git (the same allow-list the whole check uses, `_bad_config_key`, so no filter,
+    hook, fsmonitor or gpg program is configured), read by that same git. The run reads no system
+    or global configuration, points the ignore and attributes files at a missing file, turns hooks
+    and fsmonitor off on the command line (which outranks any configuration), and climbs no higher
+    than the clone. So git starts no program the agent chose, though it reads the clone's own
+    `.git`. `GIT_DIR` is not set: `git worktree` and the clean check discover the clone and its
+    linked worktrees from the working directory, held to the clone by `GIT_CEILING_DIRECTORIES`.
+    Refused when the clone is unknown, the config is not plain, or no git was recorded."""
+    with opened_clone(root) as opened:
+        top = None if opened is None else opened.git
+        program = _recorded_git(root, top)
+        try:
+            data = LOCAL.read(root / ".git" / "config", limit=CONFIG_MAX + 1, under=root)
+        except OSError as exc:
+            raise Refused(f"the clone {root}'s .git/config cannot be read ({exc})") from None
+        if len(data) > CONFIG_MAX:
+            raise Refused(f"the clone {root}'s .git/config is larger than {CONFIG_MAX // 1024} KiB")
+        entries = config_entries(data, program)
+        if entries is None:
+            raise Refused(f"the clone {root}'s .git/config cannot be parsed")
+        bad = _bad_config_key(entries)
+        if bad is not None:
+            raise Refused(_refusal(root, bad))
+        yield Pinned(
+            program,
+            {
+                **kept_env(os.environ),
+                **git_path_env(program),
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CEILING_DIRECTORIES": str(root.parent),
+                "GIT_OPTIONAL_LOCKS": "0",
+            },
+        )
+
+
+# What the worktree cleanup adds to every git it runs: hooks and fsmonitor off (a `-c` outranks
+# the clone's own configuration), the ignore and attributes files at a missing file, and no
+# transport (worktree commands fetch nothing). The config check already refuses a clone that
+# names any program, so these are a second line, as `proc.GIT` is for maity's other git.
+WORKTREE_GIT_PINS = (
+    "-c", f"core.hooksPath={os.devnull}", "-c", "core.fsmonitor=false",
+    "-c", f"core.attributesFile={os.devnull}", "-c", f"core.excludesFile={os.devnull}",
+    "-c", "protocol.allow=never",
+)  # fmt: skip
 
 
 def _read_regular(name: str, dir_fd: int, limit: int) -> bytes:
