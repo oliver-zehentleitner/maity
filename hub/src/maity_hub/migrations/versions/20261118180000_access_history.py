@@ -57,6 +57,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # The table alone: no index of another table goes, so no foreign key loses its index.
-    op.drop_index("ix_chat_access_history_human", table_name="chat_access_history")
+    # The index goes with the table: MariaDB refuses to drop it alone while the foreign key on
+    # `human_id` needs it (error 1553), since (human_id, n) is the index that key uses.
     op.drop_table("chat_access_history")
