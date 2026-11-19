@@ -26,6 +26,7 @@ from maity_hub import (
     paging,
     project_roles,
     registration,
+    restricted,
     write_guard,
 )
 from maity_hub import tables as t
@@ -347,6 +348,8 @@ async def invitation_page(token: str, request: Request) -> JSONResponse:
                 "expires_at": clock.rfc3339(row.expires_at),
                 "address_bound": row.address is not None,
                 "registration": _registration(conn, row, project, resolved),
+                # From the project and the invitation alone, as `registration` (§3.4).
+                "restricted_texts": restricted.invitation_enters(project, row.trust),
             }
 
     return JSONResponse(await run_in_threadpool(run))

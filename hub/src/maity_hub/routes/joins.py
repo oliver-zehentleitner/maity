@@ -802,6 +802,7 @@ def render_page(
         "ensurepath": join_line.ENSUREPATH,
         "takes_over": _takes_over_sentence(conn, row),
         "subagents": _subagents_quote(conn, row),
+        "restricted_texts": _restricted_sentence(conn, row, project),
         "exchange_url": exchange_url(settings, on_join_host, token),
         "signing_required": (
             _SIGNING_REQUIRED.replace("{{hub}}", hub)
@@ -845,6 +846,19 @@ def _subagents_quote(conn: Connection, row: Any) -> str:
         row.subagents_language or "en", subagents.handle_of(conn, row.created_by)
     )
     return f"> {text}\n"
+
+
+def _restricted_sentence(conn: Connection, row: Any, project: Any) -> str:
+    """Item 2's sentence when the project's restricted-access set would hold the membership
+    the exchange creates, resolved when the page is served (§3.2, §6.1). Nothing for an agent
+    that is an active member already (a new instance or a replacement enters nothing), and
+    never how many cards have a text: whoever holds the URL reads the page."""
+    if _active_member(conn, row) is not None:
+        return ""
+    owner = _owner(conn, row)
+    if not restricted.would_admit_agent(conn, project, row.agent_id, owner, row.trust):
+        return ""
+    return "You will read and write this project's restricted texts.\n"
 
 
 def _note(dashboard: str) -> str:
