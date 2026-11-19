@@ -21,3 +21,8 @@
   `.`, `trap` or `bash -c` with a quoted or expanded word is refused. A
   quoted or escaped first word before `maity` (`"[" maity status`)
   refuses the line like any other word before it.
+- cli: the hook reads a `$(…)` in double quotes to its `)` as one word,
+  a quoted word with a space in it and a heredoc with a quoted delimiter
+  included, so `git commit -m "$(cat <<'EOF' … EOF )"` and
+  `git commit -m "$(cat "msg file.txt")"` pass; the same forms that run
+  or name `maity … runner` are refused.

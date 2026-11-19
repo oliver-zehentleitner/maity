@@ -610,11 +610,17 @@ def _reads_as(word: str) -> tuple[str, str]:
     return word, re.sub(r"\$(?=['\"])|[\\'\"]", "", word)
 
 
-def _substitution_end(text: str, i: int) -> int:
+def _substitution_end(text: str, i: int, bodies: list[tuple[int, int]] | None = None) -> int:
     """The index of the `)` that closes the `$(` (or `<(`, `>(`) at `i`, quotes, escapes and
     nested substitutions and parentheses inside it passed over; ValueError when it never
-    closes or holds a backtick, a comment or a heredoc, whose reading is not modelled."""
+    closes or holds a backtick, a comment or a heredoc, whose reading is not modelled.
+    Given a list of `bodies`, a heredoc whose delimiter is quoted is read as Bash reads it
+    (its body is plain text, from the line after the operator's to a line that is the
+    delimiter alone) and the span of each body is added to the list; one followed by
+    anything but a space, a tab, a newline or an operator, one the `)` closes before its
+    body, and one whose delimiter line never comes still raise ValueError."""
     depth, j, n = 0, i + 1, len(text)
+    pending: list[tuple[str, bool]] = []
     while j < n:
         c = text[j]
         if c == "\\":
@@ -632,16 +638,44 @@ def _substitution_end(text: str, i: int) -> int:
                 elif text[j] == "`":
                     raise ValueError(text)
                 elif text[j] == "$" and text[j + 1 : j + 2] == "(":
-                    j = _substitution_end(text, j)
+                    j = _substitution_end(text, j, bodies)
                 j += 1
             if j >= n:
                 raise ValueError(text)
         elif c == "(":
             depth += 1
         elif c == ")":
+            if pending:
+                raise ValueError(text)  # closed before the body Bash reads after a newline
             depth -= 1
             if depth == 0:
                 return j
+        elif bodies is not None and text.startswith("<<", j) and not text.startswith("<<<", j):
+            m = _HEREDOC.match(text, j)
+            if m is None or text[m.end() : m.end() + 1] not in tuple(" \t\n;&|<>"):
+                raise ValueError(text)
+            delimiter = re.sub(r"['\"\\]", "", m.group(2))
+            if delimiter == m.group(2):
+                raise ValueError(text)  # an unquoted delimiter: its body expands
+            pending.append((delimiter, m.group(1) == "-"))
+            j = m.end()
+            continue
+        elif c == "\n" and pending:
+            assert bodies is not None  # noqa: S101 - pending is only filled with a list
+            j += 1
+            for delimiter, tabs in pending:
+                start = j
+                while True:
+                    stop = text.find("\n", j)
+                    if stop < 0:
+                        raise ValueError(text)  # no delimiter line that a newline ends
+                    line = text[j:stop]
+                    j = stop + 1
+                    if (line.lstrip("\t") if tabs else line) == delimiter:
+                        bodies.append((start, stop - len(line)))
+                        break
+            pending = []
+            continue
         elif c == "`" or (c == "#" and text[j - 1] in " \t\n(") or text.startswith("<<", j):
             raise ValueError(text)
         j += 1
@@ -668,7 +702,7 @@ def _unquoted_brace(written: str) -> bool:
                     i += 1
                 elif written[i] == "$" and written[i + 1 : i + 2] == "(":
                     try:
-                        i = _substitution_end(written, i)
+                        i = _substitution_end(written, i, [])
                     except ValueError:
                         return True
                 i += 1
@@ -690,7 +724,8 @@ def _without_heredocs(command: str) -> tuple[str, list[tuple[str, bool]]] | None
     """The line with the bodies of its heredocs taken out, and each body with whether its
     delimiter is quoted (the body then is plain text); None when the hook is not sure where
     one starts or ends. Quotes, escapes and comments are passed over, so a `<<` in them
-    starts none."""
+    starts none; a `$(` in double quotes is read to its `)` (`_substitution_end`), and the
+    bodies of the heredocs with a quoted delimiter in it are taken out as well."""
     out: list[str] = []
     bodies: list[tuple[str, bool]] = []
     pending: list[tuple[str, bool, bool]] = []
@@ -704,6 +739,21 @@ def _without_heredocs(command: str) -> tuple[str, list[tuple[str, bool]]] | None
                 out.append(command[i : i + 2])
                 i += 2
                 continue
+            elif quote == '"' and command.startswith("$(", i):
+                spans: list[tuple[int, int]] = []
+                try:
+                    close = _substitution_end(command, i, spans)
+                except ValueError:
+                    close = -1  # read on as before: `_unsure_quoting` refuses the line
+                if close >= 0:
+                    at = i
+                    for start, stop in spans:  # a heredoc's body in it: taken out too
+                        out.append(command[at:start])
+                        bodies.append((command[start:stop], True))
+                        at = stop
+                    out.append(command[at : close + 1])
+                    i = close + 1
+                    continue
             out.append(c)
             i += 1
             continue
@@ -773,7 +823,9 @@ def _split(line: str) -> list[tuple[str, bool, int, str]]:
     final text is not known here; a word that starts with an unquoted `~` and holds no `/`
     counts as one too. Words end at unquoted spaces, tabs and operators; single quotes,
     double quotes, `$'...'` and backslashes are taken off; a backslash-newline joins the
-    lines; nothing is expanded. Each word comes with the index in the line where it starts,
+    lines; nothing is expanded. A `$(` in double quotes that `_substitution_end` delimits
+    stays in the word as written, up to its `)`. Each word comes with the index in the line
+    where it starts,
     and as it is written there, quotes and backslashes and all (`_names` expands its braces
     from that). A
     `#` and a heredoc are read like any other text, so a line that holds them is not split as
@@ -842,6 +894,16 @@ def _split(line: str) -> list[tuple[str, bool, int, str]]:
                         quoted(line[i + 1])
                     i += 2
                     continue
+                if line.startswith("$(", i):
+                    try:
+                        close = _substitution_end(line, i, [])
+                    except ValueError:
+                        close = -1  # read on as before: `_unsure_quoting` refuses the line
+                    if close >= 0:  # one piece, as written: its own quotes are its own
+                        expands = True
+                        quoted(line[i : close + 1])
+                        i = close + 1
+                        continue
                 expands = expands or line[i] in "$`"
                 quoted(line[i])
                 i += 1
@@ -949,7 +1011,7 @@ def _unsure_quoting(line: str) -> bool:
                 return True
         elif c == "$" and line[i + 1 : i + 2] == "(" and double:
             try:
-                i = _substitution_end(line, i)
+                i = _substitution_end(line, i, [])
             except ValueError:
                 return True
         i += 1

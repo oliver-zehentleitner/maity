@@ -1623,6 +1623,18 @@ def test_a_construct_the_hook_does_not_read_exactly_refuses_the_line(command: st
     assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
 
 
+# `$(…)` in double quotes with a heredoc whose delimiter is quoted, or with a quoted word
+# that holds a space (review A1437): the commit form Claude Code writes, and its neighbours.
+PLAIN_SUBSTITUTIONS = [
+    "git commit -m \"$(cat <<'EOF'\nFix the thing\nEOF\n)\"",
+    "git commit -m \"$(cat <<'EOF'\nFix the thing ) \" ' ` $(x)\n\nMore text.\nEOF\n)\"",
+    'git commit -m "$(cat <<"EOF"\nFix the thing\nEOF\n)"',
+    "git commit -m \"$(cat <<-'EOF'\n\tFix the thing\n\tEOF\n)\"",
+    "git commit -m \"$(cat <<'A'; cat <<'B'\na\nA\nb\nB\n)\" --no-verify",
+    'echo "$(git log -1 --format="%h %s")"',
+    'git commit -m "$(cat "msg file.txt")"',
+    'echo "x $(cat "a b" "$(echo "c d")") y"',
+]
 # Heredocs and substitutions without such constructs.
 PLAIN_CONSTRUCTS = [
     "x=\"$(jq '{a:1}' f.json)\"",
@@ -1632,12 +1644,81 @@ PLAIN_CONSTRUCTS = [
     "cat <<EOF\nhello {a,b}\nEOF",
     "python3 - <<'EOF'\nprint({'a': 1})\nEOF",
     "cat <<EOF x",
+    *PLAIN_SUBSTITUTIONS,
+]
+# The same forms where `maity … runner` runs, or is named on a line that is not one read
+# line: each is refused.
+SUBSTITUTIONS_WITH_RUNNER = [
+    "git commit -m \"$(maity runner status <<'EOF'\nx\nEOF\n)\"",
+    "git commit -m \"$(cat <<'EOF'\nx\nEOF\nmaity runner status\n)\"",
+    "git commit -m \"$(cat <<'EOF'\nx\nEOF\nma?ty runner status\n)\"",
+    "git commit -m \"$(cat <<'EOF'\nmaity runner status\nEOF\n)\"",
+    "git commit -m \"$(cat <<'EOF'\nx\n EOF\nmaity runner status\nEOF\n)\"",
+    "git commit -m \"$(cat <<'EOF'\nx\nEOF\n)\" && ma?ty runner status",
+    "echo \"$(cat <<'EOF'\nx\nEOF\n)\" runner status",
+    'echo "$(git log -1 --format="%h maity runner")"',
+    'echo "$(maity runner "a b")"',
+    'echo "$(cat "a b"; maity runner status)"',
+    'git commit -m "$(cat "msg file.txt")"; maity runner status',
+    'git commit -m "$(cat "msg file.txt")" && ma?ty runner status',
+    '"$(cat "msg file.txt")" runner status',
+    'maity "$(cat "msg file.txt")" runner',
 ]
 
 
 @pytest.mark.parametrize("command", PLAIN_CONSTRUCTS, ids=range(len(PLAIN_CONSTRUCTS)))
 def test_plain_heredocs_and_substitutions_pass(command: str) -> None:
     assert plaincall.refusal(bash(command)) is None
+
+
+@pytest.mark.parametrize(
+    "command", SUBSTITUTIONS_WITH_RUNNER, ids=range(len(SUBSTITUTIONS_WITH_RUNNER))
+)
+def test_a_substitution_in_double_quotes_with_runner_is_refused(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is not None
+
+
+def test_the_split_keeps_a_substitution_in_double_quotes_whole() -> None:
+    line = 'echo "$(git log -1 --format="%h %s")" b'
+    assert [w for _, _, _, w in plaincall._split(line)] == [
+        "echo", '"$(git log -1 --format="%h %s")"', "b"
+    ]  # fmt: skip
+
+
+@pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
+def test_substitutions_in_double_quotes_run_maity_runner_only_if_refused(tmp_path: Path) -> None:
+    """Each line above in Bash, with `maity`, `git` and `cat` functions, the first printing
+    its words to stderr, which a substitution does not take, and with files `maity` (for
+    `ma?ty`) and `msg file.txt` (that says `maity`): every plain form runs without a syntax
+    error and calls no `maity`, and Bash runs `maity runner` from no line the hook lets
+    through."""
+    print(BASH_NAME)  # noqa: T201 - recorded in the test log
+    (tmp_path / "maity").write_text("")
+    (tmp_path / "msg file.txt").write_text("maity\n")
+    functions = (
+        "maity() { printf 'M %s\\n' \"$*\" >&2; }\ngit() { :; }\n"
+        'cat() { local l; while IFS= read -r l || [ -n "$l" ]; do printf \'%s\\n\' "$l";'
+        ' done < "${1:-/dev/stdin}"; }\n'
+    )
+    opened, ran = [], 0
+    for line in [*PLAIN_SUBSTITUTIONS, *SUBSTITUTIONS_WITH_RUNNER]:
+        assert BASH is not None
+        script = functions + line
+        done = subprocess.run(
+            [BASH, "--norc", "--noprofile", "-c", script], cwd=tmp_path,
+            capture_output=True, text=True, timeout=30, check=False,
+            env={"PATH": "", "LC_ALL": "C"},
+        )  # fmt: skip
+        runs = [out.split() for out in done.stderr.splitlines() if out.startswith("M ")]
+        if line in PLAIN_SUBSTITUTIONS:
+            assert runs == [], line
+            assert "syntax error" not in done.stderr and "warning" not in done.stderr, line
+        if any("runner" in words for words in runs):
+            ran += 1
+            if plaincall.refusal(bash(line)) is None:
+                opened.append(line)
+    assert opened == [], BASH_NAME
+    assert ran >= 10, ran  # the lines that run `maity runner` do run it in Bash
 
 
 # One construct each, without braces or names: each refuses the line.
@@ -1658,6 +1739,10 @@ CONSTRUCTS = [
     "echo {mait,$(true)--for=}y",
     "echo {a,b} # c",
     "cat <<EOF\n$(date)\nEOF",
+    'echo "$(cat <<EOF\nx\nEOF\n)"',
+    "echo \"$(cat <<'EOF'\nx\nEOF)\"",
+    "echo \"$(cat <<'EOF')\"\nx\nEOF",
+    "echo \"$(cat <<<'x y')\"",
 ]
 
 
