@@ -84,8 +84,8 @@ def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     after one, the holding member, or every admin while the admins hold it as a pool;
     an earlier holder no longer. Never an agent it is held for (§9.6).
 
-    `routes/overview.py` `_addressed_sql` restates this in plain columns for a request
-    without `held` and `cover` (with `_in_own_right` below): a change here is a change there."""
+    `request_sql.addressed` restates this in plain columns for a request without `held` and
+    `cover` (with `_in_own_right` below): a change here is a change there."""
     if request.personal or held_back(request, mine.principal_id):
         return False
     if request.holder_member is not None:
@@ -130,7 +130,7 @@ def originally_addressed(conn: Connection, request: Any, mine: Membership) -> bo
 
 
 def _in_own_right(request: Any, mine: Membership) -> bool:
-    # Restated in SQL by `routes/overview.py` `_addressed_sql`.
+    # Restated in SQL by `request_sql.in_own_right`.
     if request.to_kind == "member":
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":
@@ -140,7 +140,7 @@ def _in_own_right(request: Any, mine: Membership) -> bool:
 
 def is_asker(request: Any, mine: Membership) -> bool:
     """A notice the hub files on an agent's behalf has no asker who reads it: not the
-    agent it names, nor any of its instances (§7)."""
+    agent it names, nor any of its instances (§7). Restated in SQL by `request_sql.asked`."""
     if getattr(request, "filed_by", None) == "hub":
         return False
     return mine.id in (request.asked_by, request.on_behalf_of)
@@ -169,6 +169,7 @@ def owners_alone(conn: Connection, requests: Iterable[Any]) -> set[str]:
 
 
 def may_read(conn: Connection, request: Any, mine: Membership) -> bool:
+    # Restated in SQL for a request `request_sql.plain` lets through by `request_sql.may_read`.
     if is_asker(request, mine):
         return True
     if held_back(request, mine.principal_id):  # no scope opens it to the agent held (§9.6)

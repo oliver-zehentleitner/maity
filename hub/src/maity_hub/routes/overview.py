@@ -10,9 +10,9 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import ColumnElement, Connection, and_, case, func, not_, or_, select
+from sqlalchemy import Connection, and_, case, func, not_, or_, select
 
-from maity_hub import avatars, cards, clock, inbox, views
+from maity_hub import avatars, cards, clock, inbox, request_sql, views
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.db import read_transaction
@@ -20,7 +20,6 @@ from maity_hub.deps import AnyCaller, engine_of
 from maity_hub.errors import invalid
 from maity_hub.namespace import ProjectRoute
 from maity_hub.routes.requests import listed_to_all, relayed
-from maity_hub.scopes import tokens_of
 
 router = APIRouter(route_class=ProjectRoute)
 
@@ -42,63 +41,23 @@ def board_counts(
     return counts
 
 
-def _addressed_sql(mine: Membership) -> ColumnElement[bool]:
-    """`inbox.addressed_to` in plain columns, for a request that is not personal and has no
-    `held` and no `cover` (the caller's `where` sees to that): its holder, the admins'
-    pool for an admin, else `to` in the caller's own right (`inbox._in_own_right`). A change
-    there is a change here."""
-    r = t.request.c
-    tokens = sorted(tokens_of(mine.trust, mine.role, mine.role_base))
-    own_right = [
-        and_(r.to_kind == "member", r.to_member == mine.id),
-        and_(r.to_kind.not_in(("member", "owner")), r.to_role.in_(tokens)),
-    ]
-    if mine.trust == "owner":
-        own_right.append(r.to_kind == "owner")
-    not_forwarded = and_(
-        r.holder_member.is_(None), or_(r.holder_pool.is_(None), r.holder_pool.is_(False))
-    )
-    held_now = [r.holder_member == mine.id, and_(not_forwarded, or_(*own_right))]
-    if "trust:admin" in tokens:
-        held_now.append(and_(r.holder_member.is_(None), r.holder_pool.is_(True)))
-    return or_(*held_now)
-
-
-# What `relayed`, `listed_to_all` and `inbox.addressed_to` read of a request, and the counts.
-_DECIDED_BY = (
-    "id", "priority", "created_at", "personal", "to_kind", "to_member", "to_role",
-    "holder_member", "holder_pool", "held", "cover", "jour_fixe", "proposal", "filed_by",
-    "asked_by", "on_behalf_of",
-)  # fmt: skip
-
-
 def request_counts(conn: Connection, mine: Membership) -> dict[str, Any]:
     """Over exactly what `GET …/requests?status=open&to=all` lists for this caller, `to_me`
     over what `to=me` lists (§6.11).
 
-    One grouped statement counts the plain requests: no `held`, no `cover` and, where they
-    matter, no `jour_fixe` (for a holder of `requests:answer`: an owner's round opens to no
-    scope) and no `proposal` (for a proxy: it never lists a bridge consent). Its `where`
-    restates `routes/requests.py` `listed_to_all` and `_addressed_sql` restates
+    One grouped statement counts the plain requests (`request_sql.plain`): no `held`, no
+    `cover` and, where they matter, no `jour_fixe` (for a holder of `requests:answer`: an
+    owner's round opens to no scope) and no `proposal` (for a proxy: it never lists a bridge
+    consent). Its `where` is `request_sql.listed_to_all`, the SQL twin of
+    `routes/requests.py` `listed_to_all`, and `request_sql.addressed` that of
     `inbox.addressed_to`. The others, a few, are read with only the columns the Python rule
     needs and decided by it, unchanged: a JSON list or another table decides them, and
     each database reads JSON in its own syntax."""
     r = t.request.c
-    answers = mine.may("requests:answer")
     open_here = [r.project_id == mine.project.id, r.personal.is_(False), r.status == "open"]
-    plain = [r.held.is_(None), r.cover.is_(None)]
-    if answers:
-        plain.append(r.jour_fixe.is_(None))
-    if mine.role_base == "proxy":
-        plain.append(r.proposal.is_(None))
-    addressed = _addressed_sql(mine)
-    visible: list[ColumnElement[bool]] = []
-    if not answers:  # what it asked (`inbox.is_asker`) and what is addressed to it
-        asked = and_(
-            or_(r.filed_by.is_(None), r.filed_by != "hub"),
-            or_(r.asked_by == mine.id, r.on_behalf_of == mine.id),
-        )
-        visible.append(or_(asked, addressed))
+    plain = request_sql.plain(mine)
+    addressed = request_sql.addressed(mine)
+    visible = request_sql.listed_to_all(mine)
     counted = conn.execute(
         select(
             r.priority,
@@ -111,7 +70,9 @@ def request_counts(conn: Connection, mine: Membership) -> dict[str, Any]:
     ).all()
     leftover = relayed(
         conn.execute(
-            select(*(r[name] for name in _DECIDED_BY)).where(*open_here, not_(and_(*plain)))
+            select(*(r[name] for name in request_sql.DECIDED_BY)).where(
+                *open_here, not_(and_(*plain))
+            )
         ).all(),
         mine,
     )

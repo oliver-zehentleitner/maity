@@ -6,15 +6,16 @@ import base64
 import hashlib
 import json
 import logging
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, Literal, cast
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import Field
-from sqlalchemy import Connection, and_, insert, or_, select, update
+from sqlalchemy import Connection, and_, case, func, insert, not_, or_, select, update
 
 from maity_hub import (
     avatars,
@@ -33,8 +34,10 @@ from maity_hub import (
     mentions,
     namespace,
     orgs,
+    paging,
     placements,
     proposals,
+    request_sql,
     seats,
     ticker,
 )
@@ -1004,11 +1007,22 @@ def _filtered(
             except ApiError:
                 return []
     rows = relayed(conn.execute(query).all(), mine)
+    target = None if to in ("me", "all") else _parse_to(conn, mine, to)
+    return _decided(conn, mine, rows, to, target)
+
+
+def _decided(
+    conn: Connection, mine: Membership, rows: list[Any], to: str, target: inbox.Addressee | None
+) -> list[Any]:
+    """The `rows` (`relayed` already) that `to` lists: `to=me`, `to=all` (`listed_to_all`),
+    or `target`, `to` parsed. `request_sql` restates this for the plain requests (`plain`):
+    `to=me` as `addressed`, `to=all` as `listed_to_all`, a target as `addressed_as` with
+    `may_read`. A change here is a change there."""
     if to == "me":
         return [r for r in rows if inbox.addressed_to(conn, r, mine)]
-    if to == "all":  # restated in SQL by `routes/overview.py` `request_counts`
+    if to == "all":
         return listed_to_all(conn, mine, rows)
-    target = _parse_to(conn, mine, to)
+    assert target is not None
     # A member id alone also names the instance addresses of its team: the team reads them.
     whole_team = target.kind == "member" and target.instance is None
     return [
@@ -1022,7 +1036,8 @@ def _filtered(
 
 def relayed(rows: Sequence[Any], mine: Membership) -> list[Any]:
     """The project's consent to a bridge across owners is a human's own answer: a proxy
-    neither lists nor relays it (§2.3, §7)."""
+    neither lists nor relays it (§2.3, §7). `request_sql.plain` leaves a proxy's requests
+    with a `proposal` to this function."""
     if mine.role_base != "proxy":
         return list(rows)
     return [r for r in rows if (r.proposal or {}).get("kind") != bridges.PROJECT_KIND]
@@ -1032,9 +1047,10 @@ def listed_to_all(conn: Connection, mine: Membership, rows: list[Any]) -> list[A
     """`to=all` (§7): a holder of `requests:answer` sees every request but one from an
     owner's round it may not read; anyone else what it asked and what is addressed to it.
 
-    `routes/overview.py` `request_counts` restates this in SQL for the requests without
-    `held`, `cover`, `jour_fixe` (and, for a proxy, `proposal`), and hands the others to
-    this function: a change here is a change there."""
+    `request_sql.listed_to_all` restates this in SQL for the requests without `held`,
+    `cover`, `jour_fixe` (and, for a proxy, `proposal`: `request_sql.plain`); the overview's
+    counts and the project's listing hand the others to this function: a change here is a
+    change there."""
     if mine.may("requests:answer"):
         alone = inbox.owners_alone(conn, rows)
         return [r for r in rows if r.id not in alone or inbox.may_read(conn, r, mine)]
@@ -1077,22 +1093,13 @@ def _page(
     light (`_entries`) and only the page is turned into full views: a listing costs the
     page, not every request it filters."""
     if cursor is not None:
-        try:
-            raw = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
-            after_sort, after_key = raw["s"], raw["k"]
-        except (ValueError, KeyError, TypeError):
-            raise invalid({"cursor": "invalid"}) from None
-        if after_sort != sort:
-            raise invalid({"cursor": "other_sort"}, "this cursor belongs to another sort")
+        after_key = _cursor_key(cursor, sort)
         if sort == "date":  # newest first
             views = [v for v in views if _key(v, sort) < after_key]
         else:
             views = [v for v in views if _key(v, sort) > after_key]
     page = views[:limit]
-    next_cursor = None
-    if len(views) > limit:
-        token = json.dumps({"s": sort, "k": _key(page[-1], sort)})
-        next_cursor = base64.urlsafe_b64encode(token.encode()).decode().rstrip("=")
+    next_cursor = _next_cursor(sort, _key(page[-1], sort)) if len(views) > limit else None
     if render is not None:
         page = render(page)
     for view in page:
@@ -1101,10 +1108,240 @@ def _page(
     return {"items": page, "next_cursor": next_cursor}
 
 
+def _next_cursor(sort: str, key: list[Any]) -> str:
+    token = json.dumps({"s": sort, "k": key})
+    return base64.urlsafe_b64encode(token.encode()).decode().rstrip("=")
+
+
+def _cursor_key(cursor: str, sort: str) -> list[Any]:
+    """The `k` of a cursor for `sort`, as `_key` built it. Another sort's cursor is
+    `other_sort`; one that does not decode is `invalid`, as is one whose `k` is not the
+    shape `_key` gives: a key of another length, a rank that is not 0 to 3, a time that does
+    not parse or has no zone, a handle or an id that cannot be bound. Before, a wrongly typed
+    `k` reached a comparison in `_page` and failed as a 500 (tsk-ybc2ma72dzvq item 4)."""
+    try:
+        raw = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        after_sort, after_key = raw["s"], raw["k"]
+    except (ValueError, KeyError, TypeError):
+        raise invalid({"cursor": "invalid"}) from None
+    if after_sort != sort:
+        raise invalid({"cursor": "other_sort"}, "this cursor belongs to another sort")
+    if not _key_shaped(after_key, sort):
+        raise invalid({"cursor": "invalid"})
+    return cast(list[Any], after_key)
+
+
+def _key_shaped(key: Any, sort: str) -> bool:
+    if not isinstance(key, list) or len(key) != (2 if sort == "date" else 3):
+        return False
+    *head, iso, row_id = key
+    if not isinstance(iso, str) or not paging.id_shaped(row_id):
+        return False
+    if sort == "priority":
+        rank = head[0]
+        if not isinstance(rank, int) or isinstance(rank, bool):
+            return False
+        if not 0 <= rank < len(inbox.PRIORITY_RANK):
+            return False
+    if sort == "agent" and not paging.bindable(head[0]):
+        return False
+    try:
+        at = datetime.fromisoformat(iso)
+        # In UTC, as the column stores it: a zone that moves the time out of range is refused.
+        return at.tzinfo is not None and at.astimezone(UTC) is not None
+    except (ValueError, OverflowError):
+        return False
+
+
+# --- the project's list, paged in SQL (tsk-ybc2ma72dzvq item 4) --------------------------
+#
+# `_filtered`, `_sorted` and `_page` are the readable rule; `test_request_paging.py` holds this
+# path to them page by page. The plain requests (`request_sql.plain`) are decided and ordered
+# by the database, the few others read with only the columns `_decided` needs, in order and a
+# batch at a time, and decided by it unchanged (hub/context/persistence.md, 3c9e5a71).
+
+# The leftover's batches: the page plus one first, then doubling up to this.
+LEFTOVER_BATCH_MAX = 1000
+# What `_decided` reads of a leftover request beyond `request_sql.DECIDED_BY`: the address.
+_ADDRESS = ("to_profile", "to_human", "to_instance")
+
+
+@dataclass(frozen=True)
+class _Order:
+    """A sort of the listing in SQL: the key's columns in `_key`'s order, the joins they
+    need, and whether it runs newest first. `_sorted` and `_key` are its Python twins."""
+
+    sort: str
+    columns: tuple[Any, ...]
+    source: Any
+    descending: bool
+
+    def key(self, row: Any) -> tuple[Any, ...]:
+        """A row's place, comparable as the database compares `columns`."""
+        if self.sort == "date":
+            return (row.created_at, row.id)
+        head = inbox.PRIORITY_RANK[row.priority] if self.sort == "priority" else row.asker_handle
+        return (head, row.created_at, row.id)
+
+    def after(self, key: Sequence[Any]) -> Any:
+        """The rows after `key` in this order, in the expanded form: one branch per column,
+        equal on those before it."""
+        branches = []
+        for at, column in enumerate(self.columns):
+            equal = [c == key[n] for n, c in enumerate(self.columns[:at])]
+            beyond = column < key[at] if self.descending else column > key[at]
+            branches.append(and_(*equal, beyond))
+        return or_(*branches)
+
+    def ordered(self) -> list[Any]:
+        return [c.desc() for c in self.columns] if self.descending else list(self.columns)
+
+
+def _order(conn: Connection, sort: str) -> _Order:
+    r = t.request.c
+    # Text compares bytewise, as Python compares it: PostgreSQL compares text by its locale
+    # unless told otherwise (MySQL's tables are binary already, SQLite compares bytes). A
+    # handle holds `-`, which a locale may skip.
+    postgresql = conn.dialect.name == "postgresql"
+
+    def bytewise(column: Any) -> Any:
+        return column.collate("C") if postgresql else column
+
+    request_id = bytewise(r.id)
+    if sort == "date":
+        return _Order(sort, (r.created_at, request_id), t.request, True)
+    if sort == "priority":
+        rank = case(inbox.PRIORITY_RANK, value=r.priority)
+        return _Order(sort, (rank, r.created_at, request_id), t.request, False)
+    # `_asker_handles` in one expression: the asking membership's human, else its agent,
+    # else '' (a membership gone); with no asking membership the inviting human, else ''.
+    asker = t.membership.alias("asker")
+    profile = t.agent_profile.alias("asker_profile")
+    human = t.human.alias("asker_human")
+    inviter = t.human.alias("inviter")
+    source = (
+        t.request.outerjoin(asker, asker.c.id == r.asked_by)
+        .outerjoin(profile, profile.c.id == asker.c.agent_id)
+        .outerjoin(human, human.c.id == asker.c.human_id)
+        .outerjoin(inviter, inviter.c.id == r.asked_by_human)
+    )
+    of_member = case(
+        (human.c.id.is_not(None), func.coalesce(human.c.handle, "")),
+        (profile.c.id.is_not(None), func.coalesce(profile.c.handle, "")),
+        else_="",
+    )
+    handle = case((r.asked_by.is_not(None), of_member), else_=func.coalesce(inviter.c.handle, ""))
+    return _Order(sort, (bytewise(handle), r.created_at, request_id), source, False)
+
+
+def _sql_key(sort: str, key: Sequence[Any]) -> tuple[Any, ...]:
+    """A cursor's `k` (`_cursor_key`) as the values `_Order.after` compares."""
+    *head, iso, row_id = key
+    return (*head, datetime.fromisoformat(iso).astimezone(UTC), row_id)
+
+
+def _leftover_batches(limit: int) -> Iterator[int]:
+    size = limit + 1
+    while True:
+        yield size
+        size = min(size * 2, LEFTOVER_BATCH_MAX)
+
+
+def _project_page(
+    conn: Connection,
+    mine: Membership,
+    *,
+    status: str,
+    class_: str | None,
+    asked_by: str | None,
+    to: str,
+    sort: str,
+    limit: int,
+    cursor: str | None,
+) -> dict[str, Any]:
+    """`_page(_sorted(_entries(_filtered(…))))` with the database ordering and limiting.
+
+    Statement A reads the keys of the plain requests the caller sees after the cursor, the
+    page plus one. Statement B reads the other requests after the cursor, up to A's last key
+    when A filled its page, a batch at a time with the columns `_decided` needs, and decides
+    them with it, until it holds the page plus one. Both merged in order are the page's keys;
+    only those rows are read in full. A request gone since its key was read is left out."""
+    r = t.request.c
+    _check_status(status)
+    where = [r.project_id == mine.project.id, r.personal.is_(False)]
+    if status != "all":
+        where.append(r.status.in_([s for s in status.split(",") if s]))
+    if class_ is not None:
+        where.append(r["class"] == class_)
+    asker_known = True
+    if asked_by is not None:
+        if asked_by == "me":
+            where.append(r.asked_by == mine.id)
+        else:
+            try:
+                where.append(r.asked_by == member_row(conn, mine.project.id, asked_by).id)
+            except ApiError:
+                asker_known = False  # nothing is listed: `to` is not read, as in `_filtered`
+    target = None if not asker_known or to in ("me", "all") else _parse_to(conn, mine, to)
+    after_key = _cursor_key(cursor, sort) if cursor is not None else None
+    if not asker_known:
+        return {"items": [], "next_cursor": None}
+    order = _order(conn, sort)
+    after = [order.after(_sql_key(sort, after_key))] if after_key is not None else []
+    if to == "me":
+        visible = [request_sql.addressed(mine)]
+    elif to == "all":
+        visible = request_sql.listed_to_all(mine)
+    else:
+        assert target is not None
+        whole_team = target.kind == "member" and target.instance is None
+        visible = [request_sql.addressed_as(target, whole_team), request_sql.may_read(mine)]
+    plain = request_sql.plain(mine)
+    keys: list[Any] = [r.id, r.priority, r.created_at]
+    if sort == "agent":
+        keys.append(order.columns[0].label("asker_handle"))
+    taken = list(
+        conn.execute(
+            select(*keys)
+            .select_from(order.source)
+            .where(*where, *plain, *visible, *after)
+            .order_by(*order.ordered())
+            .limit(limit + 1)
+        ).all()
+    )
+    if len(taken) > limit:  # nothing after A's last key can be on this page
+        where.append(not_(order.after(order.key(taken[-1]))))
+    decided_by = [r[name] for name in (*request_sql.DECIDED_BY, *_ADDRESS)] + keys[3:]
+    leftover = select(*decided_by).select_from(order.source).where(*where, not_(and_(*plain)))
+    kept: list[Any] = []
+    for size in _leftover_batches(limit):
+        batch = list(
+            conn.execute(leftover.where(*after).order_by(*order.ordered()).limit(size)).all()
+        )
+        kept += _decided(conn, mine, relayed(batch, mine), to, target)
+        if len(kept) > limit or len(batch) < size:
+            break
+        after = [order.after(order.key(batch[-1]))]
+    merged = sorted(taken + kept, key=order.key, reverse=order.descending)[: limit + 1]
+    page = merged[:limit]
+    next_cursor = None
+    if len(merged) > limit:  # `_key`'s shape: the time as text
+        *head, at, row_id = order.key(page[-1])
+        next_cursor = _next_cursor(sort, [*head, at.isoformat(), row_id])
+    ids = [row.id for row in page]
+    found: dict[str, Any] = {}
+    if ids:
+        found = {row.id: row for row in conn.execute(select(t.request).where(r.id.in_(ids)))}
+    return {
+        "items": request_views(conn, [found[i] for i in ids if i in found]),
+        "next_cursor": next_cursor,
+    }
+
+
 def _asker_handles(conn: Connection, rows: list[Any]) -> dict[str, str]:
     """The asker's handle for every row (by the request's id), in a few queries: what the
     `agent` sort orders by. An organisation's invitation has no asking membership, its asker
-    is the human who invites (`asked_by_human`)."""
+    is the human who invites (`asked_by_human`). `_order`'s handle is its SQL twin."""
     ids = {r.asked_by for r in rows if r.asked_by is not None}
     humans = {r.asked_by_human for r in rows if r.asked_by is None and r.asked_by_human}
     if not ids and not humans:
@@ -1212,9 +1449,19 @@ def list_requests(
     with read_transaction(engine_of(request)) as conn:
         mine = membership(conn, caller, slug)
         mine.require("project:read")
-        rows = _filtered(conn, mine, status=status, class_=class_, asked_by=asked_by, to=to)
-        entries = _sorted(_entries(conn, rows), sort)
-        return JSONResponse(_page(entries, sort, limit, cursor, _render(conn)))
+        return JSONResponse(
+            _project_page(
+                conn,
+                mine,
+                status=status,
+                class_=class_,
+                asked_by=asked_by,
+                to=to,
+                sort=sort,
+                limit=limit,
+                cursor=cursor,
+            )
+        )
 
 
 @router.get("/requests")
