@@ -193,7 +193,7 @@ def latest_reports(conn: Connection, project_id: str, limit: int) -> list[dict[s
             select(c.id, c.title, c.status, c.kind, c.label, c.report).where(c.id.in_(ids))
         )
     }
-    rows = [found[card_id] for card_id in ids]
+    rows = [found[card_id] for card_id in ids if card_id in found]  # gone since the ids
     people = _reporters(
         conn, {r.report["reported_by"] for r in rows if r.report.get("reported_by")}
     )

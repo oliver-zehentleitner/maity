@@ -181,6 +181,22 @@ class Person:
 TOKENS = ("role:coder", "role:reviewer", "role:proxy", "trust:admin", "trust:owner")
 # Every `every`-th seeded request is one the overview leaves to the Python rule, in turn.
 LEFTOVER_KINDS = ("held", "cover", "jour_fixe_owner", "jour_fixe_team", "proposal")
+# The proposal kinds a project's listing holds, in turn among the proposal rows: a proxy
+# lists all but the bridge consent. `chat_access` and `cross_owner_reports_to` are personal
+# requests, never in a project's listing; the listing reads no more of one than its `kind`.
+PROPOSAL_KINDS = ("bridge_project", "memory", "member_change", "line_change")
+
+
+def proposal_of(kind: str, target: Person) -> dict[str, Any]:
+    """A proposal of `kind` as the hub files it, minimal."""
+    if kind == "memory":
+        return {"kind": kind, "store": "community", "text": "Seeded entry", "tags": []}
+    if kind == "member_change":
+        return {"kind": kind, "membership_id": target.membership, "action": "remove"}
+    if kind == "line_change":
+        change: dict[str, Any] = {"values": {}, "pause": [True, "seeded"], "instance": None}
+        return {"kind": kind, "membership_id": target.membership, **change}
+    return {"kind": kind}
 
 
 def person(engine: Engine, principal: str) -> Person:
@@ -230,7 +246,7 @@ def seed_requests(
     """`count` copies of the request `template_id`, varied: priority, `to` (owner, each
     person, each role token), asker and `on_behalf_of`, the hub as filer, a holder or the
     admins' pool, answered and withdrawn ones; every `every`-th is held, covered, filed from
-    a jour fixe round or a bridge consent, the cases the overview leaves to Python."""
+    a jour fixe round or carrying a proposal, the cases the overview leaves to Python."""
     targets: list[dict[str, Any]] = [{"to_kind": "owner", "to_member": None, "to_role": None}]
     targets += [{"to_kind": "member", "to_member": p.membership, "to_role": None} for p in people]
     targets += [{"to_kind": "role", "to_member": None, "to_role": tok} for tok in TOKENS]
@@ -252,7 +268,9 @@ def seed_requests(
                 "filed_by": "hub" if n % 19 == 4 else None,
                 "holder_member": other.membership if n % 13 == 6 else None,
                 "holder_pool": True if n % 11 == 2 else None,
-                "status": ("answered", "withdrawn")[n % 9 - 7] if n % 9 >= 7 else "open",
+                # A cycle of 8, coprime with the 9 people a leftover row rotates through:
+                # with 9 a status went with each person, and two never had an open held row.
+                "status": ("answered", "withdrawn")[n % 8 - 6] if n % 8 >= 6 else "open",
                 "created_at": now - timedelta(minutes=n, microseconds=n),
                 "held": None,
                 "cover": None,
@@ -277,7 +295,12 @@ def seed_requests(
                     if n % 2:  # covered, and held for the one covered: the cover gets nothing
                         row["held"] = [held_for.principal]
                 elif kind == "proposal":
-                    row["proposal"] = {"kind": "bridge_project"}
+                    # The j-th proposal row is request 25j + 24 at `every` 5, status n % 8 =
+                    # j % 8: kind s of 4 comes at j % 8 in (s, s + 4), open at least at s.
+                    nth = n // every // len(LEFTOVER_KINDS)
+                    row["proposal"] = proposal_of(
+                        PROPOSAL_KINDS[nth % len(PROPOSAL_KINDS)], held_for
+                    )
                 else:
                     round_id = rounds[0] if kind == "jour_fixe_owner" else rounds[1]
                     row["jour_fixe"] = {"round_id": round_id, "proposal_id": f"p{n}"}
@@ -285,15 +308,19 @@ def seed_requests(
         conn.execute(insert(t.request), rows)
 
 
-def listed_counts(engine: Engine, who: Person) -> dict[str, Any]:
-    """The overview's `requests` as the listing gives it: `GET …/requests?status=open` with
-    `to=all` and with `to=me`, through `_filtered` itself."""
+def listed_open(engine: Engine, who: Person, to: str) -> list[Any]:
+    """`GET …/requests?status=open&to=…` for `who`, through `_filtered` itself."""
     with engine.connect() as conn:
         row = conn.execute(select(t.membership).where(t.membership.c.id == who.membership)).one()
         project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
         mine = Membership(project, row, "agent" if row.agent_id else "human")
-        listed = _filtered(conn, mine, status="open", class_=None, asked_by=None, to="all")
-        to_me = _filtered(conn, mine, status="open", class_=None, asked_by=None, to="me")
+        return _filtered(conn, mine, status="open", class_=None, asked_by=None, to=to)
+
+
+def listed_counts(engine: Engine, who: Person) -> dict[str, Any]:
+    """The overview's `requests` as the listing gives it: `GET …/requests?status=open` with
+    `to=all` and with `to=me`."""
+    listed, to_me = listed_open(engine, who, "all"), listed_open(engine, who, "me")
     by_priority = {p: 0 for p in reversed(inbox.PRIORITIES)}
     for r in listed:
         by_priority[r.priority] += 1
@@ -312,10 +339,12 @@ def seed_reports(
     engine: Engine, project_id: str, author: int, reporter: str, count: int, first: int = 0
 ) -> None:
     """`count` cards with a report of about a kilobyte: two by two they share a
-    `reported_at` second, some share `updated_at` too, and every 50th has no `reported_at`."""
+    `reported_at` second, every fourth pair shares `updated_at` too so that the id decides,
+    and every 50th has no `reported_at`; those share `updated_at` as well."""
     base = clock.now().replace(microsecond=0) - timedelta(days=1)
     rows = []
     for n in range(first, first + count):
+        changed = base + timedelta(milliseconds=((n // 2 if n // 2 % 4 == 0 else n) * 7) % 3)
         report: dict[str, Any] = {
             "summary": REPORT_SUMMARY,
             "mentions": [],
@@ -331,6 +360,7 @@ def seed_reports(
         }
         if n % 50 == 49:
             del report["reported_at"]
+            changed = base
         rows.append(
             {
                 "id": new_id("task"),
@@ -340,7 +370,7 @@ def seed_reports(
                 "status": "review",
                 "created_by": author,
                 "created_at": base,
-                "updated_at": base + timedelta(milliseconds=(n * 7) % 3),
+                "updated_at": changed,
                 "report": report,
             }
         )
@@ -406,12 +436,24 @@ def test_the_overview_counts_what_the_listing_lists_for_every_caller(
     )
     with migrated.connect() as conn:
         r = t.request.c
-        seeded = conn.execute(select(r.held, r.cover, r.jour_fixe, r.status)).all()
+        seeded = conn.execute(select(r.held, r.cover, r.jour_fixe, r.proposal, r.status)).all()
     # The mandatory cases are there: held, covered, jour fixe; closed ones too.
     assert any(s.held for s in seeded) and any(s.cover for s in seeded)
     assert any(s.jour_fixe for s in seeded) and {"answered", "withdrawn"} <= {
         s.status for s in seeded
     }
+    # Every caller has an open request held for it, one it is covered on and one it covers.
+    opened = [s for s in seeded if s.status == "open"]
+    for name, p in people.items():
+        assert any(p.principal in (s.held or ()) for s in opened), name
+        assert any((s.cover or {}).get("for") == p.principal for s in opened), name
+        assert any((s.cover or {}).get("by") == p.principal for s in opened), name
+    # The proxy lists an open proposal of every kind but the bridge consent, never listed.
+    relayed = listed_open(migrated, people["proxy"], "all")
+    assert set(PROPOSAL_KINDS) - {(r.proposal or {}).get("kind") for r in relayed} == {
+        "bridge_project"
+    }
+    assert "bridge_project" in {(s.proposal or {}).get("kind") for s in opened}
     for name, who in callers.items():
         expected = listed_counts(migrated, people[name])
         shown = who.get("/projects/maintainer/maity/overview").json()["requests"]
@@ -419,6 +461,33 @@ def test_the_overview_counts_what_the_listing_lists_for_every_caller(
     # The held agent and the substitute are among the callers; a few did see something.
     assert listed_counts(migrated, people["agent"])["open"] > 0
     assert listed_counts(migrated, people["guest_agent"])["to_me"] > 0
+
+
+def test_the_oldest_open_request_may_be_one_the_python_rule_decides(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A held request is never in the grouped statement; when it is the oldest the owner
+    lists, `oldest_open_at` is its `created_at`."""
+    agent = flow.agent(make_client, owner)
+    other = flow.agent(make_client, owner, role="reviewer")
+    ids = [
+        agent.post(
+            "/projects/maintainer/maity/requests",
+            {"class": "decision", "title": title, "to": "owner"},
+        ).json()["id"]
+        for title in ("Plain?", "Held?")
+    ]
+    oldest = clock.now().replace(microsecond=0) - timedelta(days=3)
+    with migrated.begin() as conn:  # held for another agent: the owner still lists it
+        conn.execute(
+            update(t.request)
+            .where(t.request.c.id == ids[1])
+            .values(held=[other.id], created_at=oldest)
+        )
+    shown = owner.get("/projects/maintainer/maity/overview").json()["requests"]
+    assert shown["open"] == 2
+    assert shown["oldest_open_at"] == clock.rfc3339(oldest)
+    assert shown == listed_counts(migrated, person(migrated, owner.id))
 
 
 def test_the_overview_orders_reports_like_the_listing_did(

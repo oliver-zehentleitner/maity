@@ -726,7 +726,9 @@ read, except to name its `match` when it is shown.
 `GET …/overview` (`routes/overview.py`) selects only the ids of the latest reported cards,
 ordered by `coalesce(report["reported_at"].as_string(), '')`, `updated_at` and `id`, all
 descending, with `LIMIT`, and reads the shown columns of those cards only, put back in that
-order. The coalesce keeps a report without `reported_at` last on every engine. The request
+order. The coalesce keeps a report without `reported_at` last on every engine. The coalesce
+matters on PostgreSQL only: there `DESC` puts NULL first, on SQLite last, so a test run on
+SQLite alone would not notice it missing. The request
 counts are one `GROUP BY priority` statement over the "plain" open requests: no `held`, no
 `cover` and, where they change the answer, no `jour_fixe` (for a holder of
 `requests:answer`) and no `proposal` (for a proxy). Its `where` restates
