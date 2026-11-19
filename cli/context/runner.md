@@ -3296,8 +3296,9 @@ or a backtick; and a quote that never closes. Heredoc bodies are taken
 out before the line is read, so a plain heredoc passes, braces in its
 body included, and so does a `$(…)` in double quotes, read to its `)`
 with its own quotes passed over and kept in one word, a heredoc with a
-quoted delimiter in it included (an unquoted one there, or braces in
-such a body, still refuse the line). In quoted text read again as a line,
+quoted delimiter in it included (an unquoted one there, braces in such
+a body, a body whose end the hook does not read exactly, or a comment in
+the `$(…)` still refuse the line). In quoted text read again as a line,
 only the `eval` rule counts, and only beside a `{`: such text may be
 plain text in a `maity` call. The reason names the constructs, with
 `--body-file` as the way out.

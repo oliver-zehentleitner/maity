@@ -1634,6 +1634,9 @@ PLAIN_SUBSTITUTIONS = [
     'echo "$(git log -1 --format="%h %s")"',
     'git commit -m "$(cat "msg file.txt")"',
     'echo "x $(cat "a b" "$(echo "c d")") y"',
+    "git commit -m \"$(cat <<'EOF'\nRead to EOF\n EOF is not the end\nEOF\n)\"",
+    'echo "$(echo a#b)"',
+    "echo \"$(git log -1 --format='%h #%s')\"",
 ]
 # Heredocs and substitutions without such constructs.
 PLAIN_CONSTRUCTS = [
@@ -1663,6 +1666,29 @@ SUBSTITUTIONS_WITH_RUNNER = [
     'git commit -m "$(cat "msg file.txt")" && ma?ty runner status',
     '"$(cat "msg file.txt")" runner status',
     'maity "$(cat "msg file.txt")" runner',
+    # A heredoc in it whose end the hook does not read exactly (review A1536).
+    'echo "$(cat <<\'A\'\nx\nA)" ; ma?ty runner s ; echo "\nA\n)"',
+    'echo "$(cat <<\'A\'\nx\nA)"\nma?ty runner s\n: "\nA\n)"',
+    'echo "$(cat <<\'A\'\nx\nA)" ; ma[i]ty runner s ; echo "\nA\n)"',
+    'echo "$(cat <<\'A\'\nx\nA)"\nma[i]ty runner s\n: "\nA\n)"',
+    'echo "$(cat <<\'A\'\nx\nA )" ; ma?ty runner s ; echo "\nA\n)"',
+    'echo "$(cat <<\'A\'\nx\nA))" ; ma?ty runner s ; echo "\nA\n)"',
+    'echo "$(cat <<\'A\'\nx\nA)x" ; ma?ty runner s ; echo "\nA\n)"',
+    'echo "$(cat <<-\'A\'\n\tx\n\tA)" ; ma?ty runner s ; echo "\n\tA\n)"',
+    'echo "$(cat <<"A"\nx\nA)" ; ma?ty runner s ; echo "\nA\n)"',
+    'echo "$(cat <<\\A\nx\nA)" ; ma?ty runner s ; echo "\nA\n)"',
+    'git commit -m "$(cat <<\'EOF\'\nx\nEOF)" ; ma?ty runner s ; echo "\nEOF\n)"',
+    # A comment in it (review A1537).
+    'echo "$(true;#<<"EOF"\nma?ty runner status\nEOF\n)"',
+    "echo \"$(true;#<<'EOF'\nma?ty runner status\nEOF\n)\"",
+    'echo "$(true;#<<\\EOF\nma?ty runner status\nEOF\n)"',
+    'echo "$(true|#<<"EOF"\nma?ty runner status\nEOF\n)"',
+    'echo "$(true&#<<"EOF"\nma?ty runner status\nEOF\n)"',
+    'echo "$(true&&#<<"EOF"\nma?ty runner status\nEOF\n)"',
+    'echo "$(false||#<<"EOF"\nma?ty runner status\nEOF\n)"',
+    'echo "$( (true)#<<"EOF"\nma?ty runner status\nEOF\n)"',
+    'echo "$(echo "$(true;#<<"EOF"\nma?ty runner status\nEOF\n)")"',
+    'echo "$(cat <(true;#<<"EOF"\nma?ty runner status\nEOF\n))"',
 ]
 
 
@@ -1718,7 +1744,7 @@ def test_substitutions_in_double_quotes_run_maity_runner_only_if_refused(tmp_pat
             if plaincall.refusal(bash(line)) is None:
                 opened.append(line)
     assert opened == [], BASH_NAME
-    assert ran >= 10, ran  # the lines that run `maity runner` do run it in Bash
+    assert ran >= 31, ran  # the lines that run `maity runner` do run it in Bash
 
 
 # One construct each, without braces or names: each refuses the line.

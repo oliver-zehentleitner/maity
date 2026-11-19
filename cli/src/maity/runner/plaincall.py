@@ -618,7 +618,8 @@ def _substitution_end(text: str, i: int, bodies: list[tuple[int, int]] | None = 
     (its body is plain text, from the line after the operator's to a line that is the
     delimiter alone) and the span of each body is added to the list; one followed by
     anything but a space, a tab, a newline or an operator, one the `)` closes before its
-    body, and one whose delimiter line never comes still raise ValueError."""
+    body, one whose delimiter line never comes, and one with a body line that starts with
+    the delimiter but is not it still raise ValueError."""
     depth, j, n = 0, i + 1, len(text)
     pending: list[tuple[str, bool]] = []
     while j < n:
@@ -671,12 +672,17 @@ def _substitution_end(text: str, i: int, bodies: list[tuple[int, int]] | None = 
                         raise ValueError(text)  # no delimiter line that a newline ends
                     line = text[j:stop]
                     j = stop + 1
-                    if (line.lstrip("\t") if tabs else line) == delimiter:
+                    read = line.lstrip("\t") if tabs else line
+                    if read == delimiter:
                         bodies.append((start, stop - len(line)))
                         break
+                    if read.startswith(delimiter):
+                        raise ValueError(text)  # starts with the delimiter but is not it
             pending = []
             continue
-        elif c == "`" or (c == "#" and text[j - 1] in " \t\n(") or text.startswith("<<", j):
+        elif c == "#" and (text[j - 1] in " \t" or text[j - 1] in _SEPARATORS):
+            raise ValueError(text)
+        elif c == "`" or text.startswith("<<", j):
             raise ValueError(text)
         j += 1
     raise ValueError(text)

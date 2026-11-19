@@ -25,4 +25,5 @@
   a quoted word with a space in it and a heredoc with a quoted delimiter
   included, so `git commit -m "$(cat <<'EOF' … EOF )"` and
   `git commit -m "$(cat "msg file.txt")"` pass; the same forms that run
-  or name `maity … runner` are refused.
+  or name `maity … runner`, and a heredoc or a comment in them that the
+  hook does not read exactly, are refused.
