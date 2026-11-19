@@ -21,6 +21,7 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
+from maity_hub.plain_text import plain
 
 MAX_LINKS = 20
 URL_MAX = 2048
@@ -75,8 +76,10 @@ class ForgeRef:
 
 
 def _plain_https(url: str, field: str) -> urllib.parse.SplitResult:
-    """`https`, a host, no user info; what every link URL must be."""
-    if len(url) > URL_MAX or any(c.isspace() or ord(c) < 0x20 for c in url):
+    """`https`, a host, no user info; what every link URL must be. No white space and
+    nothing the plain-text rule refuses (§1.7.1), in the path too: a hidden character
+    would make the link another than it reads."""
+    if len(url) > URL_MAX or any(c.isspace() for c in url) or not plain(url):
         raise LinkError(field, "not_a_url")
     try:
         parts = urllib.parse.urlsplit(url)
@@ -145,7 +148,7 @@ def check_url(url: str) -> str:
 def check_label(label: str | None) -> str | None:
     if label is None:
         return None
-    if len(label) > LABEL_MAX or any(ord(c) < 0x20 for c in label):
+    if len(label) > LABEL_MAX or not plain(label):
         raise LinkError("label", "too_long" if len(label) > LABEL_MAX else "control_character")
     return label
 
