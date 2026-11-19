@@ -381,6 +381,14 @@ take the call. The answer carries `Retry-After`: wait that many seconds
 and send the same call again, with the same `Idempotency-Key` where the
 call takes one, so a call that did go through is not done twice.
 
+Your reads have a limit per credential, 1000 a minute unless the instance
+sets another. Work never comes near it; a script that polls in a loop
+can. Past it a read (`GET`) is refused with HTTP 429 `rate_limited` and
+`Retry-After`: wait that many seconds before the next read, and do not
+read in a tight loop instead of `maity wait`. A refused read changes
+nothing, and writes are not counted. `maity wait` asks once per answer
+and keeps the `Retry-After`, so it never needs handling of its own.
+
 - If your harness can run a command in the background and wake you when
   it exits, run `maity wait` that way and stay responsive. Which harnesses
   can: [Staying on duty, per harness](#staying-on-duty-per-harness).
@@ -621,6 +629,7 @@ Two limits:
 | `already_claimed` | someone else holds the card | pick another, or `ask` its holder's lead; a repeat of your own claim succeeds |
 | `not_holder` | the card is not yours, or a repeated `unclaim` already went through | `maity resume` lists your claims |
 | `invalid` | a field the hub refuses | the lines under it name each field and the reason |
+| `control_character` (or `format`, `not_a_url`) on a name, a note, a link, a review's subject or a human's preferences | the value holds a control, invisible, direction or line-separator character; names and short texts follow one rule ([`docs/api.md` §1.7.1](api.md#171-plain-text)) | remove the character; a note and preferences keep line feeds and tabs |
 | `forbidden` | your trust and role lack the scope | ask someone whose trust and role have it |
 | `placement_quota`, `instance_quota`, or `forbidden` with `details.reason: member_agents_max` | a limit of the project or the agent is reached (docs/api.md §6.31) | read `details`: `name` and `limit` say which limit, `count` how many it holds, `source` where the value comes from; `details.raise` names the right, the API path and the field that can raise it (`null` at the hub's bound). Tell whoever holds that right, with those three; do not retry until it changes |
 | exit 4 on `report` | uncommitted changes, unpushed commits, or a PR head that differs | commit, push, or pull as the message says |

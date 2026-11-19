@@ -15,6 +15,8 @@ from maity_hub.mail import address as addresses
 from maity_hub.notifications import positions
 
 KEY = b"k" * 32
+# `rate_count.address` (hub/context/auth.md 7d3f0a52), added with the purpose itself.
+ADDRESS_KEY = "0916f3c33ec1128c2f949d8250fb180dc37828153e537285c597b615ed664a95"
 
 # What HKDF-SHA256 (no salt, the purpose as info) gave for KEY before the derivation had one
 # home. A change here invalidates every lock row, position and known source already stored.
@@ -22,6 +24,7 @@ PINNED = {
     addresses.LOCK_PURPOSE: "c26859703866155ca6552787960becae7a36e8788f0cf58c5d93b90d1a8e7d38",
     positions.PURPOSE: "b1375ec552e6cb421eb0bb478863b6a731cac2796a7d32ab108c92c8cbf18dbe",
     known_sources.PURPOSE: "93a4948805ccabc2c78b5a235bbfa55c7bb069e156a266ca6579466361c23397",
+    known_sources.ADDRESS_PURPOSE: ADDRESS_KEY,
 }
 
 
@@ -76,6 +79,16 @@ def test_the_fallback_key_is_gone_once_an_instance_key_is_set(
             token = positions.issue(conn, KEY, "hum_wipe", positions.Position(account=3))
             found = positions.read(conn, KEY, "hum_wipe", token)
             assert found is not None and found.account == 3
+
+
+def test_the_counts_key_an_address_apart_from_the_known_sources(migrated: Engine) -> None:
+    """One base, two purposes: a count's key of an address is not the fingerprint a known
+    source of the same text would have (hub/context/auth.md 7d3f0a52)."""
+    addresses.prepare(migrated, None)
+    with migrated.connect() as conn:
+        keyed = known_sources.address_key(conn, "ada@example.com")
+        assert len(keyed) == 64 and "@" not in keyed
+        assert keyed != known_sources.fingerprint(conn, "ada@example.com")
 
 
 def test_a_stored_value_of_the_wrong_length_is_no_key(migrated: Engine) -> None:

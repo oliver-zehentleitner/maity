@@ -248,10 +248,11 @@ RECIPIENT_MAILS_PER_DAY = 200
 Recipient = tuple[Limiter, Limiter, Limiter, Limiter, Limiter, Limiter]
 
 
-def recipient_over(limiters: Recipient, normalised: str, asker: str) -> bool:
+def recipient_over(limiters: Recipient, address_key: str, asker: str) -> bool:
     """Count one mail to the address for `asker`, the source network (`Origin.limit_key`) or,
     for a verification mail, the asking account; True when it may not go out, and then
-    nothing is recorded.
+    nothing is recorded. `address_key` is the address's `known_sources.address_key`, never
+    the address or a plain hash of it.
 
     `limiters`: the address's places per hour and per day, the marks of the askers holding
     one (limit 1, the same windows), and its mails per hour and per day; each is an attribute
@@ -264,8 +265,8 @@ def recipient_over(limiters: Recipient, normalised: str, asker: str) -> bool:
     holds as many; each that finds the mark set after gives its place back. An account's
     verification requests run one at a time (under its settings row), so never at once."""
     hour, day, hour_askers, day_askers, mails_hour, mails_day = limiters
-    address = digest(f"recipient\0{normalised}")
-    pair = digest(f"recipient\0{normalised}\0{asker}")
+    address = address_key
+    pair = f"{address_key} {asker}"
     taken: list[tuple[Limiter, Mark, Limiter | None]] = []
 
     def give_back() -> bool:
@@ -293,8 +294,9 @@ def recipient_over(limiters: Recipient, normalised: str, asker: str) -> bool:
 
 class RequestLimits:
     """Only the source limit is observable; the pair limits and the recipient's silently
-    suppress delivery. Keys contain hashes, and existing and unknown addresses take the same
-    path. `source` is the caller's `Origin.limit_key`."""
+    suppress delivery. The address is counted by its `known_sources.address_key`, and
+    existing and unknown addresses take the same path. `source` is the caller's
+    `Origin.limit_key`."""
 
     def __init__(self) -> None:
         self.by_source = Limiter(10, 3600, name="auth.email_links.by_source")
@@ -325,18 +327,18 @@ class RequestLimits:
             exact=True,
         )
 
-    def take(self, address: str, source: str) -> tuple[int, bool]:
+    def take(self, address_key: str, source: str) -> tuple[int, bool]:
+        """`address_key`: the asked address's `known_sources.address_key`."""
         wait = self.by_source.hit(source)
         if wait:
             return wait, False
-        normalised = address.strip().casefold()
-        key = digest(f"{source}\0{normalised}")
-        quarter = self.pair_quarter.hit(key)
-        day = self.pair_day.hit(key)
+        pair = f"{address_key} {source}"
+        quarter = self.pair_quarter.hit(pair)
+        day = self.pair_day.hit(pair)
         if quarter or day:
             return 0, False
         # Counted in networks, only for a mail the pair limits let through (`recipient_over`).
-        return 0, not recipient_over(self.recipient(), normalised, source)
+        return 0, not recipient_over(self.recipient(), address_key, source)
 
     def recipient(self) -> Recipient:
         return (

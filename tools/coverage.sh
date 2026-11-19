@@ -70,7 +70,7 @@ slug=${slug%/*}
 repo_owner=${slug##*/}
 [[ $repo_owner =~ ^[A-Za-z0-9._-]+$ && $repo_name =~ ^[A-Za-z0-9._-]+$ ]] \
   || die "cannot read an owner and a repository from origin's URL $origin"
-case $origin in
+case ${origin,,} in
   file://*) authority="" ;;
   *://*)
     authority=${origin#*://}

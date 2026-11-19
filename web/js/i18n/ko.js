@@ -436,9 +436,16 @@ window.MAITY_I18N["ko"] = {
   "board.claim.unclaimed": "담당 안 됨",
   "board.closed.failed": "닫힌 카드를 읽지 못했어요: {reason}",
   "board.closed.loading": "닫힌 카드를 읽는 중…",
+  "board.closed.more_failed": "닫힌 카드를 더 읽지 못했어요: {reason}",
+  "board.closed.more_loaded": {
+    "other": "닫힌 카드 {count}개를 불러왔어요"
+  },
   "board.closed.recheck_failed": "닫힌 카드를 읽는 동안 바뀐 내용을 확인하지 못했어요: {reason}",
   "board.closed.show_more": {
     "other": "닫힌 카드 {count}개 더 보기"
+  },
+  "board.closed.show_more_loaded": {
+    "other": "더 보기 ({count}개 불러옴)"
   },
   "board.column.other": "기타",
   "board.column.unknown": "알 수 없는 상태",
@@ -3462,7 +3469,7 @@ window.MAITY_I18N["ko"] = {
   "placements.new.model": "모델",
   "placements.new.model_default": "러너 기본값",
   "placements.new.no_repository": "러너는 프로젝트 저장소의 클론에서 에이전트를 시작하는데, 이 프로젝트에는 저장소가 없어요.",
-  "placements.new.no_runner_offers": "이 프로젝트에 허용된 내 러너 중 그 저장소 {repository}를 제공하는 것이 없어요. 러너는 설정에 적힌 저장소를 제공해요.",
+  "placements.new.no_runner_offers": "이 프로젝트에 허용된 내 러너 중 그 저장소 {repository}을(를) 제공하는 것이 없어요. 러너는 설정에 적힌 저장소를 제공해요.",
   "placements.new.no_tool": "러너가 그곳에서 설치된 도구를 제공하지 않아요.",
   "placements.new.none": "페어링된 내 러너 중 이 프로젝트에 허용된 것이 아직 없어요. {link}에서 하나를 허용해 주세요.",
   "placements.new.none_link": "이 프로젝트의 러너",

@@ -23,6 +23,7 @@ from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError
 from maity_hub.events import Actor, lock_project
+from maity_hub.plain_text import plain_line
 from maity_hub.views import principal_id
 
 KIND = "cross_owner_reports_to"
@@ -253,7 +254,7 @@ def _summary(
     """What the decision needs, all in the request: a human who is no member reads nothing
     else of the project (§6.2)."""
     lines = [
-        f"In the project {project.name} ({namespace.full_name(conn, project)}), "
+        f"In the project {plain_line(project.name)} ({namespace.full_name(conn, project)}), "
         f"the agent {handle}, owned by {sub_owner}, is to report to {boss}, of {boss_owner}.",
         (
             f"The other owner's consent is still open (request {other})."

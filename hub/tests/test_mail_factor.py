@@ -20,7 +20,7 @@ from maity_hub.auth import mail_factor, second_factor, sessions
 from maity_hub.config import ConfigError, Settings
 from maity_hub.errors import ApiError
 from maity_hub.mail import address as addresses
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import claim_verified, decide_held
 from tests import factory, flow
 from tests.conftest import ClientFactory
 
@@ -67,7 +67,7 @@ def setup(
     if verified:
         addresses.prepare(engine, None)
         with engine.begin() as conn:
-            assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+            assert claim_verified(conn, "ada@example.com", human, secret_key=None)
     if not stored:
         return browser(make_client, mail=mail), human
     with engine.begin() as conn:
@@ -336,7 +336,7 @@ def test_switching_away_from_email_ends_the_open_second_step(
     human = factory.human(migrated, "ada")
     addresses.prepare(migrated, None)
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+        assert claim_verified(conn, "ada@example.com", human, secret_key=None)
         conn.execute(  # the admin's setting, with no environment value to win over it
             t.instance_setting.insert().values(
                 name="sign_in.second_factor", value="email", updated_at=clock.now()
@@ -571,7 +571,7 @@ def _admin(make_client: ClientFactory, engine: Engine, *, verified: bool = True)
     if verified:
         addresses.prepare(engine, None)
         with engine.begin() as conn:
-            assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+            assert claim_verified(conn, "ada@example.com", human, secret_key=None)
     client = make_client(mail=hub_mail(), secret_key=b"k" * 32)
     assert login(client).status_code == 200
     return client
@@ -723,7 +723,7 @@ def test_totp_stays_while_it_is_the_only_way_in(
         assert second_factor.view(conn, hub, human)["required"] is True
     addresses.prepare(migrated, None)
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+        assert claim_verified(conn, "ada@example.com", human, secret_key=None)
     with migrated.connect() as conn:
         assert second_factor.view(conn, hub, human)["required"] is False
     with migrated.begin() as conn:
@@ -762,7 +762,7 @@ def test_approving_a_held_removal_keeps_the_factor(
             mock_good_standing(),
             pytest.raises(ApiError),
         ):
-            preferences.decide_held(
+            decide_held(
                 conn,
                 human=row,
                 session=session,

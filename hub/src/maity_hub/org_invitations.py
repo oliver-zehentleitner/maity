@@ -30,6 +30,7 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found, rate_limited
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN
+from maity_hub.plain_text import plain_line
 from maity_hub.views import ts
 
 log = logging.getLogger(__name__)
@@ -185,6 +186,8 @@ def _file_request(
 
     request_id = new_id("request")
     inviter = conn.execute(select(t.human.c.handle).where(t.human.c.id == actor_id)).scalar_one()
+    # On one line, whatever was stored before the rule (§1.7.1).
+    title = f"Join {plain_line(org.display_name)} ({org.handle}) as {role}"[: t.TITLE]
     conn.execute(
         insert(t.request).values(
             {
@@ -192,7 +195,7 @@ def _file_request(
                 "project_id": None,
                 "org_id": org.id,
                 "class": "consent",
-                "title": f"Join {org.display_name} ({org.handle}) as {role}"[: t.TITLE],
+                "title": title,
                 "summary": (
                     f"{inviter} invites you to join the organisation {org.handle} as {role}. "
                     "You become a member only if you say go."
