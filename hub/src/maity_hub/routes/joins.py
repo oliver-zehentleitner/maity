@@ -72,6 +72,7 @@ from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
+from maity_hub.plain_text import plain_line
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
@@ -719,8 +720,9 @@ _MARKDOWN_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~])")
 
 
 def _md(text: str) -> str:
-    """Text a human typed (a project name), safe inside the Markdown template."""
-    return _MARKDOWN_SPECIAL.sub(r"\\\1", text)
+    """Text a human typed (a project name), safe inside the Markdown template: on its line,
+    whatever a value stored before the plain-text rule holds (§1.7.1), and escaped."""
+    return _MARKDOWN_SPECIAL.sub(r"\\\1", plain_line(text))
 
 
 # Put first on the page when the project's policy has `signing: required` (§3.2, step 7).
@@ -800,6 +802,7 @@ def render_page(
         "ensurepath": join_line.ENSUREPATH,
         "takes_over": _takes_over_sentence(conn, row),
         "subagents": _subagents_quote(conn, row),
+        "restricted_texts": _restricted_sentence(conn, row, project),
         "exchange_url": exchange_url(settings, on_join_host, token),
         "signing_required": (
             _SIGNING_REQUIRED.replace("{{hub}}", hub)
@@ -815,7 +818,7 @@ def render_page(
         ),
     }
     text = _TEMPLATE_PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), _template())
-    return text, f"Join {project.name} on Maity"
+    return text, f"Join {plain_line(project.name)} on Maity"
 
 
 _HTML = MarkdownIt("commonmark", {"html": False}).enable("table")
@@ -843,6 +846,19 @@ def _subagents_quote(conn: Connection, row: Any) -> str:
         row.subagents_language or "en", subagents.handle_of(conn, row.created_by)
     )
     return f"> {text}\n"
+
+
+def _restricted_sentence(conn: Connection, row: Any, project: Any) -> str:
+    """Item 2's sentence when the project's restricted-access set would hold the membership
+    the exchange creates, resolved when the page is served (§3.2, §6.1). Nothing for an agent
+    that is an active member already (a new instance or a replacement enters nothing), and
+    never how many cards have a text: whoever holds the URL reads the page."""
+    if _active_member(conn, row) is not None:
+        return ""
+    owner = _owner(conn, row)
+    if not restricted.would_admit_agent(conn, project, row.agent_id, owner, row.trust):
+        return ""
+    return "You will read and write this project's restricted texts.\n"
 
 
 def _note(dashboard: str) -> str:

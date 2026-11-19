@@ -14,6 +14,11 @@ import pytest
 from conftest import posix
 
 from maity import cli, clonecheck, inclone
+from maity.runner import scratchop, workspace
+
+makes_tmp = pytest.mark.skipif(
+    not scratchop.supported(), reason="no descriptor-relative scratch here"
+)
 
 P = "/api/v1/projects/oliver/maity"
 SECRET = b"SECRET-OUTSIDE-THE-CLONE"
@@ -273,3 +278,101 @@ def test_only_the_recorded_scratch_is_read_and_never_through_a_link(
         way, "not a file in this clone"
     )  # fmt: skip
     assert reason in err, (way, err)
+
+
+@posix
+@walks
+def test_a_review_file_under_the_agy_scratch_is_accepted_and_one_outside_is_refused(
+    placed: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An agy reviewer's scratch is recorded under `/tmp` (maity-scratch-<uid>/<placement>),
+    not beside the clone; `--review-file $MAITY_SCRATCH/review.json` is read through the same
+    inclone path as any recorded scratch, and a path outside it is still refused."""
+    room = tmp_path / f"maity-scratch-{os.getuid()}" / "plc-0003"
+    room.mkdir(parents=True)
+    private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{room}\n")
+    (room / "review.json").write_bytes(b'{"verdict": "approve"}')
+    accepted = cli._read_text_file(str(room / "review.json"), "--review-file")
+    assert accepted == '{"verdict": "approve"}'
+    outside = secret(tmp_path)  # a file beside the scratch, not in it (nor in the clone)
+    with pytest.raises(cli.UsageError, match="not a file in this clone"):
+        cli._read_text_file(str(outside), "--review-file")
+    assert SECRET not in capsys.readouterr().out.encode()  # nothing of it was read out
+
+
+def test_the_changelog_states_the_agy_scratch_residual_honestly() -> None:
+    """The residual wording does not overclaim same-user isolation (review round 3): the agy
+    scratch is not said to be reachable only by the owning placement, and the accepted same-user
+    exposure is named. Red on dc826d9b, whose changelog claimed an unlistable parent and an
+    unguessable name only the owning placement could reach. The agy writable-scratch fragment
+    was folded into CHANGELOG.md's 0.1.0a10 release section, so the assertions read that section."""
+    changelog = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
+    lines = changelog.read_text(encoding="utf-8").splitlines(keepends=True)
+    start = next(i for i, ln in enumerate(lines) if ln.startswith("## [0.1.0a10]"))
+    end = next(
+        (i for i in range(start + 1, len(lines)) if lines[i].startswith("## [")),
+        len(lines),
+    )
+    text = "".join(lines[start:end])
+    assert "only the owning placement" not in text
+    assert "unlistable" not in text and "unguessable" not in text
+    assert "same host user" in text  # the accepted residual is stated
+
+
+@posix
+@walks
+@makes_tmp
+def test_a_review_file_in_a_production_made_agy_scratch_is_read(
+    placed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end on the real layout: the agy scratch is created exactly as production does
+    (scratchop.tmp_make — a 0700 per-user parent and a random leaf), then the review file is
+    read through the real recorded-scratch path. Red on dc826d9b, where the per-user parent was
+    made 0300 (unreadable): maity's read walks it O_RDONLY from `/`, so the parent blocked every
+    `--review-file`/`--body-file` read of an agy placement. The round-2 tests missed this
+    because they created the parent 0755 by hand rather than through tmp_make."""
+    shared = tmp_path / "shared-tmp"
+    shared.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared)
+    leaf = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+    room = workspace.tmp_scratch_of(os.getuid(), leaf)
+    scratchop.tmp_make(str(room))  # exactly as the runner makes it: 0700 parent, 0700 leaf
+    (room / "review.json").write_bytes(b'{"verdict": "approve"}')
+    private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{room}\n")
+    assert cli._read_text_file(str(room / "review.json"), "--review-file") == (
+        '{"verdict": "approve"}'
+    )
+
+
+@posix
+@walks
+def test_the_agy_scratch_root_is_resolved_so_a_symlinked_temp_dir_still_reads(
+    placed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The shared temp directory is a link on some hosts (macOS `/tmp` -> `/private/tmp`).
+    tmp_scratch_of resolves the root, so the recorded scratch path has no link on the way and
+    the session's own `--review-file` read (which walks it from `/` refusing any link) works;
+    the unresolved spelling, through the link, is refused — which is why resolving matters."""
+    from maity.runner import workspace
+
+    real, link = tmp_path / "real-tmp", tmp_path / "linked-tmp"
+    real.mkdir()
+    link.symlink_to(real)
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", link)
+    leaf = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+    recorded = workspace.tmp_scratch_of(os.getuid(), leaf)
+    assert link not in recorded.parents and real in recorded.parents  # resolved, no link
+    recorded.mkdir(parents=True)
+    private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{recorded}\n")
+    (recorded / "review.json").write_bytes(b'{"verdict": "approve"}')
+    assert cli._read_text_file(str(recorded / "review.json"), "--review-file") == (
+        '{"verdict": "approve"}'
+    )
+    # Had the runner recorded the unresolved (symlinked) spelling, the read would be refused.
+    through_link = link / f"maity-scratch-{os.getuid()}" / leaf
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{through_link}\n")
+    with pytest.raises(cli.UsageError):
+        cli._read_text_file(str(through_link / "review.json"), "--review-file")

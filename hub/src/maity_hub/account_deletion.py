@@ -30,6 +30,7 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import (
     chat_access,
+    chat_access_history,
     clock,
     contacts,
     invitations,
@@ -447,7 +448,14 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
 
 def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     """Delete the account in the caller's transaction, in the order §2.9 lists, each part
-    through the code that already does it elsewhere."""
+    through the code that already does it elsewhere. For the other owners' chat-access history
+    it is one write (§9.6, "History"): one item per entry it narrows or deletes, written once
+    it is done, and none for the account's own, whose history goes with it."""
+    with chat_access_history.one_write(conn, leaving=human_id):
+        _delete_account(conn, hub, human_id)
+
+
+def _delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     from maity_hub.routes import runners as runner_routes
     from maity_hub.routes.agents import delete_profile
 
@@ -753,6 +761,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
         t.notification_recipient,  # which messages may notify them (§18.1)
         t.account_record,  # sign-ins with their addresses and browsers, address changes
         t.not_listening_seen,  # what the human answered `seen` to in the digest (§5.3)
+        t.chat_access_history,  # the history of their lists, after every write to them (§9.6)
     ):
         conn.execute(delete(table).where(table.c.human_id == human_id))
     conn.execute(delete(t.avatar_image).where(t.avatar_image.c.owner_id == human_id))

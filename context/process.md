@@ -2244,7 +2244,8 @@ server, count as minor (the coordinator's scope for #1475).
   passes too; a name such as `127.example.com` is a server of its own) is a proxy in front of
   github.com, as in Claude Code's cloud sessions, which serves git and not the API, so it stands for
   github.com. A URL without a host (a local path,
-  `file://` with or without `localhost`) names no server to ask and stops the check.
+  `file://` with or without `localhost`, the scheme in any case) names no server to ask and stops the
+  check.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
@@ -2758,3 +2759,67 @@ view of them.
 The check counts the five headings and that each has text; it cannot tell
 whether the text is right. That is what the confirmation by the lead and ops
 before the tag is for.
+
+**Fences, comments and the list of pages (2026-11-18):** (Source: the P3
+follow-ups of the review of #1846, card tsk-tzknz9zzy1m2.) The check reads a
+page as CommonMark does for what it counts, since GitHub and the docs site
+render it that way and a page that renders right must not be refused, nor a
+heading the reader cannot see accepted. A byte order mark is dropped. A fence
+is three or more backticks or tildes at the start of the line (a backtick
+fence's info string has no backtick); it closes only with a run of the same
+character at least as long, and an unclosed one runs to the end. A line
+indented by four columns or more (a tab counts to the next four) is an
+indented code block unless it continues paragraph text: it is no fence and no
+heading, and it counts as text, comments in it too, as a code block with
+content does; list items are not followed, so such a line in one is code. A
+second-level heading may be indented by up to three spaces. An HTML comment
+alone is no text, so `<!-- TODO -->` cannot stand in for `Nothing.`; a comment
+that starts a line runs as a block to its `-->` (or the end), and a heading
+inside it is no section. Comments are cut from prose only, never from code,
+where they show. Not followed either, on purpose: HTML blocks other than
+comments (a heading inside a `<div>` counts, as does a section holding only a
+link reference definition), closing `#`s, `##` plus a tab, and setext
+headings (refused, so the author writes a plain `## ` heading). Each needs
+markup no page uses. The alternative, a Markdown library, was left out: the
+check runs in ci's changelog job and the release gate on the standard library
+alone. `docs/upgrade/README.md` lists every version page, oldest first: the
+docs site renders only that README (`docs/nav.yml`), so its links are how a
+site reader finds a page. `check` refuses, on every pull request and before
+the fold too, a version page the README does not link. A page counts as
+linked only by a list line `- [version](version.md)` (or `* `, at column 0
+with no space in front; `./`, a `#fragment` and angle brackets allowed; no
+`[`, `]`, `<`, backtick or backslash in the text, so no code span, raw HTML
+tag, comment or autolink opens there and spans the destination) that is no
+code and in no comment block opened at the start of a line. Reference links,
+links inside a paragraph and images do not count; the error names the line
+to add. Why so narrow: each round of a fuller recognizer (inline and
+reference links on the rendered text) found the next edge: a reference
+resolved to the wrong label, an image, a link glued across a code span or a
+comment, an escaped bracket, an unclosed `<!--` that hid
+every later link; a list line is all the README needs, and the check stays
+standard library only. A full CommonMark inline parser was left out for the
+same reason as a Markdown library. The release gate does not ask again,
+since the release pull request has passed ci. Listing each version in
+`docs/nav.yml` as a page of its own was left out: it would grow the site's
+navigation by one entry per release. Review round 4 (A1420) showed a list
+item's own fence or comment (an item `- ~~~` with an indented list line under
+it) faking a list line that CommonMark shows as code, so the list line now
+starts at column 0. A fence line with one to three leading spaces makes the
+README or version page refused as a whole ("write code fences at the start of
+the line", with the line's number), wherever it stands: in a list item, inside
+a fence or inside a comment too. The check is a plain scan of the lines, with
+no fence or comment state. Reason (lead, round 5): CommonMark's closing rules
+for indented fences cannot be followed by a few patterns without failing
+open: round 4's rule (an indented fence closes only on one indented at least
+as far) let a re-opened fence, an empty code block and a hidden duplicate
+heading pass (A1435); the scan is fail-closed by construction, the repository
+has no such fence, and a refusal costs one edit. Rejected: following
+CommonMark's fence-indent closing (round 4, failed open per A1435), and
+refusing only a less-indented closer (still needs fence state). One edge
+fails closed, on purpose: a list line right after a list item that opened a
+comment on an indented line is refused, though CommonMark ends the comment
+with the item and shows the link. The error names the line to add, or the
+section reported missing. Reason (lead, 2026-11-18): a refusal of a correct
+but odd README costs one edit; a parser costs a review round each time; fail
+closed beats fail open. Rejected: following list items (their indent and
+where they end), built and dropped as round 4's option A.

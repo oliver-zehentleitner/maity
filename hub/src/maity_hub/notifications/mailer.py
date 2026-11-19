@@ -37,6 +37,8 @@ from maity_hub.mail.environment import MailEnvironment
 from maity_hub.mail.text import defang, quoted, subject_line
 from maity_hub.notifications import items, listing, preferences, presence, records, retention
 from maity_hub.notifications.items import Item
+from maity_hub.plain_text import plain_line
+from maity_hub.text_language import text_language
 
 log = logging.getLogger(__name__)
 
@@ -118,7 +120,7 @@ def for_human(
     state = _state(conn, human_id)
     # The settings, with the language this mail is in (§6.2).
     email = preferences.preferences(conn, human_id)["email"]
-    prefs = {**email, "language": preferences.text_language(conn, human_id)}
+    prefs = {**email, "language": text_language(conn, human_id)}
     # What the bell's long-poll compares before it derives again, and the human's settings
     # with it: unchanged since the last pass, and nothing left waiting for its hour, means
     # there is nothing to mail, and the pass costs a few aggregates, not 30 days of the
@@ -447,8 +449,9 @@ def compose(
     if len(chosen) == 1:
         only = chosen[0]
         name = projects.get(only.project_id or "", "Maity")
-        # A project's name and a title are text the hub did not write (§18.5).
-        line = subject_line(f"[Maity] {name}: {only.title or ''}")
+        # A project's name and a title are text the hub did not write (§18.5), folded first
+        # (`_project_names` folds the name): `subject_line` cleans only Cc, Zl and Zp (§1.7.1).
+        line = subject_line(f"[Maity] {name}: {plain_line(only.title or '')}")
     else:
         line = "[Maity] " + words["updates"].format(n=len(chosen))
     lines: list[str] = []
@@ -457,13 +460,14 @@ def compose(
         lines.append(quoted(projects.get(project_id or "", "Maity")))
         for item in (i for i in shown if i.project_id == project_id):
             stamp = item.at.astimezone(zone).strftime("%Y-%m-%d %H:%M")
-            lines.append(f"- {quoted(item.title or '')}")
+            lines.append(f"- {quoted(plain_line(item.title or ''))}")
             lines.append(f"  {stamp} {item.url}")
             content = (prefs["kinds"].get(item.kind) or {}).get("content")
             text = _message_text(conn, item) if content else None
             if text:
                 # A display name is text the hub did not write either (§18.5).
-                writer = defang(" ".join(items.actor_name(conn, item.actor_membership).split()))
+                name_of = plain_line(items.actor_name(conn, item.actor_membership))
+                writer = defang(" ".join(name_of.split()))
                 lines.append(f"  {writer} {words['wrote']}: {quoted(text[:CONTENT_MAX])}")
         lines.append("")
     if len(chosen) > DIGEST_MAX:
@@ -491,7 +495,7 @@ def _project_names(conn: Connection, chosen: list[Item]) -> dict[str, str]:
     if not ids:
         return {}
     rows = conn.execute(select(t.project.c.id, t.project.c.name).where(t.project.c.id.in_(ids)))
-    return {row.id: row.name for row in rows}
+    return {row.id: plain_line(row.name) for row in rows}  # on one line (§1.7.1)
 
 
 def _sign_in_mail(
@@ -568,7 +572,7 @@ def _two_factor_mail(
         kind="security",
         human_id=row.human_id,
         to=row.address,
-        subject=subject_line(f"[Maity] {item.title}"),
+        subject=subject_line(f"[Maity] {plain_line(item.title or '')}"),
         body=body,
     )
 

@@ -43,7 +43,7 @@ from typing import Any
 from sqlalchemy import Connection, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import chat_access, clock, namespace, proposals
+from maity_hub import chat_access, chat_access_history, clock, namespace, proposals, write_guard
 from maity_hub import tables as t
 from maity_hub.errors import invalid
 from maity_hub.ids import CROCKFORD, PREFIXES
@@ -542,7 +542,9 @@ def _their_agents(conn: Connection, request: Any, agent: str) -> list[str]:
     return [a for a in found if a in live]
 
 
-def _allow(conn: Connection, request: Any, reply_id: str, body: dict[str, Any]) -> None:
+def _allow(conn: Connection, request: Any, reply_id: str, body: dict[str, Any]) -> list[str]:
+    """The entries of an allow reply, one per ticked agent with something to admit it for;
+    their ids."""
     owner, side = request.to_human, request.proposal["side"]
     mine = agents_of(conn, request)
     ticked = body.get("agents", mine)
@@ -553,6 +555,19 @@ def _allow(conn: Connection, request: Any, reply_id: str, body: dict[str, Any]) 
             "chat_access.agents names only the request's waiting and held agents",
         )
     human = body.get("their_human", False)
+    # The reach and the rules are checked here, before any entry: an answer that writes none
+    # (no tick, or nothing to admit a ticked agent for) still records them in its history
+    # item (§9.6 "History"), which takes only what an entry would take (#1988, zxjn A1433).
+    if body.get("their_agents") is not None:
+        # The side's `account_lock` before its agents' rows, the order every write keeps
+        # (`write_guard`, `chat_access._human`): else a deletion of that side deadlocks with
+        # this answer (#1988, 55bz A1453).
+        write_guard.share(conn, side)
+        chat_access._their_agents(conn, side, body["their_agents"])
+    for field in ("allowed", "denied"):
+        if field in body:
+            chat_access._text(body[field], field)
+    written: list[str] = []
     for agent in dict.fromkeys(ticked):
         reach = body.get("their_agents")
         if reach is None:
@@ -570,7 +585,8 @@ def _allow(conn: Connection, request: Any, reply_id: str, body: dict[str, Any]) 
         for field in ("allowed", "denied"):
             if field in body:
                 entry[field] = body[field]
-        chat_access.create_allow(conn, owner, entry)
+        written.append(chat_access.create_allow(conn, owner, entry))
+    return written
 
 
 def _decline(conn: Connection, request: Any, reason: str) -> None:
@@ -608,16 +624,35 @@ def settle(conn: Connection, s: proposals.Settlement) -> None:
     body: dict[str, Any] = s.chat_access or {}
     from maity_hub import chat_rules
 
-    with deferred(conn):
+    cause = chat_access_history.Cause(chat_access_history.REQUEST, request_id=request.id)
+    with deferred(conn), chat_access_history.caused(cause):
         with chat_rules.announcing(conn, owner):  # takes the owner's row first (`_lock`)
+            entries: list[str] = []
             if reply in DURATION:
-                _allow(conn, request, str(reply), body)
-            elif reply == "block":
-                agents = agents_of(conn, request)
-                if agents:
-                    chat_access.create_deny(conn, owner, {"agents": agents, "owner_id": side})
+                ticked = list(body.get("agents", agents_of(conn, request)))
+                entries = _allow(conn, request, str(reply), body)
             else:
-                _decline(conn, request, DECLINED)
+                ticked = agents_of(conn, request)
+                if reply == "block":
+                    if ticked:
+                        entries = [
+                            chat_access.create_deny(
+                                conn, owner, {"agents": ticked, "owner_id": side}
+                            )
+                        ]
+                else:
+                    _decline(conn, request, DECLINED)
+            chat_access_history.answered(
+                conn,
+                owner,
+                request_id=request.id,
+                side=side,
+                reply_id=str(reply),
+                withdrawn=s.outcome == "withdrawn",
+                agents=ticked,
+                body=body,
+                entries=entries,
+            )
             chat_gate.recheck(conn, owner)
         sync(conn, owner)
 
