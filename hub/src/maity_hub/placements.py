@@ -60,6 +60,11 @@ REASONS: dict[str, tuple[str, ...]] = {
     "join_failed": ("failed",),
     "crash_loop": ("failed",),
     "hung": ("exited", "failed"),  # §15.14: the runner ended a run that produced nothing
+    # §15.14: the harness's own exits as far as its adapter recognises them
+    "network": ("exited",),
+    "context_full": ("exited", "failed"),
+    "auth": ("failed",),
+    "harness_config": ("failed",),
     "quota": ("rate_limited", "exited", "failed"),
     "agent_credential_revoked": ("failed",),
     "oom_killed": ("failed", "exited"),
@@ -95,6 +100,8 @@ DETAILS: dict[str, tuple[str, str]] = {
     "workspace_unrecorded": ("reason", "workspace_in_use"),
     "locked_by_process": ("reason", "workspace_in_use"),
     "not_a_plain_clone": ("reason", "workspace_in_use"),
+    "workspace_in_repository": ("reason", "workspace_in_use"),
+    "workspace_not_bare": ("reason", "workspace_in_use"),
     "stale_index_lock": ("state", "starting"),
     "sandbox_unavailable": ("state", "running"),
     "hot_loop": ("reason", "crash_loop"),
@@ -102,6 +109,7 @@ DETAILS: dict[str, tuple[str, str]] = {
     "tool": ("reason", "hung"),
     "mode_unsupported": ("reason", "harness_refused"),
     "model_unsupported": ("reason", "harness_refused"),
+    "target_unknown": ("reason", "harness_refused"),
     "reset_unknown": ("state", "rate_limited"),
 }
 RUNNING_STATES = ("starting", "running", "stopping")
