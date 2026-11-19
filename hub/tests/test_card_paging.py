@@ -227,7 +227,7 @@ def test_a_page_reads_full_rows_only_for_its_cards(owner: flow.Human, migrated: 
     for n in range(12):
         task(owner, title=f"Card {n}", body="a body")
     sent: list[str] = []
-    with listening(migrated, lambda *a: sent.append(a[2])):
+    with listening(migrated, lambda *a: sent.append(_unquoted(a[2]))):
         page = _page(owner, {"status": "open", "limit": 3})
     assert len(page["items"]) == 3
     reads_bodies = [s for s in sent if "card.body" in s and "FROM card" in s]
@@ -245,12 +245,19 @@ def test_a_search_reads_no_note_of_a_card_its_own_text_found(
         made = task(owner, title=f"Needle {n}")
         owner.post(f"{PROJECT}/tasks/{made['id']}/notes", {"body": "needle remark"})
     sent: list[tuple[str, Any]] = []
-    with listening(migrated, lambda *a: sent.append((a[2], a[3]))):
+    with listening(migrated, lambda *a: sent.append((_unquoted(a[2]), a[3]))):
         page = _page(owner, {"q": "needle", "status": "open", "limit": 2})
     assert [i["match"] for i in page["items"]] == [["title", "note"]] * 2
     note_reads = [p for s, p in sent if "FROM card_note" in s and "card_note.body" in s]
     asked = set().union(*(_card_ids(p) for p in note_reads))
     assert asked == {i["id"] for i in page["items"]}
+
+
+def _unquoted(statement: str) -> str:
+    """A statement without its identifier quotes, so a test reads `card.body` on every
+    database: MariaDB's dialect quotes `body` as a reserved word (``card.`body` ``), SQLite and
+    PostgreSQL leave it bare."""
+    return statement.replace("`", "").replace('"', "")
 
 
 def _card_ids(parameters: Any) -> set[str]:
