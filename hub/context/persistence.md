@@ -731,10 +731,10 @@ matters on PostgreSQL only: there `DESC` puts NULL first, on SQLite last, so a t
 SQLite alone would not notice it missing. The request
 counts are one `GROUP BY priority` statement over the "plain" open requests: no `held`, no
 `cover` and, where they change the answer, no `jour_fixe` (for a holder of
-`requests:answer`) and no `proposal` (for a proxy). Its `where` restates
-`routes/requests.py` `listed_to_all`, and `_addressed_sql` restates `inbox.addressed_to`
-in plain columns (both now in `request_sql`, shared with the project's request list,
-3c9e5a71). Every other open request is read with only the columns the Python rule
+`requests:answer`) and no `proposal` (for a proxy). Its `where` is
+`request_sql.listed_to_all`, which restates `routes/requests.py` `listed_to_all`, and
+`request_sql.addressed` restates `inbox.addressed_to` in plain columns (`request_sql` is
+shared with the project's request list, 3c9e5a71). Every other open request is read with only the columns the Python rule
 needs and decided by `relayed`, `listed_to_all` and `inbox.addressed_to` unchanged, then
 added to the counts. Each side names the other in a comment.
 
@@ -774,7 +774,10 @@ decided, ordered and limited by the database: statement A reads their keys after
 the page plus one. The others are read after the cursor with only the columns the Python rule
 needs, in the list's order, the page plus one first and then doubling batches, and decided by
 `relayed` and `_decided`, the rule `_filtered` applies. Once A fills its page, they are read
-only up to A's last key. Both merge by key; only the page's rows are read in full. The SQL
+only up to A's last key. Both merge by key; only the page's rows are read in full. Under READ
+COMMITTED a request that gets a `cover` between A and B is read by both: it is kept once, with
+B's key, the later read and the one the rule that now decides it made, so the page holds no
+duplicate and its cursor no stale place. The SQL
 rules live once, in `request_sql` (moved out of the overview, which now imports them), and
 each helper names its Python twin, which names it back. The order is the expanded keyset form
 with the id last: `CASE` over `PRIORITY_RANK` for priority, the asker's handle as one

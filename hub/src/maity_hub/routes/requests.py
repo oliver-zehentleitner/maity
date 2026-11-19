@@ -1135,7 +1135,7 @@ def _key_shaped(key: Any, sort: str) -> bool:
     if not isinstance(key, list) or len(key) != (2 if sort == "date" else 3):
         return False
     *head, iso, row_id = key
-    if not isinstance(iso, str) or not paging.id_shaped(row_id):
+    if not paging.bindable(iso) or not paging.id_shaped(row_id):
         return False
     if sort == "priority":
         rank = head[0]
@@ -1313,16 +1313,21 @@ def _project_page(
         where.append(not_(order.after(order.key(taken[-1]))))
     decided_by = [r[name] for name in (*request_sql.DECIDED_BY, *_ADDRESS)] + keys[3:]
     leftover = select(*decided_by).select_from(order.source).where(*where, not_(and_(*plain)))
-    kept: list[Any] = []
+    # By id: under READ COMMITTED a request can change between the statements. One that got a
+    # `cover` after A read it as plain is read again by B; the later read wins, as its key is
+    # the request's newer place and the rule that now decides it is B's (3c9e5a71).
+    kept: dict[str, Any] = {}
     for size in _leftover_batches(limit):
         batch = list(
             conn.execute(leftover.where(*after).order_by(*order.ordered()).limit(size)).all()
         )
-        kept += _decided(conn, mine, relayed(batch, mine), to, target)
+        decided = _decided(conn, mine, relayed(batch, mine), to, target)
+        kept.update((row.id, row) for row in decided)
         if len(kept) > limit or len(batch) < size:
             break
         after = [order.after(order.key(batch[-1]))]
-    merged = sorted(taken + kept, key=order.key, reverse=order.descending)[: limit + 1]
+    rows = {row.id: row for row in taken} | kept
+    merged = sorted(rows.values(), key=order.key, reverse=order.descending)[: limit + 1]
     page = merged[:limit]
     next_cursor = None
     if len(merged) > limit:  # `_key`'s shape: the time as text

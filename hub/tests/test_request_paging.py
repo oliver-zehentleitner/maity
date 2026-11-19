@@ -20,7 +20,17 @@ from sqlalchemy import Connection, Engine, insert, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.access import Membership
-from maity_hub.routes.requests import _entries, _filtered, _page, _project_page, _render, _sorted
+from maity_hub.routes import requests as requests_route
+from maity_hub.routes.requests import (
+    _entries,
+    _filtered,
+    _key,
+    _next_cursor,
+    _page,
+    _project_page,
+    _render,
+    _sorted,
+)
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.statements import count_statements
@@ -59,10 +69,17 @@ class Listing:
     to: str
     sort: str
     status: str
+    class_: str | None = None
+    asked_by: str | None = None
 
     def __post_init__(self) -> None:
         rows = _filtered(
-            self.conn, self.mine, status=self.status, class_=None, asked_by=None, to=self.to
+            self.conn,
+            self.mine,
+            status=self.status,
+            class_=self.class_,
+            asked_by=self.asked_by,
+            to=self.to,
         )
         self.entries = _sorted(_entries(self.conn, rows), self.sort)
 
@@ -76,8 +93,8 @@ class Listing:
             self.conn,
             self.mine,
             status=self.status,
-            class_=None,
-            asked_by=None,
+            class_=self.class_,
+            asked_by=self.asked_by,
             to=self.to,
             sort=self.sort,
             limit=limit,
@@ -89,7 +106,7 @@ class Listing:
         cursor: str | None = None
         for _ in range(len(self.entries) + 2):
             old, new = self.oracle(limit, cursor), self.paged(limit, cursor)
-            where = (self.to, self.sort, self.status, limit, cursor)
+            where = (self.to, self.sort, self.status, self.class_, self.asked_by, limit, cursor)
             assert new["next_cursor"] == old["next_cursor"], where
             assert new["items"] == old["items"], where
             yield from (item["id"] for item in new["items"])
@@ -167,13 +184,18 @@ def _seed(owner: flow.Human, make_client: ClientFactory, engine: Engine) -> Seed
             )
         ).all()
         by_n = {int(row.id[len("req-ovw") :]): row for row in rows}
+        to_agent = 0
         for n, row in sorted(by_n.items()):
             values: dict[str, Any] = {}
             if n % 6 in (1, 2, 3):  # three in a row tie: the id decides, in every sort
                 first = by_n[n - n % 6 + 1]
                 values.update(created_at=first.created_at, priority=first.priority)
             if row.to_kind == "member" and row.to_member == people["agent"].membership:
-                values["to_instance"] = (agent.instance, "zz99", None)[n % 3]
+                # Counted over these rows alone: the agent's place in the 15 targets fixes n % 3.
+                values["to_instance"] = (agent.instance, "zz99", None)[to_agent % 3]
+                to_agent += 1
+            if n % 4 == 2:  # another class, for the `class` filter
+                values["class"] = "info"
             if n % 23 == 5:
                 values.update(asked_by=gone_member, on_behalf_of=None)
             elif n % 23 == 9:
@@ -234,6 +256,7 @@ def test_every_page_is_the_listings_own_for_every_caller(
     with migrated.connect() as conn:
         kinds = _kinds(conn)
         seen: set[str] = set()
+        listed: dict[tuple[str, str, str], set[str]] = {}
         for name, who in seeded.people.items():
             mine = _membership(conn, who)
             for to in seeded.tos():
@@ -244,11 +267,114 @@ def test_every_page_is_the_listings_own_for_every_caller(
                             shown = list(listing.walk(limit))
                             assert shown == [e["id"] for e in listing.entries], (name, to)
                             seen.update(shown)
+                            listed[(name, to, status)] = set(shown)
+    # The member alone lists what is addressed to any of its instances, the instance form only
+    # its own: both seen, and they differ (`request_sql.addressed_as`' `whole_team`).
+    agent = seeded.agent
+    whole = listed[("owner", agent.id, "all")]
+    one = listed[("owner", f"{agent.id}#{agent.instance}", "all")]
+    assert one and one < whole
     # Every kind the database leaves to the Python rule reached some caller's list, and so
     # did the ties, the inviter, the deleted asker and the request with no asker.
     assert {kinds[i] for i in seen} >= set(LEFTOVER_KINDS)
     assert "req-personal0001" not in seen
     assert {f"req-ovw{n:08d}" for n in (5, 9, 14, 1, 2, 3)} <= seen
+
+
+def test_the_class_and_asker_filters_page_as_the_listing(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`class` and `asked_by` beside `to`: a few of each, not the whole product."""
+    seeded = _seed(owner, make_client, migrated)
+    agent = seeded.agent.id
+    filters = [
+        ("info", None),
+        ("decision", None),
+        (None, "me"),
+        (None, agent),
+        ("info", agent),
+        (None, "agt-nobody00000"),  # no member: nothing listed
+    ]
+    with migrated.connect() as conn:
+        for class_, asked_by in filters:
+            found = 0
+            for name in ("owner", "agent", "proxy"):
+                mine = _membership(conn, seeded.people[name])
+                for to in ("me", "all", agent):
+                    for sort in SORTS:
+                        listing = Listing(conn, mine, to, sort, "all", class_, asked_by)
+                        for limit in (1, 7):
+                            shown = list(listing.walk(limit))
+                            assert shown == [e["id"] for e in listing.entries]
+                            found += len(shown)
+            assert (found > 0) == (asked_by != "agt-nobody00000"), (class_, asked_by)
+
+
+# Under READ COMMITTED a request can change between statement A (the plain keys) and B (the
+# others). These change one between them, on the listing's own connection, which both read.
+# A plain request that gets a `cover` or a `held` is read by both: it is listed once, at B's key.
+# One that loses them, or is forwarded or answered, is read by at most one of them.
+DUPLICATED = ("cover_set", "held_set", "cover_and_priority")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [*DUPLICATED, "cover_cleared", "held_cleared", "forward", "answer"],
+)
+def test_a_request_that_changes_between_the_statements_is_listed_once(
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
+) -> None:
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    agent = flow.agent(make_client, owner)
+    made = [asked(agent, to="owner", title=f"Which {n}?")["id"] for n in range(4)]
+    cover = {"for": owner.id, "by": agent.id, "since": clock.rfc3339(clock.now())}
+    changes: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {  # (before A, between)
+        "cover_set": ({}, {"cover": cover}),
+        "held_set": ({}, {"held": [agent.id]}),
+        # The key moves too (priority sort): B's place, not A's, is the one listed.
+        "cover_and_priority": ({}, {"cover": cover, "priority": "urgent"}),
+        "cover_cleared": ({"cover": cover}, {"cover": None}),
+        "held_cleared": ({"held": [agent.id]}, {"held": None}),
+        "forward": ({}, {"holder_member": person(migrated, agent.id).membership}),
+        "answer": ({}, {"status": "answered"}),
+    }
+    before, between = changes[change]
+    original = requests_route._leftover_batches
+    r = t.request.c
+    checked = 0
+    with migrated.connect() as conn:
+        mine = _membership(conn, person(migrated, owner.id))
+        for sort in SORTS:
+            for limit in (1, 2, 5):
+                for changed in made:
+                    if before:
+                        conn.execute(update(t.request).where(r.id == changed).values(**before))
+
+                    def hooked(size: int, changed: str = changed) -> Iterator[int]:
+                        # Runs after A read its keys, before B's first batch.
+                        conn.execute(update(t.request).where(r.id == changed).values(**between))
+                        yield from original(size)
+
+                    monkeypatch.setattr(requests_route, "_leftover_batches", hooked)
+                    page = Listing(conn, mine, "all", sort, "open").paged(limit, None)
+                    monkeypatch.setattr(requests_route, "_leftover_batches", original)
+                    where = (change, sort, limit, changed)
+                    ids = [item["id"] for item in page["items"]]
+                    assert len(ids) == len(set(ids)) <= limit, where
+                    if page["next_cursor"] is not None:  # the last item's place as it is now
+                        last = conn.execute(select(t.request).where(r.id == ids[-1])).one()
+                        key = _key(_entries(conn, [last])[0], sort)
+                        assert page["next_cursor"] == _next_cursor(sort, key), where
+                    if change in (*DUPLICATED, "forward"):  # the list as it is after the change
+                        after = Listing(conn, mine, "all", sort, "open").oracle(limit, None)
+                        assert page == after, where
+                    conn.rollback()
+                    checked += 1
+    assert checked == len(SORTS) * 3 * len(made)
 
 
 def _walk_with_change(listing: Listing, values: dict[str, Any]) -> bool:
@@ -337,6 +463,7 @@ ISO = "2026-11-19T10:00:00+00:00"
         ("date", ["2026-11-19T10:00:00", "req-x"]),  # no zone
         ("date", ["yesterday", "req-x"]),
         ("date", ["0001-01-01T00:00:00+14:00", "req-x"]),  # out of range in UTC
+        ("date", [ISO + "\x00", "req-x"]),  # a NUL in the time: not bound, not parsed
         ("date", [ISO, ""]),
         ("date", [ISO, "x" * 41]),
         ("date", [ISO, "req-\x00"]),
