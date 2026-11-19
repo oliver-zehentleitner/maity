@@ -3534,8 +3534,8 @@ handle, and is clicked away too easily.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy)
-**Revisit when:** §2.3 adds or drops a built-in role, or a project's own roles (§2.3) get a place in the pickers
+**Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy); the card tsk-0e7mrvccjttn and #1948 (a project's own roles in the pickers, §2.3 "Project roles"), 2026-11
+**Revisit when:** §2.3 adds or drops a built-in role
 **See:** views.md — b71cebbf-56d9-4f65-aef9-cbb4ab5131a1 — as of 2026-10-30
 
 `js/trust.js` holds the one list of built-in roles, in the order of the
@@ -3544,10 +3544,19 @@ member does, taken from that table. Every role picker (a member's form,
 an invitation, a join, a member's own agent) fills its options from it
 by label, with the role's words as the option's tooltip and, under the
 picker, as a hint line the select is described by, following the chosen
-role. What a picker offers stays its own rule: proxy only with trust
+role. Since #1948 the project's own roles (§2.3 "Project roles") follow
+the built-in ones in the same select: read once per view
+(`M.trust.projectRoles`, one `GET …/roles` for every picker drawn in it),
+each as "name (permissions of its base)", with its description, or else
+"a role of this project, with the permissions of its base", as tooltip
+and hint. A picker drawn before that read answers is filled again when
+it does, a choice made meanwhile kept; a failed read leaves the built-in
+roles only. What a picker offers stays its own rule: proxy only with trust
 admin and only from an owner, a member's own agent every role but `ops`
-and `proxy`. A security team counts as the role whose scopes it has
-(red team as tester, purple team as reviewer) where the dashboard asks
+and `proxy`, and of the project's own roles only those whose base a
+member join may give, so none on `ops` (the join form for one's own
+agent and the owner's role picker on Members alike). A security team
+counts as the role whose scopes it has (red team as tester, purple team as reviewer) where the dashboard asks
 who reviews, tests or prepares a release; the blue team counts as
 coder, which no dashboard question asks for. The fixture hub keeps the
 same roles in one list of its own. The list is the hub's too (`scopes.ROLES`
