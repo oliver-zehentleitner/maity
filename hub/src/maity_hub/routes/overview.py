@@ -87,23 +87,33 @@ def _reporter(people: dict[str, dict[str, Any]], report: dict[str, Any]) -> dict
 
 def latest_reports(conn: Connection, project_id: str, limit: int) -> list[dict[str, Any]]:
     """The latest report of up to `limit` cards, newest `reported_at` first, from the
-    cards' `report` field (§6.6); earlier reports live only in limited events."""
-    rows = conn.execute(
-        select(
-            t.card.c.id,
-            t.card.c.title,
-            t.card.c.status,
-            t.card.c.kind,
-            t.card.c.label,
-            t.card.c.report,
-            t.card.c.updated_at,
-        ).where(t.card.c.project_id == project_id, t.card.c.report.isnot(None))
-    ).all()
-    # `reported_at` has whole seconds: within one, the card changed last came last.
-    rows = sorted(
-        rows, key=lambda r: (r.report.get("reported_at") or "", r.updated_at, r.id), reverse=True
+    cards' `report` field (§6.6); earlier reports live only in limited events.
+
+    Keys first: the database sorts and limits the ids alone, then only those cards are read
+    in full, put back in that order. `reported_at` has whole seconds: within one, the card
+    changed last comes first, then the greater id; a report without one comes last."""
+    c = t.card.c
+    ids = list(
+        conn.execute(
+            select(c.id)
+            .where(c.project_id == project_id, c.report.isnot(None))
+            .order_by(
+                func.coalesce(c.report["reported_at"].as_string(), "").desc(),
+                c.updated_at.desc(),
+                c.id.desc(),
+            )
+            .limit(limit)
+        ).scalars()
     )
-    rows = rows[:limit]
+    if not ids:
+        return []
+    found = {
+        row.id: row
+        for row in conn.execute(
+            select(c.id, c.title, c.status, c.kind, c.label, c.report).where(c.id.in_(ids))
+        )
+    }
+    rows = [found[card_id] for card_id in ids]
     people = _reporters(
         conn, {r.report["reported_by"] for r in rows if r.report.get("reported_by")}
     )
