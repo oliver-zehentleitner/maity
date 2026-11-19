@@ -75,7 +75,7 @@ def test_nobody_except_names_only_a_listed_profile(
     flow.project(owner, "other")
     elsewhere = flow.agent(make_client, owner, "other")  # a profile, no member of maity
     existing = _join(owner, agent={"id": elsewhere.id})
-    fresh = _join(owner)  # a profile the exchange creates is listed nowhere
+    fresh = _join(owner)  # a new profile, made with the join: no list names its id
     _set(migrated, "nobody_except", [owner.id])
     assert (_says(make_client, existing), _says(make_client, fresh)) == (False, False)
     _set(migrated, "nobody_except", [elsewhere.id])
@@ -117,8 +117,14 @@ def test_nothing_for_an_agent_that_is_an_active_member_already(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     member = flow.agent(make_client, owner)
+    # Room for a second instance first: the default max_instances is 1 (§6.17).
+    raised = owner.patch(f"{PROJECT}/members/{member.id}", {"team": {"max_instances": 2}})
+    assert raised.status_code == 200, raised.text
     _set(migrated, "all_except", [])
     again = _join(owner, agent={"id": member.id}, new_instance=True)
+    instead = _join(owner, agent={"id": member.id}, replaces=member.instance)
     assert not _says(make_client, again)  # a new instance enters nothing (§6.17)
+    assert not _says(make_client, instead)  # nor does a replacement
     _set(migrated, "nobody_except", [member.id])
     assert not _says(make_client, again)
+    assert not _says(make_client, instead)

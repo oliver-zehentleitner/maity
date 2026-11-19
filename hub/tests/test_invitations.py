@@ -324,6 +324,7 @@ def test_the_page_says_whether_the_new_member_reads_the_restricted_texts(
             settings = dict(conn.execute(select(t.project.c.settings)).scalar_one() or {})
             settings["restricted_access"] = value
             conn.execute(update(t.project).values(settings=settings))
+        joins.EXCHANGE_BY_ADDRESS.reset()  # each step its own room under 10 a minute (§3.4)
 
     assert (shown(member_level), shown(guest_level)) == (False, False)  # no setting
     stored({"mode": "all_except", "members": []})
