@@ -617,9 +617,17 @@ public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, 
   together and walks every project route the app has: an unknown path parameter fails the walk, so a new route
   is closed until someone opens it on purpose.
 - A gate in `ProjectRoute`: an outsider's call to any other project route answers `not_found` before FastAPI
-  reads its body or query, so no `400` names a route's fields to them. Members, owners of an agent or a runner
-  in the project, strangers to a private or unknown project, agents and callers without a session pass it
-  unchanged.
+  reads its body or query, so no `400` names a route's fields to them. Members, strangers to a private or unknown
+  project, agents and callers without a session pass it unchanged. A human who owns an agent or a runner in the
+  project passes it on `access.OWNER_CALLS` alone, the calls §1.3 lists for such an owner (the chats they read
+  along, a jour-fixe round, their agent's briefings, membership and bridge, the placements on their runner); on
+  any other route they are an outsider like any other (the lead's ruling, 2026-11-19). Strangers to a private or
+  unknown project need no gate: the body is validated before the route reads the membership, for both alike
+  (`errors.py`'s `invalid` before e.g. `create_card`'s `membership`), so a bad body tells them apart no more than
+  `not_found` does (checked, not changed, and tested).
+- A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
+  (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
+  notes; a member reads it as before.
 - An allow-list of the project view's keys (`OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from
   outside until it is named; never `repository`, `settings` beyond `language` (`role_rules`), `memory` or
   `setup`, and the links as the public page shows them.
