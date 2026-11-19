@@ -782,7 +782,11 @@ duplicate and its cursor no stale place. The page's rows read in full are decide
 only by the keys read before: on PostgreSQL every statement of `read_transaction` has its own
 snapshot (READ COMMITTED), so a write between the keys and the full read must not reach a
 caller that the write took the request from. A row that fails is left out; the page may come
-out shorter, and its cursor stays the keys'. The SQL
+out shorter, and its cursor is built from the last row it keeps, so a cursor only names a row
+the caller was shown. Rows left out after that row are read afresh by the next page. A page
+whose rows all fail reads on past them, up to `READ_ON_ROUNDS` times; if it still keeps none,
+it is empty and its cursor is the one it was called with (on the first page `_start_key`, a
+place before every request), so the next call reads afresh from there. The SQL
 rules live once, in `request_sql` (moved out of the overview, which now imports them), and
 each helper names its Python twin, which names it back. The order is the expanded keyset form
 with the id last: `CASE` over `PRIORITY_RANK` for priority, the asker's handle as one
@@ -809,9 +813,13 @@ path only when a project is made mostly of such requests.
 - Trusting the decision made when the keys were read and rendering the rows read in full as
   they come: the row can change between the two statements, and the page would show it in a
   state the caller was never decided for.
+- Keeping the cursor of the keys when a row fails on the full read: the cursor would name a
+  row the page left out.
 - REPEATABLE READ for the listing's transaction on PostgreSQL, one snapshot for every
-  statement: `read_transaction` takes the engine's isolation (READ COMMITTED, set nowhere in
-  the hub), and changing it for one route is a second kind of read transaction to keep apart.
+  statement: `read_transaction` takes the engine's isolation, READ COMMITTED, which `db.py`
+  `_engine_options` sets on every server engine. Only the notifications read
+  (`routes/notifications.py` `_snapshot`) asks for REPEATABLE READ, and a second such read for
+  one route is a second kind of read transaction to keep apart.
 
 
 ## Admin-set instance settings in one table with a registry in code, admin-set secrets sealed in a table of their own
