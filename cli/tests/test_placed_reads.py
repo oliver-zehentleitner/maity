@@ -305,9 +305,16 @@ def test_the_changelog_states_the_agy_scratch_residual_honestly() -> None:
     """The residual wording does not overclaim same-user isolation (review round 3): the agy
     scratch is not said to be reachable only by the owning placement, and the accepted same-user
     exposure is named. Red on dc826d9b, whose changelog claimed an unlistable parent and an
-    unguessable name only the owning placement could reach."""
-    changelog = Path(__file__).resolve().parents[2] / "changelog.d"
-    text = (changelog / "agent-g-agy-writable-scratch.md").read_text(encoding="utf-8")
+    unguessable name only the owning placement could reach. The agy writable-scratch fragment
+    was folded into CHANGELOG.md's 0.1.0a10 release section, so the assertions read that section."""
+    changelog = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
+    lines = changelog.read_text(encoding="utf-8").splitlines(keepends=True)
+    start = next(i for i, ln in enumerate(lines) if ln.startswith("## [0.1.0a10]"))
+    end = next(
+        (i for i in range(start + 1, len(lines)) if lines[i].startswith("## [")),
+        len(lines),
+    )
+    text = "".join(lines[start:end])
     assert "only the owning placement" not in text
     assert "unlistable" not in text and "unguessable" not in text
     assert "same host user" in text  # the accepted residual is stated
