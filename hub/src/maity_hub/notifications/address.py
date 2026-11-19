@@ -25,7 +25,7 @@ from sqlalchemy.exc import IntegrityError
 
 from maity_hub import admin, catalog, clock
 from maity_hub import tables as t
-from maity_hub.auth import passwords, sessions
+from maity_hub.auth import known_sources, passwords, sessions
 from maity_hub.auth.email_links import recipient_over
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address as addresses
@@ -272,7 +272,7 @@ def apply_address(
         },
     )
     link = f"{public_url}/mail/verify/{token}"
-    if _recipient_over(wanted, human_id):
+    if _recipient_over(known_sources.address_key(conn, addresses.normalized(wanted)), human_id):
         return  # the address had its share: the link stays pending, no mail is sent
     # Never the handle, the name or projects: nobody confirmed this address yet (§18.4).
     # The language is the human's own (§6.2); it names nobody.
@@ -288,9 +288,10 @@ def apply_address(
     )
 
 
-def _recipient_over(address: str, human_id: str) -> bool:
-    """Count one verification mail to `address`, asked by `human_id`, against the address's
-    hour and day in asking accounts; True when the address has no place left for it."""
+def _recipient_over(address_key: str, human_id: str) -> bool:
+    """Count one verification mail to the address of `address_key` (its
+    `known_sources.address_key`), asked by `human_id`, against the address's hour and day in
+    asking accounts; True when the address has no place left for it."""
     limiters = (
         VERIFY_BY_RECIPIENT_HOUR,
         VERIFY_BY_RECIPIENT_DAY,
@@ -299,7 +300,7 @@ def _recipient_over(address: str, human_id: str) -> bool:
         VERIFY_BY_RECIPIENT_MAILS_HOUR,
         VERIFY_BY_RECIPIENT_MAILS_DAY,
     )
-    return recipient_over(limiters, f"verify\0{addresses.normalized(address)}", human_id)
+    return recipient_over(limiters, address_key, human_id)
 
 
 def verify(

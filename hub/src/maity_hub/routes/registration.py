@@ -33,7 +33,7 @@ from maity_hub import (
 )
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id
-from maity_hub.auth import anonymous, passwords, second_factor
+from maity_hub.auth import anonymous, known_sources, passwords, second_factor
 from maity_hub.auth import email_links as links
 from maity_hub.deps import HumanCaller, engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, forbidden, invalid, not_found, rate_limited
@@ -206,7 +206,10 @@ def _store(
     """§2.7.1 step 3, after the answer: drop, mail the account's owner, or make a pending
     registration and mail its link."""
     normalized = registration.normalized(given)
-    pair = f"{normalized}\x00{limit_key(source)}"
+    address.prepare(engine, hub.secret_key)  # before the key's read and the lock's transaction
+    with engine.connect() as conn:
+        keyed = known_sources.address_key(conn, normalized)
+    pair = f"{keyed} {limit_key(source)}"
     over = (
         BY_PAIR_SHORT.hit(pair)
         or BY_PAIR_DAY.hit(pair)
@@ -219,11 +222,10 @@ def _store(
                 BY_ADDRESS_MAILS_HOUR,
                 BY_ADDRESS_MAILS_DAY,
             ),
-            normalized,
+            keyed,
             limit_key(source),
         )
     )
-    address.prepare(engine, hub.secret_key)  # before the lock's transaction
     with engine.begin() as conn:
         now = clock.now()
         conn.execute(

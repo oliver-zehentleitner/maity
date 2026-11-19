@@ -81,6 +81,9 @@ def patch_settings(
 ) -> JSONResponse:
     session_hash = _human(caller)
     hub = settings_of(request)
+    # The key of the verification mail's counts (`known_sources.address_key`), before the
+    # transaction that reads it.
+    addresses.prepare(engine_of(request), hub.secret_key)
 
     def run() -> tuple[dict[str, Any], int]:
         with events.transaction(engine_of(request)) as conn:
@@ -159,6 +162,7 @@ def _decide(
     if set(body) != {"id", "address"}:
         raise invalid({"body": "id_and_address"})
     hub = settings_of(request)
+    addresses.prepare(engine_of(request), hub.secret_key)  # the key of the verification's counts
     with engine_of(request).begin() as conn:
         human, session = _context(conn, caller, session_hash)
         address.decide_held(
