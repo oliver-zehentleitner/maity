@@ -1420,13 +1420,43 @@ def _cursor_of(order: _Order, row: Any) -> str:
     return _next_cursor(order.sort, [*head, at.isoformat(), row_id])
 
 
-def _full_rows(conn: Connection, ids: list[str]) -> list[Any]:
-    """The requests `ids` in full, in that order; one gone since its key was read is left
-    out."""
-    if not ids:
-        return []
-    found = {row.id: row for row in _read_in_full(conn, ids, ())}
-    return [found[i] for i in ids if i in found]
+def _all_redecided(
+    conn: Connection,
+    caller: Caller,
+    listings: Sequence[tuple[_Listing, Any]],
+    source: dict[str, int | None],
+    status: str,
+    class_: str | None,
+    asked_by: str | None,
+) -> dict[str, Any]:
+    """The rows of `GET /requests`' page in full, by id, those still listed: `source` maps
+    each id to the index in `listings` of the listing its key came from, None for the
+    personal inbox. One statement reads them all, each id with its own listing's filters
+    (`_Listing.where`, `_personal_where`); a project's rows are decided again by their
+    listing (`_redecided`), the personal ones by the inbox's rule (`_personal_decided`), as in
+    `_project_page` (3c9e5a71). A row that fails is left out."""
+    if not source:
+        return {}
+    r = t.request.c
+    by_source: dict[int | None, list[str]] = {}
+    for row_id, n in source.items():
+        by_source.setdefault(n, []).append(row_id)
+    personal = _personal_where(caller, status=status, class_=class_)
+    each = [
+        and_(r.id.in_(ids), *(personal if n is None else listings[n][0].where))
+        for n, ids in by_source.items()
+    ]
+    full: dict[int | None, list[Any]] = {}
+    for row in _read_in_full(conn, list(source), [or_(*each)]):
+        full.setdefault(source[row.id], []).append(row)
+    found: dict[str, Any] = {}
+    for n, rows in full.items():
+        if n is None:
+            kept = _personal_decided(conn, caller, rows, asked_by)
+        else:
+            kept = _redecided(conn, listings[n][0], rows)
+        found.update((row.id, row) for row in kept)
+    return found
 
 
 def _personal_keys(
@@ -1447,8 +1477,26 @@ def _personal_keys(
     if to not in ("me", "all"):
         return []  # addressed to the caller, never to a member, role or the owner
     r = t.request.c
-    # Addressed to the caller, or a cross-owner `reports_to` request they asked as an owner
-    # outside the project (§7), as `_personal_inbox` reads them.
+    where = _personal_where(caller, status=status, class_=class_)
+    keys = _key_columns(order)
+    decided_by = [*keys, r.to_human, r.proposal, r.asked_by, r.asked_by_human]
+    query = select(*decided_by).select_from(order.source).where(*where)
+    since = [order.after(after)] if after is not None else []
+    kept: list[Any] = []
+    for size in _leftover_batches(limit):
+        batch = list(conn.execute(query.where(*since).order_by(*order.ordered()).limit(size)))
+        kept += _personal_decided(conn, caller, batch, asked_by)
+        if len(kept) > limit or len(batch) < size:
+            break
+        since = [order.after(order.key(batch[-1]))]
+    return kept[: limit + 1]
+
+
+def _personal_where(caller: Caller, *, status: str, class_: str | None) -> list[Any]:
+    """The personal inbox's filters in SQL: addressed to the caller, or a cross-owner
+    `reports_to` request they asked as an owner outside the project (§7), as `_personal_inbox`
+    reads them; then `status` and `class`."""
+    r = t.request.c
     where: list[Any] = [
         r.personal.is_(True),
         (r.to_human == caller.human_id) | (r.asked_by_human == caller.human_id),
@@ -1457,23 +1505,19 @@ def _personal_keys(
         where.append(r.status.in_([s for s in status.split(",") if s]))
     if class_ is not None:
         where.append(r["class"] == class_)
-    keys = _key_columns(order)
-    decided_by = [*keys, r.to_human, r.proposal, r.asked_by, r.asked_by_human]
-    query = select(*decided_by).select_from(order.source).where(*where)
-    since = [order.after(after)] if after is not None else []
-    kept: list[Any] = []
-    for size in _leftover_batches(limit):
-        batch = list(conn.execute(query.where(*since).order_by(*order.ordered()).limit(size)))
-        kept += [
-            row
-            for row in batch
-            if (row.to_human == caller.human_id or _is_cross_owner(row))
-            and (asked_by is None or _asker_matches(conn, row, caller, asked_by))
-        ]
-        if len(kept) > limit or len(batch) < size:
-            break
-        since = [order.after(order.key(batch[-1]))]
-    return kept[: limit + 1]
+    return where
+
+
+def _personal_decided(
+    conn: Connection, caller: Caller, rows: Sequence[Any], asked_by: str | None
+) -> list[Any]:
+    """The `rows` (read with `_personal_where`) that `_personal_inbox` keeps."""
+    return [
+        row
+        for row in rows
+        if (row.to_human == caller.human_id or _is_cross_owner(row))
+        and (asked_by is None or _asker_matches(conn, row, caller, asked_by))
+    ]
 
 
 def _all_page(
@@ -1491,8 +1535,9 @@ def _all_page(
     """`GET /requests`: `_page(_sorted(_all_entries(…)))` with the database ordering and
     limiting. Each membership's listing gives its first page plus one after the cursor
     (`_listing_keys`), the personal inbox its own (`_personal_keys`); merged by key, the first
-    page plus one are the page's keys, and only those rows are read in full. A project whose
-    `to` is no address there is left out, as before (`_all_entries`)."""
+    page plus one are the page's keys, and only those rows are read in full and decided again
+    (`_all_redecided`). A project whose `to` is no address there is left out, as before
+    (`_all_entries`)."""
     listings: list[tuple[_Listing, dict[str, Any]]] = []
     for project in _member_projects(conn, caller):
         full_name = namespace.full_name(conn, project)
@@ -1516,9 +1561,11 @@ def _all_page(
     after_key = _cursor_key(cursor, sort) if cursor is not None else None
     order = _order(conn, sort)
     after = _sql_key(sort, after_key) if after_key is not None else None
-    streams: list[list[tuple[Any, dict[str, Any] | None]]] = [
-        [(row, extra) for row in _listing_keys(conn, listing, order, after, limit)]
-        for listing, extra in listings
+    # Each key with the listing it came from (its index in `listings`), None for the personal
+    # inbox: the row read in full is decided again by that listing's rule.
+    streams: list[list[tuple[Any, int | None]]] = [
+        [(row, n) for row in _listing_keys(conn, listing, order, after, limit)]
+        for n, (listing, _extra) in enumerate(listings)
     ]
     personal = _personal_keys(
         conn, caller, order, after, limit, status=status, class_=class_, asked_by=asked_by, to=to
@@ -1532,8 +1579,10 @@ def _all_page(
     )
     page = merged[:limit]
     next_cursor = _cursor_of(order, page[-1][0]) if len(merged) > limit else None
-    extras = {row.id: extra for row, extra in page}
-    rows = _full_rows(conn, [row.id for row, _ in page])
+    source = {row.id: n for row, n in page}
+    extras = {row.id: None if n is None else listings[n][1] for row, n in page}
+    decided = _all_redecided(conn, caller, listings, source, status, class_, asked_by)
+    rows = [decided[row.id] for row, _ in page if row.id in decided]
     project_inline: dict[str, Any] = {}
     org_inline: dict[str, Any] = {}
 

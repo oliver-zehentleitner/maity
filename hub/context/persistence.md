@@ -794,7 +794,9 @@ holds the new path to them page by page.
 
 `GET /requests` (`_all_page`) merges by key one such stream per membership (`_listing_keys`,
 the page plus one each) and the personal inbox read the same way (`_personal_keys`), then
-reads the page's rows in full; a project whose `to` is no address there is skipped, as
+reads the page's rows in full in one statement and decides them again too, project rows by
+the listing their key came from and personal ones by the inbox's rule; a project whose `to`
+is no address there is skipped, as
 before. It sends a few statements per project per page, as the old path did. `_all_entries`
 stays as its readable rule, and `test_requests_all_paging.py` holds it to that.
 

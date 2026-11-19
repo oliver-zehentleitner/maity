@@ -21,10 +21,12 @@ from sqlalchemy import Connection, Engine, delete, insert, select, update
 from maity_hub import clock, cross_owner
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
+from maity_hub.db import read_transaction
+from maity_hub.routes import requests as requests_route
 from maity_hub.routes.requests import _all_entries, _all_page, _key, _page, _render, _sorted
 from tests import factory, flow
 from tests.conftest import ClientFactory
-from tests.test_overview import Person, jour_fixe_rounds, seed_requests
+from tests.test_overview import Person, jour_fixe_rounds, person, seed_requests
 from tests.test_requests import asked
 
 SORTS = ("priority", "date", "agent")
@@ -342,6 +344,144 @@ def test_a_request_that_changes_between_pages_across_projects(
                 inbox = Inbox(conn, seeded.caller, to, sort, "open")
                 walked += _walk_with_change(inbox, changes[change], change == "personal_answer")
     assert walked >= 3
+
+
+# As on the project's list (test_request_paging.py `REDECIDED`): the page's keys are read
+# before its rows are read in full, and on PostgreSQL each statement of `read_transaction` has
+# its own snapshot, so the rows read in full are decided again: a project's by its listing, a
+# personal one by the inbox's rule. Each case: (the request changed, `to`, status, its values
+# before the listing, the change in between).
+REDECIDED_ALL: dict[str, tuple[str, str, str, dict[str, Any], dict[str, Any]]] = {
+    "forwarded_on": ("project", "me", "open", {"to_kind": "owner"}, {"holder_member": "z"}),
+    "answered": ("project", "me", "open", {"to_kind": "owner"}, {"status": "answered"}),
+    "addressed_elsewhere": ("project", "x", "all", {}, {"to_member": "z"}),
+    "addressed_elsewhere_me": (
+        "project",
+        "me",
+        "all",
+        {"to_kind": "owner"},
+        {"to_kind": "member", "to_member": "z"},
+    ),
+    "personal_answered": ("personal", "me", "open", {}, {"status": "answered"}),
+    "personal_readdressed": ("personal", "all", "all", {}, {"to_human": "bob"}),
+}
+
+
+@pytest.mark.parametrize("own_connection", [True, False], ids=["same_connection", "committed"])
+@pytest.mark.parametrize("change", list(REDECIDED_ALL))
+def test_the_rows_read_in_full_are_decided_again_across_projects(
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
+    own_connection: bool,
+) -> None:
+    """`same_connection` writes on the listing's own connection, which the full read sees on
+    every database. `committed` writes from another connection and commits: the full read
+    sees it on PostgreSQL; SQLite reads one snapshot per read transaction, so there the page
+    is the one from before the change. A second project's request is on every page, so the
+    full read covers more than one listing."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    agents = {name: flow.agent(make_client, owner) for name in ("x", "y", "z")}
+    members = {name: person(migrated, a.id).membership for name, a in agents.items()}
+    bob = factory.human(migrated, "bob")
+    for n in range(3):  # what the owner lists in any case: addressed to them
+        asked(agents["x"], to="owner", title=f"Mine {n}?")
+    project_row = asked(agents["y"], to=agents["x"].id, title="Which?")["id"]
+    r = t.request.c
+    beta = factory.project(migrated, "beta", owner_id=bob)
+    factory.membership(migrated, beta, "owner", human_id=bob)
+    in_beta = factory.membership(migrated, beta, "member", human_id=owner.id)
+    personal_row = "req-prsdecide001"
+    with migrated.begin() as conn:
+        template = conn.execute(select(t.request).where(r.id == project_row)).one()._mapping
+        to_caller = {"to_kind": "member", "to_member": in_beta, "asked_by": None}
+        conn.execute(
+            insert(t.request),
+            [
+                {**template, **to_caller, "id": "req-betadecide01", "project_id": beta},
+                {
+                    **template,
+                    "id": personal_row,
+                    "personal": True,
+                    "to_kind": "human",
+                    "to_member": None,
+                    "to_human": owner.id,
+                    "filed_by": "hub",
+                },
+            ],
+        )
+    kind, to, status, before, between = REDECIDED_ALL[change]
+    changed = personal_row if kind == "personal" else project_row
+    to = agents[to].id if to in agents else to
+    names: dict[str, Any] = {**members, "bob": bob}
+
+    def values(given: dict[str, Any]) -> dict[str, Any]:
+        out = {c: names.get(v, v) if isinstance(v, str) else v for c, v in given.items()}
+        if out.get("to_kind") == "owner":
+            out["to_member"] = None
+        return out
+
+    with migrated.begin() as conn:
+        if before:
+            conn.execute(update(t.request).where(r.id == changed).values(**values(before)))
+        restore = dict(
+            conn.execute(select(*(r[c] for c in between)).where(r.id == changed)).one()._mapping
+        )
+    caller = Caller(kind="human", via="cookie", human_id=owner.id)
+    original = requests_route._read_in_full
+
+    def write(conn: Connection, row_values: dict[str, Any]) -> None:
+        conn.execute(update(t.request).where(r.id == changed).values(**row_values))
+
+    fired: list[bool] = []
+    for sort in SORTS:
+        with migrated.connect() as conn:
+            earlier = Inbox(conn, caller, to, sort, status)
+            shown = [e["id"] for e in earlier.entries]
+            assert changed in shown, (change, sort)
+            if to in ("me", "all"):
+                assert "req-betadecide01" in shown, (change, sort)
+            before_page = earlier.oracle(10, None)
+        fired.clear()
+
+        def hooked(conn: Connection, ids: list[str], listed: Any) -> list[Any]:
+            # After the keys are read (every listing's and the personal inbox's), before the
+            # full read.
+            fired.append(True)
+            if own_connection:
+                write(conn, values(between))
+            else:
+                with migrated.begin() as other:
+                    write(other, values(between))
+            return original(conn, ids, listed)
+
+        monkeypatch.setattr(requests_route, "_read_in_full", hooked)
+        if own_connection:
+            with migrated.connect() as conn:
+                page = Inbox(conn, caller, to, sort, status).paged(10, None)
+                later = Inbox(conn, caller, to, sort, status).oracle(200, None)
+                conn.rollback()
+        else:
+            with read_transaction(migrated) as conn:
+                page = Inbox(conn, caller, to, sort, status).paged(10, None)
+            with migrated.connect() as conn:
+                later = Inbox(conn, caller, to, sort, status).oracle(200, None)
+            with migrated.begin() as conn:
+                write(conn, restore)
+        monkeypatch.setattr(requests_route, "_read_in_full", original)
+        where = (change, sort, own_connection)
+        assert fired == [True], where  # one full read for the whole page
+        if not own_connection and migrated.dialect.name == "sqlite":
+            assert page == before_page, where
+            continue
+        # Only what the inbox holds after the change, each item as it shows it now.
+        listed = {item["id"]: item for item in later["items"]}
+        assert changed not in listed, where
+        assert page["items"] or to not in ("me", "all"), where  # the rest still listed
+        for item in page["items"]:
+            assert item == listed.get(item["id"]), where
 
 
 def test_a_cursor_the_hub_gave_before_still_pages_across_projects(
