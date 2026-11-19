@@ -327,9 +327,54 @@ window.Maity = window.Maity || {};
   function me() {
     return fixtures()["me.json"];
   }
+  // §5.1 "Stars": the public projects of others the fixture caller can star, besides any fixture
+  // project.json with its page on (none of the caller's own is starrable: they are memberships).
+  // `stranger/tool` is the smoke test's public non-member project (tools/smoke.js, the visitor).
+  const OUTSIDE_PUBLIC = [{ id: "prj-tool00000001", full_name: "stranger/tool", name: "Tool", public_page: "on", state: "build" }];
+  // The bound (`max_starred_per_human`, default 100), set lower by the smoke test for `too_many`.
+  const fixtureStarred = { max: 100 };
+  // The stored ids, hidden ones included, in the order starred; from me.json's view at first.
+  let starredIds = null;
+  const starredStored = () => starredIds || (starredIds = (me().member.starred || []).map((s) => s.id));
+  function starrable() {
+    const views = Object.keys(fixtures()).filter((k) => k.endsWith("/project.json")).map((k) => fixtures()[k]);
+    return OUTSIDE_PUBLIC.concat(views).filter((p) => p && p.id && p.public_page === "on" && p.state !== "archived");
+  }
+  // The entries a read shows: public now and no membership (hub/stars.py `visible`).
+  function starredShown(ids) {
+    const mine = me().projects.map((p) => p.id);
+    const open = new Map(starrable().map((p) => [p.id, p.full_name]));
+    return ids.filter((id) => !mine.includes(id) && open.has(id)).map((id) => ({ id, full_name: open.get(id) }));
+  }
+  function starredChecked(given, path) {
+    const refuse = (why, extra) => fail(400, "invalid", "the request does not validate", path, Object.assign({ fields: { starred: why } }, extra || {}));
+    if (given === null || given === undefined) refuse("required");
+    if (!Array.isArray(given) || given.some((id) => typeof id !== "string")) refuse("list_type");
+    if (new Set(given).size !== given.length) refuse("duplicate");
+    const stored = starredStored();
+    const shown = new Set(starredShown(stored).map((s) => s.id));
+    const hidden = stored.length - shown.size;
+    if (given.length > stored.length && given.length > fixtureStarred.max) refuse("too_many", { hidden });
+    if (given.some((id) => me().projects.some((p) => p.id === id))) refuse("member");
+    const open = new Set(starredShown(given).map((s) => s.id));
+    if (given.some((id) => !open.has(id))) refuse("not_public");
+    // Each hidden entry right after the visible entry it followed, or first (stars.py `_placed`).
+    const after = new Map();
+    let anchor = null;
+    stored.forEach((id) => {
+      if (shown.has(id)) { if (given.includes(id)) anchor = id; } else after.set(anchor, (after.get(anchor) || []).concat(id));
+    });
+    const placed = (after.get(null) || []).slice();
+    given.forEach((id) => { placed.push(id); placed.push(...(after.get(id) || [])); });
+    if (given.some((id) => !stored.includes(id)) && placed.length > fixtureStarred.max) refuse("too_many", { hidden });
+    return placed;
+  }
+
   // GET /me as the hub sends it; PATCH /me answers the same (§5.1).
   function meView() {
     const data = me();
+    // §5.1 "Stars": a human's, as the read shows them.
+    if (data.member.kind === "human") data.member.starred = starredShown(starredStored());
     data.projects.forEach((p) => {
       p.open_requests = openFor(p.slug).length;
       p.state = project(p.slug, "").state;
@@ -2638,12 +2683,15 @@ window.Maity = window.Maity || {};
         if (list && list.some((id) => !mine.includes(id))) fail(400, "invalid", "the request does not validate", path, { fields: { start_tabs: "not_a_member" } });
         mm.start_tabs = list ? list.slice() : null;
       }
+      // §5.1 "Stars", as hub/stars.py `checked`: always the whole list; a hidden entry (a project
+      // not public now) keeps its place, a membership is `member`, an unknown id `not_public`.
+      if ("starred" in body) starredIds = starredChecked(body.starred, path);
       // §5.1 "Experiment notice": only `true`; the first confirmation's time is kept.
       if ("experiment_notice_understood" in body) {
         if (body.experiment_notice_understood !== true) fail(400, "invalid", "the request does not validate", path, { fields: { experiment_notice_understood: "must_be_true" } });
         if (!mm.experiment_notice_understood_at) mm.experiment_notice_understood_at = nowIso();
       }
-      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs", "experiment_notice_understood"];
+      const profileFields = ["public_profile", "public_presence", "public_stats", "public_agents", "public_bio", "website", "social", "links_visible", "handle", "interface_language", "start_tabs", "starred", "experiment_notice_understood"];
       if (Object.keys(body).length && Object.keys(body).every((k) => profileFields.includes(k))) return meView();
       const fields = {};
       const MEAT = ["meat_proxy", "meat_proxy_lead", "meat_proxy_hands"];
@@ -6350,6 +6398,8 @@ window.Maity = window.Maity || {};
     fixtureManages,
     // The fixture hub's rule for the test mail's recipient (§16.3), for the smoke test.
     fixtureMailTestTo,
+    // The fixture hub's bound on stars (§5.1), lowered by the smoke test for `too_many`.
+    fixtureStarred,
     source,
     ApiError,
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),

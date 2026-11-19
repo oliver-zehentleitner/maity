@@ -921,6 +921,7 @@ def main() -> int:
                     form_column_layout(run, browser)
                     switch_busy_layout(run, browser)
                     report_pages_round(run, browser)
+                    outsider_tab_round(run, browser)
                     public_first_paint_round(run, browser)
                     stored_pages_policy_round(run, browser)
                     second_hub_round(run, browser, work, artifacts)
@@ -5265,13 +5266,104 @@ def report_pages_round(run: Run, browser) -> None:
     expect(page.get_by_role("button", name="Report this agent to the instance's admins", exact=True)).to_be_visible()
     # A project the reader is no member of shows its public page under the reader's own header
     # (§16.9), which is none of "All projects": neither that link nor its Inbox tab is current
-    # (tsk-c9xzrzdcw8sb, the Inbox tab was marked).
+    # (tsk-c9xzrzdcw8sb, the Inbox tab was marked). The one current tab is the project's own dashed
+    # one (§5.1 "Stars", tsk-kqn8zhptf06k; outsider_tab_round).
     page.goto(run.base + "/owner/e2e-alpha")
     expect(page.locator("section.view-visitor")).to_be_visible()
     expect(page.locator("header nav.switcher a[href='/all']")).to_be_visible()
-    expect(page.locator("header nav.switcher [aria-current], header nav.views [aria-current]")).to_have_count(0)
+    expect(page.locator("header nav.switcher a[href='/all'][aria-current], header nav.views [aria-current]")).to_have_count(0)
+    expect(page.locator("header nav.switcher [aria-current]")).to_have_count(1)
+    expect(page.locator("header nav.switcher a.outsider[aria-current='page']")).to_have_attribute("data-outsider", "owner/e2e-alpha")
     run.shot(page, "visitor-project-signed-in")
     no_problems(run, "report pages")
+    context.close()
+
+
+OUTSIDER_TAB = "header nav.switcher a.outsider[data-outsider='owner/e2e-alpha']"
+DASHED = ("(s) => { const e = document.querySelector(s);"
+          " return !!e && getComputedStyle(e).borderTopStyle === 'dashed'; }")
+
+
+def outsider_tab_round(run: Run, browser) -> None:
+    """The outsider's dashed tab and a starred tab (docs/api.md §5.1 "Stars", §6.30 Q2;
+    tsk-kqn8zhptf06k A1; web/context/views.md f461c919), on the hub, for REPORTER, who is no member
+    of e2e-alpha (report_pages_round made them): opening its public page gives a dashed tab, the
+    current one, at 1280 and 390 px in both schemes, axe clean; it lasts through a reload, not into
+    another browser tab (sessionStorage). Starred through `PATCH /me` (the star button comes with
+    the outsider read, A2), the project is a dashed tab with a filled star in a fresh browser tab;
+    the star's button takes it off, `/me` then lists none, and the tab stays for that tab's session.
+    The star part needs the hub's `starred` (#1986)."""
+    run.step("outsider tab: a public project one is no member of is a dashed tab; a starred one has a star that unstars")
+    handle, name, address, password = REPORTER
+    context, page = new_page(run, browser)
+    page.goto(run.base + "/login")
+    fill_sign_in(page, address, password)
+    expect(page.locator("header .me")).to_contain_text(name)
+    tab = page.locator(OUTSIDER_TAB)
+    for width, height in ((1280, 900), (390, 844)):
+        page.set_viewport_size({"width": width, "height": height})
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            where = f"the outsider's tab at {width}x{height} {scheme}"
+            page.goto(run.base + "/owner/e2e-alpha")
+            expect(page.locator("section.view-visitor")).to_be_visible()
+            expect(tab).to_have_count(1)
+            expect(tab).to_have_attribute("aria-current", "page")
+            expect(page.locator("header nav.switcher a[href='/all'][aria-current]")).to_have_count(0)
+            # The dashed edge as the stylesheet draws it, waited for before it is read once (tsk-z4ps7cg7ve25).
+            settle(page, DASHED, OUTSIDER_TAB)
+            assert tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", f"{where}: not dashed"
+            settle(page, NOT_WIDER, None)
+            wide = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+            assert wide <= 0, f"{where}: {wide} px wider than the window"
+            run.shot(page, f"outsider-tab-{width}-{scheme}")
+            if (width, scheme) == (1280, "light"):
+                run.a11y(page, "the outsider's dashed tab on a public project")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.emulate_media(color_scheme="light")
+    # The browser session's: through a reload and on All projects, not in another browser tab.
+    page.reload()
+    expect(tab).to_have_count(1)
+    page.goto(run.base + "/all")
+    expect(tab).to_have_count(1)
+    expect(tab).not_to_have_attribute("aria-current", "page")
+    other = context.new_page()
+    watch_page(run, other)
+    other.goto(run.base + "/all")
+    expect(other.locator("header nav.switcher a[href='/all']")).to_have_attribute("aria-current", "page")
+    expect(other.locator(OUTSIDER_TAB)).to_have_count(0)
+    other.close()
+
+    # Starred (#1986's `starred` on /me): the project's id from its agent's clone, since the
+    # public page carries none (§16.9).
+    project_id = run.api(run.work / "clone-alpha", "GET", "/projects/owner/e2e-alpha")["id"]
+    headers = {**_csrf(page), "Content-Type": "application/json"}
+    starred = page.request.patch(f"{run.base}/api/v1/me", headers=headers, data=json.dumps({"starred": [project_id]}))
+    assert starred.status == 200, (starred.status, starred.text())
+    assert [s["id"] for s in starred.json()["member"]["starred"]] == [project_id], starred.text()
+    fresh = context.new_page()
+    watch_page(run, fresh)
+    fresh.goto(run.base + "/all")
+    star_tab = fresh.locator(OUTSIDER_TAB)
+    expect(star_tab).to_have_class(re.compile(r"\bstarred\b"))
+    star = fresh.locator("header nav.switcher .outsider-tab button.tab-star")
+    expect(star).to_have_attribute("aria-pressed", "true")
+    expect(star).to_have_accessible_name("Remove the star from owner/e2e-alpha")
+    settle(fresh, DASHED, OUTSIDER_TAB)
+    assert star_tab.evaluate("e => getComputedStyle(e).borderTopStyle") == "dashed", "the starred tab is not dashed"
+    box = star.bounding_box()
+    assert box and box["width"] >= 24 and box["height"] >= 24, f"the star's target is {box}"
+    run.shot(fresh, "outsider-tab-starred")
+    run.a11y(fresh, "a starred dashed tab")
+    star.click()
+    expect(fresh.locator("header .tabs-said")).to_have_text("owner/e2e-alpha is no longer starred; its tab stays until you close it")
+    expect(star).to_have_count(0)
+    expect(star_tab).to_have_count(1)
+    expect(star_tab).not_to_have_class(re.compile(r"\bstarred\b"))
+    me = fresh.request.get(f"{run.base}/api/v1/me").json()
+    assert me["member"]["starred"] == [], me["member"]["starred"]
+    fresh.close()
+    no_problems(run, "outsider tab")
     context.close()
 
 

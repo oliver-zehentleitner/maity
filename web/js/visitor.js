@@ -632,7 +632,9 @@ window.Maity = window.Maity || {};
     const inProject = PROJECT_KINDS.includes(answer.kind);
     const base = inProject ? projectBase(answer.path) : answer.path;
     if (signedIn) {
-      await head();
+      // A project's page is a dashed tab of the reader's own (§5.1 "Stars"): its full name, and
+      // its name where the page carries it (the Overview's; the others carry none).
+      await head(inProject ? { full_name: base.slice(1), name: answer.kind === "project" && d.name ? d.name : null } : null);
       if (!live()) return true;
     } else {
       const signIn = h("a", { class: "visitor-sign-in", href: M.withNext("/login", path) }, M.t("visitor.sign_in"));

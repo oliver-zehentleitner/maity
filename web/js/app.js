@@ -1492,7 +1492,8 @@ window.Maity = window.Maity || {};
       h("a", { href: "/all", "aria-current": !ctx.visiting && ALL_PAGES.some((page) => page.scope === ctx.scope) ? "page" : null }, M.t("header.all_projects"), all),
       // The tabs this browser has open, in its order (js/tabs.js): dragged
       // into place, or moved with Alt+Shift+Arrow, or from the tabs menu.
-      M.tabs.open(ctx).map((p) => h("a", {
+      // A public project of which the human is no member is drawn dashed (outsiderTab).
+      M.tabs.row(ctx).map((p) => (p.outsider ? outsiderTab(ctx, p) : h("a", {
         href: projectLink(p.full_name, "inbox"),
         "aria-current": ctx.scope === "project" && p.full_name === ctx.slug ? "page" : null,
         "data-project": p.id,
@@ -1509,10 +1510,80 @@ window.Maity = window.Maity || {};
       p.name,
       privateMark(p),
       h("span", { class: "dot state-dot-" + p.state, title: M.dom.word("project", p.state), "aria-label": M.dom.word("project", p.state) }),
-      pill(p))));
+      pill(p)))));
     // Runners belong to the person, not to a project (the maintainer's
     // wish, tsk-cb6myw32def0): they are in the gear menu, not this row. A new
     // project is in the "+" menu, so the tabs menu stands right after the tabs (tsk-hp9gq9rmrdq2).
+  }
+
+  // A public project the human is no member of (docs/api.md §5.1 "Stars"): a dashed tab that
+  // opens its public page, current while that page is shown. A starred one keeps its place
+  // among the tabs (dragged and moved as they are) and carries a filled star whose button
+  // takes the star off; this session's own tab has no star yet, since starring needs the
+  // project's id, which the public page does not carry (A2 of tsk-kqn8zhptf06k). The star is
+  // a button beside the link, not inside it: a link holds no other control.
+  function outsiderTab(ctx, p) {
+    const movable = !!p.starred;
+    const link = h("a", {
+      href: "/" + M.api.projectPath(p.full_name),
+      class: "outsider" + (p.starred ? " starred" : ""),
+      "aria-current": ctx.visiting === p.full_name ? "page" : null,
+      "data-project": p.id || null,
+      "data-outsider": p.full_name,
+      draggable: movable ? "true" : null,
+      title: p.starred ? M.t("tabs.outsider_starred", { name: p.full_name }) : M.t("tabs.outsider", { name: p.full_name }),
+      ondragstart: movable ? (e) => dragTab.start(e, p.id) : null,
+      ondragover: movable ? (e) => dragTab.over(e, p.id) : null,
+      ondragleave: movable ? (e) => dragTab.unmark(e.currentTarget) : null,
+      ondrop: movable ? (e) => dragTab.drop(ctx, e, p.id) : null,
+      ondragend: movable ? () => dragTab.end() : null,
+      onkeydown: movable ? (e) => moveTabByKey(ctx, e, p) : null,
+    },
+    projectMark(p.full_name, p.full_name.split("/").pop(), null, "small"),
+    p.name,
+    h("span", { class: "visually-hidden" }, ", " + outsiderSaid(p)));
+    if (!p.starred) return link;
+    const star = h("button", {
+      type: "button",
+      class: "tab-star",
+      "aria-pressed": "true",
+      "aria-label": M.t("tabs.unstar", { name: p.name }),
+      title: M.t("tabs.unstar", { name: p.name }),
+      onclick: () => unstarTab(ctx, p),
+    }, M.icons.star(14));
+    return h("span", { class: "outsider-tab" }, link, star);
+  }
+
+  // What a dashed tab is, after its name: on the tab for a screen reader, in the tabs menu for all.
+  const outsiderSaid = (p) => (p.starred ? M.t("tabs.outsider_starred_said") : M.t("tabs.outsider_said"));
+  // Why `PATCH /me` refused a `starred` list (§5.1), in the reader's words.
+  const STAR_REFUSED = {
+    not_public: () => M.t("tabs.star_refused.not_public"),
+    member: () => M.t("tabs.star_refused.member"),
+    duplicate: () => M.t("tabs.star_refused.duplicate"),
+    too_many: () => M.t("tabs.star_refused.too_many"),
+  };
+
+  // The star's button: the tab stays, unstarred, for this session; a refusal leaves the star
+  // and says why. Refused as `member`, the human is one now: /me again makes it a member's tab.
+  function unstarTab(ctx, p) {
+    M.tabs.unstar(ctx, p).then(() => {
+      renderSwitcher(ctx);
+      tabsChanged(ctx);
+      const nav = document.getElementById("header").querySelector("nav.switcher");
+      const link = nav && Array.from(nav.querySelectorAll("a")).find((a) => a.getAttribute("data-outsider") === p.full_name);
+      if (link) link.focus();
+      tabsSaid(M.t("tabs.unstarred", { name: p.name }));
+    }, (err) => {
+      const fields = err && err.code === "invalid" && err.details && err.details.fields;
+      const why = fields && fields.starred;
+      const hidden = err && err.details && Number(err.details.hidden) > 0 ? Number(err.details.hidden) : 0;
+      const reason = why === "too_many" && hidden ? M.t("tabs.star_refused.too_many_hidden", { hidden })
+        : Object.prototype.hasOwnProperty.call(STAR_REFUSED, why || "") ? STAR_REFUSED[why]()
+        : (err && err.message) || "";
+      tabsSaid(M.t("tabs.unstar_failed", { name: p.name, reason }));
+      if (why === "member" && ctx.refreshCounts) ctx.refreshCounts().catch(() => {});
+    });
   }
 
   // Dragging a tab onto another puts it there: before the tab dropped on,
@@ -1562,7 +1633,7 @@ window.Maity = window.Maity || {};
       if (!id || id === targetId) return;
       e.preventDefault();
       const after = dragTab.pastMiddle(e);
-      const order = M.tabs.open(ctx).map((p) => p.id);
+      const order = M.tabs.row(ctx).map((p) => p.id);
       const before = after ? order[order.indexOf(targetId) + 1] || null : targetId;
       if (M.tabs.moveBefore(ctx, id, before)) tabsMoved(ctx, id);
     },
@@ -1584,7 +1655,7 @@ window.Maity = window.Maity || {};
   function tabsMoved(ctx, id) {
     renderSwitcher(ctx);
     tabsChanged(ctx);
-    const order = M.tabs.open(ctx);
+    const order = M.tabs.row(ctx).filter((p) => p.id);
     const at = order.findIndex((p) => p.id === id);
     const nav = document.getElementById("header").querySelector("nav.switcher");
     const link = nav && Array.from(nav.querySelectorAll("a")).find((a) => a.getAttribute("data-project") === id);
@@ -1603,7 +1674,7 @@ window.Maity = window.Maity || {};
   // Beside the row: which projects are tabs, moving the current one, and
   // the row as the account's start set (docs/api.md §5.1 "Start tabs").
   function tabsMenu(ctx) {
-    if (!M.tabs.managed(ctx) || !ctx.projects.length) return null;
+    if (!M.tabs.managed(ctx) || (!ctx.projects.length && !M.tabs.row(ctx).length && !M.tabs.starredClosed(ctx).length)) return null;
     const current = ctx.scope === "project" ? ctx.projects.find((p) => p.full_name === ctx.slug) : null;
     const menu = M.menuButton({
       label: M.t("tabs.menu"),
@@ -1612,7 +1683,16 @@ window.Maity = window.Maity || {};
       items: () => {
         const open = M.tabs.open(ctx);
         const closed = ctx.projects.filter((p) => !open.includes(p)).sort((a, b) => a.name.localeCompare(b.name));
-        const at = current ? open.indexOf(current) : -1;
+        // The places a move counts: the member and starred tabs (this session's own stay last).
+        const placed = M.tabs.row(ctx).filter((p) => p.id).map((p) => p.id);
+        const at = current ? placed.indexOf(current.id) : -1;
+        // The dashed tabs after the projects, marked as such: the open ones in the row's order,
+        // then the starred ones closed here. Closing one hides it in this browser and sends
+        // nothing: a starred one keeps its star and can be opened again here, this session's
+        // own is gone until its page is opened again.
+        const outsiders = M.tabs.row(ctx).filter((p) => p.outsider).concat(M.tabs.starredClosed(ctx)
+          .sort((a, b) => a.name.localeCompare(b.name)));
+        const shown = M.tabs.row(ctx);
         return [
           ...open.concat(closed).map((p) => ({
             label: [p.name, privateMark(p)],
@@ -1625,9 +1705,23 @@ window.Maity = window.Maity || {};
               tabsSaid(open.includes(p) ? M.t("tabs.closed", { name: p.name }) : M.t("tabs.opened", { name: p.name }));
             },
           })),
+          ...outsiders.map((p) => {
+            const on = shown.some((x) => x.full_name === p.full_name);
+            return {
+              label: [p.name, h("span", { class: "outsider-mark" }, outsiderSaid(p))],
+              checkbox: true,
+              checked: on,
+              onSelect: () => {
+                if (p.starred) M.tabs.setOpen(ctx, p.id, !on);
+                else M.tabs.closeOutsider(ctx, p.full_name);
+                renderSwitcher(ctx);
+                tabsSaid(on ? M.t("tabs.closed", { name: p.name }) : M.t("tabs.opened", { name: p.name }));
+              },
+            };
+          }),
           current && at >= 0 ? { separator: true } : null,
           current && at > 0 ? { label: M.t("tabs.move_left"), onSelect: () => { if (M.tabs.move(ctx, current.id, -1)) tabsMoved(ctx, current.id); } } : null,
-          current && at >= 0 && at < open.length - 1
+          current && at >= 0 && at < placed.length - 1
             ? { label: M.t("tabs.move_right"), onSelect: () => { if (M.tabs.move(ctx, current.id, 1)) tabsMoved(ctx, current.id); } } : null,
           { separator: true },
           { label: M.t("tabs.keep_at_start"), onSelect: () => {
@@ -2019,6 +2113,8 @@ window.Maity = window.Maity || {};
         const names = (list) => (list || []).map((p) => p.full_name).join(" ");
         const moved = names(fresh.projects) !== names(ctx.projects);
         ctx.projects = fresh.projects;
+        // A star added or taken off elsewhere (§5.1): the row follows, as for a membership.
+        if (fresh.member && Array.isArray(fresh.member.starred) && ctx.me) ctx.me.starred = fresh.member.starred;
         renderSwitcher(ctx);
         renderChat(ctx);
         renderBell(ctx);
@@ -2546,11 +2642,14 @@ window.Maity = window.Maity || {};
       // Someone else's project may have a public page (§16.9): the reader sees it, read-only,
       // under their own header. Asked first: a stranger's address touches no member route.
       if (where.scope === "project" && !me.projects.some((p) => p.full_name === where.slug) && M.visitor) {
-        const head = async () => {
+        // `project` ({full_name, name}) where the page is a project's: it is a dashed tab of this
+        // browser session, or its starred tab, and the current one (js/tabs.js visit).
+        const head = async (project) => {
           const own = await loadContext({ scope: "all" }, me);
           own.projectViews = await projectViews(me);
           // The page shown is another project's, none of "All projects": nothing there is current.
-          own.visiting = true;
+          own.visiting = project ? project.full_name : true;
+          if (project) M.tabs.visit(own, project);
           if (seq === renderSeq) renderHeader(own, null);
         };
         if (await M.visitor.page(main, null, where, wherePath, { signedIn: true, head, live: () => seq === renderSeq })) return;

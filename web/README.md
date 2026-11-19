@@ -38,7 +38,16 @@ same folder; `web/brand/BRAND.md` has the rules.
 
 One account holds many projects. The header of every screen has a
 project switcher: each project with its state and the number of open
-requests waiting for the human, and **All projects** with the total. In a
+requests waiting for the human, and **All projects** with the total. A
+public project the human is no member of is a tab with a dashed outline
+once its public page is opened (`js/tabs.js`, `docs/api.md` §5.1 "Stars"),
+kept for the browser session in sessionStorage
+(`maity.tabs.outsider.<member id>`) until it is closed from the tabs menu;
+the projects `/me` lists as `starred` are dashed tabs among the human's
+own, opened after `start_tabs` in a browser with none kept, each with a
+filled star whose button sends `PATCH /me {"starred": [...]}` without it.
+Inside, such a tab still shows the public page; it opens the member views,
+read-only, once the hub's outsider read lands. In a
 project, the project's state and the owner's absence ("Away until …")
 sit at the switcher's right, behind a separator, in the same row; on a
 narrow screen they go under it. To their left, where the project has them,

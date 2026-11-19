@@ -116,7 +116,7 @@ not the requests themselves.
 **Status:** active
 **Evidence:** inferred
 **Source:** the maintainer's decision of 2026-11-06 on request req-6zp8zjwabmds, relayed on card tsk-p6aye59z0k7g; the dashboard's implementation, 2026-11-06
-**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs
+**Revisit when:** the account keeps the open tabs too, or the tab row gets groups or pinned tabs (the starred tabs of 2026-11-19 are close to pinned ones: the entry below, f461c919, keeps this model and adds them to it)
 **See:** https://github.com/oliver-zehentleitner/maity — 6e21a45a-26a7-46a0-b7c4-f7213718225b — as of 2026-11-06
 
 Which projects the header shows as tabs, and in which order, is kept in
@@ -140,6 +140,58 @@ a filter that hides personal requests would hide requests with no tab
 to open them from.
 
 **Rejected alternatives:** unknown beyond the contract entry's.
+
+## A public project one is no member of is a dashed tab for the browser session; a starred one is a dashed tab among one's tabs, opened after start_tabs
+
+**Id:** f461c919-3041-4558-af0e-e44127041a01
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the owner's spec on card tsk-kqn8zhptf06k (the dashed outsider tab, the star that anchors it, member views limited to the outsider's rights as the end state); docs/api.md §5.1 "Stars" and §6.30 Q2; lotse's answers to the web plan's questions Q2–Q8 and its approval of the A1/A2 split, 2026-11-19
+**Revisit when:** the hub's outsider read (§2.3, `GET /projects/{owner}/{slug}` for a non-member) lands: the tab then opens the member views, read-only, and the star button comes to an unstarred tab (A2); or the contract lets an unstarred tab outlive its browser session
+**See:** views.md#the-project-tabs-are-the-browsers-own-moved-by-dragging-by-altshiftarrow-or-from-the-tabs-menu — cd4fe2ba-aaa7-47fd-aa04-43e97207d5d6 — as of 2026-11-19
+
+A signed-in human who opens a public project they are no member of gets
+a tab for it in the switcher, drawn with a dashed outline, current while
+its page is shown (`js/tabs.js` `visit`, `js/app.js` `outsiderTab`).
+Each such project opened gets a tab of its own, kept in sessionStorage
+under `maity.tabs.outsider.<me.id>` (every access in try/catch, in
+memory without storage), named by its full name, after the member and
+starred tabs, until it is closed from the tabs menu or the browser
+session ends; it is never sent. The projects `/me` lists as `starred`
+are tabs like memberships: a browser with nothing kept opens
+`start_tabs`, then the starred projects; a star added elsewhere opens
+as the last tab, as a new membership does. A starred tab is dashed too,
+since dashed says "not a member", and carries a filled star whose
+button takes the star off (`PATCH /me` with the rest in order); the tab
+then stays, unstarred, for the session. Closing a starred tab hides it
+in this browser and keeps the star. A refused `PATCH` leaves the star
+and says why; refused as `member`, `/me` is read again and the project
+turns into a member's tab. Stars show only in the tab row and the tabs
+menu; `start_tabs` stays memberships only, and the inbox's tab filter
+and grouping follow member tabs alone.
+
+This is a step: inside, the tab still shows the stored public page,
+and an unstarred tab has no star button, because the public page
+carries no project id for `PATCH /me {"starred": […]}` (§16.9).
+
+**Reason:** §6.30 Q2 says an unstarred tab "lasts as long as the
+browser session that opened it". sessionStorage is that browser
+session: it survives a reload and dies with the session. The star is
+the contract's way to keep a project (§5.1), so a starred tab must not
+depend on this browser's storage, and treating it like a membership
+reuses the `known` rule the tab row already has (cd4fe2ba). Keeping
+the star on close mirrors a member tab, whose close never leaves the
+project.
+
+**Rejected alternatives:** kept in localStorage until closed (Q2's
+wording rules it out: it would outlive the session and come back in a
+fresh start); gone on leaving the project's page (Q2: "not until the
+reader moves to another tab"); kept in memory only (it dies on a
+reload, which is no end of the session); a × of its own on the tab
+(member tabs close from the tabs menu, and a second way would differ
+from them); closing a starred tab unstars it (the star is the account's,
+a tab this browser's: cd4fe2ba's split).
 
 ## A private project carries a lock after its name, from the project's own public_page
 

@@ -16106,6 +16106,130 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   delete main.hasAttribute;
   expect(!viAll.some((p) => p.startsWith("/projects/stranger")), "visitor: a stranger's public project asks no member route");
   expect(text(header).length && !header.querySelector(".visitor-sign-in"), "visitor: signed in, the reader's own header stays, with no sign-in link");
+  // The outsider's dashed tab and the starred tabs (tsk-kqn8zhptf06k A1; docs/api.md §5.1 "Stars", §6.30 Q2;
+  // web/context/views.md f461c919): a public project one is no member of is a dashed tab for the browser
+  // session, kept in sessionStorage; a starred one is a dashed tab among one's tabs, after start_tabs.
+  {
+    const M_ = win.Maity;
+    const ssStore = {}, lsStore = {};
+    const ssBefore = win.sessionStorage, lsBefore = win.localStorage;
+    win.sessionStorage = { getItem: (k) => (k in ssStore ? ssStore[k] : null), setItem: (k, v) => { ssStore[k] = String(v); }, removeItem: (k) => { delete ssStore[k]; } };
+    win.localStorage = { getItem: (k) => (k in lsStore ? lsStore[k] : null), setItem: (k, v) => { lsStore[k] = String(v); }, removeItem: (k) => { delete lsStore[k]; } };
+    const SESSION = "maity.tabs.outsider.hum-maintainer", LOCAL = "maity.tabs.hum-maintainer";
+    const MA = "prj-maity0000001", SA = "prj-sample000001", TOOL = "prj-tool00000001";
+    const otNav = () => header.querySelector("nav.switcher");
+    const otLinks = () => otNav().querySelectorAll("a");
+    const otTab = (full) => otNav().querySelectorAll("a.outsider").find((a) => a.getAttribute("data-outsider") === full) || null;
+    const otIds = () => otLinks().map((a) => a.getAttribute("data-project")).filter(Boolean).join();
+    const otSession = () => JSON.parse(ssStore[SESSION] || "[]").map((t) => t.full_name).join();
+    const otSaid = () => text(header.querySelector(".tabs-said"));
+    const otButton = () => header.querySelector(".tabs-menu-box").querySelector("button");
+    const otItems = () => header.querySelector(".tabs-menu-box").querySelectorAll(".menu-item");
+    const otOpenMenu = async () => { const ul = header.querySelector(".tabs-menu-box").querySelector("ul"); if (!ul || ul.hidden) { otButton().click(); await tick(); } };
+    // The menu as it stands now: closed first where it is open, since its items are built when it opens.
+    const otFreshMenu = async () => { const ul = header.querySelector(".tabs-menu-box").querySelector("ul"); if (ul && !ul.hidden) { otButton().click(); await tick(); } await otOpenMenu(); };
+    const otRefusal = (why, extra) => () => Promise.reject(new M_.api.ApiError("refused", 400, "/me", "invalid", Object.assign({ fields: { starred: why } }, extra || {})));
+    const otPatches = [];
+    const otRealPatch = M_.api.patch;
+    const otRecord = (path, body) => { otPatches.push([path, body]); return otRealPatch(path, body); };
+    M_.api.patch = otRecord;
+    await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+    const tool = otTab("stranger/tool");
+    expect(tool && tool.getAttribute("aria-current") === "page" && text(tool).includes("Tool") && text(tool).includes("not a member")
+      && otLinks()[otLinks().length - 1] === tool && !otLinks().some((a) => a !== tool && a.getAttribute("aria-current"))
+      && !tool.getAttribute("data-project") && !tool.attrs.draggable && !otNav().querySelector(".tab-star")
+      && (tool.getAttribute("href") || "").replace(/^#/, "") === "/stranger/tool",
+      "outsider: a public project one is no member of is a dashed tab after the member tabs, the current one, with no star yet");
+    expect(otSession() === "stranger/tool" && !Object.keys(lsStore).some((k) => k.includes("outsider")) && !(lsStore[LOCAL] || "").includes("stranger"),
+      "outsider: the dashed tab is kept in sessionStorage, not in localStorage " + JSON.stringify([ssStore, Object.keys(lsStore)]));
+    // Another page of the project is the same tab; another public project a tab of its own.
+    await go("#/stranger/tool/board"); for (let k = 0; k < 4; k++) await tick();
+    viPages["/public/pages/stranger/other"] = Object.assign({}, viPages["/public/pages/stranger/tool"], { path: "/stranger/other",
+      data: Object.assign({}, viPages["/public/pages/stranger/tool"].data, { name: "Other", full_name: "stranger/other" }) });
+    await go("#/stranger/other"); for (let k = 0; k < 4; k++) await tick();
+    expect(otSession() === "stranger/tool,stranger/other" && otTab("stranger/other").getAttribute("aria-current") === "page"
+      && !otTab("stranger/tool").getAttribute("aria-current") && text(otTab("stranger/tool")).includes("Tool"),
+      "outsider: each public project opened gets its own dashed tab, the board page no second one " + otSession());
+    delete viPages["/public/pages/stranger/other"];
+    // A move to All projects keeps them for the session; a fresh browser session has none.
+    await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    expect(otTab("stranger/tool") && otTab("stranger/other") && !otTab("stranger/tool").getAttribute("aria-current")
+      && otLinks()[0].getAttribute("aria-current") === "page", "outsider: the dashed tabs stay on All projects, which is current");
+    Object.keys(ssStore).forEach((k) => { delete ssStore[k]; });
+    await go("#/maintainer/maity/inbox"); await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    expect(!otNav().querySelector("a.outsider") && otIds() === MA + "," + SA, "outsider: a fresh browser session starts without the dashed tabs, the member tabs kept");
+    // Closed from the tabs menu, marked there as not a member; nothing is sent.
+    await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+    await otOpenMenu();
+    const toolItem = otItems().find((i) => i.textContent === "Toolnot a member");
+    expect(toolItem && toolItem.getAttribute("aria-checked") === "true" && toolItem.querySelector(".outsider-mark"),
+      "outsider: the tabs menu lists the dashed tab, marked as not a member " + otItems().map((i) => i.textContent).join("|"));
+    toolItem.click(); await tick();
+    expect(!otTab("stranger/tool") && otSession() === "" && !otPatches.length && otSaid() === "Tool is no longer a tab",
+      "outsider: closing the dashed tab from the menu takes it out of the session, nothing sent");
+    // Starred (#1986's `starred` on /me): a fresh browser opens start_tabs, then the starred projects, dashed.
+    await otRealPatch("/me", { start_tabs: [SA], starred: [TOOL] });
+    Object.keys(ssStore).forEach((k) => { delete ssStore[k]; });
+    Object.keys(lsStore).forEach((k) => { delete lsStore[k]; });
+    // Through a project of the start set: one opened by its address gets its tab back, so not Maity.
+    await go("#/maintainer/sample/inbox"); await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    const starredTab = () => otTab("stranger/tool");
+    const starOf = () => (starredTab() && starredTab().parentNode.querySelector(".tab-star")) || null;
+    expect(otIds() === SA + "," + TOOL && starredTab() && starredTab().classList.contains("starred") && starredTab().attrs.draggable === "true"
+      && starOf() && starOf().getAttribute("aria-pressed") === "true" && starOf().getAttribute("aria-label") === "Remove the star from stranger/tool"
+      && JSON.parse(lsStore[LOCAL]).open.join() === SA + "," + TOOL && otSession() === "",
+      "starred: a fresh browser opens start_tabs, then the starred project as a dashed tab with a filled star " + otIds());
+    // A star added on another device: a tab at the end, as a new membership.
+    lsStore[LOCAL] = JSON.stringify({ open: [SA], known: [MA, SA] });
+    await go("#/maintainer/sample/inbox"); await go("#/all"); for (let k = 0; k < 3; k++) await tick();
+    expect(otIds() === SA + "," + TOOL && JSON.parse(lsStore[LOCAL]).known.join() === MA + "," + SA + "," + TOOL,
+      "starred: a star this browser has not seen (added elsewhere) opens as the last tab, as a new membership does " + otIds());
+    // Closing a starred tab hides it here and keeps the star: no PATCH; the menu opens it again.
+    await otOpenMenu();
+    const starItem = () => otItems().find((i) => i.textContent === "stranger/toolstarred, not a member");
+    starItem().click(); await tick();
+    expect(!starredTab() && !otPatches.length && (await M_.api.get("/me")).member.starred.map((s) => s.id).join() === TOOL
+      && starItem() && starItem().getAttribute("aria-checked") === "false",
+      "starred: closing a starred tab from the menu sends nothing, the star stays, the menu lists it closed");
+    starItem().click(); await tick();
+    expect(starredTab() && otIds().endsWith(TOOL), "starred: the menu opens the starred tab again");
+    // A refusal of the unstar: said, the star stays; `member` reads /me again.
+    for (const [why, extra, words] of [["not_public", null, "the project is not public"], ["duplicate", null, "a project was named twice"],
+      ["too_many", { hidden: 2 }, "more starred projects than this hub keeps for one person (hidden while not public: 2)"],
+      ["member", null, "you are a member of it now"]]) {
+      const meReads = viAll.filter((p) => p === "/me").length;
+      M_.api.patch = otRefusal(why, extra);
+      starOf().click(); for (let k = 0; k < 3; k++) await tick();
+      expect(starOf() && starOf().getAttribute("aria-pressed") === "true" && otSaid() === "The star stays on stranger/tool: " + words
+        && (why === "member" ? viAll.filter((p) => p === "/me").length > meReads : true),
+        "starred: a refused unstar (" + why + ") is said and the star stays" + (why === "member" ? ", and /me is read again" : "") + " " + otSaid());
+    }
+    M_.api.patch = otRecord;
+    // Unstarred: PATCH /me without the project, the rest in order; the tab stays as this session's own.
+    await otRealPatch("/me", { starred: [TOOL] });
+    starOf().click(); for (let k = 0; k < 3; k++) await tick();
+    expect(otPatches.length === 1 && otPatches[0][0] === "/me" && JSON.stringify(otPatches[0][1]) === JSON.stringify({ starred: [] })
+      && starredTab() && !starredTab().classList.contains("starred") && !otNav().querySelector(".tab-star") && otSession() === "stranger/tool"
+      && otSaid() === "stranger/tool is no longer starred; its tab stays until you close it",
+      "starred: the star's button sends starred without the project and leaves an unstarred dashed tab for the session " + JSON.stringify(otPatches));
+    // The fixture hub's refusals, as hub/stars.py's.
+    const otCode = (body) => otRealPatch("/me", body).then(() => "ok", (err) => (err.details.fields || {}).starred + (err.details.hidden !== undefined ? ":" + err.details.hidden : ""));
+    const codes = [await otCode({ starred: null }), await otCode({ starred: "x" }), await otCode({ starred: [TOOL, TOOL] }),
+      await otCode({ starred: [MA] }), await otCode({ starred: ["prj-nowhere00001"] })];
+    M_.api.fixtureStarred.max = 0;
+    codes.push(await otCode({ starred: [TOOL] }));
+    M_.api.fixtureStarred.max = 100;
+    expect(JSON.stringify(codes) === JSON.stringify(["required", "list_type", "duplicate", "member", "not_public", "too_many:0"]),
+      "fixture hub: starred refuses null, a non-list, a repeat, a membership, an unknown id and one over the bound " + JSON.stringify(codes));
+    // Back as before: no star, the start set, the session's tab closed, the stores the run had.
+    await otRealPatch("/me", { start_tabs: null, starred: [] });
+    await otFreshMenu();
+    otItems().find((i) => i.textContent === "stranger/toolnot a member").click(); await tick();
+    M_.api.patch = otRealPatch;
+    win.sessionStorage = ssBefore; win.localStorage = lsBefore;
+    if (ssBefore === undefined) delete win.sessionStorage;
+    await go("#/stranger/tool"); for (let k = 0; k < 4; k++) await tick();
+  }
   expect(win.Maity.api.isPublicPath("/public/pages/stranger/tool"), "visitor: the read works after the session ended here");
   // The member Overview's own address (§6.20's badge links there) shows the public overview at that
   // address, its Overview tab current (§16.9, the maintainer's decision of 2026-11-01); its swarm tab is
