@@ -20,6 +20,7 @@ from sqlalchemy import Connection, Engine, insert, select, update
 from maity_hub import clock
 from maity_hub import tables as t
 from maity_hub.access import Membership
+from maity_hub.db import read_transaction
 from maity_hub.routes import requests as requests_route
 from maity_hub.routes.requests import (
     _entries,
@@ -365,7 +366,11 @@ def test_a_request_that_changes_between_the_statements_is_listed_once(
                     where = (change, sort, limit, changed)
                     ids = [item["id"] for item in page["items"]]
                     assert len(ids) == len(set(ids)) <= limit, where
-                    if page["next_cursor"] is not None:  # the last item's place as it is now
+                    if change == "answer":  # decided again on the row read in full
+                        assert changed not in ids, where
+                    # The last item's place as it is now; a page a row left on the full read
+                    # is shorter and keeps the cursor of the keys.
+                    if page["next_cursor"] is not None and len(ids) == limit:
                         last = conn.execute(select(t.request).where(r.id == ids[-1])).one()
                         key = _key(_entries(conn, [last])[0], sort)
                         assert page["next_cursor"] == _next_cursor(sort, key), where
@@ -422,6 +427,159 @@ def test_a_request_that_changes_between_pages(
                 listing = Listing(conn, _membership(conn, people[name]), to, sort, "open")
                 walked += _walk_with_change(listing, values)
     assert walked >= 6
+
+
+# The page's keys are read before its rows are read in full: on PostgreSQL every statement of
+# `read_transaction` has its own snapshot (READ COMMITTED), so a row can change in between.
+# The rows read in full are decided again, by `_decided` and the listing's own filters. Each
+# case: (caller, to, status, the request's values before the listing, the change in between).
+REDECIDED: dict[str, tuple[str, str, str, dict[str, Any], dict[str, Any]]] = {
+    "forwarded_on": ("x", "all", "open", {"holder_member": "x"}, {"holder_member": "z"}),
+    "cover_ended": ("x", "all", "open", {"cover": "x"}, {"cover": None}),
+    "substitute_changed": ("x", "all", "open", {"cover": "x"}, {"cover": "z"}),
+    "answered": ("owner", "all", "open", {}, {"status": "answered"}),
+    "addressed_elsewhere": ("owner", "x", "all", {}, {"to_member": "z"}),
+    "addressed_elsewhere_me": ("x", "me", "all", {}, {"to_member": "z"}),
+}
+
+
+@pytest.mark.parametrize("own_connection", [True, False], ids=["same_connection", "committed"])
+@pytest.mark.parametrize("change", list(REDECIDED))
+def test_the_rows_read_in_full_are_decided_again(
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
+    own_connection: bool,
+) -> None:
+    """`same_connection` writes on the listing's own connection, which the full read sees on
+    every database. `committed` writes from another connection and commits: the full read
+    sees it on PostgreSQL; SQLite reads one snapshot per read transaction, so there the page
+    is the one from before the change."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    agents = {name: flow.agent(make_client, owner) for name in ("x", "y", "z")}
+    members = {name: person(migrated, a.id).membership for name, a in agents.items()}
+    for n in range(3):  # what x lists in any case: it asked them
+        asked(agents["x"], to="owner", title=f"Mine {n}?")
+    changed = asked(agents["y"], to=agents["x"].id, title="Which?")["id"]
+    caller, to, status, before, between = REDECIDED[change]
+    to = agents[to].id if to in agents else to
+
+    def values(names: dict[str, Any]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        for column, name in names.items():
+            if column == "cover" and name is not None:
+                out[column] = {
+                    "for": owner.id,
+                    "by": agents[name].id,
+                    "since": clock.rfc3339(clock.now()),
+                }
+            elif column in ("holder_member", "to_member") and name is not None:
+                out[column] = members[name]
+            else:
+                out[column] = name
+        return out
+
+    r = t.request.c
+    if change.startswith(("forwarded", "cover", "substitute")):  # addressed to the owner
+        before = {**before, "to_kind": "owner", "to_member": None}
+    with migrated.begin() as conn:
+        if before:
+            conn.execute(update(t.request).where(r.id == changed).values(**values(before)))
+        restore = dict(
+            conn.execute(select(*(r[c] for c in between)).where(r.id == changed)).one()._mapping
+        )
+    who = owner.id if caller == "owner" else agents[caller].id
+    original = requests_route._read_in_full
+
+    def write(conn: Connection, row_values: dict[str, Any]) -> None:
+        conn.execute(update(t.request).where(r.id == changed).values(**row_values))
+
+    for sort in SORTS:
+        with migrated.connect() as conn:
+            mine = _membership(conn, person(migrated, who))
+            earlier = Listing(conn, mine, to, sort, status)
+            assert changed in [e["id"] for e in earlier.entries], (change, sort)
+            before_page = earlier.oracle(10, None)
+
+        def hooked(conn: Connection, ids: list[str], listed: list[Any]) -> list[Any]:
+            # After the keys are read (statements A and B), before the full read.
+            if own_connection:
+                write(conn, values(between))
+            else:
+                with migrated.begin() as other:
+                    write(other, values(between))
+            return original(conn, ids, listed)
+
+        monkeypatch.setattr(requests_route, "_read_in_full", hooked)
+        if own_connection:
+            with migrated.connect() as conn:
+                page = Listing(conn, mine, to, sort, status).paged(10, None)
+                later = Listing(conn, mine, to, sort, status).oracle(200, None)
+                conn.rollback()
+        else:
+            with read_transaction(migrated) as conn:
+                page = Listing(conn, mine, to, sort, status).paged(10, None)
+            with migrated.connect() as conn:
+                later = Listing(conn, mine, to, sort, status).oracle(200, None)
+            with migrated.begin() as conn:
+                write(conn, restore)
+        monkeypatch.setattr(requests_route, "_read_in_full", original)
+        where = (change, sort, own_connection)
+        if not own_connection and migrated.dialect.name == "sqlite":
+            assert page == before_page, where
+            continue
+        # Only what the listing holds after the change, each item as it shows it now.
+        listed = {item["id"]: item for item in later["items"]}
+        assert changed not in listed, where
+        for item in page["items"]:
+            assert item == listed.get(item["id"]), where
+
+
+# Handles a locale collation orders apart from their bytes: it may pass over `-` (`a-cd` after
+# `abc`, `b-x` after `bb`). `handles.FORMAT` takes no upper case, so case is not among them.
+BYTEWISE = ("a-1", "a-ab", "a-cd", "aab", "abc", "b-x", "bb", "zz-top")
+
+
+def test_the_agent_sort_orders_handles_by_their_bytes(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """`_order` compares the asker's handle bytewise (`collate("C")` on PostgreSQL), as
+    `_sorted` compares it in Python: every page of `sort=agent` is the listing's own."""
+    agent = flow.agent(make_client, owner)
+    template_id = asked(agent, to="owner")["id"]
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    members = {
+        handle: factory.membership(
+            migrated, project_id, role="member", human_id=factory.human(migrated, handle)
+        )
+        for handle in reversed(BYTEWISE)
+    }
+    r = t.request.c
+    with migrated.begin() as conn:
+        template = conn.execute(select(t.request).where(r.id == template_id)).one()
+        conn.execute(
+            insert(t.request),
+            [
+                {
+                    **template._mapping,
+                    "id": f"req-bytewise{n:04d}",
+                    "asked_by": member,
+                    "on_behalf_of": None,
+                    "created_at": template.created_at - timedelta(minutes=n),
+                }
+                for n, member in enumerate(members.values())
+            ],
+        )
+    by_id = {f"req-bytewise{n:04d}": handle for n, handle in enumerate(members)}
+    with migrated.connect() as conn:
+        mine = _membership(conn, person(migrated, owner.id))
+        listing = Listing(conn, mine, "all", "agent", "all")
+        for limit in (1, 2, 3, 200):
+            shown = list(listing.walk(limit))
+            assert [by_id[i] for i in shown if i in by_id] == list(BYTEWISE), limit
 
 
 def test_a_cursor_the_hub_gave_before_still_pages(
@@ -484,6 +642,30 @@ def test_a_cursor_key_of_the_wrong_shape_is_invalid(
     )
     assert response.status_code == 400, response.text
     assert response.json()["error"]["details"]["fields"] == {"cursor": "invalid"}
+
+
+@pytest.mark.parametrize(
+    ("sort", "k"),
+    [
+        ("date", [1, "req-x"]),
+        ("priority", [ISO, 1, "req-x"]),
+        ("agent", [None, ISO, "req-x"]),
+        ("date", [ISO, 7]),
+    ],
+)
+def test_a_cursor_key_of_the_wrong_shape_is_invalid_across_projects(
+    make_client: ClientFactory, migrated: Engine, sort: str, k: Any
+) -> None:
+    """`GET /requests` pages with `_page`, which reads the cursor with `_cursor_key` too."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    agent = flow.agent(make_client, owner)
+    asked(agent, to="owner")
+    response = owner.get("/requests", params={"sort": sort, "cursor": _cursor({"s": sort, "k": k})})
+    assert response.status_code == 400, response.text
+    error = response.json()["error"]
+    assert error["code"] == "invalid"
+    assert error["details"]["fields"] == {"cursor": "invalid"}
 
 
 def test_another_sorts_cursor_and_a_bad_to_are_answered_as_before(

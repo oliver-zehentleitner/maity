@@ -1247,6 +1247,11 @@ def _leftover_batches(limit: int) -> Iterator[int]:
         size = min(size * 2, LEFTOVER_BATCH_MAX)
 
 
+def _read_in_full(conn: Connection, ids: list[str], listed: Sequence[Any]) -> list[Any]:
+    """The page's rows in full, those the listing's own filters (`listed`) still let through."""
+    return list(conn.execute(select(t.request).where(t.request.c.id.in_(ids), *listed)))
+
+
 def _project_page(
     conn: Connection,
     mine: Membership,
@@ -1265,7 +1270,8 @@ def _project_page(
     page plus one. Statement B reads the other requests after the cursor, up to A's last key
     when A filled its page, a batch at a time with the columns `_decided` needs, and decides
     them with it, until it holds the page plus one. Both merged in order are the page's keys;
-    only those rows are read in full. A request gone since its key was read is left out."""
+    only those rows are read in full, and decided again by the same filters and `_decided`:
+    a request gone since its key was read, or one the listing no longer holds, is left out."""
     r = t.request.c
     _check_status(status)
     where = [r.project_id == mine.project.id, r.personal.is_(False)]
@@ -1300,6 +1306,7 @@ def _project_page(
     keys: list[Any] = [r.id, r.priority, r.created_at]
     if sort == "agent":
         keys.append(order.columns[0].label("asker_handle"))
+    listed = list(where)  # the listing's own filters, without the bound on A's last key
     taken = list(
         conn.execute(
             select(*keys)
@@ -1336,7 +1343,12 @@ def _project_page(
     ids = [row.id for row in page]
     found: dict[str, Any] = {}
     if ids:
-        found = {row.id: row for row in conn.execute(select(t.request).where(r.id.in_(ids)))}
+        # The rows read in full are decided again, with the same filters and the same rule:
+        # on PostgreSQL each statement reads its own snapshot (READ COMMITTED), and a row may
+        # have changed since its key was read. One that fails now is left out; the page may
+        # come out shorter, its cursor stays the keys' (3c9e5a71).
+        full = _read_in_full(conn, ids, listed)
+        found = {row.id: row for row in _decided(conn, mine, relayed(full, mine), to, target)}
     return {
         "items": request_views(conn, [found[i] for i in ids if i in found]),
         "next_cursor": next_cursor,

@@ -777,7 +777,12 @@ needs, in the list's order, the page plus one first and then doubling batches, a
 only up to A's last key. Both merge by key; only the page's rows are read in full. Under READ
 COMMITTED a request that gets a `cover` between A and B is read by both: it is kept once, with
 B's key, the later read and the one the rule that now decides it made, so the page holds no
-duplicate and its cursor no stale place. The SQL
+duplicate and its cursor no stale place. The page's rows read in full are decided again by
+`relayed` and `_decided`, and read with the listing's own filters (status, class, asker), not
+only by the keys read before: on PostgreSQL every statement of `read_transaction` has its own
+snapshot (READ COMMITTED), so a write between the keys and the full read must not reach a
+caller that the write took the request from. A row that fails is left out; the page may come
+out shorter, and its cursor stays the keys'. The SQL
 rules live once, in `request_sql` (moved out of the overview, which now imports them), and
 each helper names its Python twin, which names it back. The order is the expanded keyset form
 with the id last: `CASE` over `PRIORITY_RANK` for priority, the asker's handle as one
@@ -801,6 +806,12 @@ path only when a project is made mostly of such requests.
   the common call and its worst case.
 - The whole visibility in SQL over the JSON columns: each database has its own JSON syntax, so
   the rule would get a second, dialect-split copy. The overview rejected the same (8d41e6b2).
+- Trusting the decision made when the keys were read and rendering the rows read in full as
+  they come: the row can change between the two statements, and the page would show it in a
+  state the caller was never decided for.
+- REPEATABLE READ for the listing's transaction on PostgreSQL, one snapshot for every
+  statement: `read_transaction` takes the engine's isolation (READ COMMITTED, set nowhere in
+  the hub), and changing it for one route is a second kind of read transaction to keep apart.
 
 
 ## Admin-set instance settings in one table with a registry in code, admin-set secrets sealed in a table of their own
