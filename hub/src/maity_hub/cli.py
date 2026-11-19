@@ -54,7 +54,7 @@ from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
 from maity_hub.mail import address as addresses
 from maity_hub.models import one_line
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import claim_verified
 
 EXIT_FAILURE = 1
 EXIT_CONFIG = 2
@@ -389,9 +389,7 @@ def _owner_create(
                 conn.execute(insert(t.human).values(**values))
                 if not handle_register.claim(conn, handle, handle_register.HUMAN, human_id):
                     raise _HandleTaken  # an organisation took it meanwhile: the account rolls back
-            if not preferences.claim_verified(
-                conn, normalized, human_id, secret_key=settings.secret_key
-            ):
+            if not claim_verified(conn, normalized, human_id, secret_key=settings.secret_key):
                 raise _AddressTaken  # another account's address: the account rolls back
     except _HandleTaken:
         return _fail(f"the handle {handle!r} was taken meanwhile", EXIT_FAILURE)

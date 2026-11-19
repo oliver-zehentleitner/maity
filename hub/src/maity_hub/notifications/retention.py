@@ -90,7 +90,7 @@ def prune(engine: Engine, stop: Stopping = None, budget: float = PASS_BUDGET) ->
 def _pending_origin(engine: Engine, now: datetime, stop: _Deadline) -> int:
     """Clear where an expired address change was asked from, `BATCH` rows at a time; the
     pending address itself stays, as the settings show it until it is replaced or removed."""
-    from maity_hub.notifications import preferences  # it sends mail through the outbox
+    from maity_hub.notifications import address  # it sends mail through the outbox
 
     c = t.notification_settings.c
     condition = (
@@ -110,7 +110,7 @@ def _pending_origin(engine: Engine, now: datetime, stop: _Deadline) -> int:
             conn.execute(
                 update(t.notification_settings)
                 .where(c.human_id.in_(rows), *condition)
-                .values(**preferences.NO_PENDING_ORIGIN)
+                .values(**address.NO_PENDING_ORIGIN)
             )
         done += len(rows)
         if len(rows) < BATCH:
