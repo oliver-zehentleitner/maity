@@ -653,7 +653,7 @@ writable surface and no write that leaves the scratch.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Verification:** corroborated — the make/read/remove discipline, the owner, mode and no-follow checks, the unlistable parent and unguessable per-placement name, the hiding of the parent from another placement's sandbox, and the clean removal of a scratch holding read-only or unsearchable directories are covered by unit tests (`tests/test_scratchop.py`, the supervisor lifecycle in `tests/test_supervisor.py`, and the review-file read through the recorded scratch in `tests/test_placed_reads.py`); a live agy placement posting a `review_result` with the scratch is not yet observed and is still needed
+**Verification:** corroborated — the make/read/remove discipline, the owner, mode and no-follow checks, the per-user parent owned 0700, the hiding of that parent from the sandboxed Codex and Claude Code placements, the end-to-end `--review-file` read through a production-made scratch, and the clean removal of a scratch holding read-only or unsearchable directories are covered by unit tests (`tests/test_scratchop.py`, the supervisor lifecycle in `tests/test_supervisor.py`, and the review-file read through the recorded scratch in `tests/test_placed_reads.py`); a live agy placement posting a `review_result` with the scratch is not yet observed and is still needed
 **Source:** card tsk-bbhcekjk2mgm and the dispatcher's approved design; the finding that agy's sandbox makes the workspace and the beside-clone `.scratch` read-only while the host's shared temp directory is writable from inside the sandbox, confirmed by a reviewer's live probe; the ownership question resolved by the dispatcher
 **See:** runner.md — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-19
 **Revisit when:** agy's sandbox gains a writable beside-clone location, a harness other than agy needs a scratch its sandbox cannot write beside the clone, or the per-user temp parent is given a cleanup for stale placements
@@ -683,29 +683,40 @@ a directory owned by that id; the per-placement directory is private and made
 fresh at every start (an earlier one removed first, a new one then created,
 refusing one that is already there), so nothing carries across a restart and a
 directory planted by anyone else is refused rather than used or written
-through. The per-user parent is kept unlistable by its owner and the
-per-placement directory is given an unguessable name the runner chooses (not
-the placement id), recorded with the placement so the session and the runner
-find the same one again; and that parent is hidden from every other
-placement's sandbox. So only the owning placement can reach its own scratch
-there. Removing a scratch restores the owner's access on each directory first,
+through. The per-user parent is owned 0700 by that user and the per-placement
+directory is given a random name the runner chooses (not the placement id),
+recorded with the placement so the session and the runner find the same one
+again; the random name keeps a user's own placements from colliding and is not
+a secret. The runner creates the per-user parent before a placement whose
+sandbox hides it (Claude Code or Codex) starts, so the deny path that
+placement's sandbox is given is a real directory rather than a missing path a
+placeholder would stand in for; a placement that hides nothing is given no
+parent and has none made for it. Removing a scratch restores the owner's access on each directory first,
 so one holding a read-only or unsearchable directory a build tool left (a
 module cache, say) is still deleted and does not pile up. `repo/` stays
 read-only and the plain-call stdin rule for `maity` is unchanged. On an ssh
 host, whose remote user's id the runner does not hold, the scratch is not made
 and the placement runs without one.
 
-The residual risk is accepted knowingly: a shared temp directory is, by the
-agy sandbox's own premise, writable by placements of the same host user, and
-agy's sandbox offers no finer per-path separation there. It is mitigated by
-the unlistable parent and the unguessable per-placement name, so a same-user
-placement can neither enumerate nor guess another's scratch; the remaining
-same-user exposure is consciously accepted. The runner's reach into the parent
-also rests on the shared temp directory's sticky bit (the root is opened
-without a no-follow guard, as its being outside any per-placement control
-allows): a host that does not set the sticky bit on its shared temp directory
-weakens that assumption, which is why the location is the conventional sticky
-shared temp directory and not an arbitrary one.
+The residual risk is accepted knowingly. The scratch is separated against
+other host users — the per-user parent and the leaf are owned 0700 by the user
+agy runs as, so another host user cannot enter them — and against the
+sandboxed Codex and Claude Code placements of that same user, whose sandbox is
+told to hide the per-user parent so they cannot reach a scratch under it. It is
+NOT separated against another agy placement, nor against an unsandboxed
+placement, of the same host user: a shared temp directory is, by the agy
+sandbox's own premise, writable by that user, and nothing here keeps one such
+placement out of another's scratch. The 0700 mode gives only ordinary own-user
+file permissions and the random leaf name only avoids collisions between a
+user's placements; neither is relied on to separate one same-user placement
+from another. This same-user exposure is accepted until each placement runs as
+its own user (per-placement `agent_user` separation, the owner's pending
+`req-ynkndnybr9z3`). The runner's reach into the parent also rests on the
+shared temp directory's sticky and setgid bits (the root is opened without a
+no-follow guard, as its being outside any per-placement control allows): a
+host that does not set those bits on its shared temp directory weakens that
+assumption, which is why the location is the conventional sticky shared temp
+directory and not an arbitrary one.
 
 **Reason:** the recorded-scratch machinery already draws the boundary this
 needs — a placement-owned writable directory the runner records, that

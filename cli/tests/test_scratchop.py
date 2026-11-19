@@ -21,7 +21,7 @@ pytestmark = [
 
 @pytest.fixture(autouse=True)
 def _restore_modes(tmp_path: Path) -> Any:
-    """The tests leave unlistable (0300) or read-only directories behind by design; widen every
+    """The tests leave restrictive (0000/0400/0500) directories behind by design; widen every
     directory at teardown so pytest's own cleanup of its temporary directory can remove them."""
     yield
     for root, dirs, _files in os.walk(tmp_path, topdown=True):
@@ -375,7 +375,7 @@ def test_through_ssh_a_host_maity_too_old_for_the_codex_op_is_its_own_answer(
 
 # --- agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of) ----------
 
-# A per-placement leaf name of the shape the runner chooses (scratchop.TMP_LEAF): an unguessable
+# A per-placement leaf name of the shape the runner chooses (scratchop.TMP_LEAF): a random
 # token, never a placement id.
 LEAF = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 LEAF2 = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
@@ -390,8 +390,8 @@ def test_a_tmp_scratch_is_made_measured_and_removed(tmp_path: Path) -> None:
     uid = os.getuid()
     room = _tmp_room(tmp_path, uid)
     assert scratchop.tmp_make(str(room)) == {"result": "made"}
-    # The parent is unlistable (write + search, no read); the leaf and its `tmp` are private.
-    assert stat.S_IMODE(room.parent.stat().st_mode) == scratchop.TMP_PARENT_MODE == 0o300
+    # The parent, the leaf and its `tmp` are all 0700, owned by the user agy runs as.
+    assert stat.S_IMODE(room.parent.stat().st_mode) == scratchop.TMP_PARENT_MODE == 0o700
     assert stat.S_IMODE(room.stat().st_mode) == scratchop.TMP_LEAF_MODE == 0o700
     assert stat.S_IMODE((room / "tmp").stat().st_mode) == 0o700
     (room / "tmp" / "review.json").write_bytes(b"z" * 4000)
@@ -405,20 +405,18 @@ def test_a_tmp_scratch_is_made_measured_and_removed(tmp_path: Path) -> None:
     assert scratchop.tmp_size(str(room)) == {"result": "missing"}
 
 
-def test_the_parent_is_unlistable_and_the_leaf_name_is_unguessable(tmp_path: Path) -> None:
-    """The per-user parent is shared across a user's placements but kept unlistable (0300): its
-    owner reaches a named leaf but cannot enumerate the names, and the leaf name is an
-    unguessable token, so a placement of the same user can neither list nor guess another's."""
+def test_the_parent_is_0700_and_holds_each_of_a_users_leaves(tmp_path: Path) -> None:
+    """The per-user parent is shared across a user's placements and owned 0700 by that user: it
+    is readable and writable by its owner (so maity's own `--review-file` read, which walks it
+    O_RDONLY, works) and keeps other host users out. Two placements of the same user get two
+    leaves under the one parent; the parent gives them no separation from each other."""
     uid = os.getuid()
     first, second = _tmp_room(tmp_path, uid, LEAF), _tmp_room(tmp_path, uid, LEAF2)
     scratchop.tmp_make(str(first))
     scratchop.tmp_make(str(second))
     assert first.is_dir() and second.is_dir() and first.parent == second.parent
-    assert stat.S_IMODE(first.parent.stat().st_mode) == 0o300  # no read bit: not listable
-    if os.getuid() != 0:  # root ignores the mode; the mode on disk is asserted above regardless
-        with pytest.raises(PermissionError):
-            os.listdir(first.parent)  # even its owner cannot list the names
-    # A placement still reaches its own leaf by the recorded name, not by listing the parent.
+    assert stat.S_IMODE(first.parent.stat().st_mode) == 0o700  # readable by its owner
+    assert sorted(os.listdir(first.parent)) == sorted([LEAF, LEAF2])  # its owner lists both leaves
     assert scratchop.tmp_size(str(first))["result"] == "size"
 
 
@@ -428,7 +426,7 @@ def test_a_pre_existing_leaf_is_refused_and_left_alone(tmp_path: Path, planted: 
     is refused: a placement's scratch is made fresh, never reused or written through."""
     uid = os.getuid()
     room = _tmp_room(tmp_path, uid)
-    room.parent.mkdir(mode=0o300)  # a sound per-user parent (unlistable, this uid's own)
+    room.parent.mkdir(mode=0o700)  # a sound per-user parent (0700, this uid's own)
     outside = tmp_path / "outside"
     (outside).mkdir()
     (outside / "keep").write_text("k")
@@ -457,10 +455,8 @@ def test_a_tmp_planted_in_the_fresh_leaf_is_refused(
     (outside / "keep").write_text("k")
     real_tmp_dir = scratchop._tmp_dir
 
-    def planting(
-        dir_fd: int, name: str, u: int, mode: int, *, fresh: bool, path_fd: bool = False
-    ) -> int:
-        fd = real_tmp_dir(dir_fd, name, u, mode, fresh=fresh, path_fd=path_fd)
+    def planting(dir_fd: int, name: str, u: int, mode: int, *, fresh: bool) -> int:
+        fd = real_tmp_dir(dir_fd, name, u, mode, fresh=fresh)
         if name == LEAF:  # the leaf is now fresh: a same-user sibling plants its `tmp`
             with contextlib.suppress(FileExistsError):
                 if planted == "symlink":
@@ -523,7 +519,7 @@ def test_a_foreign_owned_leaf_is_refused_on_remove(tmp_path: Path) -> None:
     uid = os.getuid()
     foreign = uid + 1
     room = _tmp_room(tmp_path, foreign)
-    room.parent.mkdir(mode=0o300)
+    room.parent.mkdir(mode=0o700)
     room.mkdir(mode=0o700)
     (room / "keep").write_text("k")
     with pytest.raises(scratchop.OnTheWay, match="held by another user"):
@@ -594,6 +590,90 @@ def test_a_path_not_under_a_real_absolute_root_is_refused(tmp_path: Path, kind: 
     assert not isinstance(refused.value, scratchop.OnTheWay)
 
 
+@pytest.mark.parametrize("where, mode", [("leaf", 0o000), ("leaf", 0o400), ("subdir", 0o400)])
+def test_a_restrictive_leaf_or_subdir_does_not_block_tmp_remove(
+    tmp_path: Path, where: str, mode: int
+) -> None:
+    """A 0000 or 0400 leaf, or such a directory a build tool left inside it, does not raise a
+    bare PermissionError out of tmp_remove: the leaf is opened and widened through `_open_below`
+    and `_size` tolerates what it cannot stat, so the scratch is removed and can be remade. Red
+    on dc826d9b, where `_remove_in` opened the leaf O_RDONLY (a 0000 leaf failed) and `_size`
+    suppressed only FileNotFoundError (a 0400 leaf or subdir raised)."""
+    uid = os.getuid()
+    room = _tmp_room(tmp_path, uid)
+    scratchop.tmp_make(str(room))
+    target = room if where == "leaf" else room / "tmp" / "cache"
+    if where == "subdir":
+        target.mkdir()
+        (target / "f").write_text("x" * 50)
+    os.chmod(target, mode)
+    try:
+        removed = scratchop.tmp_remove(str(room))
+    finally:
+        if target.exists():
+            os.chmod(target, 0o700)  # so pytest can clean up if the remove failed
+    assert removed["result"] == "removed"
+    assert not room.exists()
+    assert scratchop.tmp_make(str(room)) == {"result": "made"}  # the restart path remakes it
+
+
+def test_remove_names_a_leaf_this_uid_does_not_own_as_a_clash_not_a_bare_error(
+    tmp_path: Path,
+) -> None:
+    """`_remove_in` opens the leaf through `_open_below`, so a leaf whose own mode denies opening
+    it and which this uid does not own is named as a clash (OnTheWay), not raised as a bare
+    PermissionError. Driven with a 0000 leaf and a uid it is not owned by (a test cannot chown).
+    Red on dc826d9b, where `_remove_in` opened the leaf with `_step` and a 0000 leaf raised
+    PermissionError before the owner check could name the clash."""
+    uid = os.getuid()
+    foreign = uid + 1  # a uid the leaf this test makes is not owned by
+    parent = tmp_path / "p"
+    parent.mkdir(mode=0o700)
+    leaf = parent / "leaf"
+    leaf.mkdir(mode=0o700)
+    (leaf / "keep").write_text("k")
+    os.chmod(leaf, 0o000)
+    pfd = os.open(str(parent), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        with pytest.raises(scratchop.OnTheWay):
+            scratchop._remove_in(pfd, "leaf", uid=foreign)
+    finally:
+        os.close(pfd)
+        os.chmod(leaf, 0o700)
+    assert (leaf / "keep").read_text() == "k"  # left as it is
+
+
+@pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="no /proc to count descriptors")
+def test_empty_closes_its_descriptors_when_the_walk_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_empty` closes every descriptor it opens, on an exception mid-walk too: the frames still
+    on the stack are dropped in its finally, so a failed removal does not leak fds. Red on
+    dc826d9b, where an exception out of the walk left the stacked directory descriptors open."""
+    uid = os.getuid()
+    room = _tmp_room(tmp_path, uid)
+    scratchop.tmp_make(str(room))
+    (room / "tmp" / "a" / "b" / "c").mkdir(parents=True)
+    real_scan = scratchop._scan
+    state = {"n": 0}
+
+    def boom(parent_fd: int, name: str | None, fd: int, uid_: int | None) -> Any:
+        state["n"] += 1
+        if state["n"] >= 3:  # a couple of child frames are on the stack by now
+            raise RuntimeError("mid-walk failure")
+        return real_scan(parent_fd, name, fd, uid_)
+
+    monkeypatch.setattr(scratchop, "_scan", boom)
+    fd = os.open(str(room), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    before = len(os.listdir("/proc/self/fd"))
+    try:
+        with pytest.raises(RuntimeError):
+            scratchop._empty(fd, uid)
+        assert len(os.listdir("/proc/self/fd")) <= before  # nothing leaked but our own root fd
+    finally:
+        os.close(fd)
+
+
 def test_the_tmp_module_answers_in_one_line_and_says_link_by_its_exit_code(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -606,3 +686,21 @@ def test_the_tmp_module_answers_in_one_line_and_says_link_by_its_exit_code(
     assert scratchop.main(["tmpmake", str(room)]) == scratchop.LINK
     assert '"result": "link"' in capsys.readouterr().out
     assert scratchop.main(["tmpmake"]) == 2  # no path
+
+
+def test_the_tmp_parent_op_creates_or_adopts_the_per_user_parent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`tmpparent` creates the per-user parent 0700, adopts one already this uid's own, and
+    normalises a parent narrowed since; a link or a non-canonical path is refused."""
+    uid = os.getuid()
+    parent = tmp_path / f"maity-scratch-{uid}"
+    assert scratchop.main(["tmpparent", str(parent)]) == 0
+    assert capsys.readouterr().out.strip() == '{"result": "made"}'
+    assert parent.is_dir() and stat.S_IMODE(parent.stat().st_mode) == 0o700
+    os.chmod(parent, 0o500)  # narrowed by something since
+    assert scratchop.tmp_parent_make(str(parent)) == {"result": "made"}  # adopted and normalised
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o700
+    with pytest.raises(OSError):  # a non-canonical (other-uid) parent is refused
+        scratchop.tmp_parent_make(str(tmp_path / f"maity-scratch-{uid + 1}"))
+    assert scratchop.main(["tmpparent"]) == 2  # no path

@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -3067,7 +3068,7 @@ def test_a_new_generation_does_not_resume_the_hung_session(
 
 @pytest.fixture(autouse=True)
 def _restore_modes(tmp_path: Path) -> Any:
-    """Some agy scratch tests leave an unlistable (0300) per-user parent behind by design; widen
+    """Some agy scratch tests leave restrictive directories behind by design; widen
     every directory at teardown so pytest's cleanup of its temporary directory can remove it."""
     yield
     for root, dirs, _files in os.walk(tmp_path, topdown=True):
@@ -3193,7 +3194,7 @@ def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(
     monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
     agy = config.Harness("antigravity", ("supervised",), "supervised")
     room = sup._scratch(placement(harness="antigravity"), agy, target)
-    # The leaf name is the unguessable one the runner chose, recorded for this placement, not
+    # The leaf name is the random one the runner chose, recorded for this placement, not
     # the placement id.
     leaf = sup.scratch_names["plc-0003"]
     assert room == workspace.tmp_scratch_of(target.as_user.uid(), leaf)
@@ -3203,7 +3204,7 @@ def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(
 
     assert room is not None and (room / "tmp").is_dir()
     assert _stat.S_IMODE(room.stat().st_mode) == 0o700  # the leaf is private
-    assert _stat.S_IMODE(room.parent.stat().st_mode) == 0o300  # the parent is unlistable
+    assert _stat.S_IMODE(room.parent.stat().st_mode) == 0o700  # the parent is 0700, owned
 
 
 def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
@@ -3220,7 +3221,7 @@ def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
     assert room is not None
     (room / "tmp" / "review.json").write_bytes(b"x" * 2000)  # a prior run's leftovers
     again = sup._scratch(placement(harness="antigravity"), agy, target)  # a restart
-    # A restart removes the old leaf and makes one with a fresh, unguessable name, so nothing
+    # A restart removes the old leaf and makes one with a fresh, random name, so nothing
     # carries across and the old path is gone.
     assert again is not None and again != room and not room.exists()
     assert (again / "tmp").is_dir() and not (again / "tmp" / "review.json").exists()
@@ -3236,7 +3237,7 @@ def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
     assert entry["path"] == str(again) and entry["why"] == "closed"
 
 
-def test_two_agy_placements_get_different_unguessable_leaf_names(
+def test_two_agy_placements_get_different_random_leaf_names(
     world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     sup, *_ = world
@@ -3358,3 +3359,124 @@ def test_the_clone_and_scratch_sizes_are_measured_for_the_status(world: Any) -> 
     assert rec.scratch_bytes is not None and rec.scratch_bytes >= 3000
     saved = json.loads((sup.cfg.state_dir / supervisor.ACTUAL_FILE).read_text())
     assert saved["plc-0003"]["scratch_bytes"] == rec.scratch_bytes
+
+
+def test_the_agy_leaf_name_is_recorded_before_the_leaf_is_made(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The chosen leaf name is persisted before tmp_make runs, so a crash or OnTheWay between
+    the make and a later save cannot orphan a leaf the runner cannot find again. Red on
+    dc826d9b, where the name was recorded and saved only after a successful make."""
+    sup, *_ = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+    seen: dict[str, Any] = {}
+    real_make = scratch.tmp_make
+
+    def traced(path: Path, as_user: Any) -> None:
+        seen["recorded"] = dict(sup.scratch_names)  # already recorded when the make runs
+        seen["on_file"] = state.load_state(sup.cfg.state_dir, name=supervisor.TMP_NAMES_FILE)
+        return real_make(path, as_user)
+
+    monkeypatch.setattr(scratch, "tmp_make", traced)
+    room = sup._scratch(placement(harness="antigravity"), agy, target)
+    assert room is not None
+    assert seen["recorded"] == {"plc-0003": room.name}  # recorded before the make
+    assert seen["on_file"] == {"plc-0003": room.name}  # and persisted before the make
+
+
+def test_a_failed_agy_leaf_make_keeps_the_name_recorded_for_the_next_start(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When tmp_make fails the chosen name stays recorded, so the next start finds and replaces
+    it rather than orphaning it."""
+    sup, *_ = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+
+    def fails(path: Path, as_user: Any) -> None:
+        raise scratchop.OnTheWay("a link where the leaf must be")
+
+    monkeypatch.setattr(scratch, "tmp_make", fails)
+    assert sup._scratch(placement(harness="antigravity"), agy, target) is None
+    assert "plc-0003" in sup.scratch_names  # kept, so the next start removes or replaces it
+    assert state.load_state(sup.cfg.state_dir, name=supervisor.TMP_NAMES_FILE) == sup.scratch_names
+
+
+def test_the_shared_tmp_parent_is_created_before_a_hiding_placement_starts(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A placement whose sandbox hides the per-user parent (claude-code, codex) is given it and
+    the runner creates it (0700) first, so the sandbox's deny path is a real directory, not a
+    placeholder an agy placement would then see instead of its parent. A placement that hides
+    nothing (opencode) is given no parent and the runner pre-creates none for it. Red on
+    dc826d9b, where the parent was not made; and before round 3 every non-agy placement, opencode
+    included, was given one it never hides."""
+    import stat as _stat
+
+    sup, *_ = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    target = sup.targets["local"]
+    claude = config.Harness("claude-code", ("supervised", "interactive"), "supervised")
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    parent = sup._tmp_scratch_parent(target, claude)
+    assert parent is not None and not parent.exists()
+    # Codex hides the parent too, and names the same per-user parent as Claude Code (its path is
+    # keyed on the user, not the harness).
+    assert sup._tmp_scratch_parent(target, codex) == parent
+    sup._make_tmp_parent(parent, target)
+    assert parent.is_dir() and _stat.S_IMODE(parent.stat().st_mode) == 0o700
+    sup._make_tmp_parent(parent, target)  # adopts an existing one without error
+    assert parent.is_dir()
+    opencode = config.Harness("opencode", ("supervised", "interactive"), "supervised")
+    assert sup._tmp_scratch_parent(target, opencode) is None  # hides nothing, is given nothing
+
+
+def test_scratch_name_saves_are_serialized(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_save_scratch_names` holds the names-file write under its own lock, so two concurrent
+    saves never interleave their snapshot and write (a stale snapshot overwriting a fresh one).
+    Red on dc826d9b, where the snapshot was taken under `self.lock` but the write was not, so
+    two threads could both be inside the write at once."""
+    sup, *_ = world
+    events: list[str] = []
+    gate = threading.Event()
+    real_save = state.save_state
+
+    def traced(state_dir: Path, data: Any, name: str) -> Any:
+        if name == supervisor.TMP_NAMES_FILE:
+            events.append("enter")
+            gate.wait(1.0)  # held inside the write: a second save interleaves here without a lock
+            events.append("exit")
+        return real_save(state_dir, data, name)
+
+    monkeypatch.setattr(state, "save_state", traced)
+    first = threading.Thread(target=sup._save_scratch_names)
+    second = threading.Thread(target=sup._save_scratch_names)
+    first.start()
+    while not events:  # wait until the first save is inside the write
+        time.sleep(0.001)
+    second.start()
+    time.sleep(0.05)  # give the second a chance to enter the write if it is not serialized
+    gate.set()
+    first.join(2)
+    second.join(2)
+    # Serialized: each enter is followed by its own exit, never enter/enter/exit/exit.
+    assert events == ["enter", "exit", "enter", "exit"]
+
+
+def test_a_tmp_scratch_leaf_with_a_trailing_newline_is_refused(tmp_path: Path) -> None:
+    """workspace.tmp_scratch_of validates the leaf with fullmatch (parity with scratchop), so a
+    name with a trailing newline is refused rather than taken. Red on dc826d9b, which used
+    `TMP_LEAF.match` and accepted the trailing newline."""
+    good = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+    assert workspace.tmp_scratch_of(1000, good).name == good
+    with pytest.raises(workspace.Refused):
+        workspace.tmp_scratch_of(1000, good + "\n")

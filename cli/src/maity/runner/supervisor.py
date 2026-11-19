@@ -137,10 +137,10 @@ FOLDER_PROMPT_WITHIN = 180.0
 UNCONFINED_REPORTED = ("claude-code", "antigravity")
 KILL_AFTER = 10.0  # from SIGTERM to kill-session
 ACTUAL_FILE = "actual.json"
-# The unguessable leaf names the runner chose for each agy `/tmp` scratch (workspace layout):
-# the parent is unlistable and the name is random, so the runner cannot rediscover a leaf by
-# listing — it keeps the names here to find each placement's own scratch again for removal on
-# close and across a runner restart. Its own file, not the clone's, which the agent can write.
+# The random leaf names the runner chose for each agy `/tmp` scratch (workspace layout): the
+# name is not the placement id, so the runner keeps the names here to find each placement's own
+# scratch again for removal on close and across a runner restart. Its own file, not the clone's,
+# which the agent can write.
 TMP_NAMES_FILE = "tmp_scratch.json"
 APPROVED_FILE = "approved.json"
 LOGS = "logs"
@@ -352,8 +352,11 @@ class Supervisor:
     # whose scratch is gone since this service started (§15.5).
     closed_placements: list[dict[str, Any]] = field(default_factory=list)
     scratch_cleared: set[str] = field(default_factory=set)
-    # placement id -> the unguessable leaf name of its agy `/tmp` scratch (TMP_NAMES_FILE).
+    # placement id -> the random leaf name of its agy `/tmp` scratch (TMP_NAMES_FILE).
     scratch_names: dict[str, str] = field(default_factory=dict)
+    # Serialises the TMP_NAMES_FILE write: `_save_scratch_names` holds it across snapshot + write,
+    # so two start threads (or a start and a tick) never race a stale snapshot over a fresh one.
+    scratch_names_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -418,10 +421,14 @@ class Supervisor:
 
     def _save_scratch_names(self) -> None:
         """Persist the agy `/tmp` scratch leaf names (TMP_NAMES_FILE): written as soon as one is
-        chosen or cleared, so a crash never leaves the runner unable to find a leaf to remove."""
-        with self.lock:
-            names = dict(self.scratch_names)
-        state.save_state(self.cfg.state_dir, names, name=TMP_NAMES_FILE)
+        chosen or cleared, so a crash never leaves the runner unable to find a leaf to remove.
+        `scratch_names_lock` is held across the snapshot and the write, so a concurrent `_start`
+        worker or a `tick()` cannot write a stale snapshot over a fresher one (the write is not
+        under `self.lock`, so it never blocks a tick)."""
+        with self.scratch_names_lock:
+            with self.lock:
+                names = dict(self.scratch_names)
+            state.save_state(self.cfg.state_dir, names, name=TMP_NAMES_FILE)
 
     # --- the loop --------------------------------------------------------------------------
 
@@ -1319,6 +1326,8 @@ class Supervisor:
         found = view.found
         private = self._private(target, place)
         tmp_parent = self._tmp_scratch_parent(target, harness)
+        if tmp_parent is not None:
+            self._make_tmp_parent(tmp_parent, target)
         return adapters.Context(
             placement=p,
             harness=harness,
@@ -1347,12 +1356,29 @@ class Supervisor:
             tmp_scratch_parent=tmp_parent,
         )
 
+    def _make_tmp_parent(self, parent: Path, target: Target) -> None:
+        """Create the per-user `/tmp` scratch parent (0700, owned by the agents' user) before a
+        placement that only hides it starts, so the deny path the sandbox is given is a real
+        directory. A missing deny path leaves some sandboxes a placeholder file at it; an agy
+        placement of the same user would then see a file where its parent must be and get no
+        scratch. Best effort: a failure is logged, the hiding still holds, and the agy start
+        makes the parent itself if it is still missing."""
+        try:
+            scratch.tmp_make_parent(parent, target.as_user)
+        except (scratchop.OnTheWay, OSError, subprocess.SubprocessError) as exc:
+            self.log(f"the shared /tmp scratch parent was not pre-created on {target.name}: "
+                     f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+
     def _tmp_scratch_parent(self, target: Target, harness: config.Harness) -> Path | None:
         """The agy per-user `/tmp` scratch parent to hide from this placement's sandbox, or None.
-        A non-agy placement does not use that parent and may run as the same user as an agy one,
-        so the parent is hidden from it; an agy placement owns it and is not given it here. None
-        where there is no local `/tmp` scratch (an ssh host, or no uid)."""
-        if workspace.scratch_in_tmp(harness.id) or not target.as_user.here:
+        Only a placement whose sandbox hides that parent is given it (workspace.hides_tmp_scratch_
+        parent): such a placement may run as the same user as an agy one, so the parent is hidden
+        from it and the deny/none path is set to it; an agy placement owns it and is not given it
+        here, and a harness that opens no such rule (opencode, stub) is given None so the runner
+        pre-creates nothing for it. None too where there is no local `/tmp` scratch (an ssh host,
+        or no uid). This single field drives both the sandbox's deny path (adapters) and the
+        runner's pre-create (_make_tmp_parent), so the two cannot name different placements."""
+        if not workspace.hides_tmp_scratch_parent(harness.id) or not target.as_user.here:
             return None
         try:
             uid = target.as_user.uid()
@@ -1388,11 +1414,17 @@ class Supervisor:
         """agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of),
         owned by the uid agy runs as: its sandbox makes the beside-clone `.scratch` read-only,
         so the scratch goes to the host-shared writable location instead. Any earlier leaf of
-        this placement is removed and a leaf with a fresh, unguessable name is made, so nothing
-        carries across a restart and the parent stays unlistable; the chosen name is recorded
-        (TMP_NAMES_FILE) so the session and the supervisor find this placement's own scratch
-        again. None when the uid is unknown (an ssh host) or a level is a link or a directory
-        another user holds, the session then starting without one."""
+        this placement is removed and a leaf with a fresh, random name is made, so nothing
+        carries across a restart; the chosen name is recorded (TMP_NAMES_FILE) so the session
+        and the supervisor find this placement's own scratch again. None when the uid is unknown
+        (an ssh host) or a level is a link or a directory another user holds, the session then
+        starting without one.
+
+        The new name is recorded *before* the leaf is made, so a crash or an OnTheWay between
+        the make and a later save can never orphan a leaf the runner cannot find again. The
+        previous run's leaf is removed first, while it is still the recorded name; its name is
+        dropped from the record only once it is actually gone, and a removal failure is logged
+        rather than silently dropping the name (the new name then overwrites it, logged)."""
         try:
             uid = target.as_user.uid()
         except OSError as exc:
@@ -1403,24 +1435,29 @@ class Supervisor:
         if old is not None:  # a prior run's leaf: the agy scratch is made fresh each start
             try:
                 scratch.tmp_remove(workspace.tmp_scratch_of(uid, old), target.as_user)
-            except (scratchop.OnTheWay, OSError, subprocess.SubprocessError, workspace.Refused):
-                pass  # left behind at most; a fresh leaf is still made below
+            except (scratchop.OnTheWay, OSError, subprocess.SubprocessError,
+                    workspace.Refused) as exc:  # fmt: skip
+                self.log(f"{p['id']}: previous scratch leaf not removed on {target.name}: "
+                         f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+            else:  # gone: drop its recorded name before the new one takes its place
+                with self.lock:
+                    if self.scratch_names.get(p["id"]) == old:
+                        del self.scratch_names[p["id"]]
+                self._save_scratch_names()
         leaf = secrets.token_hex(16)
         try:
             path = workspace.tmp_scratch_of(uid, leaf)
         except workspace.Refused:
             return None
+        with self.lock:  # recorded before the leaf is made: a crash after the make cannot orphan it
+            self.scratch_names[p["id"]] = leaf
+        self._save_scratch_names()
         try:
             scratch.tmp_make(path, target.as_user)
-        except scratchop.OnTheWay as exc:
+        except (scratchop.OnTheWay, OSError, subprocess.SubprocessError) as exc:
+            # The name stays recorded; the next start removes or replaces it, so it is not orphaned.
             self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
-        except (OSError, subprocess.SubprocessError) as exc:
-            self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
-            return None
-        with self.lock:
-            self.scratch_names[p["id"]] = leaf
-        self._save_scratch_names()  # durable before the session is told its scratch
         return path
 
     def _scratch_location(self, p: dict[str, Any], target: Target) -> tuple[Path, bool] | None:

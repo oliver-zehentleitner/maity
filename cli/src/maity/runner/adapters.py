@@ -215,9 +215,11 @@ class Context:
     # The placement's scratch (§15.5), made by the supervisor; None where the harness gets none
     # (workspace.SCRATCH_HARNESSES).
     scratch: Path | None = None
-    # The agy per-user `/tmp` scratch parent, hidden from this (non-agy) placement's sandbox so
-    # it cannot reach another placement's scratch there; None for an agy placement, which owns
-    # that parent, and where there is no local `/tmp` scratch (an ssh host, no uid).
+    # The agy per-user `/tmp` scratch parent, hidden from this placement's sandbox so it cannot
+    # reach another placement's scratch there; set only for a placement whose sandbox hides it
+    # (workspace.TMP_SCRATCH_PARENT_HIDERS: Claude Code, Codex). None for an agy placement, which
+    # owns that parent, for one that hides nothing, and where there is no local `/tmp` scratch (an
+    # ssh host, no uid).
     tmp_scratch_parent: Path | None = None
 
 
