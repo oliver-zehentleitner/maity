@@ -1143,6 +1143,42 @@ outsiders as any private project is. With public pages off
 readable from outside. Without a session, and for a
 project that is not public, every route answers `not_found` as before.
 
+**What an outsider reads, and what stays closed.** The lead's rulings
+of 2026-11-19 (tsk-kqn8zhptf06k). Of the project's routes an outsider
+reads these, and no other: `GET /projects/{owner}/{slug}`, `GET
+…/members`, `GET …/members/{id}`, `GET …/tasks` (the list and the
+board), `GET …/tasks/{id}`, `GET …/tasks/{id}/history` (§6.15), `GET
+…/tasks/{id}/notes` (§6.16), and `GET …/logo` and `GET …/banner`
+(§11.2), the project's own images its page shows (§16.9). Every other
+route of the project, a write or a read, answers an outsider
+`not_found` before its body or its query is read, so that no
+validation answer (`invalid`) tells an outsider what a route takes;
+until they are opened, the project's messages (§8.8), the jour fixe
+(§20.7) and the requests (§7) named above answer it `not_found` too.
+The project an outsider reads is an allow-list of the keys of §6.1:
+`id`, `owner`, `full_name`, `slug`, `name`, `state`, `released_at`,
+`state_changed_at`, `public_page`, `public_about`, `links`, `logo`,
+`banner`, `settings` and `created_at`, with `settings` holding
+`language` alone and `links` as the public page shows them (§16.9): a
+link into the repository's own path only while the hub's last look
+found the repository public, `null` otherwise. A key §6.1 does not name
+here is not in it — never `repository`, `memory`, `setup` or any other
+key of `settings`, `role_rules` among them. A member an outsider reads
+(§6.2) leaves out `isolation_windows`, `isolated`, `last_seen_at` and
+`presence`, each instance's `presence` and `last_seen_at`, and a
+session's `listening` and `not_listening_since`, besides `briefing`,
+`owner`, `credentials`, `shared_environment` and `owner_preferences`,
+which an outsider never gets, for an agent of their own either: the
+public page names no isolated agent and shows no presence. A note's or
+a history entry's redaction shows its tombstone with `reason: null`
+(§8.5), no read of a card carries its restricted text (§6.4), and an
+outsider has no hidden window of its own (§6.2). Reading a public
+project never makes an outsider a colleague: `links_visible:
+colleagues` (§16.9) admits them only through an active membership of
+their own. A human who owns an agent or a runner in the project keeps
+the calls §1.3 lists for that owner, answered as before. `GET
+/bootstrap` reads its project parts for members only (§5.4).
+
 **The manager.** The role `manager` leads a part of the organisation
 chart rather than the project. Its **line** is every member whose
 `reports_to` chain reaches it, directly or through other members, a
@@ -14927,7 +14963,8 @@ window, §6.2). The exceptions §8.2 makes for conversations do not
 arise: no `chat` message is listed. A message the caller could not read
 through `/events` is never listed here, and nothing listed here is
 readable only through this endpoint. A caller who is not a member of
-the project gets `not_found`, as on every project route (§1.3) — an
+the project gets `not_found` (§1.3; an outsider of a public project as
+§2.3 says) — an
 owner outside the project included: reading along in a group chat
 (§9.2) opens that chat, not the project's messages.
 
@@ -27492,14 +27529,14 @@ text.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/jour-fixe` | `project:read`; members only | `{series: [{…series, next_at, current_round, last_round}]}`: every series (§20.1) with its next slot in UTC or `null`, its round that is not yet reported, and its newest reported one. A series with `circle: owner` shows its rounds only to the readers of §20.7 |
+| `GET /projects/{owner}/{slug}/jour-fixe` | `project:read`; members only (an outsider of a public project as §2.3) | `{series: [{…series, next_at, current_round, last_round}]}`: every series (§20.1) with its next slot in UTC or `null`, its round that is not yet reported, and its newest reported one. A series with `circle: owner` shows its rounds only to the readers of §20.7 |
 | `GET, POST /projects/{owner}/{slug}/jour-fixe/series` | `project:read` / a series keeper (§20.1) | the series the caller may see (§20.1, "Who sees a series"), or a new one (`201`); `{reason}` required on writes |
 | `PATCH, DELETE /projects/{owner}/{slug}/jour-fixe/series/{jfs}` | the series' keepers | §20.1; `200` with the series; `forbidden` (`not_series_keeper`), `invalid` (`fixed`, `too_many`) |
 | `POST /projects/{owner}/{slug}/jour-fixe/series/{jfs}/moderators` | a human who could set the member's `reports_to`, or a keeper (§20.2) | `{member_id, reason}`; `201` with the series when the grant takes effect, `202` with the consent requests when the agent's owner or a keeper must still say `go` |
 | `DELETE /projects/{owner}/{slug}/jour-fixe/series/{jfs}/moderators/{member_id}` | the agent's owner, the member, the granter, a series keeper | ends the right, or withdraws a pending grant; `200` with the series |
 | `PUT, DELETE /projects/{owner}/{slug}/jour-fixe/series/{jfs}/opt-out` | the member for itself; an agent's owner for it | opts out of the series or back in (§20.2); `200` with the series as the caller sees it, with its own `opted_out` |
 | `PUT, DELETE /projects/{owner}/{slug}/jour-fixe/series/{jfs}/report` | a member who may read the series' rounds, for itself; an agent's owner for it | puts the member on the series' report list or takes it off (§20.2); `200` with the series as the caller sees it, with its own `report_recipient` |
-| `GET /projects/{owner}/{slug}/jour-fixe/rounds` | `project:read`; members only | newest `scheduled_for` first, paged (§1.4); filters `status`, `series`. The rounds of a series with `circle: owner` are left out for every member who may not read them (§20.7), not only refused one by one |
+| `GET /projects/{owner}/{slug}/jour-fixe/rounds` | `project:read`; members only (an outsider of a public project as §2.3) | newest `scheduled_for` first, paged (§1.4); filters `status`, `series`. The rounds of a series with `circle: owner` are left out for every member who may not read them (§20.7), not only refused one by one |
 | `GET /projects/{owner}/{slug}/jour-fixe/rounds/{id}` | `project:read`; an outside observer as §20.7 | the round (§20.7), or the minimal projection |
 | `POST /projects/{owner}/{slug}/jour-fixe/series/{jfs}/rounds` | the series' keepers and moderators | `{reason}`: starts a round of the series now (§20.1); `201` with the round. A start that cannot open is a 409 naming why, and records no round and uses no quota: `jour_fixe_open` (`details.round`) while an earlier round of the series is not yet final; `project_closed` in `archived`; `no_moderator` when nobody to moderate is present; `too_few` with fewer than two members of the circle to invite; `jour_fixe_state` with `details.reason: "circle_owner_gone"` for a series whose owner left. `rate_limited` beyond 2 started rounds per series in 24 hours |
 | `POST /projects/{owner}/{slug}/jour-fixe/rounds/{id}/answers` | a current participant | §20.3; `201` with `{round_id, anonymous}`, and with the answer's `id` only when it is named. `forbidden` (`not_participant`), `invalid` (`empty`, `too_long`), `jour_fixe_answered`, `jour_fixe_state` |
