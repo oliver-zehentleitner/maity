@@ -297,11 +297,45 @@ def test_the_page_says_who_invites_to_what(owner: flow.Human, make_client: Clien
         "expires_at": made["expires_at"],
         "address_bound": False,
         "registration": "sign_in_only",  # a fresh instance is closed and has no mail
+        "restricted_texts": False,  # no restricted-access setting
     }
     # The inviter's handle is the only one the page carries (§3.4).
     rest = {key: value for key, value in shown.json().items() if key != "invited_by"}
     assert "handle" not in str(rest)
     assert token_of(made) not in shown.text
+
+
+def test_the_page_says_whether_the_new_member_reads_the_restricted_texts(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """§3.4: `true` under `all_except` for an invitation above `guest`, `false` otherwise;
+    from the project and the invitation alone, the same for every reader."""
+    member_level, guest_level = issue(owner), issue(owner, trust="guest", role="coder")
+    anna = member(make_client, migrated, "anna")
+    visitor = make_client()
+
+    def shown(made: dict[str, Any], client: Any = visitor) -> Any:
+        response = page(client, token_of(made))
+        assert response.status_code == 200, response.text
+        return response.json()["restricted_texts"]
+
+    def stored(value: Any) -> None:
+        with migrated.begin() as conn:
+            settings = dict(conn.execute(select(t.project.c.settings)).scalar_one() or {})
+            settings["restricted_access"] = value
+            conn.execute(update(t.project).values(settings=settings))
+        joins.EXCHANGE_BY_ADDRESS.reset()  # each step its own room under 10 a minute (§3.4)
+
+    assert (shown(member_level), shown(guest_level)) == (False, False)  # no setting
+    stored({"mode": "all_except", "members": []})
+    assert (shown(member_level), shown(guest_level)) == (True, False)
+    # A list that names someone changes nothing: no person is looked at, nor who reads.
+    stored({"mode": "all_except", "members": [owner.id, anna.id]})
+    assert (shown(member_level), shown(member_level, anna.client)) == (True, True)
+    stored({"mode": "nobody_except", "members": [owner.id]})
+    assert (shown(member_level), shown(guest_level)) == (False, False)
+    stored(None)
+    assert shown(member_level) is False
 
 
 def test_the_page_is_one_not_found_for_every_dead_token(
