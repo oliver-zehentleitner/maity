@@ -417,10 +417,13 @@ def start_hub(
         MAITY_WEB_DIR=str(WEB),
         MAITY_ATTACHMENT_DIR=str(attachments),
         MAITY_PUBLIC_PAGES="on",
-        # A test browser session reads far faster than a person: no read limit per credential.
+        # A test browser session reads far faster than a person: no read limit per credential,
+        # unless `extra` sets one (read_limit_round).
         MAITY_MAX_READS_PER_MINUTE="unlimited",
-        **(extra or {}),
     )
+    # After the defaults, so `extra` overrides one: in the dict() call above a key named twice
+    # was a TypeError before the hub started.
+    env.update(extra or {})
     HUB_ENV[base] = env
     log_path = logs / log_name
     with open(log_path, "w") as log:  # the hub keeps its own copy of the descriptor
@@ -927,6 +930,7 @@ def main() -> int:
                     security_round(run, browser, work, artifacts)
                     mail_factor_round(run, browser, work, artifacts)
                     password_reset_round(run, browser, work, artifacts)
+                    read_limit_round(run, browser, work, artifacts)
                 except Exception:
                     report_failure(list(run.recent), base, artifacts)
                     # What the page itself said before the step failed: its errors explain more than a missing element.
@@ -3452,6 +3456,145 @@ def password_reset_round(run: Run, browser, work: Path, artifacts: Path) -> None
                 pass
         stop_hub(hub)
         catcher.close()
+        run.base = first_base
+
+
+# Reads of /api/v1/me from inside the page, with its session cookie (a read needs no CSRF header),
+# until the first refusal: then the session's budget is spent. At most 200, so a hub that never
+# refuses fails the step instead of holding it; any answer but 200 and 429 ends it at once.
+BURN_READS_JS = """async () => {
+  for (let i = 1; i <= 200; i++) {
+    const r = await fetch("/api/v1/me", { credentials: "same-origin" });
+    if (r.status === 429) return { reads: i, status: 429, retry: r.headers.get("Retry-After"), body: await r.json() };
+    if (r.status !== 200) return { reads: i, status: r.status, body: await r.text() };
+  }
+  return null;
+}"""
+
+# One read of /api/v1/me at a time, polled by wait_for_function: true once one answers 200, that
+# is once the counter takes a read of this session again. Synchronous, so the poll never mistakes
+# a pending promise for a truthy answer.
+READS_AGAIN_JS = """() => {
+  if (!window.__e2eReading) {
+    window.__e2eReading = true;
+    fetch("/api/v1/me", { credentials: "same-origin" })
+      .then((r) => { window.__e2eReadStatus = r.status; }, () => {})
+      .finally(() => { window.__e2eReading = false; });
+  }
+  return window.__e2eReadStatus === 200;
+}"""
+
+# The Retry-After a refused session must carry before a load counts on it (read_limit_round).
+REFUSED_FOR_AT_LEAST = 10
+
+
+def read_limit_round(run: Run, browser, work: Path, artifacts: Path) -> None:
+    """The refused read (§1.7 "Reads per credential") as the reader sees it, on a hub of its own
+    with the lowest read limit it takes (60 a minute): `rate_limited` through js/errors.js to
+    the page that could not load. Every other hub of this run reads without a limit (start_hub)."""
+    home = work / "read-limit-hub"
+    home.mkdir()
+    port = free_port()
+    first_base = run.base
+    run.base = f"http://127.0.0.1:{port}"
+    run.step(f"read limit hub on {run.base}: a session past 60 reads a minute sees the page that could not load")
+    log_name = "hub-read-limit.log"
+    hub = start_hub(home, artifacts, port, {"MAITY_MAX_READS_PER_MINUTE": "60"}, log_name)
+    contexts = []
+    # Why each load below is refused, without a sleep (hub/src/maity_hub/read_limits.py
+    # ReadCounter.take, ratelimit.estimate_wait):
+    # - The counter's key is the session's hash (auth/caller.py `_cookie`): each sign-in is a
+    #   credential with counts of its own, and nothing an earlier session read counts for it.
+    # - A refused read is not counted (take returns before `current += 1`). Once the burn is
+    #   refused, a read of the session fits again only when time alone makes room: the previous
+    #   minute's weight falling within this minute, or this minute rolling over.
+    # - Retry-After is ceil(T) of exactly that T (estimate_wait solves current + 1 + previous *
+    #   (1 - elapsed) <= limit for the elapsed it needs). Retry-After >= REFUSED_FOR_AT_LEAST
+    #   (10) means every read of that session is refused for more than 9 s after the burn.
+    # - A load decides on its first counted reads: GET /bootstrap (js/api.js prime, one read; a
+    #   `rate_limited` answers the whole bundle, routes/bootstrap.py WHOLE), then GET
+    #   /auth/session on its own route, whose 429 reaches pageFailed (js/app.js render). The
+    #   view's own reads run only after /auth/session and /me answered; a refusal there would
+    #   show errorBox instead, which is the case this rules out.
+    # So a load fails only if the hub takes its GET /auth/session more than 9 s after the burn,
+    # where it takes about a second. A burn with a shorter Retry-After is not used: it ended in
+    # the last seconds of a minute, or the session's reads straddled a minute's start and that
+    # minute's weight frees a slot about every second. The round then waits, as a condition, until
+    # that session reads again, which is early in a minute (1 s after its start in the first case,
+    # at most about 10 s after the burn in the second), and signs in once more: that session's
+    # reads all fall in that minute, previous = 0, and its Retry-After is ceil(seconds left + 1),
+    # at least 10 unless the two sign-ins with their burns took more than about 40 s.
+    try:
+
+        def refused_session(what: str):
+            """A new session, signed in, its reads spent, refused for more than 9 s from now."""
+            for attempt in (1, 2):
+                context, page = sign_in(run, browser)
+                contexts.append(context)
+                burned = page.evaluate(BURN_READS_JS)
+                assert burned, f"{what}: 200 reads of /api/v1/me without a refusal: the read limit does not hold"
+                assert burned["status"] == 429, (
+                    f"{what}: GET /api/v1/me answered {burned['status']} on read {burned['reads']}, "
+                    f"neither 200 nor 429: {burned['body']}"
+                )
+                assert burned["body"]["error"]["code"] == "rate_limited", burned
+                assert burned["retry"] and int(burned["retry"]) >= 1, burned
+                retry = int(burned["retry"])
+                if retry >= REFUSED_FOR_AT_LEAST:
+                    return page, burned
+                assert attempt == 1, (
+                    f"{what}: a session signed in early in a minute still answered Retry-After {retry}, "
+                    f"under {REFUSED_FOR_AT_LEAST}"
+                )
+                page.wait_for_function(READS_AGAIN_JS, polling=250, timeout=TIMEOUT_MS)
+                context.close()
+            raise AssertionError(f"{what}: no refused session")
+
+        page, burned = refused_session("English")
+        hub_message = burned["body"]["error"]["message"]
+        page.goto(run.base + "/all")
+        failed = page.locator("main .page-failed")
+        reason = page.locator("main .page-failed-reason")
+        expect(failed).to_be_visible()
+        # In English the hub's own message stands (js/errors.js): the title is the page's, the
+        # details hold the status, the code and the hub's words. A closed <details> counts too.
+        expect(page.locator("main .page-failed-title")).to_have_text("Maity couldn't load this page")
+        expect(reason).to_contain_text("HTTP 429 rate_limited")
+        expect(reason).to_contain_text(hub_message)
+        run.shot(page, "read-limit-failed-1280")
+        run.a11y(page, "read limit: the page that could not load")
+
+        # Another language takes errors.js's words for the code, from its catalog, in place of the
+        # hub's English: the mapping `rate_limited` → error.rate_limited, read from de.json. On a
+        # session of its own: the screenshot and the axe pass above take seconds of the first one's.
+        de = json.loads((WEB / "i18n" / "de.json").read_text())
+        page, _ = refused_session("German")
+        failed = page.locator("main .page-failed")
+        reason = page.locator("main .page-failed-reason")
+        page.goto(run.base + "/all?lang=de")
+        expect(page.locator("html")).to_have_attribute("lang", "de")
+        expect(failed).to_be_visible()
+        expect(page.locator("main .page-failed-title")).to_have_text(de["page.failed.other"])
+        expect(reason).to_contain_text("HTTP 429 rate_limited")
+        expect(reason).to_contain_text(de["error.rate_limited"])
+        expect(reason).not_to_contain_text(hub_message)
+
+        # The refusal came from the limit per credential, not from an ingress or a route limit:
+        # the hub's one INFO line per refusal (read_limits.take).
+        logged = (artifacts / log_name).read_text()
+        assert re.search(
+            r"read limit: GET /api/v1/\S+ credential=[0-9a-f]{12} limit=60 retry_after=\d+", logged
+        ), f"no read limit line in {log_name}"
+        # The refusals were asked for here; the browser's console line for each is exempt already.
+        run.problems = [p for p in run.problems if not re.fullmatch(r"GET /api/v1/\S+ answered 429", p)]
+        no_problems(run, "read limit")
+    finally:
+        for c in contexts:
+            try:
+                c.close()
+            except Exception:
+                pass
+        stop_hub(hub)
         run.base = first_base
 
 
