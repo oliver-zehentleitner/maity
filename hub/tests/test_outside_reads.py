@@ -409,6 +409,109 @@ def test_a_not_done_security_card_is_hidden_from_an_outsider_as_on_the_public_bo
             assert world.owner.get(path).status_code == 200, path
 
 
+def _hold(engine: Engine, reporter: str, card_id: str, action: str = "hide") -> None:
+    """A moderation hold on the card, as `moderation.apply` leaves one (§16.8)."""
+    report_id = f"rpt-{card_id[-12:]}"
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.abuse_report).values(
+                id=report_id, reporter=reporter, account_id=reporter, target_type="card",
+                target_id=card_id, reason="spam", status="resolved", action=action,
+                created_at=clock.now(),
+            )
+        )  # fmt: skip
+        conn.execute(
+            insert(t.moderation_hold).values(
+                report_id=report_id,
+                target_type="card",
+                target_id=card_id,
+                action=action,
+                at=clock.now(),
+            )
+        )
+
+
+def _listed(who: flow.Human, query: str) -> dict[str, Any]:
+    answer = who.get(f"{P}/tasks{query}")
+    assert answer.status_code == 200, (query, answer.text)
+    return {item["id"]: item for item in answer.json()["items"]}
+
+
+def test_a_card_under_a_hold_is_hidden_from_an_outsider_as_on_the_public_board(
+    world: World, migrated: Engine
+) -> None:
+    """`moderation.hold`, the public Board's and card page's rule (§16.8, §16.9): a card under
+    a hold, whatever its status, is in no list an outsider reads, and its card, history and
+    notes answer `not_found`; a member reads it as before, with its `moderation`."""
+    writer = _membership_of(migrated, world.project_id, human_id=world.owner.id)
+    held = factory.card(migrated, world.project_id, writer, title="Free tokens")
+    closed = factory.card(
+        migrated, world.project_id, writer, title="Old spam", status="done", closed_at=clock.now()
+    )
+    for card_id in (held, closed):
+        _hold(migrated, world.owner.id, card_id)
+    for query in ("", "?order=updated", "?status=open", "?status=done", "?q=tokens"):
+        assert not {held, closed} & set(_listed(world.outsider, query)), query
+    assert world.card_id in _listed(world.outsider, "")
+    assert {held, closed} <= set(_listed(world.owner, ""))
+    for card_id in (held, closed):
+        for tail in ("", "/history", "/notes"):
+            path = f"{P}/tasks/{card_id}{tail}"
+            outside = world.outsider.get(path)
+            assert (outside.status_code, outside.json()) == (404, NOT_FOUND), path
+            inside = world.owner.get(path)
+            assert inside.status_code == 200, path
+        assert world.owner.get(f"{P}/tasks/{card_id}").json()["moderation"]["action"] == "hide"
+
+
+def test_no_hidden_cards_id_is_in_any_card_an_outsider_reads(
+    world: World, migrated: Engine
+) -> None:
+    """A visible card that depends on, ships with, relates to or is the child of a not-done
+    `security` card or a card under a hold names none of them to an outsider, in the list or
+    the card, and its subtask counts leave out such children; a member reads every id and
+    count as before."""
+    writer = _membership_of(migrated, world.project_id, human_id=world.owner.id)
+    secret = factory.card(migrated, world.project_id, writer, title="Hole", label="security")
+    held = factory.card(migrated, world.project_id, writer, title="Spam")
+    _hold(migrated, world.owner.id, held)
+    plain = factory.card(migrated, world.project_id, writer, title="Plain")
+    card = factory.card(migrated, world.project_id, writer, title="Visible", parent=secret)
+    factory.card(migrated, world.project_id, writer, title="Hole 2", parent=card, label="security")
+    held_child = factory.card(migrated, world.project_id, writer, title="Held", parent=card)
+    _hold(migrated, world.owner.id, held_child)
+    shown_child = factory.card(migrated, world.project_id, writer, title="Child", parent=card)
+    edges = [
+        (card, other, kind)
+        for other in (secret, held, plain)
+        for kind in ("depends_on", "ships_with", "related")
+    ]
+    edges += [(other, card, "related") for other in (secret, held, plain)]  # symmetric
+    with migrated.begin() as conn:
+        conn.execute(
+            insert(t.card_edge),
+            [{"from_card": a, "to_card": b, "kind": kind} for a, b, kind in edges],
+        )
+    hidden = {secret, held, held_child}
+    path = f"{P}/tasks/{card}"
+    outside = [world.outsider.get(path).json(), _listed(world.outsider, "")[card]]
+    outside.append(_listed(world.outsider, "?order=updated")[card])
+    for view in outside:
+        for field in ("depends_on", "ships_with", "related"):
+            assert view[field] == [plain], (field, view[field])
+        assert view["parent"] is None
+        assert view["children"] == {"open": 1, "total": 1}
+        assert not any(card_id in str(view) for card_id in hidden), view
+    assert set(_listed(world.outsider, f"?parent={secret}")) == set()
+    assert set(_listed(world.outsider, f"?parent={card}")) == {shown_child}
+    inside = world.owner.get(path).json()
+    for field in ("depends_on", "ships_with", "related"):
+        assert inside[field] == sorted([secret, held, plain]), field
+    assert inside["parent"] == secret
+    assert inside["children"] == {"open": 3, "total": 3}
+    assert card in set(_listed(world.owner, f"?parent={secret}"))
+
+
 # --- a stranger's bad body: a private project answers as an unknown one -------------------------
 
 

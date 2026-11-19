@@ -1112,10 +1112,16 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch or the one a dependency brings (§6.4), never anyone else's."""
+    watch or the one a dependency brings (§6.4), never anyone else's. A public project's
+    outsider (`access.OutsideReader`) reads no trace of a card it does not read (§2.3,
+    `public_cards.outside_views`)."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
+    from maity_hub import access, public_cards  # they read views; imported here, not at the top
+
+    if isinstance(viewer, access.OutsideReader):
+        views = public_cards.outside_views(conn, views)
     from maity_hub import moderation  # moderation reads views; imported here, not at the top
 
     held = moderation.holds_of(conn, "card", [r.id for r in rows])

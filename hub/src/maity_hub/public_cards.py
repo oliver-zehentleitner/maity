@@ -9,6 +9,10 @@ card under a moderation hold has none, and the holder and the notes' authors are
 as the Board names a holder; an edited note shows its edit mark and reason, never its old
 text; a redacted note shows as removed, without its reason. Whatever
 changes a card or its notes calls `public_pages.touch` for the kind `card`.
+
+A public project's outsider reading the member routes (§2.3) reads the cards by the same rule
+(`outside_clause`, `outside_shown`), and no hidden card's id in another card's view
+(`outside_views`).
 """
 
 from __future__ import annotations
@@ -17,10 +21,11 @@ import hashlib
 from collections.abc import Collection
 from typing import Any
 
-from sqlalchemy import Connection, func, or_, select
+from sqlalchemy import Connection, and_, func, or_, select
 
 from maity_hub import clock, moderation, namespace, public_design, public_pages, render
 from maity_hub import tables as t
+from maity_hub.cards import CLOSED
 from maity_hub.config import Settings
 from maity_hub.public_project_views import _holder, members
 from maity_hub.public_projects import served
@@ -40,6 +45,132 @@ def shown_clause() -> Any:
     read through the member routes either (§2.3)."""
     c = t.card.c
     return or_(c.status == "done", c.label.is_(None), func.lower(c.label) != "security")
+
+
+def unheld_clause() -> Any:
+    """No moderation hold on the card, as a condition on `card`: the hold `render_card` and
+    `board_rows` read (`moderation.hold`, any hold row of the card), so a card under one is
+    on no board, has no page, and is in no list an outsider reads (§2.3, §16.8)."""
+    h = t.moderation_hold.c
+    held = select(h.report_id).where(h.target_type == "card", h.target_id == t.card.c.id)
+    return ~held.exists()
+
+
+def outside_clause() -> Any:
+    """The cards a public project's outsider reads through the member routes (§2.3): those the
+    public Board shows, `shown_clause` without a hold (`unheld_clause`)."""
+    return and_(shown_clause(), unheld_clause())
+
+
+def outside_shown(conn: Connection, card: Any) -> bool:
+    """`outside_clause` for one card read already: `shown` and no hold, as `render_card`."""
+    return shown(card) and moderation.hold(conn, "card", card.id) is None
+
+
+def _hidden_rows(conn: Connection, referenced: set[str], parents: set[str]) -> list[Any]:
+    """The cards an outsider does not read (not `outside_clause`) among `referenced`, and among
+    the children of `parents`: one query for a page of cards."""
+    c = t.card.c
+    if not referenced and not parents:
+        return []
+    return list(
+        conn.execute(
+            select(c.id, c.parent, c.status).where(
+                or_(c.id.in_(referenced), c.parent.in_(parents)), ~outside_clause()
+            )
+        )
+    )
+
+
+def hidden_among(conn: Connection, ids: set[str]) -> set[str]:
+    """The cards among `ids` an outsider does not read (not `outside_clause`)."""
+    return {row.id for row in _hidden_rows(conn, ids, set())}
+
+
+EDGE_FIELDS = ("depends_on", "ships_with", "related")
+
+
+def _release_ids(release: dict[str, Any]) -> set[str]:
+    """The card ids a release object names (`releases.release_view`)."""
+    found = {pr["task_id"] for pr in release.get("pull_requests") or [] if pr.get("task_id")}
+    found |= {card for group in release.get("groups") or [] for card in group}
+    for item in (release.get("readiness") or {}).get("blocking") or []:
+        if item.get("task"):
+            found.add(item["task"])
+        found |= set(item.get("tasks") or [])
+    return found
+
+
+def _release_without(release: dict[str, Any], hidden: set[str]) -> dict[str, Any]:
+    """The release object with no trace of a hidden card: a pull request only a hidden card
+    reported, a hidden card in a group or a blocker, and a blocker that names nothing else."""
+    dropped = {
+        pr["number"] for pr in release.get("pull_requests") or [] if pr.get("task_id") in hidden
+    }
+    groups = [
+        [card for card in group if card not in hidden] for group in release.get("groups") or []
+    ]
+    blocking = []
+    readiness = release.get("readiness") or {}
+    for item in readiness.get("blocking") or []:
+        if item.get("task") in hidden or item.get("pr") in dropped:
+            continue
+        if "tasks" in item:
+            rest = [card for card in item["tasks"] if card not in hidden]
+            if len(rest) < 2:
+                continue
+            item = {**item, "tasks": rest}
+        blocking.append(item)
+    return {
+        **release,
+        "pull_requests": [
+            pr for pr in release.get("pull_requests") or [] if pr["number"] not in dropped
+        ],
+        "groups": [group for group in groups if len(group) > 1],
+        "readiness": {**readiness, "blocking": blocking},
+    }
+
+
+def outside_views(conn: Connection, views: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Card views as a public project's outsider reads them (§2.3): no trace of a card it does
+    not read (a not-done `security` card, a card under a hold), neither in `depends_on`,
+    `ships_with`, `related`, `parent`, the `children` counts nor a release's pull requests,
+    groups and blockers. The hidden cards among those the views name are found in one query,
+    whatever the number of views."""
+    referenced: set[str] = set()
+    for view in views:
+        for name in EDGE_FIELDS:
+            referenced.update(view[name])
+        if view["parent"]:
+            referenced.add(view["parent"])
+        if view["release"]:
+            referenced |= _release_ids(view["release"])
+    rows = _hidden_rows(conn, referenced, {view["id"] for view in views})
+    hidden = {row.id for row in rows if row.id in referenced}
+    unseen: dict[str, list[Any]] = {}
+    for row in rows:
+        if row.parent is not None:
+            unseen.setdefault(row.parent, []).append(row)
+    if not hidden and not unseen:
+        return views
+    shaped = []
+    for view in views:
+        view = dict(view)
+        for name in EDGE_FIELDS:
+            view[name] = [card for card in view[name] if card not in hidden]
+        if view["parent"] in hidden:
+            view["parent"] = None
+        children = unseen.get(view["id"], [])
+        if children:
+            view["children"] = {
+                "open": view["children"]["open"]
+                - sum(child.status not in CLOSED for child in children),
+                "total": view["children"]["total"] - len(children),
+            }
+        if view["release"]:
+            view["release"] = _release_without(view["release"], hidden)
+        shaped.append(view)
+    return shaped
 
 
 def _gone_agent(conn: Connection, membership_id: int) -> bool:

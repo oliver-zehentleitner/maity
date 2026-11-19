@@ -275,7 +275,8 @@ def _project_card(conn: Connection, mine: Membership | access.OutsideReader, car
     if isinstance(mine, access.OutsideReader):
         from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
-        if not public_cards.shown(row):  # a not-done `security` card, as on the Board (§2.3)
+        # A not-done `security` card or one under a hold, as on the Board (§2.3).
+        if not public_cards.outside_shown(conn, row):
             raise not_found()
     return row
 
@@ -681,8 +682,11 @@ def list_tasks(
         if isinstance(mine, access.OutsideReader):
             from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
-            # A not-done `security` card is in no list an outsider reads, as on the Board (§2.3).
-            query = query.where(public_cards.shown_clause())
+            # A not-done `security` card or one under a hold is in no list an outsider reads,
+            # as on the Board (§2.3), nor are the children filtered by such a card's id.
+            query = query.where(public_cards.outside_clause())
+            if parent is not None and public_cards.hidden_among(conn, {parent}):
+                query = query.where(false())
         wanted: list[str] = []
         if status != "all":
             wanted = [s for s in status.split(",") if s]
