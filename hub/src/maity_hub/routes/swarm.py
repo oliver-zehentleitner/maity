@@ -51,7 +51,7 @@ def _live(
                 {
                     "task_id": card.id,
                     "title": card.title,
-                    "since": clock.rfc3339(card.claim_since) if card.claim_since else None,
+                    "since": clock.rfc3339_or_none(card.claim_since),
                 }
             )
     found = []

@@ -417,6 +417,8 @@ def start_hub(
         MAITY_WEB_DIR=str(WEB),
         MAITY_ATTACHMENT_DIR=str(attachments),
         MAITY_PUBLIC_PAGES="on",
+        # A test browser session reads far faster than a person: no read limit per credential.
+        MAITY_MAX_READS_PER_MINUTE="unlimited",
         **(extra or {}),
     )
     HUB_ENV[base] = env
@@ -911,6 +913,7 @@ def main() -> int:
                     chat_height_views(run, browser)
                     chat_phone_views(run, browser)
                     chat_phone_head(run, browser)
+                    chat_bubble_width(run, browser)
                     paths_views(run, browser)
                     notification_sessions_layout(run, browser)
                     account_tabs_layout(run, browser)
@@ -3865,6 +3868,149 @@ def chat_phone_head(run: Run, browser) -> None:
                     context.close()
 
 
+# Two probe bubbles, one's own and someone else's, cloned from the chat's first ones and given a
+# long paragraph, a long URL and a code block with a long line; returns per probe its box, the
+# width its max-width allows (min(max(36rem, 60%), 60rem, 90%) of the message column), whether
+# the code scrolls in itself and whether the URL stays inside the bubble, and the page's sideways
+# overflow. A second call measures the probes already there.
+BUBBLE_MEASURE = """() => {
+  const list = document.querySelector('.chat-layout.open .chat-pane .messages');
+  if (!document.querySelector('.msg-probe')) {
+    const word = 'readable ';
+    const fill = (li, side) => {
+      li.classList.add('msg-probe'); li.classList.remove('grouped', 'seq-target'); li.dataset.probe = side;
+      li.querySelector('.md').innerHTML = '<p>' + word.repeat(120) + '</p><p><a href="https://example.org/">https://example.org/'
+        + 'a-long-path-without-a-single-space-'.repeat(8) + '</a></p><div class="md-code-box"><div class="md-code-frame">'
+        + '<pre class="md-code"><code>' + 'const line = "a code line longer than any bubble"; '.repeat(6) + '</code></pre></div></div>';
+      list.append(li);
+    };
+    const out = list.querySelector('.msg.out'), other = list.querySelector('.msg.in:not(.grouped)') || list.querySelector('.msg.in');
+    if (!out || !other) return { missing: [!out && 'out', !other && 'in'].filter(Boolean) };
+    fill(out.cloneNode(true), 'out'); fill(other.cloneNode(true), 'in');
+  }
+  const ls = getComputedStyle(list), rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  const column = list.clientWidth - parseFloat(ls.paddingLeft) - parseFloat(ls.paddingRight);
+  const allowed = Math.min(Math.max(36 * rem, 0.6 * column), 60 * rem, 0.9 * column);
+  const probes = Array.from(document.querySelectorAll('.msg-probe')).map((li) => {
+    const r = li.getBoundingClientRect(), s = getComputedStyle(li), pre = li.querySelector('pre'), a = li.querySelector('.md a');
+    const extra = s.boxSizing === 'border-box' ? 0 : parseFloat(s.paddingLeft) + parseFloat(s.paddingRight)
+      + parseFloat(s.borderLeftWidth) + parseFloat(s.borderRightWidth);
+    const link = a.getBoundingClientRect();
+    return { side: li.dataset.probe, left: r.left, right: r.right, width: r.width - extra, allowed,
+      codeScrolls: pre.scrollWidth > pre.clientWidth, linkInside: link.left >= r.left - 0.5 && link.right <= r.right + 0.5 };
+  });
+  return { column, allowed, probes, sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+}"""
+
+
+def chat_bubble_width(run: Run, browser) -> None:
+    """The owner's wish for the full-screen chat on a desktop (tsk-e305sjdqes86), in fixture mode,
+    in a direct and a group chat, light and dark, at 1920 x 1080, 1280 x 800 and 390 x 844: a
+    bubble, one's own and someone else's, with a long paragraph, a long URL and a code block, is
+    as wide as min(max(36rem, 60%), 60rem, 90%) of the message column allows, on the page and in
+    full screen; in full screen on a desktop that is more than the old 36rem (at 1920 the 60rem
+    cap); at phone width it is the old 90%. The code scrolls in itself, the URL stays inside, the
+    page does not scroll sideways. Full screen left and opened again, and the window resized while
+    full, draw each side's bubble as wide as before and as a fresh load at that size, every stage
+    held to the rule as well."""
+    run.step("fixtures: chat bubbles up to 60% of the column in full screen, the old width on a phone and on the page")
+    index = (WEB / "index.html").as_uri()
+
+    def check(m: dict, where: str, phone: bool, full: bool) -> None:
+        assert not m.get("missing"), f"{where}: no bubble to clone on that side {m.get('missing')}"
+        assert m["sideways"] <= 0, f"{where}: the page scrolls {m['sideways']} px sideways"
+        sides = sorted(p["side"] for p in m["probes"])
+        assert sides == ["in", "out"], f"{where}: probes {sides}"
+        for p in m["probes"]:
+            at = f"{where}, {p['side']}"
+            assert abs(p["width"] - p["allowed"]) <= 1, f"{at}: the bubble is {p['width']:.1f} px, its max-width allows {p['allowed']:.1f} (column {m['column']:.1f})"
+            assert p["codeScrolls"] and p["linkInside"], f"{at}: code scrolls {p['codeScrolls']}, URL inside {p['linkInside']}"
+        if phone:
+            assert abs(m["allowed"] - 0.9 * m["column"]) <= 1, f"{where}: a phone's bubble is {m['allowed']:.1f}, not 90% of {m['column']:.1f}"
+        elif full:
+            assert m["allowed"] > 576 + 1 and m["allowed"] >= 0.5 * m["column"] - 1, f"{where}: {m['allowed']:.1f} of {m['column']:.1f} in full screen"
+
+    # The bubbles as drawn, side by side (own and other): the same rendered widths, not only the
+    # same computed rule (A1359 on #1972).
+    def same_widths(m: dict, first: dict, where: str, than: str) -> None:
+        drawn = {p["side"]: p["width"] for p in m["probes"]}
+        before = {p["side"]: p["width"] for p in first["probes"]}
+        assert sorted(drawn) == sorted(before) == ["in", "out"], f"{where}: sides {sorted(drawn)}, {than} {sorted(before)}"
+        for side in ("in", "out"):
+            assert abs(drawn[side] - before[side]) <= 1, f"{where}, {side}: the bubble is {drawn[side]:.1f} px, {than} {before[side]:.1f}"
+
+    for chat, kind in (("agt-a", ".chat-pane:not(.group-chat)"), ("cnv-0007", ".chat-pane.group-chat")):
+        for width, height in ((1920, 1080), (1280, 800), (390, 844)):
+            phone = width <= 720
+            for scheme in ("light", "dark"):
+                where = f"{chat} at {width}x{height}, {scheme}"
+                context = browser.new_context(viewport={"width": width, "height": height}, color_scheme=scheme)
+                page = context.new_page()
+                errors: list[str] = []
+                page.on("pageerror", lambda err: errors.append(str(err)))
+                try:
+                    page.goto(f"{index}?lang=en#/maintainer/maity/chat/{chat}")
+                    pane = page.locator(f".chat-layout.open {kind}")
+                    pane.locator(".compose").wait_for()
+                    page.wait_for_timeout(300)
+                    on_page = page.evaluate(BUBBLE_MEASURE)
+                    check(on_page, f"{where}, on the page", phone, False)
+                    if not phone:
+                        assert abs(on_page["allowed"] - 576) <= 1, f"{where}, on the page: {on_page['allowed']:.1f}, not the old 36rem"
+                    toggle = pane.get_by_role("button", name="Read in full screen", exact=True)
+                    toggle.click()
+                    expect(page.locator("html.chat-full")).to_have_count(1)
+                    page.wait_for_timeout(200)
+                    full = page.evaluate(BUBBLE_MEASURE)
+                    check(full, f"{where}, full screen", phone, True)
+                    if width == 1920:
+                        assert abs(full["allowed"] - 960) <= 1, f"{where}, full screen: {full['allowed']:.1f}, not the 60rem cap"
+                    if not phone and chat == "cnv-0007":
+                        run.shot(page, f"chat-bubbles-full-{width}-{scheme}")
+                    # Left and opened again: the same widths.
+                    page.keyboard.press("Escape")
+                    expect(page.locator("html.chat-full")).to_have_count(0)
+                    page.wait_for_timeout(200)
+                    again = page.evaluate(BUBBLE_MEASURE)
+                    check(again, f"{where}, full screen left", phone, False)
+                    assert abs(again["allowed"] - on_page["allowed"]) <= 1, f"{where}, full screen left: {again['allowed']:.1f}, before {on_page['allowed']:.1f}"
+                    same_widths(again, on_page, f"{where}, full screen left", "on the page before")
+                    toggle.click()
+                    expect(page.locator("html.chat-full")).to_have_count(1)
+                    page.wait_for_timeout(200)
+                    reopened = page.evaluate(BUBBLE_MEASURE)
+                    check(reopened, f"{where}, full screen again", phone, True)
+                    assert abs(reopened["allowed"] - full["allowed"]) <= 1, f"{where}, full screen again: {reopened['allowed']:.1f}, first {full['allowed']:.1f}"
+                    same_widths(reopened, full, f"{where}, full screen again", "the first full screen")
+                    # Resized while full to the next size, compared with a fresh load there (below).
+                    if not phone:
+                        other = (1280, 800) if width == 1920 else (1920, 1080)
+                        page.set_viewport_size({"width": other[0], "height": other[1]})
+                        page.wait_for_timeout(300)
+                        resized = page.evaluate(BUBBLE_MEASURE)
+                        check(resized, f"{where}, full screen resized to {other[0]}x{other[1]}", False, True)
+                        load = browser.new_context(viewport={"width": other[0], "height": other[1]}, color_scheme=scheme)
+                        try:
+                            p2 = load.new_page()
+                            p2.goto(f"{index}?lang=en#/maintainer/maity/chat/{chat}")
+                            p2.locator(f".chat-layout.open {kind} .compose").wait_for()
+                            p2.wait_for_timeout(300)
+                            p2.locator(f".chat-layout.open {kind}").get_by_role("button", name="Read in full screen", exact=True).click()
+                            expect(p2.locator("html.chat-full")).to_have_count(1)
+                            p2.wait_for_timeout(200)
+                            loaded = p2.evaluate(BUBBLE_MEASURE)
+                        finally:
+                            load.close()
+                        check(loaded, f"{where}, a fresh load at {other[0]}x{other[1]} in full screen", False, True)
+                        same_widths(resized, loaded, f"{where}, full screen resized to {other[0]}x{other[1]}", "a fresh load")
+                        assert abs(resized["allowed"] - loaded["allowed"]) <= 1 and abs(resized["column"] - loaded["column"]) <= 1, (
+                            f"{where}, resized to {other[0]}x{other[1]}: {resized['allowed']:.1f} of {resized['column']:.1f}, a fresh load {loaded['allowed']:.1f} of {loaded['column']:.1f}"
+                        )
+                    assert not errors, f"{where}: {errors}"
+                finally:
+                    context.close()
+
+
 def chat_phone_views(run: Run, browser) -> None:
     """The owner's request for phones (tsk-fnch2yxp2kk1), in fixture mode, in a group chat at
     1280 x 800, 390 x 844 and 360 x 780, light and dark. At phone width the product line is only
@@ -5399,6 +5545,32 @@ def stored_page_layout(run: Run, browser) -> None:
             context.close()
 
 
+def settle(seen: Page, check: str, arg) -> None:
+    """Wait until `check`, a function of `arg` run in the page, is true, before a read whose
+    assertion follows. A layout or colour read once can see the view before the frame's
+    stylesheets apply to it: the shell's stored page stands until the dashboard draws over it, an
+    old view until the new one is drawn (tsk-5q7vxjm75t5v, tsk-z4ps7cg7ve25). The check looks the
+    element up again on each poll and tests the exact quantity the assertion reads. It gives up
+    after the timeout without failing: the read after it then names what it found."""
+    try:
+        seen.wait_for_function(check, arg=arg)
+    except PlaywrightError:
+        pass  # the assertion after it names the value
+
+
+def settle_columns(seen: Page, selector: str, n: int) -> None:
+    """`settle` for a grid's number of columns, as the checks read it."""
+    settle(seen, "([s, n]) => { const e = document.querySelector(s);"
+           " return !!e && getComputedStyle(e).gridTemplateColumns.split(' ').length === n; }", [selector, n])
+
+
+# The frame's sheets as the checks list them, and the page no wider than the window: waited for
+# too, since a late or switched stylesheet changes both (tsk-z4ps7cg7ve25).
+SHEET_ON = ("(name) => [...document.styleSheets].filter(s => !s.disabled)"
+            ".map(s => (s.href || '').split('/').pop().split('?')[0]).includes(name)")
+NOT_WIDER = "() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0"
+
+
 def visitor_layout(run: Run, browser) -> None:
     """A public page the dashboard draws for a visitor, in the frame of §16.7.5 as the sign-in and
     the stored pages are (tsk-tp97v64vpy5z, PR 3): the landing page's header and footer around it,
@@ -5428,13 +5600,21 @@ def visitor_layout(run: Run, browser) -> None:
                 # The approved mockup's project page (tsk-9482zxza3gs3): the landing's dark hero, the
                 # figures band on the Overview, the views as a bar across the whole window under them;
                 # at 390 px the hero stacked, three figures a row, the bar scrolling sideways.
-                hero = seen.locator("section.phero")
+                # The view of this kind, not the one being left or the shell's stored page. Its colour
+                # (.hero in landing.css) and, on a phone, its one column (public-sections.css) are
+                # waited for before each is read once (tsk-z4ps7cg7ve25): a visible h1 proves neither.
+                scope = f'section.view-visitor.public-view[data-kind="{kind}"]:not([inert])'
+                view = f"{scope} section.phero"
+                hero = seen.locator(view)
+                settle(seen, "([s, c]) => { const e = document.querySelector(s);"
+                       " return !!e && getComputedStyle(e).backgroundColor === c; }", [view, "rgb(11, 15, 20)"])
                 assert hero.evaluate("e => getComputedStyle(e).backgroundColor") == "rgb(11, 15, 20)", f"{where}: the hero is not the dark zone"
                 expect(hero.locator(".pmark")).to_have_text("E")
                 expect(hero.locator("p.crumb")).to_have_text("owner / e2e-alpha")
-                bar = seen.locator("nav.ptabs")
+                bar = seen.locator(f"{scope} nav.ptabs")
                 expect(bar.locator('a[aria-current="page"]')).to_have_count(1)
                 assert bar.evaluate("e => e.getBoundingClientRect().width") == width, f"{where}: the tab bar is not as wide as the window"
+                settle(seen, SHEET_ON, "public-sections.css")
                 sheets = seen.evaluate("[...document.styleSheets].filter(s => !s.disabled).map(s => (s.href || '').split('/').pop().split('?')[0])")
                 assert "public-sections.css" in sheets, f"{where}: {sheets}"
                 if kind == "project":
@@ -5442,17 +5622,22 @@ def visitor_layout(run: Run, browser) -> None:
                     # "Try it" is the header's own call to action, there only where the header has one.
                     offered = seen.locator("header.site-header a.btn.btn-primary").count()
                     expect(hero.locator("div.cta a.btn.btn-primary")).to_have_count(offered)
-                    figures = seen.locator("section.band .stats5")
+                    # The grids' columns (.stats5, .mgrid in public-sections.css, fewer under its
+                    # max-width: 760px) are waited for in this view before each is read once.
+                    grid = f"{scope} section.band .stats5"
+                    figures = seen.locator(grid)
                     expect(figures.locator(".stat").first).to_be_visible()
+                    settle_columns(seen, grid, 3 if width < 760 else 5)
                     columns = figures.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
                     assert columns == (3 if width < 760 else 5), f"{where}: {columns} figure columns"
                     assert bar.evaluate("e => e.getBoundingClientRect().top") >= figures.evaluate("e => e.getBoundingClientRect().bottom") - 1, f"{where}: the bar is not under the band"
                     # The team as cards under the bar (part 2): four a row, one on a phone; each card's
                     # picture or letter, name and @handle.
-                    team = seen.locator("section.team-cards")
+                    team = seen.locator(f"{scope} section.team-cards")
                     expect(team.locator("a.mcard").first).to_be_visible()
                     expect(team.locator("a.mcard .mc-t small").first).to_have_text(re.compile(r"^@"))
                     expect(team.locator("a.mcard .av").first).to_be_visible()
+                    settle_columns(seen, f"{scope} section.team-cards .mgrid", 1 if width < 760 else 4)
                     cards = team.locator(".mgrid").evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
                     assert cards == (1 if width < 760 else 4), f"{where}: {cards} card columns"
                     assert team.evaluate("e => e.getBoundingClientRect().top") >= bar.evaluate("e => e.getBoundingClientRect().bottom") - 1, f"{where}: the team is not under the bar"
@@ -5465,7 +5650,11 @@ def visitor_layout(run: Run, browser) -> None:
                     assert tab.evaluate("e => e.getBoundingClientRect().top") >= bar.evaluate("e => e.getBoundingClientRect().bottom") - 1, f"{where}: the board is not under the bar"
                     assert tab.evaluate("e => e.getBoundingClientRect().width") == width, f"{where}: the board's section is not as wide as the window"
                 if width < 760:
+                    settle(seen, "(s) => { const e = document.querySelector(s + ' nav.ptabs .wrap');"
+                           " return !!e && getComputedStyle(e).overflowX === 'auto'; }", scope)
                     assert bar.locator(".wrap").evaluate("e => getComputedStyle(e).overflowX") == "auto", f"{where}: the bar does not scroll"
+                    settle(seen, "(s) => { const e = document.querySelector(s + ' .wrap');"
+                           " return !!e && getComputedStyle(e).gridTemplateColumns.split(' ').length === 1; }", view)
                     assert hero.locator(".wrap").evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length") == 1, f"{where}: the hero is not stacked"
                 expect(seen.locator("header.site-header")).to_be_visible()
                 expect(seen.locator("footer.site-footer")).to_be_visible()
@@ -5474,6 +5663,7 @@ def visitor_layout(run: Run, browser) -> None:
                 if width >= 960:
                     expect(sign_in).to_be_visible()
                 assert f"next=%2Fowner%2Fe2e-alpha" in (sign_in.get_attribute("href") or ""), f"{where}: {sign_in.get_attribute('href')}"
+                settle(seen, NOT_WIDER, None)
                 wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
                 assert wide <= 0, f"{where}: {wide} px wider than the window"
                 assert not refused, f"{where}: {refused[:2]}"
@@ -5513,37 +5703,62 @@ def profile_layout(run: Run, browser) -> None:
         # The view of this kind, not the one being left: after a route change the old view stays,
         # inert, until the new one is drawn (js/app.js render), so a check of "a hero" could read
         # the old page or a style mid-switch. The colour is waited for, as the page settles.
-        hero = seen.locator(f"section.view-visitor.profile-view[data-kind='{kind}']:not([inert]) section.uhero")
+        scope = f"section.view-visitor.profile-view[data-kind='{kind}']:not([inert])"
+        view = f"{scope} section.uhero"
+        hero = seen.locator(view)
         expect(hero.locator("h1")).to_be_visible()
         expect(hero).to_have_css("background-color", "rgb(11, 15, 20)")  # the dark zone
         expect(hero.locator("p.crumb")).to_have_text("Agent" if kind == "agent" else "Person")
         pic = hero.locator(".wrap > .av")
+        # .av-128 in public-sections.css, 96 px under its max-width: 760px. The size is waited for
+        # (tsk-5q7vxjm75t5v): the hero can be there before the picture has its size, and one read
+        # then saw 0 px on a page this check did not change. A picture that never gets the size
+        # still fails below: the wait gives up after the timeout and the read reports what it has.
+        want = 96 if width < 760 else 128
+        settle(seen, "([s, w]) => { const e = document.querySelector(s + ' .wrap > .av');"
+               " return !!e && Math.round(e.getBoundingClientRect().width) === w; }", [view, want])
         side = pic.evaluate("e => Math.round(e.getBoundingClientRect().width)")
-        assert side == (96 if width < 760 else 128), f"{where}: the picture is {side} px"
+        assert side == want, f"{where}: the picture is {side} px"
         assert pic.evaluate("e => getComputedStyle(e).borderRadius") != "50%" if kind == "agent" else True, f"{where}: the agent's picture is round"
+        # The column on a phone (.uhero .wrap under public-sections.css's max-width: 760px) is waited
+        # for on its own (tsk-z4ps7cg7ve25): the picture's wait saw its rule at one moment, and on
+        # #1983 the read after it still found a row. The picture's size proves nothing later.
+        settle(seen, "([s, col]) => { const e = document.querySelector(s + ' .wrap');"
+               " return !!e && (getComputedStyle(e).flexDirection === 'column') === col; }", [view, width < 760])
         stacked = hero.locator(".wrap").evaluate("e => getComputedStyle(e).flexDirection") == "column"
         assert stacked == (width < 760), f"{where}: the hero stacked is {stacked}"
         expect(seen.locator("nav.person-tabs, nav.ptabs")).to_have_count(0)
-        projects = seen.locator("section.profile-projects .pgrid")
+        # The grids' columns (.pgrid, .mgrid, .stats4 in public-sections.css, fewer under its
+        # max-width: 760px) are each waited for too, in this view: a visible card proves no
+        # stylesheet, and probe A of tsk-z4ps7cg7ve25 read "1 project columns" with the sheet off.
+        grid = f"{scope} section.profile-projects .pgrid"
+        projects = seen.locator(grid)
         expect(projects.locator("a.pcard").first).to_be_visible()
+        settle_columns(seen, grid, 1 if width < 760 else 3)
         got = {"stacked": stacked, "projects": projects.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")}
         assert got["projects"] == (1 if width < 760 else 3), f"{where}: {got['projects']} project columns"
         if kind == "person":
-            agents = seen.locator("section.profile-agents .mgrid")
+            grid = f"{scope} section.profile-agents .mgrid"
+            agents = seen.locator(grid)
             expect(agents.locator("a.mcard[href='/owner/agents/e2e-agent']")).to_be_visible()
+            settle_columns(seen, grid, 1 if width < 760 else 4)
             got["agents"] = agents.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
             assert got["agents"] == (1 if width < 760 else 4), f"{where}: {got['agents']} agent columns"
         else:
             expect(hero.locator("p.owner a[href='/owner']")).to_be_visible()
             expect(hero.locator("dl.facts dt").first).to_be_visible()
-            band = seen.locator("section.band .stats4")
+            grid = f"{scope} section.band .stats4"
+            band = seen.locator(grid)
             expect(band.locator(".stat").first).to_be_visible()
+            settle_columns(seen, grid, 2 if width < 760 else 4)
             got["figures"] = band.evaluate("e => getComputedStyle(e).gridTemplateColumns.split(' ').length")
             assert got["figures"] == (2 if width < 760 else 4), f"{where}: {got['figures']} figure columns"
+        settle(seen, SHEET_ON, "public-sections.css")
         sheets = seen.evaluate("[...document.styleSheets].filter(s => !s.disabled).map(s => (s.href || '').split('/').pop().split('?')[0])")
         assert "public-sections.css" in sheets, f"{where}: {sheets}"
         expect(seen.locator("header.site-header")).to_be_visible()
         expect(seen.locator("footer.site-footer")).to_be_visible()
+        settle(seen, NOT_WIDER, None)
         wide = seen.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
         assert wide <= 0, f"{where}: {wide} px wider than the window"
         return got

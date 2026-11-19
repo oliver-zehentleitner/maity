@@ -71,6 +71,8 @@ window.Maity = window.Maity || {};
     "POST /projects/{owner}/{slug}/joins",
     "POST /projects/{owner}/{slug}/requests/{request_id}/answer",
     "POST /requests/{request_id}/answer",
+    "PATCH /admin/projects/{owner}/{slug}/limits",
+    "PATCH /admin/users/{human_id}/limits",
     "POST /admin/users/{human_id}/second-factor/reset",
     "PATCH /admin/settings/auth-pages",
     "PATCH /admin/settings/landing",
@@ -4754,6 +4756,26 @@ window.Maity = window.Maity || {};
       }
       // `order=updated` (§6): the old updated_at desc order, as the board's reconciling read asks it.
       if (query.get("order") === "updated") items = items.slice().sort((a, b) => (Date.parse(b.updated_at || 0) || 0) - (Date.parse(a.updated_at || 0) || 0));
+      // Closed columns alone, in the board's order, are paged as the hub pages them (§6.4,
+      // hub/context/persistence.md 7bad4e04): the column, `closed_at` newest first (none last), the id;
+      // the cursor holds the last card's place. The board reads its closed columns this way, a page at a time.
+      const wanted = (query.get("status") || "").split(",");
+      const closedOnly = q === null && !query.get("order") && wanted.every((s) => s === "done" || s === "cancelled");
+      if (closedOnly) {
+        const at = (c) => [["done", "cancelled"].indexOf(c.status), c.closed_at ? 0 : 1, c.closed_at || "", c.id];
+        const before = (x, y) => x[0] - y[0] || x[1] - y[1] || (x[2] > y[2] ? -1 : x[2] < y[2] ? 1 : 0) || (x[3] < y[3] ? -1 : x[3] > y[3] ? 1 : 0);
+        const sorted = items.slice().sort((a, b) => before(at(a), at(b)));
+        const limit = pageLimit(query, path);
+        const given = query.get("cursor");
+        let after = null;
+        if (given !== null) {
+          try { after = JSON.parse(atob(given)); } catch (e) { after = null; }
+          if (!Array.isArray(after) || after.length !== 4) fail(400, "invalid", "not a cursor of this list", path, { fields: { cursor: "invalid" } });
+        }
+        const rest = after ? sorted.filter((c) => before(at(c), after) > 0) : sorted;
+        const page = rest.slice(0, limit);
+        return { items: page, next_cursor: rest.length > limit ? btoa(JSON.stringify(at(page[page.length - 1]))) : null };
+      }
       return { items, next_cursor: null };
     }],
     // One card (§6), its notes (§6.16, fixtures/<slug>/task-notes.json) and

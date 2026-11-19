@@ -58,7 +58,7 @@ def packet(project: Any, credential: Any) -> dict[str, Any]:
     confirmed = credential.ktw_acknowledged_at
     return {
         "commitment": "required",
-        "acknowledged_at": clock.rfc3339(confirmed) if confirmed else None,
+        "acknowledged_at": clock.rfc3339_or_none(confirmed),
         **(
             {"acknowledge_by": clock.rfc3339(credential.ktw_acknowledge_by)}
             if confirmed is None and credential.ktw_acknowledge_by is not None
@@ -76,7 +76,7 @@ def instance_fields(project: Any, credential: Any) -> dict[str, Any]:
     confirmed = credential.ktw_acknowledged_at
     due = credential.ktw_acknowledge_by
     return {
-        "keep_the_why_acknowledged_at": clock.rfc3339(confirmed) if confirmed else None,
+        "keep_the_why_acknowledged_at": clock.rfc3339_or_none(confirmed),
         "keep_the_why_acknowledge_by": clock.rfc3339(due) if confirmed is None and due else None,
     }
 

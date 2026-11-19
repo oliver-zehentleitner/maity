@@ -52,6 +52,7 @@ from maity_hub import (
     public_project_views,  # noqa: F401  (registers the kind of page)
     public_projects,  # noqa: F401  (registers the kind of page)
     public_snapshot,
+    read_limits,
     registration_accounts,
     reports,
     request_stats,
@@ -121,6 +122,7 @@ from maity_hub.routes import (
     placements,
     preferences,
     project_images,
+    project_limits,
     project_messages,
     projects,
     register_page,
@@ -433,6 +435,7 @@ def create_app(
     shared_counts.configure(shared_engine)
     shared_budget.configure(shared_engine)
     known_sources.configure(settings.secret_key)  # the key of the sources' fingerprints (§2.1)
+    read_limits.configure(settings.secret_key)  # the key of the read limit's log tags (§1.7)
     # Reads sealed verifiers with the key; seals new ones only with MAITY_SEAL_VERIFIERS, and
     # refuses plain ones with MAITY_SEALED_VERIFIERS_ONLY (§2.2).
     verifiers.configure(
@@ -632,6 +635,7 @@ def create_app(
     app.include_router(runners.router, prefix=prefix)
     app.include_router(runner.router, prefix=prefix)
     app.include_router(placements.router, prefix=prefix)
+    app.include_router(project_limits.router, prefix=prefix)
     app.include_router(ticker.router, prefix=prefix)
     app.include_router(memory.router, prefix=prefix)
     app.include_router(preferences.router, prefix=prefix)

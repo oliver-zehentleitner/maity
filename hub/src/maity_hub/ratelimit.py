@@ -26,6 +26,27 @@ Mark = float | datetime | None  # what `place` recorded: a moment, or a fixed wi
 EXACT_UP_TO = 20
 
 
+def estimate_wait(
+    current: int, previous: int, elapsed: float, count: int, limit: int, seconds: float
+) -> int:
+    """Seconds until a sliding window estimated from two fixed ones (`current` + `previous` ×
+    what still overlaps) with `count` more fits `limit` again; `current` holds those `count`
+    already, `elapsed` is how far into the current window `now` is (0 to 1). Within this window
+    the previous one's weight falls; when even an empty previous window would not make room,
+    the wait runs into the next window, where this window's attempts are the previous ones and
+    fall in turn."""
+    remaining = (1 - elapsed) * seconds
+    if current <= limit and previous > 0:
+        fits_at = 1 - (limit - current) / previous  # the fraction of this window
+        if fits_at < 1:
+            return max(1, math.ceil((fits_at - elapsed) * seconds))
+    before = current - count  # what this window already held, the next window's previous
+    if before <= 0:
+        return max(1, math.ceil(remaining))
+    fits_at = max(0.0, 1 - (limit - count) / before)  # the fraction of the next window
+    return max(1, math.ceil(remaining + fits_at * seconds))
+
+
 class Limiter:
     def __init__(
         self,
@@ -92,21 +113,9 @@ class Limiter:
         return self._wait(window, count), window.start
 
     def _wait(self, window: shared_counts.Window, count: int) -> int:
-        """Seconds until the estimate with `count` more fits the limit again. `window.current`
-        holds those `count` already. Within this window the previous one's weight falls; when
-        even an empty previous window would not make room, the wait runs into the next window,
-        where this window's attempts are the previous ones and fall in turn."""
-        limit, current, previous = self.limit, window.current, window.previous
-        remaining = (1 - window.elapsed) * self.window
-        if current <= limit and previous > 0:
-            fits_at = 1 - (limit - current) / previous  # the fraction of this window
-            if fits_at < 1:
-                return max(1, math.ceil((fits_at - window.elapsed) * self.window))
-        before = current - count  # what this window already held, the next window's previous
-        if before <= 0:
-            return max(1, math.ceil(remaining))
-        fits_at = max(0.0, 1 - (limit - count) / before)  # the fraction of the next window
-        return max(1, math.ceil(remaining + fits_at * self.window))
+        return estimate_wait(
+            window.current, window.previous, window.elapsed, count, self.limit, self.window
+        )
 
     def _log_wait(self, log: shared_counts.Log, count: int) -> int:
         """Seconds until enough attempts of an exact log have left the window for `count`

@@ -16,7 +16,7 @@ from typing import Any
 from sqlalchemy import Connection, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
-from maity_hub import clock, site_values
+from maity_hub import clock, jcs, site_values
 from maity_hub import tables as t
 from maity_hub.errors import invalid, rate_limited
 from maity_hub.landing import CONTROL, LANGUAGES, Problems, markdown_problem
@@ -41,8 +41,8 @@ def _languages(value: Any, page: str, found: Problems) -> dict[str, dict[str, st
     before = len(found.fields)
     for tag, text in value.items():
         here = f"{page}.{tag}"
-        if tag not in LANGUAGES:
-            found.add(here, "invalid")
+        if tag not in LANGUAGES:  # a lone surrogate's path is its parent's: no encoding
+            found.add(page if jcs.has_lone_surrogate(tag) else here, "invalid")
             continue
         if not isinstance(text, dict):
             found.add(here, "invalid")

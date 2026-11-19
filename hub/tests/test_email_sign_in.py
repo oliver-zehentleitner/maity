@@ -17,7 +17,7 @@ from maity_hub import tables as t
 from maity_hub.auth import email_links
 from maity_hub.config import Settings
 from maity_hub.mail import address as addresses
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import claim_verified
 from maity_hub.routes import email_sign_in
 from tests import factory, flow, stored_keys
 from tests.conftest import ClientFactory
@@ -43,7 +43,7 @@ def setup(make_client: ClientFactory, engine: Engine, **env: str) -> tuple[Any, 
     human = factory.human(engine, "ada")
     addresses.prepare(engine, None)  # the claim below takes the lock without a route
     with engine.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+        assert claim_verified(conn, "ada@example.com", human, secret_key=None)
     return make_client(mail=hub.mail, secret_key=b"k" * 32), human
 
 

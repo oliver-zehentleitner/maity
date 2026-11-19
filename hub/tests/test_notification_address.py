@@ -20,6 +20,22 @@ from maity_hub.errors import ApiError
 from maity_hub.mail import address as addresses
 from maity_hub.mail import outbox
 from maity_hub.notifications import preferences, tokens
+from maity_hub.notifications.address import (
+    NO_PENDING_ORIGIN,
+    VERIFY_BY_HUMAN_DAY,
+    VERIFY_BY_HUMAN_HOUR,
+    VERIFY_BY_RECIPIENT_DAY,
+    VERIFY_BY_RECIPIENT_DAY_ACCOUNTS,
+    VERIFY_BY_RECIPIENT_HOUR,
+    VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS,
+    VERIFY_BY_RECIPIENT_MAILS_DAY,
+    VERIFY_BY_RECIPIENT_MAILS_HOUR,
+    _recipient_over,
+    decide_held,
+    has_verified_address,
+    row_of,
+    void_pending_address,
+)
 from maity_hub.ratelimit import Attempt
 from tests import factory, flow, stored_keys
 from tests.conftest import ClientFactory
@@ -156,7 +172,7 @@ def test_removing_the_address_voids_unsubscribe_links(
     factory.earlier_admin(migrated)  # the admin's address is never removed (§18.4)
     owner = verified(make_client, migrated, "me@example.org")
     with migrated.begin() as conn:
-        epoch = preferences.row_of(conn, owner.id).epoch
+        epoch = row_of(conn, owner.id).epoch
     token = preferences.unsubscribe_token(b"s" * 32, owner.id, "chat", epoch)
     assert owner.client.get(f"/mail/unsubscribe/{token}").status_code == 200
     owner.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
@@ -194,20 +210,20 @@ def test_a_human_without_a_password_needs_an_old_session(
         change = preferences.view(conn, owner.id, True)["email"]["address_change"]
         assert change["address"] == "new@example.org" and change["id"].startswith("adc-")
         with pytest.raises(ApiError) as too_new:
-            preferences.decide_held(
+            decide_held(
                 conn, step_up=lambda: None, keeps_factor=lambda: None,
                 human=human, session=session, change_id=change["id"],
                 address=change["address"], approve=True, signing_key=None, public_url="",
             )  # fmt: skip
         assert too_new.value.details == {"reason": "session_too_new"}
         with pytest.raises(ApiError) as wrong:
-            preferences.decide_held(
+            decide_held(
                 conn, step_up=lambda: None, keeps_factor=lambda: None,
                 human=human, session=session, change_id="adc-other",
                 address=change["address"], approve=False, signing_key=None, public_url="",
             )  # fmt: skip
         assert wrong.value.code == "conflict"
-        preferences.decide_held(
+        decide_held(
             conn, step_up=lambda: None, keeps_factor=lambda: None,
                 human=human, session=session, change_id=change["id"],
             address=change["address"], approve=False, signing_key=None, public_url="",
@@ -277,7 +293,7 @@ def test_a_verify_token_binds_the_pending_address(
     owner = with_mail(make_client, migrated)
     owner.patch(S, {"email": {"address": "me@example.org"}})
     with migrated.begin() as conn:
-        row = preferences.row_of(conn, owner.id)
+        row = row_of(conn, owner.id)
     other = tokens.make(
         b"s" * 32,
         {"h": owner.id, "p": "verify", "a": "attacker@example.org", "n": row.pending_nonce,
@@ -320,7 +336,7 @@ def test_only_a_session_in_good_standing_decides_or_replaces_a_held_change(
             )  # fmt: skip
         assert replaced.value.details == {"reason": "not_in_good_standing"}
         with pytest.raises(ApiError) as decided:
-            preferences.decide_held(
+            decide_held(
                 conn, human=human, session=weak, change_id=change["id"],
                 address=change["address"], approve=True, signing_key=None, public_url="",
                 step_up=lambda: None, keeps_factor=lambda: None,
@@ -401,8 +417,8 @@ def test_a_registration_claims_its_address_once(migrated: Engine) -> None:
             registration_accounts.claim_address(conn, "ada@example.com", second, secret_key=None)
             is False
         )
-        assert preferences.has_verified_address(conn, "ada@example.com") is True
-        assert preferences.has_verified_address(conn, "grace@example.com") is False
+        assert has_verified_address(conn, "ada@example.com") is True
+        assert has_verified_address(conn, "grace@example.com") is False
         view = preferences.view(conn, first, True)["email"]
     assert (view["address"], view["address_status"]) == ("ada@example.com", "verified")
     assert view["verified_at"] is not None and view["hard_failures"] == 0
@@ -683,12 +699,12 @@ def test_the_verification_s_counts_keep_the_address_only_as_its_keyed_fingerprin
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     counted = (
-        preferences.VERIFY_BY_RECIPIENT_HOUR,
-        preferences.VERIFY_BY_RECIPIENT_DAY,
-        preferences.VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS,
-        preferences.VERIFY_BY_RECIPIENT_DAY_ACCOUNTS,
-        preferences.VERIFY_BY_RECIPIENT_MAILS_HOUR,
-        preferences.VERIFY_BY_RECIPIENT_MAILS_DAY,
+        VERIFY_BY_RECIPIENT_HOUR,
+        VERIFY_BY_RECIPIENT_DAY,
+        VERIFY_BY_RECIPIENT_HOUR_ACCOUNTS,
+        VERIFY_BY_RECIPIENT_DAY_ACCOUNTS,
+        VERIFY_BY_RECIPIENT_MAILS_HOUR,
+        VERIFY_BY_RECIPIENT_MAILS_DAY,
     )
     for limiter in counted:
         limiter.reset()
@@ -848,11 +864,11 @@ def test_the_origin_is_replaced_removed_and_voided_with_the_pending_address(
     owner.patch(S, {**body, "email": {"address": "newer@example.org"}})  # a new request
     assert _origin(migrated, owner.id) == ("Chrome", "Windows", "198.51.100.8")
     with migrated.begin() as conn:
-        preferences.void_pending_address(conn, owner.id)  # a new password (§2.10)
+        void_pending_address(conn, owner.id)  # a new password (§2.10)
     assert _origin(migrated, owner.id) == (None, None, None)
     # The fourth verification mail of this hour: past the per-human limit (context/
     # notifications.md aedbf93a), which is not what this test is about.
-    preferences.VERIFY_BY_HUMAN_HOUR.reset()
+    VERIFY_BY_HUMAN_HOUR.reset()
     assert owner.patch(S, body).status_code == 200
     assert _origin(migrated, owner.id) == ("Chrome", "Windows", "198.51.100.8")
     owner.patch(S, {"email": {"address": None}, "current_password": factory.PASSWORD})
@@ -868,7 +884,7 @@ def test_a_change_asked_before_the_hub_kept_where_names_nothing(
         conn.execute(
             update(t.notification_settings)
             .where(t.notification_settings.c.human_id == owner.id)
-            .values(**preferences.NO_PENDING_ORIGIN)
+            .values(**NO_PENDING_ORIGIN)
         )
     owner.client.post(f"/mail/verify/{link(outbox_rows(migrated)[-1], 'verify')}")
     notice = outbox_rows(migrated)[-1]
@@ -895,13 +911,13 @@ def _verify_clock(monkeypatch: pytest.MonkeyPatch) -> tuple[list[float], list[fl
     def ask(human: str, times: int = 1) -> int:
         got = 0
         for _ in range(times):
-            if preferences.VERIFY_BY_HUMAN_HOUR.blocked(human):
+            if VERIFY_BY_HUMAN_HOUR.blocked(human):
                 continue
-            if preferences.VERIFY_BY_HUMAN_DAY.blocked(human):
+            if VERIFY_BY_HUMAN_DAY.blocked(human):
                 continue
-            preferences.VERIFY_BY_HUMAN_HOUR.hit(human)
-            preferences.VERIFY_BY_HUMAN_DAY.hit(human)
-            if not preferences._recipient_over("target@example.org", human):
+            VERIFY_BY_HUMAN_HOUR.hit(human)
+            VERIFY_BY_HUMAN_DAY.hit(human)
+            if not _recipient_over("target@example.org", human):
                 sent.append(now[0])
                 got += 1
         return got
@@ -959,7 +975,7 @@ def test_an_address_gets_at_most_100_verification_mails_in_any_day(
         for human in late:
             if chosen == 3:
                 break
-            if not preferences.VERIFY_BY_HUMAN_DAY.blocked(human) and ask(human, 3):
+            if not VERIFY_BY_HUMAN_DAY.blocked(human) and ask(human, 3):
                 chosen += 1
     assert _most_in(sent, 86400) == 100
     assert _most_in(sent, 3600) <= 9

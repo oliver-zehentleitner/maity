@@ -25,7 +25,7 @@ window.Maity = window.Maity || {};
   // ---- plain words for what a runner advertises (shared with Project → Runners)
 
   const TOOLS = {
-    "claude-code": "Claude Code", codex: "Codex", opencode: "opencode", antigravity: "Antigravity",
+    "claude-code": "Claude Code", codex: "Codex", opencode: "OpenCode", antigravity: "Antigravity",
     pi: "pi", hermes: "Hermes",
     kimi: "Kimi Code", cline: "Cline", omp: "oh-my-pi", get stub() { return M.t("runners.tool.stub"); },
   };

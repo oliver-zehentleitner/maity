@@ -168,6 +168,14 @@ def test_what_issuing_refuses(
     assert plain.get(PATH).status_code == 403
 
 
+def test_a_lone_surrogate_in_the_note_is_invalid_and_an_emoji_is_not(owner: flow.Human) -> None:
+    refused = owner.raw("POST", PATH, b'{"note": "a \\ud800 b"}')
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"note": "invalid"}
+    made = owner.raw("POST", PATH, b'{"note": "\\ud83d\\ude42 welcome"}')
+    assert made.status_code == 201, made.text
+
+
 def test_an_agent_never_touches_invitations(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

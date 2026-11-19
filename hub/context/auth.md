@@ -1109,7 +1109,7 @@ test instead.
 The login's bucket for an address of no account (`password_limits.account_key`), the pair and
 per-recipient limits of `POST /auth/email-link` and `POST /auth/password-reset`
 (`RequestLimits.take`, `email_links.recipient_over`), those of `POST /auth/register` and the
-per-recipient limits of a verification mail (`preferences._recipient_over`) all count the
+per-recipient limits of a verification mail (`notifications.address._recipient_over`) all count the
 address by `known_sources.address_key`: an HMAC-SHA-256 of the address as each path normalises
 it, under a key derived by HKDF (purpose `rate_count.address`) from `MAITY_SECRET_KEY`, else from
 the per-address lock's pepper. A pair is that key, a space and the source network or the asking

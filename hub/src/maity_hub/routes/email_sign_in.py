@@ -30,6 +30,7 @@ from maity_hub.errors import ApiError, forbidden, rate_limited
 from maity_hub.mail import address, outbox
 from maity_hub.notifications import preferences, tokens
 from maity_hub.routes import auth, device_codes
+from maity_hub.text_language import text_language
 
 router = APIRouter(prefix="/auth")
 page_router = APIRouter()
@@ -194,7 +195,7 @@ def deliver(
             },
         )
         human = conn.execute(select(t.human).where(t.human.c.id == human_id)).one()
-        language = preferences.text_language(conn, human_id)
+        language = text_language(conn, human_id)
         browser, system = sessions.describe(user_agent)
         body = links.mail_body(
             language=language,
@@ -324,7 +325,7 @@ def link_page(token: str, request: Request) -> HTMLResponse:
         ):
             return _dead(conn, request)
         human = conn.execute(select(t.human).where(t.human.c.id == row.human_id)).one()
-        language = preferences.text_language(conn, row.human_id)
+        language = text_language(conn, row.human_id)
         name = f"{human.display_name} ({human.handle})"
         form = secrets.token_urlsafe(32)
         words = catalog.section("sign_in", language)

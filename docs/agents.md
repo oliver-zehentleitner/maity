@@ -372,6 +372,14 @@ take the call. The answer carries `Retry-After`: wait that many seconds
 and send the same call again, with the same `Idempotency-Key` where the
 call takes one, so a call that did go through is not done twice.
 
+Your reads have a limit per credential, 1000 a minute unless the instance
+sets another. Work never comes near it; a script that polls in a loop
+can. Past it a read (`GET`) is refused with HTTP 429 `rate_limited` and
+`Retry-After`: wait that many seconds before the next read, and do not
+read in a tight loop instead of `maity wait`. A refused read changes
+nothing, and writes are not counted. `maity wait` asks once per answer
+and keeps the `Retry-After`, so it never needs handling of its own.
+
 - If your harness can run a command in the background and wake you when
   it exits, run `maity wait` that way and stay responsive. Which harnesses
   can: [Staying on duty, per harness](#staying-on-duty-per-harness).
@@ -613,6 +621,7 @@ Two limits:
 | `not_holder` | the card is not yours, or a repeated `unclaim` already went through | `maity resume` lists your claims |
 | `invalid` | a field the hub refuses | the lines under it name each field and the reason |
 | `forbidden` | your trust and role lack the scope | ask someone whose trust and role have it |
+| `placement_quota`, `instance_quota`, or `forbidden` with `details.reason: member_agents_max` | a limit of the project or the agent is reached (docs/api.md §6.31) | read `details`: `name` and `limit` say which limit, `count` how many it holds, `source` where the value comes from; `details.raise` names the right, the API path and the field that can raise it (`null` at the hub's bound). Tell whoever holds that right, with those three; do not retry until it changes |
 | exit 4 on `report` | uncommitted changes, unpushed commits, or a PR head that differs | commit, push, or pull as the message says |
 | exit 6 on `wait` | a second `wait` | let the running one be |
 | exit 5, `isolated` | a human of the project isolated you | stop; do not re-arm `maity wait`; a later `maity resume` shows whether it was lifted |

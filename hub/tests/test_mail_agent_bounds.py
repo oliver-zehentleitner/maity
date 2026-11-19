@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from maity_hub.auth import sessions
-from maity_hub.notifications import mailer
+from maity_hub.mail import text as mail_text
 
 # Far above what each case takes (milliseconds) and far below what the replaced patterns took on
 # the same input (seconds), so a slow machine cannot make it flaky.
@@ -33,11 +33,11 @@ def timed(read: Callable[[], Any]) -> float:
 @pytest.mark.parametrize(
     "read",
     [
-        lambda: mailer.defang("a." * (LONG // 2)),
+        lambda: mail_text.defang("a." * (LONG // 2)),
         # A run that ends in a scheme mark and holds no scheme: the scan back over it and the
         # look for a letter after `+`, `.` or `-` both go over the whole run, the longest path.
-        lambda: mailer.defang("1." * (LONG // 2) + "://"),
-        lambda: mailer.defang("a-" * (LONG // 2) + ":/"),
+        lambda: mail_text.defang("1." * (LONG // 2) + "://"),
+        lambda: mail_text.defang("a-" * (LONG // 2) + ":/"),
         lambda: sessions.describe("Version/" + "1" * LONG),
         lambda: sessions.describe("Version/1 " * (LONG // 10)),
     ],
@@ -55,11 +55,11 @@ def test_a_long_text_is_read_in_bounded_time(read: Callable[[], Any]) -> None:
 
 
 def test_defang_and_describe_read_as_before() -> None:
-    assert mailer.defang("see https://example.org/x") == "see https[:]//example[.]org/x"
-    assert mailer.defang("a+b.c-d://x") == "a+b[.]c-d[:]//x"
-    assert mailer.defang("_x://y") == "_x://y"  # no word boundary before the letter
-    assert mailer.defang("_.x://y") == "_.x[:]//y"
-    assert mailer.defang("1a://x a://y") == "1a://x a[:]//y"
+    assert mail_text.defang("see https://example.org/x") == "see https[:]//example[.]org/x"
+    assert mail_text.defang("a+b.c-d://x") == "a+b[.]c-d[:]//x"
+    assert mail_text.defang("_x://y") == "_x://y"  # no word boundary before the letter
+    assert mail_text.defang("_.x://y") == "_.x[:]//y"
+    assert mail_text.defang("1a://x a://y") == "1a://x a[:]//y"
     safari = "Mozilla/5.0 (Macintosh) AppleWebKit/605 (KHTML) Version/17.1 Safari/605.1.15"
     assert sessions.describe(safari) == ("Safari", "macOS")
     assert sessions.describe("Version/17 Mobile\nSafari/605") == (None, None)  # not on one line
@@ -75,6 +75,6 @@ def test_texts_read_as_the_old_patterns_read_them() -> None:
     agent = ["Version/", "Safari/", "1", ".", "a", " ", "\n", "_", "é", "/"]
     for _ in range(20_000):
         text = "".join(rng.choice(scheme) for _ in range(rng.randint(0, 14)))
-        assert mailer._schemes(text) == OLD_SCHEME.sub(r"\1[:]", text), repr(text)
+        assert mail_text._schemes(text) == OLD_SCHEME.sub(r"\1[:]", text), repr(text)
         line = "".join(rng.choice(agent) for _ in range(rng.randint(0, 8)))
         assert bool(sessions._safari(line)) == bool(OLD_SAFARI.search(line)), repr(line)

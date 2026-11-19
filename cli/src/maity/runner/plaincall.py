@@ -3,9 +3,10 @@
 `maity` runs outside the sandbox (`excludedCommands`). This hook lets a command line that
 starts with `maity` through only when it is one plain call: words of letters, digits and
 `_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
-redirect, a background `&`, a substitution, a heredoc, a newline or a `$` is refused before
-the command runs (cli/context/runner.md). Any other tool call, and a command line that does
-not start with `maity`, is left to the permission rules: the hook prints nothing and exits 0.
+redirect, a background `&`, a substitution, a heredoc, a newline or a `$` outside single
+quotes is refused before the command runs (cli/context/runner.md). Any other tool call, and a
+command line that does not start with `maity`, is left to the permission rules: the hook prints
+nothing and exits 0.
 
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
 stderr. Input it cannot read is refused too.
@@ -29,8 +30,9 @@ _MAITY = re.compile(r"[^0-9A-Za-z]*maity", re.IGNORECASE)
 
 REFUSED = (
     "A `maity` command runs only as one plain call: nothing piped, chained, redirected, sent to "
-    "the background or substituted, no heredoc, no newline and no `$`. Run it alone; put text "
-    "in single quotes, or write it to a file in this clone and pass that file (`--body-file`)."
+    "the background or substituted, no heredoc, no newline and no `$` outside single quotes. "
+    "Run it alone; put text in single quotes, or write it to a file in this clone and pass that "
+    "file (`--body-file`)."
 )
 
 
