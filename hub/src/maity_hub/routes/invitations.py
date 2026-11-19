@@ -22,6 +22,7 @@ from maity_hub import (
     idempotency,
     invitation_mail,
     invitations,
+    jcs,
     namespace,
     paging,
     project_roles,
@@ -66,8 +67,9 @@ def _check(body: InvitationIn) -> None:
     if not invitations.TTL_MIN <= body.ttl_seconds <= invitations.TTL_MAX:
         errors["ttl_seconds"] = "out_of_range"
     if body.note is not None and (
-        len(body.note.encode()) > invitations.NOTE_MAX
-        or any(ord(c) < 32 and c not in "\n\t" or ord(c) == 127 for c in body.note)
+        any(ord(c) < 32 and c not in "\n\t" or ord(c) == 127 for c in body.note)
+        or jcs.has_lone_surrogate(body.note)  # before the size: it does not encode
+        or len(body.note.encode()) > invitations.NOTE_MAX
     ):
         errors["note"] = "invalid"
     if errors:
