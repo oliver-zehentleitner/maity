@@ -280,9 +280,9 @@ def _store(
 
 def _has_account(conn: Connection, normalized: str) -> bool:
     """Whether the address is an account's verified address (§18.4)."""
-    from maity_hub.notifications import preferences
+    from maity_hub.notifications import address
 
-    return preferences.has_verified_address(conn, normalized)
+    return address.has_verified_address(conn, normalized)
 
 
 def lock_address(conn: Connection, secret_key: bytes | None, normalized: str) -> None:

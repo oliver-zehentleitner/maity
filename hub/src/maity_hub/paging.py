@@ -42,6 +42,10 @@ def uncursor(text: str, bound: str | None = None) -> tuple[datetime, str]:
         iso, row_id, *rest = _decode(text)
         if rest != ([bound] if bound is not None else []):
             raise ValueError
+        # Most callers bind the id; some carry more than an id in it (a band, a project's
+        # name, a handle), so its length is theirs to judge, not the id column's.
+        if not _bindable(str(row_id)):
+            raise ValueError
         return datetime.fromisoformat(iso), str(row_id)
     except (ValueError, TypeError):
         raise invalid({"cursor": "invalid"}) from None
@@ -124,10 +128,17 @@ def _id_shaped(row_id: str) -> bool:
     (PostgreSQL refuses one in text), and encodable as UTF-8: JSON carries a lone
     surrogate (`"\\ud800"`), which a driver cannot encode to bind it. The hub's ids are not parsed
     (ids.py), so this is no pattern: such an id would only reach the database as an error."""
-    if not 0 < len(row_id) <= ID or "\x00" in row_id:
+    return 0 < len(row_id) <= ID and _bindable(row_id)
+
+
+def _bindable(text: str) -> bool:
+    """Whether `text` can be bound as a query's text on every database: no NUL and
+    encodable as UTF-8 (`_id_shaped`). Otherwise the driver fails and the client gets a 500,
+    not 400 `invalid` (tsk-tjjgzhepgpdp)."""
+    if "\x00" in text:
         return False
     try:
-        row_id.encode("utf-8")
+        text.encode("utf-8")
     except UnicodeEncodeError:
         return False
     return True

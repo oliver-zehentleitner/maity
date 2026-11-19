@@ -12,6 +12,8 @@ from unittest import mock
 import upgrade_page as u
 
 ROOT = Path(__file__).resolve().parent.parent
+# The characters str.splitlines() breaks at and CommonMark does not.
+SEPARATORS = ("\u2028", "\u2029", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e")
 FULL = "# Upgrading to 0.1.0a9\n\n" + "".join(f"## {s}\n\nNothing.\n\n" for s in u.SECTIONS)
 
 
@@ -115,6 +117,39 @@ class Problems(unittest.TestCase):
         page = "```\n## What changes for users\n```\n\n" + FULL
         with Tree() as root:
             (root / "docs" / "upgrade" / "0.1.0a9.md").write_bytes(b"\xef\xbb\xbf" + page.encode("utf-8"))
+            self.assertEqual(u.problems(root, "0.1.0a9"), [])
+
+    def test_a_line_ends_only_at_a_line_feed_or_carriage_return(self):
+        # CommonMark ends a line at \n, \r\n or \r only; str.splitlines() also at these.
+        for sep in SEPARATORS:
+            with self.subTest(sep=hex(ord(sep))):
+                self.assertEqual(u.lines(f"## A\r\nx{sep}## B\r## C\n"), [
+                    ("heading", "A"), ("text", f"x{sep}## B"), ("heading", "C"),
+                ])
+
+    def test_a_fence_after_a_unicode_line_separator_hides_nothing(self):
+        # Read as a line break, the separator put the fence on a line of its own, which hid the
+        # duplicate section after it: the page passed (tsk-dest4a10zfw9, from #1985's review).
+        for sep in SEPARATORS:
+            with self.subTest(sep=hex(ord(sep))):
+                page = FULL + f"x{sep}```\n\n## The way back\n\nNothing.\n"
+                with Tree(page=page) as root:
+                    (found,) = u.problems(root, "0.1.0a9")
+                self.assertIn("must appear once each", found)
+
+    def test_a_heading_after_a_unicode_line_separator_is_no_heading(self):
+        for sep in SEPARATORS:
+            with self.subTest(sep=hex(ord(sep))):
+                page = FULL.replace("## The way back\n", f"Text{sep}## The way back\n")
+                with Tree(page=page) as root:
+                    (found,) = u.problems(root, "0.1.0a9")
+                self.assertIn("lacks the section(s): ## The way back", found)
+
+    def test_an_indented_fence_after_a_unicode_line_separator_is_line_text(self):
+        # Not a fence line: the whole line, separator and all, is paragraph text.
+        last = "## The way back\n\nNothing.\n"
+        page = FULL.replace(last, last[:-1] + "\u2028  ```\n")
+        with Tree(page=page) as root:
             self.assertEqual(u.problems(root, "0.1.0a9"), [])
 
     def test_a_four_backtick_fence_holds_a_three_backtick_one(self):
@@ -375,6 +410,12 @@ class Listing(unittest.TestCase):
         self.refused("# Upgrade pages\n\n- a\n  <!--\n- [0.1.0a9](0.1.0a9.md)\n")
 
     # Forms a fuller recognizer accepted (9ecab5fe), refused by the list-line rule.
+    def test_a_list_line_after_a_unicode_line_separator_does_not_count(self):
+        # It is the rest of a paragraph line, not a list line of its own.
+        for sep in SEPARATORS:
+            with self.subTest(sep=hex(ord(sep))):
+                self.refused(f"# Upgrade pages\n\nVersions:{sep}- [0.1.0a9](0.1.0a9.md)\n")
+
     def test_a_reference_link_does_not_count(self):
         self.refused("# Upgrade pages\n\n- [0.1.0a9][A9]\n\n[a9]: 0.1.0a9.md\n")
 

@@ -235,7 +235,7 @@ invited one accept. A `disabled` address is still that account's
 verified address: §18.7 only stops mail to it after hard failures, the
 address keeps its place in the one-account-per-address constraint, and
 setting and verifying it again enables it. The rest of the hub treats
-`disabled` as verified too (`notifications/preferences.py`). A `pending`
+`disabled` as verified too (`notifications/address.py`). A `pending`
 address was never confirmed by its mailbox, so accepting with it would
 let anyone bind an invitation to an address they only typed.
 Both sides normalize with `strip().lower()` (`registration.normalized`
