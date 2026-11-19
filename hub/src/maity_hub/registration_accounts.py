@@ -82,9 +82,9 @@ def claim_address(
 ) -> bool:
     """Write the address as the account's verified address (§18.4), unique across the
     accounts; False when another account holds it."""
-    from maity_hub.notifications import preferences
+    from maity_hub.notifications import address
 
-    return preferences.claim_verified(conn, normalized, human_id, secret_key=secret_key)
+    return address.claim_verified(conn, normalized, human_id, secret_key=secret_key)
 
 
 def admitted(

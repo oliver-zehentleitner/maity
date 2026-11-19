@@ -21,6 +21,7 @@ from maity_hub import (
     attachment_store,
     clock,
     events,
+    jcs,
     moderation,
     namespace,
     public_people,
@@ -383,6 +384,12 @@ def target(
     if not isinstance(target_id, str) or not target_id or len(target_id) > 255:
         raise invalid({"target.id": "required"})
     project = given.get("project")
+    if jcs.has_lone_surrogate(target_id) or (
+        isinstance(project, str) and jcs.has_lone_surrogate(project)
+    ):
+        # The id and the project are the strings a lookup binds: no id or name holds a lone
+        # surrogate, and the SQL bind cannot encode it. Any other member is ignored.
+        raise not_found()
     if kind == "profile":
         shot = _profile(conn, caller, target_id, project, pages)
         from_page = shot.pop("project", None)
@@ -437,8 +444,10 @@ def create(
     reason, text = body.get("reason"), body.get("text")
     if reason not in REASONS:
         raise invalid({"reason": "unknown"})
-    if text is not None and (not isinstance(text, str) or len(text.encode()) > TEXT_MAX):
-        raise invalid({"text": "too_long" if isinstance(text, str) else "not_text"})
+    if text is not None and (not isinstance(text, str) or jcs.has_lone_surrogate(text)):
+        raise invalid({"text": "not_text"})  # a lone surrogate is no text UTF-8 can encode
+    if text is not None and len(text.encode()) > TEXT_MAX:
+        raise invalid({"text": "too_long"})
     given = body.get("target")
     if not isinstance(given, dict):
         raise invalid({"target": "required"})

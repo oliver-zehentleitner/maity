@@ -25,6 +25,7 @@ from maity_hub.deps import engine_of, origin_of, settings_of
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.mail import address, outbox
 from maity_hub.notifications import preferences, records
+from maity_hub.notifications.address import void_pending_address
 from maity_hub.routes import auth
 from maity_hub.routes.auth import Strict
 from maity_hub.routes.email_sign_in import _anonymous
@@ -347,6 +348,6 @@ def _reset(
     resets.password_changed(conn, human_id)  # the generation moves, the open links die
     sessions.end_where(conn, t.human_session.c.human_id == human_id, ENDED_BY)
     email_links.void_human(conn, human_id)
-    preferences.void_pending_address(conn, human_id)
+    void_pending_address(conn, human_id)
     account_deletion.withdraw(conn, human_id, ENDED_BY)
     records.write(conn, human_id, "password_reset", {"ip": ip, "browser": browser, "os": system})

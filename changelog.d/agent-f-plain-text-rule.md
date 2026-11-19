@@ -36,4 +36,6 @@
 ### Fixed
 
 - hub: an invitation's note holding a lone surrogate is refused with
-  `control_character` (400) instead of failing with a server error.
+  `control_character` (400), the note's reason for every character the
+  plain-text rule refuses, rather than `invalid`; the character check runs
+  before the size, so such a note never reaches the encoding.

@@ -20,7 +20,7 @@ from maity_hub.deps import AnyCaller, engine_of, presence_caller, settings_of
 from maity_hub.errors import forbidden, humans_only, invalid, not_found, rate_limited
 from maity_hub.mail import address as addresses
 from maity_hub.mail import settings as mail_settings
-from maity_hub.notifications import preferences, presence
+from maity_hub.notifications import address, preferences, presence
 from maity_hub.ratelimit import Attempt
 from maity_hub.views import member_view
 
@@ -125,7 +125,7 @@ def verify_from_dashboard(
     addresses.prepare(engine_of(request), hub.secret_key)  # before the lock's transaction
     with engine_of(request).begin() as conn:
         # Another human's token is `not_found`, the same as an invalid one (§18.4).
-        done = preferences.verify(
+        done = address.verify(
             conn,
             token,
             hub.mail.signing_key,
@@ -161,7 +161,7 @@ def _decide(
     hub = settings_of(request)
     with engine_of(request).begin() as conn:
         human, session = _context(conn, caller, session_hash)
-        preferences.decide_held(
+        address.decide_held(
             conn,
             human=human,
             session=session,

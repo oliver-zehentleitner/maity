@@ -15,6 +15,8 @@ Each section holds text (a line such as "Nothing." counts); an HTML comment
 alone is no text, since the rendered page shows nothing there.
 
 The page is read as CommonMark reads it, as far as headings and text go: a
+line ends only at a line feed, a carriage return or both (not at U+2028 or
+the other breaks str.splitlines() knows); a
 byte order mark at the start is dropped; a fenced code block opens with three
 or more backticks or tildes at the start of the line and closes only with a
 run of the same character at least as long (an unclosed one runs to the end);
@@ -77,7 +79,10 @@ SECTIONS = (
     "The way back",
 )
 VERSION = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
-# CommonMark: an ATX heading and a fence are indented by at most three spaces.
+# CommonMark: an ATX heading and a fence are indented by at most three spaces. FENCE keeps that
+# reading, but problems() and unlisted() refuse a file with a fence indented 1-3 spaces
+# (indented_fences()) before lines() reads it, so lines() meets such a fence only in a file
+# already refused; in a checked file every fence opens at the start of the line.
 HEADING = re.compile(r"^ {0,3}## (.*)$")
 ATX = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
@@ -134,13 +139,24 @@ def problems(root: Path, version: str) -> list[str]:
     return out
 
 
+def split(text: str) -> list[str]:
+    """The lines of a text, ended only where CommonMark ends a line: at \\n, \\r\\n or \\r.
+    str.splitlines() also breaks at U+2028, U+2029, U+0085, \\x0b, \\x0c and \\x1c-\\x1e, which
+    CommonMark reads as characters of the line: a fence or heading after one is no fence or
+    heading on the rendered page, and must be none here either."""
+    out = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if out[-1] == "":
+        out.pop()  # the newline that ends the last line starts no line of its own
+    return out
+
+
 def indented_fences(name: str, text: str) -> list[str]:
     """One error per line that is a fence line with 1-3 leading spaces, wherever it stands
     (in a list item, a fence or a comment too): such a line makes the whole file refused.
     A plain line scan, no fence or comment state; the module's docstring has the reason."""
     return [
         f"{name}:{number}: write code fences at the start of the line"
-        for number, line in enumerate(text.splitlines(), start=1)
+        for number, line in enumerate(split(text), start=1)
         if INDENTED_FENCE.match(line)
     ]
 
@@ -167,7 +183,7 @@ def lines(text: str) -> list[tuple[str, str]]:
     fence: str | None = None  # the opening run of the open fence
     comment = False
     paragraph = False  # the line before is paragraph text, which an indented line continues
-    for line in text.splitlines():
+    for line in split(text):
         if fence is not None:
             closing = FENCE.match(line)
             if (

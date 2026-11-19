@@ -29,6 +29,7 @@ from maity_hub import (
     idempotency,
     inbox,
     instances,
+    jcs,
     mentions,
     namespace,
     orgs,
@@ -726,7 +727,11 @@ def _action_errors(body: RequestCreate, mine: Membership) -> dict[str, str]:
     if not action.path.startswith("/") or "?" in action.path or "#" in action.path:
         errors["action.path"] = "not_a_path"
     if action.body is not None:
-        if len(action.body.encode("utf-8")) > ACTION_BODY_MAX:
+        # The unconstrained `str` lets a JSON-escaped lone surrogate through, which UTF-8,
+        # and so the size and `body_sha256`, cannot encode: refused before either (§7).
+        if jcs.has_lone_surrogate(action.body):
+            errors["action.body"] = "lone_surrogate"
+        elif len(action.body.encode("utf-8")) > ACTION_BODY_MAX:
             errors["action.body"] = "too_large"
         else:
             try:
