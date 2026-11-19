@@ -57,7 +57,7 @@ class Refused(Exception):
 # runner's own launch (the loop on an ssh host, the stub, Claude Code's hook, the pane's log):
 # the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
 # runner's own, and an agent's call of it is refused (cli.main).
-IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap", "worktree-clean"})
+IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
 
 
 # --- pair ------------------------------------------------------------------------------------
@@ -1032,47 +1032,24 @@ def _installer(command: Any) -> Any:
     return handler
 
 
-# --- worktree-clean --------------------------------------------------------------------------
+# --- worktree-prune --------------------------------------------------------------------------
 
 
-def cmd_worktree_clean(args: argparse.Namespace) -> int:
-    """Clear a Claude Code subagent's leftover worktree. In a placed session (the agent's own
-    call) the clone is the runner's clone, found and checked the way maity's git is; the git run
-    is the recorded one, so the agent's configuration starts no program. `--prune-start --repo`
-    is the supervisor's own hygiene run on the agents' side (no placement, no git): refused for a
-    placed agent, which cannot redirect it at another path."""
-    placed = bool(os.environ.get(clonecheck.PLACEMENT_ENV))
-    if args.prune_start or args.repo:
-        if placed:
-            raise Refused(
-                "--prune-start is the runner's; a placed agent clears its own clone with "
-                "`maity runner worktree-clean`"
-            )
-        if not args.prune_start or not args.repo:
-            raise Refused("--prune-start and --repo go together")
-        print(json.dumps(worktree.prune_orphans(args.repo)))
-        return 0
-    try:
-        root = clonecheck.placement_root(Path.cwd())
-    except clonecheck.Refused as exc:
-        raise Refused(str(exc)) from None
-    if root is None:
+def cmd_worktree_prune(args: argparse.Namespace) -> int:
+    """The supervisor's git-free prune of a Claude Code subagent's leftover worktree under a
+    clone's `.claude/worktrees/`, run on the agents' side on placement start
+    (worktree.prune_orphans, AsUser.worktree_prune). Internal, the supervisor's own: refused for a
+    placed agent, which cannot redirect it at another path, and needs `--repo` to name the clone.
+    There is no in-session remover; a placed agent's leftover is cleared when the placement next
+    starts."""
+    if clonecheck.PLACEMENT_ENV in os.environ:  # empty-string-safe: a placed session is placed
         raise Refused(
-            "this is not a placed session; `maity runner worktree-clean` clears a leftover "
-            "worktree in a runner placement's clone"
+            "`maity runner worktree-prune` is the runner's placement-start hygiene, not a placed "
+            "agent's to call; a leftover worktree is cleared when the placement next starts"
         )
-    try:
-        with clonecheck.worktree_git(root) as pinned:
-            result = worktree.clean(root, pinned, force=args.force)
-    except (clonecheck.Refused, worktree.Refused) as exc:
-        raise Refused(str(exc)) from None
-    removed = result.get("removed") or []
-    if result.get("result") == "clean" or not removed:
-        print("no leftover worktree under .claude/worktrees/; the clone is already plain")
-    else:
-        assert isinstance(removed, list)  # noqa: S101 - clean() returns a list here
-        print(f"cleared {len(removed)} worktree(s) under .claude/worktrees/; the clone reads as "
-              "plain again")  # fmt: skip
+    if not args.repo:
+        raise Refused("`maity runner worktree-prune` needs --repo to name the clone to prune")
+    print(json.dumps(worktree.prune_orphans(args.repo)))
     return 0
 
 
@@ -1120,27 +1097,14 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["codex", "--under", a.under, *(["--auth", a.auth] if a.auth else []), a.path]
         if a.op == "codex" else [a.op, "--under", a.under, a.path]
     ))  # fmt: skip
-    # Agent-callable inside a placed session, and the supervisor's own on placement start: clear
-    # a Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/` so the
-    # clone reads as plain again (worktree). The agent runs it from inside the session (`maity`
-    # runs outside the sandbox as the clone's owner, so it may remove what the sandbox denies the
-    # agent); `--prune-start --repo` is the supervisor's hygiene run on the agents' side and is
-    # refused for a placed agent. An ssh host runs either through its own `maity`.
-    r = rsub.add_parser(
-        "worktree-clean",
-        help="clear a leftover Claude Code subagent worktree so this clone reads as plain",
-        description="Remove the worktrees a Claude Code subagent left under this placement's "
-        "clone `.claude/worktrees/`, which make the clone check refuse `maity report` and the "
-        "next start. Only worktrees whose working tree resolves (no symlink) under this clone's "
-        ".claude/worktrees/ are touched; one pointing elsewhere is left. A worktree with "
-        "uncommitted changes is kept unless --force is passed to discard it.",
-        formatter_class=fmt,
-    )
-    r.add_argument("--force", action="store_true",
-                   help="discard a worktree even when it has uncommitted changes")  # fmt: skip
-    r.add_argument("--prune-start", action="store_true", help=argparse.SUPPRESS)  # supervisor only
+    # Internal (no `help`, so not listed): the supervisor's own git-free prune of a Claude Code
+    # subagent's leftover worktree under the clone's `.claude/worktrees/` on placement start, so
+    # the clone reads as plain again (worktree). The runner runs no git in an existing clone, so
+    # this removes by file operations only; it is refused for a placed agent, which cannot
+    # redirect it at another path. An ssh host runs it through its own `maity`.
+    r = rsub.add_parser("worktree-prune")
     r.add_argument("--repo", help=argparse.SUPPRESS)  # supervisor only: the clone to prune
-    r.set_defaults(handler=cmd_worktree_clean)
+    r.set_defaults(handler=cmd_worktree_prune)
 
     # Internal too: what a pane's output goes through on an ssh host, holding its log to
     # limits.log_keep_bytes (logcap).

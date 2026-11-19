@@ -754,6 +754,52 @@ def test_a_leftover_subagent_worktree_is_cleared_on_start(
     assert any("cleared leftover worktree" in line for line in logs)
 
 
+def test_a_stale_worktree_registration_without_its_working_tree_is_cleared_on_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `.git/worktrees/<name>` left without its `.claude/worktrees/` working tree still reads
+    as unsupported; the start-prune clears the dangling registration even though the working tree
+    is gone, and the start proceeds."""
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)  # the registration, but no .claude/worktrees working tree
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.records["plc-0003"].reason is None
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+    assert not admin.exists()
+
+
+def test_a_foreign_workspace_with_a_leftover_is_refused_before_pruning(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clone another agent holds is refused (workspace_in_use) before anything is pruned: the
+    start-prune only ever touches this agent's own clone, so a leftover in a foreign one is left
+    exactly where it is."""
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    (place.path / ".git").mkdir(parents=True)
+    (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
+    workspace.record(sup.cfg.state_dir, place, "intruder", "other-plc")  # another agent's clone
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    (place.path / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    settle(sup)
+    assert sup.records["plc-0003"].reason == "workspace_in_use"
+    assert backend.started == []
+    assert admin.exists()  # not pruned: ownership is refused first
+    assert (place.path / ".claude" / "worktrees" / "agent-x").exists()
+
+
 def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -289,13 +289,13 @@ class AsUser:
         """Clear a Claude Code subagent's leftover worktree under the clone's `.claude/worktrees/`
         on placement start (worktree.prune_orphans), by file operations only, never git: the
         runner runs no git in an existing clone. For the runner's own user it runs in-process;
-        through sudo or on an ssh host the op runs there (`maity runner worktree-clean
-        --prune-start --repo`) and prints one JSON line. OSError when it fails."""
+        through sudo or on an ssh host the op runs there (`maity runner worktree-prune --repo`)
+        and prints one JSON line. OSError when it fails."""
         from . import worktree
 
         if self.direct:
             return worktree.prune_orphans(str(repo))
-        argv = [*self.maity, "runner", "worktree-clean", "--prune-start", "--repo", str(repo)]
+        argv = [*self.maity, "runner", "worktree-prune", "--repo", str(repo)]
         done = self.run(argv, env=self.module_env())
         if done.returncode != 0:
             raise OSError(f"worktree prune {repo} failed: {done.stderr.strip()[:200]}")
