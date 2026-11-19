@@ -136,7 +136,7 @@ def test_the_account_holds_its_address_as_verified(
 ) -> None:
     """The completion writes the address through the notification settings' store
     (§18.4), not through a stand-in."""
-    from maity_hub.notifications import preferences
+    from maity_hub.notifications import address, preferences
 
     settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
     row = requested(make_client, migrated, settings)
@@ -144,20 +144,20 @@ def test_the_account_holds_its_address_as_verified(
     assert done.kind == "created"
     with migrated.begin() as conn:
         view = preferences.view(conn, done.human_id, True)["email"]
-        assert preferences.has_verified_address(conn, "ada@example.com") is True
+        assert address.has_verified_address(conn, "ada@example.com") is True
     assert (view["address"], view["address_status"]) == ("ada@example.com", "verified")
 
 
 def test_a_taken_address_makes_no_account(
     admin: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
-    from maity_hub.notifications import preferences
+    from maity_hub.notifications import address
 
     settings = settings_for(MAITY_REGISTRATION_APPROVAL="automatic")
     row = requested(make_client, migrated, settings)
     holder = flow.human(make_client, migrated, "holder")
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", holder.id, secret_key=None)
+        assert address.claim_verified(conn, "ada@example.com", holder.id, secret_key=None)
     assert complete(migrated, settings, row.id).kind == "gone"
     with migrated.connect() as conn:
         assert conn.execute(select(t.human).where(t.human.c.handle == "ada")).first() is None

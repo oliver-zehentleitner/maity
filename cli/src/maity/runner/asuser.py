@@ -114,6 +114,22 @@ class AsUser:
 
         return Path(pwd.getpwnam(str(self.user)).pw_dir)
 
+    def uid(self) -> int:
+        """The uid the agents run as: the runner's own (`single`) or the agents' user's
+        (`agent_user`). agy's scratch under `/tmp` is owned by and reachable only to this uid
+        (scratchop.tmp_make). OSError when the host has no uid or the user is unknown."""
+        if self.direct:
+            getuid = getattr(os, "getuid", None)
+            if getuid is None:
+                raise OSError("this system has no uid; no /tmp scratch here")
+            return int(getuid())
+        import pwd  # POSIX only, and every maity command imports this module
+
+        try:
+            return pwd.getpwnam(str(self.user)).pw_uid
+        except KeyError:
+            raise OSError(f"the agents' user {self.user} is not known here") from None
+
     def write(self, path: Path, text: str) -> Path:
         """A file 0600 for the agents' side; the file's own directory is made 0700 if missing.
         Tools BSD, macOS and GNU all have (`sh`, `mkdir`, `mktemp`, `cat`, `chmod`, `mv`), and
@@ -257,6 +273,60 @@ class AsUser:
             raise OSError(f"scratch {op} {path}: no answer")
         return answer
 
+    def tmp_scratch(self, op: str, path: Path) -> dict[str, Any]:
+        """A placement's `/tmp` scratch (agy) made, measured or removed on the agents' side,
+        or (`op` "parent") the per-user parent created or adopted: the per-user parent (0700,
+        owned by the agents' user) and the per-placement leaf opened without following a link
+        and checked owned by the uid the agents run as (os.getuid there). scratchop.OnTheWay for
+        a link, a directory another user holds, or a leaf that already exists; OSError when it
+        fails otherwise."""
+        if self.direct:
+            if op == "parent":
+                return scratchop.tmp_parent_make(str(path))
+            return scratchop.tmp_run(op, str(path))
+        done = self.run([*self.runner_module("scratchop"), f"tmp{op}", str(path)])
+        if done.returncode == scratchop.LINK:
+            raise scratchop.OnTheWay(
+                f"{path}: a link, a foreign-owned or pre-existing directory; nothing done"
+            )
+        if done.returncode != 0:
+            raise OSError(f"tmp scratch {op} {path} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"tmp scratch {op} {path}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"tmp scratch {op} {path}: no answer")
+        return answer
+
+    def codex(self, under: Path, home: Path, config_text: str, auth_target: Path | None) -> None:
+        """Codex's control files written inside the per-placement codex-home on the agents'
+        side (scratchop.codex): config.toml and, when `auth_target` is given, the auth.json
+        link. Every directory from `under` (the workspaces root) down to codex-home is opened
+        without following a link, and codex-home itself is opened without following one, so a
+        codex-home swapped for a link is refused rather than followed out of the scratch.
+        scratchop.OnTheWay when it is a link; OSError when it fails otherwise."""
+        target = str(auth_target) if auth_target is not None else None
+        if self.direct:
+            scratchop.codex(str(under), str(home), config_text, target)
+            return
+        argv = [*self.runner_module("scratchop"), "codex", "--under", str(under)]
+        if target is not None:
+            argv += ["--auth", target]
+        done = self.run([*argv, str(home)], input=config_text)
+        if done.returncode == scratchop.LINK:
+            raise scratchop.OnTheWay(f"{home}: a link where codex-home must be; nothing written")
+        if done.returncode == 2:
+            # The op reaches an ssh host through its own `maity runner scratchop`. A host whose
+            # `maity` has no `codex` op (older than this) rejects the subcommand as an argument
+            # error (exit 2), distinct from LINK (4) and a genuine failure (1): refuse the
+            # placement, do not crash-loop it. The runner always builds a well-formed argv.
+            raise scratchop.Unsupported(
+                f"host maity too old for codex placements: {done.stderr.strip()[:200]}"
+            )
+        if done.returncode != 0:
+            raise OSError(f"codex home {home} failed: {done.stderr.strip()[:200]}")
+
     def terminate(self, pid: int) -> None:
         """SIGTERM to a process group of the agents' side."""
         if self.direct:
@@ -343,6 +413,11 @@ class Ssh(AsUser):
             stdin=subprocess.DEVNULL if input is None else None,  # never the operator's tty
             timeout=timeout, check=False,
         )  # fmt: skip
+
+    def uid(self) -> int:
+        """An ssh host's agents run under a remote account whose uid the runner does not hold,
+        so agy's `/tmp` scratch (keyed on that uid) is not made there."""
+        raise OSError(f"{self.name}: a /tmp scratch is not made on an ssh host")
 
     def home(self) -> Path:
         done = self.run(["printenv", "HOME"])

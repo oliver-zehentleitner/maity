@@ -16,7 +16,7 @@ from sqlalchemy import Engine, insert, select, update
 from maity_hub import clock, maintenance
 from maity_hub import tables as t
 from maity_hub.config import Settings
-from maity_hub.notifications.preferences import HELD_FOR
+from maity_hub.notifications.address import HELD_FOR
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.statements import count_statements

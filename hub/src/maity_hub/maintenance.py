@@ -533,7 +533,7 @@ def _shift_held_changes(
 ) -> None:
     """A held address change lapses `HELD_FOR` after `requested_at`; when that falls into the
     window, `requested_at` moves, so the change lapses that much later."""
-    from maity_hub.notifications.preferences import HELD_FOR
+    from maity_hub.notifications.address import HELD_FOR
 
     settings = t.notification_settings.c
     held = conn.execute(

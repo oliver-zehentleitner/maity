@@ -456,6 +456,7 @@ def test_the_long_poll_does_not_renew_leases(agent: factory.Agent, migrated: Eng
     facts = RequestFacts(
         method="GET",
         raw_path=b"/api/v1/projects/maintainer/maity/events",
+        path="/api/v1/projects/maintainer/maity/events",
         raw_query=b"wait=55",
         headers={"authorization": f"Bearer {agent.value}"},
         cookies={},

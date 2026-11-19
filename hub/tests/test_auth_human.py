@@ -9,12 +9,13 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
+from maity_hub.auth import caller as caller_module
 from maity_hub.config import Settings
-from tests import factory
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 
@@ -351,6 +352,64 @@ def test_every_call_renews_the_humans_last_seen(
     assert seen == later
 
 
+@pytest.mark.parametrize("meanwhile", ["ended", "written"])
+def test_presence_that_matches_no_row_reads_the_session_again(
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    meanwhile: str,
+) -> None:
+    # Between the call's first session read and its presence update, the session either ends
+    # or another call of it writes its presence; either way the update matches no row. The
+    # session read again tells them apart: an ended one is refused before any lease is
+    # renewed, a live one authenticates.
+    human = flow.human(make_client, migrated)
+    project_id = flow.project(human)["id"]
+    with migrated.connect() as conn:
+        membership_id = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.human_id == human.id)
+        ).scalar_one()
+    later = clock.now() + timedelta(minutes=5)  # presence is due
+    clock.set_source(lambda: later)
+    old_lease = later + timedelta(seconds=30)
+    card = factory.card(
+        migrated,
+        project_id,
+        membership_id,
+        status="in_progress",
+        claim_holder=membership_id,
+        lease_until=old_lease,
+    )
+    first_read = caller_module._live_session
+    reads: list[str] = []
+
+    def read_then_change(conn: Any, id_hash: str, now: Any) -> Any:
+        reads.append(id_hash)
+        row = first_read(conn, id_hash, now)
+        if len(reads) == 1:
+            # Through the call's own connection: SQLite has one writer, and what the update
+            # and the read after it see is the same as after another writer's commit.
+            values = {"ended_at": later} if meanwhile == "ended" else {"last_seen_at": later}
+            conn.execute(
+                update(t.human_session).where(t.human_session.c.id_hash == id_hash).values(**values)
+            )
+        return row
+
+    monkeypatch.setattr(caller_module, "_live_session", read_then_change)
+    response = human.get("/me")
+    monkeypatch.undo()
+    with migrated.connect() as conn:
+        lease = conn.execute(select(t.card.c.lease_until).where(t.card.c.id == card)).scalar()
+    if meanwhile == "ended":
+        assert response.status_code == 401, response.text
+        assert response.headers["Maity-Error"] == "unauthenticated"
+        assert lease == old_lease  # no lease renewed for an ended session
+    else:
+        assert response.status_code == 200, response.text
+        assert lease != old_lease  # authenticated, its lease renewed
+    assert len(reads) == 2  # the second read is the one after the update that matched nothing
+
+
 def test_agent_endpoints_and_auth_endpoints_are_separate(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
@@ -513,6 +572,21 @@ def test_a_login_holds_its_place_in_the_count_while_it_compares(
     seen = _seen_while_comparing(monkeypatch, password_limits.LOGIN, owner)
     factory.login_handle(make_client(peer="203.0.113.20"), "maintainer", "wrong")
     assert len(seen) == 1 and seen[0] > 0  # the fifth place was taken before the comparison
+
+
+def test_a_login_counts_an_address_of_no_account_only_by_its_keyed_fingerprint(
+    make_client: ClientFactory, migrated: Engine, owner: str
+) -> None:
+    from maity_hub.auth import password_limits
+    from tests import stored_keys
+
+    counted = (password_limits.LOGIN, password_limits.LOGIN_FROM)
+    for limiter in counted:
+        limiter.reset()
+    client = make_client(peer="203.0.113.30")
+    assert factory.login_handle(client, "nobody", "wrong").status_code == 401
+    address = f"nobody@{factory.SIGN_IN_DOMAIN}".lower()
+    stored_keys.assert_keyed(migrated, counted, address)
 
 
 def _signed_in_with_four_wrong(
