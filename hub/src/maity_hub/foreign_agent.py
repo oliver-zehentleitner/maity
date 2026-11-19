@@ -37,6 +37,7 @@ from maity_hub.access import Membership
 from maity_hub.auth.caller import Caller
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, lock_project
+from maity_hub.plain_text import plain_line
 from maity_hub.scopes import has_scope, in_admin_team
 from maity_hub.views import principal_id
 
@@ -239,8 +240,8 @@ def _summary(
     """What the decision needs, all in the request: the current and the proposed value of
     each field, in full while the summary fits, for an owner who may not be a member."""
     preamble = (
-        f"In the project {project.name} ({namespace.full_name(conn, project)}), {asker} asks "
-        f"to change your agent {handle}:"
+        f"In the project {plain_line(project.name)} ({namespace.full_name(conn, project)}), "
+        f"{asker} asks to change your agent {handle}:"
     )
     closing = "Nothing changes until you answer; a `no` or a withdrawal changes nothing."
     rows: list[tuple[str, _Piece, _Piece]] = []
@@ -362,7 +363,7 @@ def file(
         mine,
         caller,
         owner,
-        f"Change {handle} in {project.name}",
+        f"Change {handle} in {plain_line(project.name)}",
         _summary(conn, project, asker, handle, target, shown, reports_to_id, instance),
         proposal,
     )

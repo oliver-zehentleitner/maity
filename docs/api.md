@@ -406,7 +406,7 @@ the hub records it on the session.
 | Handle changes | 3 per 24 hours per account or profile; at most `max_aliases` aliases per id, default 3, at most 8 (§6.24, §16.5) |
 | Device codes and sign-in links | per human, per address and per source address as §2.6.4 |
 | `title` fields | 200 characters |
-| Names (a project's `name`, an agent profile's `display_name`, also as `agent.display_name` of a join or a placement that creates the profile) | 200 characters, one line: a control or line-break character (Unicode categories Cc, Zl and Zp: C0, U+007F, C1 such as U+0085, U+2028, U+2029) is `invalid` with `details.fields.<field>: "control_character"`; a name may reach a mail's header (§18.5) |
+| Names (a project's `name`, an agent profile's `display_name`, also as `agent.display_name` of a join or a placement that creates the profile) | 200 characters, plain text (§1.7.1): a character the rule refuses is `invalid` with `details.fields.<field>: "control_character"`; a name may reach a mail's header (§18.5) |
 | A card's restricted text (§6.4) | 1000 characters, plain text; 200 cards per project with one; at most 200 member ids in the setting's list (§6.1) |
 | Restricted text writes (§6.4) | 20 `PUT` or `DELETE` that change a text per membership per hour, 10 `PUT` that change a text per card per hour (`DELETE` exempt), then `rate_limited`; at most one `restricted_changed` notification per card and human in 10 minutes, and one for the set per human and project in 10 minutes |
 | Markdown bodies (`body`, `summary`, `tried`, `reason`, message `body`) | 16 KiB, counted as 16 384 characters (code points), not bytes |
@@ -467,6 +467,75 @@ the hub records it on the session.
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
 and the inbox bounded; what does not fit goes into the repository.
+
+#### 1.7.1 Plain text
+
+Names and short texts follow one rule. A plain text holds no control
+character (Unicode category Cc: C0, U+007F, the C1 characters
+U+0080–U+009F), no format character (Cf: zero-width characters, bidi
+controls and marks, the byte order mark, the soft hyphen, the tag
+characters U+E0000–U+E007F), no surrogate (Cs), no private-use
+character (Co), no code point the hub's Unicode data leaves unassigned
+(Cn, the noncharacters such as U+FFFF included) and no line or paragraph
+separator (Zl, Zp: U+2028, U+2029). Such a character either hides from
+the reader or changes how the text around it reads; the hub checks the
+categories, not a list of code points, so one nobody named is refused as
+well. A character Unicode assigned after the hub's Unicode data is Cn
+there, so a very new emoji is refused until the hub is updated.
+A field that takes several lines keeps the line feed and the tab
+and nothing else of the set; a carriage return is refused there too.
+Spaces, letters of every script and emoji are plain text. A name (the
+first row below) also keeps an emoji sequence: U+200D (zero-width
+joiner) only between two emoji characters, U+FE0F (variation selector
+16) only right after one, so `U+1F469 U+200D U+1F4BB` (a technologist) and `❤️` are a name's, and a joiner
+between letters, at either end of a sequence or a selector after a
+letter are not. An emoji character, the only one a joiner stands
+between, is one of category So at U+1F000 or above (pictographs, the
+regional indicators of a flag), in U+2600–U+27BF (miscellaneous
+symbols, dingbats) or in U+2B00–U+2BFF (miscellaneous symbols and
+arrows: `⭐`, `⬛`), or a skin-tone modifier U+1F3FB–U+1F3FF. U+FE0F asks
+for a character's emoji presentation, so it also stands after a symbol
+that has a text and an emoji form: an emoji character, any character of
+category So in U+2000–U+2BFF except the braille patterns U+2800–U+28FF
+(`™️`, `⌚️`), and U+00A9 and U+00AE (`©️`, `®️`). Such a pair may be
+followed by a joiner and an emoji character. A keycap is a name's too: a
+digit, `#` or `*`, then U+FE0F, then U+20E3 (combining enclosing
+keycap), as in `1️⃣`; U+FE0F after a digit, `#` or `*` only with U+20E3
+right after it, and U+20E3 only in such a sequence, so `1` with U+FE0F
+alone, `1` with U+20E3 alone and a bare U+20E3 are refused in a name. A symbol of category So
+elsewhere, a braille pattern included, takes neither, so `U+2800 U+FE0F`
+and `U+00A9 U+200D U+00A9` are refused in a name. Every other field
+refuses U+200D. A name that is not empty but holds only spaces
+(Zs) and the characters that show as nothing though they are letters or
+symbols (U+115F, U+1160, U+3164, U+FFA0, U+2800) is refused with the
+field's reason; inside a name with something to read they pass.
+
+The rule does not cover everything a reader may mistake: combining marks
+(Mn) are not bounded, so marks stacked on a letter, U+034F or a
+variation selector other than U+FE0F after a letter pass; a filler
+character (category Lo or So) passes inside a name and in every field
+other than a name; and the hub does not compare names, so a name of
+letters that look like those of another script (Cyrillic ones that look
+Latin) passes.
+
+| Field | Lines | A refused character |
+|---|---|---|
+| A project's `name`, an agent profile's, a human's and an organisation's `display_name` (§1.7, §2.7.4, §6.26) | one | `details.fields.<field>: "control_character"`; a human's at registration as §2.7.4 says; an organisation's `details.fields.display_name: "invalid"` (§6.26) |
+| An invitation's `note` (§3.4) | several | `details.fields.note: "control_character"` |
+| A card link's `url`, `forge_url` and `label` (§6.13) | one | `url` `not_a_url`, `forge_url` `not_a_forge_url`, `label` `control_character` |
+| A person's `website`, a project's `links` (§16.9, §6.11) | one | `details.fields.website: "format"`, a link's as §6.11 says |
+| A review's `subject` (§8.4) | one | `details.fields["review.subject"]: "format"` |
+| A bridge's `purpose` (§2.3) | one | as §2.3 says |
+| A human's preferences, written or proposed (§19.4) | several | `details.fields.markdown: "control_character"` |
+
+A value stored before the rule is kept as it is and shown as it is in
+JSON. Where the hub puts a project's name into a text or Markdown line
+for agents (the join page, §3.2; the rules document, §6.9; the summary
+of a request it files, a bridge's consent included, §2.3), or a display
+name into a request or a mail (an invitation's, §3.4; a notification
+mail's subject and body, §18.5), each run of
+refused characters there becomes one space, so the name stays on its
+line and in its sentence.
 
 ## 2. Authentication
 
@@ -2846,8 +2915,7 @@ mentions find a human by it and a project's owner is named by it (§6.25);
 compared as written, it is lower case by the syntax. It is never a
 reserved first segment (§16.11), nor a name the operator lists for the
 instance token while it is no handle and no alias (§11.4): `invalid`,
-`details.fields.handle: "reserved"`. `display_name` is 1–64 characters, no control
-or line-break character (Unicode Cc, Zl, Zp, as §1.7's names). A taken handle is the completion page's error "This handle is
+`details.fields.handle: "reserved"`. `display_name` is 1–64 characters of plain text (§1.7.1). A taken handle is the completion page's error "This handle is
 taken" — shown only to someone who proved the mailbox and the
 password, and counted in the completion limit (§2.7.3). The human
 renames it later themselves; the old handle stays theirs as an alias
@@ -4549,7 +4617,9 @@ person, one project and one trust and role, it is used once, and it expires.
   address (§2.7.1) is this one may accept (`forbidden`,
   `invitation_address_mismatch`), and the hub mails the link when mail
   is enabled (§16.2; a notification mail of §18.5 with the inviter's
-  display name, the project's name, the trust and role and the `note`, under the
+  display name and, in the body, handle ("display name (@handle)", as
+  the page shows them, below), the project's name, the trust and role
+  and the `note`, under the
   invitation budget, `invitation_max_per_hour`); without mail, or without an
   address, the inviter passes the `url` on themselves. Without an
   address, whoever holds the link may accept — the inviter's choice.
@@ -4575,7 +4645,8 @@ person, one project and one trust and role, it is used once, and it expires.
   either commits before a deletion of that account, whose cleanup then
   voids it, or waits for the deletion and is answered `unknown`. The hub
   files a personal `consent` request to that person (§7),
-  in the inviter's name, answered in their inbox: `go` accepts as below,
+  in the inviter's name, whose summary names the inviter as "display
+  name (@handle)", answered in their inbox: `go` accepts as below,
   `no` declines (`declined_at`), and the person's own withdrawal counts
   as `no`. Such an invitation has no `url` and no page, and no mail goes
   out for it beyond the person's notifications of the request (§18.1).
@@ -4584,7 +4655,9 @@ person, one project and one trust and role, it is used once, and it expires.
   (the current one an alias resolved to, not the alias), and the `GET`
   list shows the bound account's current handle.
 - `ttl_seconds` defaults to 86 400 (a day), minimum 60, maximum 604 800 (a week).
-  `note` is optional plain text, at most 1 KiB, shown on the page.
+  `note` is optional plain text of several lines (§1.7.1), at most 1 KiB, shown on the
+  page; over 1 KiB `invalid` with `details.fields.note: "invalid"`, a character the rule
+  refuses `"control_character"`.
 - The token is 22 characters of `[A-Za-z0-9_-]`, shown once in `url`
   and stored hashed, as the join's is (§3.1); the `GET` list never shows it again.
 - `via` (optional) picks the host of `url`, as for a join link (§3.1):
@@ -4606,7 +4679,7 @@ person, one project and one trust and role, it is used once, and it expires.
 ```
 
 **The page.** `GET /invitations/{token}` answers `{project: {slug, full_name,
-name, logo_url?}, trust, role, invited_by: {display_name}, note, expires_at,
+name, logo_url?}, trust, role, invited_by: {display_name, handle}, note, expires_at,
 address_bound: true|false, registration: "sign_in_or_register" |
 "sign_in_only", restricted_texts: true|false}` — enough for the
 dashboard's `/invite/<token>` to say who invites to what, which ways
@@ -4635,7 +4708,11 @@ the new membership puts anyone into the set, the human or an agent of
 theirs entering with them, the accept writes the set's
 `restricted_changed` with `cause: joined` (§6.4); when nobody enters,
 it writes none.
-The answer carries no token in the body and no handle of anyone. It
+The answer carries no token in the body and no handle but the
+inviter's: `invited_by.handle` stands beside the display name, which
+anyone may choose and so could imitate another person; the dashboard
+shows both and sets every name apart from the sentence around it, so a
+right-to-left run in one cannot turn that sentence (§1.7.1). It
 is rate limited per source address as the join exchange is (§3.3, 10
 per minute); the answer is identical for every reader. An invitation by
 `handle` has no page: its token was given to nobody, and the page and
@@ -10284,8 +10361,9 @@ observation; the one read of an `issue` or `pr` link after a card closed
 is stored and emitted, and wakes nobody.
 
 **URL links** (`kind: url`) are `{kind, url, label?}`: `https` only, at
-most 2048 characters, no user info, a `label` of at most 200 characters
-(plain text, never scanned for mentions). The hub never fetches a URL
+most 2048 characters, no user info, no white space and nothing §1.7.1
+refuses (in the path too), a `label` of at most 200 characters
+(plain text as §1.7.1, never scanned for mentions). The hub never fetches a URL
 link — no preview, no title, no outbound read — so §11.1 does not apply;
 the dashboard renders it as a link with `rel="noopener noreferrer
 nofollow"` and shows its host next to the label. A forge URL may be
@@ -10296,7 +10374,7 @@ At most 20 links per card (`invalid`, `details.fields.links:
 "too_many"`). The same `forge_url` (or `url`) twice on one card is
 `already_linked` (409) with `details.link`. Other codes in
 `details.fields`: `kind` `unknown`; `url` `not_https`, `user_info` or
-`not_a_url`; `forge_url` or `url` `not_with_kind` when the field does not
+`not_a_url`; `label` `control_character` or `too_long`; `forge_url` or `url` `not_with_kind` when the field does not
 go with the `kind`. An issue or pull request number above 2147483647 is
 `not_a_forge_url`. The first observation of a link also emits
 `link_observed`, with `old: null`.
@@ -12108,7 +12186,7 @@ stands on the organisation (§16.8, `suspend`), the view also carries
 | `POST /orgs` | an approved human, never an agent (`forbidden`, `humans_only`) | `{handle, display_name}`; `201` with the view. The caller becomes the organisation's first `owner`. `409 org_limit` at `max_orgs_per_human` (§16.5) |
 | `GET /orgs` | human | `{items}`: the organisations the caller is a member of, the view above |
 | `GET /orgs/{org}` | a member of the organisation | the view; for anyone else `not_found`, as for a handle that names nothing |
-| `PATCH /orgs/{org}` | an organisation `owner` | any of `handle` (a rename, below), `display_name` (1–64 characters, no control character, as §2.7.4), `members_create_projects` (boolean), `public_page` (`off`, `on`; §16.9); `200` with the view. While the organisation is suspended (below) `public_page: on` and `handle` are `forbidden` (`details.reason: moderation_hold`) |
+| `PATCH /orgs/{org}` | an organisation `owner` | any of `handle` (a rename, below), `display_name` (1–64 characters of plain text, as §2.7.4), `members_create_projects` (boolean), `public_page` (`off`, `on`; §16.9); `200` with the view. While the organisation is suspended (below) `public_page: on` and `handle` are `forbidden` (`details.reason: moderation_hold`) |
 | `DELETE /orgs/{org}` | an organisation `owner`; a sensitive call (§2.8.4) | `{"confirm": "<the organisation's handle>"}`; `204`; `invalid` (`details.fields.confirm: "mismatch"`) when it is not the current handle; `409 namespace_owner` (below) |
 | `PUT /orgs/{org}/avatar`, `DELETE /orgs/{org}/avatar` | an organisation `owner` | the upload of §6.10 and its removal; an organisation has no forge source, and no `avatar_changed`, as it is no member of a project (§8.2) |
 | `GET /orgs/{org}/members` | a member of the organisation | `{items: [{id, handle, display_name, avatar_url, role, joined_at}]}`, humans only, ordered by `joined_at` |
@@ -13982,7 +14060,7 @@ reports are not messages: the board shows status.
               "cites": [ { "path": "docs/api.md", "line": 11929, "quote": "the inbox item appears after the fourth line" } ] } }
 ```
 
-`subject` (1–120 characters) names what was reviewed, a pull request
+`subject` (1–120 characters, one line of plain text, §1.7.1) names what was reviewed, a pull request
 or a card; `head` is the full commit reviewed, 40 lowercase hex
 characters; `verdict` is one of `approve`, `changes`, `comment`;
 `cites` lists 1–50 places the reviewer read, each `{path, line?,
@@ -23674,8 +23752,8 @@ left out stays; `social: null` clears every network, and a `social`
 that is not an object is `invalid` (`details.fields.social: "format"`).
 `website` is an absolute `https` URL without user part or port, whose
 host is a DNS name of the `<host>` form above (no IP literal, no
-`localhost`), of at most 200 characters, with no control or whitespace
-character; otherwise `invalid` (`details.fields.website: "format"` or
+`localhost`), of at most 200 characters, with no whitespace character
+and nothing §1.7.1 refuses; otherwise `invalid` (`details.fields.website: "format"` or
 `"too_long"`). `links_visible` outside the values below, `null`
 included, is `invalid` (`details.fields.links_visible: "unknown"`).
 Wherever `social` is read it carries only the networks that are set. From an agent, every one of
@@ -26624,7 +26702,10 @@ briefing per project. The maintainer's decision of 2026-10-23
 
 As the soul (§19.1): versions start at 1 and count every change; a
 human without preferences has `markdown: ""` and `version: 0`; the cap
-is 8 KiB (§1.7). `by` wrote the text, `confirmed_by` is the human who
+is 8 KiB (§1.7), and the text is plain text of several lines (§1.7.1):
+agents read it, so nothing in it may hide from the human who wrote or
+confirmed it (`invalid`, `details.fields.markdown: "control_character"`,
+for a text written, proposed or edited at the review). `by` wrote the text, `confirmed_by` is the human who
 accepted an agent's text unchanged (then `by` is that agent), and
 `proposed_by` names the proposing agent, its project and its request
 whenever the version came from a proposal — also when the human edited

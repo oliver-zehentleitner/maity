@@ -12,6 +12,7 @@ from sqlalchemy import Connection, Engine, select, update
 from maity_hub import languages
 from maity_hub import tables as t
 from maity_hub.notifications import preferences
+from maity_hub.notifications.address import row_of
 from maity_hub.text_language import text_language
 from tests import factory
 
@@ -49,7 +50,7 @@ def test_text_language_reads_as_the_merged_settings_did(
             update(t.human).where(t.human.c.id == human_id).values(interface_language=chosen)
         )
         if stored is not None:
-            preferences.row_of(conn, human_id, lock=True)  # the row the first write makes
+            row_of(conn, human_id, lock=True)  # the row the first write makes
             conn.execute(
                 update(t.notification_settings)
                 .where(t.notification_settings.c.human_id == human_id)
