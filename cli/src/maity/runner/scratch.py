@@ -65,6 +65,45 @@ def write_codex_home(
     as_user.codex(_under(home.parent), home, config_text, auth_target)
 
 
+def tmp_make(path: Path, as_user: AsUser = RUNNER) -> None:
+    """The agy scratch at `path` under `/tmp`, with `tmp` in it, owned by the user the agents
+    run as, under a per-user parent owned 0700 by that user (scratchop.tmp_make). scratchop.OnTheWay
+    when a level is a link, a directory another user holds, or a leaf that already exists; OSError
+    otherwise."""
+    as_user.tmp_scratch("make", path)
+
+
+def tmp_make_parent(path: Path, as_user: AsUser = RUNNER) -> None:
+    """The per-user agy scratch parent at `path` (`<root>/maity-scratch-<uid>`) created or
+    adopted 0700, owned by the agents' user (scratchop.tmp_parent_make). The runner makes it
+    before a non-agy placement that only hides it starts, so the sandbox's deny path is a real
+    directory. scratchop.OnTheWay when it is a link or a directory another user holds; OSError
+    otherwise."""
+    as_user.tmp_scratch("parent", path)
+
+
+def tmp_measure(path: Path, as_user: AsUser = RUNNER) -> int | None:
+    """The bytes under the agy scratch at `path`; None when it is missing, reached through a
+    link or a foreign-owned parent, or cannot be measured in time."""
+    try:
+        answer = as_user.tmp_scratch("size", path)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = answer.get("bytes")
+    return found if isinstance(found, int) and not isinstance(found, bool) else None
+
+
+def tmp_remove(path: Path, as_user: AsUser = RUNNER) -> int | None:
+    """Remove the agy scratch at `path` under `/tmp` and return its size before; None when
+    there was none (scratchop.tmp_remove). scratchop.OnTheWay when the parent is a link or
+    foreign-owned; OSError when it cannot be removed."""
+    answer = as_user.tmp_scratch("remove", path)
+    if answer.get("result") == "missing":
+        return None
+    found = answer.get("bytes")
+    return found if isinstance(found, int) and not isinstance(found, bool) else 0
+
+
 def measure(path: Path, as_user: AsUser = RUNNER) -> int | None:
     """The bytes under the scratch at `path`; None when it is missing, reached through a link
     or cannot be measured in time."""

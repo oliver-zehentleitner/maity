@@ -166,8 +166,9 @@ def wrong_code(conn: Connection, human_id: str) -> int:
 class RequestLimits:
     """`POST /auth/password-reset`, as `POST /auth/email-link` (§2.6.4), in buckets of its own:
     only the source limit answers `429`; over the pair limits the answer stays `202` and nothing
-    is sent, and so over the recipient's limit. Existing and unknown addresses take the same
-    path. `source` is the caller's `Origin.limit_key`."""
+    is sent, and so over the recipient's limit. The address is counted by its
+    `known_sources.address_key`, and existing and unknown addresses take the same path.
+    `source` is the caller's `Origin.limit_key`."""
 
     def __init__(self) -> None:
         self.by_source = Limiter(10, 3600, name="auth.password_resets.by_source")
@@ -198,14 +199,14 @@ class RequestLimits:
             exact=True,
         )
 
-    def take(self, address: str, source: str) -> tuple[int, bool]:
+    def take(self, address_key: str, source: str) -> tuple[int, bool]:
+        """`address_key`: the asked address's `known_sources.address_key`."""
         wait = self.by_source.hit(source)
         if wait:
             return wait, False
-        normalised = address.strip().casefold()
-        key = digest(f"{source}\0{normalised}")
-        quarter = self.pair_quarter.hit(key)
-        day = self.pair_day.hit(key)
+        pair = f"{address_key} {source}"
+        quarter = self.pair_quarter.hit(pair)
+        day = self.pair_day.hit(pair)
         if quarter or day:
             return 0, False
         recipient = (
@@ -216,7 +217,7 @@ class RequestLimits:
             self.recipient_mails_hour,
             self.recipient_mails_day,
         )
-        return 0, not recipient_over(recipient, normalised, source)
+        return 0, not recipient_over(recipient, address_key, source)
 
 
 def password_changed(conn: Connection, human_id: str) -> None:

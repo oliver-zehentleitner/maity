@@ -2311,10 +2311,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   {
     const lrAll = win.Maity.api.getAll;
     let lrHold = null, lrRelease = null;
+    // lrExtra: path → (answer) => an item the next read of that path answers with too, once.
+    const lrExtra = new Map();
     win.Maity.api.getAll = (p) => {
-      if (p !== lrHold) return lrAll(p);
+      const extra = lrExtra.get(p);
+      lrExtra.delete(p);
+      const read = () => lrAll(p).then((r) => (extra ? Object.assign({}, r, { items: r.items.concat([extra(r)]) }) : r));
+      if (p !== lrHold) return read();
       lrHold = null;
-      return new Promise((r) => { lrRelease = r; }).then(() => lrAll(p));
+      return new Promise((r) => { lrRelease = r; }).then(read);
     };
     srProto.focus = function () { document.activeElement = this; };
     const lrChoose = (id) => { byId("join-agent").value = id; byId("join-agent").dispatch("change"); byId("join-agent").focus(); };
@@ -2355,26 +2360,47 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       + JSON.stringify([lrProfilesHeld, lrProfiles]));
     srCancel().click(); await tick();
     // The lists read after a join made, the line closed by Done before they answer. The join is
-    // answered here for agt-s1 and not kept, so the joins counted further down stay as they are.
+    // answered here for a new profile, agt-late, and not kept: the reads after it answer with that
+    // profile and its join once each, so the profiles and joins counted further down stay as they are.
+    // The closed submission still offers the new profile in the newer form and calls changed(), whose
+    // hook draws the seats (nte-a36pp3q2p052 at #1919). This page's own hook draws nothing, so the
+    // panel is mounted anew with a hook that keeps the seats it would draw.
+    const lrMount = win.Maity.join.mount;
+    let lrJ = null, lrSeats = null;
+    win.Maity.join.mount = (c, hooks) => lrMount(c, Object.assign({}, hooks, {
+      changed: () => { lrSeats = lrJ ? lrJ.seats().map((s) => s.getAttribute("data-join")) : null; hooks.changed(); },
+    })).then((m) => { lrJ = m; return m; });
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/placements"); for (let k = 0; k < 8; k++) await tick(); await openAgentCards();
     await srOpen(); await srTurn(false);
     lrNew("late-made");
     srJoinHold = true;
     srJoin().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
     lrHold = "/agents"; lrRelease = null;
-    srJoinAnswer({ id: "join-late", agent_id: "agt-s1", instruction: null, expires_at: new Date(Date.now() + 600000).toISOString(),
-      paste_lines: { join: "maity join late", posix: "curl late", windows: null } }); for (let k = 0; k < 4; k++) await tick();
-    const lrLine = !!lrRelease && lrHold === null && !!srPanel().querySelector(".paste-row");
+    const lrJoin = { id: "join-late", agent_id: "agt-late", trust: "member", role: "coder", reports_to: null, instruction: null,
+      expires_at: new Date(Date.now() + 600000).toISOString(), paste_lines: { join: "maity join late", posix: "curl late", windows: null } };
+    const lrProfile = (r) => Object.assign({}, r.items.find((x) => x.id === "agt-s1"), { id: "agt-late", handle: "late-made", display_name: "late-made", memberships: [] });
+    lrExtra.set("/agents", lrProfile);
+    lrExtra.set("/agents?allowed_in=" + encodeURIComponent("maintainer/maity"), lrProfile);
+    lrExtra.set("/projects/maintainer/maity/joins", () => lrJoin);
+    srJoinAnswer(lrJoin); for (let k = 0; k < 4; k++) await tick();
+    const lrLine = !!lrRelease && lrHold === null && !!srPanel().querySelector(".paste-row") && lrExtra.size === 0;
     const lrDone = srPanel().querySelectorAll("button").find((b) => text(b) === "Done");
     if (lrDone) lrDone.click(); await tick();
     await srOpen(); lrChoose("agt-a");
+    lrSeats = null;
     if (lrRelease) lrRelease(); for (let k = 0; k < 8; k++) await tick();
     const lrMade = lrState();
+    const lrOffered = byId("join-agent").querySelectorAll("option").some((o) => o.getAttribute("value") === "agt-late");
     expect(lrLine && JSON.stringify(lrMade) === JSON.stringify(["agt-a", "", false, true]),
       "join: the lists read after a join and answered after its line was closed leave agt-a chosen in the newer form, its status, button and focus "
       + JSON.stringify([lrLine, lrMade]));
+    expect(lrOffered && !!lrSeats && lrSeats.includes("join-late"),
+      "join: the lists read after a join and answered after its line was closed offer the new profile in the newer form and list its seat "
+      + JSON.stringify([lrOffered, lrSeats]));
     srCancel().click(); await tick();
     srProto.focus = srFocus;
     win.Maity.api.getAll = lrAll;
+    win.Maity.join.mount = lrMount;
   }
   // The project's limit of placements reached (§6.1 max_placements, tsk-6s5n7egy4e5r), since
   // tsk-hdczmsq2r431 from the join form's part on a runner: the refusal names the limit and links
@@ -10742,7 +10768,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "invite: the logo at this hub's own absolute address is drawn; another host or a crafted path leaves the mark, the page whole: " + ivLogos.join());
   const ivSignIn = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Sign in to accept");
   const ivRegister = ivPage() && ivPage().querySelectorAll("a").find((a) => text(a) === "Create one");
-  expect(ivPage() && text(ivPage()).includes("Maintainer invites you to join Maity as member · coder.") && text(ivPage().querySelector(".invite-note")) === "You review the web side; D will brief you."
+  expect(ivPage() && text(ivPage()).includes("Maintainer (@maintainer) invites you to join Maity as member · coder.") && text(ivPage().querySelector(".invite-note")) === "You review the web side; D will brief you."
     && ivSignIn && ivSignIn.getAttribute("href") === "#/login?next=%2Finvite%2Fopen-xxxxxxxxxxxxxxxx1"
     && ivRegister && ivRegister.getAttribute("href") === "#/register?next=%2Finvite%2Fopen-xxxxxxxxxxxxxxxx1"
     && header.querySelector(".theme-menu") && plainTitle() === "Join Maity · Maity",
@@ -10750,7 +10776,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The door (the designer's pass part 2): one centred card; the role in bold, the note a quote with who wrote it,
   // the logo or its monogram, the action full width.
   expect(ivPage().classList.contains("door") && text(ivPage().querySelector(".invite-lead strong")) === "member · coder"
-    && text(ivPage().querySelector(".invite-note-by")) === "— Maintainer" && ivPage().querySelector(".invite-project .invite-logo")
+    && text(ivPage().querySelector(".invite-note-by")) === "— Maintainer (@maintainer)" && ivPage().querySelector(".invite-project .invite-logo")
     && ivSignIn.classList.contains("door-action") && thCss.includes(".door { max-width: 28rem; margin: 10vh auto;"),
     "invite: one centred card, the role in bold, the note a quote signed, the logo, the action full width");
   await go("#/invite/only-xxxxxxxxxxxxxxxx2"); for (let k = 0; k < 4; k++) await tick();

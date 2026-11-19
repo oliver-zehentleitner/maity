@@ -3534,8 +3534,8 @@ handle, and is clicked away too easily.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy)
-**Revisit when:** §2.3 adds or drops a built-in role, or a project's own roles (§2.3) get a place in the pickers
+**Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy); the card tsk-0e7mrvccjttn and #1948 (a project's own roles in the pickers, §2.3 "Project roles"), 2026-11
+**Revisit when:** §2.3 adds or drops a built-in role
 **See:** views.md — b71cebbf-56d9-4f65-aef9-cbb4ab5131a1 — as of 2026-10-30
 
 `js/trust.js` holds the one list of built-in roles, in the order of the
@@ -3544,10 +3544,19 @@ member does, taken from that table. Every role picker (a member's form,
 an invitation, a join, a member's own agent) fills its options from it
 by label, with the role's words as the option's tooltip and, under the
 picker, as a hint line the select is described by, following the chosen
-role. What a picker offers stays its own rule: proxy only with trust
+role. Since #1948 the project's own roles (§2.3 "Project roles") follow
+the built-in ones in the same select: read once per view
+(`M.trust.projectRoles`, one `GET …/roles` for every picker drawn in it),
+each as "name (permissions of its base)", with its description, or else
+"a role of this project, with the permissions of its base", as tooltip
+and hint. A picker drawn before that read answers is filled again when
+it does, a choice made meanwhile kept; a failed read leaves the built-in
+roles only. What a picker offers stays its own rule: proxy only with trust
 admin and only from an owner, a member's own agent every role but `ops`
-and `proxy`. A security team counts as the role whose scopes it has
-(red team as tester, purple team as reviewer) where the dashboard asks
+and `proxy`, and of the project's own roles only those whose base a
+member join may give, so none on `ops` (the join form for one's own
+agent and the owner's role picker on Members alike). A security team
+counts as the role whose scopes it has (red team as tester, purple team as reviewer) where the dashboard asks
 who reviews, tests or prepares a release; the blue team counts as
 coder, which no dashboard question asks for. The fixture hub keeps the
 same roles in one list of its own. The list is the hub's too (`scopes.ROLES`
@@ -7179,6 +7188,32 @@ panel the same edge, and a new form inside it needs no width of its own.
   short, and in a padded box (the settings' webhook) the column's parts
   beside it would end the box's padding past the column's edge.
 
+## The invitation page names the inviter by display name and handle, every typed name in its own `<bdi>`
+
+**Id:** 35cd35c9-317b-48d5-a750-6d1009fd451d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-zadkerpebgd5 (one plain-text rule for names, notes, URLs and subjects), 2026-11-14; `js/invite.js`
+**Revisit when:** another signed-out page shows a name someone typed next to text of its own, or the hub's plain-text rule (docs/api.md §1.7.1) starts to allow a bidi or format character
+**See:** https://github.com/oliver-zehentleitner/maity — 893c6bee-9785-4e29-ae44-c8e6c71947df — as of 2026-11-14
+
+The invitation page (`/invite/<token>`) says who invites as "display name (@handle)", from the
+hub's `invited_by.handle`, in the lead sentence, under the note and in the no-registration hint.
+The project's name and the inviter's display name each sit in a `<bdi>`, and the note's paragraph
+has `dir="auto"`.
+
+**Reason:** the page is read by someone who has no account yet and nothing else to check the
+inviter against; a display name is free text anyone may choose, a handle is unique. A `<bdi>`
+isolates a right-to-left run or a direction mark in a name from the sentence around it, so the
+sentence reads as it is translated, also for a value stored before the hub refused such marks.
+
+**Rejected alternatives:**
+- The display name alone, trusting the hub's rule: the rule says nothing about two people who
+  pick the same visible name, and stored values predate it.
+- `unicode-bidi: isolate` in the stylesheet on a span: the same effect, but only where the
+  stylesheet loads; `<bdi>` carries it in the markup.
+
 ## A tab row brings its current tab into sight again once the fonts are in
 
 **Id:** 826df576-d97f-458e-bb40-89f6de67a4d6
@@ -7342,4 +7377,3 @@ sent is what the page shows (review A963).
   and cost a call on every save.
 - Merging the draft into the list read again (keeping roles others added): it would hide a
   conflict on the same role; refusing and reloading says it.
-

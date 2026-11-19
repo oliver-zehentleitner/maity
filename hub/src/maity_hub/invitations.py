@@ -31,6 +31,7 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.models import HANDLE_PATTERN
+from maity_hub.plain_text import plain_line
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.ratelimit import Limiter
 from maity_hub.scopes import has_scope
@@ -472,9 +473,12 @@ def file_request(
     name; returns its id."""
     from maity_hub.routes.requests import file_to_human
 
-    inviter = conn.execute(
-        select(t.human.c.display_name).where(t.human.c.id == caller.human_id)
-    ).scalar()
+    found = conn.execute(
+        select(t.human.c.display_name, t.human.c.handle).where(t.human.c.id == caller.human_id)
+    ).one()
+    # By name and handle, as the invitation page shows the inviter (§3.4): a name alone can
+    # be anyone's. On one line, whatever was stored before the rule (§1.7.1).
+    inviter = f"{plain_line(found.display_name or '')} (@{found.handle})".lstrip()
     summary = (
         f"{inviter} invites you to the project {project_name} as {role} with trust {trust}. "
         "You become a member only if you say go."

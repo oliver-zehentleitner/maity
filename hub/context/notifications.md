@@ -64,6 +64,38 @@ function-local import against the cycle. The address lifecycle, which moves out 
   the same answer for this one key, but it ties every caller to the whole settings module.
 - A function-local import in each caller: the workaround this card removes.
 
+## The address lifecycle is a module of its own, beside the settings it shares a row with
+
+**Id:** 5829e0a1-b0f5-4ce0-9452-e5402f2a9ef8
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-xx108ajy287x item 16 (clean-up audit tsk-hgnbapyw7hnh, area 12, finding 16); the lead's go on the design, 2026-11-18
+**Revisit when:** the address moves out of the `notification_settings` row, or the settings start to need something of the address beyond its row
+**See:** notifications.md#the-text-language-is-a-module-of-its-own-not-part-of-languagespy-or-the-notification-settings — 0ea8c13c-857d-4155-b004-688023ec140d — as of 2026-11-18
+
+`notifications/address.py` holds the settings row (`row_of`, `verified_row`) and the
+address's whole lifecycle: setting and removing it (`change_address`, `apply_address`), the
+verification link and its limits, the claim of one account per address (`verify`,
+`claim_verified`, `has_verified_address`), the change held for approval (`held`,
+`decide_held`), the notice to the old address, and voiding a pending address at a new
+password. `notifications/preferences.py` keeps the settings: the defaults and their merge,
+validation, `view`, `patch` and the unsubscribe link. `patch` hands an address to
+`address.change_address`. `address` never imports `preferences`, which
+`tests/test_mail_module_boundaries.py` checks for every import, a function-local one too.
+
+**Reason:** the verified address is account identity (a sign-in factor, §2.6.3, and where
+security mail goes), not a notification setting. The file had grown to about 900 lines,
+more than half of them the address. Sign-in, the second factor, registration, the CLI and
+password reset imported the notification settings only to reach the address.
+
+**Rejected alternatives:**
+- Keep `row_of` in `preferences` and import it from `address`: `preferences.patch` calls into
+  the address, so the two would import each other.
+- `auth/address.py` or `account_address.py`: the lead chose `notifications/address.py`. The
+  row is still the notification settings' row, and the name sits next to `preferences.py`.
+- One pull request with 16a: about 25 files moved without a local test run, so it went in two.
+
 ## Items are derived on every read from 30 days of the human's projects, with the relations as they are now
 
 **Id:** e29065f2-c5d3-43dd-9209-f7f30b67269a
@@ -417,7 +449,7 @@ in `address_lock` (inserted if absent, then `SELECT ... FOR UPDATE`), checks tha
 account holds it, and writes it. A link for an address another account claimed meanwhile is
 the dead-link page and changes nothing. Removing the address clears the column, which frees
 the address. Setting a pending address claims nothing. A registration's completion claims
-its address the same way (`preferences.claim_verified`, called by
+its address the same way (`address.claim_verified`, called by
 `registration_accounts.claim_address`), under the same lock; the loser makes no account.
 
 **Reason:** the contract asks for a unique constraint as the guard and a lock that
@@ -709,7 +741,7 @@ is no security item would be counted, and the counts would disagree with the ite
 **Source:** docs/api.md §2.8.4; the card tsk-9z1m4tcz1e98 (the follow-up of the review of #471), 2026-10-28
 **Revisit when:** another operation on the address becomes sensitive, or the held change moves to a place where `second_factor.require_step_up` cannot be given as a callable
 
-`preferences.patch` and `preferences.decide_held` take a `step_up` callable that the routes fill
+`preferences.patch` and `address.decide_held` take a `step_up` callable that the routes fill
 with `second_factor.require_step_up(conn, hub, caller)`. It is called where the change is known to
 move a verified address (`_change_address`: the address is verified, or disabled, and the wanted one
 differs, a removal included), and for the approval of a held change, first, so a refusal changes
@@ -827,7 +859,7 @@ store a guess the human never made, and a browser on a trip would set it.
 **Source:** a review note on the settings card (tsk-32jx98jzne6z) and the review of #581, 2026-10-29; `tests/test_settings_race.py`
 **Revisit when:** a settings write runs at `REPEATABLE READ`, or the row is made at account creation
 
-`preferences.row_of(lock=True)` reads the row `FOR UPDATE` first; when there is none it inserts it
+`address.row_of(lock=True)` reads the row `FOR UPDATE` first; when there is none it inserts it
 in a savepoint, and on an `IntegrityError` (another first write committed in between) it reads and
 locks the row that now exists. Two first `PATCH`es of one human therefore end one after the other,
 instead of the later one answering 500 on the primary key. The deadlock retry of
@@ -1419,7 +1451,7 @@ module for it. `secretbox` already owns `MAITY_SECRET_KEY` and the
 **See:** mail.md#mails-anyone-can-send-to-an-address-have-budgets-of-their-own-and-wait-over-them-verification-and-invitation — d3113259-e9eb-4321-8a8a-70080feaf52b — as of 2026-11-14
 **See:** auth.md#anonymous-mail-requests-are-capped-per-recipient-in-source-networks-and-limits-per-source-address-count-an-ipv6-client-by-its-64 — ad4dc104-7b44-4049-a9e4-ebcf7aef9dd2 — as of 2026-11-17
 
-Setting a pending address takes, per human, at most 3 verification mails an hour and 10 a day; past that the `PATCH` answers `rate_limited` and nothing changes. Per recipient (a digest of the normalised address) there are places for 3 asking accounts an hour and 10 a day: an account's first verification mail to the address in a window takes one, its further ones none; and at most 9 verification mails queued for the address in any hour and 100 in any day from all accounts together, counted as the sign-in link's (ad4dc104): when the mail is requested and queued, not when the outbox delivers it within `verification_max_per_hour`, so mails queued in different windows can arrive together after a delay. Past either the change is stored but no mail is queued, and the answer is the same.
+Setting a pending address takes, per human, at most 3 verification mails an hour and 10 a day; past that the `PATCH` answers `rate_limited` and nothing changes. Per recipient (the normalised address's keyed fingerprint, auth.md 7d3f0a52) there are places for 3 asking accounts an hour and 10 a day: an account's first verification mail to the address in a window takes one, its further ones none; and at most 9 verification mails queued for the address in any hour and 100 in any day from all accounts together, counted as the sign-in link's (ad4dc104): when the mail is requested and queued, not when the outbox delivers it within `verification_max_per_hour`, so mails queued in different windows can arrive together after a delay. Past either the change is stored but no mail is queued, and the answer is the same.
 
 **Reason:** the budget of its own (d3113259) keeps verification mail from holding up security mail, but alone it lets one account fill it, or many accounts flood one stranger's inbox. Counted in mails, the per-recipient limit equalled the per-human one, so one account asking three times spent the address's hour and the owner's own verification waited; counted in accounts, one or two cannot: one account's requests run one at a time under its settings row (taken for update; its first write waits on the row's primary key on PostgreSQL, and SQLite's `BEGIN IMMEDIATE` serialises every write), so an account never holds two places, unlike a network (ad4dc104). Three distinct accounts in an hour (ten in a day) still hold the address's places; where one source can make active accounts (open registration with automatic approval: 10 registrations an hour per source address, within the instance's new accounts per hour), one source can so hold them — an accepted limit for now, a further cap per address is a separate decision. The windows slide, so places alone let 15 mails through in one hour and 186 in one day (measured in review); the count of the mails bounds what is queued at 9 and 100, and two accounts at their own limits (at most 6 requested in any hour, 20 in any day) never reach it. The per-human limit tells the caller, who is signed in and owns the attempts; the per-recipient one stays silent so that it reveals nothing about what other accounts asked for that address.
 
