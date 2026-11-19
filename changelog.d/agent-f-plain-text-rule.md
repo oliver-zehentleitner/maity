@@ -1,0 +1,41 @@
+### Changed
+
+- hub: names and short texts follow one rule (docs/api.md §1.7.1): a
+  project's name, every display name, an invitation's note, a card link's
+  URL and label, a person's website and a project's links, a review's
+  subject and a human's preferences refuse control, format (zero-width,
+  direction, tag), surrogate, unassigned (noncharacters included) and
+  line-separator characters; a note and the
+  preferences keep the line feed and the tab, and a name keeps an emoji
+  sequence (a zero-width joiner between two emoji, a variation selector
+  right after one or after a symbol with an emoji form such as ©, ™ or ⌚;
+  an emoji is a symbol of the emoji, miscellaneous-symbol, dingbat and
+  symbols-and-arrows blocks; a keycap such as 1️⃣ as a whole, the
+  enclosing keycap mark nowhere else). A name of spaces and blank filler characters alone
+  is refused. Each field answers with the
+  reason it already had (`control_character`, `not_a_url`, `format`, and
+  `invalid` for a display name at registration and an organisation's); an
+  invitation note's refused character is now `control_character` rather
+  than `invalid`.
+- hub: where the hub writes a project's name into a text or Markdown line
+  for agents (the join page, the rules document, the requests it files),
+  or a display name into an invitation's request or mail, a name stored
+  before the rule stays on one line.
+- hub: an invitation's mail and the request of an invitation by handle
+  name the inviter as "display name (@handle)", as the invitation page
+  does; the mail's subject keeps the display name alone.
+
+### Added
+
+- hub: the invitation page's answer names the inviter's handle as well
+  (`invited_by.handle`, §3.4).
+- web: the invitation page shows the inviter as "display name (@handle)"
+  and sets the project's and the inviter's names apart from the sentence
+  around them.
+
+### Fixed
+
+- hub: an invitation's note holding a lone surrogate is refused with
+  `control_character` (400), the note's reason for every character the
+  plain-text rule refuses, rather than `invalid`; the character check runs
+  before the size, so such a note never reaches the encoding.

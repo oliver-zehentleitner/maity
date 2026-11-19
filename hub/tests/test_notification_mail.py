@@ -330,6 +330,39 @@ def test_a_digest_lists_fifty_and_counts_the_rest(migrated: Engine) -> None:
     assert "and 3 more: https://hub.example/" in body
 
 
+def test_a_title_with_a_bidi_control_is_folded_in_the_mail_subject_and_body(
+    migrated: Engine,
+) -> None:
+    from zoneinfo import ZoneInfo
+
+    from maity_hub.notifications.items import Item
+    from maity_hub.notifications.preferences import DEFAULTS
+
+    bidi = "\U0000202e"
+    one = Item(
+        kind="inbox",
+        at=clock.now(),
+        title=f"Ann{bidi}Lee asks you: Re{bidi}view",
+        target=None,
+        url=f"{PUBLIC}/x",
+        seq=1,
+    )
+    with migrated.begin() as conn:
+        subject, body, _kinds = mailer.compose(
+            conn, [one], DEFAULTS["email"], PUBLIC, ZoneInfo("UTC")
+        )
+    assert bidi not in subject and bidi not in body
+    assert subject == "[Maity] Maity: Ann Lee asks you: Re view"
+    assert '- "Ann Lee asks you: Re view"' in body
+
+
+def test_an_item_title_is_folded_where_it_is_built() -> None:
+    from maity_hub.notifications.items import _cut
+
+    bidi = "\U0000202e"
+    assert _cut(f"Ann{bidi}Lee asks you: Re{bidi}view") == "Ann Lee asks you: Re view"
+
+
 def test_over_the_instance_budget_mail_waits_and_merges_into_one(
     make_client: ClientFactory, migrated: Engine, at: Any
 ) -> None:

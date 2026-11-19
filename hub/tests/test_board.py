@@ -598,6 +598,17 @@ def test_a_note_is_at_most_4_kib_and_mentions_are_the_hubs(owner: flow.Human) ->
     assert fields_of(posted) == {"mentions": "read_only"}
 
 
+def test_a_lone_surrogate_in_a_note_is_refused_and_an_emoji_is_not(owner: flow.Human) -> None:
+    """The model's own refusal, before the byte cap encodes the body: never a 500."""
+    card = task(owner)
+    path = f"/projects/maintainer/maity/tasks/{card['id']}/notes"
+    refused = owner.raw("POST", path, b'{"body": "half \\ud800 a pair"}')
+    assert fields_of(refused) == {"body": "string_unicode"}
+    paired = owner.raw("POST", path, b'{"body": "a pair \\ud83d\\ude42 and \xf0\x9f\x99\x82"}')
+    assert paired.status_code == 201, paired.text
+    assert paired.json()["body"] == "a pair 🙂 and 🙂"
+
+
 # --- observation (the probe's worker) ----------------------------------------------------------
 
 

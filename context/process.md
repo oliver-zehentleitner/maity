@@ -2244,7 +2244,8 @@ server, count as minor (the coordinator's scope for #1475).
   passes too; a name such as `127.example.com` is a server of its own) is a proxy in front of
   github.com, as in Claude Code's cloud sessions, which serves git and not the API, so it stands for
   github.com. A URL without a host (a local path,
-  `file://` with or without `localhost`) names no server to ask and stops the check.
+  `file://` with or without `localhost`, the scheme in any case) names no server to ask and stops the
+  check.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code

@@ -19,7 +19,7 @@ from maity_hub import tables as t
 from maity_hub.config import ConfigError, Settings
 from maity_hub.mail import address, headers, settings, smtp
 from maity_hub.mail.environment import Sender
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import claim_verified, row_of
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.smtpfake import FakeSmtp, Script, certificate
@@ -383,7 +383,7 @@ def test_the_test_send_defaults_to_the_admins_verified_address(
     owner = admin(make_client, migrated, local_env(server.port))
     address.prepare(migrated, None)
     with migrated.begin() as conn:
-        assert preferences.claim_verified(conn, "owner@example.org", owner.id, secret_key=None)
+        assert claim_verified(conn, "owner@example.org", owner.id, secret_key=None)
         conn.execute(
             update(t.notification_settings)
             .where(t.notification_settings.c.human_id == owner.id)
@@ -402,7 +402,7 @@ def test_the_test_send_never_defaults_to_an_unverified_or_disabled_address(
 ) -> None:
     owner = admin(make_client, migrated, env_of())
     with migrated.begin() as conn:
-        preferences.row_of(conn, owner.id, lock=True)
+        row_of(conn, owner.id, lock=True)
         conn.execute(
             update(t.notification_settings)
             .where(t.notification_settings.c.human_id == owner.id)
