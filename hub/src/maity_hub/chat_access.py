@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy import Connection, delete, func, insert, or_, select, update
 
-from maity_hub import clock, namespace, write_guard
+from maity_hub import chat_access_history, clock, namespace, write_guard
 from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
@@ -268,6 +268,7 @@ def create_allow(conn: Connection, me: str, body: dict[str, Any]) -> str:
     _room(conn, me)
     conn.execute(insert(t.chat_access).values(values))
     _write_agents(conn, values["id"], own, theirs)
+    chat_access_history.created(conn, values["id"])
     return str(values["id"])
 
 
@@ -293,6 +294,7 @@ def patch_allow(conn: Connection, me: str, entry_id: str, body: dict[str, Any]) 
         mode, theirs = _their_agents(conn, row.owner_id, body["their_agents"])
         values["their_agents"] = mode
     row = _row(conn, me, ALLOW, entry_id, lock=True)
+    was = chat_access_history.before(conn, [entry_id])  # under the entry's lock
     if own is not None:
         _replace_agents(conn, entry_id, OWN, own)
     if theirs is not None:
@@ -314,6 +316,7 @@ def patch_allow(conn: Connection, me: str, entry_id: str, body: dict[str, Any]) 
             values[field] = _text(body[field], field)
     if values:
         conn.execute(update(t.chat_access).where(t.chat_access.c.id == entry_id).values(values))
+    chat_access_history.after(conn, was)
 
 
 def create_deny(conn: Connection, me: str, body: dict[str, Any]) -> str:
@@ -342,22 +345,35 @@ def create_deny(conn: Connection, me: str, body: dict[str, Any]) -> str:
     _room(conn, me)
     conn.execute(insert(t.chat_access).values(values))
     _write_agents(conn, values["id"], own, [])
+    chat_access_history.created(conn, values["id"])
     if subject in ("owner_id", "project"):
         column = "owner_id" if subject == "owner_id" else "project_id"
-        _narrow_allows(conn, me, column, values[column], agents_all, own)
+        _narrow_allows(conn, me, column, values[column], agents_all, own, values["id"])
     return str(values["id"])
 
 
 def _narrow_allows(
-    conn: Connection, me: str, column: str, value: str, agents_all: bool, agents: list[str]
+    conn: Connection,
+    me: str,
+    column: str,
+    value: str,
+    agents_all: bool,
+    agents: list[str],
+    deny_id: str,
 ) -> None:
-    c, g = t.chat_access.c, t.chat_access_agent.c
+    c = t.chat_access.c
     allows = conn.execute(
         select(c.id, c.agents_all)
         .where(c.human_id == me, c.kind == ALLOW, getattr(c, column) == value)
         .order_by(c.id)
         .with_for_update()
     ).all()
+    with chat_access_history.watching(conn, [entry.id for entry in allows], deny_id=deny_id):
+        _narrow(conn, allows, agents_all, agents)
+
+
+def _narrow(conn: Connection, allows: Sequence[Any], agents_all: bool, agents: list[str]) -> None:
+    g = t.chat_access_agent.c
     for entry in allows:
         if agents_all:
             _drop(conn, [entry.id])
@@ -380,7 +396,9 @@ def delete_entry(conn: Connection, me: str, kind: str, entry_id: str) -> None:
         select(c.id).where(c.id == entry_id, c.human_id == me, c.kind == kind)
     ).first()
     if found is not None:
-        _drop(conn, [entry_id])
+        conn.execute(select(c.id).where(c.id == entry_id).with_for_update()).first()
+        with chat_access_history.watching(conn, [entry_id]):
+            _drop(conn, [entry_id])
 
 
 def _write_agents(conn: Connection, entry_id: str, own: list[str], theirs: list[str]) -> None:
@@ -450,12 +468,18 @@ def forget_human(conn: Connection, human_id: str) -> None:
     human of a deny, go. Its agents are taken out of every entry by `forget_agent`, which the
     deletion of each of its profiles calls (`delete_profile`)."""
     c = t.chat_access.c
-    gone = conn.execute(
-        select(c.id).where(
-            or_(c.human_id == human_id, c.owner_id == human_id, c.subject_human_id == human_id)
-        )
-    ).scalars()
-    _drop(conn, list(gone))
+    gone = list(
+        conn.execute(
+            select(c.id).where(
+                or_(c.human_id == human_id, c.owner_id == human_id, c.subject_human_id == human_id)
+            )
+        ).scalars()
+    )
+    if gone:  # locked in the order `_drop` takes them, before they are read for the history
+        conn.execute(select(c.id).where(c.id.in_(gone)).order_by(c.id).with_for_update()).all()
+    gone_cause = chat_access_history.Cause(chat_access_history.GONE)
+    with chat_access_history.caused(gone_cause), chat_access_history.watching(conn, gone):
+        _drop(conn, gone)
 
 
 def forget_agent(conn: Connection, agent_id: str) -> None:
@@ -472,9 +496,14 @@ def forget_agent(conn: Connection, agent_id: str) -> None:
         conn.execute(
             select(c.id).where(c.id.in_(named | subject)).order_by(c.id).with_for_update()
         ).all()
-    conn.execute(delete(t.chat_access_agent).where(g.agent_id == agent_id))
-    _drop(conn, sorted(subject))
-    _prune(conn, sorted(named - subject))
+    gone_cause = chat_access_history.Cause(chat_access_history.GONE)
+    with (
+        chat_access_history.caused(gone_cause),
+        chat_access_history.watching(conn, named | subject),
+    ):
+        conn.execute(delete(t.chat_access_agent).where(g.agent_id == agent_id))
+        _drop(conn, sorted(subject))
+        _prune(conn, sorted(named - subject))
 
 
 # Reads ---------------------------------------------------------------------------------------

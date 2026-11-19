@@ -31,6 +31,7 @@ from maity_hub import tables as t
 from maity_hub.errors import ApiError, invalid, rate_limited
 from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.models import HANDLE_PATTERN
+from maity_hub.plain_text import plain_line
 from maity_hub.policy import CLOSED_STATES
 from maity_hub.ratelimit import Limiter
 from maity_hub.scopes import has_scope
@@ -92,11 +93,11 @@ def view(
         "created_by": row.created_by,
         "created_at": clock.rfc3339(row.created_at),
         "expires_at": clock.rfc3339(row.expires_at),
-        "used_at": _ts(row.used_at),
+        "used_at": clock.rfc3339_or_none(row.used_at),
         "used_by": row.used_by,
-        "revoked_at": _ts(row.revoked_at),
-        "voided_at": _ts(row.voided_at),
-        "declined_at": _ts(row.declined_at),
+        "revoked_at": clock.rfc3339_or_none(row.revoked_at),
+        "voided_at": clock.rfc3339_or_none(row.voided_at),
+        "declined_at": clock.rfc3339_or_none(row.declined_at),
         "via": row.via,
     }
     if url is not None:
@@ -113,10 +114,6 @@ def handles_now(conn: Connection, rows: Sequence[Any]) -> dict[str, str]:
         conn.execute(select(t.human.c.id, t.human.c.handle).where(t.human.c.id.in_(invitees))).all()
     )
     return {row.id: current[row.invitee_id] for row in rows if row.invitee_id in current}
-
-
-def _ts(value: datetime | None) -> str | None:
-    return clock.rfc3339(value) if value is not None else None
 
 
 def may_issue(trust: str, role: str, issuer_trust: str, issuer_base: str) -> bool:
@@ -476,9 +473,12 @@ def file_request(
     name; returns its id."""
     from maity_hub.routes.requests import file_to_human
 
-    inviter = conn.execute(
-        select(t.human.c.display_name).where(t.human.c.id == caller.human_id)
-    ).scalar()
+    found = conn.execute(
+        select(t.human.c.display_name, t.human.c.handle).where(t.human.c.id == caller.human_id)
+    ).one()
+    # By name and handle, as the invitation page shows the inviter (§3.4): a name alone can
+    # be anyone's. On one line, whatever was stored before the rule (§1.7.1).
+    inviter = f"{plain_line(found.display_name or '')} (@{found.handle})".lstrip()
     summary = (
         f"{inviter} invites you to the project {project_name} as {role} with trust {trust}. "
         "You become a member only if you say go."

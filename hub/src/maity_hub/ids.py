@@ -38,6 +38,7 @@ PREFIXES = {
     "link": "lnk",
     "forge_link": "fgl",
     "chat_access": "cha",
+    "chat_access_history": "chh",
     "history": "hst",
     "note": "nte",
     "pending_registration": "preg",

@@ -30,6 +30,7 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import (
     chat_access,
+    chat_access_history,
     clock,
     contacts,
     invitations,
@@ -447,7 +448,14 @@ def confirm(conn: Connection, hub: Settings, token: str) -> str | None:
 
 def delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     """Delete the account in the caller's transaction, in the order §2.9 lists, each part
-    through the code that already does it elsewhere."""
+    through the code that already does it elsewhere. For the other owners' chat-access history
+    it is one write (§9.6, "History"): one item per entry it narrows or deletes, written once
+    it is done, and none for the account's own, whose history goes with it."""
+    with chat_access_history.one_write(conn, leaving=human_id):
+        _delete_account(conn, hub, human_id)
+
+
+def _delete_account(conn: Connection, hub: Settings, human_id: str) -> None:
     from maity_hub.routes import runners as runner_routes
     from maity_hub.routes.agents import delete_profile
 
@@ -677,6 +685,9 @@ def _end_access(conn: Connection, hub: Settings, human_id: str) -> None:
         for installation_id in installations:
             wakeups.forget_token_everywhere(conn, hub.github_app, installation_id)
     conn.execute(delete(t.email_sign_in).where(t.email_sign_in.c.human_id == human_id))
+    # The instance admin's limits for this account (§16.5.1) go with it; who set a limit on
+    # another account or a project stays, as with an instance setting.
+    conn.execute(delete(t.limit_override).where(t.limit_override.c.human_id == human_id))
     conn.execute(delete(t.email_sign_in_day).where(t.email_sign_in_day.c.human_id == human_id))
     # The day's wrong second-factor codes (§2.8.6).
     conn.execute(delete(t.second_factor_day).where(t.second_factor_day.c.human_id == human_id))
@@ -750,6 +761,7 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
         t.notification_recipient,  # which messages may notify them (§18.1)
         t.account_record,  # sign-ins with their addresses and browsers, address changes
         t.not_listening_seen,  # what the human answered `seen` to in the digest (§5.3)
+        t.chat_access_history,  # the history of their lists, after every write to them (§9.6)
     ):
         conn.execute(delete(table).where(table.c.human_id == human_id))
     conn.execute(delete(t.avatar_image).where(t.avatar_image.c.owner_id == human_id))

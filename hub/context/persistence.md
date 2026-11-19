@@ -547,11 +547,16 @@ off.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** implementation of card order (`docs/api.md` §6.4, contract #135), 2026-10-23
+**Source:** implementation of card order (`docs/api.md` §6.4, contract #135), 2026-10-23; keys first and the batched search, card tsk-ybc2ma72dzvq (PR 2), 2026-11-18
 **Revisit when:** a project's board grows to thousands of cards, or a client reports paging through a board that does not finish while cards keep moving
+**See:** persistence.md — b7d3e9a2-5c41-4f86-9e2d-3a7c1f05b8e4 — as of 2026-11-18
 
-`GET …/tasks` reads a project's cards that match the filters and sorts them
-in Python by `ranks.board_key`: the columns in board order, then within
+`GET …/tasks` reads the order's keys (`id`, `status`, `rank`,
+`created_at`, `closed_at`, `updated_at`) of a project's cards that match
+the filters other than `q`, and sorts them
+in Python by `ranks.board_key`; the full rows are read only for the
+page's cards, and a search is applied to the sorted keys a batch at a
+time ([the card list reads keys first](#the-card-list-reads-keys-first-and-a-search-reads-card-text-and-notes-a-batch-at-a-time), b7d3e9a2). The order: the columns in board order, then within
 one by rank, then by `created_at`, then by `id`, and closed cards by
 `closed_at` newest first, then by `id`. A page's cursor names the last
 card it showed and the first card it did not show, each with its sort
@@ -623,7 +628,8 @@ compares bytes. Its cursor (`paging.closed_cursor`) holds only the last card's c
 position, `closed_at` and id, bound to the list's filters: at most about 120 characters
 by its encoding, whatever the page size. A malformed cursor is refused as `invalid`: a
 time without a zone or out of range in UTC, a position that is no column of the board,
-an id longer than the id column or with a NUL. The cursor is not signed, so an edited one
+an id longer than the id column, with a NUL, or that does not encode as UTF-8 (a lone
+surrogate, which JSON carries). The cursor is not signed, so an edited one
 that is well formed is taken; it shows only cards the caller may read anyway, since the
 read rights are checked before the cursor. A page of the whole board that ends on a
 closed card hands out the same cursor, and the Python-sorted path then goes on after that
@@ -654,6 +660,101 @@ two statuses and one collation on one dialect.
   (5.5 kB per follow-up page), not the rows read per page.
 - Offset paging (`LIMIT … OFFSET …`): a card that closes or reopens between two pages
   moves every card after it by one, so the next page skips or repeats a card.
+
+## The card list reads keys first, and a search reads card text and notes a batch at a time
+
+**Id:** b7d3e9a2-5c41-4f86-9e2d-3a7c1f05b8e4
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ybc2ma72dzvq item 2 (the security team's round-3 load pass: "keys first, then full rows only for the page; search doesn't load every note body"), PR 2, 2026-11-18; `hub/tests/test_load_card_paging.py` for the numbers
+**Revisit when:** the board's order moves into SQL, or a project's cards outgrow sorting their keys in Python
+**See:** persistence.md — 4e61c371-33b4-4ae4-8bb1-cb8fa974acb3 — as of 2026-11-18
+
+`GET …/tasks` (`routes/tasks.py`) selects only the order's columns (`KEYS`) for every card
+the filters let through, sorts or keyset-pages those, and reads `select(t.card)` only for the
+ids of the page (`_views`). With `q`, `card_search.Search` decides which keys are kept: it
+reads `id`, `title`, `body` and `report` for one batch of keys at a time, and the notes
+(redacted ones and those in the reader's hidden windows left out, §6.2) only of the cards
+whose own text did not match, and then of the page's cards so that `match` can name `note`.
+The first batch is the page plus one, each next one twice the last, at most 1000
+(`SEARCH_BATCH_MAX`); `order=updated` reads each batch of keys with a keyset after the last
+key read. A card deleted between its key and its row is left out. On PostgreSQL and MySQL
+under READ COMMITTED the key read and the row read are two statements, so a card can also
+change status between them. The page then shows its new status at its old place, and the
+cursor holds its old key. That is harmless: the next page sees a card that moved, and
+`_after`'s rules for a moved card apply.
+
+The board's cursor ([the board's card order](#the-boards-card-order-is-sorted-in-python-not-by-the-database), 4e61c371) is resolved among all cards of the filters, not only a
+search's hits. Before, a search sorted only its hits, so when the last card shown stopped
+matching, the next page went on from the first card not shown, or the column's top, and a
+card between the two that began to match was skipped. Now the page goes on after the last
+card shown where it still sits, the first card not shown is the next card of the filters,
+a hit or not, and such a card is found. That is the one change in
+behaviour; the contract's paging rule (§6.4) already said a card that did not move is never
+skipped.
+
+**Reason:** the old list read every full row the filters let through (bodies and reports
+included) and the search read every note body of those cards in one statement, so a call's
+memory and time grew with the project, not with the page. The keys are a few short columns;
+the body, the report and the notes are the bulk. Batches that start at the page's size keep a
+search that matches often at about the page's reads, and doubling keeps one that matches
+rarely at a few statements over the whole list. A card found by its own text needs no note
+read, except to name its `match` when it is shown.
+
+**Rejected alternatives:**
+- The search in SQL (`LIKE`/`ILIKE` over the columns and a join on the notes): the contract
+  folds both sides with NFKC and Unicode lowercasing, independent of the database's collation
+  (§6.4), which none of the three engines does the same way in SQL.
+- Keys first, but a search's text read for the whole list in one batch: it bounds nothing,
+  since a search that matches the first card still reads every card's text and notes.
+- A fixed batch the size of the page: a rare hit then costs one statement per page-sized
+  slice of the project.
+- Keeping only the hits in the board's sorted list for the cursor (the first cut of this
+  change): it skipped a card that began to match between two pages, as above.
+
+## The overview reads its reports keys first and counts open requests in one grouped statement, with a Python leftover
+
+**Id:** 8d41e6b2-57ca-4f93-b0d8-2e6a9c15f374
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-ybc2ma72dzvq item 3 ("Overview: the latest reports and the request counts come from SQL with a limit and grouping"), option A approved by the manager, no migration, 2026-11-19; `hub/tests/test_load_overview.py` for the numbers
+**Revisit when:** the database's sort on `report->>'reported_at'` dominates the overview's time, or the held, covered and jour fixe requests stop being a few
+**See:** persistence.md — b7d3e9a2-5c41-4f86-9e2d-3a7c1f05b8e4 — as of 2026-11-19
+
+`GET …/overview` (`routes/overview.py`) selects only the ids of the latest reported cards,
+ordered by `coalesce(report["reported_at"].as_string(), '')`, `updated_at` and `id`, all
+descending, with `LIMIT`, and reads the shown columns of those cards only, put back in that
+order. The coalesce keeps a report without `reported_at` last on every engine. The coalesce
+matters on PostgreSQL only: there `DESC` puts NULL first, on SQLite last, so a test run on
+SQLite alone would not notice it missing. The request
+counts are one `GROUP BY priority` statement over the "plain" open requests: no `held`, no
+`cover` and, where they change the answer, no `jour_fixe` (for a holder of
+`requests:answer`) and no `proposal` (for a proxy). Its `where` restates
+`routes/requests.py` `listed_to_all`, and `_addressed_sql` restates `inbox.addressed_to`
+in plain columns. Every other open request is read with only the columns the Python rule
+needs and decided by `relayed`, `listed_to_all` and `inbox.addressed_to` unchanged, then
+added to the counts. Each side names the other in a comment.
+
+**Reason:** the overview read every reported card's whole report and every open request's
+full row, to sort and count them in Python, so its memory and time grew with the project
+(4.2 MB at 1000 cards and requests, 12.6 MB at 3000, on SQLite) for a response of at most
+50 reports and four numbers. The keys and the grouped count stay at about 0.4 MB at both
+sizes. What is held, covered or filed from a jour fixe round depends on a JSON list or on
+another table (`jour_fixe_round.config`). Restating that in SQL would mean JSON containment,
+so those few go through the rule the listing uses. A mistake there would then show as a
+leftover that grew, not as a wrong count. The test against `_filtered` covers every
+caller kind.
+
+**Rejected alternatives:**
+- The whole visibility in SQL with JSON containment for `held`, `cover.by` and the round's
+  circle: each database has its own syntax (`@>` on PostgreSQL, `JSON_CONTAINS` on MySQL,
+  `json_each` on SQLite), and the rule would have a second, dialect-split copy.
+- A functional index on `report->>'reported_at'`, or a `reported_at` column on the card:
+  the first is not portable across the three engines, the second needs a migration.
+  Deferred unless the numbers show the database's sort dominating.
+- Keeping the Python path: the rows read grow with the project, not with the response.
 
 
 ## Admin-set instance settings in one table with a registry in code, admin-set secrets sealed in a table of their own

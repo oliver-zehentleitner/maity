@@ -308,7 +308,7 @@ def _subscription_view(sub: dict[str, Any]) -> dict[str, Any]:
     return {
         "follow": {"areas": list(sub["follow"]["areas"]), "types": list(sub["follow"]["types"])},
         "mute": {"areas": list(sub["mute"]["areas"]), "types": list(sub["mute"]["types"])},
-        "updated_at": clock.rfc3339(sub["updated_at"]) if sub["updated_at"] else None,
+        "updated_at": clock.rfc3339_or_none(sub["updated_at"]),
     }
 
 

@@ -38,6 +38,7 @@ def test_the_defaults_and_where_they_come_from(admin: flow.Human) -> None:
         "max_aliases": {"value": 3, "source": "default"},
         "names_at_alias_limit": 0,
         "max_attachment_storage_per_project": {"value": 1024**3, "source": "default"},
+        "max_reads_per_minute": {"value": 1000, "source": "default"},
         "max_attachment_storage": {"value": "unlimited", "source": "default"},
         "attachment_storage_used": 0,
     }
@@ -66,14 +67,19 @@ def test_a_body_is_all_or_nothing_and_names_what_it_refuses(admin: flow.Human) -
     )
     assert refused.status_code == 400, refused.text
     assert refused.json()["error"]["details"]["fields"] == {
-        "max_orgs_per_human": "invalid",
+        "max_orgs_per_human": "out_of_range",
         "humans_at_limit": "read_only",
         "humans_at_org_limit": "read_only",
         "max_something": "extra_forbidden",
     }
     assert admin.get(PATH).json()["max_agents_per_human"]["source"] == "default"
     for bad in (True, 10001, "many", 1.5, [1]):
-        assert admin.patch(PATH, {"max_agents_per_human": bad}).status_code == 400
+        again = admin.patch(PATH, {"max_agents_per_human": bad})
+        assert again.status_code == 400
+        # the same reason as on the limits of one project or account (§16.5.1)
+        assert again.json()["error"]["details"]["fields"] == {
+            "max_agents_per_human": "out_of_range"
+        }
 
 
 def test_only_the_instance_admin_reads_or_sets_them(
@@ -111,7 +117,7 @@ def test_the_organisation_cap_is_the_admins_value_and_counts_humans_at_it(
     refused = admin.post("/orgs", {"handle": "second-org", "display_name": "Second"})
     assert refused.status_code == 409, refused.text
     assert refused.json()["error"]["code"] == "org_limit"
-    assert refused.json()["error"]["details"] == {"limit": 1, "count": 1}
+    assert refused.json()["error"]["details"] == {"limit": 1, "count": 1, "source": "instance"}
     assert admin.get(PATH).json()["humans_at_org_limit"] == 1
     # lowering deletes nothing; unlimited lifts the cap and counts no one
     assert admin.patch(PATH, {"max_orgs_per_human": "unlimited"}).json()["humans_at_org_limit"] == 0
@@ -127,7 +133,7 @@ def test_the_agent_cap_gates_the_creation_of_profiles(admin: flow.Human) -> None
     refused = agent(admin, "third")
     assert refused.status_code == 409, refused.text
     assert refused.json()["error"]["code"] == "agent_limit"
-    assert refused.json()["error"]["details"] == {"limit": 2, "count": 2}
+    assert refused.json()["error"]["details"] == {"limit": 2, "count": 2, "source": "instance"}
     assert admin.get(PATH).json()["humans_at_limit"] == 1
     # a deleted profile does not count
     [first] = [a for a in admin.get("/agents").json()["items"] if a["handle"] == "first"]

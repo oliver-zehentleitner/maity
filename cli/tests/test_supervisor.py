@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -7,6 +8,7 @@ import re
 import shutil
 import subprocess
 import threading
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -21,6 +23,7 @@ from maity.runner import (
     config,
     restart,
     scratch,
+    scratchop,
     serve,
     supervisor,
     tmux,
@@ -773,6 +776,136 @@ def test_a_clone_with_a_planted_redirect_does_not_start(
     assert "plc-0003: failed workspace_in_use not_a_plain_clone (generation 1)" in lines
     assert ".git/" not in json.dumps(reports.sent)
     assert (place.path / ".git" / entry).read_text() == text  # the runner deletes nothing
+
+
+def test_a_leftover_subagent_worktree_is_cleared_on_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Claude Code subagent's worktree left under `.claude/worktrees/` would read as
+    unsupported and refuse the start; the supervisor clears it first, by file operations only,
+    and the start proceeds."""
+    sup, backend, _, _, logs = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    (place.path / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.records["plc-0003"].reason is None
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+    assert not admin.exists() and not (place.path / ".claude" / "worktrees" / "agent-x").exists()
+    assert any("cleared leftover worktree" in line for line in logs)
+
+
+def test_a_stale_worktree_registration_without_its_working_tree_is_cleared_on_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `.git/worktrees/<name>` left without its `.claude/worktrees/` working tree still reads
+    as unsupported; the start-prune clears the dangling registration even though the working tree
+    is gone, and the start proceeds."""
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)  # the registration, but no .claude/worktrees working tree
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.records["plc-0003"].reason is None
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+    assert not admin.exists()
+
+
+def test_a_foreign_workspace_with_a_leftover_is_refused_before_pruning(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clone another agent holds is refused (workspace_in_use) before anything is pruned: the
+    start-prune only ever touches this agent's own clone, so a leftover in a foreign one is left
+    exactly where it is."""
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    (place.path / ".git").mkdir(parents=True)
+    (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
+    workspace.record(sup.cfg.state_dir, place, "intruder", "other-plc")  # another agent's clone
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    (place.path / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    settle(sup)
+    assert sup.records["plc-0003"].reason == "workspace_in_use"
+    assert backend.started == []
+    assert admin.exists()  # not pruned: ownership is refused first
+    assert (place.path / ".claude" / "worktrees" / "agent-x").exists()
+
+
+def test_a_start_prune_that_times_out_is_logged_and_the_start_goes_on(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A start-prune that times out (its op runs over sudo or on an ssh host) is caught and
+    logged skipped, and the start still proceeds — the leftover simply waits for a later restart.
+    Pins the `subprocess.TimeoutExpired` catch: without it the timeout would crash the start."""
+    from maity.runner import asuser
+
+    sup, backend, _, _, logs = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    place = new_clone(sup.cfg)
+    (place.path / ".git" / "worktrees").mkdir(parents=True)  # gates the prune block on
+
+    def timeout(self: Any, repo: Path) -> dict[str, Any]:
+        raise subprocess.TimeoutExpired(cmd="worktree-prune", timeout=1)
+
+    monkeypatch.setattr(asuser.AsUser, "worktree_prune", timeout)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert sup.records["plc-0003"].reason is None  # the timeout did not fail the start
+    assert [s[0] for s in backend.started] == ["maity_maity_agent-3"]
+    assert any("worktree prune skipped" in line for line in logs)
+
+
+def test_start_refuses_a_foreign_clone_before_the_prune_touches_it(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Driving `_start` straight at a clone another agent holds (so it is not refused earlier in
+    `_launch`): ownership is checked before the start-prune runs, so the foreign clone's leftover
+    is left exactly where it is. This pins the order — were the prune to run first, it would clear
+    a clone this agent does not hold."""
+    from maity.runner import targets
+
+    sup, backend, _, _, _ = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch)
+    assert sup.cfg.local is not None
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    (place.path / ".git").mkdir(parents=True)
+    (place.path / ".git" / "config").write_text(f'[remote "origin"]\n\turl = {REPO}\n')
+    workspace.record(sup.cfg.state_dir, place, "intruder", "other-plc")  # another agent's clone
+    admin = place.path / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{place.path / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    (place.path / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+
+    p = placement(agent=NEW)
+    sup.update([p])  # desired, so `_start` does not stop as unwanted
+    target = targets.local(sup.cfg, sup.probes, backend)
+    rec = supervisor.Record(generation=p["generation"], since=sup.now())
+    harness = sup.cfg.harnesses[p["harness"]]
+    name = tmux.session_name(p["project_id"], p["workspace"]["clone"])
+    view = supervisor.GateView.of(target, harness.id)
+    sup._start(p, rec, place, name, harness, p["agent"], target=target, view=view)
+
+    assert rec.reason == "workspace_in_use"
+    assert backend.started == []
+    assert admin.exists()  # ownership refused before the prune: the foreign leftover is left
+    assert (place.path / ".claude" / "worktrees" / "agent-x").exists()
 
 
 def test_a_clone_with_only_the_sandboxs_empty_placeholders_starts(
@@ -2258,6 +2391,105 @@ def test_codex_without_its_sandbox_is_refused_where_the_grant_has_parts_it_leave
     assert sup._refusal(placement(harness="codex"), sup.targets["local"]) is None
 
 
+def test_a_codex_host_too_old_for_the_launch_write_op_refuses_rather_than_crash_loops(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An ssh host whose `maity` has no codex op cannot anchor the home. The runner refuses the
+    placement with a clear reason instead of crash-looping it: the no-scratch fall-back would
+    return CODEX_HOME to the hidden state directory, the original incident. A generic failure
+    in the same place is still a crash loop, so the two stay distinct."""
+    sup, backend, reports, _, logs = world
+    recorded(sup.cfg)
+    sup.targets["local"].sandbox["codex"] = True
+
+    def too_old(*a: Any, **k: Any) -> None:
+        raise scratchop.Unsupported("host maity too old for codex placements: invalid choice")
+
+    monkeypatch.setattr(scratch, "write_codex_home", too_old)
+    sup.update([placement(harness="codex")])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    # The report carries NO detail: `harness_refused`'s detail is a closed contract list
+    # (docs/api.md §15.7) with no code for this, and an unknown one would be rejected and
+    # re-sent every tick (see the refusal path in supervisor.py). The reason lives in the log.
+    assert (rec.state, rec.reason, rec.detail, rec.retry_at) == (
+        "failed", "harness_refused", None, None
+    )  # fmt: skip
+    assert rec.reason != "crash_loop" and not rec.crashes and backend.started == []
+    assert any("too old for the codex launch-write op" in line for line in logs)
+    assert all(b["detail"] is None for _, b in reports.sent)
+
+    # A genuine failure in the same place is still counted and ends in a crash loop, so the
+    # refusal is not swallowing ordinary errors.
+    def broken(*a: Any, **k: Any) -> None:
+        raise OSError("disk gone while writing the home")
+
+    monkeypatch.setattr(scratch, "write_codex_home", broken)
+    sup.update([placement(harness="codex", generation=2)])
+    settle(sup)
+    rec = sup.records["plc-0003"]
+    assert rec.reason != "harness_refused" and (rec.state, rec.crashes) != ("failed", 0)
+
+
+def _hub_detail_rule() -> Any:
+    """The hub's REAL acceptance rule for a status report's `detail`, or None when the hub
+    package cannot be imported from the cli test environment. The monorepo keeps `hub/` beside
+    `cli/`, and `maity_hub` is not installed in the cli venv, so this puts `hub/src` on the path
+    and imports the authoritative closed list (`placements.DETAILS`) rather than copying it. The
+    returned predicate `ok(reason, detail)` applies §15.7: a `null` detail is always fine,
+    `join_failed` takes any hub error code, and every other reason takes a detail only when
+    `DETAILS` lists it for that reason -- the same check the hub's `_check_codes` runs."""
+    import importlib
+    import sys
+
+    hub_src = str(Path(__file__).resolve().parents[2] / "hub" / "src")
+    if hub_src not in sys.path:
+        sys.path.insert(0, hub_src)
+    try:
+        pl = importlib.import_module("maity_hub.placements")
+    except Exception:  # noqa: BLE001 - hub deps/metadata absent in the cli venv: use the fallback
+        return None
+
+    def ok(reason: str | None, detail: str | None) -> bool:
+        if detail is None:
+            return True
+        if reason == "join_failed":
+            return bool(pl.JOIN_DETAIL_CODE.fullmatch(detail))
+        rule = pl.DETAILS.get(detail)
+        return rule is not None and rule[0] == "reason" and rule[1] == reason
+
+    return ok
+
+
+def test_the_older_host_refusal_report_satisfies_the_hub_detail_contract(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The actual status body the supervisor POSTs for the too-old-host refusal must satisfy
+    the hub's closed detail-code contract (docs/api.md §15.7). An out-of-contract detail would
+    make the hub answer `invalid`, and the runner would then re-send the rejected report every
+    tick (the refusal never recorded) -- so this guards that path, not a copied list. Where the
+    hub package is importable, the body's `detail` is run through the hub's REAL closed list;
+    where it is not, the body must still carry no detail at all."""
+    sup, _, reports, _, _ = world
+    recorded(sup.cfg)
+    sup.targets["local"].sandbox["codex"] = True
+
+    def too_old(*a: Any, **k: Any) -> None:
+        raise scratchop.Unsupported("host maity too old for codex placements: invalid choice")
+
+    monkeypatch.setattr(scratch, "write_codex_home", too_old)
+    sup.update([placement(harness="codex")])
+    settle(sup)
+    body = next(b for _, b in reports.sent if b["reason"] == "harness_refused")
+
+    ok = _hub_detail_rule()
+    if ok is not None:  # run the real body through the hub's real closed list
+        assert ok(body["reason"], body["detail"])  # the no-detail refusal is accepted
+        assert not ok(body["reason"], "codex_host_too_old")  # an out-of-list detail is rejected
+    else:  # hub not importable here: the body must still carry no detail (§15.7)
+        assert body["detail"] is None
+
+
 def test_claude_code_is_not_told_what_codex_starts_without(world: Any) -> None:
     sup, _, _, _, logs = world
     sup.cfg = replace(
@@ -3008,6 +3240,17 @@ def test_a_new_generation_does_not_resume_the_hung_session(
 # --- the scratch (§15.5) ---------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _restore_modes(tmp_path: Path) -> Any:
+    """Some agy scratch tests leave restrictive directories behind by design; widen
+    every directory at teardown so pytest's cleanup of its temporary directory can remove it."""
+    yield
+    for root, dirs, _files in os.walk(tmp_path, topdown=True):
+        for name in dirs:  # top-down: widening a directory lets os.walk then descend into it
+            with contextlib.suppress(OSError):
+                os.chmod(os.path.join(root, name), 0o700)
+
+
 def scratch_of(sup: supervisor.Supervisor, pid: str = "plc-0003") -> Path:
     assert sup.cfg.local is not None
     return sup.cfg.local.workspaces.resolve() / "maity" / ".scratch" / pid
@@ -3108,16 +3351,149 @@ def test_a_scratch_that_is_a_link_is_neither_made_nor_removed(
     assert sum("scratch left on local" in line for line in logs) == 1  # said once
 
 
-def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(world: Any) -> None:
+def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sup, *_ = world
     target = sup.targets["local"]
-    for harness_id in ("antigravity", "opencode"):
-        harness = config.Harness(harness_id, ("supervised",), "supervised")
-        assert sup._scratch(placement(), harness, target) is None
+    opencode = config.Harness("opencode", ("supervised",), "supervised")
+    assert sup._scratch(placement(), opencode, target) is None  # none the runner opens for it
     assert not scratch_of(sup).exists()
     sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)  # made with the clone, first
     made = sup._scratch(placement(), config.Harness("codex", ("supervised",), "supervised"), target)
-    assert made == scratch_of(sup) and (made / "tmp").is_dir()
+    assert made == scratch_of(sup) and (made / "tmp").is_dir()  # codex: beside the clone
+    # agy's scratch is under `/tmp` instead, its sandbox being unable to write beside the clone.
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()  # the host-shared writable location ('/tmp') exists already
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    room = sup._scratch(placement(harness="antigravity"), agy, target)
+    # The leaf name is the random one the runner chose, recorded for this placement, not
+    # the placement id.
+    leaf = sup.scratch_names["plc-0003"]
+    assert room == workspace.tmp_scratch_of(target.as_user.uid(), leaf)
+    assert room is not None and room.name != "plc-0003"
+    assert room.parent == (shared_tmp / f"maity-scratch-{target.as_user.uid()}").resolve()
+    import stat as _stat
+
+    assert room is not None and (room / "tmp").is_dir()
+    assert _stat.S_IMODE(room.stat().st_mode) == 0o700  # the leaf is private
+    assert _stat.S_IMODE(room.parent.stat().st_mode) == 0o700  # the parent is 0700, owned
+
+
+def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, _, _, _, logs = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    sup.cfg.harnesses["antigravity"] = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+    agy = sup.cfg.harnesses["antigravity"]
+    room = sup._scratch(placement(harness="antigravity"), agy, target)
+    assert room is not None
+    (room / "tmp" / "review.json").write_bytes(b"x" * 2000)  # a prior run's leftovers
+    again = sup._scratch(placement(harness="antigravity"), agy, target)  # a restart
+    # A restart removes the old leaf and makes one with a fresh, random name, so nothing
+    # carries across and the old path is gone.
+    assert again is not None and again != room and not room.exists()
+    assert (again / "tmp").is_dir() and not (again / "tmp" / "review.json").exists()
+    assert sup.scratch_names["plc-0003"] == again.name
+    # The per-user parent is outside the workspaces root, so the closed-placement sweep removes
+    # the `/tmp` scratch by the recorded leaf name, not beside the clone.
+    sup.closed([{"id": "plc-0003", "project_id": "maity", "active": False,
+                 "closed_reason": "deleted", "harness": "antigravity"}])  # fmt: skip
+    sup._clear_scratch(set(), set(sup.targets))
+    assert not again.exists() and "plc-0003" in sup.scratch_cleared
+    assert "plc-0003" not in sup.scratch_names  # its recorded leaf is gone with it
+    (entry,) = scratch.removals(sup.cfg.state_dir, 10)
+    assert entry["path"] == str(again) and entry["why"] == "closed"
+
+
+def test_two_agy_placements_get_different_random_leaf_names(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, *_ = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+    first = sup._scratch(placement(n=3, harness="antigravity"), agy, target)
+    second = sup._scratch(placement(n=4, harness="antigravity"), agy, target)
+    assert first is not None and second is not None
+    # Different placements of the same user get different names, neither a placement id.
+    assert first.name != second.name
+    assert first.name not in ("plc-0003", "plc-0004") and second.name != "plc-0004"
+    assert sup.scratch_names == {"plc-0003": first.name, "plc-0004": second.name}
+    # Each resolves to its own recorded scratch; the parent is shared.
+    assert sup._scratch_location(placement(n=3, harness="antigravity"), target) == (first, True)
+    assert first.parent == second.parent
+
+
+def test_the_recorded_agy_leaf_name_survives_a_runner_restart(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, reports, clock, logs = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+    room = sup._scratch(placement(harness="antigravity"), agy, target)
+    assert room is not None
+    sup.save()  # the leaf name is persisted
+    # A fresh supervisor (the runner restarted) reads the recorded names back.
+    other = supervisor.Supervisor(
+        sup.cfg, backend, reports, logs.append, sup.probes, now=clock, rand=lambda: 0.5
+    )
+    other.targets = sup.targets
+    other.load()
+    assert other.scratch_names == {"plc-0003": room.name}
+    p = placement(harness="antigravity")
+    assert other._scratch_location(p, target) == (room, True)
+    other.closed([{"id": "plc-0003", "project_id": "maity", "active": False,
+                   "closed_reason": "deleted", "harness": "antigravity"}])  # fmt: skip
+    other._clear_scratch(set(), set(other.targets))
+    assert not room.exists() and "plc-0003" in other.scratch_cleared
+
+
+def test_a_closed_agy_placement_is_swept_after_its_harness_leaves_config(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sweep decides from the placement's own recorded harness, not an active config entry,
+    so a placement closed after antigravity was taken out of the configuration is still swept."""
+    sup, *_ = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    sup.cfg.harnesses["antigravity"] = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+    room = sup._scratch(placement(harness="antigravity"), sup.cfg.harnesses["antigravity"], target)
+    assert room is not None and room.exists()
+    del sup.cfg.harnesses["antigravity"]  # antigravity is taken out of the configuration
+    sup.closed([{"id": "plc-0003", "project_id": "maity", "active": False,
+                 "closed_reason": "deleted", "harness": "antigravity"}])  # fmt: skip
+    sup._clear_scratch(set(), set(sup.targets))
+    assert not room.exists() and "plc-0003" in sup.scratch_cleared
+
+
+def test_the_agy_scratch_is_none_where_the_uid_is_unknown(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, _, _, _, logs = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+
+    def no_uid(self: Any) -> int:
+        raise OSError("a /tmp scratch is not made on an ssh host")
+
+    monkeypatch.setattr(type(sup.targets["local"].as_user), "uid", no_uid)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    assert sup._scratch(placement(harness="antigravity"), agy, sup.targets["local"]) is None
+    assert any("no scratch on local" in line for line in logs)
 
 
 def test_a_scratch_that_cannot_be_made_or_only_through_a_link_is_none(
@@ -3157,3 +3533,124 @@ def test_the_clone_and_scratch_sizes_are_measured_for_the_status(world: Any) -> 
     assert rec.scratch_bytes is not None and rec.scratch_bytes >= 3000
     saved = json.loads((sup.cfg.state_dir / supervisor.ACTUAL_FILE).read_text())
     assert saved["plc-0003"]["scratch_bytes"] == rec.scratch_bytes
+
+
+def test_the_agy_leaf_name_is_recorded_before_the_leaf_is_made(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The chosen leaf name is persisted before tmp_make runs, so a crash or OnTheWay between
+    the make and a later save cannot orphan a leaf the runner cannot find again. Red on
+    dc826d9b, where the name was recorded and saved only after a successful make."""
+    sup, *_ = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+    seen: dict[str, Any] = {}
+    real_make = scratch.tmp_make
+
+    def traced(path: Path, as_user: Any) -> None:
+        seen["recorded"] = dict(sup.scratch_names)  # already recorded when the make runs
+        seen["on_file"] = state.load_state(sup.cfg.state_dir, name=supervisor.TMP_NAMES_FILE)
+        return real_make(path, as_user)
+
+    monkeypatch.setattr(scratch, "tmp_make", traced)
+    room = sup._scratch(placement(harness="antigravity"), agy, target)
+    assert room is not None
+    assert seen["recorded"] == {"plc-0003": room.name}  # recorded before the make
+    assert seen["on_file"] == {"plc-0003": room.name}  # and persisted before the make
+
+
+def test_a_failed_agy_leaf_make_keeps_the_name_recorded_for_the_next_start(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When tmp_make fails the chosen name stays recorded, so the next start finds and replaces
+    it rather than orphaning it."""
+    sup, *_ = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    agy = config.Harness("antigravity", ("supervised",), "supervised")
+    target = sup.targets["local"]
+
+    def fails(path: Path, as_user: Any) -> None:
+        raise scratchop.OnTheWay("a link where the leaf must be")
+
+    monkeypatch.setattr(scratch, "tmp_make", fails)
+    assert sup._scratch(placement(harness="antigravity"), agy, target) is None
+    assert "plc-0003" in sup.scratch_names  # kept, so the next start removes or replaces it
+    assert state.load_state(sup.cfg.state_dir, name=supervisor.TMP_NAMES_FILE) == sup.scratch_names
+
+
+def test_the_shared_tmp_parent_is_created_before_a_hiding_placement_starts(
+    world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A placement whose sandbox hides the per-user parent (claude-code, codex) is given it and
+    the runner creates it (0700) first, so the sandbox's deny path is a real directory, not a
+    placeholder an agy placement would then see instead of its parent. A placement that hides
+    nothing (opencode) is given no parent and the runner pre-creates none for it. Red on
+    dc826d9b, where the parent was not made; and before round 3 every non-agy placement, opencode
+    included, was given one it never hides."""
+    import stat as _stat
+
+    sup, *_ = world
+    shared_tmp = tmp_path / "shared-tmp"
+    shared_tmp.mkdir()
+    monkeypatch.setattr(workspace, "TMP_SCRATCH_ROOT", shared_tmp)
+    target = sup.targets["local"]
+    claude = config.Harness("claude-code", ("supervised", "interactive"), "supervised")
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    parent = sup._tmp_scratch_parent(target, claude)
+    assert parent is not None and not parent.exists()
+    # Codex hides the parent too, and names the same per-user parent as Claude Code (its path is
+    # keyed on the user, not the harness).
+    assert sup._tmp_scratch_parent(target, codex) == parent
+    sup._make_tmp_parent(parent, target)
+    assert parent.is_dir() and _stat.S_IMODE(parent.stat().st_mode) == 0o700
+    sup._make_tmp_parent(parent, target)  # adopts an existing one without error
+    assert parent.is_dir()
+    opencode = config.Harness("opencode", ("supervised", "interactive"), "supervised")
+    assert sup._tmp_scratch_parent(target, opencode) is None  # hides nothing, is given nothing
+
+
+def test_scratch_name_saves_are_serialized(world: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`_save_scratch_names` holds the names-file write under its own lock, so two concurrent
+    saves never interleave their snapshot and write (a stale snapshot overwriting a fresh one).
+    Red on dc826d9b, where the snapshot was taken under `self.lock` but the write was not, so
+    two threads could both be inside the write at once."""
+    sup, *_ = world
+    events: list[str] = []
+    gate = threading.Event()
+    real_save = state.save_state
+
+    def traced(state_dir: Path, data: Any, name: str) -> Any:
+        if name == supervisor.TMP_NAMES_FILE:
+            events.append("enter")
+            gate.wait(1.0)  # held inside the write: a second save interleaves here without a lock
+            events.append("exit")
+        return real_save(state_dir, data, name)
+
+    monkeypatch.setattr(state, "save_state", traced)
+    first = threading.Thread(target=sup._save_scratch_names)
+    second = threading.Thread(target=sup._save_scratch_names)
+    first.start()
+    while not events:  # wait until the first save is inside the write
+        time.sleep(0.001)
+    second.start()
+    time.sleep(0.05)  # give the second a chance to enter the write if it is not serialized
+    gate.set()
+    first.join(2)
+    second.join(2)
+    # Serialized: each enter is followed by its own exit, never enter/enter/exit/exit.
+    assert events == ["enter", "exit", "enter", "exit"]
+
+
+def test_a_tmp_scratch_leaf_with_a_trailing_newline_is_refused(tmp_path: Path) -> None:
+    """workspace.tmp_scratch_of validates the leaf with fullmatch (parity with scratchop), so a
+    name with a trailing newline is refused rather than taken. Red on dc826d9b, which used
+    `TMP_LEAF.match` and accepted the trailing newline."""
+    good = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+    assert workspace.tmp_scratch_of(1000, good).name == good
+    with pytest.raises(workspace.Refused):
+        workspace.tmp_scratch_of(1000, good + "\n")

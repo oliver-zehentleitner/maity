@@ -2237,6 +2237,28 @@ chat_access_agent = Table(
     **MYSQL_TABLE,
 )
 
+# The history of a human's lists (docs/api.md §9.6, "History"): one row per change of an entry
+# (`kind` `entry`) and per answer to the request to chat with the human's agents (`answer`), in
+# the order written (`n`). `data` is the item as stored: the entry as it was, the cause, the
+# answer's button and ticks. `entry_id` has no foreign key: the entry may be gone. Only that
+# human reads it; deleted with the account, in its export; at most `chat_access_history.KEPT`
+# per human.
+chat_access_history = Table(
+    "chat_access_history",
+    metadata,
+    Column("n", BIG_ID, primary_key=True, autoincrement=True),
+    _id("id", nullable=False, unique=True),
+    _ref("human_id", "human.id", nullable=False),
+    Column("kind", String(8), nullable=False),  # entry, answer
+    Column("entry_id", String(ID)),
+    Column("data", JSON_VALUE, nullable=False),
+    Column("at", UtcDateTime, nullable=False),
+    Index("ix_chat_access_history_human", "human_id", "n"),
+    CheckConstraint("kind IN ('entry', 'answer')", name="kind"),
+    sqlite_autoincrement=True,
+    **MYSQL_TABLE,
+)
+
 # How far a member has read a conversation: `unread` counts the others' messages
 # after `last_seq` (a direct one's human party; a group chat's participants).
 conversation_read = Table(
@@ -2617,6 +2639,26 @@ instance_setting = Table(
     Column("value", JSON_VALUE, nullable=False),
     Column("updated_at", UtcDateTime, nullable=False),
     _ref("updated_by", "human.id"),
+    **MYSQL_TABLE,
+)
+
+# The instance admin's limit for one project or one human account (§16.5.1): one row per
+# value set, on exactly one of the two; `value` a whole number or "unlimited". No row is
+# the instance's value or the default ceiling (§6.31). The row goes with its project or its
+# account.
+limit_override = Table(
+    "limit_override",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    _ref("project_id", "project.id", nullable=True),
+    _ref("human_id", "human.id", nullable=True),
+    Column("name", String(64), nullable=False),
+    Column("value", JSON_VALUE, nullable=False),
+    Column("updated_at", UtcDateTime, nullable=False),
+    _ref("updated_by", "human.id"),
+    CheckConstraint("(project_id IS NULL) <> (human_id IS NULL)", name="one"),
+    UniqueConstraint("project_id", "name", name="uq_limit_override_project"),
+    UniqueConstraint("human_id", "name", name="uq_limit_override_human"),
     **MYSQL_TABLE,
 )
 

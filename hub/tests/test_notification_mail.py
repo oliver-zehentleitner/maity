@@ -10,6 +10,7 @@ from sqlalchemy import Engine, insert, select, update
 
 from maity_hub import catalog, clock
 from maity_hub import tables as t
+from maity_hub.mail import text as mail_text
 from maity_hub.notifications import mailer
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -304,10 +305,10 @@ def test_nothing_without_complete_mail_settings(
 
 
 def test_defang() -> None:
-    assert mailer.defang("see http://x.io and me@example.org") == (
+    assert mail_text.defang("see http://x.io and me@example.org") == (
         "see http[:]//x[.]io and me@example[.]org"
     )
-    assert mailer.defang("version 1.2 stays") == "version 1.2 stays"
+    assert mail_text.defang("version 1.2 stays") == "version 1.2 stays"
 
 
 def test_a_digest_lists_fifty_and_counts_the_rest(migrated: Engine) -> None:
@@ -327,6 +328,39 @@ def test_a_digest_lists_fifty_and_counts_the_rest(migrated: Engine) -> None:
     assert subject == "[Maity] 53 updates" and kinds == ["inbox"]
     assert body.count("\n- ") + body.startswith("- ") == 50
     assert "and 3 more: https://hub.example/" in body
+
+
+def test_a_title_with_a_bidi_control_is_folded_in_the_mail_subject_and_body(
+    migrated: Engine,
+) -> None:
+    from zoneinfo import ZoneInfo
+
+    from maity_hub.notifications.items import Item
+    from maity_hub.notifications.preferences import DEFAULTS
+
+    bidi = "\U0000202e"
+    one = Item(
+        kind="inbox",
+        at=clock.now(),
+        title=f"Ann{bidi}Lee asks you: Re{bidi}view",
+        target=None,
+        url=f"{PUBLIC}/x",
+        seq=1,
+    )
+    with migrated.begin() as conn:
+        subject, body, _kinds = mailer.compose(
+            conn, [one], DEFAULTS["email"], PUBLIC, ZoneInfo("UTC")
+        )
+    assert bidi not in subject and bidi not in body
+    assert subject == "[Maity] Maity: Ann Lee asks you: Re view"
+    assert '- "Ann Lee asks you: Re view"' in body
+
+
+def test_an_item_title_is_folded_where_it_is_built() -> None:
+    from maity_hub.notifications.items import _cut
+
+    bidi = "\U0000202e"
+    assert _cut(f"Ann{bidi}Lee asks you: Re{bidi}view") == "Ann Lee asks you: Re view"
 
 
 def test_over_the_instance_budget_mail_waits_and_merges_into_one(
@@ -733,10 +767,10 @@ def test_the_subject_defangs_what_the_hub_did_not_write(
 
 
 def test_subject_line_is_one_defanged_line_cut_at_its_maximum() -> None:
-    line = mailer.subject_line("[Maity] p: go to\x85evil.example  " + "x" * 300)
+    line = mail_text.subject_line("[Maity] p: go to\x85evil.example  " + "x" * 300)
     assert line.startswith("[Maity] p: go to evil[.]example x")
-    assert len(line) == mailer.SUBJECT_MAX and line.endswith("…")
-    assert mailer.subject_line("[Maity] Ann: version 1.2") == "[Maity] Ann: version 1.2"
+    assert len(line) == mail_text.SUBJECT_MAX and line.endswith("…")
+    assert mail_text.subject_line("[Maity] Ann: version 1.2") == "[Maity] Ann: version 1.2"
 
 
 def _only_in_queue(engine: Engine, row_id: int) -> None:

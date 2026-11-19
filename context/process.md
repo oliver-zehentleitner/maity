@@ -216,7 +216,9 @@ base it merges into (`git diff HEAD^1 HEAD`) and gates each suite on the
 paths it reads: the hub's suites on `hub/` and `docs/join-page.md` (the
 join page ships in the wheel), the image also on `deploy/Dockerfile*`,
 the join smoke and the browser test also on `cli/`, the dashboard on
-`web/`, the CLI on `cli/`, the Helm chart on `deploy/`. The changelog
+`web/`, the CLI on `cli/`, the Helm chart on `deploy/`, the vendored
+Keep the Why views (`web-vendor`) on `web/vendor/` and
+`web/tools/vendor_ktw.py`. The changelog
 check always runs; a change to the workflow runs everything; a push to
 main runs everything. A new push to a pull request cancels its older run.
 `ci-ok` is the one check to require: green when every suite passed or
@@ -1510,7 +1512,7 @@ for the newest run to finish.
   green run for as long as the streak lasts, and a deploy needs a green one.
 - A group per commit, as before: nothing is ever replaced, so a merge streak queues one run per merge.
 
-## Every CI job has a timeout, 90 minutes for the database jobs and 30 for the rest; a hang no longer holds main for six hours
+## Every job ci-ok waits for and the MariaDB run have a timeout, 90 minutes for the database jobs and 30 for the rest; a hang no longer holds main for six hours
 
 **Id:** 97f338fd-9f05-4376-ac74-1649931c9945
 **Type:** decision
@@ -1535,8 +1537,9 @@ the same evening.
 
 A timeout ends the job as `cancelled`, not `failure`, and the run shows as cancelled in the run list, like a run GitHub
 replaced while it waited; `ci-ok` counts only `success` and `skipped`, so it is red. In `hub-mariadb.yml` the report treats
-`cancelled` like `failure` and opens or comments on the `ci-red` issue, since nothing there cancels a running job; before, a
-hung MariaDB run ended without a word.
+`cancelled` like `failure` and opens or comments on the `ci-red` issue, since nothing there cancels a running job: a
+`cancelled` there is the job's timeout or a cancel by hand, and neither ends silently. Before, a hung MariaDB run ended
+without a word.
 
 **Rejected alternatives:**
 - A per-test timeout (`pytest-timeout`): names the hanging test, which the job timeout does not, but is a new dependency in the
@@ -1584,7 +1587,7 @@ depends on a human; the approval has to come from Oliver).
 **Evidence:** inferred
 **Source:** card tsk-80xk3tbhe2hc, from the jour fixe of 2026-11-03 (request req-tmx2jadxrqvt, adopted by the maintainer); the lead's message that a hang on #1225 ended as a silent 90-minute timeout (not checked here); the diagnosis run on #1255 (`-o faulthandler_timeout=300`, its stacks in `hub/context/testing.md`); the proof run on #1316, 2026-11-04
 **Revisit when:** a green `hub-postgresql` test runs longer than about 120 s, the stacks come from tests that do not hang, or `pytest-timeout` comes into the locks for another reason
-**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
+**See:** process.md#every-job-ci-ok-waits-for-and-the-mariadb-run-have-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-04
 
 `hub-postgresql` (`ci.yml`) sets `PYTEST_ADDOPTS: -o faulthandler_timeout=300` in the job's environment (since 2026-11-10
 with `--durations=50` beside it, which lists the 50 slowest test phases: setup, call or teardown; 97f338fd). A test whose
@@ -1640,7 +1643,7 @@ value is the author's weighing, not measured against a real hang beyond #1255.
 **Evidence:** confirmed
 **Source:** card tsk-g6acq8cbajb4, step 3: the `--durations=50` numbers of two green hosted runs (ci 42878494136, 85.0 min of tests; ci 42894371345 on main 2fc7871a, 59.4 min) and the coordinator's rule "B if the time is concentrated, otherwise A"; the first sharded run, ci 42909006763 on the pull request's first head (job start and end times of its three legs); `.github/workflows/ci.yml`, `hub/tests/conftest.py`
 **Revisit when:** one shard takes clearly longer than the others, the suite's length changes by a large factor, the maintainer's runner gets more than one `pg` runner, or `hub-sqlite` gets the same matrix
-**See:** process.md#every-ci-job-has-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
+**See:** process.md#every-job-ci-ok-waits-for-and-the-mariadb-run-have-a-timeout-90-minutes-for-the-database-jobs-and-30-for-the-rest-a-hang-no-longer-holds-main-for-six-hours — 97f338fd-9f05-4376-ac74-1649931c9945 — as of 2026-11-10
 
 `hub-postgresql` is a matrix of three legs. `MAITY_TEST_SHARD=k/n` makes `hub/tests/conftest.py`
 keep only the test files whose path's CRC-32 modulo `n` is `k - 1`; the others are reported as
@@ -2241,7 +2244,8 @@ server, count as minor (the coordinator's scope for #1475).
   passes too; a name such as `127.example.com` is a server of its own) is a proxy in front of
   github.com, as in Claude Code's cloud sessions, which serves git and not the API, so it stands for
   github.com. A URL without a host (a local path,
-  `file://` with or without `localhost`) names no server to ask and stops the check.
+  `file://` with or without `localhost`, the scheme in any case) names no server to ask and stops the
+  check.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
@@ -2755,3 +2759,67 @@ view of them.
 The check counts the five headings and that each has text; it cannot tell
 whether the text is right. That is what the confirmation by the lead and ops
 before the tag is for.
+
+**Fences, comments and the list of pages (2026-11-18):** (Source: the P3
+follow-ups of the review of #1846, card tsk-tzknz9zzy1m2.) The check reads a
+page as CommonMark does for what it counts, since GitHub and the docs site
+render it that way and a page that renders right must not be refused, nor a
+heading the reader cannot see accepted. A byte order mark is dropped. A fence
+is three or more backticks or tildes at the start of the line (a backtick
+fence's info string has no backtick); it closes only with a run of the same
+character at least as long, and an unclosed one runs to the end. A line
+indented by four columns or more (a tab counts to the next four) is an
+indented code block unless it continues paragraph text: it is no fence and no
+heading, and it counts as text, comments in it too, as a code block with
+content does; list items are not followed, so such a line in one is code. A
+second-level heading may be indented by up to three spaces. An HTML comment
+alone is no text, so `<!-- TODO -->` cannot stand in for `Nothing.`; a comment
+that starts a line runs as a block to its `-->` (or the end), and a heading
+inside it is no section. Comments are cut from prose only, never from code,
+where they show. Not followed either, on purpose: HTML blocks other than
+comments (a heading inside a `<div>` counts, as does a section holding only a
+link reference definition), closing `#`s, `##` plus a tab, and setext
+headings (refused, so the author writes a plain `## ` heading). Each needs
+markup no page uses. The alternative, a Markdown library, was left out: the
+check runs in ci's changelog job and the release gate on the standard library
+alone. `docs/upgrade/README.md` lists every version page, oldest first: the
+docs site renders only that README (`docs/nav.yml`), so its links are how a
+site reader finds a page. `check` refuses, on every pull request and before
+the fold too, a version page the README does not link. A page counts as
+linked only by a list line `- [version](version.md)` (or `* `, at column 0
+with no space in front; `./`, a `#fragment` and angle brackets allowed; no
+`[`, `]`, `<`, backtick or backslash in the text, so no code span, raw HTML
+tag, comment or autolink opens there and spans the destination) that is no
+code and in no comment block opened at the start of a line. Reference links,
+links inside a paragraph and images do not count; the error names the line
+to add. Why so narrow: each round of a fuller recognizer (inline and
+reference links on the rendered text) found the next edge: a reference
+resolved to the wrong label, an image, a link glued across a code span or a
+comment, an escaped bracket, an unclosed `<!--` that hid
+every later link; a list line is all the README needs, and the check stays
+standard library only. A full CommonMark inline parser was left out for the
+same reason as a Markdown library. The release gate does not ask again,
+since the release pull request has passed ci. Listing each version in
+`docs/nav.yml` as a page of its own was left out: it would grow the site's
+navigation by one entry per release. Review round 4 (A1420) showed a list
+item's own fence or comment (an item `- ~~~` with an indented list line under
+it) faking a list line that CommonMark shows as code, so the list line now
+starts at column 0. A fence line with one to three leading spaces makes the
+README or version page refused as a whole ("write code fences at the start of
+the line", with the line's number), wherever it stands: in a list item, inside
+a fence or inside a comment too. The check is a plain scan of the lines, with
+no fence or comment state. Reason (lead, round 5): CommonMark's closing rules
+for indented fences cannot be followed by a few patterns without failing
+open: round 4's rule (an indented fence closes only on one indented at least
+as far) let a re-opened fence, an empty code block and a hidden duplicate
+heading pass (A1435); the scan is fail-closed by construction, the repository
+has no such fence, and a refusal costs one edit. Rejected: following
+CommonMark's fence-indent closing (round 4, failed open per A1435), and
+refusing only a less-indented closer (still needs fence state). One edge
+fails closed, on purpose: a list line right after a list item that opened a
+comment on an indented line is refused, though CommonMark ends the comment
+with the item and shows the link. The error names the line to add, or the
+section reported missing. Reason (lead, 2026-11-18): a refusal of a correct
+but odd README costs one edit; a parser costs a review round each time; fail
+closed beats fail open. Rejected: following list items (their indent and
+where they end), built and dropped as round 4's option A.

@@ -18,6 +18,8 @@ from maity_hub import avatars, catalog, clock, events, inbox, invitations, names
 from maity_hub import tables as t
 from maity_hub.access import Membership
 from maity_hub.notifications import records
+from maity_hub.plain_text import plain_line
+from maity_hub.text_language import text_language
 from maity_hub.views import deleted, deleted_person
 
 WINDOW = timedelta(days=30)
@@ -88,9 +90,7 @@ def scope(conn: Connection, human_id: str, public_url: str) -> Scope:
         )
     ).all()
     found = Scope(human_id, public_url)
-    from maity_hub.notifications import preferences  # preferences reads what this module shows
-
-    found.language = preferences.text_language(conn, human_id)
+    found.language = text_language(conn, human_id)
     if not members:
         return found
     projects = {
@@ -1360,6 +1360,9 @@ def _url(where: Scope, route: str) -> str:
 
 
 def _cut(text: str) -> str:
-    """Text only, at most 200 characters (§18.2)."""
-    flat = " ".join(text.split())
+    """Text only, at most 200 characters (§18.2), on one line: every title is built through
+    here from the catalog's words and stored names and titles (a display name, a project's
+    name, a request's or card's title), so `plain_line` folds each stored part that holds a
+    character the plain-text rule refuses (§1.7.1); the catalog's words hold none."""
+    flat = " ".join(plain_line(text).split())
     return flat if len(flat) <= TITLE_MAX else flat[: TITLE_MAX - 1] + "…"

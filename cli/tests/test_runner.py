@@ -614,6 +614,70 @@ def test_check_finds_opencode_and_its_version(
     assert not any(line.startswith("error") for line in out), out
 
 
+def test_check_warns_opencode_is_unsandboxed_under_single_layout(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # opencode never has a runner-switched OS sandbox, so under the single layout an opencode
+    # agent runs as the operator's own user and can run any command as it, including reading the
+    # runner's state, the other clones and logins (docs/runners.md#opencode-grok,
+    # tsk-nynpvag9zvhh). `check` keeps the ok line and adds the warning; `paired` leaves
+    # backend.local.layout at its "single" default.
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "opencode", "0.5.3")
+    paired.write_text(paired.read_text() + '\n[harness.opencode]\nmodels = ["xai/grok"]\n')
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    out = lines(capsys)
+    assert any(
+        line.startswith("ok") and "harness opencode" in line and "(0.5.3)" in line for line in out
+    ), out
+    warning = [line for line in out if line.startswith("warn") and "harness opencode" in line]
+    assert len(warning) == 1, out
+    assert "no OS sandbox" in warning[0]
+    assert "under layout single" in warning[0]
+    assert "run any command as the runner's own user" in warning[0]
+    assert "the runner's state, the other clones and logins" in warning[0]
+    assert "tsk-nynpvag9zvhh" in warning[0]
+
+
+@pytest.mark.parametrize(
+    ("extra", "level", "failed"),
+    [("", "warn", False), ("\nrequire_sandbox = true", "error", True)],
+)
+def test_check_refuses_opencode_when_a_sandbox_is_required(
+    bin_dir: Path, extra: str, level: str, failed: bool
+) -> None:
+    # opencode never has a runner-switched OS sandbox, so every placement is unsandboxed. Like
+    # claude-code and antigravity (capabilities.sandbox_refused), `require_sandbox = true` under
+    # [harness.opencode] turns the residual-risk warning into an error (exit 1); without it the
+    # local check through `_check_harness` only warns.
+    fake_tool(bin_dir, "opencode", "0.5.3")
+    cfg = parse(minimal(h=f'[harness.opencode]\nmodels = ["xai/grok"]{extra}\n'))
+    report = commands.Report()
+    commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="single")
+    found = [
+        (lvl, t) for lvl, t in report.lines if "harness opencode" in t and "no OS sandbox" in t
+    ]
+    assert len(found) == 1, report.lines
+    assert found[0][0] == level, report.lines
+    assert report.failed is failed
+
+
+def test_check_warns_opencode_generically_under_the_agent_user_layout(bin_dir: Path) -> None:
+    # The local check threads backend.local.layout into `_check_opencode`. Under agent_user the
+    # warning takes the generic wording ("as the agents' user"), not single's "the runner's own
+    # user": this fails if the call site hard-codes the layout to "single".
+    fake_tool(bin_dir, "opencode", "0.5.3")
+    cfg = parse(minimal(h='[harness.opencode]\nmodels = ["xai/grok"]\n'))
+    report = commands.Report()
+    commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="agent_user")
+    warning = [t for level, t in report.lines if level == "warn" and "harness opencode" in t]
+    assert len(warning) == 1, report.lines
+    assert "an agent can run any command as the agents' user" in warning[0]
+    assert "under layout single" not in warning[0]
+
+
 def test_check_warns_about_inherited_claude_settings(
     paired: Path, bin_dir: Path, home: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -988,6 +1052,28 @@ def test_runner_check_names_what_codex_starts_without_only_with_codex_configured
     quiet = commands.Report()
     commands._check_repositories(quiet, parse(minimal(grant=grant)))
     assert quiet.lines == []
+
+
+def test_runner_check_passes_when_codex_home_lies_under_the_workspaces_root() -> None:
+    cfg = parse(minimal(c="\n[harness.codex]\n",
+                        ws='\n[backend.local]\nworkspaces = "/srv/ws"\n'))  # fmt: skip
+    report = commands.Report()
+    commands._check_codex_home(report, cfg)
+    assert not report.failed
+    assert any("CODEX_HOME lies in each placement's scratch under /srv/ws" in text
+               for level, text in report.lines if level == "ok")  # fmt: skip
+
+
+def test_runner_check_errors_when_codex_home_would_be_hidden_under_the_state_dir() -> None:
+    # state_dir is /srv/state; a workspaces root under it would hide every codex-home (the
+    # misconfiguration card tsk-hv7jbgy75zjt fixes).
+    cfg = parse(minimal(c="\n[harness.codex]\n",
+                        ws='\n[backend.local]\nworkspaces = "/srv/state/ws"\n'))  # fmt: skip
+    report = commands.Report()
+    commands._check_codex_home(report, cfg)
+    assert report.failed
+    assert any("inside the state directory" in text
+               for level, text in report.lines if level == "error")  # fmt: skip
 
 
 # --- the agents' git identity (cli/context/runner.md, tsk-z27pwcfr03wm) --------------------

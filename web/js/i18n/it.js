@@ -456,10 +456,19 @@ window.MAITY_I18N["it"] = {
   "board.claim.unclaimed": "Non presa in carico",
   "board.closed.failed": "Impossibile leggere le schede chiuse: {reason}",
   "board.closed.loading": "Lettura delle schede chiuse…",
+  "board.closed.more_failed": "Impossibile leggere altre schede chiuse: {reason}",
+  "board.closed.more_loaded": {
+    "one": "{count} scheda chiusa caricata",
+    "other": "{count} schede chiuse caricate"
+  },
   "board.closed.recheck_failed": "Non è stato possibile verificare se le schede chiuse sono cambiate durante la lettura: {reason}",
   "board.closed.show_more": {
     "one": "Mostra {count} altra scheda chiusa",
     "other": "Mostra altre {count} schede chiuse"
+  },
+  "board.closed.show_more_loaded": {
+    "one": "Mostra altre ({count} caricata)",
+    "other": "Mostra altre ({count} caricate)"
   },
   "board.column.other": "Altro",
   "board.column.unknown": "Stato sconosciuto",

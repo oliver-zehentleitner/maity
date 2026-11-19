@@ -456,10 +456,19 @@ window.MAITY_I18N["en"] = {
   "board.claim.unclaimed": "Unclaimed",
   "board.closed.failed": "The closed cards could not be read: {reason}",
   "board.closed.loading": "Reading the closed cards…",
+  "board.closed.more_failed": "More closed cards could not be read: {reason}",
+  "board.closed.more_loaded": {
+    "one": "{count} closed card loaded",
+    "other": "{count} closed cards loaded"
+  },
   "board.closed.recheck_failed": "The closed cards could not be checked for changes made while they were read: {reason}",
   "board.closed.show_more": {
     "one": "Show {count} more closed card",
     "other": "Show {count} more closed cards"
+  },
+  "board.closed.show_more_loaded": {
+    "one": "Show more ({count} loaded)",
+    "other": "Show more ({count} loaded)"
   },
   "board.column.other": "Other",
   "board.column.unknown": "Unknown status",
@@ -3715,7 +3724,11 @@ window.MAITY_I18N["en"] = {
   "placements.new.legend": "On a runner",
   "placements.new.mode": "Mode",
   "placements.new.model": "Model",
+  "placements.new.model_choose": "Choose a model",
   "placements.new.model_default": "The runner's default",
+  "placements.new.model_missing": "{tool} starts only on a model chosen here. Choose one of the runner's models.",
+  "placements.new.model_named": "This tool starts only on a model chosen here: without one, it would run its own default, a model hosted by its maker, and the clone's conversation would go there.",
+  "placements.new.no_model": "Not offered here, since the runner names no model and each of these starts only on a named one: {tools}.",
   "placements.new.no_repository": "A runner starts an agent in a clone of the project's repository, and this project has none.",
   "placements.new.no_runner_offers": "None of your runners allowed in this project offers its repository, {repository}. A runner offers the repositories its configuration lists.",
   "placements.new.no_tool": "The runner offers no tool there that is installed.",

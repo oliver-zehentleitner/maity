@@ -87,9 +87,17 @@ INFO_FILES = frozenset({"exclude", "refs"})
 # Other object stores git would read from (and, over http, fetch from).
 ALTERNATES = ("objects/info/alternates", "objects/info/http-alternates")
 # Claude Code's sandbox leaves these in a clone it ran in, to guard the paths it protects:
-# empty, they change nothing git does. Anything in them is refused as before.
+# empty, they change nothing git does. Anything in them is refused as before. `config.lock`
+# is the empty, read-only lockfile the sandbox holds so `.git/config` stays unwritable: the
+# lock's mere presence makes git's own `.git/config` writes fail ("could not lock config
+# file"), which does not matter in a sandboxed clone. git never reads, adopts or commits a
+# pre-existing `config.lock`: it writes `.git/config` through a lock it creates itself with
+# O_CREAT|O_EXCL and renames only that one into place, so the lock's content never reaches
+# `.git/config`. The check therefore accepts only the shape the sandbox is known to leave, an
+# empty regular file at this path; a non-empty `config.lock` is refused as before, a fail-safe
+# default, not a guard against git applying it.
 SANDBOX_DIR = ".claude-sandbox-noreplace"  # an empty directory, wherever it appears
-SANDBOX_EMPTY_FILES = frozenset({"config.worktree", *ALTERNATES})
+SANDBOX_EMPTY_FILES = frozenset({"config.worktree", "config.lock", *ALTERNATES})
 # `glab-cli/`, `modules/` and `worktrees/`: Claude Code lists `.git/glab-cli`, `.git/modules` and
 # `.git/worktrees` among the paths its sandbox protects (read in the binary of 2.1.321; seen made
 # empty at every session start by 2.1.323 for `glab-cli` and `worktrees`). With anything in
@@ -432,6 +440,51 @@ def _within(path: Path, directory: Path) -> bool:
     return path == directory or directory in path.parents
 
 
+# Where Claude Code places a subagent's isolated worktree inside a clone (behaviour only):
+# `<clone>/.claude/worktrees/<id>`. git registers each under `.git/worktrees/<name>/`, whose
+# `gitdir` file names the worktree's `.git` file; its parent is the worktree's working tree.
+CLAUDE_WORKTREES = (".claude", "worktrees")
+
+
+_GITDIR_MAX = 4096
+
+
+def _parse_gitdir(raw: bytes) -> Path | None:
+    """The working tree named by a `.git/worktrees/<name>/gitdir` file's bytes (the parent of
+    what it names), or None when it is not a plain, bounded, single-line absolute path whose
+    basename is `.git` with no `.` or `..` segment. The caller opens the file without following a
+    link and without blocking (O_NOFOLLOW|O_NONBLOCK) and reads it only when it is a regular file
+    at most `_GITDIR_MAX` bytes (worktree._admin_working_tree), so a planted link, FIFO or
+    oversized file is refused — never followed, waited on, or read whole. The raw segments are
+    checked, not a normalised path, so a `.` or `..` component cannot be folded away first."""
+    if len(raw) > _GITDIR_MAX or b"\0" in raw:
+        return None
+    # A gitdir file is one line: the path and the trailing newline git writes. Any second line
+    # (an embedded newline) is refused.
+    lines = raw.split(b"\n")
+    if len(lines) > 2 or (len(lines) == 2 and lines[1]):
+        return None
+    target = lines[0].decode("utf-8", "replace").strip()
+    if not target or not os.path.isabs(target):
+        return None
+    path = Path(target)
+    if path.name != ".git" or any(seg in (os.curdir, os.pardir) for seg in target.split("/")):
+        return None
+    return path.parent
+
+
+def _under_claude_worktrees(root: Path, working_tree: Path) -> bool:
+    """Whether `working_tree` is, by name, `<root>/.claude/worktrees/<id>`: the lexical test
+    that names which registered worktrees the placement-start prune may clear (worktree.py). The
+    prune itself opens each level without following a link before it touches anything; this names
+    which ones it will try, and leaves every worktree pointing elsewhere alone."""
+    try:
+        rest = working_tree.relative_to(root).parts
+    except ValueError:
+        return False
+    return len(rest) == 3 and rest[:2] == CLAUDE_WORKTREES
+
+
 # The configuration keys maity passes on to git from the clone's own, under the runner: what
 # report and the checks read (remotes, upstreams, who commits) and how the work tree is read.
 # The repository's layout (`core.bare`, the format) is maity's, never the clone's.
@@ -522,8 +575,23 @@ def _refusal(root: Path, finding: Finding) -> str:
     said = f"the clone {root} is not a plain clone: {finding.reason}."
     feature = unsupported(finding)
     if feature is not None:
-        return (f"{said} {feature} not supported under the runner yet, so maity runs no git"
-                " in this clone while that is set up")  # fmt: skip
+        message = (f"{said} {feature} not supported under the runner yet, so maity runs no git"
+                   " in this clone while that is set up")  # fmt: skip
+        # A worktree a Claude Code subagent left under the clone's own `.claude/worktrees/` is
+        # the one case with a way out: the runner prunes it on the next placement start. The
+        # hint belongs only to that refusal (the `.git/worktrees` entry), not to another
+        # unsupported feature that happens to sit beside such a leftover, and only when the prune
+        # would actually clear a registration — not when the scope or the admin entry is a link,
+        # where it clears nothing and the hint would mislead.
+        from maity.runner import worktree
+
+        if finding.item == "worktrees" and worktree.clears_a_leftover(str(root)):
+            message += (
+                ". A worktree left under .claude/worktrees/ (a Claude Code subagent's) is cleared"
+                " when the placement next starts, returning the clone to a plain state; restart"
+                " the placement"
+            )
+        return message
     if finding.setting:
         key = onboarding.inline(without_userinfo(finding.item))
         return (f"{said} Under the runner maity's git runs only in a clone configured as"

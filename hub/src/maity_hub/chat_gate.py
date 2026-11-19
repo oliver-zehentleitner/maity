@@ -41,7 +41,7 @@ from typing import Any
 from sqlalchemy import Connection, false, func, insert, null, select, true, update
 from sqlalchemy.sql.elements import ColumnElement
 
-from maity_hub import chat_access, clock
+from maity_hub import chat_access, chat_access_history, clock
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 from maity_hub.ids import new_id
@@ -313,6 +313,14 @@ def owner_yes(conn: Connection, conversation: Any, current: list[Any], agent_id:
             )
         )
         chat_access._write_agents(conn, entry_id, [agent_id], agents)
+        chat_access_history.created(
+            conn,
+            entry_id,
+            chat_access_history.Cause(
+                chat_access_history.CHAT_ADD,
+                conversation=chat_access_history.chat_of(conn, conversation),
+            ),
+        )
 
 
 def _highest_seq(conn: Connection, project_id: str) -> int:
@@ -511,6 +519,7 @@ def lapse(conn: Connection, owner: str) -> int:
             .where(c.id.in_(ids), c.lapsed_at.is_(None), c.until.is_not(None), c.until <= now)
             .values(lapsed_at=now)
         )
+        chat_access_history.expired(conn, ids)
         with chat_request.deferred(conn):
             for chat in chats_of_owner(conn, owner):
                 group_chats.resettle(conn, chat, None)

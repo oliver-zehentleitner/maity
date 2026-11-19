@@ -30,6 +30,7 @@ from maity_hub import (
     availability,
     briefings,
     campaigns,
+    ceilings,
     clock,
     cross_owner,
     events,
@@ -71,6 +72,7 @@ from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.ids import new_id
 from maity_hub.models import HANDLE_PATTERN, GitIdentity, Name, Strict, markdown, title
 from maity_hub.namespace import ProjectRoute
+from maity_hub.plain_text import plain_line
 from maity_hub.ratelimit import Limiter
 from maity_hub.routes.agents import create_profile
 from maity_hub.routes.members import validate_assignment
@@ -233,7 +235,7 @@ def create_join(slug: str, body: JoinCreate, request: Request, caller: HumanCall
         # proxy hands out a credential with that trust, which is the owner's to give.
         _require_owner_for(mine, values)
         _check_takes_over(conn, body, mine.project.id, agent_id, existing)
-        _check_instance(conn, body, existing)
+        _check_instance(conn, body, existing, caller.principal_id)
         handed = _check_handover(conn, body.handover, mine.project.id)
         if member_rule and existing is None:
             # The count and the new join are one step under the project's lock (§3.1).
@@ -384,7 +386,7 @@ def _require_owner_for(mine: Any, values: dict[str, Any]) -> None:
         )
 
 
-def _check_instance(conn: Connection, body: JoinCreate, existing: Any) -> None:
+def _check_instance(conn: Connection, body: JoinCreate, existing: Any, caller_id: str) -> None:
     """A member's join says which instance it adds; a first join says neither (§3.1)."""
     if existing is None:
         if body.new_instance is not None or body.replaces is not None:
@@ -400,7 +402,7 @@ def _check_instance(conn: Connection, body: JoinCreate, existing: Any) -> None:
         return
     if not body.new_instance:
         raise invalid({"instance": "required"}, "the agent is a member: new_instance or replaces")
-    instances.refuse_over_quota(conn, existing)
+    instances.refuse_over_quota(conn, existing, caller_id=caller_id)
 
 
 # --- bringing your own agent (§3.1) ------------------------------------------------
@@ -491,7 +493,7 @@ def _check_member_limits(conn: Connection, body: JoinCreate, mine: Any, existing
             raise member_join_limit("takes_over")
 
 
-def _agents_held(conn: Connection, project_id: str, owner_id: str) -> set[str]:
+def agents_held(conn: Connection, project_id: str, owner_id: str) -> set[str]:
     """The owner's distinct agent profiles with an active membership in the project or an
     open first join to it (§3.1): a profile counts once, an instance join not at all."""
     owned = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == owner_id)
@@ -522,14 +524,28 @@ def _agents_held(conn: Connection, project_id: str, owner_id: str) -> set[str]:
 def _require_slot(conn: Connection, project: Any, owner_id: str, agent_id: str) -> None:
     """The owner's agents stay within `policy.member_agents_max`, read under the
     project's lock the caller took."""
-    held = _agents_held(conn, project.id, owner_id)
-    if agent_id not in held and len(held) >= project.member_agents_max:
+    held = agents_held(conn, project.id, owner_id)
+    limit = _member_agents_limit(conn, project)
+    if agent_id not in held and len(held) >= limit.limit:
+        quota = ceilings.details(
+            limit,
+            len(held),
+            namespace.full_name(conn, project),
+            sees_ceiling=False,  # a member under the member rule holds no project:admin
+            member_id=owner_id,
+        )
         raise ApiError(
             403,
             "forbidden",
             "you hold as many agents in this project as its policy allows",
-            {"reason": "member_agents_max", "max": project.member_agents_max},
+            {"reason": "member_agents_max", **quota},
         )
+
+
+def _member_agents_limit(conn: Connection, project: Any) -> Any:
+    """`member_agents_max` in effect (§6.31): the policy's value, or its ceiling when that
+    is lower."""
+    return ceilings.resolve(conn, "member_agents_max", project, project.member_agents_max)
 
 
 def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) -> None:
@@ -562,8 +578,8 @@ def _recheck_member_rule(conn: Connection, row: Any, project: Any, member: Any) 
     # their memberships and open first joins, this join's own included, against the
     # maximum now. Another open join naming the same profile is no exemption: a lowered
     # maximum holds for it too.
-    held = _agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
-    if len(held) > project.member_agents_max:
+    held = agents_held(conn, row.project_id, row.created_by) | {row.agent_id}
+    if len(held) > _member_agents_limit(conn, project).limit:
         raise not_found()
 
 
@@ -704,8 +720,9 @@ _MARKDOWN_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+\-.!|<>~])")
 
 
 def _md(text: str) -> str:
-    """Text a human typed (a project name), safe inside the Markdown template."""
-    return _MARKDOWN_SPECIAL.sub(r"\\\1", text)
+    """Text a human typed (a project name), safe inside the Markdown template: on its line,
+    whatever a value stored before the plain-text rule holds (§1.7.1), and escaped."""
+    return _MARKDOWN_SPECIAL.sub(r"\\\1", plain_line(text))
 
 
 # Put first on the page when the project's policy has `signing: required` (§3.2, step 7).
@@ -800,7 +817,7 @@ def render_page(
         ),
     }
     text = _TEMPLATE_PLACEHOLDER.sub(lambda m: values.get(m.group(1), m.group(0)), _template())
-    return text, f"Join {project.name} on Maity"
+    return text, f"Join {plain_line(project.name)} on Maity"
 
 
 _HTML = MarkdownIt("commonmark", {"html": False}).enable("table")
@@ -1363,7 +1380,7 @@ def _move_to_replacement(
                 "holder": member.agent_id,
                 "instance": new,
                 "replaces": old,
-                "lease_until": clock.rfc3339(card.lease_until) if card.lease_until else None,
+                "lease_until": clock.rfc3339_or_none(card.lease_until),
             },
             actor=actor,
             subject=("task", card.id),
