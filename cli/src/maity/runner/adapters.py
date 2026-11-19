@@ -50,6 +50,13 @@ CLAUDE_MAITY_PROMPT = (
     "or a `$` outside single quotes is refused. Pass longer text in a file in this clone "
     "(`--body-file`)."
 )
+# Claude Code matches the allowlist against the command line as written, so a form that wraps an
+# allowed command is refused (tsk-66zyvc4xnhtv). This tells the agent how to phrase its checks.
+CLAUDE_COMMAND_PROMPT = (
+    " Run one command per Bash call: a chain (`cd pkg && …`) is allowed only if every part is, "
+    "so use `make -C <pkg>` and path arguments (`python3 -m pytest cli/tests`) instead of "
+    "`cd <pkg> && …`, and do not prefix a command with a variable (`PYTHONPATH=… python3 …`)."
+)
 # What a line that starts with `maity` may not hold in opencode's rules (opencode_config).
 MAITY_NOT_PLAIN = (";", "&", "|", "<", ">", "`", "$", "\n")
 # An interactive session the runner ended because its agent stopped listening (§15.14) starts
@@ -115,7 +122,11 @@ GIT_PROTECTED = ("config", "config.worktree", "hooks", "info", "objects/info/alt
 # lowercase, as the skill's `uuidgen` needs on macOS), needs no package installed (`uuidgen` is
 # util-linux), and runs read-only. Codex and agy have no command allowlist, so the command already
 # runs there inside their own sandbox (docs/runners.md).
-UUID_COMMAND = "cat /proc/sys/kernel/random/uuid"
+# Claude Code resolves a `cat <path>` line through the Read tool's file permission, not the Bash
+# allowlist, so `Bash(cat …)` alone never lets it run (verified 2.1.327, tsk-66zyvc4xnhtv); the
+# claude settings add a Read rule for this path as well (claude_settings).
+UUID_PATH = "/proc/sys/kernel/random/uuid"
+UUID_COMMAND = f"cat {UUID_PATH}"
 
 READY = ("stub", "claude-code", "codex", "opencode", "antigravity")  # harnesses with an adapter
 SESSION_GIT_CONFIG = {
@@ -345,7 +356,17 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     ws = str(ctx.clone)
     allow = ["Bash(maity *)", *(f"Bash(git {sub})" for sub in GIT_SUBCOMMANDS)]
     allow += [f"Bash(git {sub} *)" for sub in GIT_SUBCOMMANDS]
+    # The same subcommands through `git -C <clone>`, which agents working from a sibling
+    # directory (a package subfolder, another clone's path) need. Scoped to this clone's exact
+    # path, never `git -C *`: a free `-C` would point git at any repository. The `-C` form
+    # carries the same denies as plain git — the GIT_DENIED escapes are mirrored below for it —
+    # so it is gated no more and no less than `git <sub>` (tsk-66zyvc4xnhtv, runner.toml note).
+    allow += [f"Bash(git -C {ws} {sub})" for sub in GIT_SUBCOMMANDS]
+    allow += [f"Bash(git -C {ws} {sub} *)" for sub in GIT_SUBCOMMANDS]
     allow += [f"Bash({UUID_COMMAND})"]  # an OS-made UUID v4 for Keep-the-Why entries
+    # Claude Code routes `cat <path>` to the Read tool, so the Bash rule above does not reach it;
+    # this Read rule on the kernel UUID path is what actually lets it run (UUID_PATH).
+    allow += [f"Read(/{UUID_PATH})"]
     allow += [f"Bash({cmd})" for cmd in ctx.grant.allow if config.plain_command(cmd)]
     allow += [f"{tool}(/{ws}/**)" for tool in ("Read", "Edit", "Write")]
     if ctx.scratch is not None:  # the placement's scratch (§15.5), for the file tools too
@@ -359,6 +380,10 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             for name in GIT_PROTECTED]  # fmt: skip
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
     deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED)]
+    # The same escapes through `git -C <clone>` (the allow forms above), mirrored so a deny wins
+    # over the `git -C <clone> <sub> *` allow: every GIT_DENIED rule begins `git `, replaced here
+    # by `git -C <clone> ` (tsk-66zyvc4xnhtv).
+    deny += [f"Bash(git -C {ws} {rule[len('git '):]})" for rule in GIT_DENIED]
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
         # stays in the model's context; the bare name takes it out of the model's context
@@ -471,12 +496,17 @@ def pull_requests_record(ctx: Context) -> str:
 
 
 def _sandbox_prompt(ctx: Context) -> str:
-    """What the start prompt adds: under the harness's sandbox the git commands that fail, and
-    for Claude Code that `maity` runs alone; with the grant's pull requests, `maity gh`."""
+    """What the start prompt adds. Claude Code's `dontAsk` allowlist is set for every placement
+    (claude_settings), sandbox or not, so a claude-code session always gets the command-phrasing
+    guidance; the git-config notice and the `maity`-alone hint are only about the sandbox (the
+    unwritable `.git/config`, the plaincall hook); with the grant's pull requests, `maity gh`."""
     pulls = PULL_REQUEST_PROMPT if pull_requests_record(ctx) else ""
+    is_claude = ctx.harness.id == "claude-code"
+    command = CLAUDE_COMMAND_PROMPT if is_claude else ""
     if not writes_denied(ctx):
-        return pulls
-    return GIT_PROMPT + (CLAUDE_MAITY_PROMPT if ctx.harness.id == "claude-code" else "") + pulls
+        return command + pulls
+    maity = CLAUDE_MAITY_PROMPT if is_claude else ""
+    return GIT_PROMPT + maity + command + pulls
 
 
 def hide_placeholders(ctx: Context) -> None:

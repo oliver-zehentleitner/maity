@@ -1091,6 +1091,8 @@ class Supervisor:
                 folder=workspace.uses_folder(harness.id),
             )  # fmt: skip
         except workspace.Refused as refused_:
+            if refused_.why:  # the runner's log only; the report keeps the codes
+                self.log(f"{p['id']}: {refused_.reason}: {refused_.why}")
             rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
             return 0
         owner = agent.get("id") or agent.get("handle") or ""
@@ -1109,6 +1111,8 @@ class Supervisor:
             try:
                 workspace.owned(self.cfg, place, owner, p["id"])
             except workspace.Refused as refused_:
+                if refused_.why:  # the runner's log only; the report keeps the codes
+                    self.log(f"{p['id']}: {refused_.reason}: {refused_.why}")
                 rec.enter(now, "failed", refused_.reason, detail=refused_.detail)
                 return 0
         has_credential = as_user.exists(place.credential, "-f")

@@ -12,7 +12,7 @@ import fakehub
 import pytest
 
 from maity import cli, state
-from maity.runner import commands, config
+from maity.runner import commands, config, workspace
 
 MINIMAL = """\
 [hub]
@@ -77,6 +77,76 @@ def test_tilde_is_expanded(home: Path) -> None:
     assert cfg.state_dir == home / "st"
     assert cfg.local is not None
     assert cfg.local.workspaces == home / "maity-workspaces"
+
+
+@pytest.mark.parametrize("bad", ["/srv/ws*", "/srv/w?rk", "/srv/[ab]/ws"])
+def test_a_workspaces_root_with_a_glob_character_is_refused(bad: str) -> None:
+    """The clone path, built under the workspaces root, is embedded literally in a
+    `Bash(git -C <clone> …)` allow rule, where Claude Code treats `*`, `?` and `[]` as
+    wildcards; a root carrying one would widen the rule, so it is refused (tsk-66zyvc4xnhtv,
+    #1962 round 2)."""
+    found = problems(minimal(b=f'\n[backend.local]\nworkspaces = "{bad}"\n'))
+    assert any("backend.local.workspaces" in p and "must not contain" in p for p in found)
+
+
+# The raw check above sees only the configured string. A root with no glob character in its raw
+# form can still RESOLVE to one — a symlink to a wildcard path, or a relative or `~` root joined
+# onto a wildcard-bearing cwd or home — and the resolved path is the string that reaches the
+# `Bash(git -C <clone> …)` rule. `workspace.locate` is the choke point every placement passes
+# through, so the resolved path is refused there, fail-closed (tsk-66zyvc4xnhtv, #1962 round 3).
+
+
+def test_locate_refuses_a_root_that_is_a_symlink_to_a_wildcard_path(tmp_path: Path) -> None:
+    """A root with no glob character of its own, symlinked to a real directory whose name holds
+    a `*`: the raw check passes, but `locate` resolves the symlink and refuses the wildcard."""
+    real = tmp_path / "wild*root"
+    real.mkdir()
+    link = tmp_path / "clean-root"
+    link.symlink_to(real)
+    with pytest.raises(workspace.Refused) as info:
+        workspace.locate(link, "proj", "clone")
+    assert info.value.reason == "workspace_in_use"
+    assert "*" in (info.value.why or "") and str(real) in (info.value.why or "")
+
+
+def test_locate_refuses_a_relative_root_resolving_under_a_wildcard_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A relative root resolves against the current directory; a `?` in that directory's path
+    then rides into the resolved clone path, where `locate` refuses it."""
+    cwd = tmp_path / "cwd?dir"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    with pytest.raises(workspace.Refused) as info:
+        workspace.locate(Path("ws"), "proj", "clone")
+    assert "?" in (info.value.why or "")
+
+
+def test_locate_refuses_a_tilde_root_whose_home_carries_a_wildcard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `~` root is expanded with the user's home (config does this with `.expanduser()`); a
+    `[`/`]` in that home rides into the resolved path, which the raw check on `"~/ws"` never
+    saw. `locate` refuses the expanded, resolved path."""
+    home = tmp_path / "home[1]"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    root = Path("~/ws").expanduser()  # exactly what config.parse stores for the workspaces root
+    with pytest.raises(workspace.Refused) as info:
+        workspace.locate(root, "proj", "clone")
+    assert "[" in (info.value.why or "") and "]" in (info.value.why or "")
+
+
+def test_scratch_of_refuses_a_resolved_wildcard_root(tmp_path: Path) -> None:
+    """The scratch is the other resolved-root path embedded in the file-tool rules, so its
+    choke point refuses a wildcard root too (here a symlink to a `*` path)."""
+    real = tmp_path / "wild*root"
+    real.mkdir()
+    link = tmp_path / "clean-root"
+    link.symlink_to(real)
+    with pytest.raises(workspace.Refused) as info:
+        workspace.scratch_of(link, "proj", "plc-abc123")
+    assert "*" in (info.value.why or "")
 
 
 @pytest.mark.parametrize(

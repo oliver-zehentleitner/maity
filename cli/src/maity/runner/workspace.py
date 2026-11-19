@@ -129,6 +129,27 @@ class Workspace:
         return self.repo / ".git" / "maity" / state.CREDENTIAL_FILE
 
 
+def _no_rule_glob(path: Path) -> None:
+    """Refuse fail-closed when the resolved `path` carries a character Claude Code's Bash
+    permission matcher treats as a wildcard. This path (the clone, or the placement's scratch)
+    is embedded literally in the placement's permission rules — the `git -C <clone>` allow and
+    its mirrored denies, the Read/Edit/Write roots, the sandbox deny lists (adapters) — so a
+    wildcard in it would widen a rule past the clone to other repositories. The configured
+    root's raw string is already checked at config parse (config._no_glob), but a root that is a
+    symlink to a wildcard path, or a relative or `~` root, carries no wildcard in its raw form
+    and only reveals one once resolved; this is the last point before the resolved path reaches
+    a rule. The ssh host's path is confined by REMOTE_PATH and never resolved, so it skips this.
+    The offending path goes to the runner's log only (`why`), never to the hub (§15.7)."""
+    bad = config.rule_glob_chars(str(path))
+    if bad:
+        raise Refused(
+            "workspace_in_use",
+            "workspace_unrecorded",
+            why=f"the resolved path {path} carries the character(s) {bad} that Claude Code's "
+            "permission matcher treats as a wildcard; refusing so no rule widens past the clone",
+        )
+
+
 def scratch_of(root: Path, project: str, placement_id: str, host: str = "") -> Path:
     """The placement's scratch under `root` (§15.5), built from validated tokens and kept
     inside `root` as a clone's path is (locate). Not resolved: what is there is the agents'
@@ -136,7 +157,10 @@ def scratch_of(root: Path, project: str, placement_id: str, host: str = "") -> P
     if not (TOKEN.match(project) and SCRATCH_ID.match(placement_id)):
         raise Refused("workspace_in_use", "workspace_unrecorded")
     base = root if host else root.resolve()
-    return base / project / SCRATCH / placement_id
+    path = base / project / SCRATCH / placement_id
+    if not host:
+        _no_rule_glob(path)  # the resolved root feeds the scratch's Read/Edit/Write rules
+    return path
 
 
 def uses_folder(harness_id: str) -> bool:
@@ -186,6 +210,11 @@ def locate(root: Path, project: str, clone: str, host: str = "", folder: bool = 
     path = (base / project / clone).resolve()
     if path.parent.parent != base:
         raise Refused("workspace_in_use", "workspace_unrecorded")
+    # The last check before this clone path reaches a permission rule (ws in adapters): the
+    # mandatory per-placement choke point, so every harness's rule use of the resolved clone
+    # path is covered here, and the resolved workspaces root it is built under is refused before
+    # any rule is written (_no_rule_glob).
+    _no_rule_glob(path)
     return Workspace(path, project, clone, folder=folder)
 
 

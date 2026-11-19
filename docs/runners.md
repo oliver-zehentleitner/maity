@@ -132,7 +132,7 @@ Install agy for the user the agents run as (`~/.local/bin/agy`; add that to `age
 
 An agent that sends a review from the folder (`maity say --type review_result`) has its cites checked in the clone, `repo`, whichever directory it is in: maity checks them in the runner's clone, never in the folder, which is no clone.
 
-The runner deletes nothing in the folder. The service's log names what it found, without file contents; remove the entry by hand and restart the placement. Keep the workspaces root out of any git repository: `maity runner check` fails when it lies inside one. A clone does not move between the two layouts: an existing plain clone at the folder's path, or a folder at a plain clone's path, is refused as `workspace_in_use`.
+The runner deletes nothing in the folder. The service's log names what it found, without file contents; remove the entry by hand and restart the placement. Keep the workspaces root out of any git repository: `maity runner check` fails when it lies inside one. Its real path, after symlinks and `~` expansion, must not contain `*`, `?`, `[` or `]`: a placement on such a root fails to start with `workspace_in_use`, and the runner log says why. A clone does not move between the two layouts: an existing plain clone at the folder's path, or a folder at a plain clone's path, is refused as `workspace_in_use`.
 
 **Session settings.** Before each start the runner writes the settings agy gets for that session with `--settings`, in the runner's own directory for the agent, outside the folder:
 
@@ -228,7 +228,7 @@ The runner passes the identity to each session as `GIT_AUTHOR_NAME`, `GIT_AUTHOR
 
 ## Letting agents run a repository's checks
 
-Besides `maity` and `git`, an agent may run only the commands its repository's grant lists. For a Python repository that runs pytest, Keep the Why's linter, black, ruff and mypy, add:
+Besides `maity` and `git`, an agent may run only the commands its repository's grant lists. On Claude Code those git subcommands are also allowed through `git -C <clone>`, for the placement's own clone path only, so an agent working from another directory can still drive the clone's git. For a Python repository that runs pytest, Keep the Why's linter, black, ruff and mypy, add:
 
 ```toml
 [repositories."github.com/you/demo"]
@@ -249,7 +249,7 @@ allow = [
 
 Each entry is a plain command; [`maity runner`](../cli/README.md#maity-runner) lists what is refused.
 
-**A UUID source for Keep the Why.** Beyond `maity`, `git` and the grant, the runner also allows one fixed command, `cat /proc/sys/kernel/random/uuid`, on the harnesses that gate commands with an allowlist (Claude Code and opencode). Keep the Why gives every entry an `Id` made by an OS command, never from memory, and under the allowlist the usual sources — `uuidgen`, `node`, `od /dev/urandom` — are all refused, so an agent could record no reasoning. The kernel's generator needs no package installed and prints a lowercase v4 directly. Only the allowlist harnesses need the explicit allow: Codex has no per-command allowlist, so the command already runs inside its sandbox and needs no entry, and antigravity gates commands with its sandbox rather than an allowlist, so the command runs inside agy's sandbox, where that starts, like any unlisted command and needs no entry. The skill names `uuidgen` first and this path second; it was chosen because it needs no `util-linux` and no lowercasing step.
+**A UUID source for Keep the Why.** Beyond `maity`, `git` and the grant, the runner also allows one fixed command, `cat /proc/sys/kernel/random/uuid`, on the harnesses that gate commands with an allowlist (Claude Code and opencode). Keep the Why gives every entry an `Id` made by an OS command, never from memory, and under the allowlist the usual sources — `uuidgen`, `node`, `od /dev/urandom` — are all refused, so an agent could record no reasoning. The kernel's generator needs no package installed and prints a lowercase v4 directly. On Claude Code the allow for this is a Read rule on the path, not a Bash rule: Claude Code resolves a `cat <path>` line through the Read tool's file permission, so a `cat` command is allowed by reading-permission on its path. Only the allowlist harnesses need the explicit allow: Codex has no per-command allowlist, so the command already runs inside its sandbox and needs no entry, and antigravity gates commands with its sandbox rather than an allowlist, so the command runs inside agy's sandbox, where that starts, like any unlisted command and needs no entry. The skill names `uuidgen` first and this path second; it was chosen because it needs no `util-linux` and no lowercasing step.
 
 ## Clones after a stop
 
