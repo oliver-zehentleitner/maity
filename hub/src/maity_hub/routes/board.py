@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 from sqlalchemy import Connection, and_, insert, or_, select, update
 
-from maity_hub import clock, events, forge, idempotency, mentions, namespace, paging
+from maity_hub import access, clock, events, forge, idempotency, mentions, namespace, paging
 from maity_hub import tables as t
 from maity_hub.access import Membership, membership
 from maity_hub.auth import credentials
@@ -73,7 +73,7 @@ class NoteRedactIn(RedactIn):
 # --- shared --------------------------------------------------------------------------------
 
 
-def _card(conn: Connection, mine: Membership, card_id: str) -> Any:
+def _card(conn: Connection, mine: Membership | access.OutsideReader, card_id: str) -> Any:
     return _project_card(conn, mine, card_id)
 
 
@@ -270,6 +270,7 @@ def delete_link(
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}/history")
+@access.outside_read
 def get_history(
     slug: str,
     card_id: str,
@@ -279,7 +280,7 @@ def get_history(
     cursor: str | None = None,
 ) -> JSONResponse:
     with read_transaction(engine_of(request)) as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         card = _card(conn, mine, card_id)
         c = t.card_history.c
@@ -432,6 +433,7 @@ def _members(conn: Connection, *membership_ids: int | None) -> list[str]:
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}/notes")
+@access.outside_read
 def list_notes(
     slug: str,
     card_id: str,
@@ -442,7 +444,7 @@ def list_notes(
     cursor: str | None = None,
 ) -> JSONResponse:
     with read_transaction(engine_of(request)) as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         card = _card(conn, mine, card_id)
         c = t.card_note.c

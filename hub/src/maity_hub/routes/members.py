@@ -14,6 +14,7 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, select, update
 
 from maity_hub import (
+    access,
     admin_agents,
     agent_owners,
     attachments,
@@ -435,15 +436,23 @@ def _owners(conn: Connection, project_id: str) -> int:
 
 
 @router.get("/projects/{owner}/{slug}/members")
+@access.outside_read
 def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        return JSONResponse(members_body(conn, caller, slug))
+        mine = access.reader(conn, caller, slug)
+        return JSONResponse(members_body(conn, caller, slug, mine))
 
 
-def members_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
+def members_body(
+    conn: Connection,
+    caller: Caller,
+    slug: str,
+    given: Membership | access.OutsideReader | None = None,
+) -> dict[str, Any]:
     """`GET /projects/{owner}/{slug}/members`' answer (§6.2), also the `members` part of
-    `GET /bootstrap` (§5.4)."""
-    mine = membership(conn, caller, slug)
+    `GET /bootstrap` (§5.4), which passes no reader (`given`): the caller's membership is read
+    here, so an outsider reads no part of it (§2.3)."""
+    mine = given if given is not None else membership(conn, caller, slug)
     mine.require("project:read")
     rows = conn.execute(
         select(t.membership).where(
@@ -451,7 +460,9 @@ def members_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
         )
     ).all()
     admin = mine.may("members:admin")
-    owned = _owned_agents(conn, mine)
+    outside = isinstance(mine, access.OutsideReader)
+    # An outsider who owns an agent here reads it as any outsider does (§2.3): no details.
+    owned: set[str] = set() if outside else _owned_agents(conn, mine)
     views = member_views(
         conn,
         rows,
@@ -463,6 +474,8 @@ def members_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
     counted = instance_counts.manages(rows, by_id, by_id)
     for member_id, view in by_id.items():
         view["manages"] = counted[member_id]
+    if outside:
+        views = [outside_member_view(view) for view in views]
     views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
     return {"items": views, "next_cursor": None}
 
@@ -489,12 +502,61 @@ def list_briefings(slug: str, member_id: str, request: Request, caller: AnyCalle
 
 
 @router.get("/projects/{owner}/{slug}/members/{member_id}")
+@access.outside_read
 def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         row = member_row(conn, mine.project.id, member_id)
+        if isinstance(mine, access.OutsideReader):
+            view = member_view(conn, row, links=person_links.Reader(mine.principal_id))
+            view["manages"] = instance_counts.for_member(conn, row)
+            return JSONResponse(outside_member_view(view))
         return JSONResponse(member_as_read(conn, mine, row))
+
+
+# What a member view never shows an outsider (§2.3): besides the fields only an admin, the
+# member itself or an agent's owner reads, a member's hidden windows, its isolation and every
+# sign of its presence, as the public page names no isolated agent and shows no presence
+# (§16.9). Fail closed: presence and last use leave the instances and the session too.
+OUTSIDE_HIDDEN_MEMBER = (
+    "isolation_windows",
+    "isolated",
+    "last_seen_at",
+    "presence",
+    "briefing",
+    "owner",
+    "credentials",
+    "shared_environment",
+    "owner_preferences",
+)
+OUTSIDE_HIDDEN_INSTANCE = ("presence", "last_seen_at")
+OUTSIDE_HIDDEN_SESSION = ("listening", "not_listening_since")
+
+
+def _without(value: Any, hidden: tuple[str, ...]) -> Any:
+    if not isinstance(value, dict):
+        return value
+    return {key: item for key, item in value.items() if key not in hidden}
+
+
+def outside_member_view(view: dict[str, Any]) -> dict[str, Any]:
+    """A member view as an outsider reads it (§2.3): `OUTSIDE_HIDDEN_MEMBER` left out, and
+    each instance's `presence` and `last_seen_at` and every session's `listening` and
+    `not_listening_since`."""
+    shown: dict[str, Any] = _without(view, OUTSIDE_HIDDEN_MEMBER)
+    if "session" in shown:
+        shown["session"] = _without(shown["session"], OUTSIDE_HIDDEN_SESSION)
+    if isinstance(shown.get("instances"), list):
+        shown["instances"] = [_outside_instance(item) for item in shown["instances"]]
+    return shown
+
+
+def _outside_instance(item: Any) -> Any:
+    shown = _without(item, OUTSIDE_HIDDEN_INSTANCE)
+    if isinstance(shown, dict) and "session" in shown:
+        shown["session"] = _without(shown["session"], OUTSIDE_HIDDEN_SESSION)
+    return shown
 
 
 def _owned_agents(conn: Connection, mine: Any) -> set[str]:

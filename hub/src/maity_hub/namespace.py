@@ -35,10 +35,19 @@ FULL_NAME = re.compile(r"^([a-z0-9][a-z0-9-]{1,30})/([a-z0-9][a-z0-9-]{1,62})$")
 
 class ProjectRoute(APIRoute):
     """A route under `/projects/{owner}/{slug}`: its `slug` path parameter becomes the full
-    name `<owner>/<slug>` before the dependencies and the endpoint read it."""
+    name `<owner>/<slug>` before the dependencies and the endpoint read it.
+
+    A route under `/api/v1/projects/{owner}/{slug}` that is not one of `access.OUTSIDE_READS`
+    for the request's method first passes `access.gate`: a public project's outsider is
+    answered `not_found` there, before FastAPI reads the body or the query (§2.3)."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         inner = super().get_route_handler()
+        from maity_hub import access  # access resolves projects through this module
+
+        below = self.path.startswith(access.API_PROJECT + "/")
+        project_route = self.path == access.API_PROJECT or below
+        readable = frozenset(m for m, p in access.OUTSIDE_READS if p == self.path)
 
         async def handler(request: Request) -> Response:
             params = request.scope.get("path_params") or {}
@@ -46,6 +55,8 @@ class ProjectRoute(APIRoute):
                 params = dict(params)
                 params["slug"] = f"{params.pop('owner')}/{params['slug']}"
                 request.scope["path_params"] = params
+            if project_route and request.method not in readable:
+                await access.gate(request)
             return await inner(request)
 
         return handler

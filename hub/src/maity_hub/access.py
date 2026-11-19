@@ -3,18 +3,26 @@
 A project the caller is not a member of does not exist for it: `not_found`,
 never `forbidden`, so that projects cannot be enumerated. Within a project
 the membership's trust and role decide, by scope.
+
+The one exception is a public project's *outsider* (§2.3, "Reading a public project from
+outside"): a signed-in human without an active membership reads the routes `OUTSIDE_READS`
+names, and only those, as an `OutsideReader`. Closed by construction (hub/context/public-pages.md
+eb7fd1c7, "Superseded for signed-in outsiders"): a route is open to an outsider only when its
+endpoint calls `reader` and carries `@outside_read`, and `ProjectRoute` answers an outsider's call
+to any other project route `not_found` before its body or query is read (`gate`).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import Connection, select
 
-from maity_hub import namespace, proxy_go
+from maity_hub import clock, namespace, proxy_go
 from maity_hub import tables as t
-from maity_hub.auth.caller import Caller
+from maity_hub.auth.caller import SESSION_COOKIE, Caller, session_alive, session_id_hash
 from maity_hub.errors import ApiError, forbidden, not_found
 from maity_hub.scopes import GOVERNANCE, has_scope
 
@@ -157,6 +165,205 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
         go,
         bridge_windows,
     )
+
+
+# --- the outsider of a public project (§2.3) ------------------------------------------------
+
+API_PROJECT = "/api/v1/projects/{owner}/{slug}"
+
+# The project routes an outsider reads, as (method, path template) the app lists them: every one
+# a GET (§2.3). Each endpoint calls `reader` and carries `@outside_read`; `test_outside_reads`
+# holds the three together, and `ProjectRoute` answers an outsider's call to any other project
+# route `not_found` (`gate`).
+OUTSIDE_READS = frozenset(
+    {
+        ("GET", API_PROJECT),
+        ("GET", f"{API_PROJECT}/members"),
+        ("GET", f"{API_PROJECT}/members/{{member_id}}"),
+        ("GET", f"{API_PROJECT}/tasks"),
+        ("GET", f"{API_PROJECT}/tasks/{{card_id}}"),
+        ("GET", f"{API_PROJECT}/tasks/{{card_id}}/history"),
+        ("GET", f"{API_PROJECT}/tasks/{{card_id}}/notes"),
+        ("GET", f"{API_PROJECT}/logo"),
+        ("GET", f"{API_PROJECT}/banner"),
+    }
+)
+
+OUTSIDE_READ_MARK = "__maity_outside_read__"
+
+
+def outside_read[Endpoint: Callable[..., Any]](endpoint: Endpoint) -> Endpoint:
+    """Marks an endpoint an outsider reads (§2.3); its route is in `OUTSIDE_READS`."""
+    setattr(endpoint, OUTSIDE_READ_MARK, True)
+    return endpoint
+
+
+@dataclass(frozen=True)
+class OutsideRow:
+    """The membership row an outsider does not have: no trust, no role and no hidden window
+    (§6.2), so the reads that filter by a reader's row hide nothing more and nothing less."""
+
+    human_id: str
+    id: int = -1
+    agent_id: None = None
+    trust: None = None
+    role: None = None
+    role_base: None = None
+    isolation_windows: tuple[dict[str, int], ...] = ()
+    isolated_since: None = None
+
+
+@dataclass(frozen=True)
+class OutsideReader:
+    """A signed-in human who reads a public project without an active membership in it
+    (§2.3). No `Membership`: no write path takes one, it holds `project:read` alone, and it
+    is never refused `forbidden`, which would say a scope exists for it: `not_found`."""
+
+    project: Any
+    principal_id: str
+    row: OutsideRow = field(repr=False)
+    kind: str = "human"
+    id: int = -1
+    trust: None = None
+    role: None = None
+    role_base: None = None
+    instance: None = None
+    bridged: bool = False
+    go: None = None
+
+    def may(self, scope: str) -> bool:
+        return scope == "project:read"
+
+    def require(self, scope: str) -> None:
+        if not self.may(scope):
+            raise not_found()
+
+
+def reader(conn: Connection, caller: Caller, slug: str) -> Membership | OutsideReader:
+    """Who reads the project `slug` names through one of `OUTSIDE_READS`: the caller's active
+    membership when there is one (`membership`); otherwise an `OutsideReader` for a signed-in
+    human (a dashboard session, never an agent, bridge or runner credential) while the project
+    is public for outsiders now (`public_projects.public_for_outsiders`: public pages on, its
+    page on, not archived, no hold, its owner in good standing), read on every call; otherwise
+    `not_found`, as `membership` answers. A removed member reads as an outsider."""
+    try:
+        return membership(conn, caller, slug)
+    except ApiError as refused:
+        if refused.code != "not_found":
+            raise
+        if caller.kind != "human" or caller.via != "cookie" or caller.human_id is None:
+            raise
+        if caller.bridge is not None:
+            raise
+        from maity_hub import public_projects  # the public pages' modules, as `stars` reads them
+
+        project = namespace.resolve(conn, slug)
+        if project is None:
+            raise
+        if project.id not in public_projects.public_for_outsiders(conn, [project.id]):
+            raise
+        return OutsideReader(project, caller.human_id, OutsideRow(caller.human_id))
+
+
+def _session_human(conn: Connection, cookie: str) -> str | None:
+    """The human a live session cookie names, or None. One read; it writes nothing (the
+    authentication after the gate writes the call's presence, §2.4)."""
+    if not cookie.isascii():
+        return None
+    row = conn.execute(
+        select(
+            t.human_session.c.human_id,
+            t.human_session.c.ended_at,
+            t.human_session.c.expires_at,
+            t.human_session.c.last_seen_at,
+            t.human.c.deleted_at,
+        )
+        .join(t.human, t.human.c.id == t.human_session.c.human_id)
+        .where(t.human_session.c.id_hash == session_id_hash(cookie))
+    ).first()
+    if row is None or row.ended_at is not None or row.deleted_at is not None:
+        return None
+    if not session_alive(row, clock.now()):
+        return None
+    return str(row.human_id)
+
+
+def is_outsider(conn: Connection, cookie: str, slug: str) -> bool:
+    """Whether the session cookie's human is an outsider of the public project `slug` names
+    (§2.3). Cheapest refusals first: the project's own row (no page, archived), then the
+    session, then the human's membership, and only then the whole public test."""
+    project = namespace.resolve(conn, slug)
+    if project is None or project.public_page != "on" or project.state == "archived":
+        return False
+    human_id = _session_human(conn, cookie)
+    if human_id is None:
+        return False
+    member = conn.execute(
+        select(t.membership.c.id).where(
+            t.membership.c.project_id == project.id,
+            t.membership.c.human_id == human_id,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if member is not None:
+        return False
+    if _owns_a_part(conn, project.id, human_id):
+        return False
+    from maity_hub import public_projects
+
+    return project.id in public_projects.public_for_outsiders(conn, [project.id])
+
+
+def _owns_a_part(conn: Connection, project_id: str, human_id: str) -> bool:
+    """Whether the human, no member, owns an agent that holds or held a membership in the
+    project, or a runner a placement of the project runs on. Such an owner keeps the calls
+    §1.3 lists for them (an owner reading along in a chat, §9.2; a round of the jour fixe,
+    §20.7; their agent's membership, its briefings and bridges, §6.2, §6.18, §2.3; the
+    placements on their runner, §15.3): the gate passes them as before, and their routes
+    answer them as they always did."""
+    agent = conn.execute(
+        select(t.membership.c.id)
+        .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+        .where(t.membership.c.project_id == project_id, t.agent_profile.c.owner_id == human_id)
+        .limit(1)
+    ).first()
+    if agent is not None:
+        return True
+    runner = conn.execute(
+        select(t.placement.c.id)
+        .join(t.runner, t.runner.c.id == t.placement.c.runner_id)
+        .where(t.placement.c.project_id == project_id, t.runner.c.owner_id == human_id)
+        .limit(1)
+    ).first()
+    return runner is not None
+
+
+async def gate(request: Any) -> None:
+    """`not_found` for an outsider's call to a project route not in `OUTSIDE_READS` (§2.3),
+    before FastAPI reads its body or its query, so that no validation answer (`400 invalid`)
+    tells an outsider what a route takes. `ProjectRoute` calls it for such a
+    route. Members, the owners `_owns_a_part` names, strangers to a private or unknown project,
+    agents, bridges, runners and callers without a session pass unchanged: their call is
+    answered exactly as before. It costs nothing while public pages are off, without a
+    session cookie, or with an `Authorization` or `Maity-For` header; otherwise the project's
+    resolve, and only for a project whose page is on the session's and the membership's read,
+    and only for a human without a membership there the owner's reads and the public test."""
+    from maity_hub import public_pages
+
+    if not public_pages.serving():
+        return
+    headers = request.headers
+    if "authorization" in headers or "maity-for" in headers:
+        return
+    cookie = request.cookies.get(SESSION_COOKIE)
+    slug = (request.scope.get("path_params") or {}).get("slug")
+    if not cookie or not slug:
+        return
+    engine = request.app.state.async_engine
+    async with engine.connect() as conn:
+        outsider = await conn.run_sync(is_outsider, cookie, slug)
+    if outsider:
+        raise not_found()
 
 
 def member_row_or_removed(conn: Connection, project_id: str, principal_id: str) -> Any:

@@ -17,6 +17,7 @@ from sqlalchemy import Connection, and_, case, false, insert, or_, select, updat
 from sqlalchemy.exc import IntegrityError
 
 from maity_hub import (
+    access,
     availability,
     card_search,
     card_watches,
@@ -265,7 +266,7 @@ def _card(conn: Connection, card_id: str) -> Any:
     return conn.execute(select(t.card).where(t.card.c.id == card_id)).one()
 
 
-def _project_card(conn: Connection, mine: Membership, card_id: str) -> Any:
+def _project_card(conn: Connection, mine: Membership | access.OutsideReader, card_id: str) -> Any:
     row = conn.execute(
         select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
     ).first()
@@ -648,6 +649,7 @@ def _subtasks_proposed() -> ApiError:
 
 
 @router.get("/projects/{owner}/{slug}/tasks")
+@access.outside_read
 def list_tasks(
     slug: str,
     request: Request,
@@ -668,7 +670,7 @@ def list_tasks(
 ) -> JSONResponse:
     fg = reader_of(request)
     with read_transaction(engine_of(request)) as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         query = select(t.card).where(t.card.c.project_id == mine.project.id)
         wanted: list[str] = []
@@ -866,10 +868,11 @@ def _after(
 
 
 @router.get("/projects/{owner}/{slug}/tasks/{card_id}")
+@access.outside_read
 def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     fg = reader_of(request)
     with read_transaction(engine_of(request)) as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg, mine))
 
