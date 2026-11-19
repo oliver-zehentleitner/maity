@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -22,6 +23,7 @@ from maity_hub import clock, cross_owner
 from maity_hub import tables as t
 from maity_hub.auth.caller import Caller
 from maity_hub.db import read_transaction
+from maity_hub.inbox import PRIORITIES
 from maity_hub.routes import requests as requests_route
 from maity_hub.routes.requests import _all_entries, _all_page, _key, _page, _render, _sorted
 from tests import factory, flow
@@ -503,6 +505,289 @@ def test_a_cursor_the_hub_gave_before_still_pages_across_projects(
             cursor = _cursor({"s": sort, "k": _key(gone, sort)})
             assert inbox.paged(7, cursor) == inbox.oracle(7, cursor), sort
             conn.rollback()
+
+
+def _ten_listed(make_client: ClientFactory, migrated: Engine) -> Caller:
+    """Six open requests to the owner in their project from two agents and four personal ones
+    to the owner, across the priorities and between the project's in time: the owner's
+    `GET /requests?to=all` lists all ten, the kinds mixed in every sort."""
+    owner = flow.human(make_client, migrated)
+    flow.project(owner)
+    askers = [flow.agent(make_client, owner) for _ in range(2)]
+    members = [person(migrated, a.id).membership for a in askers]
+    made = [asked(askers[n % 2], to="owner", title=f"Which {n}?")["id"] for n in range(6)]
+    r = t.request.c
+    with migrated.begin() as conn:
+        for n, request_id in enumerate(made):
+            priority = PRIORITIES[n % len(PRIORITIES)]
+            conn.execute(update(t.request).where(r.id == request_id).values(priority=priority))
+        rows = {row.id: row for row in conn.execute(select(t.request).where(r.id.in_(made)))}
+        template = rows[made[0]]._mapping
+        personal = [
+            {
+                **template,
+                "id": f"req-prskeep{n:05d}",
+                "personal": True,
+                "to_kind": "human",
+                "to_member": None,
+                "to_human": owner.id,
+                "filed_by": "hub",
+                "asked_by": members[(n + 1) % 2],
+                "priority": PRIORITIES[(n + 1) % len(PRIORITIES)],
+                "created_at": rows[made[n + 1]].created_at + timedelta(microseconds=n + 1),
+            }
+            for n in range(4)
+        ]
+        conn.execute(insert(t.request), personal)
+    return Caller(kind="human", via="cookie", human_id=owner.id)
+
+
+def _set_status(conn: Connection, ids: Iterable[str], status: str) -> None:
+    conn.execute(update(t.request).where(t.request.c.id.in_(list(ids))).values(status=status))
+
+
+def _hide_on_full_read(
+    monkeypatch: pytest.MonkeyPatch,
+    migrated: Engine,
+    own_connection: bool,
+    choose: Callable[[list[str]], list[str]],
+) -> set[str]:
+    """Between the key reads and the full read, the requests `choose` picks of the page's ids
+    leave the inbox (answered), on the inbox's connection or committed from another one. The
+    set of every id hidden so far."""
+    hidden: set[str] = set()
+    original = requests_route._read_in_full
+
+    def hooked(conn: Connection, ids: list[str], listed: Any) -> list[Any]:
+        chosen = [i for i in choose(ids) if i not in hidden]
+        hidden.update(chosen)
+        if chosen and own_connection:
+            _set_status(conn, chosen, "answered")
+        elif chosen:
+            with migrated.begin() as other:
+                _set_status(other, chosen, "answered")
+        return original(conn, ids, listed)
+
+    monkeypatch.setattr(requests_route, "_read_in_full", hooked)
+    return hidden
+
+
+def _cursor_names(cursor: str | None, hidden: set[str]) -> set[str]:
+    """The hidden ids a cursor's `k` holds."""
+    if cursor is None:
+        return set()
+    raw = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+    return {value for value in raw["k"] if value in hidden}
+
+
+def _paged_once(
+    migrated: Engine, caller: Caller, sort: str, limit: int, cursor: str | None, own: bool
+) -> dict[str, Any]:
+    """The owner's `to=all` page: on a connection rolled back after, or in a read transaction
+    while another connection commits (`_hide_on_full_read`)."""
+    if own:
+        with migrated.connect() as conn:
+            page = Inbox(conn, caller, "all", sort, "open").paged(limit, cursor)
+            conn.rollback()
+            return page
+    with read_transaction(migrated) as conn:
+        return Inbox(conn, caller, "all", sort, "open").paged(limit, cursor)
+
+
+def _oracle_from(listed: Inbox, limit: int, cursor: str | None) -> list[str]:
+    """The ids the old path shows from `cursor` on."""
+    shown: list[str] = []
+    for _ in range(len(listed.entries) + 2):
+        page = listed.oracle(limit, cursor)
+        shown += [item["id"] for item in page["items"]]
+        cursor = page["next_cursor"]
+        if cursor is None:
+            return shown
+    raise AssertionError("no last page")
+
+
+def _rest(listed: Inbox, limit: int, cursor: str | None, hidden: set[str]) -> list[str]:
+    """The ids of every page from `cursor` on; no cursor names a hidden request."""
+    shown: list[str] = []
+    for _ in range(len(listed.entries) + 5):
+        if cursor is None:
+            return shown
+        page = listed.paged(limit, cursor)
+        assert not _cursor_names(page["next_cursor"], hidden), cursor
+        shown += [item["id"] for item in page["items"]]
+        cursor = page["next_cursor"]
+    raise AssertionError("no last page")
+
+
+def _ending_with(listed: Inbox, limit: int, personal: bool) -> tuple[str | None, str]:
+    """A cursor whose page ends on a personal request (`personal`) or a project's, and that
+    request: the first such one with a full page before it."""
+    entries = listed.entries
+    for at in range(limit - 1, len(entries)):
+        entry = entries[at]
+        if entry["id"].startswith("req-prskeep") is personal:  # `_ten_listed`'s personal ids
+            if at < limit:
+                cursor = None
+            else:
+                cursor = _cursor({"s": listed.sort, "k": _key(entries[at - limit], listed.sort)})
+            page = listed.oracle(limit, cursor)
+            assert page["items"][-1]["id"] == entry["id"], (listed.sort, limit)
+            return cursor, entry["id"]
+    raise AssertionError(("no request of that kind", listed.sort, limit, personal))
+
+
+@pytest.mark.parametrize("own_connection", [True, False], ids=["same_connection", "committed"])
+def test_a_pages_cursor_is_built_from_the_rows_it_keeps(
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    own_connection: bool,
+) -> None:
+    """The page's last row, a project's request or a personal one, leaves the inbox between
+    the key reads and the full read: the cursor names a row the page keeps, and the walk from
+    it lists every request the inbox holds after the change once. `committed` on SQLite reads
+    one snapshot: the page is the one from before the change."""
+    caller = _ten_listed(make_client, migrated)
+    sqlite_snapshot = not own_connection and migrated.dialect.name == "sqlite"
+    for personal in (False, True):
+        for sort in SORTS:
+            for limit in (1, 2):
+                with migrated.connect() as conn:
+                    before = Inbox(conn, caller, "all", sort, "open")
+                    start, boundary = _ending_with(before, limit, personal)
+                    before_ids = _oracle_from(before, limit, start)
+
+                def choose(ids: list[str], boundary: str = boundary) -> list[str]:
+                    return [boundary] if boundary in ids else []
+
+                hidden = _hide_on_full_read(monkeypatch, migrated, own_connection, choose)
+                where = (personal, sort, limit, own_connection)
+                page = _paged_once(migrated, caller, sort, limit, start, own_connection)
+                assert hidden == {boundary}, where
+                if not sqlite_snapshot:
+                    assert not _cursor_names(page["next_cursor"], hidden), where
+                with migrated.connect() as conn:
+                    if own_connection:
+                        _set_status(conn, hidden, "answered")
+                    after = Inbox(conn, caller, "all", sort, "open")
+                    shown = [i["id"] for i in page["items"]]
+                    shown += _rest(after, limit, page["next_cursor"], hidden)
+                    if sqlite_snapshot:
+                        assert shown == before_ids, where
+                    else:
+                        assert shown == _oracle_from(after, limit, start), where
+                        assert boundary not in shown, where
+                    conn.rollback()
+                monkeypatch.undo()
+                if not own_connection:
+                    with migrated.begin() as conn:
+                        _set_status(conn, hidden, "open")
+
+
+@pytest.mark.parametrize("own_connection", [True, False], ids=["same_connection", "committed"])
+def test_a_page_whose_rows_all_drop_reads_on(
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    own_connection: bool,
+) -> None:
+    """Every row of a page (the first, then the second, each ending on a project's request or
+    a personal one) leaves the inbox between the key reads and the full read: the page reads
+    on to the requests after them and is the page the inbox gives after the change; the walk
+    lists each request it holds once."""
+    caller = _ten_listed(make_client, migrated)
+    sqlite_snapshot = not own_connection and migrated.dialect.name == "sqlite"
+    limit = 2
+    for personal in (False, True):
+        for sort in SORTS:
+            for at_page in (0, 1):
+                with migrated.connect() as conn:
+                    before = Inbox(conn, caller, "all", sort, "open")
+                    cursor, _last = _ending_with(before, limit, personal)
+                    if at_page:
+                        cursor = before.oracle(limit, cursor)["next_cursor"]
+                    before_page = before.oracle(limit, cursor)
+                calls: list[list[str]] = []
+
+                def choose(ids: list[str], calls: list[list[str]] = calls) -> list[str]:
+                    calls.append(ids)
+                    return ids if len(calls) == 1 else []  # the target page's first full read
+
+                hidden = _hide_on_full_read(monkeypatch, migrated, own_connection, choose)
+                where = (personal, sort, at_page, own_connection)
+                page = _paged_once(migrated, caller, sort, limit, cursor, own_connection)
+                assert hidden == {i["id"] for i in before_page["items"]}, where
+                with migrated.connect() as conn:
+                    if own_connection:
+                        _set_status(conn, hidden, "answered")
+                    after = Inbox(conn, caller, "all", sort, "open")
+                    if sqlite_snapshot:
+                        assert page == before_page, where
+                    else:
+                        assert page == after.oracle(limit, cursor), where
+                        assert not _cursor_names(page["next_cursor"], hidden), where
+                        shown = [i["id"] for i in page["items"]]
+                        shown += _rest(after, limit, page["next_cursor"], hidden)
+                        assert shown == _oracle_from(after, limit, cursor), where
+                        assert not hidden & set(shown), where
+                    conn.rollback()
+                monkeypatch.undo()
+                if not own_connection:
+                    with migrated.begin() as conn:
+                        _set_status(conn, hidden, "open")
+
+
+@pytest.mark.parametrize("own_connection", [True, False], ids=["same_connection", "committed"])
+def test_a_walk_whose_rows_keep_dropping_ends(
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    own_connection: bool,
+) -> None:
+    """Every row read in full leaves the inbox just before, project requests and personal
+    ones alike: each call reads on `READ_ON_ROUNDS` times, then answers an empty page with the
+    cursor it was called with (a place before every request on the first page), and the walk
+    ends once nothing is left. `committed` on SQLite reads one snapshot per call: the full read
+    still holds the rows, and the page is the one from before the change."""
+    caller = _ten_listed(make_client, migrated)
+    sqlite_snapshot = not own_connection and migrated.dialect.name == "sqlite"
+    rounds = requests_route.READ_ON_ROUNDS
+    for sort in SORTS:
+        for limit, start_after_first in ((1, False), (2, False), (1, True)):
+            where = (sort, limit, start_after_first, own_connection)
+            with migrated.connect() as conn:
+                before = Inbox(conn, caller, "all", sort, "open")
+                cursor = before.oracle(1, None)["next_cursor"] if start_after_first else None
+                before_page = before.oracle(limit, cursor)
+            hidden = _hide_on_full_read(monkeypatch, migrated, own_connection, lambda ids: ids)
+            with migrated.connect() as conn:
+                calls = 0
+                while True:
+                    calls += 1
+                    assert calls <= 6, where
+                    if own_connection:
+                        page = Inbox(conn, caller, "all", sort, "open").paged(limit, cursor)
+                    else:
+                        page = _paged_once(migrated, caller, sort, limit, cursor, False)
+                    if sqlite_snapshot:
+                        assert page == before_page, where
+                        break
+                    assert page["items"] == [], where
+                    assert not _cursor_names(page["next_cursor"], hidden), where
+                    if page["next_cursor"] is None:
+                        break
+                    # The bound was reached: the cursor the call was given, or the start.
+                    start = requests_route._next_cursor(sort, requests_route._start_key(sort))
+                    assert page["next_cursor"] == (cursor or start), where
+                    assert len(hidden) % (rounds * limit) == 0, where
+                    cursor = page["next_cursor"]
+                if not sqlite_snapshot:
+                    assert len(hidden) == 10 - int(start_after_first), where
+                conn.rollback()
+            monkeypatch.undo()
+            if not own_connection:
+                with migrated.begin() as conn:
+                    _set_status(conn, hidden, "open")
 
 
 @pytest.mark.parametrize(

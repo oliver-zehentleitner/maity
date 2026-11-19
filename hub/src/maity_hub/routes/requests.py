@@ -1173,7 +1173,8 @@ def _key_shaped(key: Any, sort: str) -> bool:
 LEFTOVER_BATCH_MAX = 1000
 # What `_decided` reads of a leftover request beyond `request_sql.DECIDED_BY`: the address.
 _ADDRESS = ("to_profile", "to_human", "to_instance")
-# The rounds a page reads on past keys whose rows all fail when read in full (`_project_page`).
+# The rounds a page reads on past keys whose rows all fail when read in full (`_project_page`,
+# `_all_page`).
 READ_ON_ROUNDS = 3
 # `_start_key`'s place before every request: times outside any request's, within every
 # database's range, and an id no request needs.
@@ -1396,7 +1397,7 @@ def _listing_keys(
     them with it, until it holds the page plus one. Both merged in order are the result."""
     r = t.request.c
     mine, to, target = listing.mine, listing.to, listing.target
-    since =[order.after(after)] if after is not None else []
+    since = [order.after(after)] if after is not None else []
     if to == "me":
         visible = [request_sql.addressed(mine)]
     elif to == "all":
@@ -1568,8 +1569,9 @@ def _all_page(
     limiting. Each membership's listing gives its first page plus one after the cursor
     (`_listing_keys`), the personal inbox its own (`_personal_keys`); merged by key, the first
     page plus one are the page's keys, and only those rows are read in full and decided again
-    (`_all_redecided`). A project whose `to` is no address there is left out, as before
-    (`_all_entries`)."""
+    (`_all_redecided`). The cursor is built from the last row the page keeps; a page that keeps
+    none reads on, all streams merged again past its keys, as `_project_page` does. A project
+    whose `to` is no address there is left out, as before (`_all_entries`)."""
     listings: list[tuple[_Listing, dict[str, Any]]] = []
     for project in _member_projects(conn, caller):
         full_name = namespace.full_name(conn, project)
@@ -1592,29 +1594,51 @@ def _all_page(
             listings.append((listing, {"project": inline}))
     after_key = _cursor_key(cursor, sort) if cursor is not None else None
     order = _order(conn, sort)
-    after = _sql_key(sort, after_key) if after_key is not None else None
-    # Each key with the listing it came from (its index in `listings`), None for the personal
-    # inbox: the row read in full is decided again by that listing's rule.
-    streams: list[list[tuple[Any, int | None]]] = [
-        [(row, n) for row in _listing_keys(conn, listing, order, after, limit)]
-        for n, (listing, _extra) in enumerate(listings)
-    ]
-    personal = _personal_keys(
-        conn, caller, order, after, limit, status=status, class_=class_, asked_by=asked_by, to=to
-    )
-    streams.append([(row, None) for row in personal])
-    merged = list(
-        islice(
-            heapq.merge(*streams, key=lambda kept: order.key(kept[0]), reverse=order.descending),
-            limit + 1,
+
+    def keys_after(at: tuple[Any, ...] | None) -> list[tuple[Any, int | None]]:
+        """The page plus one's keys after `at`, every stream merged. Each key with the listing
+        it came from (its index in `listings`), None for the personal inbox: the row read in
+        full is decided again by that listing's rule."""
+        streams: list[list[tuple[Any, int | None]]] = [
+            [(row, n) for row in _listing_keys(conn, listing, order, at, limit)]
+            for n, (listing, _extra) in enumerate(listings)
+        ]
+        personal = _personal_keys(
+            conn, caller, order, at, limit, status=status, class_=class_, asked_by=asked_by, to=to
         )
-    )
-    page = merged[:limit]
-    next_cursor = _cursor_at(sort, order.key(page[-1][0])) if len(merged) > limit else None
-    source = {row.id: n for row, n in page}
-    extras = {row.id: None if n is None else listings[n][1] for row, n in page}
-    decided = _all_redecided(conn, caller, listings, source, status, class_, asked_by)
-    rows = [decided[row.id] for row, _ in page if row.id in decided]
+        streams.append([(row, None) for row in personal])
+        merged = heapq.merge(
+            *streams, key=lambda kept: order.key(kept[0]), reverse=order.descending
+        )
+        return list(islice(merged, limit + 1))
+
+    # As in `_project_page`: the cursor is built from the last row the page keeps, and a page
+    # that keeps none reads on past its keys, up to `READ_ON_ROUNDS` times (3c9e5a71).
+    position = _sql_key(sort, after_key) if after_key is not None else None
+    for _ in range(READ_ON_ROUNDS):
+        merged = keys_after(position)
+        page = merged[:limit]
+        if not page:
+            return {"items": [], "next_cursor": None}
+        source = {row.id: n for row, n in page}
+        decided = _all_redecided(conn, caller, listings, source, status, class_, asked_by)
+        shown = [(row, n) for row, n in page if row.id in decided]
+        if shown:
+            # More may follow the last row kept: keys past the page, or rows left out after it,
+            # which the next page reads afresh.
+            more = len(merged) > limit or shown[-1][0] is not page[-1][0]
+            next_cursor = _cursor_at(sort, order.key(shown[-1][0])) if more else None
+            break
+        if len(merged) <= limit:  # no key after the rows left out: nothing more is listed
+            return {"items": [], "next_cursor": None}
+        position = order.key(page[-1][0])  # every row left out: read on past them
+    else:
+        # No row kept in `READ_ON_ROUNDS` rounds: the position this call started from, which
+        # the next call reads afresh.
+        start = cursor if cursor is not None else _next_cursor(sort, _start_key(sort))
+        return {"items": [], "next_cursor": start}
+    extras = {row.id: None if n is None else listings[n][1] for row, n in shown}
+    rows = [decided[row.id] for row, _ in shown]
     project_inline: dict[str, Any] = {}
     org_inline: dict[str, Any] = {}
 
