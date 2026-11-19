@@ -604,6 +604,36 @@ renderer puts it there.
 HTML. Such a change keeps the row's `lastmod`, because the sitemap's date says what a crawler can read. Rejected:
 `data` in the digest, which would move that date.
 
+**Superseded for signed-in outsiders (2026-11-19).** The maintainer's decision of 2026-11-14 (tsk-yr3ckca01b9q,
+"public is public", `docs/api.md` §2.3) has a signed-in human without an active membership read a public project
+through the member routes; a visitor without a session still reads only `GET /public/pages/{path}`, and the
+rejection above still holds for them. For the outsider the risk this entry names (a field added later becomes
+public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, PR 2, the lead's rulings):
+
+- A closed allow-list of routes: `access.OUTSIDE_READS`, nine GETs (the project, its members and one member, the
+  cards and one card, a card's history and notes, the logo and the banner). Only those endpoints call
+  `access.reader`, which hands them an `OutsideReader` (no `Membership`, `project:read` alone, `not_found` where a
+  member would get `forbidden`), and each carries `@outside_read`. `tests/test_outside_reads.py` holds the three
+  together and walks every project route the app has: an unknown path parameter fails the walk, so a new route
+  is closed until someone opens it on purpose.
+- A gate in `ProjectRoute`: an outsider's call to any other project route answers `not_found` before FastAPI
+  reads its body or query, so no `400` names a route's fields to them. Members, owners of an agent or a runner
+  in the project, strangers to a private or unknown project, agents and callers without a session pass it
+  unchanged.
+- An allow-list of the project view's keys (`OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from
+  outside until it is named; never `repository`, `settings` beyond `language` (`role_rules`), `memory` or
+  `setup`, and the links as the public page shows them.
+- The member views leave out `isolation_windows`, `isolated`, `last_seen_at` and presence (also each instance's)
+  besides the fields only an admin, the member or an agent's owner reads: the public page names no isolated agent
+  and shows no presence, so the outsider's read does not open more (fail closed). Notes and history show a
+  redaction's tombstone without its reason; no read of a card carries a restricted text; the outsider has no
+  hidden window of its own. Reading a public project never makes the outsider a colleague for `links_visible`.
+  `GET /bootstrap` stays with members.
+
+Rejected: filtering the member routes by a denylist for the outsider (the risk above, route by route); reusing the
+public page's stored `data` for the outsider (a visitor's projection of a few views, partly rendered on a timer,
+without the card history and the member and card fields the contract opens to an outsider).
+
 ## A visitor on the way to a public page never ends at the login
 
 **Id:** 439a36e9-c05c-4c87-a3d3-1cd2ff5061d7
