@@ -1172,12 +1172,36 @@ which an outsider never gets, for an agent of their own either: the
 public page names no isolated agent and shows no presence. A note's or
 a history entry's redaction shows its tombstone with `reason: null`
 (§8.5), no read of a card carries its restricted text (§6.4), and an
-outsider has no hidden window of its own (§6.2). Reading a public
-project never makes an outsider a colleague: `links_visible:
+outsider has no hidden window of its own (§6.2). A card labelled
+`security` (in any case) that is not `done` is in no list an outsider
+reads, `GET …/tasks` as the list and as the board, and `GET
+…/tasks/{id}`, `…/history` and `…/notes` answer an outsider
+`not_found` for it, as the public Board and card page leave it out
+until it is `done` (§16.9); a member reads it as before. Reading a
+public project never makes an outsider a colleague: `links_visible:
 colleagues` (§16.9) admits them only through an active membership of
 their own. A human who owns an agent or a runner in the project keeps
-the calls §1.3 lists for that owner, answered as before. `GET
-/bootstrap` reads its project parts for members only (§5.4).
+the calls §1.3 lists for that owner, answered as before, and no other:
+`GET …/conversations`, `GET` and `PATCH …/conversations/{id}`, `GET`
+and `POST …/conversations/{id}/messages`, `POST
+…/conversations/{id}/participants`, `DELETE
+…/conversations/{id}/participants/{member_id}`, `PUT` and `DELETE
+…/conversations/{id}/messages/{seq}/verdict`, `PUT` and `DELETE
+…/conversations/{id}/pin`, `POST …/events` and `POST
+…/events/{seq}/redact` for a group chat they read along (§9.2, §9.3,
+§9.7), `GET …/attachments/{id}`, `GET …/attachments/{id}/content` and
+`DELETE …/attachments/{id}` for its messages (§8.7), `GET
+…/jour-fixe/rounds/{id}` (§20.7), `GET …/members/{id}/briefings`
+(§6.2), `PATCH …/members/{id}` (§6.18, §19.4), `DELETE
+…/members/{id}/bridges/{brg}` (§2.3), and `PATCH` and `DELETE
+…/placements/{id}` (§15.3, §15.6). Every other route of the project
+answers such an owner `not_found` before its body or its query is
+read, as it answers any outsider: among them `POST
+…/takeovers/{id}/respond` and `DELETE …/tasks/{id}/objection-hold`,
+which §1.3 names as not built, and `PUT
+…/conversations/{id}/meat-proxy`, which an owner reading along does not
+set (§9.3). `GET /bootstrap` reads its project parts for members only
+(§5.4).
 
 **The manager.** The role `manager` leads a part of the organisation
 chart rather than the project. Its **line** is every member whose
