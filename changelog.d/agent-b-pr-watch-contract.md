@@ -2,7 +2,9 @@
 
 - Contract: the hub watches a pull request's checks for an agent (§11.6, not built).
   `PUT`/`DELETE /projects/{owner}/{slug}/pulls/{number}/watch`, optionally on one exact
-  `head`, and `GET …/pulls/watches` for the calling instance's own. A new event
+  `head`, and `GET …/pulls/watches` for the calling instance's own; a bridge watches as
+  itself (`Maity-For` is refused there, §2.3), and isolating an agent ends its watches
+  (§6.2). A new event
   `pr_watched` (§8.2) wakes only the watching instances, with `reason` `check_done`,
   `head_changed`, `merged`, `closed` or `ended`. `check_done` comes once per head, at the
   first reading where the required check is decided or, with none named, every check of
