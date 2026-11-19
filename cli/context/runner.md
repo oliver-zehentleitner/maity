@@ -2746,12 +2746,15 @@ this agent's own (a clone another agent or a person holds hits the in-use
 refusal untouched, before anything is pruned). It runs no git — the runner
 runs no git in an existing clone, which would run the agent's code as the
 runner — so it removes by file operations only, each directory opened from
-the one above without following a link, touching only a worktree whose
-working tree is a real directory directly under `.claude/worktrees/`. A link
-on the way, and a registered worktree pointing out of the clone, are both
-left — the latter keeps a planted redirect refusing the start. Having no git
-it cannot read whether a leftover holds uncommitted changes, so a restart's
-prune discards whatever is in the leftover worktree, including work a
+the one above without following a link, touching only a registration whose
+working tree is, by name, this clone's own `.claude/worktrees/<id>`: the
+working-tree directory itself, or a registration left dangling once that
+working tree is gone, which has nothing to lose. A link on the way, a
+non-directory planted in the working tree's place, and a registered worktree
+pointing out of the clone, are all left — the last keeps a planted redirect
+refusing the start. Having no git it cannot read whether a leftover holds
+uncommitted changes, so a restart's prune discards whatever is in the
+leftover worktree, including work a
 subagent did not merge; there is no in-session save, and a leftover found at
 a start is a past session's, with nobody to ask.
 
@@ -2767,9 +2770,11 @@ not have — so tolerating one would reopen across worktrees exactly what the
 check closes for the main clone. Pruning at placement start needs no git and
 runs before the agent session, so no git ever runs in a clone that still
 holds a worktree's agent-influenceable metadata. What makes the removal safe
-is its scope: only a working tree that is a real directory, with no link on
-the way, directly under this clone's `.claude/worktrees/` is touched;
-anything else is left.
+is its scope: only a registration whose working tree is, by name, directly
+under this clone's `.claude/worktrees/` is touched — its working-tree
+directory, or a dangling registration whose working tree is already gone and
+so has nothing to lose — with no link followed on the way; a link or a
+non-directory in that place, and anything else, is left.
 
 **Rejected alternatives:**
 - Tolerating a present worktree in the clone check: relax the check so a

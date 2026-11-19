@@ -147,22 +147,63 @@ def test_prune_orphans_blocked_by_a_symlinked_claude_leaves_the_registration(clo
 @pytest.mark.parametrize(
     "gitdir",
     [
-        "{root}/.claude/worktrees/../.git\n",  # a `..` segment
-        "{root}/.claude/worktrees/agent-x/evil\n",  # the basename is not `.git`
-        "{root}/.claude/worktrees/agent-x/.git\nextra\n",  # a second line
-        "relative/.git\n",  # not absolute
+        pytest.param("{root}/.claude/worktrees/../.git\n", id="dotdot-segment"),
+        pytest.param("{root}/./.claude/worktrees/agent-x/.git\n", id="dot-segment"),
+        pytest.param("{root}/.claude/worktrees/agent-x/evil\n", id="basename-not-git"),
+        pytest.param("{root}/.claude/worktrees/agent-x/.git\nextra\n", id="second-line"),
+        pytest.param("relative/.git\n", id="not-absolute"),
+        pytest.param(
+            "{root}/.claude/worktrees/agent-x/.git" + " " * 5000 + "\n", id="over-size-bound"
+        ),
+        pytest.param("{root}/.claude/worktrees/agent-x/.git\x00\n", id="embedded-nul"),
     ],
 )
 def test_prune_orphans_refuses_a_malformed_gitdir(clone: Path, gitdir: str) -> None:
-    """A `gitdir` with a `..` segment, a basename that is not `.git`, a second line, or a
-    relative path is refused: the registration is left, never acted on."""
-    (clone / ".claude" / "worktrees").mkdir(parents=True)
-    admin = clone / ".git" / "worktrees" / "agent-x"
+    """Each gitdir guard is pinned as the one that refuses: a real `.claude/worktrees/agent-x`
+    child is present, so were a guard dropped the admin entry would be cleared. A `.` or `..`
+    segment (checked on the raw string, before a Path folds `.` away), a basename that is not
+    `.git`, a second line, a relative path, an over-size-bound path, or an embedded NUL each
+    leaves the registration, never acts on it."""
+    (clone / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)  # a real child: only a
+    admin = clone / ".git" / "worktrees" / "agent-x"  # gitdir guard can refuse now
     admin.mkdir(parents=True)
     (admin / "gitdir").write_text(gitdir.format(root=clone))
     removed, _ = _lists(worktree.prune_orphans(str(clone)))
     assert ".git/worktrees/agent-x" not in removed
     assert admin.exists()
+
+
+def test_prune_orphans_refuses_a_symlinked_gitdir(clone: Path) -> None:
+    """The `gitdir` file is opened without following a link: a `gitdir` that is a symlink to a
+    file naming this clone's own worktree is refused, not followed — the registration is left even
+    though a real `.claude/worktrees/agent-x` child is present (pins the gitdir open's
+    O_NOFOLLOW)."""
+    (clone / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    admin = clone / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    target = clone.parent / "gitdir-target"
+    target.write_text(f"{clone / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    (admin / "gitdir").symlink_to(target)  # the gitdir file is a link
+    removed, _ = _lists(worktree.prune_orphans(str(clone)))
+    assert ".git/worktrees/agent-x" not in removed
+    assert admin.exists()
+
+
+def test_prune_orphans_does_not_read_or_remove_through_a_symlinked_admin_dir(clone: Path) -> None:
+    """`.git/worktrees` reached without following a link (pins `_descend`'s O_NOFOLLOW): when it is
+    a symlink to a directory of registrations, the prune neither reads nor removes through it, so
+    the external registration is left exactly where it is."""
+    (clone / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    external = clone.parent / "external-worktrees"
+    (external / "agent-x").mkdir(parents=True)
+    (external / "agent-x" / "gitdir").write_text(
+        f"{clone / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n"
+    )
+    (clone / ".git").mkdir(parents=True, exist_ok=True)
+    (clone / ".git" / "worktrees").symlink_to(external)  # the admin dir itself is a link
+    removed, _ = _lists(worktree.prune_orphans(str(clone)))
+    assert ".git/worktrees/agent-x" not in removed
+    assert (external / "agent-x").exists()  # never removed through the link
 
 
 def test_prune_orphans_does_not_report_a_symlinked_admin_as_removed(clone: Path) -> None:
@@ -205,6 +246,53 @@ def test_prune_orphans_clears_a_stale_registration_without_a_working_tree(placed
     assert clonecheck.not_inspectable(placed) is None
 
 
+@pytest.mark.parametrize("sibling", [None, "agent-other"])
+def test_prune_orphans_clears_a_dangling_registration_with_the_scope_present(
+    placed: Path, sibling: str | None
+) -> None:
+    """`.claude/worktrees/` is present — empty, or holding another worktree — but the
+    registration's own `<id>` working tree is gone: a dangling registration with no working tree
+    to lose. The prune clears it rather than leaving the clone stuck, and it reads plain again."""
+    (placed / ".claude" / "worktrees").mkdir(parents=True)
+    if sibling is not None:
+        _worktree(placed, sibling)  # another valid worktree keeps the scope non-empty
+    admin = placed / ".git" / "worktrees" / "agent-x"  # its `<id>` working tree is absent
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{placed / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    assert clonecheck.not_inspectable(placed) is not None
+    removed, _ = _lists(worktree.prune_orphans(str(placed)))
+    assert ".git/worktrees/agent-x" in removed
+    assert not admin.exists()
+    assert clonecheck.not_inspectable(placed) is None
+
+
+@pytest.mark.parametrize("child", ["symlink", "file"])
+def test_prune_orphans_leaves_a_registration_whose_child_is_not_a_plain_dir(
+    clone: Path, child: str
+) -> None:
+    """With the scope present, a registered `<id>` that is a link or a non-directory (not a real
+    directory, and not simply gone) is left untouched: the prune never follows it or clears the
+    registration, so a planted child cannot pass the clone check by way of the prune."""
+    (clone / ".claude" / "worktrees").mkdir(parents=True)
+    child_path = clone / ".claude" / "worktrees" / "agent-x"
+    if child == "symlink":
+        victim = clone.parent / "victim"
+        victim.mkdir()
+        (victim / "keep.txt").write_text("not the prune's to touch\n")
+        child_path.symlink_to(victim)
+    else:
+        child_path.write_text("not a directory\n")  # ENOTDIR when opened as a directory
+    admin = clone / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{clone / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    removed, left = _lists(worktree.prune_orphans(str(clone)))
+    assert ".git/worktrees/agent-x" not in removed
+    assert ".git/worktrees/agent-x" in left
+    assert admin.exists()
+    if child == "symlink":
+        assert (clone.parent / "victim" / "keep.txt").exists()  # the link was never followed
+
+
 # --- the refusal hint: a restart clears a `.claude/worktrees/` leftover, named only for one ----
 
 
@@ -226,6 +314,35 @@ def test_a_worktree_elsewhere_gets_no_restart_hint(placed: Path) -> None:
         with clonecheck.placement_git(placed):
             pass
     assert "restart" not in str(exc.value).lower()
+
+
+def test_another_feature_beside_a_claude_worktree_gets_no_restart_hint(placed: Path) -> None:
+    """The restart hint belongs to the worktrees refusal itself. When the real blocker is another
+    unsupported feature (a submodule), a `.claude/worktrees/` registration beside it does not earn
+    a hint that a restart clears the block — the submodule, not the leftover, is what refuses."""
+    _worktree(placed, "agent-x")  # a real leftover a restart's prune could clear on its own
+    (placed / ".git" / "modules" / "sub").mkdir(parents=True)  # but a submodule is the blocker
+    with pytest.raises(clonecheck.Refused) as exc:
+        with clonecheck.placement_git(placed):
+            pass
+    message = str(exc.value)
+    assert "Submodules are" in message  # the refusal is for the submodule
+    assert "restart" not in message.lower()  # and names no false way out
+
+
+def test_a_blocked_scope_gets_no_restart_hint(placed: Path) -> None:
+    """When `.claude` is reached through a link, the placement-start prune clears nothing — so the
+    worktrees refusal names no restart, which would not return the clone to a plain state."""
+    (placed / ".claude").symlink_to(placed.parent / "nowhere")  # the scope is behind a link
+    admin = placed / ".git" / "worktrees" / "agent-x"
+    admin.mkdir(parents=True)
+    (admin / "gitdir").write_text(f"{placed / '.claude' / 'worktrees' / 'agent-x' / '.git'}\n")
+    with pytest.raises(clonecheck.Refused) as exc:
+        with clonecheck.placement_git(placed):
+            pass
+    message = str(exc.value)
+    assert "Worktrees are" in message  # still the worktrees refusal
+    assert "restart" not in message.lower()  # but no misleading way out
 
 
 # --- the supervisor's internal CLI surface (no agent-callable op) ------------------------------

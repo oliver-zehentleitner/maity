@@ -447,28 +447,16 @@ CLAUDE_WORKTREES = (".claude", "worktrees")
 
 
 _GITDIR_MAX = 4096
-_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 
 
-def _gitdir_working_tree(admin: Path) -> Path | None:
-    """The working tree a `.git/worktrees/<name>` registers (the parent of what its `gitdir`
-    file names), or None when the file is not a plain, bounded, single-line absolute path whose
-    basename is `.git` with no `.` or `..` segment. The file is opened without following a link
-    and without blocking (O_NOFOLLOW|O_NONBLOCK), and read only when it is a regular file and at
-    most `_GITDIR_MAX` bytes, so a planted link, FIFO or oversized file is refused — never
-    followed, waited on, or read whole."""
-    try:
-        fd = os.open(admin / "gitdir", os.O_RDONLY | NOFOLLOW | _NONBLOCK)
-    except OSError:
-        return None
-    try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            return None
-        raw = os.read(fd, _GITDIR_MAX + 1)
-    except OSError:
-        return None
-    finally:
-        os.close(fd)
+def _parse_gitdir(raw: bytes) -> Path | None:
+    """The working tree named by a `.git/worktrees/<name>/gitdir` file's bytes (the parent of
+    what it names), or None when it is not a plain, bounded, single-line absolute path whose
+    basename is `.git` with no `.` or `..` segment. The caller opens the file without following a
+    link and without blocking (O_NOFOLLOW|O_NONBLOCK) and reads it only when it is a regular file
+    at most `_GITDIR_MAX` bytes (worktree._admin_working_tree), so a planted link, FIFO or
+    oversized file is refused — never followed, waited on, or read whole. The raw segments are
+    checked, not a normalised path, so a `.` or `..` component cannot be folded away first."""
     if len(raw) > _GITDIR_MAX or b"\0" in raw:
         return None
     # A gitdir file is one line: the path and the trailing newline git writes. Any second line
@@ -480,7 +468,7 @@ def _gitdir_working_tree(admin: Path) -> Path | None:
     if not target or not os.path.isabs(target):
         return None
     path = Path(target)
-    if path.name != ".git" or any(part in (os.curdir, os.pardir) for part in path.parts):
+    if path.name != ".git" or any(seg in (os.curdir, os.pardir) for seg in target.split("/")):
         return None
     return path.parent
 
@@ -495,21 +483,6 @@ def _under_claude_worktrees(root: Path, working_tree: Path) -> bool:
     except ValueError:
         return False
     return len(rest) == 3 and rest[:2] == CLAUDE_WORKTREES
-
-
-def _has_claude_worktree(root: Path) -> bool:
-    """Whether the clone has at least one registered worktree whose working tree is under its
-    own `.claude/worktrees/` — the leftover the placement-start prune clears. Read-only, no
-    git."""
-    try:
-        names = os.listdir(root / ".git" / "worktrees")
-    except OSError:
-        return False
-    for name in names:
-        working = _gitdir_working_tree(root / ".git" / "worktrees" / name)
-        if working is not None and _under_claude_worktrees(root, working):
-            return True
-    return False
 
 
 # The configuration keys maity passes on to git from the clone's own, under the runner: what
@@ -605,10 +578,16 @@ def _refusal(root: Path, finding: Finding) -> str:
         message = (f"{said} {feature} not supported under the runner yet, so maity runs no git"
                    " in this clone while that is set up")  # fmt: skip
         # A worktree a Claude Code subagent left under the clone's own `.claude/worktrees/` is
-        # the one case with a way out: the runner prunes it on the next placement start.
-        if _has_claude_worktree(root):
+        # the one case with a way out: the runner prunes it on the next placement start. The
+        # hint belongs only to that refusal (the `.git/worktrees` entry), not to another
+        # unsupported feature that happens to sit beside such a leftover, and only when the prune
+        # would actually clear a registration — not when the scope or the admin entry is a link,
+        # where it clears nothing and the hint would mislead.
+        from maity.runner import worktree
+
+        if finding.item == "worktrees" and worktree.clears_a_leftover(str(root)):
             message += (
-                " A worktree left under .claude/worktrees/ (a Claude Code subagent's) is cleared"
+                ". A worktree left under .claude/worktrees/ (a Claude Code subagent's) is cleared"
                 " when the placement next starts, returning the clone to a plain state; restart"
                 " the placement"
             )
