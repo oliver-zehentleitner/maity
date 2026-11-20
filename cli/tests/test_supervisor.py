@@ -3224,6 +3224,51 @@ def test_a_reset_starts_a_fresh_session_and_reports_it(
     assert (last["observed_generation"], last["state"], last["sessions"]) == (2, "running", 1)
 
 
+def test_an_adopted_session_counts_as_the_resets_fresh_one(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runner restarted inside a reset's generation, before a save of `sessions` reached
+    actual.json (or without one): the live session it adopts is the reset's fresh one, so a
+    hung end later in that generation resumes it instead of starting fresh again."""
+    sup, backend, reports, _, _ = world
+    recorded(sup.cfg)
+    backend.live[SESSION] = tmux.Session(SESSION, False, None, 99, "plc-0003", 2)
+    sup.update([placement(mode="interactive", health=HEALTH, generation=2, fresh_session=True)])
+    sup.tick()
+    assert states(reports)[-1] == ("running", "adopted", None)
+    rec = sup.records["plc-0003"]
+    assert rec.sessions == 1 and reports.sent[-1][1]["sessions"] == 1
+    sup.tick()  # the idle check's first look
+    hung_round(world)
+    assert rec.resume
+    seen: list[bool] = []
+    context = sup._context
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(args[-1])
+        return context(*args, **kwargs)
+
+    monkeypatch.setattr(sup, "_context", spy)
+    resumed(world)
+    assert seen == [True]  # the adopted session continued, not a second reset
+
+
+def test_an_unknown_target_reports_the_new_generations_sessions(world: Any) -> None:
+    """A generation that names a target the runner lacks fails at once; its report carries
+    that generation's count of fresh sessions, none, not the one before it."""
+    sup, _, reports, clock, _ = world
+    sup.records["plc-0003"] = supervisor.Record(
+        generation=1, since=clock.now, sessions=1, reports_sessions=True
+    )
+    sup.update([placement(generation=2, target="nowhere", fresh_session=True)])
+    sup.tick()
+    last = reports.sent[-1][1]
+    assert (last["state"], last["detail"], last["observed_generation"]) == (
+        "failed", "target_unknown", 2
+    )  # fmt: skip
+    assert last["sessions"] == 0
+
+
 def test_sessions_go_only_to_a_hub_that_carries_fresh_session(world: Any) -> None:
     """An older hub's placement has no `fresh_session`, and its Strict report model would
     refuse an unknown `sessions`: the runner leaves the field out there."""

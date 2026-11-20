@@ -1231,6 +1231,25 @@ def test_placement_restart_with_rejoin(joined: Path, fake: fakehub.FakeHub) -> N
     assert fake.signed()[-1].json() == {"rejoin": True}
 
 
+def test_placement_restart_with_a_fresh_session(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A reset (§15.6) is a restart with `fresh_session: true`; it combines with `--rejoin`,
+    and a plain restart sends neither."""
+    placements(fake)
+    fake.routes[("POST", f"{P}/placements/plc-0003/restart")] = lambda seen: (
+        200, PLACEMENT
+    )  # fmt: skip
+    assert cli.main(["placement", "restart", "agent-f", "--fresh-session"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"fresh_session": True}
+    assert "restarting on a fresh session" in capsys.readouterr().out
+    argv = ["placement", "restart", "agent-f", "--rejoin", "--fresh-session"]
+    assert cli.main(argv) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {"rejoin": True, "fresh_session": True}
+    assert cli.main(["placement", "restart", "agent-f"]) == cli.EXIT_OK
+    assert fake.signed()[-1].json() == {}
+
+
 def test_wait_keep_cursor_acknowledges_nothing(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:

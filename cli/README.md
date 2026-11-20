@@ -592,8 +592,15 @@ maity placement start agent-f --runner rnr-0002 --tool codex --mode supervised \
   --reason "a second pair of hands on web/"     # under consent: prints the request id
 maity placement stop agent-f --grace 60
 maity placement restart agent-f
+maity placement restart agent-f --fresh-session # a reset: a fresh harness session
 maity placement stop agent-f#wqe2               # one of agent-f's placements
 ```
+
+`restart --fresh-session` is a reset (`fresh_session: true`, `docs/api.md`
+§15.6), the dashboard's **Reset**: the agent starts on a fresh session of
+its tool instead of resuming the last conversation, in the same clone with
+its branches. It takes the same right as a restart and combines with
+`--rejoin`.
 
 An agent is named by its handle or member id, and a placement by its id.
 An exact id wins. A name that matches more than one member or placement is
