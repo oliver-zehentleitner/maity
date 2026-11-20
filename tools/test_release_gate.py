@@ -63,8 +63,18 @@ BRANCH = "d" * 40  # a commit only on a branch
 UNKNOWN = "e" * 40  # a commit the checkout cannot get
 
 
+OLD = "f" * 40  # a commit of main whose hub-mariadb.yml predates hub-mariadb-11-8
+UNREADABLE = "9" * 40  # a commit of main whose workflow file cannot be read
+ALL_JOBS = {"decide", "hub-mariadb", "hub-mariadb-11-8", "report"}
+
+
 class FakeGit:
     """TAG and LATER share the hub files; OTHER differs; BRANCH is not on main."""
+
+    def workflow_jobs(self, sha):
+        if sha in (UNKNOWN, UNREADABLE):
+            return None
+        return ALL_JOBS - {"hub-mariadb-11-8"} if sha == OLD else ALL_JOBS
 
     def on_main(self, sha):
         return None if sha == UNKNOWN else sha != BRANCH
@@ -144,9 +154,18 @@ def maria(rid, sha, title="hub-mariadb ci", event="workflow_dispatch", status="c
     return run(rid, sha=sha, status=status, event=event, title=title)
 
 
+def with_11_8(jobs):
+    """The tables below name the 11.4 suite; a run of today's workflow has the 11.8 job too,
+    green unless the test names it."""
+    return {
+        rid: ({"hub-mariadb-11-8": "success", **named} if "hub-mariadb" in named else named)
+        for rid, named in jobs.items()
+    }
+
+
 class MariaDb(unittest.TestCase):
     def api(self, runs, jobs):
-        return FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **jobs})
+        return FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **with_11_8(jobs)})
 
     def test_green_run_on_the_tag_passes(self):
         code, out = gate(
@@ -188,6 +207,75 @@ class MariaDb(unittest.TestCase):
         code, out = gate(self.api([maria(5, TAG)], {5: {"hub-mariadb": "cancelled"}}))
         self.assertEqual(code, 1)
         self.assertIn("hub-mariadb is cancelled", out)
+
+    def test_a_red_11_8_job_stops_a_green_11_4_suite(self):
+        for result in ("failure", "cancelled", "timed_out", "skipped"):
+            jobs = {5: {"hub-mariadb": "success", "hub-mariadb-11-8": result}}
+            code, out = gate(self.api([maria(5, TAG)], jobs))
+            self.assertEqual(code, 1, result)
+            self.assertIn("::error::hub-mariadb-11-8 is " + result + " on " + TAG, out)
+
+    def test_both_red_are_named(self):
+        jobs = {5: {"hub-mariadb": "failure", "hub-mariadb-11-8": "failure"}}
+        code, out = gate(self.api([maria(5, TAG)], jobs))
+        self.assertEqual(code, 1)
+        self.assertIn("hub-mariadb is failure, hub-mariadb-11-8 is failure on " + TAG, out)
+
+    def test_both_green_pass(self):
+        jobs = {5: {"decide": "success", "hub-mariadb": "success", "hub-mariadb-11-8": "success"}}
+        code, out = gate(self.api([maria(5, TAG)], jobs))
+        self.assertEqual(code, 0, out)
+        self.assertIn("hub-mariadb passed on " + TAG, out)
+        self.assertNotIn("predates", out)
+
+    def test_a_run_whose_workflow_predates_the_11_8_job_counts_on_11_4_alone(self):
+        # A hand run from main at OLD, whose hub-mariadb.yml has no 11.8 job yet.
+        runs = [maria(5, OLD, "hub-mariadb hand " + TAG)]
+        api = FakeApi(
+            ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], 5: {"hub-mariadb": "success"}}
+        )
+        code, out = gate(api)
+        self.assertEqual(code, 0, out)
+        self.assertIn("its workflow file has no hub-mariadb-11-8: it predates it", out)
+
+    def test_a_missing_11_8_job_the_workflow_defines_stops(self):
+        # Renamed, a partial re-run, an answer without it: absent is not "predates".
+        api = FakeApi(
+            ci=GREEN_CI["ci"],
+            maria=[maria(5, TAG)],
+            jobs={**GREEN_CI["jobs"], 5: {"hub-mariadb": "success"}},
+        )
+        code, out = gate(api)
+        self.assertEqual(code, 1, out)
+        self.assertIn("::error::hub-mariadb-11-8 is missing on " + TAG, out)
+
+    def test_a_workflow_file_that_cannot_be_read_stops(self):
+        runs = [maria(5, UNREADABLE, "hub-mariadb hand " + TAG)]
+        code, out = gate(self.api(runs, {5: {"hub-mariadb": "success"}}))
+        self.assertEqual(code, 1, out)
+        self.assertIn(
+            "::error::cannot read .github/workflows/hub-mariadb.yml at " + UNREADABLE, out
+        )
+
+    def test_a_red_11_8_beside_a_skipped_suite_stops_instead_of_an_older_green_run(self):
+        runs = [maria(6, TAG), maria(5, TAG)]
+        for result in ("failure", "cancelled"):
+            jobs = {
+                6: {"hub-mariadb": "skipped", "hub-mariadb-11-8": result},
+                5: {"hub-mariadb": "success"},
+            }
+            code, out = gate(self.api(runs, jobs))
+            self.assertEqual(code, 1, result)
+            self.assertIn("hub-mariadb is skipped, hub-mariadb-11-8 is " + result, out)
+
+    def test_both_skipped_still_counts_for_nothing(self):
+        runs = [maria(6, TAG), maria(5, TAG)]
+        jobs = {
+            6: {"hub-mariadb": "skipped", "hub-mariadb-11-8": "skipped"},
+            5: {"hub-mariadb": "success"},
+        }
+        code, out = gate(self.api(runs, jobs))
+        self.assertEqual(code, 0, out)
 
     def test_hand_run_counts_by_the_sha_in_its_title(self):
         # Its head_sha is main's head (OTHER); the title names what it tested.
@@ -258,7 +346,7 @@ class Provenance(unittest.TestCase):
     """Only main's own hub-mariadb.yml can vouch for a commit."""
 
     def api(self, runs, jobs):
-        return FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **jobs})
+        return FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **with_11_8(jobs)})
 
     def test_hand_run_dispatched_on_a_branch_is_refused(self):
         # The branch's copy of the workflow keeps the title and the job name.
@@ -384,6 +472,18 @@ class RealGit(unittest.TestCase):
         self.assertIs(git.same(self.one, self.web), True)
         self.assertIs(git.same(self.web, self.hub), False)  # self.hub was fetched for this
 
+    def test_workflow_jobs_reads_the_file_at_the_commit_and_fails_closed(self):
+        wf = self.origin / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "hub-mariadb.yml").write_text("on: push\njobs:\n  hub-mariadb:\n    x: 1\n")
+        self.git(self.origin, "add", "-A")
+        self.git(self.origin, "commit", "-q", "-m", "workflow")
+        with_file = self.git(self.origin, "rev-parse", "HEAD")
+        git = self.check()
+        self.assertEqual(git.workflow_jobs(with_file), {"hub-mariadb"})  # fetched for this
+        self.assertIsNone(git.workflow_jobs(self.one))  # the file is not there
+        self.assertIsNone(git.workflow_jobs("e" * 40))  # nor the commit
+
     def test_unknown_commit_is_none_not_different(self):
         git = self.check()
         self.assertIsNone(git.same(self.one, "f" * 40))
@@ -396,6 +496,19 @@ class RealGit(unittest.TestCase):
 
 
 class Workflows(unittest.TestCase):
+    def test_hub_mariadb_defines_the_jobs_the_gate_requires_under_their_ids(self):
+        # The gate reads job ids from the file and looks them up by name in the jobs API:
+        # the same only while no job of the file sets a `name:` of its own.
+        text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")
+        ids = g.workflow_job_ids(text)
+        self.assertEqual(ids, ALL_JOBS)
+        self.assertTrue({"hub-mariadb", *g.MARIADB_EXTRA_JOBS} <= ids)
+        self.assertNotRegex(text, r"(?m)^    name:")
+
+    def test_job_ids_are_read_from_the_jobs_block_only(self):
+        text = "on:\n  push:\njobs:\n  a:\n    steps: []\n  b-1:  # note\n    x: 1\nenv:\n  c: 1\n"
+        self.assertEqual(g.workflow_job_ids(text), {"a", "b-1"})
+
     def test_paths_match_decide_in_hub_mariadb(self):
         text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")
         line = re.search(r'git diff --name-only "\$base" "\$sha" -- (.+)\)"', text).group(1)

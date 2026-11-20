@@ -25,6 +25,11 @@ Which engines run in CI — SQLite, PostgreSQL and MariaDB — came from
 the coordinator's brief; the job split, the versions and the fixture were
 decided in the implementation session.
 
+Since 2026-11-20 `hub-mariadb` also runs a subset on MariaDB 11.8 LTS: the
+migrations, the schema checks and the notification tests. 11.7 reserved
+`vector`, a column name of the hub, and 11.4 alone could not show it (the
+entry on reserved names in `persistence.md`). The full suite stays on 11.4.
+
 **Reason:** lint and types do not depend on the database, so they run
 once; the tests are what differs per engine. An editable install tests
 the source tree, not what ships: a file the wheel leaves out (a migration,

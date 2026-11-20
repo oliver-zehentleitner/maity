@@ -433,7 +433,10 @@ CI (`.github/workflows/ci.yml`) runs `make check` on SQLite, the test
 suite on PostgreSQL 17 and against the built wheel on Python 3.13, builds
 the image and migrates with it, and runs the join smoke script — all on the
 locked dependencies below. The suite on MariaDB 11.4 runs hourly on main
-(`.github/workflows/hub-mariadb.yml`), not per pull request.
+(`.github/workflows/hub-mariadb.yml`), not per pull request; beside it, the
+migrations, the schema checks and the notification tests run on MariaDB
+11.8. The supported database versions are in
+[Database versions](../docs/install/README.md#database-versions).
 
 ### Dependencies
 
@@ -582,7 +585,12 @@ Run `make format` on it before `make check` (the template imports `op` and
 autogenerate does not detect renames and writes nothing for data changes. Revisions must run on all three engines: use
 `op.*` operations and SQLAlchemy types, no raw engine-specific SQL, and
 name every constraint (the metadata's naming convention does that for
-tables defined in code). SQLite runs in Alembic's batch mode, so column
+tables defined in code). A table or column name that MySQL or MariaDB
+reserve and SQLAlchemy does not quote by itself (`vector`, reserved since
+MariaDB 11.7) carries `quote=True`, in `tables.py` and in every revision
+that names it; a table read with `autoload_with` loses the flag.
+`tests/test_reserved_words.py` holds the list of such words and fails on a
+name from it without the flag. SQLite runs in Alembic's batch mode, so column
 changes work there too. Every revision has a working `downgrade()`; the
 test suite migrates up and down on each engine. A revision spells out its
 column types instead of importing them from `maity_hub` (autogenerate
