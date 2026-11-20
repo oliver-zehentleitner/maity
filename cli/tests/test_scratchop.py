@@ -124,6 +124,20 @@ def test_a_planted_pg_password_is_never_written_through_read_or_vouched_for(
     assert victim.read_text() == "keepme" and not (tmp_path / "nowhere").exists()
 
 
+def test_a_directory_planted_as_a_password_file_leaks_no_descriptor(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    holder = root / scratchop.PG_HOLDER
+    scratchop.pg_make(str(root), str(holder))
+    (holder / "plc-0003").mkdir()
+    fds = Path("/proc/self/fd")
+    before = len(list(fds.iterdir())) if fds.is_dir() else 0
+    for _ in range(5):
+        assert scratchop.pg_read(str(root), str(holder / "plc-0003")) is None
+    if fds.is_dir():
+        assert len(list(fds.iterdir())) == before
+
+
 def test_a_fifo_planted_as_a_password_file_neither_blocks_nor_is_read(tmp_path: Path) -> None:
     root = tmp_path / "ws"
     root.mkdir()

@@ -263,13 +263,15 @@ def pg_read(under: str, path: str) -> str | None:
             # check and the open is read, and a FIFO planted at the name does not block.
             flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
             fd = os.open(names[1], flags | getattr(os, "O_CLOEXEC", 0), dir_fd=holder)
-            with os.fdopen(fd, "rb") as handle:
-                found = os.fstat(handle.fileno())
+            try:  # the descriptor closed on every path, a directory planted at the name too
+                found = os.fstat(fd)
                 if not (stat.S_ISREG(found.st_mode) and found.st_uid == _uid(None)
                         and stat.S_IMODE(found.st_mode) == 0o600
                         and found.st_nlink == 1):  # fmt: skip
                     return None
-                first = handle.read(512).decode("ascii", "replace").split("\n", 1)[0]
+                first = os.read(fd, 512).decode("ascii", "replace").split("\n", 1)[0]
+            finally:
+                os.close(fd)
     except OSError:
         return None
     return first if PG_PASSWORD.fullmatch(first) else None

@@ -309,6 +309,46 @@ def test_the_server_reads_only_the_checked_access_files(run: dict[str, str]) -> 
     assert f"-c ident_file='{data}/pg_ident.conf'" in start
 
 
+@pytest.mark.parametrize("opts", [None, 'postgres "-D" "/x"\n', "checked"])
+def test_a_running_server_is_used_with_a_password_only_if_started_on_the_checked_files(
+    run: dict[str, str], opts: str | None
+) -> None:
+    """A server already up runs on the rules it loaded: with a password, only one whose
+    postmaster.opts shows the forced hba_file and ident_file is used (the review of #2032)."""
+    data = Path(run["MAITY_PG_DIR"])
+    (data / "PG_VERSION").touch()
+    (data / "pg_hba.conf").write_text("local all all scram-sha-256\n")
+    Path(run["FAKE_UP"]).touch()  # up already
+    if opts == "checked":
+        opts = (f'postgres "-D" "{data}" "-c" "hba_file={data}/pg_hba.conf" '
+                f'"-c" "ident_file={data}/pg_ident.conf"\n')  # fmt: skip
+    if opts is not None:
+        (data / "postmaster.opts").write_text(opts)
+    done = subprocess.run(
+        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD},
+        capture_output=True, text=True,
+    )  # fmt: skip
+    if opts is not None and "hba_file" in opts:
+        assert done.returncode == 0 and calls(run, "start") == []
+    else:
+        assert done.returncode == 2 and "not started with its checked" in done.stderr
+
+
+@pytest.mark.parametrize(
+    "name", ["pg'x", 'pg"x', "pg$(id)", "pg`id`", "pg\\x", "pg\nx", "pg\tx", "pg\rx"]
+)
+def test_a_data_dir_that_would_break_the_server_command_line_is_refused(
+    run: dict[str, str], tmp_path: Path, name: str
+) -> None:
+    refused = subprocess.run(
+        [SCRIPT, "true"], env={**run, "MAITY_PG_DIR": str(tmp_path / name)},
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert refused.returncode == 2 and "MAITY_PG_DIR must not hold" in refused.stderr
+    log = Path(run["FAKE_LOG"]).read_text() if Path(run["FAKE_LOG"]).exists() else ""
+    assert "pg_ctl" not in log and "initdb" not in log
+
+
 def test_without_a_password_nothing_changes(run: dict[str, str]) -> None:
     subprocess.run([SCRIPT, "true"], env=run, check=True)
     (initdb,) = [line for line in Path(run["FAKE_LOG"]).read_text().splitlines()
@@ -345,6 +385,12 @@ def test_a_password_that_is_not_the_runners_shape_starts_nothing(
         "local all all scram\\-sha-256\n",  # a backslash
         "localx all all scram-sha-256\n",  # no connection type PostgreSQL knows
         "include_dir conf.d\n",
+        "local @dbs all scram-sha-256\n",  # an @file list PostgreSQL reads from another file
+        "local all @users scram-sha-256\n",
+        "local all\rall trust\0 scram-sha-256\n",  # PostgreSQL: `local all all trust`
+        "host all\vall 127.0.0.1/32 trust\0 scram-sha-256\n",
+        "local all\fall trust scram-sha-256\n",
+        "local all \0all scram-sha-256\nlocal trust\0 all scram-sha-256\n",
         None,  # no pg_hba.conf at all
     ],
 )
@@ -382,7 +428,7 @@ def test_a_cluster_on_scram_alone_is_used_with_a_password(run: dict[str, str]) -
     data = Path(run["MAITY_PG_DIR"])
     (data / "PG_VERSION").touch()
     (data / "pg_hba.conf").write_text(
-        "# trust: not here, \"quoted\", a, comma\n   # indented comment\n\n"
+        '# trust: not here, "quoted", a, comma\n   # indented comment\n\n'
         "local all all scram-sha-256\r\n"  # a CRLF line is read as its rule
         "host all all 127.0.0.1/32 scram-sha-256\nhost all all ::1/128 scram-sha-256\n"
         "host all all 127.0.0.1 255.255.255.255 scram-sha-256\nlocal replication all reject\n"

@@ -234,8 +234,8 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
         assert re.fullmatch(r"[0-9a-f]{64}\n", passfile.read_text())
         assert passfile.read_text().strip() not in " ".join(argv)  # never on a command line
         assert argv[1:4] == ["-I", "-m", "maity.runner.pgenv"]
-        assert argv[4:9] == [str(root), str(passfile), str(pg), "--", argv[9]]
-        argv = argv[9:]
+        assert argv[4:8] == [str(root), str(passfile), str(pg), "--"]
+        argv = argv[8:]  # the stub's own argv, as without pgenv
     private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
     assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
     assert clone not in private.parents

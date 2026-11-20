@@ -1958,7 +1958,8 @@ for p in "$1"*; do
   [ -d "$h" ] && ! [ -L "$h" ] || continue
   [ -r "$h" ] && [ -x "$h" ] || exit 3
   find "$h" -mindepth 1 -maxdepth 1 -print0 || exit 3
-done"""
+done
+[ -r "$1" ] && [ -x "$1" ] || exit 3"""
 
 
 # For each clone entry given: its two places for a credential, looked at through a link as

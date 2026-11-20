@@ -34,6 +34,14 @@ if [ "$mode" = run ] && [ -z "${MAITY_RUN_SLOT:-}" ]; then
 fi
 
 dir="${MAITY_PG_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/maity/test-postgres}"
+# The data directory goes into pg_ctl's command lines, which pg_ctl hands to a shell: no quote,
+# `$`, backtick, backslash or control character in it, so nothing in it is read as shell.
+case "$dir" in
+  *"'"* | *'"'* | *'$'* | *'`'* | *'\'* | *[[:cntrl:]]*)
+    echo "$0: MAITY_PG_DIR must not hold a quote, \$, \`, a backslash or a control character" >&2
+    exit 2
+    ;;
+esac
 if [ -n "${MAITY_PG_BIN:-}" ]; then
   PATH="$MAITY_PG_BIN:$PATH"
 fi
@@ -65,18 +73,23 @@ fi
 # Whether every rule of the pg_hba.conf named lets in only with scram-sha-256 (or rejects): an
 # allowlist, so trust, peer, ident, md5 and anything else fail, as do an include directive, an
 # unknown connection type, a link and a file that cannot be read. PostgreSQL's own tokenizer
-# knows quoted fields (with spaces or `#` in them) and comma lists; this one does not, so a rule
-# with a quote, a backslash or a comma fails too rather than being read wrongly. The method is the
+# knows quoted fields (with spaces or `#` in them), comma lists and `@file` lists; this one does
+# not, so a rule with a quote, a backslash, a comma or an `@` field fails too rather than being
+# read wrongly. The method is the
 # 4th field of a `local` rule and the 5th of a host rule, the 6th with a separate mask.
 scram_only() {
   [ -f "$1" ] && [ ! -L "$1" ] && [ -r "$1" ] || return 1
   awk '
     { sub(/\r$/, "") }
+    # PostgreSQL ends a line at a NUL and splits fields on a carriage return, which awk does not:
+    # any control character but the tab, on any line, fails rather than being read differently.
+    /[\001-\010\013-\037\177]/ || index($0, sprintf("%c", 0)) { bad = 1; exit }
     /^[[:space:]]*(#|$)/ { next }
     /["\047\\]/ { bad = 1; exit }
     { sub(/#.*/, "") }
     NF == 0 { next }
     /,/ { bad = 1; exit }
+    /(^|[[:space:]])@/ { bad = 1; exit }
     $1 !~ /^(local|host|hostssl|hostnossl|hostgssenc|hostnogssenc)$/ { bad = 1; exit }
     {
       if ($1 == "local") method = $4
@@ -136,6 +149,14 @@ if ! pg_ctl -D "$dir" status >/dev/null 2>&1; then
   if [ "$mode" = run ]; then
     head -n 1 "$dir/postmaster.pid" >"$started"
   fi
+elif [ -n "$password" ] && ! {
+  grep -qF "\"hba_file=$dir/pg_hba.conf\"" "$dir/postmaster.opts" &&
+    grep -qF "\"ident_file=$dir/pg_ident.conf\"" "$dir/postmaster.opts"
+} 2>/dev/null; then
+  # A server already up runs on the rules it loaded when it started: only one this script started
+  # with the checked files (postmaster.opts records its options) is used with a password.
+  echo "$0: the server running on $dir was not started with its checked pg_hba.conf; stop it (--stop) first" >&2
+  exit 2
 fi
 if [ "$mode" = start ]; then
   rm -f "$started" # a server started with --start outlives the runs, also one a run started
