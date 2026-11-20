@@ -18991,7 +18991,7 @@ clone Z. It is the only thing the hub asks of a runner.
   "runner": { "id": "rnr-0002", "name": "home-laptop" },
   "target": null, "harness": "claude-code", "mode": "interactive", "model": "opus",
   "workspace": { "clone": "agent-b", "branch": null, "continues_existing": true },
-  "desired": "running", "generation": 4, "rejoin": false, "stop_grace_seconds": 120, "workspace_retention": "24h",
+  "desired": "running", "generation": 4, "rejoin": false, "fresh_session": false, "stop_grace_seconds": 120, "workspace_retention": "24h",
   "approval": { "status": "approved", "request_id": null, "pending_change": null },
   "credential_id": "crd-b-0007", "instance": "wqe2",
   "reported_current": true,
@@ -19021,6 +19021,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | `desired` | `running`, `stopped` |
 | `generation` | starts at 1; incremented on every change of the spec and every restart (a restart with `rejoin: true` included); a `rejoin` set by a `removed` workspace report does not increment it, as the next start makes a new clone anyway (§15.5); the runner reports which generation it acted on |
 | `rejoin` | set by a restart with `rejoin: true` after the clone's credential was revoked, or by a `removed` workspace report on an active placement and on every active placement naming the credential it revoked (§15.5): the runner removes the old credential file and picks up a new join |
+| `fresh_session` | `true` while the current `generation` is the one a reset made (a restart with `fresh_session: true`, §15.6): the runner starts the harness on a fresh session instead of resuming the last one (§15.14). Any later new generation, a plain restart or a change of spec, reads `false` again; a stop and a start keep the generation and with it the value |
 | `approval` | `status`: `approved`, `pending`, `refused`; `request_id`: the consent request while one exists; `pending_change`: an agent's proposed change of a running placement's spec waiting for consent, else `null` (§15.6). A runner never sees a placement that is not `approved` |
 | `stop_grace_seconds` | 0–900, default 120: how long the agent gets to park its work after a stop before the process is ended |
 | `workspace_retention` | `immediate`, `3h`, `24h` (default) or `7d`: how long the runner keeps the clone after the session ended under a stop or a close, before it removes it (§15.5). The hub stores it and the runner reads it; the runner's clock and its removal are not built yet, tsk-34gb7frfbsk7 |
@@ -19326,7 +19327,7 @@ agents' shared home, which no removal of a clone reaches:
 | `GET /projects/{owner}/{slug}/placements/{id}` | as the list | |
 | `GET /projects/{owner}/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
 | `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` and `workspace_retention` alone also by the agent profile's owner; `desired: stopped` alone also by the runner's owner, member of the project or not; `desired: stopped` and `workspace_retention` alone also by every agent with `agents:propose`; a change of spec and `desired: running` only on the runner's side (below, `runner_owner_only`) | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`, `workspace_retention`; a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
-| `POST /projects/{owner}/{slug}/placements/{id}/restart` | the runner's side (below): its owner with `members:admin` or as the agent profile's owner, or an agent with `agents:propose` whose own human owns the runner; anyone else `forbidden` (`runner_owner_only`) | `{rejoin?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal sets it, §15.5), and for one the clone's removal may store later: after such a revocation, a `restart` with `{}` or a `PATCH desired: running` of a placement whose credential it revoked answers `forbidden` (`owner_only`) for anyone but the agent profile's owner, whether a `rejoin` is stored yet or not. A restart resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
+| `POST /projects/{owner}/{slug}/placements/{id}/restart` | the runner's side (below): its owner with `members:admin` or as the agent profile's owner, or an agent with `agents:propose` whose own human owns the runner; anyone else `forbidden` (`runner_owner_only`) | `{rejoin?, fresh_session?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `fresh_session: true` makes it a **reset**: the new generation starts the agent on a fresh harness session instead of resuming the last one (`fresh_session` on the placement, §15.5; §15.14), the clone and its branches kept as by any restart. The same right as a restart, and it combines with `rejoin`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal sets it, §15.5), and for one the clone's removal may store later: after such a revocation, a `restart` with `{}` or a `PATCH desired: running` of a placement whose credential it revoked answers `forbidden` (`owner_only`) for anyone but the agent profile's owner, whether a `rejoin` is stored yet or not. A restart without `fresh_session` resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove` | humans only: the agent profile's owner, or `members:admin`; an agent credential is `forbidden` | `{}`; `202` with the placement: asks the runner to remove the clone of a stopped or closed placement whose `workspace_outcome` is `retained` or `kept`, unsaved work included (§15.5); sets `remove_requested` and `remove_requested_at`, emits `placement_updated`. Any other placement or outcome is `conflict` (`details.reason: "workspace_not_held"`). Works on a closed placement too, however long ago it closed |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
 | `POST /projects/{owner}/{slug}/placements/{id}/replace` (not built yet, §15.14) | `members:admin` and ownership of both runners, the old placement's and the new one's; or `agents:propose` under `spawn_requests`, for an agent whose own human owns both runners (`runner_owner_only` otherwise) | `{runner, target?, harness?, mode?, model?, workspace?, handover, keep_old?, reason?}`, `handover` one of `none`, `summary`, `full`, `keep_old` a boolean (the old instance stays dormant for 2 hours, §15.14); `201` with the new placement, which replaces this one after the handover (§15.14). `replace_open` while a replacement of either is open: until its old placement has closed after step 3, or its new one after an abort (§15.14) |
@@ -19496,7 +19497,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `exit_code` | integer or `null` | the harness process's own code |
 | `observed_generation` | integer | the generation the report is about; a report for an older generation becomes an event and does not move `reported` |
 | `restarts` | integer | restarts in this generation |
-| `sessions` | integer | fresh sessions started in this generation; every other start resumes the placement's session (§15.14) |
+| `sessions` | integer or absent | fresh sessions started in this generation; every other start resumes the placement's session (§15.14). The runner sends it only to a hub whose placements carry `fresh_session` (§15.5): an older one refuses a report with a field it does not know. A report without it is valid and stores none |
 | `last_activity_at` | timestamp or `null` | the latest harness output or loop call the runner saw; clamped like `since`; a report changing only this field is sent at most once a minute and writes no event (§15.14) |
 | `run` | `open`, `waiting` or absent | supervised only: whether a run is open, or the loop waits for an event between runs; the hub counts silence only while one is open (§15.14). A report whose `state` is not `running` carries no `run` and ends an open run. A run opens only when an accepted report of the placement's current generation changes `run` to `open` while none is open: the hub then issues the run an id and keeps that report's `reported_at`, both on the placement as `open_run` (§15.5, §15.15), which the answer carries. A repeat (a `seq` not above the stored one, answered with the stored placement and its `open_run`) and a report changing only `last_activity_at` keep the open run's id and time, and a report for an older generation opens nothing. After a new generation, the first report of that generation with `run: open` opens a run, whatever `run` the stored report holds. Any accepted report that does not keep a run open ends it, whatever its generation |
 | `nudge` | `{id, outcome}` or absent | the outcome of the placement's latest nudge, `woken`, `resumed` or `left_running` (§15.14); a different `id` from the placement's current nudge is ignored |
@@ -19740,7 +19741,7 @@ A placement as the runner reads it:
   "target": null,
   "workspace": { "clone": "agent-b", "branch": null,
                  "repository": "https://github.com/oliver-zehentleitner/maity" },
-  "rejoin": false,
+  "rejoin": false, "fresh_session": false,
   "stop_grace_seconds": 120, "workspace_retention": "24h", "workspace_epoch": 1,
   "health": { "flapping": false,
               "settings": { "hang_after_minutes": 30, "reply_within_minutes": 10, "tool_call_max_minutes": 120 } },
@@ -20889,6 +20890,10 @@ placement resumes exactly that session: a run of the loop, a crash
 restart, a restart (§15.6), a runner restart, and a nudge. It starts a
 fresh session only:
 - for a new generation that changes `harness`, `model` or `mode`;
+- for a reset (§15.6): the first start of the generation a restart with
+  `fresh_session: true` made, whatever the session before it left; a
+  later resume in that generation (after a `hung` end) continues the new
+  session;
 - for a replacement, which is a new placement (not built yet, below);
 - once per generation, after a `context_full` it recognised (§15.7),
   and only when no tool call was open, so a half-done call is not
@@ -20896,9 +20901,16 @@ fresh session only:
 
 `reported.sessions` counts the fresh sessions of the generation. A
 restart therefore no longer throws the agent's context away. To start
-clean, replace the agent with `handover: none` (on the same runner, in
-a clone of its own, below; the replacement is not built yet: today a
-`DELETE` and, once it has closed, a new placement starts clean).
+clean in the same clone, reset it (§15.6): the conversation that hung is
+dropped, the clone and its branches stay. To start clean in a clone of
+its own, replace the agent with `handover: none` (below; the replacement
+is not built yet: today a `DELETE` and, once it has closed, a new
+placement starts clean). The runner does not keep the session id yet: today it
+resumes only after a `hung` end of an interactive Claude Code or
+Antigravity session (`--continue`, `-c`), Codex and opencode start a new
+conversation at every interactive start, a supervised loop starts one at
+every start of the loop, and every new generation starts fresh. A reset
+is the restart that stays fresh once a restart resumes.
 
 **Why a run ended.** The runner maps the end of a run to the reasons
 `hung`, `network`, `context_full`, `auth` and `harness_config` (§15.7).

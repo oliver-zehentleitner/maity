@@ -3196,6 +3196,42 @@ def test_a_new_generation_does_not_resume_the_hung_session(
     assert sup.records["plc-0003"].hung_exits == []
 
 
+def test_a_reset_starts_a_fresh_session_and_reports_it(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reset (§15.6): a new generation with `fresh_session`, started without the resume a
+    hung end left, logged as a reset, and counted in `sessions` (§15.7)."""
+    sup, backend, reports, clock, logs = world
+    interactive(world, fresh_session=False)
+    assert reports.sent[-1][1]["sessions"] == 1  # the first start of generation 1: fresh
+    hung_round(world)
+    assert sup.records["plc-0003"].resume
+    seen: list[bool] = []
+    context = sup._context
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(args[-1])
+        return context(*args, **kwargs)
+
+    monkeypatch.setattr(sup, "_context", spy)
+    sup.update([placement(mode="interactive", health=HEALTH, generation=2, fresh_session=True)])
+    settle(sup)
+    assert len(backend.started) == 2 and seen == [False]
+    assert any("reset: a fresh session, the last one not resumed" in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER
+    sup.tick()  # `running`: the report after the start carries its count
+    last = reports.sent[-1][1]
+    assert (last["observed_generation"], last["state"], last["sessions"]) == (2, "running", 1)
+
+
+def test_sessions_go_only_to_a_hub_that_carries_fresh_session(world: Any) -> None:
+    """An older hub's placement has no `fresh_session`, and its Strict report model would
+    refuse an unknown `sessions`: the runner leaves the field out there."""
+    sup, _, reports, _, _ = world
+    interactive(world)
+    assert reports.sent and all("sessions" not in body for _, body in reports.sent)
+
+
 # --- the scratch (§15.5) ---------------------------------------------------------------------
 
 

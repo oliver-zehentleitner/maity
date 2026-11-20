@@ -1446,6 +1446,9 @@ placement = Table(
     Column("desired", String(16), nullable=False),
     Column("generation", Integer, nullable=False),
     Column("rejoin", Boolean, nullable=False),
+    # The generation a reset started (§15.6): its start takes a fresh harness session, not
+    # the last one. A generation, not a flag, so any later new generation ends it unwritten.
+    Column("fresh_session_generation", Integer),
     Column("stop_grace_seconds", Integer, nullable=False),
     # The clone after a stop or a close (§15.5): how long the runner keeps it, which clone
     # of the placement is meant, and the runner's latest report on it. Columns, not one

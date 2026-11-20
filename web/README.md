@@ -558,8 +558,12 @@ too.
    human with `members:admin` who owns the runner (its `owner_id`, not
    merely listed under `GET /runners`), or the owner of the agent's
    profile (§15.6), gets **Stop** (unconfirmed: the safe
-   direction) or **Start**, and **Restart**, confirmed with one more
-   click; **Restart with a new join** (`rejoin`) only where the
+   direction) or **Start**, and **Restart** and **Reset**, each confirmed
+   with one more click: **Reset** is a restart with `fresh_session`, a
+   fresh harness session instead of the last one, its question saying the
+   running conversation is dropped and the clone and its branches stay,
+   and the generation it made reads "a fresh session" beside its number;
+   **Restart with a new join** (`rejoin`) only where the
    placement's credential was revoked (the credentials are read for
    one's own agents placed here only, once the placements are known).
    Each is one call at a time per

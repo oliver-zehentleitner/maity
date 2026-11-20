@@ -128,6 +128,7 @@ def test_a_placement_has_the_contract_shape(setup: Setup) -> None:
         "desired",
         "generation",
         "rejoin",
+        "fresh_session",  # a reset's generation (§15.6)
         "stop_grace_seconds",
         "workspace_retention",
         "workspace_epoch",
@@ -187,6 +188,7 @@ def test_the_runner_reads_the_placement_with_its_repository(setup: Setup) -> Non
         "target": None,
         "workspace": {"clone": body["agent"]["handle"], "branch": "main", "repository": REPOSITORY},
         "rejoin": False,
+        "fresh_session": False,
         "stop_grace_seconds": 120,
         "workspace_retention": "24h",
         "workspace_epoch": 1,
@@ -1025,6 +1027,56 @@ def test_restart_bumps_the_generation_and_rejoin_needs_a_revoked_credential(
         f"/projects/maintainer/maity/placements/{body['id']}/restart", {"rejoin": True}
     )
     assert rejoin.json()["error"]["details"]["fields"] == {"rejoin": "credential_not_revoked"}
+
+
+def runner_view(s: Setup, placement_id: str) -> dict[str, Any]:
+    response = call(s.client, s.runner, "GET", "/api/v1/runner/placements")
+    assert response.status_code == 200, response.text
+    found: dict[str, Any] = next(p for p in response.json()["items"] if p["id"] == placement_id)
+    return found
+
+
+def test_a_reset_is_a_restart_whose_generation_starts_a_fresh_session(setup: Setup) -> None:
+    # §15.6: `fresh_session: true` makes the restart a reset. The flag belongs to the
+    # generation the reset made: the runner reads it there, and the next new generation
+    # (a plain restart, a change of spec) ends it without a write of its own.
+    body = placed(setup)
+    path = f"/projects/maintainer/maity/placements/{body['id']}"
+    assert (body["fresh_session"], runner_view(setup, body["id"])["fresh_session"]) == (
+        False,
+        False,
+    )
+    reset = setup.owner.post(f"{path}/restart", {"fresh_session": True})
+    assert reset.status_code == 200, reset.text
+    assert (reset.json()["generation"], reset.json()["fresh_session"]) == (2, True)
+    assert get(setup, body["id"])["fresh_session"] is True
+    assert runner_view(setup, body["id"])["fresh_session"] is True
+    # A stop and a start keep the generation, so the reset still holds for its start.
+    assert setup.owner.patch(path, {"desired": "stopped"}).json()["fresh_session"] is True
+    assert setup.owner.patch(path, {"desired": "running"}).json()["fresh_session"] is True
+    again = setup.owner.post(f"{path}/restart", {}).json()
+    assert (again["generation"], again["fresh_session"]) == (3, False)
+    assert runner_view(setup, body["id"])["fresh_session"] is False
+    changed = setup.owner.post(f"{path}/restart", {"fresh_session": True}).json()
+    assert (changed["generation"], changed["fresh_session"]) == (4, True)
+    spec = setup.owner.patch(path, {"stop_grace_seconds": 60}).json()
+    assert (spec["generation"], spec["fresh_session"]) == (5, False)
+    wrong = setup.owner.post(f"{path}/restart", {"fresh_session": "maybe"})
+    assert wrong.status_code == 400, wrong.text
+
+
+def test_a_report_carries_the_fresh_sessions_of_its_generation(setup: Setup) -> None:
+    # §15.7 `sessions`: stored with the report when the runner sends it; a runner from
+    # before it sends none, and its report is taken as it was.
+    body = placed(setup)
+    older = report(setup, body, 1)
+    assert older.status_code == 200, older.text
+    assert "sessions" not in get(setup, body["id"])["reported"]
+    newer = report(setup, body, 2, sessions=1)
+    assert newer.status_code == 200, newer.text
+    assert get(setup, body["id"])["reported"]["sessions"] == 1
+    negative = report(setup, body, 3, sessions=-1)
+    assert negative.status_code == 400, negative.text
 
 
 # Who revoked and why, as `auth.revocation.revoke` stores it; "runner_owner" and "owner" name a
