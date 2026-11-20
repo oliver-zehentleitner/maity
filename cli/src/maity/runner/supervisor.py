@@ -270,6 +270,10 @@ class Record:
     # Its OS sandbox as the start gate decided (GateView); None for a record from before.
     sandbox: bool | None = None
     resume: bool = False  # the next start resumes the harness's session (after `hung`)
+    # Fresh sessions started in this generation (§15.7 `sessions`), and whether the hub reads
+    # them: one whose placement carries `fresh_session` (§15.6) takes the field in a report.
+    sessions: int = 0
+    reports_sessions: bool = False
     nudges: int = 0  # nudges answered since a `maity wait` was last seen
     unsent: bool = False  # the nudge's line is typed but did not show yet: Enter waits for it
     left_typed: bool = False  # a dropped nudge's line may still sit in the input: not again
@@ -289,7 +293,8 @@ class Record:
         self.nudges, self.unsent, self.left_typed = 0, False, False
 
     def key(self) -> list[Any]:
-        return [self.state, self.reason, self.detail, self.generation, self.restarts]
+        return [self.state, self.reason, self.detail, self.generation, self.restarts,
+                self.sessions]  # fmt: skip
 
     def enter(self, now: float, state_: str, reason: str | None = None, **fields: Any) -> None:
         if (state_, reason) != (self.state, self.reason):
@@ -674,9 +679,10 @@ class Supervisor:
             return 0  # this tick's snapshot may predate the session the task just started
         rec = self.records.setdefault(pid, Record(generation=generation, since=now))
         rec.target = target.name
+        rec.reports_sessions = "fresh_session" in p
         if rec.generation != generation:
             rec.generation, rec.restarts, rec.crashes, rec.retry_at = generation, 0, [], None
-            rec.hung_exits, rec.resume = [], False
+            rec.hung_exits, rec.resume, rec.sessions = [], False, 0
             rec.state = rec.reason = rec.detail = None
             rec.waiting = None
             rec.exit_code = None
@@ -1202,8 +1208,11 @@ class Supervisor:
                     rec.enter(self.now(), "stopped", "stopped_by_hub")
                 return
             scratch = self._scratch(p, harness, target)
-            context = self._context(p, harness, place, target, rec.resume, view=view,
-                                    scratch=scratch)  # fmt: skip
+            # A reset (§15.6): the generation's first session is a fresh one, never the last
+            # conversation resumed; a later resume in it (after `hung`) continues the new one.
+            reset = bool(p.get("fresh_session")) and rec.sessions == 0
+            context = self._context(p, harness, place, target, rec.resume and not reset,
+                                    view=view, scratch=scratch)  # fmt: skip
             launch = adapters.launch(context)
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
             target.backend.start(
@@ -1268,7 +1277,11 @@ class Supervisor:
             rec.session_hint = hint if len(hint) <= 200 and hint.isascii() else None
             rec.resume = False
             rec.binary = context.binary
+            if not launch.resumed:
+                rec.sessions += 1
         self.log(f"{name}: started generation {p['generation']}")
+        if reset and not launch.resumed:
+            self.log(f"{name}: reset: a fresh session, the last one not resumed")
         if harness.id == "opencode":  # name the model in effect: the placement's, or the default
             self.log(f"{name}: opencode model {p.get('model') or harness.default_model}")
         found = (view or GateView.of(target, harness.id)).found  # the version that started
@@ -1701,6 +1714,8 @@ class Supervisor:
                 else None
             ),
             "restarts": rec.restarts,
+            # Only to a hub that knows the field: an older one refuses a report that has it.
+            **({"sessions": rec.sessions} if rec.reports_sessions else {}),
             "retry_at": stamp(rec.retry_at) if rec.state in ("exited", "rate_limited") else None,
             "crash_count": len(rec.crashes) if counting else None,
             "crash_window_seconds": window if counting else None,

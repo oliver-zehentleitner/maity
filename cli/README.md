@@ -1183,7 +1183,10 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   last conversation (`--continue`). `crash_cap` such ends in a row,
   with no `maity wait` seen in between, hold the placement as
   `failed`/`hung`. The minutes are
-  30 and 10 until the hub sends the owner's health settings. Attaching
+  30 and 10 until the hub sends the owner's health settings. A reset
+  from the hub (a restart with `fresh_session`, docs/api.md §15.6)
+  starts the next generation on a fresh session instead, whatever the
+  harness, and the runner's log says so (`reset: a fresh session`). Attaching
   to the session pauses the check, so the runner never types while you
   are there. Needs `ps` where the agents run.
 - **Adoption and orphans.** After a runner restart, a live session of a
