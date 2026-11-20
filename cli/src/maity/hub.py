@@ -184,6 +184,27 @@ def hub_base(url: str) -> str:
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, "", "", "")).rstrip("/")
 
 
+DEFAULT_PORTS = {"https": 443, "http": 80}
+
+
+def origin(url: str) -> tuple[str, str, int]:
+    """The origin of a hub URL as `hub_base` accepts it: scheme, host and port, the host as
+    `_host` compares it (lowercase, IDNA, no trailing dot) and the port filled in with the
+    scheme's default, so `https://Hub.example:443/x` and `https://hub.example` are one
+    origin. The path is not part of it, as `hub_base` drops it."""
+    base = hub_base(url)
+    parts = urllib.parse.urlsplit(base)
+    host = _host(base)
+    if host is None:
+        raise HubError(f"not a hub URL: {safe_url(url)}")
+    return parts.scheme, host, parts.port or DEFAULT_PORTS[parts.scheme]
+
+
+def same_origin(a: str, b: str) -> bool:
+    """Whether two hub URLs name the same origin (`origin`)."""
+    return origin(a) == origin(b)
+
+
 def join_target(url: str) -> str:
     """Where `maity join` sends the exchange, from the URL's shape (docs/api.md §13): a
     `/join/<token>`, `/j/<token>` or `/api/v1/join/<token>` URL → `POST /api/v1/join/<token>` on

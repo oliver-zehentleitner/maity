@@ -186,6 +186,23 @@ SANDBOXED_CALL = (
 )
 
 
+def _keep_hub(stored: str, given: str) -> None:
+    """`--hub` on a clone whose state names a hub: only that hub's origin passes (scheme, host
+    and port, `hub.origin`), anything else is refused before anything is written or sent. A
+    clone's hub changes only by a new join (cli/context/credentials.md)."""
+    if hub.same_origin(stored, given):
+        return
+    scheme, host, port = hub.origin(stored)
+    shown = f"[{host}]" if ":" in host else host
+    if port != hub.DEFAULT_PORTS[scheme]:
+        shown = f"{shown}:{port}"
+    raise LocalRefusal(
+        f"this clone is joined to the hub at {scheme}://{shown}, and --hub names "
+        f"{hub.safe_url(hub.hub_base(given))}, another origin. A clone's hub is fixed: it "
+        "changes only by a new join (`maity join <url> --code <code>`). Nothing was changed"
+    )
+
+
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
     `on_request` is this command's `--on-request`, `for_target` the global `--for`, both set
@@ -207,8 +224,12 @@ class Session:
                 "this clone has not joined a project; run `maity join <url> --code <code>`"
             )
         self.data = state.load_state(self.dir)
-        if hub_url:  # a credential from the page-driven join has no state.json yet
-            self.data["hub"] = hub.hub_base(hub_url)
+        if hub_url:
+            if isinstance(self.data.get("hub"), str):
+                # The clone's hub is fixed: the same origin passes and the stored URL stays.
+                _keep_hub(self.data["hub"], hub_url)
+            else:  # a credential from the page-driven join has no state.json yet
+                self.data["hub"] = hub.hub_base(hub_url)
         stored = self.data.get("hub")
         if not isinstance(stored, str):
             raise state.StateError(
@@ -4805,6 +4826,15 @@ def cmd_api(args: argparse.Namespace) -> int:
 def cmd_help(args: argparse.Namespace) -> int:
     if args.hub:
         base = hub.hub_base(args.hub)
+        directory: Path | None
+        try:
+            directory = state.resolve_state_dir()
+        except state.StateError:
+            directory = None  # outside a clone: before a join, no stored hub to keep
+        stored = state.load_state(directory).get("hub") if directory is not None else None
+        if isinstance(stored, str):
+            _keep_hub(stored, args.hub)
+            base = hub.hub_base(stored)
     else:
         stored = state.load_state(state.resolve_state_dir()).get("hub")
         if not isinstance(stored, str):
@@ -4948,7 +4978,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="print the last resume's packet in full, without calling the hub",
     )
     p.add_argument(
-        "--hub", help="the hub URL, once, when the credential came from the page-driven join"
+        "--hub",
+        help="the hub URL, once, when the credential came from the page-driven join; on a "
+        "clone whose state already names a hub, another origin is refused (exit "
+        f"{EXIT_REFUSED}, nothing written): the hub changes only by a new join",
     )
     _session_args(p)
     p.add_argument("--json", action="store_true", help="print the resume packet as JSON")
@@ -6072,7 +6105,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Fetch and print /api/v1/help from the hub this clone joined, or from --hub.",
         formatter_class=fmt,
     )
-    p.add_argument("--hub", help="hub URL, for use before joining")
+    p.add_argument(
+        "--hub",
+        help="hub URL, for use before joining; on a joined clone only its own hub's origin "
+        f"(exit {EXIT_REFUSED} otherwise)",
+    )
     p.set_defaults(handler=cmd_help)
 
     p = add(

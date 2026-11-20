@@ -643,8 +643,12 @@ def test_api_query_is_signed(joined: Path, fake: fakehub.FakeHub) -> None:
 
 
 def test_help_fetches_the_hub_help(
-    fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    monkeypatch.setenv("MAITY_STATE_DIR", str(tmp_path / "no-state"))  # before a join
     assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_OK
     assert capsys.readouterr().out == "# Maity help\n"
 
@@ -679,6 +683,102 @@ def test_resume_adopts_a_credential_from_the_page_driven_join(
     assert cli.main(["resume", "--hub", fake.url]) == cli.EXIT_OK
     data = state.load_state(directory)
     assert data["hub"] == fake.url and data["project"] == "maity" and data["member_id"] == "agt-b"
+
+
+# --- a clone's hub is fixed: --hub on a joined clone ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("https://hub.example", "https://HUB.example"),
+        ("https://hub.example", "https://hub.example:443"),
+        ("https://hub.example", "HTTPS://hub.example./"),
+        ("https://hub.example", "https://hub.example/j/abc?x=1"),
+        ("http://localhost", "http://localhost:80"),
+        ("https://hub.example:8443", "https://Hub.Example:8443/api"),
+    ],
+)
+def test_same_origin(a: str, b: str) -> None:
+    assert hub.same_origin(a, b) and hub.same_origin(b, a)
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ("https://hub.example", "https://other.example"),
+        ("https://hub.example", "https://hub.example:8443"),
+        ("https://hub.example", "https://sub.hub.example"),
+        ("http://localhost:8000", "http://127.0.0.1:8000"),
+        ("http://localhost", "https://localhost"),
+    ],
+)
+def test_another_origin(a: str, b: str) -> None:
+    assert not hub.same_origin(a, b) and not hub.same_origin(b, a)
+
+
+def _state_bytes(directory: Path) -> dict[str, bytes]:
+    """Every file in the state directory, byte for byte."""
+    files = sorted(p for p in directory.rglob("*") if p.is_file())
+    return {str(p.relative_to(directory)): p.read_bytes() for p in files}
+
+
+def _other_port(url: str) -> str:
+    base = hub.hub_base(url)
+    port = int(base.rsplit(":", 1)[1])
+    return f"{base.rsplit(':', 1)[0]}:{port + 1 if port < 65535 else port - 1}"
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_hub_flag_with_another_origin_is_refused_and_writes_nothing(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    before = _state_bytes(joined)
+    assert "state.json" in before and "credential" in before
+    for other in ("https://elsewhere.example", _other_port(fake.url)):
+        assert cli.main([*command, "--hub", other]) == cli.EXIT_REFUSED, other
+        err = capsys.readouterr().err
+        assert f"joined to the hub at {fake.url}," in err
+        assert "changes only by a new join" in err
+        assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_hub_flag_with_the_same_origin_passes(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    spellings = (fake.url, f"{fake.url}/", f"{fake.url}/j/abc", fake.url.replace("http", "HTTP"))
+    for given in spellings:
+        assert cli.main([*command, "--hub", given]) == cli.EXIT_OK, output(capsys)
+        assert state.load_state(joined)["hub"] == fake.url  # the stored URL stays as it was
+    capsys.readouterr()
+
+
+def test_hub_flag_on_a_first_join_from_the_page_passes(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No state.json yet, only the credential the page-driven join left: `--hub` names the hub,
+    whatever it is, and is stored."""
+    directory = state.resolve_state_dir()
+    directory.mkdir(mode=0o700)
+    (directory / "credential").write_text(fakehub.CREDENTIAL)
+    (directory / "credential").chmod(0o600)
+    assert not (directory / "state.json").exists()
+    assert cli.main(["resume", "--hub", f"{fake.url}/"]) == cli.EXIT_OK, output(capsys)
+    assert state.load_state(directory)["hub"] == fake.url
+
+
+def test_a_new_join_is_the_way_to_another_hub(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A clone joined to another hub, its credential removed: `maity join` stores the new hub
+    as before."""
+    directory = state.resolve_state_dir()
+    state.save_state(directory, {"hub": "https://elsewhere.example", "project": "x/y"})
+    join = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]
+    assert cli.main(join) == cli.EXIT_OK, output(capsys)
+    assert state.load_state(directory)["hub"] == fake.url
 
 
 def test_a_redirect_is_refused_not_followed(
