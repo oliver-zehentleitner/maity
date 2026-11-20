@@ -773,6 +773,110 @@ def test_s183_a_single_call_after_allowed_assignments_is_held_to_one_plain_call(
     assert plaincall.refusal(bash(runner)) == plaincall.RUNNER_REFUSED
 
 
+# `maity` in a backtick command substitution (tsk-12zb1s0zgdjw): the shell reads the text
+# between the backticks as a line of its own, so `maity` is a word there however the word
+# around it goes on. Refused outright, like `maity` after any other command.
+IN_BACKTICKS = [
+    "`maity`",
+    "echo `maity`",
+    "`PYTHONPATH=. maity`",
+    "`LD_PRELOAD=./x.so maity`",
+    "`MAITY_STATE_DIR=/x maity`",
+    "`MAITY_WAIT_TIMEOUT=5 maity`",
+    "`env maity`",
+    "`nice maity`",
+    "`/usr/bin/maity`",
+    '"`maity`"',
+    "`MAITY`",
+    "`Maity`",
+    "$(echo `maity`)",
+    "true; `maity`",
+    "true && `maity`",
+    "true | `maity`",
+    "true || `maity`",
+    "`maity`x",
+    "x`maity`",
+    "x=`maity`",
+    "`maity``maity`",
+    "` maity`",
+    "`\tmaity`",
+    '"`/usr/bin/maity`"',
+    "'`maity`'",
+    'echo "a`maity`b"',
+    "`./maity`",
+    "`~/.local/bin/maity`",
+    "`$HOME/.local/bin/maity`",
+    "`! maity`",
+    "`exec maity`",
+    "`command maity`",
+    "[[ `maity` ]]",
+    "for i in `maity`; do :; done",
+    "`maity`>/dev/null",
+]
+# The same in other forms, or with other constructs on the line: each is refused, for one
+# reason or another.
+SUBSTITUTED_ELSEWHERE = [
+    "$(maity)",
+    '"$(maity)"',
+    "$(PYTHONPATH=. maity)",
+    "$(/usr/bin/maity)",
+    "$(env maity)",
+    "$( maity )",
+    "x$(maity)y",
+    "<(maity)",
+    ">(maity)",
+    "cat <(maity)",
+    "`maity -h`",
+    "echo `maity status`",
+    '`"maity"`',
+    "`ma\\ity`",
+    "`\\maity`",
+    "`ma''ity`",
+    "`echo $(maity)`",
+    "`maity `",
+    "`maity;`",
+    "`(maity)`",
+    "echo ${x:-`maity`}",
+    "echo ${x:-$(maity)}",
+    "case `maity` in *) ;; esac",
+    "`maity`#",
+]
+# Backtick substitutions that do not run `maity`: left to the permission rules as before.
+NOT_IN_BACKTICKS = [
+    "echo `date`",
+    "ls `pwd`",
+    "x=`git rev-parse HEAD`",
+    'echo "`date` done"',
+    "echo `cat maity.txt`",
+    "echo `maityx`",
+]
+
+
+@pytest.mark.parametrize("command", IN_BACKTICKS)
+def test_maity_in_a_backtick_substitution_is_refused_outright(command: str) -> None:
+    assert plaincall.prefixed(command)
+    assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
+
+
+@pytest.mark.parametrize("command", SUBSTITUTED_ELSEWHERE)
+def test_maity_in_any_other_substitution_form_is_refused(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is not None
+
+
+@pytest.mark.parametrize("command", NOT_IN_BACKTICKS)
+def test_backtick_substitutions_without_maity_are_left_to_the_permission_rules(
+    command: str,
+) -> None:
+    assert plaincall.refusal(bash(command)) is None
+
+
+def test_a_word_names_maity_or_runner_between_its_backticks() -> None:
+    assert plaincall._is_maity("`maity`", "`maity`")
+    assert plaincall._is_maity("x=`/usr/bin/MAITY`y", "x=`/usr/bin/MAITY`y")
+    assert not plaincall._is_maity("`maityx`", "`maityx`")
+    assert plaincall._is_runner("`runner`", "`runner`")
+
+
 # A `!`, a subshell or a group right before `maity`: the line counts as starting with `maity`
 # (a leading character a plain call may not hold is skipped) and is not one plain call.
 NOT_PLAIN_BEFORE_MAITY = ["! maity status", "!maity status", "(maity status)", "{ maity status; }"]
@@ -2087,3 +2191,78 @@ def test_text_with_braces_and_backticks_in_a_maity_call_passes() -> None:
 def test_the_runner_reason_names_the_constructs() -> None:
     assert "`eval`, `source`, `.`, `trap` or `bash -c`" in plaincall.RUNNER_REFUSED
     assert "a backslash-newline" in plaincall.RUNNER_REFUSED
+
+
+# Substitution shapes around the commands an agent may put `maity` behind.
+SUBSTITUTION_SHAPES = [
+    "`{c}`",
+    "$({c})",
+    '"$({c})"',
+    '"`{c}`"',
+    "cat <({c})",
+    "x=`{c}`",
+    "echo `{c}`",
+    "`{c}`y",
+    "$(echo `{c}`)",
+    "true; `{c}`",
+    "true && `{c}`",
+    "true | `{c}`",
+    'echo "a`{c}`b"',
+    "for i in `{c}`; do :; done",
+    "echo $(echo $({c}))",
+]
+SUBSTITUTED_COMMANDS = [
+    "maity",
+    "{bin}/maity",
+    "./maity",
+    "env maity",
+    "nice maity",
+    "command maity",
+    "exec maity",
+    "PYTHONPATH=. maity",
+    "NO_COLOR=1 maity",
+    "MAITY_WAIT_TIMEOUT=5 maity",
+    "nohup maity",
+    "{{ maity; }}",
+    "(maity)",
+    "true; maity",
+    "false || maity",
+    "true | maity",
+    "! maity",
+    " maity",
+    "maity ",
+    "\tmaity",
+]
+
+
+@pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
+def test_substitutions_run_maity_only_if_refused(tmp_path: Path) -> None:
+    """Each shape with each command, with and without arguments, in Bash, with `maity` a
+    program on the path and in the working directory that records each run: Bash runs
+    `maity` from no line the hook lets through."""
+    print(BASH_NAME)  # noqa: T201 - recorded in the test log
+    bin_dir, mark = tmp_path / "bin", tmp_path / "ran"
+    bin_dir.mkdir()
+    program = f'#!{BASH}\necho ran >> "$MARK"\n'
+    for where in (bin_dir / "maity", tmp_path / "maity"):
+        where.write_text(program)
+        where.chmod(0o755)
+    path = ":".join([str(bin_dir), "/usr/bin", "/bin"])
+    opened, ran = [], 0
+    for shape in SUBSTITUTION_SHAPES:
+        for command in SUBSTITUTED_COMMANDS:
+            for args in ("", " status", " -h"):
+                line = shape.format(c=command.format(bin=bin_dir) + args)
+                assert BASH is not None
+                mark.unlink(missing_ok=True)
+                subprocess.run(
+                    [BASH, "--norc", "--noprofile", "-c", line], cwd=tmp_path,
+                    capture_output=True, timeout=30, check=False, stdin=subprocess.DEVNULL,
+                    env={"PATH": path, "MARK": str(mark), "HOME": str(tmp_path), "LC_ALL": "C"},
+                )  # fmt: skip
+                if mark.exists():
+                    ran += 1
+                    if plaincall.refusal(bash(line)) is None:
+                        opened.append(line)
+    assert opened == [], BASH_NAME
+    assert ran >= 800, ran  # most of the lines do run `maity` in Bash

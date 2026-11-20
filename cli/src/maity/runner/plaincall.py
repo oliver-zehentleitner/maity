@@ -10,8 +10,10 @@ command starts is read past its leading comment lines and blank lines, as Claude
 it; the line itself is still judged whole, so such a line is refused. Any other line in
 which `maity` is a word (`prefixed`) is
 refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
-a subshell or a group before it, or `maity` by a path. A word counts as `maity` (and as
-`runner`) also once its backslashes and quotes are taken off (`_reads_as`), and a word that
+a subshell or a group before it, or `maity` by a path, and so is a line with `maity` in a
+command substitution, where the shell reads it as a line of its own. A word counts as `maity`
+(and as `runner`) also once its backslashes and quotes are taken off (`_reads_as`), also as
+each part of it between backticks (`_substituted`), and a word that
 holds a `{` also as each part of it between `{`, `,` and `}` and as each word its brace
 expansion makes, as Bash makes them from the word as written, quotes and all, and from its
 text read again, up to `BRACE_LIMIT` words; a word that makes more, or whose braces the hook
@@ -103,8 +105,9 @@ PREFIX_REFUSED = (
     "`maity …` at the start of the line; text that mentions `maity` goes in a file in this "
     "clone, passed with `--body-file`."
 )
-# The reason for a refused line whose words before `maity` assign MAITY_WAIT_TIMEOUT
-# (`_assigns_wait_timeout`): the same rule, led by the way to set a wait's timeout here.
+# The reason for a refused line with a word before `maity` that reads as an assignment to
+# MAITY_WAIT_TIMEOUT (`_assigns_wait_timeout`): the same rule, led by the way to set a wait's
+# timeout here.
 WAIT_TIMEOUT_REFUSED = (
     "MAITY_WAIT_TIMEOUT does not go before `maity` here: run `maity wait --timeout N` "
     "instead. " + PREFIX_REFUSED
@@ -119,8 +122,9 @@ WAIT_TIMEOUT_REFUSED = (
 # would not get the credential in a placement, so a placed agent passes `maity wait --timeout N`
 # (cli/context/runner.md). `test_plaincall.py` fails when a `MAITY_` name is added here.
 ALLOWED_BEFORE_MAITY = ("NO_COLOR", "LANG", "LC_*", "TZ")
-# An assignment to MAITY_WAIT_TIMEOUT, unquoted, with `=` or `+=`: only for the reason a
-# refused line gets (`WAIT_TIMEOUT_REFUSED`), never to let a line through.
+# A word that reads as an assignment to MAITY_WAIT_TIMEOUT, unquoted, with `=` or `+=`,
+# wherever it stands before `maity`: only for the reason a refused line gets
+# (`WAIT_TIMEOUT_REFUSED`), never to let a line through.
 _WAIT_ASSIGNMENT = re.compile(r"MAITY_WAIT_TIMEOUT\+?=")
 # An allowed name, unquoted, then `=`; `+=` is refused as well. The value is not judged here:
 # `plain` refuses one that expands.
@@ -155,8 +159,9 @@ def _placement(command: str) -> str | None:
     assignment `_ASSIGNMENT` allows and that word is `maity` alone (in any case, not by a
     path), or when a quote never closes on a line that names `maity`; "prefixed" when
     `maity` is a word after anything else (an assignment to another name included), by a
-    path, or a word of quoted text that holds spaces or operators, read again as a line
-    (`_maity_in_text`); None when `maity` is no word of the line."""
+    path, between backticks (`_substituted`), or a word of quoted text that holds spaces or
+    operators, read again as a line (`_maity_in_text`); None when `maity` is no word of the
+    line."""
     command = _past_comment_lines(command)
     if _MAITY.match(command) is not None:
         return "held"
@@ -178,9 +183,11 @@ def _placement(command: str) -> str | None:
 
 
 def _assigns_wait_timeout(command: str) -> bool:
-    """Whether a word before the line's first word `maity` (`_is_maity`), read past its
-    leading comment lines and blank lines as `_placement` reads it, is an unquoted assignment
-    to MAITY_WAIT_TIMEOUT (`_WAIT_ASSIGNMENT`). It only picks the reason for a line that is
+    """Whether any word before the line's first word `maity` (`_is_maity`), read past its
+    leading comment lines and blank lines as `_placement` reads it, is an unquoted word that
+    reads as an assignment to MAITY_WAIT_TIMEOUT (`_WAIT_ASSIGNMENT`), whether or not the
+    shell takes it as one: the first word or any later one, after a command such as `env`,
+    as an argument or after an operator alike. It only picks the reason for a line that is
     refused anyway."""
     command = _past_comment_lines(command)
     try:
@@ -264,20 +271,29 @@ def plain(command: str) -> bool:
 
 def _is_maity(word: str, written: str) -> bool:
     """Whether a word names `maity`: by any path, in any case, however its start is trimmed,
-    also as `_names` takes it (`written` as `_split` gives it). A word in which `$'` is
-    followed by a backslash counts whatever it holds."""
+    also as `_names` takes it (`written` as `_split` gives it), and also as any part of it
+    between backticks (`_substituted`). A word in which `$'` is followed by a backslash counts
+    whatever it holds."""
     if re.search(r"\$'.*\\", word, re.DOTALL):
         return True
     return any(
-        re.sub(r"^[^0-9A-Za-z]+", "", name.rsplit("/", 1)[-1]).lower() == "maity"
-        for name in _names(word, written)
+        re.sub(r"^[^0-9A-Za-z]+", "", part.rsplit("/", 1)[-1]).lower() == "maity"
+        for part in _substituted(_names(word, written))
     )
 
 
 def _is_runner(word: str, written: str) -> bool:
     """Whether a word is `runner`, in any case, also as `_names` takes it (`written` as
-    `_split` gives it)."""
-    return any(name.lower() == "runner" for name in _names(word, written))
+    `_split` gives it), and also as any part of it between backticks (`_substituted`)."""
+    return any(part.lower() == "runner" for part in _substituted(_names(word, written)))
+
+
+def _substituted(names: Sequence[str]) -> list[str]:
+    """Each name, and each part of it between backticks. `_split` keeps a backtick in the
+    word as text, but the shell ends the word of the command a backtick opens or closes
+    there and reads what stands between as a line of its own, so `` `maity` ``,
+    `` x=`maity` `` and `` `env maity` `` hold the word `maity` (cli/context/runner.md)."""
+    return [part for name in names for part in (name, *name.split("`"))]
 
 
 def _names(word: str, written: str) -> tuple[str, ...]:
