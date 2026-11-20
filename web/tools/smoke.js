@@ -2655,9 +2655,14 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = prAll;
   const prGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me" ? prGet(p).then((m) => { m.projects.find((x) => x.slug === "maity").trust = "member"; return m; }) : prGet(p));
-  await go(PR); await tick();
+  // What a member's visit reads, not only what it draws: never the project's runners.
+  const prMemberReads = [];
+  win.Maity.api.getAll = (p) => { if (p.startsWith("/projects/maintainer/maity/runners")) prMemberReads.push(p); return prAll(p); };
+  await go(PR); await tick(); await fireIntervals(); await tick();
+  win.Maity.api.getAll = prAll;
   expect(!prTab() && !prSubTab() && !main.querySelector("article.runner") && win.Maity.route.current().path === "/maintainer/maity/settings/mine",
     "project runners: no tab and no runners for a member, led on to Mine " + win.Maity.route.current().path);
+  expect(!prMemberReads.length, "project runners: a member's visit to settings/runners reads no runners list " + JSON.stringify(prMemberReads));
   win.Maity.api.get = prGet;
   await go("#/maintainer/maity/team"); for (let k = 0; k < 4; k++) await tick();
 
@@ -8012,6 +8017,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(text(main).includes("The board changed.") && text(main).includes("The project changed."), "state change added to the notice");
   btn(main, "Reload").click(); await tick(); await tick();
   expect(!text(main).includes("The board changed."), "reload clears the notice");
+  // Settings → Runners keeps the runners' change notice of their old route (tsk-ert2k23kr5m4); another Settings tab has none.
+  await go("#/maintainer/maity/settings/runners"); await tick();
+  feed = [{ seq: 10004, kind: "runner_attached", actor: { member_id: "agt-b" }, payload: {} }];
+  await fireIntervals(); await tick();
+  expect(text(main).includes("The runners changed.") && btn(main, "Reload"), "project runners: someone else's runner event on Settings → Runners says the runners changed");
+  await go("#/maintainer/maity/settings/work"); await tick();
+  feed = [{ seq: 10005, kind: "runner_detached", actor: { member_id: "agt-b" }, payload: {} }];
+  await fireIntervals(); await tick();
+  expect(!text(main).includes("The runners changed."), "project runners: the same event on Settings → Way of working says nothing about runners");
+  feed = [];
   await go("#/maintainer/maity/inbox");
   const before = gets.length;
   feed = [{ seq: 10004, kind: "request_created", actor: { member_id: "agt-b" }, payload: {} }];
