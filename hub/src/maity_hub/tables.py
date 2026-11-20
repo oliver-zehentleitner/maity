@@ -654,7 +654,7 @@ project = Table(
     Column("repository_default_branch", String(255)),
     # The one check that says a commit is good (§6.1 `repository.required_check`), or null.
     Column("repository_required_check", String(200)),
-    # The project's own links (§6.11): issues, wiki, discussions, chat, each an https URL.
+    # The project's own links (§6.11): issues, wiki, discussions, docs, chat, each an https URL.
     Column("links", JSON_VALUE),
     # The project's public page and the text on it (§16.9): both belong to the namespace
     # owner and are off and empty until they choose; not part of the policy.

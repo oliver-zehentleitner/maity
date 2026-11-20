@@ -389,6 +389,7 @@
     "object": {
      "chat": "null",
      "discussions": "null",
+     "docs": "null",
      "issues": "null",
      "wiki": "null"
     }

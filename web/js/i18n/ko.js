@@ -3648,6 +3648,7 @@ window.MAITY_I18N["ko"] = {
   "project.link.actions_on": "{forge}의 Actions",
   "project.link.chat": "채팅",
   "project.link.discussions": "토론",
+  "project.link.docs": "문서",
   "project.link.issues": "이슈",
   "project.link.ktw_dashboard": "Keep the Why 대시보드",
   "project.link.opens": "{what} (새 탭에서 열림)",

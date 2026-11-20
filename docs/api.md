@@ -5927,7 +5927,8 @@ server time back.
                   "required_check": "ci-ok",
                   "forge": "github", "probe_configured": true, "probe_via": "app",
                     "owner_confirmed": true, "confirmed_by": { "id": "hum-mebxvnc20qeg", "handle": "oliver" } },
-  "links": { "issues": "https://github.com/oliver-zehentleitner/maity/issues", "wiki": null, "discussions": null, "chat": null },
+  "links": { "issues": "https://github.com/oliver-zehentleitner/maity/issues", "wiki": null, "discussions": null,
+             "docs": "https://maity.dev/", "chat": null },
   "logo": { "available": true, "source": "uploaded", "etag": "\"9f2c41d0\"" },
   "banner": { "available": false, "source": null },
   "memory": { "provider": "keep-the-why" },
@@ -9740,7 +9741,7 @@ already read; the page adds no new right and no new stored field.
 | Keep the Why dashboard link | `keep_the_why_export.members[]` (§6.1, §11.3), the root's (`path: ""`) `dashboard_url`, and each child's under its `name` | `null` export: no link. The attention counts are next to it (`summary.attention`, `summary.status`) |
 | contract link | `settings.contract_path` (§6.1, default `docs/api.md`), `repository` | the view of the whole contract inside Maity and, when `forge` is `github` or `gitlab` only, the forge's page for the file (§6.8); `gitea`, `bitbucket`, `other` or no repository: no forge page for the file |
 | pull requests link | `repository.url` and `repository.forge` (§6.1) | derived in the browser: GitHub and Gitea `/pulls`, GitLab `/-/merge_requests`, Bitbucket `/pull-requests`; another forge or no repository: no link |
-| issues, wiki, discussions and chat links | the project's `links` (below) | each one set is a button next to the repository link; one not set shows nothing |
+| issues, wiki, discussions, docs and chat links | the project's `links` (below) | each one set is a button next to the repository link, in this order (Docs after Discussions, before Chat); one not set shows nothing |
 | policy preset | `policy.preset` and the fields it fills (§6.1) | |
 | members with trust and role | `GET /projects/{owner}/{slug}/members` (§6.2) | grouped by `role` and `kind` in the browser, the trust shown where it is not `member`; presence as the hub computes it. `owner` and `credentials` only where the member view already carries them |
 | board counts, open requests, recent reports | `GET /projects/{owner}/{slug}/overview` (below) | the only new endpoint |
@@ -9749,16 +9750,17 @@ already read; the page adds no new right and no new stored field.
 **The project's own links.** The maintainer's wish of 2026-10-31:
 besides the repository and Keep the Why, a project points at where its
 people talk and write. The project carries `links: {issues, wiki,
-discussions, chat}` (`chat`: a Discord, Telegram, Matrix or similar
-invite), each `null` (default) or an absolute `https` URL without user
+discussions, docs, chat}` (`docs`: the project's documentation, added
+on the maintainer's wish of 2026-11-19; `chat`: a Discord, Telegram,
+Matrix or similar invite), each `null` (default) or an absolute `https` URL without user
 part or port, whose host is a DNS name as for a person's `website`
 (§16.9: no IP literal, no `localhost`), of at most 500 characters, with
 no control or whitespace character, on any host — an issue tracker, a
-wiki, a discussion board or a chat need not be on the forge. Set with
+wiki, a discussion board, documentation or a chat need not be on the forge. Set with
 `PATCH /projects/{owner}/{slug}` under `project:admin`, like
 `repository`; `links` merges as a person's `social` does: a key given
 sets or (`null`) clears that link, a key left out stays, `links: null`
-clears all four. A value not of that form is `invalid`
+clears all five. A value not of that form is `invalid`
 (`details.fields.links.<name>`: `format` or `too_long`), an unknown key
 `details.fields.links.<key>: "unknown"`, a `links` that is not an object
 `details.fields.links: "format"`. A change emits `project_updated` with

@@ -3887,7 +3887,7 @@ window.Maity = window.Maity || {};
       // person_links.website_problem does (500 characters): too_long first, then the form.
       if ("links" in body) {
         if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
-        const KEYS = ["issues", "wiki", "discussions", "chat"];
+        const KEYS = ["issues", "wiki", "discussions", "docs", "chat"];
         const merged = {};
         if (body.links !== null) {
           if (typeof body.links !== "object" || Array.isArray(body.links)) fail(400, "invalid", "the request does not validate", path, { fields: { links: "format" } });
