@@ -1146,7 +1146,8 @@ pull_requests = true
 lead = true
 ```
 
-A placed member whose role the hub names `manager` then also runs:
+A placed member whose role the hub names `manager`, or a project role
+built on manager, then also runs:
 
 - `maity gh pr merge <number> --match-head-commit <sha> --subject <text>
   --body-file <file>` (or `--body <text>`): a squash merge, always. The
@@ -1169,7 +1170,7 @@ A placed member whose role the hub names `manager` then also runs:
   control characters and cut to its last 400 lines. maity says when it cut
   the log, and how many lines it had. With `--job`, gh reads the run that
   job belongs to and does not use the run id given, so the job id alone
-  decides which run is shown. Run and job ids are digits, up to 20.
+  decides which run is shown. Run and job ids are digits, up to 19.
 
 At each of these calls maity reads the caller's role from the hub with
 the session's credential, never from the resume packet or a member id
