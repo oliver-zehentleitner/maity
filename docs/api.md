@@ -19692,10 +19692,19 @@ skill.
   a string in the hub's credential format (§2.2), with the check its
   hub client runs on every request body (`sign.contains_credential`,
   called from `_guard_payload` in `cli/src/maity/hub.py`), so the report
-  is never refused for one. The hub still checks the whole body as it
-  checks every body: a credential-format string anywhere in it refuses
-  the report with `credential_in_payload` (§2.2), and a real credential
-  is revoked as there.
+  is never refused for one.
+- **The hub's own check.** The hub refuses, it does not drop: a log
+  line is part of the report's body, and the hub's guard on every
+  request body (§2.2, "The hub refuses any request body or query string")
+  already refuses the whole report with `credential_in_payload` (400)
+  when a string in the credential format stands anywhere in it, a log
+  line included, from every caller, a runner too. That is the
+  server-side check for log lines; it stores nothing of the report, and
+  a real credential is revoked as §2.2 says. The hub refuses every other
+  field of a report the same way, so a log line gets no rule of its own,
+  and the hub's part of the card adds a test that a status report whose
+  `finding.log` holds such a string is refused and leaves `reported` and
+  the history unchanged.
 - **Bounds.** At most 200 entries, oldest first. `at` is the line's
   timestamp; `line` is 1 to 1024 bytes of printable ASCII (`0x20` to
   `0x7E`, so no line break or control character), and all lines
@@ -19717,8 +19726,10 @@ skill.
   field is. A body that passes 64 KiB anyway is `payload_too_large`
   (§1.7).
 - **Who reads them.** Only the runner's owner, the agent profile's
-  owner, and the members `trust:admin` names in the project (§2.3: an
-  admin agent such as the lead; no proxy). For them the hub adds `log`
+  owner, and the members of the project with trust `owner` or `admin`
+  (§2.3): the project's owners and its admins, an admin agent such as
+  the lead among them; the arbiter's answer to req-jcq33fsvc72a. For
+  them the hub adds `log`
   to the finding wherever they read it: in `reported` on the placement
   (§15.5) and in the history (`GET
   /projects/{owner}/{slug}/placements/{id}/reports`, §15.6). Those two
@@ -19727,9 +19738,10 @@ skill.
   caller the finding comes without the `log` key. The hub keeps the
   lines with the `placement_reported` event's row, outside its payload,
   so the event as such never carries `log`: in the event stream (`GET
-  /events`, §8.3) its audience (§8.2) and the readers of every event
-  (an admin, a proxy) see the finding without it. The runner gets it
-  back in the answer to its own report.
+  /events`, §8.3) every reader sees the finding without it, its
+  audience (§8.2) and those who read every event alike, a reader above
+  included, who reads the lines in the two places named. The runner
+  gets them back in the answer to its own report.
 - **How long.** The lines are kept with their finding: in `reported`
   until the next report replaces it, and with that `placement_reported`
   event as long as the event is kept, and they go with it.

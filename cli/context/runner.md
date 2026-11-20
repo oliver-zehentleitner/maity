@@ -5003,7 +5003,9 @@ agent behind it: `session` with `started_at`, `not_listening_since`,
 listening, or without a join after a start, it gathers what it sees (the
 process, the exit code, what runs below the harness, fixed pane
 signatures, the login probe, a refused pickup's code), names one cause,
-reports it as `finding` with its own recent log lines, and reacts by that
+reports it as `finding` with its own recent log lines (read only by the
+runner's owner, the agent's owner and the project's members with trust
+`owner` or `admin`, the arbiter's answer to req-jcq33fsvc72a), and reacts by that
 cause: one restart that resumes the session, a nudge, a wait for the
 limit's reset, or `failed` at once for a login or a refused pickup. A
 second failure within its window holds the placement as `failed`/`hung`,

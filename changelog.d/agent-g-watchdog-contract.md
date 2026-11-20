@@ -11,9 +11,10 @@
   agents, `null` for a foreign one (req-1kk6pwdxdmg6). Not built yet (§15.8).
 - contract: a status report may carry `finding`: a cause and signals as fixed codes, never
   pane text, a path or a secret, plus the runner's own last log lines about the placement,
-  bounded and read only by the runner's owner, the agent's owner and the project's admin
-  agents; `hung` gains the details `not_listening` and `never_joined`. Not built yet
-  (§15.7).
+  bounded and read only by the runner's owner, the agent's owner and the project's members
+  with trust `owner` or `admin`; a log line in the credential format is refused with the
+  report (`credential_in_payload`); `hung` gains the details `not_listening` and
+  `never_joined`. Not built yet (§15.7).
 - contract: the runner settings `[limits.watch]` `not_listening_grace_minutes`,
   `join_within_minutes`, `auto_restarts` and `retry_window_minutes`. Not built yet
   (docs/runners.md).
