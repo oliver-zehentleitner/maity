@@ -6679,6 +6679,27 @@ still hands over the open groups' cards. Without them an open column would be
 left at its first page with a count. The closed columns say the failure, as
 before. A reload after a write reads every page before it draws, as before.
 
+Since tsk-3b2t7hwc352s (2026-11-20) the late draw replaces only the columns
+that changed. Ops traced the board and the card panel on oliver-pc01-l
+(prod fccd88f, the card's note of 2026-11-20). The board was drawn twice. The
+late draw emptied every column (`clear`, one `removeChild` per child: 46 ms
+of script and 10–15k layout invalidations) and built them again, and each
+draw was followed by a style recalculation of 175–200 ms over about 16k
+elements. The late draw (the closed reads in or failed, a Show more page)
+still builds every column in script. It then compares each with the column on
+the page (`M.dom.sameTree`: elements, attributes and text, a menu's id aside,
+since `M.menuButton` makes one anew for every draw). Where the two are the
+same and drawn from the same card objects in the same order, the column on
+the page stays and is not moved. The opened card's panel keeps its card part
+the same way. A column or part that differs is drawn anew as before, and so is
+one whose subtask list or dependency lines a closed card changes. The stale
+lists of the rejected alternative below cannot come back. In a kept column or
+part the focus, an open form and what was typed simply stay; where it is
+drawn anew they are carried over as before. `byId` is now filled in place, so
+that a card edited in a kept column is drawn from the cards the late draw
+brought. A draw the reader starts (a filter, a search, a move) draws every
+column anew, as before.
+
 **Reason:** on the maintainer's project the closed window was 783 cards,
 the largest group by far, and its pages follow each other through a
 keyset cursor, so it held the first draw by about a second while the open
@@ -6705,6 +6726,12 @@ columns, the ones a reader works in, had long answered.
   moving the open form into it keeps the draft without stale lists, on a
   changed card as well. Redrawing without moving the form (round 3) lost
   the draft: the form has no control in the redrawn part to carry it to.
+- Drawing the board once, after the whole read (tsk-3b2t7hwc352s): it
+  brings back the wait the first draw removed.
+- Choosing the columns to redraw by their cards alone (tsk-3b2t7hwc352s): an
+  open card's subtask list, dependency lines and folding read the closed
+  cards too, so a column changes with more than its own cards. Comparing
+  what the column would draw covers all of it.
 
 
 ## A card's open menu outlives the board's redraws that no action of the reader starts
@@ -6731,6 +6758,12 @@ After the draw it opens the same menu of the redrawn card again, through the men
 assign menu) leaves the menu closed and the focus on its button, so that Enter lands on no other
 item; a menu whose items had no focus is not opened again. A redraw the reader starts (a move, a filter, a search)
 closes the menu as before: the reader's own action has replaced it.
+
+The `Revisit when` above has partly come about with tsk-3b2t7hwc352s (2026-11-20): the late draw
+keeps a column on the page where it would be drawn the same (e58ffe3b). A card menu opened before it
+is still closed before the draw and opened again after it, as above. Opening it filled its list, so
+its column is not the same any more and is drawn anew. The steps here stay needed for that, for every
+other column that changes, and for the presence refresh, which draws every column.
 
 **Reason:** the race is in the page, not only in the test. The fix belongs where a person meets it,
 and the e2e step then needs no wait of its own.
@@ -6788,6 +6821,19 @@ closed card the board is opened on that is not loaded opens in its panel,
 read by itself, as a card outside the window does. A hub search, whose
 results come whole, still draws the 50 closed last of each closed column
 and a button the rest ("Show 11 more closed cards").
+
+The `Revisit when` above about a full redraw over 200 ms has come about. Ops'
+trace of 2026-11-20 on oliver-pc01-l (prod fccd88f, before tsk-qw08c8ds214g)
+followed each of the board's two draws with a style recalculation of 175–200
+ms over about 16k elements. The late draw's script took 138 ms: 46 ms emptied
+the columns one `removeChild` at a time, about 29 ms formatted dates. The
+page of 50 stays. Since tsk-3b2t7hwc352s the late draw keeps every column that
+would be drawn the same (e58ffe3b). `M.dom.clear` empties an element with one
+`replaceChildren` where the browser has it. js/i18n.js keeps one date
+formatter per language, zone and options instead of making one for every
+date. The gain is not measured yet: ops' rerun of perf/trace.py on the same
+host after the deploy decides the card. A draw the reader starts still draws
+every column.
 
 **Reason:** every redraw of the board (a filter change, each keystroke of
 the board search, a card's update) drew every closed card: with 783 a full
