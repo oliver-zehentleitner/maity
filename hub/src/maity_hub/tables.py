@@ -2887,13 +2887,14 @@ notification_recipient = Table(
 )
 
 # The stored vector behind a position handle, when the inline form would not fit
-# (§18.2): immutable, kept at least 30 days after its last use.
+# (§18.2): immutable, kept at least 30 days after its last use. `vector` is reserved on
+# MariaDB 11.7+ and SQLAlchemy does not know it, hence quote=True (test_reserved_words.py).
 notification_position = Table(
     "notification_position",
     metadata,
     Column("id", String(ID), primary_key=True),
     _ref("human_id", "human.id", nullable=False),
-    Column("vector", JSON_VALUE, nullable=False),
+    Column("vector", JSON_VALUE, nullable=False, quote=True),
     Column("created_at", UtcDateTime, nullable=False),
     Column("last_used_at", UtcDateTime, nullable=False),
     **MYSQL_TABLE,

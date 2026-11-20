@@ -1020,6 +1020,44 @@ not show the mistake, and `hub-mariadb` runs only on `main`.
 **Rejected alternatives:** none in contention; the type has to come from somewhere other than the
 reflection.
 
+## A name MySQL or MariaDB reserve is quoted with `quote=True`, not renamed
+
+**Id:** e70b5933-72f5-4951-b024-b92fe22dc521
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-5cah3a82dv63 (found in the review of pull request #2020 on MariaDB 11.8; the lead's go for quoting over a rename, 2026-11-20); the MariaDB KB "Reserved Words" (`VECTOR`, 11.7+); `hub/tests/test_reserved_words.py`
+**Revisit when:** SQLAlchemy's MySQL/MariaDB reserved lists gain `vector` (`test_sqlalchemy_still_lacks_vector` fails), or the hub starts writing raw SQL against `notification_position`
+
+MariaDB 11.7 made `vector` a reserved word, and `notification_position` has a column of that name.
+SQLAlchemy quotes an identifier only when its dialect's reserved list holds it, and 2.1.6 lacks
+`vector`: migration `0034` sent `vector JSON NOT NULL` unquoted, so a new install on MariaDB 11.7+
+stopped there, and on a server upgraded under an existing hub the `INSERT` of a stored position
+failed (the `SELECT` survives, a reserved word after a period needs no quotes). The column carries
+`quote=True` in `tables.py` and in `0034`; the edit to the shipped revision changes only how its DDL
+is spelled, not what it creates, so its id stays and existing databases are untouched. The schema
+already depended on SQLAlchemy's quoting for `before`, `body`, `by`, `limit`, `rank`, `role` and
+`trigger`; `vector` is one the dialect did not know yet. `test_reserved_words.py` keeps a list of the
+words the servers reserve newer than SQLAlchemy's lists and fails, on every engine and without a
+server, on such a name without the flag, in the tables and in the revisions.
+
+**Reason:** a rename still needs the same edit to `0034`, because a new install runs its `CREATE
+TABLE` before any rename could, so it is the quoting plus a migration chained on main's head, a
+`CHANGE COLUMN` on MariaDB where the JSON column's `json_valid` CHECK names the column, and the old
+name quoted again in both directions. What it would buy, SQL written by hand without quotes, matters
+little in a hub whose rule is `op.*` and Core only.
+
+**Rejected alternatives:**
+- Renaming the column with a migration that keeps the data: more steps for the same edit to `0034`
+  (above).
+- Waiting for SQLAlchemy to list the word: an operator on 11.7+ could not install the hub meanwhile,
+  and the next word would surprise the same way.
+
+**Known limit:** a table read with `autoload_with` gets plain names without the flag, so a revision
+that reflects `notification_position` and writes `vector` names that column itself, as with the JSON
+type above. The list in the test is kept by hand from the vendors' reserved-word pages.
+
 ## On MariaDB a migration run commits per step, and a refusal stays where it refused
 
 **Id:** e7f302f4-ee65-49f6-bc75-849bacb94ba8

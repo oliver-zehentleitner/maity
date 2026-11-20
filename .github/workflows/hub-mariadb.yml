@@ -149,10 +149,48 @@ jobs:
       - run: make install
       - run: make test
 
+  # The newest MariaDB LTS, on a subset: a fresh install through head and back (test_migrations, test_schema) and the
+  # notification positions, whose stored vector is written by an INSERT naming `vector`, reserved since MariaDB 11.7
+  # (hub/context/persistence.md, the entry on reserved words). The full suite stays on 11.4 above.
+  hub-mariadb-11-8:
+    needs: decide
+    if: needs.decide.outputs.run == 'true'
+    runs-on: ${{ (vars.HUB_RUNNER_LABEL != '' && contains(format(' {0} ', vars.HUB_RUNNER_TYPES || 'sqlite pg maria'), ' maria ')) && fromJSON(format('["self-hosted","{0}-maria"]', vars.HUB_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    services:
+      mariadb:
+        image: mariadb:11.8@sha256:e1d5495f445654134f226f55a41ce0da227116f6f27f283101f405c794d841fc # 11.8.9; pinned: a local tag cannot replace it
+        env:
+          MARIADB_USER: maity
+          MARIADB_PASSWORD: ci-only
+          MARIADB_DATABASE: maity
+          MARIADB_ROOT_PASSWORD: ci-only  # the test workers create their own databases
+        ports: ["127.0.0.1:3307:3306"]  # beside the 11.4 job's 3306 when both run on the same machine
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      MAITY_TEST_DATABASE_URL: mariadb://maity:ci-only@127.0.0.1:3307/maity
+      MAITY_TEST_ADMIN_DATABASE_URL: mariadb://root:ci-only@127.0.0.1:3307/maity
+    steps:
+      - run: echo "runner $RUNNER_NAME ($RUNNER_ENVIRONMENT, $RUNNER_OS $RUNNER_ARCH), $(nproc) cpus"
+        working-directory: .  # before the checkout, `hub` does not exist yet
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.decide.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: make install
+      - run: >-
+          make test PYTEST_ARGS="-n auto tests/test_reserved_words.py tests/test_migrations.py tests/test_schema.py
+          tests/test_notifications.py tests/test_notification_retention.py"
+
   # Red: one issue labelled ci-red names the range; more red runs comment on it. A green
   # automatic run closes it. A hand run for a deploy candidate never closes the issue of main.
   report:
-    needs: [decide, hub-mariadb]
+    needs: [decide, hub-mariadb, hub-mariadb-11-8]
     if: always() && needs.decide.outputs.run == 'true' && needs.hub-mariadb.result != 'skipped'
     runs-on: ubuntu-latest
     permissions:
@@ -171,7 +209,8 @@ jobs:
       - shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RESULT: ${{ needs.hub-mariadb.result }}
+          # red when either MariaDB job is: a failure first, then a cancel, else the 11.4 suite's result
+          RESULT: ${{ (needs.hub-mariadb.result == 'failure' || needs.hub-mariadb-11-8.result == 'failure') && 'failure' || ((needs.hub-mariadb.result == 'cancelled' || needs.hub-mariadb-11-8.result == 'cancelled') && 'cancelled' || needs.hub-mariadb.result) }}
           HAND: ${{ github.event_name == 'workflow_dispatch' && !(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') }}
           SHA: ${{ needs.decide.outputs.sha }}
           BASE: ${{ needs.decide.outputs.base }}
@@ -197,7 +236,7 @@ jobs:
           # cancelled is red too: nothing here cancels a running job (cancel-in-progress is false), so it is the
           # job's timeout or a cancel by hand, and either must not end silently.
           elif [ "$RESULT" = failure ] || [ "$RESULT" = cancelled ]; then
-            how=""; [ "$RESULT" = cancelled ] && how=" (cancelled: the job's timeout of 90 minutes or a cancel by hand)"
+            how=""; [ "$RESULT" = cancelled ] && how=" (cancelled: a job's timeout, 90 minutes on 11.4 and 30 on 11.8, or a cancel by hand)"
             text="hub-mariadb is red at $SHA$how ($RUN_URL). Last green run was at $BASE; the change is in $BASE..$SHA."
             if [ -n "$num" ]; then
               gh issue comment "$num" --repo "$GITHUB_REPOSITORY" --body "$text"
