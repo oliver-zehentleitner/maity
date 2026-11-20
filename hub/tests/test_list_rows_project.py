@@ -166,6 +166,8 @@ def test_jour_fixe_series_cost_the_same_for_3_and_for_30(
 def test_jour_fixe_rounds_cost_the_same_for_3_and_for_30(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
+    """A project-wide series read by the project's owner: `circle.reads` answers without a read.
+    An owner circle read by another than its owner is measured on its own, below."""
     first, _ = _round(owner, make_client)
 
     def grow(n: int) -> None:
@@ -186,6 +188,45 @@ def test_jour_fixe_rounds_cost_the_same_for_3_and_for_30(
         "/projects/{}/{}/jour-fixe/rounds",
         lambda: owner.get(f"{P}/jour-fixe/rounds?limit=200"),
         grow,
+    )
+
+
+@flat_rows("/projects/{}/{}/jour-fixe/rounds")
+@pytest.mark.parametrize("reader", ["circle owner", "moderator", "owned agent"])
+def test_jour_fixe_rounds_of_an_owner_circle_cost_the_same_for_3_and_for_30(
+    reader: str, owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The rounds of a series for one human's own agents (§20.7), read by that human, by the
+    round's moderator and by another of the human's agents: `circle.reads` decides each round,
+    and only for its owner without a read (h385 at #2039)."""
+    from tests.test_jour_fixe_circle import Circle
+
+    circle = Circle(owner, make_client, migrated, [clock.now()])
+    by: dict[str, Any] = {
+        "circle owner": circle.friend,
+        "moderator": circle.lead,
+        "owned agent": circle.worker,
+    }
+
+    def grow(n: int) -> None:
+        _copies(
+            migrated,
+            t.jour_fixe_round,
+            circle.id,
+            n,
+            lambda i: {
+                "status": ("reported", "skipped", "missed")[i % 3],
+                "scheduled_for": clock.now() - timedelta(days=i),
+                "created_at": clock.now() - timedelta(days=i),
+            },
+        )
+
+    same_for_3_and_30(
+        migrated,
+        "/projects/{}/{}/jour-fixe/rounds",
+        lambda: by[reader].get(f"{P}/jour-fixe/rounds?limit=200"),
+        grow,
+        case=f"owner circle, read by the {reader}",
     )
 
 

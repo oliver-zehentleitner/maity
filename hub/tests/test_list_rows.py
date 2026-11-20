@@ -198,7 +198,10 @@ def unaccounted(routes: set[str], claimed: set[str]) -> dict[str, set[str]]:
         ),
         "entries that are no GET route (any more)": listed - routes,
         "routes in two of them": twice,
-        "GROWING entries no @flat_rows test claims": set(list_rows.GROWING) - claimed,
+        "GROWING entries no @flat_rows test claims": {
+            entry.split(" [", 1)[0] for entry in list_rows.GROWING
+        }
+        - claimed,
         "LIST_KEYS entries for a route not in NOT_LISTS": set(LIST_KEYS) - set(NOT_LISTS),
     }
     return {kind: found for kind, found in problems.items() if found}

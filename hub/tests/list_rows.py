@@ -18,10 +18,10 @@ from tests.statements import listening
 F = TypeVar("F", bound=Callable[..., Any])
 
 # Known exceptions: list routes whose statements grow with their rows today (measured
-# 2026-11-20, tsk-xdn21ph67js9; the last four after the review of #2039). Each gets its own card
+# 2026-11-20, tsk-xdn21ph67js9; the last six after the reviews of #2039). Each gets its own card
 # for the fix; its `@flat_rows` test still runs and asserts that the cost grows, so an entry fails
 # once its fix lands and leaves with that card. One per line, sorted, with what the route reads
-# per row.
+# per row. `<route> [<case>]`: only that way of reading the route grows (`same_for_3_and_30`).
 GROWING: dict[str, str] = {
     "/admin/registrations": "the account (`registration_accounts.item`)",
     "/admin/reports": "the project's name, the reporter's handle (`reports.admin_view`)",
@@ -38,6 +38,8 @@ GROWING: dict[str, str] = {
     "/projects": "restricted fields, confirmations (`routes.projects.list_projects`)",
     "/projects/{}/{}/attachments": "the attachment's view (`attachments.view`, one row a call)",
     "/projects/{}/{}/jour-fixe": "`_shown`, `rounds.current`, `_last_reported`, `_views`",
+    "/projects/{}/{}/jour-fixe/rounds [owner circle, read by the moderator]": "`circle.reads`",
+    "/projects/{}/{}/jour-fixe/rounds [owner circle, read by the owned agent]": "`circle.reads`",
     "/projects/{}/{}/jour-fixe/series": "grants, recipients, opt-outs (`series.view`)",
     "/projects/{}/{}/limits": "ceilings, instances held (`project_limits._agents`)",
     "/projects/{}/{}/members/{}/credentials": "session and principal (`views.credential_view`)",
@@ -73,14 +75,17 @@ def same_for_3_and_30(
     grow: Callable[[int], None],
     rows: Callable[[Any], int] = _rows,
     async_engines: bool = False,
+    case: str = "",
 ) -> tuple[int, int]:
     """`call` answers 200 with `grow(3)` more rows and again with `grow(27)` more, the list
     showing 27 rows more the second time, and sends the same number of statements both times
     (more, for a route in `GROWING`). One call before, so a one-time write of a first read (a
     presence, a baseline) is not taken for row cost. Without `async_engines` the statements on
     the app's async engine (the sign-in, whose presence write comes once a minute) are not
-    counted, as in `test_view_batching`: a route that reads there passes `True`. Returns the
-    two counts."""
+    counted, as in `test_view_batching`: a route that reads there passes `True`. A `case`
+    names one way to read the route that costs differently from the others (another reader):
+    GROWING then lists `"<route> [<case>]"` alone, and the route's other tests stay flat.
+    Returns the two counts."""
     first = call()
     assert first.status_code == 200, first.text
     measured: list[Any] = []
@@ -108,11 +113,12 @@ def same_for_3_and_30(
     large, many = counted()
     assert many - few == 27, f"{route}: the list shows {few} and then {many} rows, not 27 more"
     assert small > 0, f"{route}: no statement counted; does it read on the async engine?"
-    if route in GROWING:
+    known = f"{route} [{case}]" if case else route
+    if known in GROWING:
         assert large > small, (
-            f"{route}: {small} statements for 3 rows and {large} for 30, the same now: "
+            f"{known}: {small} statements for 3 rows and {large} for 30, the same now: "
             "remove it from GROWING (tests/list_rows.py)"
         )
     else:
-        assert large == small, f"{route}: {small} statements for 3 rows, {large} for 30"
+        assert large == small, f"{known}: {small} statements for 3 rows, {large} for 30"
     return small, large
