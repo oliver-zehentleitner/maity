@@ -9,7 +9,7 @@ measures kept for later.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the owner's answers to two inbox requests, 2026-11-08 (the goal of about 1 s per page; a kept list of every measure, worked from the biggest expected gain); umbrella card tsk-a5pxwgkgr73e and its step-1 notes, built from the hub's request log and local statement counts; the step-2 plan on that card, approved by the lead on 2026-11-18 (measure again before the later items become cards); notes nte-ksp8m8crdtkc and nte-d1jaydnt671c on tsk-ym4a7c9rvsn2 (2026-11-09, why item 2 was stopped)
+**Source:** the owner's answers to two inbox requests, 2026-11-08 (the goal of about 1 s per page; a kept list of every measure, worked from the biggest expected gain); umbrella card tsk-a5pxwgkgr73e and its step-1 notes, built from the hub's request log and local statement counts; the step-2 plan on that card, approved by the lead on 2026-11-18 (measure again before the later items become cards); notes nte-ksp8m8crdtkc and nte-d1jaydnt671c on tsk-ym4a7c9rvsn2 (2026-11-09, why item 2 was stopped); the prod rerun of 2026-11-20 (nte-6t6wyf3dna2d), the budget built from it (nte-qswgka9xkdf9) and the result notes of the four measure-only cards approved by the lead after it (tsk-jaw0g9fe3trz, tsk-nwq3azjf63db, tsk-rfv3a7ccbfv1, tsk-kpbwm5cae99g)
 **Revisit when:** a page meets the goal on a cold load, or a measure on the list turns out to cost more than it gains
 
 Every dashboard view (inbox, board, card panel, chat, members, settings, public pages)
@@ -41,6 +41,36 @@ Measured on 2026-11-08 from the hub's request log and local statement counts:
   avatar reads per page, 300–500 ms each as they queue. On a reload they answer 304, but
   each one is still a round trip.
 
+Measured again on 2026-11-20 on prod (the same tool and test account, from a different
+host than the baseline, so absolute times carry an offset; one run of 3 per page, and one
+traced cold load of the board, a card and settings):
+
+- **Warm, every page:** the goal is met (385–884 ms to the last request; the load event
+  53–75 ms, the files now come from the browser cache).
+- **Cold:** the load event is at 621–703 ms on every page, so the files fit. What is
+  over is the tail of API reads after it: board 1546 ms, card 1534, settings 1287; chat,
+  all, account, members and inbox at 1033–1142.
+- **The boot is serial:** `/bootstrap` starts at the load event and runs alone; the
+  notifications head (`/me/notifications?limit=0`, about 100–150 ms) only starts after it,
+  although the boot asks for both in one `Promise.all`, since that is reached after the
+  session and `/me`, which come from `/bootstrap`. On settings `…/me/settings` then waits
+  for a second wave before the last parallel reads; its main thread is idle throughout.
+- **Board and card:** the open column's second page is read only after its first (the
+  open column is 245 kB, 45 % of a warm load's bytes), the avatars only after a fourth
+  wave, and style recalculation over about 16,000 elements, repeated 3–4 times as the
+  waves land, keeps the main thread busy until about 1.9 s (board) and 2.1 s (card),
+  after the last request.
+- **Size:** `web/index.html` loads 110 files, 807 kB gzip (+130 kB, 10 new and 11 grown
+  files since the baseline, each from a feature pull request). Every page reads
+  `/auth/sessions?ended=true` (16 kB), and a project page reads its `/bootstrap` (83 kB)
+  again on every warm load.
+- **Counting caveat:** until 2026-11-20 the tool's long-poll filter dropped every
+  `/me/notifications` URL, the notifications head included. The "gaps" with no request in
+  flight that the earlier runs showed after `/bootstrap` were that call. The tool counts
+  the heads from then on (only waiting long polls stay out), so request counts from before
+  and after the fix do not compare one to one; the times to the last request are not
+  affected as far as the traces show, since the head never came last.
+
 The list, in the order agreed (gain is the expected share of a page's time):
 
 | # | Measure | Gain | Cost | Status, card |
@@ -56,15 +86,17 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 8 | A chat's messages: senders and first deliveries in one statement each | −~0.1 s per chat | S | done, tsk-239r9cwxje6w (#1544) |
 | 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | done, tsk-239r9cwxje6w (#1542) |
 | 10 | One boot read: the window, the session, `/me` and on a project view the head, the project and its members in one answer | two round trips fewer on a project view, one elsewhere (expected) | M, contract | done, tsk-x4z69ff785y6 and tsk-j591fzgnmspf (below) |
-| 11 | Bundling the scripts with a build step | fewer of a cold load's ~100 script and stylesheet requests, if a new measurement still needs it | L | later |
-| 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later |
-| 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | later |
-| 14 | Render cost in the browser, from a performance trace of the board and a chat | unknown | S to measure | later |
+| 11 | Bundling the scripts with a build step | fewer of a cold load's ~100 script and stylesheet requests, if a new measurement still needs it | L | later; measured 2026-11-20, tsk-kpbwm5cae99g: no case for it, the cold load event fits (621–703 ms); about 16 kB gzip of scripts that serve one page or flow are the first candidates for loading on demand |
+| 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later; measured 2026-11-20, tsk-rfv3a7ccbfv1 and tsk-jaw0g9fe3trz: does not apply to what was measured. It would pay only if one statement dominated; none does. `/bootstrap` and `…/members` are bound by statement count times a round trip (1.3–1.9 ms each), not by a slow plan |
+| 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | measured 2026-11-20, tsk-jaw0g9fe3trz and tsk-kpbwm5cae99g: the board's open column 245 kB (45 % of a warm load), `/auth/sessions?ended=true` 16 kB on every page, a project's `/bootstrap` 83 kB on every warm load; a fix is not decided |
+| 14 | Render cost in the browser, from a performance trace of the board and a chat | unknown | S to measure | measured 2026-11-20 for the board and a card, tsk-jaw0g9fe3trz: style recalculation over ~16k elements, 3–4 times, holds the main thread to ~1.9 s and ~2.1 s, past the last request; a fix is not decided, a chat not traced |
 | 15 | A statement test per list route, and a check on the number and size of the files the HTML loads, in CI | keeps the gains | S | open, tsk-xdn21ph67js9 |
 
-Statuses as of 2026-11-18, read from the board. Items 11 to 14 wait for a new measurement
-against the 2026-11-08 baseline, and each becomes a card only where that run shows a page
-still missing the goal (the step-2 plan). Item 2 was stopped by the lead on 2026-11-09,
+Statuses as of 2026-11-18, read from the board; items 11 to 14 as of 2026-11-20. Items 11
+to 14 waited for a new measurement against the 2026-11-08 baseline, each to become a card
+only where that run shows a page still missing the goal (the step-2 plan). That run and its
+four measure-only cards are in (above); which fixes become cards is the lead's decision and
+not made yet. Item 2 was stopped by the lead on 2026-11-09,
 after a measurement before any code (nte-ksp8m8crdtkc): the dashboard loads classic
 deferred scripts, not ES modules, and `modulepreload` applies to module scripts only; on a
 classic script it would fetch the file a second time. After the compression and
@@ -132,7 +164,7 @@ instance admin, who measures and may read the instance's metadata anyway, gets i
 
 **Id:** b77c193d-6561-4f9a-8af6-7e072780b49e
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the owner's decision of 2026-11-11 on measure 10 of the list above, and his second answer the same day, after the saving was found to be two round trips and not five to eight: build it for slow and mobile connections, with the hub reading the parts concurrently; the shape agreed with the lead on card tsk-x4z69ff785y6; `GET /bootstrap`, §5.4 of `docs/api.md`
 **Revisit when:** the route is measured against the dashboard's waves (the saving is expected until then), a part needs a field or a right its single route does not give, or the dashboard's boot no longer reads these routes in waves
@@ -176,6 +208,19 @@ wrong, and a test can compare each part with its route. Per-part statuses keep t
 that are drawn before or without a full session (signed out, the second-factor step, a
 pending account, a running maintenance window) on the same call: each of them needs the
 window and the session even when the rest is refused.
+
+**Measured on prod, 2026-11-20 (the Revisit when above; card tsk-rfv3a7ccbfv1, from the
+hub log of all pods over 60 minutes and the browser timelines of that day's rerun):** the
+route takes about 130–165 ms on a project view (73–100 statements) and 30–65 ms without
+one (10–49 statements), not the ~45 ms measured in-process. Its time rises linearly with
+the statement count at a flat 1.3–1.9 ms per statement, the round trip to the managed
+PostgreSQL that the in-process run did not have; no single statement is slow. The log
+does not record the pool's checkout wait, but on that load no request showed signs of
+one. Database time summed over the statements is 1.21 times the request's time in the
+median, so the parts do run on several connections at once. In the browser the route
+starts at the load event and runs alone, and the dashboard's next read (the notifications
+head) starts only after it. Not measured: the old waves on prod, so the saving against
+them is still expected, not measured. The re-check of this entry is open.
 
 **Rejected alternatives:**
 - A shape of its own that picks fields from each source, as the project overview (§6.11)
