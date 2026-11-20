@@ -11219,10 +11219,6 @@
     "en": "f82745f8413486e5",
     "text": "13e1ad6418c5303a"
   },
-  "nav.runners": {
-    "en": "9aa56c3dab3c6957",
-    "text": "f1e0d8bbdd499626"
-  },
   "nav.runners.changed": {
     "en": "eb0c69dfb9a75fab",
     "text": "562d38d316dbaf32"
@@ -17346,10 +17342,6 @@
   "settings.repo.url": {
     "en": "c6ef2fb0345c4753",
     "text": "c6ef2fb0345c4753"
-  },
-  "settings.runners_link": {
-    "en": "3162924245f70b05",
-    "text": "d3c6228b682e3011"
   },
   "settings.saving": {
     "en": "4e65400e023b52a3",

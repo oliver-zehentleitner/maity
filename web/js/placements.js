@@ -551,7 +551,7 @@ window.Maity = window.Maity || {};
       }
       if (!runners.length) {
         say(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
-          { link: h("a", { href: ctx.link("runners") }, M.t("placements.new.none_link")) })));
+          { link: h("a", { href: ctx.link("settings", "runners") }, M.t("placements.new.none_link")) })));
         return;
       }
       const name = repositoryName(repo);
