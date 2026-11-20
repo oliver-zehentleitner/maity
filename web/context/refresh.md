@@ -547,6 +547,11 @@ between, is still active. Every other ended session leaves the banner as it is. 
 Security → Sessions list, the bell's pinned alerts and the Notifications page keep reading
 the ended ones where they show or judge them.
 
+The cost of the fallback: while an active session's approver has ended (up to the 30
+days the hub keeps ended sessions), every build of the sign-in banner makes two calls
+instead of one, on every page and on each of its 60-second rebuilds. A render superseded
+while its view runs has already read the active sessions; the read is dropped unused.
+
 **Reason:** the board's reads took about 1.2 s cold, and both banners' reads waited
 for all of them, though they depend on nothing the page reads. They were half of the
 board's fourth wave. The ended sessions are 16–18 kB on every page for a banner that
