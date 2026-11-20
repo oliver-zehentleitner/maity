@@ -15,7 +15,8 @@ when the agents are its own user; through sudo or on an ssh host it starts this 
 there (`python -I -m maity.runner.scratchop`, `maity runner scratchop`), which prints its
 answer as one JSON line.
 
-Only the standard library: the module runs with `-I` on the agents' side.
+Imports only the standard library and maity modules that do the same (today `maity.clonecheck`,
+for the placement id pattern): the module runs with `-I` on the agents' side.
 """
 
 from __future__ import annotations
@@ -30,6 +31,8 @@ import stat
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import PurePath
+
+from maity.clonecheck import PLACEMENT_ID as PLACEMENT_ID
 
 OPS = ("make", "size", "remove")
 # agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of): a per-user
@@ -55,7 +58,8 @@ TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 # A placement's scratch (§15.5): `<workspaces>/<project_id>/.scratch/<placement id>`. A clone's
 # name starts with a letter or digit (TOKEN), so `.scratch` is never one.
 SCRATCH = ".scratch"
-SCRATCH_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")  # a placement id, as the supervisor takes it
+# A placement id, as the supervisor takes it: the one pattern, matched in full.
+SCRATCH_ID = PLACEMENT_ID
 LINK = 4  # the exit code for a link (or no directory) on the way: nothing was done
 _FOLDER = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
 # A path descriptor opens a directory without needing read or search on it (O_PATH, Linux), so

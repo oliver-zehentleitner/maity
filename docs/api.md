@@ -776,7 +776,7 @@ join again. Asymmetric keys remain the revisit condition
 Rules the hub applies: `|Maity-Timestamp − server time| ≤ 300 s`, else
 `timestamp_skew` with `details.server_time` so the client can resync; a
 nonce is unique per credential, remembered for 600 s (on PostgreSQL at least 600 s, until a sweep deletes it), else `nonce_reused`;
-an unknown credential id is `unauthenticated` (on both paths, so the two never disagree); any other failure is `signature_invalid`. On PostgreSQL the spent nonces are kept in the database, shared by every replica, with an epoch taken from the database's clock: a signed request whose `Maity-Timestamp` predates the epoch is `timestamp_skew`, so a request captured before a crash or a failover of the database (which loses the nonces and sets a new epoch) is not replayed after it. On SQLite and MariaDB the nonces are kept in the hub process, and a request that predates the process's start is `timestamp_skew`, for the same reason across a restart. Signed requests need
+an unknown credential id is `unauthenticated` (on both paths, so the two never disagree), and so is an id of a form the hub never issues, which it refuses without looking it up; any other failure is `signature_invalid`. On PostgreSQL the spent nonces are kept in the database, shared by every replica, with an epoch taken from the database's clock: a signed request whose `Maity-Timestamp` predates the epoch is `timestamp_skew`, so a request captured before a crash or a failover of the database (which loses the nonces and sets a new epoch) is not replayed after it. On SQLite and MariaDB the nonces are kept in the hub process, and a request that predates the process's start is `timestamp_skew`, for the same reason across a restart. Signed requests need
 `Idempotency-Key` on `POST`/`PATCH` like bearer ones.
 
 **Signing required.** A project whose policy has `signing: required`
@@ -1210,7 +1210,9 @@ assignees (§8.2). The outsider reads the project's messages through
 claims only from the notices of §6.5, "An outsider's claim". The
 project stops being public only as a whole — made private, or any case
 of §16.9 "What is never served" — and from then on it is private to
-outsiders as any private project is. Without a session, and for a
+outsiders as any private project is. With public pages off
+(`MAITY_PUBLIC_PAGES` `off`, §16.9) no project is public, so nothing is
+readable from outside. Without a session, and for a
 project that is not public, every route answers `not_found` as before.
 
 **The manager.** The role `manager` leads a part of the organisation
@@ -4894,8 +4896,13 @@ project is public again. Such a kept entry is hidden from the client,
 so a `PATCH` cannot name it (naming it is `not_public`): the hub keeps
 every hidden entry through a `PATCH`, in its place among the entries
 the body gives (after the visible entry it followed, first when none
-did), and drops it only when the human becomes a member or the project
-is deleted. A hidden entry counts toward the bound, and a `too_many`
+did; when the body leaves that entry out, after the nearest earlier
+visible entry the body keeps, first when it keeps none), and drops it
+only when the human becomes a member or the project
+is deleted. With public pages off (`MAITY_PUBLIC_PAGES` `off`, §16.9)
+no project counts as public for stars: a `PATCH` naming one is
+`not_public`, and every stored entry is hidden. A hidden entry counts
+toward the bound, and a `too_many`
 carries `details.hidden`, the number of hidden entries. When the bound
 is lowered below what a human holds, the stars stay: a `PATCH` that
 adds no project is accepted at any length, one that adds a project
@@ -4905,7 +4912,7 @@ to the browser session that opened it: it goes when the reader closes
 it, or when the browser starts the dashboard afresh, and it is never
 sent to the hub. Stars are private: no count, no event, no
 notification; a star is no membership (§3.4); the export (§2.9)
-carries them.
+carries them as the read shows them, hidden entries left out.
 
 For a human, `projects` lists every membership, ordered by slug, each
 with `id` (the project's fixed id, §6.25), `open_requests`: the number of open requests `GET /projects/{owner}/{slug}/requests`
@@ -20454,11 +20461,15 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      - Local mode does this before it reads anything in `.git/maity`,
        copies from it or sets `MAITY_STATE_DIR` there. The CLI does it
        itself for `MAITY_STATE_DIR` (the directory and its two parents)
-       whenever `MAITY_SUPERVISOR` is set and `MAITY_PLACEMENT` is not,
-       which is local mode's sessions alone (a runner's carry
-       `MAITY_PLACEMENT`): every `maity resume` and every `maity wait`
+       whenever `MAITY_SUPERVISOR` is set and `MAITY_PLACEMENT` is absent
+       from the environment, which is local mode's sessions alone (a
+       runner's carry `MAITY_PLACEMENT`, and set, even empty, it marks a
+       placed session): every `maity resume` and every `maity wait`
        local mode runs between runs, and every `maity` command in the
-       harness's session, checks at its own open.
+       harness's session, checks at its own open. Not built yet, as local
+       mode is not: today the CLI resolves `MAITY_STATE_DIR`, links
+       included, without this check, and reads `MAITY_SUPERVISOR` only to
+       send it with `maity resume` (§15.11).
      - A harness may write `.git`, so during a run it could replace its
        `.git/maity` with a link to another workspace's; making a link
        needs no read access to its target. Checked only at the start,
@@ -22495,9 +22506,9 @@ under every value, `unlimited` included. `max_reads_per_minute` takes
 
 ### 16.5.1 Limits per project and per account
 
-`max_starred_per_human` is not built yet: the hub has no stars (§5.1,
-"Stars", tsk-yr3ckca01b9q), and a `PATCH` naming it is `invalid`
-(`extra_forbidden`).
+`max_starred_per_human` is not built yet here: the hub keeps stars
+(§5.1, "Stars", tsk-kqn8zhptf06k) bounded by the instance's value
+(§16.5) alone, and a `PATCH` naming it is `invalid` (`extra_forbidden`).
 
 The instance admin sets individual limits for one project or one human
 account, up to `unlimited`; nobody else does, and defaults stay as

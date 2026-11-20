@@ -67,6 +67,24 @@ def join_detail(code: str | None, reason: Any = None) -> str | None:
     return code if isinstance(code, str) and DETAIL_CODE.fullmatch(code) else None
 
 
+def _code_or_dash(value: Any) -> str:
+    """`value` when it has the form of a code, else `-`: only values of code form reach the
+    log, so no line break, control character, message text or token-shaped value does. The
+    form says nothing about where a value came from: an unknown code shows as itself."""
+    return value if isinstance(value, str) and DETAIL_CODE.fullmatch(value) else "-"
+
+
+def refusal_line(step: str, code: Any, reason: Any = None, why: Any = None) -> str:
+    """The warning the runner logs for a refused join step (`pickup` or `exchange`, §15.9):
+    the hub's code, `details.reason` and `details.why`, each in code form or `-`. A pickup's
+    `pickup_not_allowed` names its cause only in `why` (`credential_issued`, `handle_taken`,
+    …), which the reported detail does not carry (tsk-fveaj86ec6e2)."""
+    return (
+        f"warning: join {step} refused: {_code_or_dash(code)}"
+        f" (reason {_code_or_dash(reason)}, why {_code_or_dash(why)})"
+    )
+
+
 class Retry(Exception):
     """A step that may succeed on the next tick (a pickup whose answer was lost)."""
 
@@ -175,14 +193,14 @@ def valid(p: Any) -> bool:
     generation = p.get("generation")
     return (
         isinstance(p.get("id"), str)
-        and PLACEMENT_ID.match(p["id"]) is not None
+        and PLACEMENT_ID.fullmatch(p["id"]) is not None
         and isinstance(p.get("project"), str)
-        and workspace.FULL_NAME.match(p["project"]) is not None
+        and workspace.FULL_NAME.fullmatch(p["project"]) is not None
         and isinstance(p.get("project_id"), str)
-        and workspace.TOKEN.match(p["project_id"]) is not None
+        and workspace.TOKEN.fullmatch(p["project_id"]) is not None
         and isinstance(p.get("project_aliases", []), list)
         and all(
-            isinstance(a, str) and workspace.FULL_NAME.match(a) is not None
+            isinstance(a, str) and workspace.FULL_NAME.fullmatch(a) is not None
             for a in p.get("project_aliases", [])
         )
         and isinstance(generation, int)
@@ -191,9 +209,9 @@ def valid(p: Any) -> bool:
         and p.get("desired") in ("running", "stopped")
         and isinstance(space, dict)
         and isinstance(space.get("clone"), str)
-        and workspace.TOKEN.match(space["clone"]) is not None
+        and workspace.TOKEN.fullmatch(space["clone"]) is not None
         and isinstance(p.get("harness"), str)
-        and HARNESS_ID.match(p["harness"]) is not None
+        and HARNESS_ID.fullmatch(p["harness"]) is not None
         and _count(p.get("seq", 0))
         and _count(p.get("stop_grace_seconds", 0))
         and p.get("stop_grace_seconds", 0) <= 900
@@ -388,9 +406,9 @@ class Supervisor:
         good = [
             p for p in placements
             if isinstance(p, dict) and isinstance(p.get("id"), str)
-            and PLACEMENT_ID.match(p["id"]) is not None and p.get("active") is False
+            and PLACEMENT_ID.fullmatch(p["id"]) is not None and p.get("active") is False
             and isinstance(p.get("project_id"), str)
-            and workspace.TOKEN.match(p["project_id"]) is not None
+            and workspace.TOKEN.fullmatch(p["project_id"]) is not None
         ]  # fmt: skip
         with self.lock:
             self.closed_placements = good
@@ -1356,13 +1374,18 @@ class Supervisor:
                 raise Retry("the pickup got no answer") from None  # a re-pickup revokes it
             # A 404 (the placement gone, or no such route) is not the join token's `not_found`.
             gone = exc.status == 404
-            detail = None if gone else join_detail(exc.code, exc.details.get("reason"))
+            reason, why = exc.details.get("reason"), exc.details.get("why")
+            self.log(f"{p['id']}: {refusal_line('pickup', exc.code, reason, why)}")
+            detail = None if gone else join_detail(exc.code, reason)
             raise workspace.Refused("join_failed", detail) from None
         url, code = pickup.get("join_url"), pickup.get("code")
         if not isinstance(url, str) or not isinstance(code, str):
             raise workspace.Refused("join_failed")
         joined, why = run_join(place, url, code, self.cfg.state_dir, as_user, target.agent_path)
         if not joined:
+            # The child's machine line carries the code only (for `forbidden`, the reason in
+            # its place), and the exchange answers `not_found` without a why (§15.9).
+            self.log(f"{p['id']}: {refusal_line('exchange', why)}")
             raise workspace.Refused("join_failed", why)
         try:
             if not as_user.direct:
