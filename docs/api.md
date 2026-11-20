@@ -13778,7 +13778,7 @@ learns its content.
 | `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time, changes only its `name` or is cleared to `null` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
-| `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
+| `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at`, `finding` (the report's finding or `null`, never with its `log`, §15.7; not built yet, tsk-twmms66p1ww4) |
 | `agent_stop_requested` | `member:<the placement's agent>` | `placement_id`, `grace_seconds`, `by` |
 | `placement_check_in` | `instance:<agent id>#<instance>` of the placement | `placement_id`, `asked_at`, `reply_by` (§15.14) |
 | `handover_requested` | `instance:<agent id>#<instance>` of the old placement | `placement_id`, `replaced_by`, `to_instance`, `handover`, `reply_by` (§15.14; not built yet, as the replacement is not) |
@@ -19046,6 +19046,8 @@ clone Z. It is the only thing the hub asks of a runner.
 | the placement, except the rows below | humans with `project:read`; an agent for its own placement; an agent with `agents:propose` for every placement of the project; the runner's owner who is not a member of the project: only the runner owner's line of each placement on their runner (§15.3) |
 | `briefing` (a new profile, until the first pickup) | `members:admin` and the creator |
 | `session_hint`, `logs_hint` | the runner's owner only — never an agent, `agents:propose` included |
+| `reported.finding` without its `log` (§15.7) | everyone who sees the placement (not built yet, tsk-twmms66p1ww4) |
+| `reported.finding.log`, and `finding.log` in the history (§15.6) | the runner's owner, the agent profile's owner and the project's members with trust `owner` or `admin`; never through a bridge (`Maity-For`); for everyone else the finding comes without `log` (§15.7; not built yet, tsk-twmms66p1ww4) |
 | `proposed_by`, `approval.request_id` | everyone who sees the placement |
 
 **Server rules.**
@@ -19592,7 +19594,8 @@ than this writes no such line, so with it the detail is `null`. A
 pickup's `404` carries no detail.
 
 **A finding.** Not built yet (tsk-twmms66p1ww4). When the runner's
-watch (§15.14) diagnoses a placement, the report it sends next carries
+watch (§15.14) diagnoses a placement, or the hub refuses its pickup or
+join, the report it sends next carries
 what it found as `finding`, so the owner and the lead can see why the
 runner acted, and the history shows which causes recur:
 
@@ -19622,9 +19625,9 @@ Every field but `log`, and every key of `signals`, is required. The causes:
 | `not_waiting` | the harness is alive with nothing below it: no `maity wait` runs |
 | `wait_deaf` | a `maity wait` runs below the harness, yet the hub says the session is not listening |
 | `never_joined` | no session of the placement's credential started within the runner's time for a join, and nothing else explains it |
-| `usage_limit` | the pane shows the harness's provider limit (`pane_match: usage_limit`), or the harness exited for it |
-| `login_invalid` | the login probe says `needed`, or the pane shows a login prompt (`pane_match: login_prompt`) |
-| `pickup_refused` | the hub refused the placement's pickup or join (`pickup_code`) |
+| `usage_limit` | the harness exited for its provider's limit, as its adapter recognises the exit (§15.7, "Recognition"; a supervised run's limit exit of the loop included); a pane match `usage_limit` goes with it as a signal but never decides it alone |
+| `login_invalid` | the harness's login probe says `needed`; a pane match `login_prompt` goes with it as a signal but never decides it alone, and where the harness has no probe (agy) nothing decides it: `login` is `unknown`, the match stays in `pane_match`, and the diagnosis goes on |
+| `pickup_refused` | the hub refused the placement's pickup or join (`pickup_code`); reported at the refusal itself, not by a trigger (§15.14) |
 | `unknown` | none of the above |
 
 The pane codes, the same for every harness:
@@ -19686,8 +19689,20 @@ skill.
 - **Which lines.** Only the lines of the runner's own log that concern
   this placement. Never the session's output: not the pane, not the
   pane log `maity runner logs` shows (§15.5, `logs_hint`), not the
-  harness's own output or files. In each line the runner writes the
-  agents' home directory as `~`.
+  harness's own output or files.
+- **Only text the runner wrote.** A line in `finding.log` holds only
+  text of the runner's own: its fixed wording, codes, numbers,
+  timestamps and the names it gave (placement id, harness, mode,
+  target). A value that comes from the agents' side, such as a path, a
+  branch or file name, or the text of an exception raised by an
+  operation on the agents' side, goes in only as a fixed code or a
+  placeholder (`<path>`, `<branch>`, `<error>`), or the line is left
+  out. A line the runner cannot build that way is left out.
+- **One placement per line.** The runner writes each line about a
+  placement with that placement's id at its start (`plc-0003: …`) and
+  selects for `finding.log` only the lines that start with the id of
+  the placement the finding is about. A line about the runner as a
+  whole, or one that names another placement, is never selected.
 - **No secret.** Before sending, the runner drops every line that holds
   a string in the hub's credential format (§2.2), with the check its
   hub client runs on every request body (`sign.contains_credential`,
@@ -19718,11 +19733,11 @@ skill.
   under 2 KiB.
 - **Validation.** More than 200 entries is `invalid` with
   `details.fields["finding.log"]: "too_many"`, lines that together pass
-  24 KiB `"too_large"`; a `line` that is empty, longer than 1024 bytes
-  or holds a character outside printable ASCII is `invalid` with
-  `details.fields["finding.log.<index>.line"]` `"too_long"` or
-  `"format"`, an `at` that is no timestamp `["finding.log.<index>.at"]:
-  "invalid"`; a key besides `at` and `line` is `invalid` as any unknown
+  24 KiB `"too_large"`; a `line` that is empty is `invalid` with
+  `details.fields["finding.log.<index>.line"]: "empty"`, one longer
+  than 1024 bytes `"too_long"`, one that holds a character outside
+  printable ASCII `"format"`; an `at` that is no timestamp
+  `["finding.log.<index>.at"]: "invalid"`; a key besides `at` and `line` is `invalid` as any unknown
   field is. A body that passes 64 KiB anyway is `payload_too_large`
   (§1.7).
 - **Who reads them.** Only the runner's owner, the agent profile's
@@ -19735,7 +19750,11 @@ skill.
   /projects/{owner}/{slug}/placements/{id}/reports`, §15.6). Those two
   reach wider (every human with `project:read`, an agent for its own
   placement, every agent with `agents:propose`), so for every other
-  caller the finding comes without the `log` key. The hub keeps the
+  caller the finding comes without the `log` key. A proxy holds trust
+  `admin` (§2.3) and reads the lines as any admin does. A bridge's call
+  for an agent (`Maity-For`, §2.3, "The bridge") gets the finding
+  without `log`, whoever it serves: the lines are read by their readers
+  themselves, not through a connection. The hub keeps the
   lines with the `placement_reported` event's row, outside its payload,
   so the event as such never carries `log`: in the event stream (`GET
   /events`, §8.3) every reader sees the finding without it, its
@@ -19806,11 +19825,10 @@ every limit a crash.
   placement's state alone. If an interactive harness does exit and the
   adapter recognises the exit as its limit, the runner reports
   `rate_limited` as in `supervised` mode. The runner's watch (§15.14,
-  not built yet, tsk-twmms66p1ww4) adds one case: when it diagnoses a
-  placement and matches the limit's signature in the pane
-  (`pane_match: usage_limit`, above), it ends the session as a stop
-  does and reports `rate_limited` as here, with that `finding`, and
-  resumes the session at `retry_at`.
+  not built yet, tsk-twmms66p1ww4) does not change this: the limit's
+  signature in the pane (`pane_match: usage_limit`, above) is recorded
+  in a finding, but alone it never makes the runner report
+  `rate_limited` or end the session.
 - **Stopping.** `desired: stopped` on a `rate_limited` placement
   (`DELETE`, detach, archive, revocation under `stop`) stops it
   normally: the runner cancels the pending restart, reports `stopped`
@@ -20113,7 +20131,8 @@ The kinds are in §8.2. Rules that apply to all of them:
   member's readable set; owners and admins read runner-addressed events
   as they read every event of the project.
 - **Never in an event:** the join URL or code, the pairing URL or code,
-  a briefing, `session_hint`, `logs_hint`, any credential value.
+  a briefing, `session_hint`, `logs_hint`, a finding's `log` (§15.7),
+  any credential value.
 - A recomputation that starts or ends the agent's runner limit (§6.12),
   whichever of its triggers ran it (a report, a close, a change of
   `desired`, or the end of a limit the agent set itself), emits
@@ -21121,53 +21140,91 @@ cause.
   (`membership_isolated`, §6.2, §15.5), so they never reach the runner.
 - **The diagnosis.** The runner gathers the signals of §15.7, at the
   trigger and without waiting, and takes the first cause that fits:
-  `pickup_refused`, `login_invalid`, `usage_limit`, `harness_exited`,
-  then, for the trigger `not_listening`, `wait_deaf` when `below` is
-  `waiting` and `not_waiting` when it is `idle`, and for the trigger
-  `never_joined` the cause `never_joined`; otherwise `unknown`. A
-  process other than `maity wait` below the harness (`below: working`)
-  is work, as for the own check: the runner looks again at its next
-  pass, and only once the session has stayed not listening for
+  `login_invalid`, `usage_limit`, `harness_exited`, then, for the
+  trigger `not_listening`, `wait_deaf` when `below` is `waiting` and
+  `not_waiting` when it is `idle`, and for the trigger `never_joined`
+  the cause `never_joined`; otherwise `unknown`. A pane match alone
+  decides neither `login_invalid` nor `usage_limit` (§15.7, the causes).
+  A process other than `maity wait` below the harness (`below:
+  working`) is work, as for the own check: the runner looks again at
+  its next pass, and only once the session has stayed not listening for
   `tool_call_max_minutes` (the placement's `health.settings`, 120 by
   default until the hub carries them) does it take `unknown`.
+- **A refused pickup is reported at once.** A pickup or join the hub
+  refuses fails the start before the harness runs, so neither trigger
+  ever reaches it. On the refusal itself the runner reports `failed`,
+  `reason: join_failed`, `detail` the hub's code, as today, and adds a
+  finding with `cause: pickup_refused` and that code as
+  `signals.pickup_code`. It does so for every placement on a hub whose
+  placements carry `session`, a foreign one with `session: null`
+  included: the refusal is the runner's own observation.
 - **The reaction**, one per cause:
 
   | `cause` | What the runner does | What it reports |
   |---|---|---|
   | `harness_exited` | starts the harness again, resuming its session | `exited`, `reason: hung`, the trigger as `detail`, with the finding |
-  | `not_waiting` | nudges as its own check does (above): one line into the pane while nobody is attached; no restart. The own check's rules then go on as they are | the finding on its next report, `running` |
+  | `not_waiting` | nudges as its own check does (above): one line into the pane while nobody is attached, once per episode (below); no restart. The own check's rules then go on as they are | at once `running`, with the finding |
   | `wait_deaf` | ends the session as a stop does and starts it again, resuming | `exited`, `reason: hung`, `detail: not_listening`, with the finding |
   | `never_joined` | ends the session and starts it again, resuming where the harness can | `exited`, `reason: hung`, `detail: never_joined`, with the finding |
-  | `usage_limit` | ends the session and starts it again at the reset (§15.7, "A rate limit is not a crash") | `rate_limited`, `reason: quota`, `retry_at`, with the finding |
-  | `login_invalid` | never restarts: the login needs a person | `failed`, `reason: auth`, with the finding |
-  | `pickup_refused` | never restarts: as today | `failed`, `reason: join_failed`, `detail` the hub's code, with the finding |
+  | `usage_limit` | the harness has exited; the runner starts it again at the reset (§15.7, "A rate limit is not a crash") | `rate_limited`, `reason: quota`, `retry_at`, with the finding |
+  | `login_invalid` | never restarts: the login needs a person. A session still running is ended as a stop does before the report | `failed`, `reason: auth`, with the finding |
+  | `pickup_refused` | never restarts: as today, at the refusal (above) | `failed`, `reason: join_failed`, `detail` the hub's code, with the finding |
   | `unknown` | ends the session and starts it again once, resuming; the finding stays for analysis | `exited`, `reason: hung`, the trigger as `detail`, with the finding |
 
   The trigger's detail is `not_listening` or `never_joined` (§15.7).
   `failed` opens the owner's outage request (§15.7, "The owner is asked
   when an agent stops"), and `rate_limited` sets the member's limit
   (§6.12), as for any such report.
+- **A person at the pane.** While a client is attached to an
+  interactive session, the watch ends nothing: not for `wait_deaf`,
+  `never_joined`, `unknown` or `login_invalid`, and not to hold the
+  placement at the cap (below). It reports the finding instead, once,
+  on a `running` report, and diagnoses again at its first pass after
+  the last client has left, if the trigger still holds. `not_waiting`
+  types no line then, as the own check does. Attached is what the own
+  check reads: tmux's `session_attached` count for the session above
+  zero; when tmux cannot say, the runner counts the session as
+  attached. A supervised run has no pane to attach to, and after
+  `harness_exited` or `usage_limit` there is no session left to end.
+- **`not_waiting`, once per episode.** The watch nudges once for each
+  value of `session.not_listening_since`: while it stays the same, a
+  later pass neither nudges nor reports again; a new episode (a new
+  value) may nudge once more. The report is sent when the runner
+  diagnoses, a `running` report that carries the finding and nothing
+  else new; it takes the next `seq` and writes a `placement_reported`
+  event like any report. If the own check later ends the session after
+  that nudge (no answer within `reply_within_minutes`), that end is the
+  own check's: it is reported `exited`, `hung`, `idle` and counts toward
+  the own check's `crash_cap` row, not toward `auto_restarts`, so one
+  end is counted once, under the rule that made it.
 - **A restart resumes.** The watch's restarts are the runner's own, as
   after a `hung` end: the same generation, the placement's session
   resumed (above, "The session continues"), no call to the hub, so they
   need no right the runner lacks. A fresh session stays a person's
   reset (§15.6).
-- **The second failure stops.** The runner makes at most
-  `auto_restarts` watch restarts of a placement within
-  `retry_window_minutes`. A trigger beyond that within the window
-  restarts nothing: the runner reports `failed`, `reason: hung`, the
-  trigger as `detail`, with the finding, which opens the owner's outage
-  request (§15.7), and holds the placement there until its generation
-  moves, as at the crash cap. With `auto_restarts = 0` the first
-  trigger does so. The window counts watch restarts only; they also
-  count toward `restarts`, toward the crash cap of the own check's row
-  and toward flapping (below) as any start after an exit. A new
+- **The second failure stops.** The cap is only for the causes whose
+  reaction is a restart: `harness_exited`, `wait_deaf`, `never_joined`
+  and `unknown`. The runner makes at most `auto_restarts` watch
+  restarts of a placement within `retry_window_minutes`. A finding with
+  one of these causes beyond that within the window restarts nothing:
+  the runner ends the session as a stop does if it still runs, then
+  reports `failed`, `reason: hung`, the trigger as `detail`, with the
+  finding, which opens the owner's outage request (§15.7), and holds
+  the placement there until its generation moves, as at the crash cap.
+  With `auto_restarts = 0` the first such finding does so.
+  `login_invalid`, `usage_limit`, `pickup_refused` and `not_waiting`
+  are never turned into `failed`/`hung` by the cap and do not count
+  toward it. The window counts watch restarts only; they also count
+  toward `restarts` and toward flapping (below) as any start after an
+  exit, and a restart after `harness_exited` counts as an exit under
+  the restart policy's crash count (§15.5) as any exit does. A new
   generation starts the count over.
 - **A foreign placement.** For a placement with `session: null` (§15.8)
   the runner acts only on what it sees itself: the process and its exit
   code, the pane's signatures and a refused pickup's code. It has no
   trigger of its own there and cannot decide `wait_deaf` or
-  `never_joined`; its own check and the restart policy act as before.
+  `never_joined`; its own check and the restart policy act as before,
+  and a refused pickup is reported with its finding as above.
 - **Flapping.** Not built yet, and not part of the watch. The watch
   needs nothing of it and keeps to its rule: a watch restart is a
   start after an exit that is not `network`, so it counts as one when

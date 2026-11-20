@@ -5008,10 +5008,29 @@ runner's owner, the agent's owner and the project's members with trust
 `owner` or `admin`, the arbiter's answer to req-jcq33fsvc72a), and reacts by that
 cause: one restart that resumes the session, a nudge, a wait for the
 limit's reset, or `failed` at once for a login or a refused pickup. A
-second failure within its window holds the placement as `failed`/`hung`,
-which opens the owner's outage request, so it never loops. Paused and
-dormant agents are left alone. For a foreign placement (`session: null`)
-the runner acts only on what it sees itself.
+second failure within its window, counted only for the causes it restarts
+for, holds the placement as `failed`/`hung`, which opens the owner's
+outage request, so it never loops. Paused and dormant agents are left
+alone. For a foreign placement (`session: null`) the runner acts only on
+what it sees itself.
+
+Round 2 of the review (PR #2059) added four rules:
+- a session with a client attached (tmux's `session_attached`, unknown
+  counted as attached) is never ended by the watch; the finding is
+  reported instead;
+- a pane match alone decides neither `login_invalid` (it needs the login
+  probe, and a harness without one never gets it) nor `usage_limit` (it
+  needs the harness's limit exit);
+- `finding.log` holds only text the runner wrote, with values from the
+  agents' side as placeholders, and only lines that start with the
+  placement's id;
+- an own-check end after a watch nudge counts toward `crash_cap`, not
+  `auto_restarts`, so one end is counted once, under the rule that made it.
+
+The reason for the pane rule: text in a pane is the session's to write,
+so it may say anything. The causes that stop an agent for a person
+(`auth`) or pause it (`rate_limited`) therefore rest on a signal from
+outside the pane.
 
 **Reason:** only the runner sees the process, its exit code and the pane,
 and it already owns restart, backoff and the caps; its own restarts keep
