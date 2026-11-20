@@ -395,6 +395,36 @@ def test_the_stars_go_with_the_account(
     assert gone.starred is None
 
 
+def test_the_links_go_with_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The website, the network names and who sees them are the person's profile (§16.9, §2.9):
+    a deleted account keeps no link, and the visibility is back at its default."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    links = {
+        "website": "https://pat.example.org",
+        "social": {"github": "pat"},
+        "links_visible": "everyone",
+    }
+    assert pat.patch("/me", links).status_code == 200
+    query = select(t.human.c.website, t.human.c.social, t.human.c.links_visible).where(
+        t.human.c.id == pat.id
+    )
+    with migrated.connect() as conn:
+        kept = conn.execute(query).one()
+    assert (kept.website, kept.social, kept.links_visible) == (
+        "https://pat.example.org",
+        {"github": "pat"},
+        "everyone",
+    )
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        gone = conn.execute(query).one()
+    assert (gone.website, gone.social, gone.links_visible) == (None, None, "private")
+
+
 def test_the_kept_sizes_of_the_picture_go_with_the_account(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:

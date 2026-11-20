@@ -459,6 +459,14 @@ def block(conn: Connection, normalized: str, until: Any) -> None:
         )
 
 
+def forget_expired_blocks(conn: Connection) -> int:
+    """Delete every block whose `until` has passed, with its address: every read of a block
+    asks for `until > now`, so an expired row only keeps an address (§16.4)."""
+    return conn.execute(
+        delete(t.registration_block).where(t.registration_block.c.until <= clock.now())
+    ).rowcount
+
+
 def expire(conn: Connection, hub: Any) -> int:
     """Delete every pending account nobody decided on within 30 days (§2.7.5)."""
     now = clock.now()
@@ -482,7 +490,8 @@ INTERVAL = 3600.0  # seconds between expiry sweeps
 
 class Worker:
     """Runs `expire` in the background: an undecided account goes after 30 days whether
-    or not an instance admin looks (§2.7.5)."""
+    or not an instance admin looks (§2.7.5). The same pass deletes the blocks that have run
+    out (`forget_expired_blocks`, §16.4)."""
 
     def __init__(self, engine: Engine, hub: Any, interval: float | None = None) -> None:
         self.engine = engine
@@ -510,6 +519,7 @@ class Worker:
                         continue
                     with self.engine.begin() as conn:
                         expire(conn, self.hub)
+                        forget_expired_blocks(conn)
                         campaigns.purge(conn)  # the origins after 30 days, the sums after 400
             except Exception:
                 log.exception("the registration expiry sweep failed")

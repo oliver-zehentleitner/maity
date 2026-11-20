@@ -783,6 +783,9 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             limit_show_reason_in=None,
             public_profile=False,  # the profile and its page are deleted with the person (§2.9)
             public_bio=None,
+            website=None,  # the person's links go with the profile (§16.9, §2.9)
+            social=None,
+            links_visible="private",  # the column's default: as if never chosen
             public_stats=False,
             public_agents="public_projects",
             interface_language=None,
