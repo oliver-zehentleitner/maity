@@ -719,11 +719,11 @@ def test_a_placements_own_tmpdir_leaf_is_opened_again_and_its_siblings_stay_hidd
     parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
     own, sibling = parent / ("a" * 32), parent / ("b" * 32)
 
-    def codex_fs(**extra: Any) -> dict[str, str]:
+    def codex_fs(base: Path, **extra: Any) -> dict[str, str]:  # a directory of its own per call
         ctx = context(
-            tmp_path, harness_id="codex", binary="/usr/bin/codex",
-            clone=tmp_path / "ws" / "proj" / "agent-3", workspaces=tmp_path / "ws",
-            private=(tmp_path / "st",), tmp_scratch_parent=parent, tmpdir=own / "tmp",
+            base, harness_id="codex", binary="/usr/bin/codex",
+            clone=base / "ws" / "proj" / "agent-3", workspaces=base / "ws",
+            private=(base / "st",), tmp_scratch_parent=parent, tmpdir=own / "tmp",
             placement={**PLACEMENT, "mode": "supervised"}, **extra,
         )  # fmt: skip
         fs: dict[str, str] = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"][
@@ -731,14 +731,14 @@ def test_a_placements_own_tmpdir_leaf_is_opened_again_and_its_siblings_stay_hidd
         ]
         return fs
 
-    filesystem = codex_fs()
+    filesystem = codex_fs(tmp_path / "x")
     assert filesystem[str(parent)] == "none" and filesystem[str(own)] == "write"
     assert _effective_rule(filesystem, own / "tmp" / "pytest-1") == "write"
     assert _effective_rule(filesystem, sibling / "tmp") == "none"
     # Where the scratch's own `tmp` fits, that is the TMPDIR, and the leaf is not opened.
     room = Path("/srv/ws/proj/.scratch/plc-0003")
     assert adapters.scratch_tmpdir(room) is not None
-    assert str(own) not in codex_fs(scratch=room)
+    assert str(own) not in codex_fs(tmp_path / "y", scratch=room)
     # Claude Code: the parent stays denied, and no leaf is opened, even if one were given.
     claude = adapters.claude_settings(
         context(tmp_path / "c", sandbox=True, tmp_scratch_parent=parent, tmpdir=own / "tmp")
