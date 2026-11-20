@@ -128,7 +128,11 @@ elif [ -n "$password" ] && ! scram_only "$dir/pg_hba.conf"; then
   exit 2
 fi
 if ! pg_ctl -D "$dir" status >/dev/null 2>&1; then
-  pg_ctl -D "$dir" -w -l "$dir/server.log" -o "-c listen_addresses='' -k '$dir'" start >/dev/null 7>&- 8>&- 9>&-
+  # hba_file and ident_file on the command line beat any postgresql.conf, postgresql.auto.conf or
+  # include in the data directory, so the server reads the pg_hba.conf checked above.
+  pg_ctl -D "$dir" -w -l "$dir/server.log" \
+    -o "-c listen_addresses='' -k '$dir' -c hba_file='$dir/pg_hba.conf' -c ident_file='$dir/pg_ident.conf'" \
+    start >/dev/null 7>&- 8>&- 9>&-
   if [ "$mode" = run ]; then
     head -n 1 "$dir/postmaster.pid" >"$started"
   fi

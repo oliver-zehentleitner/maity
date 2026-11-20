@@ -297,6 +297,18 @@ def test_with_a_password_the_cluster_takes_scram_and_never_sees_it_on_a_command_
     assert "-A scram-sha-256" in line and "--pwfile=/dev/fd/" in line and "trust" not in line
 
 
+def test_the_server_reads_only_the_checked_access_files(run: dict[str, str]) -> None:
+    """hba_file and ident_file on the command line: a postgresql.conf, postgresql.auto.conf or
+    include in the data directory cannot point the server at another pg_hba.conf than the one
+    the script checked (the review of #2032)."""
+    subprocess.run([SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD}, check=True)
+    data = run["MAITY_PG_DIR"]
+    (start,) = [line for line in Path(run["FAKE_LOG"]).read_text().splitlines()
+                if line.startswith("pg_ctl") and line.endswith("start")]  # fmt: skip
+    assert f"-c hba_file='{data}/pg_hba.conf'" in start
+    assert f"-c ident_file='{data}/pg_ident.conf'" in start
+
+
 def test_without_a_password_nothing_changes(run: dict[str, str]) -> None:
     subprocess.run([SCRIPT, "true"], env=run, check=True)
     (initdb,) = [line for line in Path(run["FAKE_LOG"]).read_text().splitlines()
