@@ -7,7 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, func, insert, select, update
+from sqlalchemy import Connection, and_, func, insert, or_, select, update
 
 from maity_hub import (
     allowed_projects,
@@ -244,7 +244,8 @@ class ProfileInUse(ApiError):
 
 
 def _in_use(conn: Connection, agent_id: str) -> tuple[list[Any], list[str]]:
-    """The profile's active memberships and the active placements that run them."""
+    """The profile's active memberships, and the active placements that run them or that
+    admit the profile where it is no member yet (§6.3, §15.6): either makes it in use."""
     members = conn.execute(
         namespace.join_owner(
             select(
@@ -254,20 +255,10 @@ def _in_use(conn: Connection, agent_id: str) -> tuple[list[Any], list[str]]:
         .where(t.membership.c.agent_id == agent_id, t.membership.c.active.is_(True))
         .order_by(t.project.c.slug)
     ).all()
-    running = (
-        conn.execute(
-            select(t.placement.c.id)
-            .where(
-                t.placement.c.membership_id.in_([m.id for m in members]),
-                t.placement.c.active.is_(True),
-            )
-            .order_by(t.placement.c.id)
-        )
-        .scalars()
-        .all()
-        if members
-        else []
-    )
+    p = t.placement.c
+    admitting = and_(p.agent_id == agent_id, p.membership_id.is_(None))
+    runs = or_(p.membership_id.in_([m.id for m in members]), admitting) if members else admitting
+    running = conn.execute(select(p.id).where(runs, p.active.is_(True)).order_by(p.id)).scalars()
     return list(members), list(running)
 
 
@@ -299,7 +290,7 @@ def delete_agent(
         if row.deleted_at is not None:  # a second DELETE answers as it is
             return idempotency.Outcome(200, "agent", agent_id, load_agent(conn, agent_id))
         members, running = _in_use(conn, agent_id)
-        if members and not cascade:
+        if (members or running) and not cascade:
             raise ProfileInUse(
                 [
                     {

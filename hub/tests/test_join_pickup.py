@@ -1014,6 +1014,28 @@ def test_isolating_the_membership_closes_the_placements_still_without_a_credenti
     assert later.json()["error"]["details"] == {"why": "not_running"}
 
 
+def test_a_profile_a_waiting_placement_admits_is_in_use(setup: Setup) -> None:
+    # §6.3: an active placement makes the profile in use, one that admits it included; a
+    # bare DELETE is refused and changes nothing.
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    refused = setup.owner.client.delete(
+        f"/api/v1/agents/{agent_id}", headers={"X-CSRF-Token": setup.owner.csrf}
+    )
+    assert (refused.status_code, error(refused)) == (409, "profile_in_use")
+    assert refused.json()["error"]["details"] == {
+        "memberships": [],
+        "placements": [placement["id"]],
+    }
+    row = placement_row(setup, placement["id"])
+    assert (row.active, row.closed_reason) == (True, None)
+    with setup.engine.connect() as conn:
+        deleted_at = conn.execute(
+            select(t.agent_profile.c.deleted_at).where(t.agent_profile.c.id == agent_id)
+        ).scalar()
+    assert deleted_at is None
+
+
 def test_a_deleted_profiles_waiting_placement_closes(
     setup: Setup, make_client: ClientFactory
 ) -> None:

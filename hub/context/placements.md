@@ -874,8 +874,10 @@ own agent" covers creating the placement only: a spec change by `PATCH`
 still needs `members:admin` and the runner, while `desired` stays the
 profile owner's. Removing or isolating the membership closes the
 profile's placements still without a credential (`membership_removed`,
-`membership_isolated`), and deleting the profile closes those that admit
-it at once with `removed`, on the owner's authority alone (no
+`membership_isolated`). A placement that admits the profile makes it in
+use (§6.3): a bare `DELETE` is refused with `profile_in_use` and changes
+nothing, and only `?cascade=true` deletes it, closing those placements
+at once with `removed`, on the owner's authority alone (no
 `members:admin`, the owner as the event's actor), their unused pickups
 revoked.
 
