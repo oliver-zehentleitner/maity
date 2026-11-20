@@ -119,7 +119,8 @@ PREFIX_REFUSED = (
 SPACING_REFUSED = (
     "A line that names `maity` holds no control character and no space other than an ASCII "
     "space and a tab: no carriage return, vertical tab, form feed, no-break or other Unicode "
-    "space, and no zero-width space or other invisible format character. Run `maity …` with plain spaces; text that holds such "
+    "space, and no zero-width space or other invisible format character. "
+    "Run `maity …` with plain spaces; text that holds such "
     "characters goes in a file in this clone, passed with `--body-file`."
 )
 # The reason for a refused line with a word before `maity` that reads as an assignment to
