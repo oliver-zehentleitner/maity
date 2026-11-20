@@ -7,7 +7,8 @@
   `pr ready`, `run list --commit <sha>` and `run view <run id>` (jobs by
   name, or the last 400 lines of the failed log). They need the runner
   grant `lead = true` beside `pull_requests = true` and the member's role
-  `manager`, which maity reads from the hub at each call. Upgrade: to let
+  `manager` or a project role built on it, which maity reads from the hub
+  at each call for the member the credential is. Upgrade: to let
   a placed lead use them, add `lead = true` to the repository's grant and
   restart its placement; `maity runner check` warns about `lead` without
   `pull_requests`.

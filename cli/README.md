@@ -1172,12 +1172,22 @@ A placed member whose role the hub names `manager` then also runs:
   decides which run is shown. Run and job ids are digits, up to 20.
 
 At each of these calls maity reads the caller's role from the hub with
-the session's credential (`GET /me`, the projects of the identity the
-hub authenticated, matched to this project), never from the resume
-packet or a member id in local state. It refuses unless the role is
-`manager`, when the hub does not answer, and when `/me` does not list
-this project. These commands are refused under
-`--for`. Without `lead = true` they are refused, as they are without
+the session's credential, never from the resume packet or a member id
+in local state: `GET /me` names the member the hub authenticated, and
+that member's own view gives the role's base (`role_base`). The base
+must be `manager`, so a project role built on manager counts and one
+built on any other role does not, whatever its name. maity also
+refuses when the hub does not answer, when `/me` does not list this
+project, for an isolated member, when `MAITY_STATE_DIR` is set (the
+runner never sets it), when the session's state is not this
+placement's clone's `.git/maity`, and when the runner's directory for
+the agent is not this placement's (`…/agents/<placement id>/git`). These
+commands are refused under `--for`. Everything gh prints, on either
+stream, reaches the terminal cleaned of the control characters a
+terminal acts on, since a confirmation can echo a title someone else
+wrote. These checks hold where the harness's sandbox holds; on agy and
+opencode, which are no boundary between placements, they are no
+boundary either. Without `lead = true` they are refused, as they are without
 `pull_requests`, which `maity runner check` warns about. The repository,
 the environment and the empty directory are those of `pr create`. A
 Codex placement gets no `lead`, as it gets no `pull_requests`.

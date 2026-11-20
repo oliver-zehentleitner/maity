@@ -4033,10 +4033,19 @@ the repository from the runner's record, gh in an empty directory with
 the same environment. Two gates come on top, both checked before a body
 is read or gh starts. The runner writes a `gh_lead` record only for a
 grant with `lead = true` beside `pull_requests = true`, and never for
-Codex. maity reads the caller's role from the hub at each call, from
-`GET /me` with the session's credential, and refuses unless it is
-`manager`. It also refuses when the hub does not answer, when `/me` does
-not list this project, and under `--for`.
+Codex. maity reads the caller's role from the hub at each call: `GET
+/me` names the member the session's credential is, and that member's
+view gives `role_base`, which must be `manager` (a project role built
+on manager counts, by the lead's decision on #2054: a project role
+grants no more than its base, context/trust.md). It also refuses when
+the hub does not answer, when `/me` does not list this project, for an
+isolated member, under `--for`, when `MAITY_STATE_DIR` is set under a
+placement, when the session's state is not the placement clone's
+`.git/maity`, and when the runner's directory for the agent is not
+`…/agents/<this placement>/git`. Everything gh prints is cleaned
+before it reaches the terminal. These checks are defence in depth where
+the harness's sandbox holds (Claude Code, Codex); on agy and opencode,
+no boundary between placements, they are none either.
 
 **Reason:** a lead merges, fixes pull request bodies, readies drafts and
 reads CI every day. As a placement it had only `pr create` and `pr view`,
@@ -4070,6 +4079,14 @@ its end, and a whole log would flood the lead's context.
   whichever id is asked, so the id would come from local state, not from
   the identity the hub authenticated (review A1720 of #2054). `GET /me`
   answers for the credential that signed the call.
+- The literal role name `manager` only (this PR's second version): a
+  project role built on manager would then be refused although it holds
+  manager's rights, unlike every other right in the project.
+- Opening the state through the checked `.git` descriptor (review
+  A1719): the state is still read by path, but only after the same call
+  checked `.git` and only when it is the placement clone's `.git/maity`;
+  reading it through the descriptor would rework how every command
+  loads its session, which is wider than this card.
 - Allowing `--admin`, `--auto`, another merge method or
   `--delete-branch`: none of them is needed for the daily work, and each
   widens what a placed lead can do past the review and CI gate.

@@ -1627,27 +1627,43 @@ def cmd_gh(args: argparse.Namespace) -> int:
 
 
 def _hub_role() -> str | None:
-    """The role the hub gives the caller in this project now, for the lead commands of
-    `maity gh`: read from `GET /me`, which answers for the credential that signed the call,
-    so no member id from local state names whose role it is (review A1720 of #2054). Never
-    from the resume packet, never for an agent served with `--for`. A hub that does not
-    answer, or a `/me` that does not list this project, refuses (ghpr.check_role)."""
+    """The base of the role the hub gives the caller in this project now (`role_base`: a
+    project role counts as the built-in role it is built on, never more, context/trust.md),
+    for the lead commands of `maity gh`. Bound to the credential that signed the calls, never
+    to a member id from local state (review A1720 of #2054): `GET /me` names who the hub
+    authenticated, refuses here for an isolated agent (/me answers one, §6.2), and must list
+    this project; that member's own view then gives `role_base`. Never from the resume
+    packet, never for an agent served with `--for`, never from a state directory named by
+    MAITY_STATE_DIR under a placement. A hub that does not answer refuses (ghpr.check_role)."""
     if Session.for_target is not None:
         raise ghpr.Refused("the lead commands act as this clone's own member, not with --for")
+    if clonecheck.placed() and state.STATE_DIR_ENV in os.environ:
+        # The runner never sets it: under a placement only the placement's own state counts.
+        raise ghpr.Refused(f"the lead commands refuse {state.STATE_DIR_ENV} under a placement")
     try:
         session = Session()
+        root = clonecheck.placement_root()
+        if root is not None and session.dir.resolve() != (root / ".git" / "maity").resolve():
+            # The placement's own state only: the clone whose .git ghpr.run checked just now.
+            raise ghpr.Refused("the lead commands read only this placement's own state")
         project = session.project
-        answer = session.client.call("GET", "/me")
-    except (state.StateError, hub.HubError) as exc:
+        me = session.client.call("GET", "/me")
+        if _field(me, "membership", "isolated") is not None:
+            raise ghpr.Refused("an isolated member runs no lead command")
+        member = _field(me, "member", "id")
+        listed = [
+            p for p in (_field(me, "projects") or [])
+            if isinstance(p, dict) and p.get("full_name") == project
+        ]  # fmt: skip
+        if not isinstance(member, str) or len(listed) != 1:
+            raise ghpr.Refused(f"the hub lists no membership of yours in {project}")
+        view = session.client.call("GET", session.project_path("members", member))
+    except (state.StateError, hub.HubError, clonecheck.Refused) as exc:
         raise ghpr.Refused(f"the hub did not say this member's role: {exc}") from None
-    listed = [
-        p for p in (_field(answer, "projects") or [])
-        if isinstance(p, dict) and p.get("full_name") == project
-    ]  # fmt: skip
-    if len(listed) != 1:
-        raise ghpr.Refused(f"the hub lists no membership of yours in {project}")
-    role = listed[0].get("role")
-    return role if isinstance(role, str) else None
+    if _field(view, "id") != member:
+        raise ghpr.Refused("the hub's member view is not the member /me named")
+    base = _field(view, "role_base")
+    return base if isinstance(base, str) else None
 
 
 def cmd_report(args: argparse.Namespace) -> int:

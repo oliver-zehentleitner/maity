@@ -665,11 +665,24 @@ SHA = "4a59187965ed2fca8c6ecb874d053823ba14ce91"
 ROLE_READS: list[str] = []
 
 
+def runner_layout(tmp_path: Path, placed: dict[str, Any], placement: str) -> Path:
+    """The runner's directory for the agent as the runner lays it out,
+    `<state>/agents/<placement>/git`, holding `placed`'s records (git, pull_requests)."""
+    where = tmp_path / "state" / "agents" / placement / "git"
+    where.mkdir(parents=True)
+    for name in (clonecheck.GIT_PATH.name, ghpr.PULL_REQUESTS):
+        (where / name).write_bytes((placed["record"].parent / name).read_bytes())
+    return where
+
+
 @pytest.fixture
-def lead(placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """`placed` with the runner's LEAD record and a hub that names the member a manager; the
-    role read is counted, so a test can see it happened at the call."""
-    record = placed["record"].parent / ghpr.LEAD
+def lead(placed: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """`placed` with the runner's LEAD record in this placement's own directory of the
+    runner's layout (`agents/plc-0003/git`), and a hub that names the member's role base
+    manager; the role read is counted, so a test can see it happened at the call."""
+    where = runner_layout(tmp_path, placed, "plc-0003")
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(where))
+    record = where / ghpr.LEAD
     record.write_text("lead\n")
     ROLE_READS.clear()
 
@@ -678,7 +691,25 @@ def lead(placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> dict[str, A
         return "manager"
 
     monkeypatch.setattr(cli, "_hub_role", manager)
-    return {**placed, "lead_record": record}
+    return {**placed, "lead_record": record, "runner_dir": where}
+
+
+@pytest.mark.parametrize("layout", ["another placement", "not the runner's layout"])
+def test_the_lead_record_counts_only_in_this_placements_directory(
+    lead: dict[str, Any], tmp_path: Path, layout: str, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """Review A1721 of #2054: GIT_PRIVATE_ENV is taken as given, so the lead commands read
+    their record only from `…/agents/<this placement>/git`. A directory with every record in
+    place but of another placement, or outside the layout, is refused before any role read."""
+    if layout == "another placement":
+        where = runner_layout(tmp_path / "other", lead, "plc-0009")
+    else:
+        where = lead["record"].parent  # placed's own `agent/git`, which the runner never makes
+    (where / ghpr.LEAD).write_text("lead\n")
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(where))
+    err = refused(["gh", "pr", "ready", "2045"], capsys)
+    assert "this placement's directory" in err and ran(lead) is None and ROLE_READS == []
 
 
 @runs_gh
@@ -885,10 +916,11 @@ def test_run_list_and_view_read_the_heads_runs_and_jobs(lead: dict[str, Any]) ->
                             "--log-failed", "--", "44802593768"]  # fmt: skip
 
 
-def test_run_and_job_ids_take_up_to_twenty_digits_and_pr_numbers_ten() -> None:
-    """Run and job ids already pass 10 digits; a pull request number keeps its cap."""
+def test_run_and_job_ids_take_up_to_nineteen_digits_and_pr_numbers_ten() -> None:
+    """Run and job ids already pass 10 digits; 19 hold any positive 64-bit id; a pull
+    request number keeps its cap."""
     assert ghpr.RUN_ID.fullmatch("44802593768") and ghpr.RUN_ID.fullmatch("136531499858")
-    assert ghpr.RUN_ID.fullmatch("9" * 20) and not ghpr.RUN_ID.fullmatch("9" * 21)
+    assert ghpr.RUN_ID.fullmatch("9" * 19) and not ghpr.RUN_ID.fullmatch("9" * 20)
     assert not ghpr.RUN_ID.fullmatch("0123") and not ghpr.RUN_ID.fullmatch("12a")
     assert ghpr.NUMBER.fullmatch("2054") and not ghpr.NUMBER.fullmatch("44802593768")
 
@@ -917,7 +949,7 @@ def test_a_member_the_hub_does_not_name_a_manager_is_refused(
 ) -> None:  # fmt: skip
     monkeypatch.setattr(cli, "_hub_role", lambda: role)
     err = refused(["gh", "pr", "ready", "2045"], capsys)
-    assert "role manager" in err and ran(lead) is None
+    assert "manager or built on it" in err and ran(lead) is None
 
 
 def test_a_hub_that_does_not_answer_refuses(
@@ -968,29 +1000,37 @@ def test_the_role_is_never_read_for_an_agent_served_with_for(
         cli._hub_role()
 
 
-class _Client:
-    """A hub that answers `GET /me` for the credential that signed it, and records every call."""
+PROJECT = "oliver-zehentleitner/maity"
+MEMBERS = "/projects/oliver-zehentleitner/maity/members/"
 
-    def __init__(self, me: Any) -> None:
-        self.me = me
+
+class _Client:
+    """A hub that answers for the credential that signed the call: `/me` and the member views
+    by path from `answers`, an exception raised as given; every call is recorded."""
+
+    def __init__(self, answers: dict[str, Any]) -> None:
+        self.answers = answers
         self.calls: list[tuple[str, str]] = []
 
     def call(self, method: str, path: str, **_: Any) -> Any:
         self.calls.append((method, path))
-        if isinstance(self.me, Exception):
-            raise self.me
-        return self.me
+        answer = self.answers.get(path, hub.HubError("not found", "not_found", 404))
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
 
 
 def _session(
-    monkeypatch: pytest.MonkeyPatch, me: Any, local_member: str = "agt-manager"
+    monkeypatch: pytest.MonkeyPatch, answers: dict[str, Any], local_member: str = "agt-manager"
 ) -> _Client:
     """A Session whose local state names `local_member` (a manager's id, say) while the hub
-    authenticates the credential as whoever `me` describes."""
-    client = _Client(me)
+    authenticates the credential as whoever `/me` in `answers` describes. Not placed, so the
+    placement's state check does not apply (its own test below)."""
+    client = _Client(answers)
 
     class FakeSession:
-        project = "oliver-zehentleitner/maity"
+        project = PROJECT
+        dir = Path("/nowhere/.git/maity")
 
         def __init__(self) -> None:
             self.client = client
@@ -1000,23 +1040,79 @@ def _session(
         def me(self) -> str:
             return local_member
 
+        def project_path(self, *parts: str) -> str:
+            return "/projects/" + PROJECT + "/" + "/".join(parts)
+
     monkeypatch.setattr(cli, "Session", FakeSession)
     monkeypatch.setattr(FakeSession, "for_target", None, raising=False)
+    monkeypatch.setattr(clonecheck, "placement_root", lambda *a, **k: None)
+    monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
     return client
+
+
+def _me(member: str, role: str = "coder", isolated: Any = None) -> dict[str, Any]:
+    return {"member": {"id": member},
+            "projects": [{"full_name": PROJECT, "role": role}],
+            "membership": {"isolated": isolated}}  # fmt: skip
 
 
 def test_the_role_is_the_authenticated_callers_not_the_local_member_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Review A1720 of #2054: the local state may name a manager's id, but the hub answers
-    `/me` for the credential that signed the call; that answer's role decides, and no
-    member read by id is made."""
-    me = {"member": {"id": "agt-coder"},
-          "projects": [{"full_name": "oliver-zehentleitner/other", "role": "manager"},
-                       {"full_name": "oliver-zehentleitner/maity", "role": "coder"}]}  # fmt: skip
-    client = _session(monkeypatch, me, local_member="agt-manager")
+    """Review A1720 of #2054: the local state may name a manager's id, but `/me` answers for
+    the credential that signed the call; the member view read is that member's, never the
+    local id's, and its role base decides."""
+    client = _session(monkeypatch, {
+        "/me": _me("agt-coder"),
+        MEMBERS + "agt-coder": {"id": "agt-coder", "role": "coder", "role_base": "coder"},
+        MEMBERS + "agt-manager": {"id": "agt-manager", "role": "manager", "role_base": "manager"},
+    }, local_member="agt-manager")  # fmt: skip
     assert cli._hub_role() == "coder"
+    assert client.calls == [("GET", "/me"), ("GET", MEMBERS + "agt-coder")]
+
+
+@pytest.mark.parametrize(("role", "base", "allowed"), [
+    ("manager", "manager", True),
+    ("release-lead", "manager", True),   # a project role built on manager counts as manager
+    ("lead-coder", "coder", False),      # one built on coder does not, whatever its name says
+])  # fmt: skip
+def test_the_role_base_decides_not_the_roles_name(
+    monkeypatch: pytest.MonkeyPatch, role: str, base: str, allowed: bool
+) -> None:
+    """The lead's decision on #2054: a project role grants no more than its base
+    (context/trust.md), so `role_base == manager` lets a lead command run."""
+    _session(monkeypatch, {
+        "/me": _me("agt-l", role=role),
+        MEMBERS + "agt-l": {"id": "agt-l", "role": role, "role_base": base},
+    })  # fmt: skip
+    if allowed:
+        ghpr.check_role(cli._hub_role)
+    else:
+        with pytest.raises(ghpr.Refused, match="manager or built on it"):
+            ghpr.check_role(cli._hub_role)
+
+
+def test_an_isolated_member_is_refused_though_me_answers_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`/me` answers an isolated agent (§6.2); the lead commands check its flag and refuse
+    before any member read."""
+    client = _session(monkeypatch, {
+        "/me": _me("agt-l", role="manager", isolated={"by": "hum-x", "reason": "r"}),
+        MEMBERS + "agt-l": {"id": "agt-l", "role": "manager", "role_base": "manager"},
+    })  # fmt: skip
+    with pytest.raises(ghpr.Refused, match="isolated"):
+        cli._hub_role()
     assert client.calls == [("GET", "/me")]
+
+
+def test_a_member_view_of_another_member_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    _session(monkeypatch, {
+        "/me": _me("agt-l"),
+        MEMBERS + "agt-l": {"id": "agt-other", "role": "manager", "role_base": "manager"},
+    })  # fmt: skip
+    with pytest.raises(ghpr.Refused, match="not the member"):
+        cli._hub_role()
 
 
 @pytest.mark.parametrize(
@@ -1025,21 +1121,66 @@ def test_the_role_is_the_authenticated_callers_not_the_local_member_ids(
         {"member": {"id": "agt-x"}, "projects": []},  # not a member of this project
         {"member": {"id": "agt-x"}, "projects": [{"full_name": "o/elsewhere", "role": "manager"}]},
         {"member": {"id": "agt-x"}},  # no list at all
+        {"projects": [{"full_name": PROJECT, "role": "manager"}]},  # no member named
         "not json",
     ],
 )
 def test_a_me_that_does_not_list_this_project_refuses(
     monkeypatch: pytest.MonkeyPatch, me: Any
 ) -> None:
-    _session(monkeypatch, me)
+    _session(monkeypatch, {"/me": me})
     with pytest.raises(ghpr.Refused, match="no membership"):
         cli._hub_role()
 
 
 def test_a_hub_error_on_me_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
-    _session(monkeypatch, hub.HubError("unreachable"))
+    _session(monkeypatch, {"/me": hub.HubError("unreachable")})
     with pytest.raises(ghpr.Refused, match="did not say"):
         cli._hub_role()
+
+
+def test_a_state_dir_named_by_maity_state_dir_is_refused_under_a_placement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review A1721 of #2054: the runner never sets MAITY_STATE_DIR, so under a placement
+    the lead commands refuse it before a session is built or the hub asked."""
+    client = _session(monkeypatch, {"/me": _me("agt-l", role="manager")})
+    monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
+    monkeypatch.setenv("MAITY_STATE_DIR", "/elsewhere/state")
+    with pytest.raises(ghpr.Refused, match="MAITY_STATE_DIR"):
+        cli._hub_role()
+    assert client.calls == []
+
+
+def test_only_the_placements_own_state_is_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Under a placement the session's state must be the placement clone's `.git/maity`,
+    the clone whose `.git` ghpr.run checked; another directory is refused before the hub."""
+    client = _session(monkeypatch, {"/me": _me("agt-l", role="manager")})
+    monkeypatch.setattr(clonecheck, "placement_root", lambda *a, **k: tmp_path / "clone")
+    with pytest.raises(ghpr.Refused, match="own state"):
+        cli._hub_role()
+    assert client.calls == []
+
+
+@runs_gh
+def test_every_answer_of_gh_is_cleaned_on_both_streams(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review A1721 of #2054: a confirmation can echo a title someone else wrote; neither
+    stream reaches the terminal with an escape a terminal acts on."""
+    Path(lead["gh"]).write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        "sys.stdout.write('merged #2045 (\\x1b]0;title\\x07)\\n')\n"
+        "sys.stderr.write('\\u2713 Squashed \\x1b[2J and merged\\n')\n"
+    )
+    argv = ["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
+            "--body", "b"]  # fmt: skip
+    assert cli.main(argv) == 0
+    seen = capsys.readouterr()
+    assert "\x1b" not in seen.out and "\x07" not in seen.out and "\x1b" not in seen.err
+    assert "merged #2045" in seen.out and "\\x1b" in seen.out and "Squashed" in seen.err
 
 
 def test_the_footer_filter_drops_whole_lines_only() -> None:

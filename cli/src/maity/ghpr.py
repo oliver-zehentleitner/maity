@@ -81,9 +81,9 @@ LEAD_COMMANDS = frozenset({("pr", "merge"), ("pr", "edit"), ("pr", "ready"),
 LEAD_ROLE = "manager"
 SHA = re.compile(r"[0-9a-f]{40}")  # a full commit id: a merge names exactly the head it read
 NUMBER = re.compile(r"[1-9][0-9]{0,9}")  # a pull request of this repository
-# A CI run or job of this repository: ids are already 11 and 12 digits, and grow; 20 digits
-# hold any 64-bit id.
-RUN_ID = re.compile(r"[1-9][0-9]{0,19}")
+# A CI run or job of this repository: ids are already 11 and 12 digits, and grow; 19 digits
+# hold any positive 64-bit id.
+RUN_ID = re.compile(r"[1-9][0-9]{0,18}")
 # What `run list` asks gh for: one run per line of the head's workflows, the ids `run view` takes.
 RUN_FIELDS = (
     "databaseId", "workflowName", "name", "event", "status", "conclusion", "headSha",
@@ -215,9 +215,20 @@ def granted(root: Path, dot_git: int | None = None) -> tuple[str, str]:
 def lead_granted(root: Path, dot_git: int | None = None) -> None:
     """Refused unless the runner wrote its LEAD record for this clone (`lead = true` beside
     `pull_requests = true`): `lead` and a newline, in the runner's directory for the agent.
-    Never one in the clone (Codex's IN_CLONE), which the session could write itself."""
-    if clonecheck.runner_dir(root) is None:
+    Never one in the clone (Codex's IN_CLONE), which the session could write itself, and only
+    from this placement's own directory in the runner's layout, `…/agents/<placement id>/git`
+    (review A1721 of #2054): GIT_PRIVATE_ENV is taken as the runner set it, so a value naming
+    another placement's directory is refused here."""
+    where = clonecheck.runner_dir(root)
+    if where is None:
         raise Refused("the lead commands need the runner's own record, which this placement lacks")
+    placement = clonecheck.placement_id()
+    if (placement is None or where.name != "git" or where.parent.name != placement
+            or where.parent.parent.name != "agents"):  # fmt: skip
+        raise Refused(
+            f"{clonecheck.GIT_PRIVATE_ENV} is not this placement's directory of the runner's"
+            " (agents/<placement id>/git)"
+        )
     try:
         content = clonecheck.runner_record(root, dot_git, LEAD, 64)
     except FileNotFoundError:
@@ -405,28 +416,29 @@ def as_log(args: argparse.Namespace) -> bool:
 
 
 def _tail(answer: bytes) -> str:
-    """A `run view --log-failed` answer, cleaned (`onboarding`: the log is the repository's
-    code's output) and cut to its last LOG_TAIL lines, with a line that says so."""
-    text = answer.decode("utf-8", "replace").replace("\r\n", "\n")
-    lines = onboarding.clean(text).split("\n")
+    """A `run view --log-failed` answer cut to its last LOG_TAIL lines, with a line that says
+    so, and only those cleaned (`onboarding`: the log is the repository's code's output), so a
+    log of megabytes is not scanned whole (review A1719 of #2054)."""
+    lines = answer.decode("utf-8", "replace").replace("\r\n", "\n").split("\n")
     if lines and lines[-1] == "":
         lines.pop()
-    if len(lines) <= LOG_TAIL:
-        return "".join(line + "\n" for line in lines)
-    head = f"maity: cut to the last {LOG_TAIL} of {len(lines)} lines\n"
-    return head + "".join(line + "\n" for line in lines[-LOG_TAIL:])
+    cut = len(lines) > LOG_TAIL
+    head = f"maity: cut to the last {LOG_TAIL} of {len(lines)} lines\n" if cut else ""
+    return head + "".join(onboarding.clean(line) + "\n" for line in lines[-LOG_TAIL:])
 
 
 def check_role(role_of: Callable[[], str | None] | None) -> None:
-    """Refused unless the hub names this member's role `manager` now: `role_of` reads it with
-    the session's credential at each call; None, or a read that fails, refuses (fail closed)."""
+    """Refused unless the hub names this member's role, by its base, `manager` now: a project
+    role built on manager counts, one built on any other role does not (context/trust.md: a
+    project role grants no more than its base). `role_of` reads the base with the session's
+    credential at each call; None, or a read that fails, refuses (fail closed)."""
     if role_of is None:
         raise Refused("the lead commands need this member's role from the hub")
     role = role_of()
     if role != LEAD_ROLE:
         raise Refused(
-            f"the lead commands are for a member with the role {LEAD_ROLE}; "
-            f"the hub names this one {role or 'no role'}"
+            f"the lead commands are for a member whose role is {LEAD_ROLE} or built on it; "
+            f"the hub names this one's base {role or 'no role'}"
         )
 
 
@@ -497,9 +509,21 @@ def run(args: argparse.Namespace, role_of: Callable[[], str | None] | None = Non
             cwd=empty,
             env=gh_env(os.environ, gh),
             check=False,
-            stdout=subprocess.PIPE if text or log else None,
+            capture_output=True,
         )
+    # Every answer of gh is printed cleaned (review A1721 of #2054): a confirmation can echo a
+    # title or a branch someone else wrote, on either stream.
     if done.stdout:
-        sys.stdout.write(_readable(done.stdout) if text else _tail(done.stdout))
+        out = _readable(done.stdout) if text else _tail(done.stdout) if log else _clean(done.stdout)
+        sys.stdout.write(out)
         sys.stdout.flush()
+    if done.stderr:
+        sys.stderr.write(_clean(done.stderr))
+        sys.stderr.flush()
     return done.returncode
+
+
+def _clean(answer: bytes) -> str:
+    """gh's output as text with every character a terminal acts on shown as an escape
+    (`onboarding.clean`); line feeds and tabs stay."""
+    return onboarding.clean(answer.decode("utf-8", "replace"))
