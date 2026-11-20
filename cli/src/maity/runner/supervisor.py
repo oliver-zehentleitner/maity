@@ -1509,7 +1509,7 @@ class Supervisor:
         """The placement's password file in `holder`, drawn once and kept across restarts; None
         when it is not one the runner vouches for (the log says why), and then the session gets
         no test cluster: without the password it would be made with trust."""
-        leaf = holder / p["id"]
+        leaf = holder / str(p["id"])
         try:
             made = target.as_user.pg("make", holder.parent, leaf)
         except (scratchop.OnTheWay, OSError, subprocess.SubprocessError) as exc:

@@ -1166,7 +1166,12 @@ def test_pgenv_is_no_maity_command(monkeypatch: pytest.MonkeyPatch, placed: str 
     from maity.runner import pgenv
 
     reached: list[object] = []
-    monkeypatch.setattr(pgenv, "main", lambda argv=None: reached.append(argv) or 0)
+
+    def fake(argv: object = None) -> int:
+        reached.append(argv)
+        return 0
+
+    monkeypatch.setattr(pgenv, "main", fake)
     if placed is None:
         monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
     else:
