@@ -223,6 +223,26 @@ class Context:
     tmp_scratch_parent: Path | None = None
 
 
+# A Unix socket's path holds at most 107 bytes on Linux (`sun_path` is 108, with its NUL).
+# Tools put sockets under TMPDIR: Claude Code's sandbox binds `claude-socks-<16 hex>.sock`
+# there (34 bytes) and does not start when the path is longer. A scratch deep in a workspaces
+# root made that path 117 bytes, so every Claude Code placement lost its sandbox (cli 0.1.0a16).
+SOCKET_PATH_MAX = 107
+SOCKET_NAME_ROOM = len("claude-socks-0123456789abcdef.sock")
+
+
+def scratch_tmpdir(scratch: Path | None) -> Path | None:
+    """The TMPDIR inside the placement's scratch, or None when there is no scratch or when a
+    socket named like Claude Code's under it would not fit a Unix socket path: then the session
+    keeps the host's TMPDIR (normally /tmp) and only `MAITY_SCRATCH` names the scratch."""
+    if scratch is None:
+        return None
+    tmp = scratch / "tmp"
+    if len(os.fsencode(tmp)) + 1 + SOCKET_NAME_ROOM > SOCKET_PATH_MAX:
+        return None
+    return tmp
+
+
 @dataclass(frozen=True)
 class Launch:
     argv: list[str]
@@ -247,8 +267,8 @@ def launch(ctx: Context) -> Launch:
         **ctx.extra_env,
         # Its scratch, and temporary files inside it, so a review's or a test's leftovers go
         # when the placement ends instead of piling up in the agents' home (§15.5).
-        **({"MAITY_SCRATCH": str(ctx.scratch), "TMPDIR": str(ctx.scratch / "tmp")}
-           if ctx.scratch is not None else {}),  # fmt: skip
+        **({"MAITY_SCRATCH": str(ctx.scratch)} if ctx.scratch is not None else {}),
+        **({"TMPDIR": str(tmp)} if (tmp := scratch_tmpdir(ctx.scratch)) is not None else {}),
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
     # session's variables are gone (clonecheck.placement_root), instead of trusting that.

@@ -1260,9 +1260,28 @@ def test_the_scratch_is_told_to_the_session_and_opened_in_both_sandboxes(tmp_pat
     toml = adapters.codex_config(codex)
     hidden, opened = f'"{tmp_path / "ws"}" = "none"', f'"{room}" = "write"'
     assert hidden in toml and opened in toml  # the root stays hidden, its scratch opened again
-    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=room))
-    assert launched.env["MAITY_SCRATCH"] == str(room)
-    assert launched.env["TMPDIR"] == str(room / "tmp")
+    short = Path("/srv/ws/maity/.scratch/plc-0003")  # room for a socket under its tmp
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=short))
+    assert launched.env["MAITY_SCRATCH"] == str(short)
+    assert launched.env["TMPDIR"] == str(short / "tmp")
+
+
+def test_a_scratch_too_deep_for_a_socket_keeps_the_hosts_tmpdir(tmp_path: Path) -> None:
+    # Claude Code binds its sandbox socket `claude-socks-<16 hex>.sock` under TMPDIR; a scratch
+    # whose `tmp` leaves no room for it under the 107-byte Unix socket path broke every Claude
+    # Code placement's sandbox (cli 0.1.0a16). Such a scratch is still named, TMPDIR is not.
+    deep = Path("/") / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    assert len(str(deep / "tmp")) + 1 + adapters.SOCKET_NAME_ROOM > adapters.SOCKET_PATH_MAX
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=deep))
+    assert launched.env["MAITY_SCRATCH"] == str(deep)
+    assert "TMPDIR" not in launched.env
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    assert adapters.scratch_tmpdir(room) == room / "tmp"
+    longest = Path("/" + "x" * (adapters.SOCKET_PATH_MAX - adapters.SOCKET_NAME_ROOM - 6))
+    assert len(str(longest / "tmp")) + 1 + adapters.SOCKET_NAME_ROOM == adapters.SOCKET_PATH_MAX
+    assert adapters.scratch_tmpdir(longest) == longest / "tmp"  # exactly at the limit fits
+    assert adapters.scratch_tmpdir(Path(str(longest) + "x")) is None
+    assert adapters.scratch_tmpdir(None) is None
 
 
 def test_without_a_scratch_nothing_names_one(tmp_path: Path) -> None:
