@@ -102,15 +102,18 @@ def _literal(node: ast.expr | None) -> tuple[str, bool] | None:
     """The name a node spells and whether quoted_name quotes it; None when it is no literal."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value, False
-    if isinstance(node, ast.Call) and _callee(node) == "quoted_name":
+    if isinstance(node, ast.Call) and _callee(node) in ("quoted_name", "conv"):
+        # sa.schema.conv is a quoted_name and takes the same quote argument
         inner = _literal(_arg(node, 0, "value"))
         if inner is None:
             return None
         flag = _arg(node, 1, "quote")
+        if flag is None:  # no quote argument: a quoted_name passed in keeps its own
+            return inner
         return inner[0], isinstance(flag, ast.Constant) and flag.value is True
-    if isinstance(node, ast.Call) and _callee(node) in ("f", "conv"):
-        # op.f("…"), sa.schema.conv("…"): the name as written, quoted by the dialect
-        return _literal(_arg(node, 0, "name" if _callee(node) == "f" else "value"))
+    if isinstance(node, ast.Call) and _callee(node) == "f":
+        # op.f("…"): the name as written, quoted by the dialect
+        return _literal(_arg(node, 0, "name"))
     return None
 
 
@@ -292,6 +295,10 @@ op.create_table(
     ),
     "a conv name quoted": (
         'op.create_index(sa.schema.conv(quoted_name("vector", True)), "t", ["v"])'
+    ),
+    "a conv name with its own quote": 'op.create_index(sa.schema.conv("vector", True), "t", ["v"])',
+    "a conv name with its own quote, by keyword": (
+        'op.create_index(sa.schema.conv(value="vector", quote=True), "t", ["v"])'
     ),
 }
 

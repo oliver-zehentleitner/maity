@@ -138,6 +138,11 @@ jobs:
       # which come from that lock.
       - run: |
           pip install --quiet --require-hashes --no-deps --only-binary :all: -r tools/requirements/site.txt
+      # test_release_gate.py checks each commit of release_gate.py's MARIADB_EXTRA_JOBS against
+      # its parent and fails here without them. Two commits each, not fetch-depth: 0: the full
+      # history with every branch for one test on every pull request.
+      - run: |
+          git fetch --quiet --no-tags --depth=2 origin $(python -c 'import sys; sys.path.insert(0, "tools"); import release_gate; print(*release_gate.MARIADB_EXTRA_JOBS.values())')
       - run: python -m unittest discover -s tools -p 'test_*.py' -v
 
   # The dashboard (web/, owned by Agent D): structure checks on the Python
