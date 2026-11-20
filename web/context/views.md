@@ -6663,6 +6663,22 @@ read, and the board stays as drawn. A group that fails before its first page
 still fails the view, as before. A group read that answers without handing
 over a first page draws once the group is complete.
 
+Since tsk-ywf14h6qd6kq (2026-11-20, the review of #2043) an open column is
+treated as the closed ones are until it is complete. `M.api.getAll` also says
+whether more pages follow the first. A column whose later pages are still
+read holds no count and is marked busy, because a first page's count is not
+the column's. A later open page that fails no longer fails the whole read:
+that group keeps its first page, and its column holds no count and says
+"More cards of the open columns could not be read". Every other column keeps
+what it read, Done and Cancelled included. Before this change they lost their
+cards and showed the open column's failure, while the incomplete open column
+had no mark. The status line above the columns says the same, so a filter
+that hides that column still shows it. A read that fails otherwise after the
+first draw (a closed column, the read again of the cards changed meanwhile)
+still hands over the open groups' cards. Without them an open column would be
+left at its first page with a count. The closed columns say the failure, as
+before. A reload after a write reads every page before it draws, as before.
+
 **Reason:** on the maintainer's project the closed window was 783 cards,
 the largest group by far, and its pages follow each other through a
 keyset cursor, so it held the first draw by about a second while the open
