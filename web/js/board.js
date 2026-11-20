@@ -763,15 +763,18 @@ window.Maity = window.Maity || {};
         pages.forEach((page, i) => { if (page.more) LIST_GROUPS[i].split(",").forEach((s) => partial.add(s)); });
         shown([...open.values()], partial);
       }
+      const asError = (err) => (err instanceof Error ? err : new Error(String(err)));
+      // openFailed: each failed group's statuses with that group's own error (statuses), and the
+      // first error that came (err).
       let openFailed = null;
       const openParts = groups.slice(0, LIST_GROUPS.length).map((read, i) => (pages
         ? read.catch((err) => {
-          if (!openFailed) openFailed = { statuses: new Set(), err };
-          LIST_GROUPS[i].split(",").forEach((s) => openFailed.statuses.add(s));
+          const e = asError(err);
+          if (!openFailed) openFailed = { statuses: new Map(), err: e };
+          LIST_GROUPS[i].split(",").forEach((s) => openFailed.statuses.set(s, e));
           return { items: pages[i].items, next_cursor: null };
         })
         : read));
-      const asError = (err) => (err instanceof Error ? err : new Error(String(err)));
       // A read that failed after the first draw still hands over the open groups' cards it read
       // (open: their cards and openFailed), so that no open column is left at its first page with
       // a count; the closed columns say the failure, as before (tsk-ywf14h6qd6kq).
@@ -816,8 +819,8 @@ window.Maity = window.Maity || {};
     let closedPending = true;
     let closedError = null;
     // The open columns whose later pages are still read, their count kept back as a closed column's
-    // is; and those whose later page failed, their first page kept and the failure said in the
-    // status line and in the column (tsk-ywf14h6qd6kq).
+    // is; and those whose later page failed, their first page kept and the failure said in its own
+    // line above the columns (openStatus) and in the column (tsk-ywf14h6qd6kq, A1711).
     let openPartial = new Set();
     let openFailed = null;
     let reads = 1;
@@ -889,6 +892,7 @@ window.Maity = window.Maity || {};
       openPartial = new Set();
       openFailed = null;
       sayClosed();
+      sayOpen();
       items = boardItems;
       hubResults = false;
       if (searchInput.value) await search();
@@ -1061,7 +1065,7 @@ window.Maity = window.Maity || {};
         ? h("p", { class: closedError ? "send-status failed closed-read" : "muted closed-read" }, closedWords())
         : cards.length ? shownOf(s, cards).drawn.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"),
       openIncomplete(s)
-        ? h("p", { class: "send-status failed open-read" }, M.t("board.open.more_failed", { reason: openFailed.err.message || String(openFailed.err) }))
+        ? h("p", { class: "send-status failed open-read" }, openMoreFailed(openFailed.statuses.get(s)))
         : null,
       moreButton(s, cards));
       if ((closedWaiting(s) && !closedError) || (openWaiting(s) && !openIncomplete(s))) col.setAttribute("aria-busy", "true");
@@ -1248,6 +1252,19 @@ window.Maity = window.Maity || {};
     // the live region stands outside them and keeps its place from pending to done or failed.
     const closedStatus = h("p", { class: "visually-hidden", role: "status", "aria-live": "polite" });
     const sayClosed = () => { closedStatus.textContent = closedPending || closedError ? closedWords() : ""; };
+    // A later open page that failed (openFailed), each column with its group's own reason; the line
+    // above the columns names the first that came. That line is the background read's own, shown
+    // under every column filter: the status line stays the reader's actions', so a refusal said
+    // there is never replaced by it (A1711). Emptied, and hidden, by any read that clears openFailed;
+    // empty, it carries neither send-status nor failed, so no query for a failure or a status line
+    // finds it.
+    const openMoreFailed = (err) => M.t("board.open.more_failed", { reason: err.message || String(err) });
+    const openStatus = h("p", { class: "open-read-status", role: "status" });
+    const sayOpen = () => {
+      openStatus.textContent = openFailed ? openMoreFailed(openFailed.err) : "";
+      openStatus.className = openFailed ? "send-status failed open-read-status" : "open-read-status";
+      openStatus.hidden = !openFailed;
+    };
     // The focused element in the columns, so that the next draw can find it again: its data-focus
     // key, or its card and its place among that card's controls and links (a card's title link has
     // no key). Returns what puts the focus back after the draw, or null when it was elsewhere.
@@ -1593,8 +1610,9 @@ window.Maity = window.Maity || {};
         h("label", { for: "board-area" }, M.t("board.filter.area")), areaSel,
         h("label", { for: "board-needs" }, M.t("cards.new.field.needs")), needsFilter,
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " ", M.t("board.filter.silent")) : null),
-      searchStatus, formBox, status.el, intro, wantedNote, closedStatus, boardBody);
+      searchStatus, formBox, status.el, intro, wantedNote, closedStatus, openStatus, boardBody);
     sayClosed();
+    sayOpen();
     let markedCard = draw();
     // The closed group in, while the rest of the view goes on: the board drawn again with it (a local
     // search filters it too; a hub search keeps its own results), and the focus put back on the
@@ -1615,8 +1633,7 @@ window.Maity = window.Maity || {};
       openPartial = new Set();
       openFailed = all.openFailed || null;
       sayClosed();
-      // Said where every filter shows it: the status line above the columns.
-      if (openFailed) status.fail(M.t("board.open.more_failed"), openFailed.err);
+      sayOpen();
       if (!hubResults) items = boardItems;
       else {
         // A hub search drawn meanwhile: a card it found that the board has now loaded is in the window.
@@ -1644,9 +1661,9 @@ window.Maity = window.Maity || {};
         openFailed = err.open.openFailed || null;
         boardItems = err.open.cards;
         if (!hubResults) items = boardItems;
-        if (openFailed) status.fail(M.t("board.open.more_failed"), openFailed.err);
       }
       sayClosed();
+      sayOpen();
       draw(true);
       if (back) back();
       if (menuBack) menuBack();

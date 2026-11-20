@@ -34,7 +34,12 @@ Measured on 2026-11-08 from the hub's request log and local statement counts:
 - **Members page:** the credentials are read once per member (27 at once), about 1.2 s.
 - **Card panel and chat:** fast on the server, but `…/members` and the chat list are read
   again every 0.4–3 s.
-- **Flat per row** (3 vs 30 rows): every other list.
+- **Flat per row** (3 vs 30 rows): every other list. **Contradicted, open:** the statement
+  test of every list route (item 15, 2026-11-20, on SQLite and PostgreSQL) found 25 of the 59
+  list routes growing per row, plus `…/jour-fixe/rounds` for two readers of an owner circle,
+  among them `/me`, `/projects`, `/agents`, a project's placements and runners, and the org
+  lists; they are listed in `GROWING` in `hub/tests/list_rows.py`, each to
+  become a card. The 2026-11-08 count covered the lists the pages read most, not every route.
 - **Baseline with a test account** (headless browser, median of 3 runs, cold and warm):
   the load event at 0.7–0.8 s on every page, warm no faster than cold, because all 101–103
   files come back 200 on a reload. The board and a card's panel end at 2.9–3.4 s: about 28
@@ -94,7 +99,7 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later; measured 2026-11-20, tsk-rfv3a7ccbfv1, tsk-jaw0g9fe3trz and tsk-nwq3azjf63db: it would pay only if one statement dominated. It does not apply to `/bootstrap`: its time rises with the statement count at a flat 1.3–1.9 ms per statement, a round trip each, and no single statement is slow. For `…/members` it is not yet shown: it was measured only in aggregate, 34–35 statements at about 2.0–3.2 ms each on average (median database time 71–108 ms in the two runs), with no per-statement split and no EXPLAIN |
 | 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | measured 2026-11-20, tsk-jaw0g9fe3trz and tsk-kpbwm5cae99g: the board's open column 245 kB (45 % of a warm load), `/auth/sessions?ended=true` 16 kB on every page, a project's `/bootstrap` 83 kB on every warm load; a fix is not decided |
 | 14 | Render cost in the browser, from a performance trace of the board and a chat | unknown | S to measure | measured 2026-11-20 for the board and a card, tsk-jaw0g9fe3trz: style recalculation over ~16k elements, 3–4 times, holds the main thread to ~1.9 s and ~2.1 s, past the last request; a fix is not decided, a chat not traced |
-| 15 | A statement test per list route, and a check on the number and size of the files the HTML loads, in CI | keeps the gains | S | open, tsk-xdn21ph67js9 |
+| 15 | A statement test per list route, and a check on the number and size of the files the HTML loads, in CI | keeps the gains | S | done, tsk-xdn21ph67js9 (`hub/tests/test_list_rows.py`, `web/tools/shell_budget.py`; 25 list routes that grow are exceptions, each to become a card) |
 
 Statuses as of 2026-11-18, read from the board; items 11 to 14 as of 2026-11-20. Items 11
 to 14 waited for a new measurement against the 2026-11-08 baseline, each to become a card

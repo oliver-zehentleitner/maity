@@ -1,44 +1,62 @@
 # The hub's checks. `make check` is what CI runs and what has to be green
 # before a pull request.
 
-PYTHON ?= python3
+# PYTHON is hub/.venv's (from `make dev`) when it exists, else python3, the one CI's
+# setup-python brings; `PYTHON=…` names another. Absolute, since `rechain` runs from the root,
+# and quoted at every use, since the checkout's path may hold a space.
+PYTHON ?= $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,python3)
 UV ?= uv
 
-.PHONY: install format check lint typecheck test revision rechain lock lock-upgrade lock-check \
+# In a runner placement pip cannot write ~/.cache/pip; its cache goes to the placement's
+# scratch instead, unless PIP_CACHE_DIR is set already.
+ifneq ($(MAITY_SCRATCH),)
+export PIP_CACHE_DIR ?= $(MAITY_SCRATCH)/pip-cache
+endif
+
+.PHONY: dev install format check lint typecheck test revision rechain lock lock-upgrade lock-check \
 	release-build release-check
 
+# hub/.venv with the tested set, made inside make, so a sandbox that allows `make` but
+# not a bare `python3 -m venv` can set it up (as cli's `make dev`). Wheels only, as in
+# release-build: a hashed sdist would make pip install its build backend unpinned.
+dev:
+	python3 -m venv .venv
+	.venv/bin/python -m pip install -q --require-hashes --only-binary :all: \
+		-r requirements/dev.txt -r requirements/build.txt
+	.venv/bin/python -m pip install -q --no-deps --no-build-isolation -e .
+
 # The tested set: every dependency pinned with hashes in requirements/, the
-# hub itself on top without resolving anything again.
+# hub itself on top without resolving anything again, into PYTHON's environment.
 install:
-	$(PYTHON) -m pip install --require-hashes -r requirements/dev.txt -r requirements/build.txt
-	$(PYTHON) -m pip install --no-deps --no-build-isolation -e .
+	"$(PYTHON)" -m pip install --require-hashes -r requirements/dev.txt -r requirements/build.txt
+	"$(PYTHON)" -m pip install --no-deps --no-build-isolation -e .
 
 format:
-	$(PYTHON) -m black src tests scripts hatch_build.py
-	$(PYTHON) -m ruff check --fix src tests scripts hatch_build.py
+	"$(PYTHON)" -m black src tests scripts hatch_build.py
+	"$(PYTHON)" -m ruff check --fix src tests scripts hatch_build.py
 
 check: lint typecheck test
 
 lint:
-	$(PYTHON) -m black --check src tests scripts hatch_build.py
-	$(PYTHON) -m ruff check src tests scripts hatch_build.py
+	"$(PYTHON)" -m black --check src tests scripts hatch_build.py
+	"$(PYTHON)" -m ruff check src tests scripts hatch_build.py
 
 typecheck:
-	$(PYTHON) -m mypy
+	"$(PYTHON)" -m mypy
 
 # One worker per core (pytest-xdist); `make test PYTEST_ARGS=` runs the suite in one process.
 PYTEST_ARGS ?= -n auto
 
 test:
-	$(PYTHON) -m pytest $(PYTEST_ARGS)
+	"$(PYTHON)" -m pytest $(PYTEST_ARGS)
 
 # make revision m="add the tasks"
 revision:
-	$(PYTHON) scripts/new_revision.py "$(m)"
+	"$(PYTHON)" scripts/new_revision.py "$(m)"
 
 # After merging origin/main: hang the branch's new migration on main's head.
 rechain:
-	cd .. && $(PYTHON) tools/rechain.py
+	cd .. && "$(PYTHON)" tools/rechain.py
 
 # The locks in requirements/: runtime (the image), dev (CI and `install`,
 # with the runtime pins as constraints), build (hatchling, with the dev pins
@@ -88,7 +106,7 @@ BUILD_ENV ?= $(CURDIR)/.release-env
 
 release-build:
 	rm -rf "$(BUILD_ENV)" ../dist
-	$(PYTHON) -m venv "$(BUILD_ENV)"
+	"$(PYTHON)" -m venv "$(BUILD_ENV)"
 	"$(BUILD_ENV)/bin/python" -m pip install --quiet --require-hashes --no-deps --only-binary :all: -r requirements/release.txt
 	"$(BUILD_ENV)/bin/python" -m build --no-isolation --outdir ../dist
 	"$(BUILD_ENV)/bin/python" -m twine check --strict ../dist/*

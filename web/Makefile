@@ -5,9 +5,12 @@ NODE ?= node
 
 # HTML, JavaScript, CSS and fixture checks, and the e2e harness's own
 # judgement of answers, and that ci.yml runs the web job for every file
-# check.py reads outside web/; Python standard library only.
+# check.py reads outside web/, and the shell's files within their budget
+# (tools/shell-budget.json); Python standard library only.
 check:
 	$(PYTHON) tools/check.py
+	$(PYTHON) tools/shell_budget.py
+	$(PYTHON) tools/test_shell_budget.py
 	$(PYTHON) tools/test_e2e_harness.py
 	$(PYTHON) tools/test_i18n_check.py
 	$(PYTHON) tools/test_step_up_check.py

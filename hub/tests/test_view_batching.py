@@ -13,6 +13,7 @@ from maity_hub import clock
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.list_rows import flat_rows
 from tests.statements import count_statements
 
 
@@ -97,6 +98,7 @@ def _closed_releases(engine: Engine, project_id: str, owner: int, n: int) -> Non
                 )
 
 
+@flat_rows("/projects/{}/{}/tasks", "/projects/{}/{}/events", "/projects/{}/{}/members")
 def test_lists_cost_the_same_for_3_rows_and_for_30(
     make_client: ClientFactory, migrated: Engine
 ) -> None:

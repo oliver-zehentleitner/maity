@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import secrets
 import shutil
 import stat
@@ -26,6 +27,9 @@ from maity import onboarding, proc
 from maity.redact import without_userinfo
 
 PLACEMENT_ENV = "MAITY_PLACEMENT"
+# A placement id as the runner takes it from the hub (supervisor.valid) and sets it in
+# PLACEMENT_ENV. Checked with fullmatch: `$` alone also matches before a trailing newline.
+PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
 # Written by the runner into every clone it starts an agent in (adapters.launch), in the
 # directory Claude Code's sandbox keeps the agent from writing.
 MARKER_PATH = Path(".git", "maity", "placement")
@@ -346,13 +350,30 @@ class Refused(Exception):
     """maity runs no git here; the message says why."""
 
 
+def placed() -> bool:
+    """Whether this is a session the runner placed: PLACEMENT_ENV is set, even empty. An
+    empty or malformed value is a placed session whose identity is unknown, never an
+    unplaced one; callers refuse it (placement_id)."""
+    return PLACEMENT_ENV in os.environ
+
+
+def placement_id() -> str | None:
+    """PLACEMENT_ENV when it is a placement id, else None. None means either not placed or
+    placed with an id that is not one, so a caller asks placed() first."""
+    value = os.environ.get(PLACEMENT_ENV)
+    if value is None or PLACEMENT_ID.fullmatch(value) is None:
+        return None
+    return value
+
+
 def placement_root(cwd: Path | None = None) -> Path | None:
     """In a session the runner started: the runner's clone, the parent of `GIT_COMMON_DIR`
     as the runner set it, resolved; None outside such a session. Never the current
     directory, which could be any repository the agent made. Without `MAITY_PLACEMENT`,
     a clone above `cwd` that holds the runner's marker is refused: the variables were
-    removed from the environment, not never set."""
-    if not os.environ.get(PLACEMENT_ENV):
+    removed from the environment, not never set. Set but not a placement id (empty
+    included) is a placed session of unknown identity, refused."""
+    if not placed():
         marked = _runner_marked(cwd or Path.cwd())
         if marked is not None:
             raise Refused(
@@ -361,6 +382,8 @@ def placement_root(cwd: Path | None = None) -> Path | None:
                 " runner started"
             )
         return None
+    if placement_id() is None:
+        raise Refused(f"{PLACEMENT_ENV} is set but not a placement id")
     common = os.environ.get("GIT_COMMON_DIR")
     if not common:
         raise Refused(f"{PLACEMENT_ENV} is set without GIT_COMMON_DIR, so the clone is unknown")

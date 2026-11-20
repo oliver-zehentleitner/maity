@@ -124,6 +124,15 @@ def never_a_page(raw_path: str) -> bool:
     return len(segments) > DEEPEST
 
 
+def is_invitation(raw_path: str) -> bool:
+    """Whether the dashboard draws an invitation at this path, `/invite/{token}` (§16.11):
+    read as the dashboard reads it (`web/js/app.js`, the no-referrer check in `render()`),
+    empty segments skipped and the first one decoded, so `//invite/{token}` and
+    `/%69nvite/{token}` are invitations too. `raw_path` as for `never_a_page`."""
+    segments = [part for part in raw_path.split("/") if part]
+    return len(segments) > 1 and _segment(segments[0]) == "invite"
+
+
 NEXT_MAX = 512
 _NEXT_BAD = re.compile(r"[\\\s#\x00-\x1f\x7f]|//")
 

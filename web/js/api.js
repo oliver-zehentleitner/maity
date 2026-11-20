@@ -6308,9 +6308,13 @@ window.Maity = window.Maity || {};
   // refused before this) and no change of the zone was saved while it was on its way; a saved
   // change of the settings sets it from their answer.
   let zoneSaves = 0;
-  function request(method, path, body, raw, signal, headers) {
+  // quiet: a read started before the drawing knows whether there is a session (the boot's
+  // notifications head, js/app.js): its 401, enrolment 403 or 503 maintenance tells the page
+  // nothing, since the drawing has not yet read the session and the window that would decide it
+  // (tsk-zf3wd9t5gjab).
+  function request(method, path, body, raw, signal, headers, quiet) {
     const saves = zoneSaves;
-    const answer = requestOnce(method, path, body, raw, signal, headers);
+    const answer = requestOnce(method, path, body, raw, signal, headers, quiet);
     const setZone = (name) => { if (M.i18n && M.i18n.setZone) M.i18n.setZone(name); };
     if (method === "GET" && path === "/me") {
       return answer.then((m) => { if (saves === zoneSaves && m && m.member && m.member.kind === "human") setZone(m.member.timezone); return m; });
@@ -6320,15 +6324,18 @@ window.Maity = window.Maity || {};
     }
     return answer;
   }
-  function requestOnce(method, path, body, raw, signal, headers) {
+  function requestOnce(method, path, body, raw, signal, headers, quiet) {
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
     // A tab's presence (§18.4) changes nothing the page shows, so it keeps what is kept.
     if (method !== "GET" && !(method === "POST" && path === "/me/presence") && M.onWrite) M.onWrite(path);
     const epoch = M.sessionEpoch || 0;
     // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
-    // place (js/maintenance.js), and the caller gets the refusal as before.
-    const told = (err) => { if (err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
+    // place (js/maintenance.js), and the caller gets the refusal as before. Not by a quiet read:
+    // the boot's head is refused while /bootstrap, which a window lets through, still runs, and
+    // the redraw it would start asks the next quiet head, refused again, without end; the drawing
+    // learns the window from its own reads and asks the head again itself (tsk-zf3wd9t5gjab).
+    const told = (err) => { if (!quiet && err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
     const single = () => {
@@ -6364,6 +6371,7 @@ window.Maity = window.Maity || {};
         if (sessionBlocked || epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
         return answer;
       }, (err) => {
+        if (quiet) throw err;
         if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path, epoch);
         // The hub moved a running session into enrolment (§2.8.5): the setup is all it reaches now.
         if (err && err.status === 403 && err.details && err.details.reason === "second_factor_enrolment_required" && M.onEnrolmentRequired) M.onEnrolmentRequired();
@@ -6417,7 +6425,9 @@ window.Maity = window.Maity || {};
     fixtureMailTestTo,
     source,
     ApiError,
-    get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),
+    // opts: { signal } cancels the read; { quiet } (request, above) tells the page of no 401,
+    // enrolment 403 or maintenance 503.
+    get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal, undefined, !!(opts && opts.quiet)),
     getAll,
     // The boot's bundle (§5.4, above): prime(project or null, live) gives a token for unprime.
     prime,

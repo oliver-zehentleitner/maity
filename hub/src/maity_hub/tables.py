@@ -147,6 +147,9 @@ human = Table(
     # The projects a browser with no tabs of its own opens, in order, as project ids (§5.1
     # "Start tabs"); NULL opens every membership.
     Column("start_tabs", JSON_VALUE),
+    # The public projects the human keeps as tabs without a membership, in the order starred,
+    # as project ids (§5.1 "Stars"); a project not public now stays in it, hidden. NULL is none.
+    Column("starred", JSON_VALUE),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration
