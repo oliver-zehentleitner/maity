@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import sys
 import tomllib
@@ -491,6 +492,12 @@ def lines(capsys: pytest.CaptureFixture[str]) -> list[str]:
     return capsys.readouterr().out.splitlines()
 
 
+def marked(capsys: pytest.CaptureFixture[str], marker: str) -> list[str]:
+    """The lines whose words, paths left out, hold `marker`: a test's temporary directory is
+    named after the test, so its paths can hold any word of the test's name."""
+    return [line for line in lines(capsys) if marker in re.sub(r"/\S*", "", line)]
+
+
 def test_check_passes_on_a_paired_runner(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -860,6 +867,9 @@ FILTERING = "Name:\tcat\nSeccomp:\t0\nSeccomp_filters:\t0\n"
         ("x86_64", "6.12.0", "Seccomp:\t0\n", "no_seccomp", "x64"),
         ("x86_64", "5.9.0", "Seccomp:\t0\n", "no_seccomp", "x64"),
         ("x86_64", "6.12.0", "Seccomp:\tx\n", "inconclusive", "x64"),
+        ("x86_64", "6.12.0", "Seccomp:\t0\nSeccomp_filters:\t\n", "inconclusive", "x64"),
+        ("x86_64", "6.12.0", "Seccomp:\t0\nSeccomp_filters:\t?\n", "inconclusive", "x64"),
+        ("x86_64", "6.12.0", "Name:\tc�t\nSeccomp:\t2\nSeccomp_filters:\t1\n", "ok", "x64"),
         ("x86_64", "unknown", "Seccomp:\t0\n", "inconclusive", "x64"),
         ("", "6.12.0", FILTERING, "inconclusive", ""),
         ("x86_64", "6.12.0", None, "inconclusive", ""),
@@ -913,9 +923,31 @@ def test_the_seccomp_preflight_asks_the_agents_side_in_one_call(
     monkeypatch.setattr(AsUser, "run", run)
     found = capabilities.claude_seccomp(AsUser("agents"))
     assert (found.outcome, found.arch) == ("ok", "arm64")
-    assert calls == [["sh", "-c", 'uname -m && uname -r && cat "$1"', "sh", "/proc/self/status"]]
+    assert calls == [["sh", "-c", capabilities._SECCOMP_HOST, "sh", "/proc/self/status"]]
+    assert capabilities._SECCOMP_HOST.startswith("uname -m && uname -r && ")
     answer["code"] = 1
     assert capabilities.claude_seccomp(AsUser("agents")).outcome == "inconclusive"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the agents' side is a POSIX shell")
+def test_the_agents_side_status_read_replaces_bytes_outside_ascii(tmp_path: Path) -> None:
+    """The sudo/ssh read decodes as a direct read with `errors="replace"` does: a task name
+    with bytes that are no UTF-8 leaves the keys readable, never an exception."""
+    import subprocess
+
+    from maity.runner import capabilities
+
+    status = tmp_path / "status"
+    status.write_bytes(b"Name:\tc\xc3\xa4t\xff\nSeccomp:\t0\nSeccomp_filters:\t0\n")
+    done = subprocess.run(
+        ["sh", "-c", capabilities._SECCOMP_HOST, "sh", str(status)],
+        capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    machine, release, rest = done.stdout.split("\n", 2)
+    assert machine and release
+    assert rest == "Name:\tc??t?\nSeccomp:\t0\nSeccomp_filters:\t0\n"
+    direct = status.read_text(encoding="utf-8", errors="replace")
+    assert direct.splitlines()[1:] == rest.splitlines()[1:]
 
 
 @pytest.mark.parametrize(
@@ -949,7 +981,7 @@ def test_check_reports_the_seccomp_preflight_under_bubblewrap(
     monkeypatch.setattr(sys, "platform", "linux")
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
-    said = [line for line in lines(capsys) if "seccomp" in line]
+    said = marked(capsys, "seccomp")
     assert [line.split()[0] for line in said] == [level], said
     if outcome == "ok":
         assert said[0].endswith("machine x64, kernel seccomp filtering present")
@@ -1011,7 +1043,7 @@ def test_the_socket_probe_reads_the_runtimes_lines_and_fails_closed_otherwise(
     assert argv[argv.index("-p") + 1] == capabilities.SOCKET_PROBE_PROMPT
     settings = json.loads(argv[argv.index("--settings") + 1])
     assert settings["sandbox"]["enabled"] is True
-    assert "allowAllUnixSockets" not in json.dumps(settings)
+    assert settings["sandbox"]["network"] == {"allowAllUnixSockets": False}
     assert env["SRT_DEBUG"] == "1"
     assert env["PATH"] == "/agents/bin"
 
@@ -1051,7 +1083,7 @@ def test_check_runs_the_socket_probe_after_an_ok_preflight(
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
     assert [binary for binary, _ in asked] == [str(bin_dir / "claude")]
-    said = [line for line in lines(capsys) if "probe run" in line]
+    said = marked(capsys, "probe run")
     assert [line.split()[0] for line in said] == [level], said
 
 
@@ -1077,6 +1109,84 @@ def test_check_runs_no_socket_probe_when_the_preflight_refuses(
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
 
 
+@pytest.mark.parametrize(
+    ("text", "why"),
+    [('{"sandbox": {"network": {"allowAllUnixSockets": true}}}',
+      "sets sandbox.network.allowAllUnixSockets"),
+     ('{"sandbox": {"network": {"allowUnixSockets": ["/x"]}}}',
+      "sets sandbox.network.allowUnixSockets"),
+     ('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig"),
+     ('{"permissions": {}}', None),
+     ("{not json", "cannot be read as JSON")],
+)  # fmt: skip
+def test_check_reports_unix_socket_settings_in_the_agents_user_settings(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    text: str,
+    why: str | None,
+) -> None:
+    """Every start refuses on them, so `check` names them as an error; a clean file is ok."""
+    from maity.runner import capabilities
+
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    user = Path.home() / ".claude" / "settings.json"
+    user.parent.mkdir(exist_ok=True)
+    user.write_text(text)
+    monkeypatch.setattr(sys, "platform", "linux")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == (
+        0 if why is None else 1
+    )
+    said = marked(capsys, "Unix socket setting")
+    if why is None:
+        assert [s.split()[0] for s in said] == ["ok"], said
+    else:
+        assert [s.split()[0] for s in said] == ["error"], said
+        assert why in said[0]
+
+
+def test_check_keeps_the_passed_probe_version_and_warns_on_another(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A passing probe keeps the installed version for the target in the state directory; a
+    failing one forgets it and says what a start will warn about."""
+    from maity import state
+    from maity.runner import capabilities
+
+    answer = {"outcome": "ok"}
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    monkeypatch.setattr(
+        capabilities,
+        "claude_socket_probe",
+        lambda *args: capabilities.SocketProbe(answer["outcome"], "why"),
+    )
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "linux")
+    state_dir = config.load(paired).state_dir
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    found = state.load_state(state_dir, name=capabilities.PROBE_FILE)
+    assert found == {"local": "2.1.325"}
+    answer["outcome"] = "inconclusive"
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
+    assert state.load_state(state_dir, name=capabilities.PROBE_FILE) == {}
+    said = marked(capsys, "probe has not passed")
+    assert [s.split()[0] for s in said] == ["warn"], said
+
+
 def test_check_runs_no_seccomp_preflight_under_seatbelt(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1094,7 +1204,7 @@ def test_check_runs_no_seccomp_preflight_under_seatbelt(
     monkeypatch.setattr(sys, "platform", "darwin")
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
-    assert not any("seccomp" in line for line in lines(capsys))
+    assert marked(capsys, "seccomp") == []
 
 
 def test_check_refuses_a_loose_state_dir(

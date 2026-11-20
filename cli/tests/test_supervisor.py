@@ -515,6 +515,87 @@ def test_a_sandboxed_start_is_refused_while_settings_switch_hooks_off(
     assert any("sets allowManagedHooksOnly" in line for line in logged)
 
 
+SOCKET_FILES = [
+    ('{"sandbox": {"network": {"allowAllUnixSockets": false}}}',
+     "sets sandbox.network.allowAllUnixSockets"),
+    ('{"sandbox": {"network": {"allowUnixSockets": ["/x"]}}}',
+     "sets sandbox.network.allowUnixSockets"),
+    ('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig"),
+    ('{"permissions": {}}', None),
+    ("{not json", "cannot be read as JSON"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("text", "why"), SOCKET_FILES)
+def test_a_sandboxed_start_is_refused_while_the_users_settings_carry_a_socket_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, why: str | None
+) -> None:
+    """The placement pins its Unix socket settings and refuses user settings that would change
+    them, read at every start; an unreadable file refuses too. Other harnesses are not
+    asked."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    user = Path.home() / ".claude" / "settings.json"
+    user.parent.mkdir()
+    user.write_text(text)
+    found = sup._refusal(placement(harness="claude-code"), target)
+    if why is None:
+        assert found is None and logged == []
+    else:
+        assert found == ("harness_refused", None)
+        assert len(logged) == 1 and why in logged[0] and str(user) in logged[0]
+    assert sup._refusal(placement(harness="codex"), target) is None
+
+
+@pytest.mark.parametrize(
+    ("record", "installed", "warned"),
+    [(None, "2.1.325", "has not passed on this target, installed 2.1.325"),
+     ({"local": "2.1.324"}, "2.1.325", "last passed with 2.1.324, installed 2.1.325"),
+     ({"local": "2.1.325"}, "2.1.325", None),
+     ({"other": "2.1.325"}, "2.1.325", "has not passed on this target")],
+)  # fmt: skip
+def test_a_start_after_a_version_change_warns_to_run_check_and_still_starts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    record: dict[str, str] | None,
+    installed: str,
+    warned: str | None,
+) -> None:
+    """The version whose `check` probe passed is read from the state directory: a different
+    one, or none, is logged at the start and refuses nothing."""
+    import sys
+
+    from maity import state
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, installed, "", True)
+    sup.log = logged.append
+    if record is not None:
+        state.save_state(sup.cfg.state_dir, record, name=capabilities.PROBE_FILE)
+    target = sup.targets["local"]
+    view = supervisor.GateView.of(target, "claude-code")
+    sup._probe_warning(target, view, "s")
+    if warned is None:
+        assert logged == []
+    else:
+        assert len(logged) == 1 and warned in logged[0], logged
+        assert logged[0].endswith("run `maity runner check`")
+    logged.clear()
+    sup._probe_warning(target, supervisor.GateView(view.found, False, False), "s")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    sup._probe_warning(target, view, "s")
+    assert logged == []  # unsandboxed, or Seatbelt: no probe to have passed
+
+
 SECCOMP_ANSWERS = {
     "ok": capabilities.ClaudeSeccomp("ok", "x64"),
     "unsupported_arch": capabilities.ClaudeSeccomp(

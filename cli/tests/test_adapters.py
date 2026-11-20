@@ -221,7 +221,9 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert strict["network"] == {
         "allowedDomains": ["github.com", "maity.team"],
         "strictAllowlist": True,
+        "allowAllUnixSockets": False,  # pinned: the user's settings cannot open Unix sockets
     }
+    assert strict["network"]["allowAllUnixSockets"] is False
 
 
 def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: Path) -> None:
@@ -1222,6 +1224,46 @@ def test_the_agents_user_settings_count_only_for_managed_hooks_only() -> None:
     user.write_text('{"allowManagedHooksOnly": true}')
     why = capabilities.claude_hooks_off(AsUser(), "linux")
     assert why is not None and str(user) in why
+
+
+@pytest.mark.parametrize(
+    ("text", "why"),
+    [('{"sandbox": {"network": {"allowAllUnixSockets": true}}}',
+      "sets sandbox.network.allowAllUnixSockets"),
+     ('{"sandbox": {"network": {"allowAllUnixSockets": false}}}',
+      "sets sandbox.network.allowAllUnixSockets"),  # presence counts, whatever the value
+     ('{"sandbox": {"network": {"allowUnixSockets": []}}}',
+      "sets sandbox.network.allowUnixSockets"),
+     ('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig"),
+     ('{"sandbox": {"enabled": true, "network": {"allowedDomains": []}}, "permissions": {}}',
+      None),
+     ('{"sandbox": "x"}', None), ("{not json", "cannot be read as JSON"),
+     ("[]", "is not a JSON object")],
+)  # fmt: skip
+def test_the_agents_user_settings_may_carry_no_unix_socket_setting(
+    text: str, why: str | None
+) -> None:
+    """Each key of SOCKET_SETTINGS in the agents' user's settings is named, whatever its
+    value; a file that cannot be read as a JSON object counts as set, as for the hooks."""
+    from maity.runner import capabilities
+
+    assert capabilities.claude_socket_settings(AsUser(), "linux") is None  # no file
+    user = Path.home() / ".claude" / "settings.json"
+    user.parent.mkdir()
+    user.write_text(text)
+    found = capabilities.claude_socket_settings(AsUser(), "linux")
+    assert (found is None) if why is None else (found is not None and why in found)
+    if found is not None:
+        assert str(user) in found
+
+
+def test_managed_settings_are_not_read_for_unix_socket_settings() -> None:
+    """Only the agents' user's settings are merged under the placement's file; the managed
+    ones are the operator's."""
+    from maity.runner import capabilities
+
+    _managed(capabilities).write_text('{"sandbox": {"seccompConfig": {}}}')
+    assert capabilities.claude_socket_settings(AsUser(), "linux") is None
 
 
 @pytest.mark.parametrize(

@@ -471,6 +471,7 @@ def _check_harness(
     as_user: AsUser = RUNNER,
     tools_dir: Path | None = None,
     layout: str | None = None,
+    state_dir: Path | None = None,
 ) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
@@ -500,7 +501,9 @@ def _check_harness(
         else:
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
-        _check_claude_code(report, harness, as_user, agent_path, found.version, found.path)
+        _check_claude_code(
+            report, harness, as_user, agent_path, found.version, found.path, state_dir
+        )
     if harness.id == "antigravity":
         _check_antigravity(report, harness, as_user, agent_path)
     if harness.id == "opencode":
@@ -673,6 +676,7 @@ def _check_claude_code(
     agent_path: str = "",
     version: str | None = None,
     binary: str | None = None,
+    state_dir: Path | None = None,
 ) -> None:
     # On the agents' PATH, as their user finds it: that is where the sandbox starts.
     tools = capabilities.claude_sandbox_tools()
@@ -692,8 +696,10 @@ def _check_claude_code(
         report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
         if tools == ("bwrap", "socat"):  # bubblewrap's nesting; Seatbelt has none
             _check_claude_nesting(report, agent_path, as_user)
-            _check_claude_seccomp(report, as_user, "", binary, agent_path)
+            record = None if state_dir is None else ProbeRecord(state_dir, "local", version)
+            _check_claude_seccomp(report, as_user, "", binary, agent_path, record)
         _check_claude_hooks(report, as_user, "")
+        _check_claude_socket_settings(report, as_user, "")
     _check_claude_settings(report, as_user, "")
 
 
@@ -723,8 +729,23 @@ def _check_claude_nesting(report: Report, agent_path: str, as_user: AsUser) -> N
         )
 
 
+@dataclass(frozen=True)
+class ProbeRecord:
+    """Where `check` keeps the Claude Code version whose probe passed (capabilities.
+    PROBE_FILE): the state directory, the target's name and the installed version."""
+
+    state_dir: Path
+    target: str
+    version: str | None
+
+
 def _check_claude_seccomp(
-    report: Report, as_user: AsUser, where: str, binary: str | None, agent_path: str
+    report: Report,
+    as_user: AsUser,
+    where: str,
+    binary: str | None,
+    agent_path: str,
+    record: ProbeRecord | None = None,
 ) -> None:
     """Linux only: what Claude Code's seccomp step needs from the host (capabilities.
     claude_seccomp). Anything but `ok` is an error: the supervisor starts no sandboxed Claude
@@ -732,21 +753,55 @@ def _check_claude_seccomp(
     found = capabilities.claude_seccomp(as_user)
     if found.outcome != "ok":
         report.error(f"{where}{capabilities.claude_seccomp_line(found)}")
+        _probe_stale(report, where, record)
         return
     report.ok(
         f"{where}harness claude-code: seccomp for blocking Unix sockets: machine "
         f"{found.arch}, kernel seccomp filtering present"
     )
     if binary is not None:
-        _check_claude_socket_probe(report, as_user, where, binary, agent_path)
+        _check_claude_socket_probe(report, as_user, where, binary, agent_path, record)
+
+
+def _probe_stale(report: Report, where: str, record: ProbeRecord | None) -> None:
+    """What a start on this target will warn about: the installed version is not the one
+    whose probe last passed (capabilities.probe_stale_line)."""
+    if record is None or not record.state_dir.is_dir():
+        return
+    passed = capabilities.probe_passed(record.state_dir, record.target)
+    stale = capabilities.probe_stale_line(passed, record.version)
+    if stale is not None:
+        report.warn(f"{where}{stale}")
+
+
+def _keep_probe(report: Report, where: str, record: ProbeRecord | None, passed: bool) -> None:
+    """Record the probed version as passed, or forget the target's record when it did not
+    pass. The service reads it at each start (supervisor._probe_warning)."""
+    if record is None or not record.state_dir.is_dir():  # `check` reports the directory
+        return
+    try:
+        capabilities.record_probe(record.state_dir, record.target,
+                                  record.version if passed else None)  # fmt: skip
+    except (OSError, state.StateError) as exc:
+        report.warn(f"{where}harness claude-code: the probe result is not kept "
+                    f"({onboarding.inline(str(exc))[:160]})")  # fmt: skip
 
 
 def _check_claude_socket_probe(
-    report: Report, as_user: AsUser, where: str, binary: str, agent_path: str
+    report: Report,
+    as_user: AsUser,
+    where: str,
+    binary: str,
+    agent_path: str,
+    record: ProbeRecord | None = None,
 ) -> None:
     """One headless run of Claude Code (capabilities.claude_socket_probe), here and never at a
-    start; anything but the runtime's line that it applied the filter is an error."""
+    start; anything but the runtime's line that it applied the filter is an error. Its result
+    is kept per target for the service's start warning."""
     probe = capabilities.claude_socket_probe(binary, agent_path, as_user)
+    _keep_probe(report, where, record, probe.outcome == "ok")
+    if probe.outcome != "ok":
+        _probe_stale(report, where, record)
     if probe.outcome == "ok":
         report.ok(f"{where}harness claude-code: probe run: Unix socket blocking applied")
     elif probe.outcome == "off":
@@ -769,6 +824,17 @@ def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:
         report.ok(f"{where}harness claude-code: hooks are not switched off")
     else:
         report.error(f"{where}{capabilities.claude_hooks_line(why)}")
+
+
+def _check_claude_socket_settings(report: Report, as_user: AsUser, where: str) -> None:
+    """With the sandbox on, the agents' user's settings must carry no Unix socket setting
+    (capabilities.SOCKET_SETTINGS): such settings refuse every start of a sandboxed agent
+    (supervisor), so `check` says so as an error."""
+    why = capabilities.claude_socket_settings(as_user)
+    if why is None:
+        report.ok(f"{where}harness claude-code: the user's settings carry no Unix socket setting")
+    else:
+        report.error(f"{where}{capabilities.claude_socket_settings_line(why)}")
 
 
 def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
@@ -868,8 +934,11 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                 refused = capabilities.sandbox_refused(harness, False, harness.id in held)
                 (report.error if refused else report.warn)(line)
             elif harness.id == "claude-code":
-                _check_claude_seccomp(report, as_user, f"{name}: ", probe.path, target.agent_path)
-                _check_claude_hooks(report, as_user, f"{name}: ")
+                record = ProbeRecord(cfg.state_dir, name, probe.version)
+                where = f"{name}: "
+                _check_claude_seccomp(report, as_user, where, probe.path, target.agent_path, record)
+                _check_claude_hooks(report, as_user, where)
+                _check_claude_socket_settings(report, as_user, where)
             if harness.id == "antigravity":
                 _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
             if harness.id == "opencode":
@@ -946,7 +1015,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         for harness in cfg.harnesses.values():
             _check_harness(
                 report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir,
-                cfg.local.layout,
+                cfg.local.layout, cfg.state_dir,
             )  # fmt: skip
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))

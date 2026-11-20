@@ -4960,7 +4960,7 @@ a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
 **Type:** constraint
 **Status:** open
 **Evidence:** inferred
-**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032, 2026-11-20; the ops team's read-only reading of the Claude Code 2.1.328 and 2.1.329 binaries (minified): the supported machines, the helper's resolution and the built-in helper handed in by file descriptor, the warning sent to the sandbox runtime's debug logger, 2026-11-20; `/proc/self/status` of an unconfined shell on a test host (`Seccomp: 0`, `Seccomp_filters: 0`), 2026-11-20; the ops team's live run of Claude Code 2.1.329 on an x64 Linux runner host (a throwaway session, no placement): headless with `SRT_DEBUG=1` the filter was applied, the interactive interface showed no sandbox-runtime line while it ran, 2026-11-20; the lead's decision for the static preflight, the headless probe in `check` only and dropping the pane check, 2026-11-20
+**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032, 2026-11-20; the ops team's read-only reading of the Claude Code 2.1.328 and 2.1.329 binaries (minified): the supported machines, the helper's resolution and the built-in helper handed in by file descriptor, the warning sent to the sandbox runtime's debug logger, 2026-11-20; `/proc/self/status` of an unconfined shell on a test host (`Seccomp: 0`, `Seccomp_filters: 0`), 2026-11-20; the ops team's live run of Claude Code 2.1.329 on an x64 Linux runner host (a throwaway session, no placement): headless with `SRT_DEBUG=1` the filter was applied, the interactive interface showed no sandbox-runtime line while it ran, 2026-11-20; the lead's decision for the static preflight, the headless probe in `check` only and dropping the pane check, 2026-11-20; the security review of #2063 (the pinned socket settings, the user settings refused) and the lead's decision to warn, not refuse, on a version whose probe has not passed, 2026-11-20
 **See:** runner.md#a-placements-test-slots-and-test-cluster-live-in-its-own-scratch-so-its-slots-bound-only-its-own-runs — 2ce039de-925e-4244-9a90-8336e9375d68 — as of 2026-11-20
 **Revisit when:** every move of the Claude Code version pin (`capabilities.CHECKED`): run the `check` probe, and read the supported machines and the probe's two lines from the binary again; Claude Code shows the block's state itself or fails closed without the step; each placement runs as its own OS user
 
@@ -4972,11 +4972,26 @@ lower case) and `/proc/self/status` (`capabilities.claude_seccomp`). It
 starts the placement only for a machine in `CLAUDE_SECCOMP_ARCHES` (x64
 and arm64) on a kernel that has a `Seccomp:` line and, from Linux 5.9, a
 `Seccomp_filters:` line. Their values are the reading task's own (0 for an
-unconfined shell) and are ignored. Any other machine, a missing line or an
-answer that cannot be read refuses the start (`harness_refused`, the reason
-in the log) and is an error in `check`. An `ok` is kept per target for the
-service's lifetime, and anything else is read again at the next start.
-Seatbelt (macOS) has no seccomp step and is not checked.
+unconfined shell) and are ignored, as long as they read as numbers. Any
+other machine, a missing line or an answer that cannot be read refuses the
+start (`harness_refused`, the reason in the log) and is an error in
+`check`. An `ok` is kept per target for the service's lifetime, and
+anything else is read again at the next start. That is enough for the
+machine and the kernel: neither changes while the service runs, and a
+reboot restarts it. Seatbelt (macOS) has no seccomp step and is not
+checked.
+
+The placement pins its socket settings and refuses user settings that would
+change them. Its settings file sets `sandbox.network.allowAllUnixSockets`
+to `false` (`adapters.claude_settings`); a `--settings` file wins over the
+user's settings, as the runner already relies on for `disableAllHooks`.
+Placements load the agents' user's settings (`--setting-sources user`), so
+a sandboxed Claude Code start is refused, and `check` reports an error,
+while that file carries `sandbox.network.allowAllUnixSockets`,
+`sandbox.network.allowUnixSockets` or `sandbox.seccompConfig`, whatever
+the value, or cannot be read as a JSON object
+(`capabilities.claude_socket_settings`, read as `claude_hooks_off` reads
+it, at every start).
 
 After an `ok` preflight, `check` alone (never a start) runs the installed
 Claude Code once headless as the agents' user
@@ -4987,6 +5002,17 @@ filter for Unix socket blocking is `ok`; its warning that the helper is not
 available is an error that the block is off; a timeout, a non-zero exit or
 neither line is an error that the block is not confirmed. The model's
 answer is not kept. Operators run `check` after every version pin.
+
+`check` keeps, per target, the Claude Code version whose probe passed in
+the state directory (`capabilities.PROBE_FILE`, written with
+`state.save_state` like the runner's other state files) and forgets it
+when the probe does not pass. At each sandboxed Claude Code start on Linux
+the service reads it (`Supervisor._probe_warning`): an installed version
+that differs, or no record, is logged with a line to run `check`, and the
+start goes ahead. `check` shows the same warning when its probe does not
+pass or is not run. The runner installs Claude Code itself, so refusing
+every start after a version pin until someone runs `check` would be an
+outage.
 
 **Reason:** every placement of a host runs as the same OS user, so the
 seccomp step is the only thing between a sandboxed command and the other
@@ -5030,6 +5056,14 @@ passes; `check` reports it as an error.
 - Checking the values of `Seccomp:` and `Seccomp_filters:`: they describe
   the reading task, not the kernel, and are 0 on a host that supports
   filters.
+- Refusing a start whose installed Claude Code is not the version whose
+  probe last passed: for now. The runner installs and updates Claude Code
+  itself, so every placement would stop after each version pin until
+  someone ran `check`; the start warns instead.
+- Relying on the placement's pinned `allowAllUnixSockets` alone, without
+  refusing user settings that carry socket keys: `allowUnixSockets` and
+  `seccompConfig` are not pinned by it, and the merge of the two files is
+  Claude Code's, not shown for every key.
 
 ## agy and opencode are no boundary between placements of one OS user, and no deny of other scratches is written for agy
 

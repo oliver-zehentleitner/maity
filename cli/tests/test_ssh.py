@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -444,6 +445,64 @@ def test_check_refuses_opencode_on_an_ssh_host_when_a_sandbox_is_required(
     ]
     assert len(found) == 1, report.lines
     assert found[0][0] == level, report.lines
+
+
+@pytest.mark.parametrize("seccomp", ["ok", "no_seccomp"])
+def test_check_names_the_host_on_its_claude_code_seccomp_and_probe_lines(
+    tmp_path: Path, fake_ssh: Path, monkeypatch: pytest.MonkeyPatch, seccomp: str
+) -> None:
+    """On an ssh host the preflight, the probe, the socket-settings and the probe-record lines
+    carry the `<host>: ` prefix; the probe runs with the host's binary and agent_path and is
+    kept under the host's name."""
+    from maity import state
+
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path) + "\n[harness.claude-code]\n")
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    (tmp_path / "remote" / "ws").mkdir(parents=True)
+    cfg = config.load(path)
+    target = targets.ssh_hosts(cfg)[1]
+    found = {h: capabilities.Probe(None, None, None) for h in cfg.harnesses}
+    found["claude-code"] = capabilities.Probe("/r/bin/claude", "2.1.329", None)
+    monkeypatch.setattr(
+        targets, "probe_remote", lambda as_user, harnesses, path: (found, {"claude-code": True},
+                                                                    set())  # fmt: skip
+    )
+    answers = {
+        "ok": capabilities.ClaudeSeccomp("ok", "arm64"),
+        "no_seccomp": capabilities.ClaudeSeccomp("no_seccomp", "x64", "no Seccomp line"),
+    }
+    monkeypatch.setattr(capabilities, "claude_seccomp", lambda as_user: answers[seccomp])
+    monkeypatch.setattr(capabilities, "claude_hooks_off", lambda as_user: None)
+    monkeypatch.setattr(capabilities, "claude_socket_settings", lambda as_user: None)
+    asked: list[tuple[str, str]] = []
+
+    def probe(binary: str, agent_path: str, as_user: object) -> capabilities.SocketProbe:
+        asked.append((binary, agent_path))
+        return capabilities.SocketProbe("ok")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    report = commands.Report()
+    commands._check_host(report, cfg, target)
+    # Paths left out: the test's temporary directory is named after the test.
+    words = ("seccomp", "probe", "Unix socket")
+    mine = [(level, text) for level, text in report.lines
+            if any(word in re.sub(r"/\S*", "", text) for word in words)]  # fmt: skip
+    assert mine and all(text.startswith("build-2: harness claude-code: ") for _, text in mine)
+    if seccomp == "ok":
+        assert ("ok", "build-2: harness claude-code: seccomp for blocking Unix sockets: machine "
+                "arm64, kernel seccomp filtering present") in mine  # fmt: skip
+        probed = "build-2: harness claude-code: probe run: Unix socket blocking applied"
+        assert ("ok", probed) in mine
+        assert asked == [("/r/bin/claude", target.agent_path)]
+        kept = state.load_state(cfg.state_dir, name=capabilities.PROBE_FILE)
+        assert kept == {"build-2": "2.1.329"}
+    else:
+        assert [level for level, text in mine if "seccomp" in re.sub(r"/\S*", "", text)] == [
+            "error"
+        ]
+        assert asked == []
+        assert any(level == "warn" and "probe has not passed" in text for level, text in mine)
 
 
 def test_stop_all_names_a_host_it_could_not_reach(

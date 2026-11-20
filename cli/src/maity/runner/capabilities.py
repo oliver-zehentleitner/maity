@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .. import proc
+from .. import proc, state
 from . import config, tools
 from .asuser import RUNNER, AsUser
 
@@ -129,48 +129,109 @@ def _present(as_user: AsUser, path: Path, kind: str = "-e") -> bool:
     return done.returncode == 0
 
 
-def claude_hooks_off(as_user: AsUser = RUNNER, platform: str | None = None) -> str | None:
-    """Why the runner's hook would not run for the agents' Claude Code, or None. Managed
-    settings (the file, and each `*.json` in `managed-settings.d/` beside it) that set
-    `disableAllHooks` or `allowManagedHooksOnly`, or that cannot be read as JSON: unknown
-    counts as off. In the agents' user settings only `allowManagedHooksOnly` counts; the
-    runner's own settings file sets `disableAllHooks` back to false over theirs."""
+def _claude_settings_files(
+    as_user: AsUser, platform: str | None, user_only: bool = False
+) -> list[tuple[Path, bool, Path]] | str:
+    """The Claude Code settings files the agents' Claude Code merges: the managed settings (the
+    file, and each `*.json` in `managed-settings.d/` beside it) unless `user_only`, then the
+    agents' user's own. Each with whether it is managed and the directory it is read from
+    (limitread). A string says why they cannot be listed."""
     if as_user.here:
         platform = sys.platform if platform is None else platform
     else:
         platform = "linux"
     managed = next((p for key, p in CLAUDE_MANAGED.items() if platform.startswith(key)), None)
-    # Each file with its switches and the directory it is read from (limitread): the managed
-    # settings' own directory, the agents' user's home.
-    files: list[tuple[Path, tuple[str, ...], Path]] = []
+    files: list[tuple[Path, bool, Path]] = []
     try:
-        if managed is not None:
+        if managed is not None and not user_only:
             if _present(as_user, managed):
-                files.append((managed, HOOK_SWITCHES, managed.parent))
+                files.append((managed, True, managed.parent))
             drop_ins = managed.parent / "managed-settings.d"
             if _present(as_user, drop_ins, "-d"):
                 done = as_user.run(["sh", "-c", _DROP_INS, "sh", str(drop_ins)])
                 if done.returncode != 0:
                     return f"{drop_ins} cannot be listed"
                 listed = sorted(done.stdout.splitlines())
-                files += [(Path(line), HOOK_SWITCHES, managed.parent) for line in listed]
+                files += [(Path(line), True, managed.parent) for line in listed]
         home = as_user.home()
         user = home / ".claude" / "settings.json"
         if _present(as_user, user):
-            files.append((user, ("allowManagedHooksOnly",), home))
+            files.append((user, False, home))
     except (OSError, KeyError) as exc:
         return f"the Claude Code settings cannot be checked ({ascii_text(str(exc), 120)})"
-    for path, switches, under in files:
-        try:
-            data = json.loads(as_user.read_whole(path, SETTINGS_MAX, under=under))
-        except (OSError, KeyError, ValueError):
-            return f"{path} cannot be read as JSON"
-        if not isinstance(data, dict):
-            return f"{path} is not a JSON object"
+    return files
+
+
+def _settings_object(as_user: AsUser, path: Path, under: Path) -> dict[str, Any] | str:
+    """A settings file as a JSON object, or why it is none."""
+    try:
+        data = json.loads(as_user.read_whole(path, SETTINGS_MAX, under=under))
+    except (OSError, KeyError, ValueError):
+        return f"{path} cannot be read as JSON"
+    if not isinstance(data, dict):
+        return f"{path} is not a JSON object"
+    return data
+
+
+def claude_hooks_off(as_user: AsUser = RUNNER, platform: str | None = None) -> str | None:
+    """Why the runner's hook would not run for the agents' Claude Code, or None. Managed
+    settings (the file, and each `*.json` in `managed-settings.d/` beside it) that set
+    `disableAllHooks` or `allowManagedHooksOnly`, or that cannot be read as JSON: unknown
+    counts as off. In the agents' user settings only `allowManagedHooksOnly` counts; the
+    runner's own settings file sets `disableAllHooks` back to false over theirs."""
+    files = _claude_settings_files(as_user, platform)
+    if isinstance(files, str):
+        return files
+    for path, is_managed, under in files:
+        data = _settings_object(as_user, path, under)
+        if isinstance(data, str):
+            return data
+        switches = HOOK_SWITCHES if is_managed else ("allowManagedHooksOnly",)
         on = [key for key in switches if data.get(key) is not False and key in data]
         if on:
             return f"{path} sets {' and '.join(on)}"
     return None
+
+
+# The settings that decide which Unix sockets a sandboxed command may open. The placement's
+# settings file pins `allowAllUnixSockets` off (adapters.claude_settings); the agents' user's
+# own settings are merged in (`--setting-sources user`), so a start is refused while they carry
+# any of these, whatever the value (cli/context/runner.md).
+SOCKET_SETTINGS = (
+    ("sandbox", "network", "allowAllUnixSockets"),
+    ("sandbox", "network", "allowUnixSockets"),
+    ("sandbox", "seccompConfig"),
+)
+
+
+def claude_socket_settings(as_user: AsUser = RUNNER, platform: str | None = None) -> str | None:
+    """Why the agents' user's Claude Code settings could change the placement's socket
+    settings, or None: they carry a key of SOCKET_SETTINGS, or cannot be read as a JSON
+    object (unknown counts as set, as for the hook switches)."""
+    files = _claude_settings_files(as_user, platform, user_only=True)
+    if isinstance(files, str):
+        return files
+    for path, _, under in files:
+        data = _settings_object(as_user, path, under)
+        if isinstance(data, str):
+            return data
+        found = []
+        for keys in SOCKET_SETTINGS:
+            node: Any = data
+            for key in keys[:-1]:
+                node = node.get(key) if isinstance(node, dict) else None
+            if isinstance(node, dict) and keys[-1] in node:
+                found.append(".".join(keys))
+        if found:
+            return f"{path} sets {' and '.join(found)}"
+    return None
+
+
+def claude_socket_settings_line(why: str) -> str:
+    """Why a sandboxed Claude Code agent is not started, for `check` and the log."""
+    return (f"harness claude-code: {why}; the placement pins its Unix socket settings and"
+            " takes none from the user's settings, so its sandboxed agents are not started"
+            " until the setting is removed")  # fmt: skip
 
 
 def claude_hooks_line(why: str) -> str:
@@ -410,7 +471,9 @@ PROC_STATUS = Path("/proc/self/status")
 # values are the task's own mode and filter count (0 for an unconfined shell): only whether
 # the lines are there says what the kernel supports.
 SECCOMP_FILTERS_FROM = (5, 9)
-_SECCOMP_HOST = 'uname -m && uname -r && cat "$1"'
+# Bytes outside printable ASCII in the status (a task's name may hold any) become `?` on the
+# agents' side, as `errors="replace"` does for a direct read: only the ASCII keys are read.
+_SECCOMP_HOST = "uname -m && uname -r && LC_ALL=C tr -c '\\11\\12\\40-\\176' '?' < \"$1\""
 _RELEASE_HEAD = re.compile(r"(\d+)\.(\d+)")
 
 
@@ -439,13 +502,14 @@ def _seccomp_host(as_user: AsUser) -> tuple[str, str, str] | None:
     None when they cannot be read."""
     if as_user.direct:
         try:
-            return _platform.machine(), _platform.release(), PROC_STATUS.read_text()
+            status = PROC_STATUS.read_text(encoding="utf-8", errors="replace")
+            return _platform.machine(), _platform.release(), status
         except OSError:
             return None
     try:
         done = as_user.run(["sh", "-c", _SECCOMP_HOST, "sh", str(PROC_STATUS)],
                            timeout=VERSION_TIMEOUT)  # fmt: skip
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, UnicodeDecodeError):
         return None
     lines = done.stdout.split("\n", 2)
     if done.returncode != 0 or len(lines) < 3:
@@ -478,6 +542,10 @@ def claude_seccomp(as_user: AsUser = RUNNER) -> ClaudeSeccomp:
     if not fields["Seccomp"].isdigit():
         return ClaudeSeccomp("inconclusive", arch, f"an unreadable Seccomp line in {PROC_STATUS}")
     if "Seccomp_filters" in fields:
+        if not fields["Seccomp_filters"].isdigit():
+            return ClaudeSeccomp(
+                "inconclusive", arch, f"an unreadable Seccomp_filters line in {PROC_STATUS}"
+            )
         return ClaudeSeccomp("ok", arch)
     head = _RELEASE_HEAD.match(release)
     if head is None:
@@ -516,7 +584,7 @@ SOCKET_PROBE_PROMPT = (
 SOCKET_PROBE_SETTINGS = {
     "permissions": {"allow": [f"Bash({SOCKET_PROBE_COMMAND})"], "defaultMode": "dontAsk"},
     "sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
-                "autoAllowBashIfSandboxed": False},
+                "autoAllowBashIfSandboxed": False, "network": {"allowAllUnixSockets": False}},
 }  # fmt: skip
 SOCKET_PROBE_TIMEOUT = 180
 
@@ -556,6 +624,44 @@ def claude_socket_probe(binary: str, path: str, as_user: AsUser = RUNNER) -> Soc
     if any(SOCKET_PROBE_APPLIED in line for line in said):
         return SocketProbe("ok")
     return SocketProbe("inconclusive", "the debug log named neither outcome")
+
+
+# The Claude Code version whose probe last passed, per target, in the state directory: `check`
+# writes it, the service reads it at each sandboxed Claude Code start and only warns when the
+# installed version differs (the runner installs Claude Code itself; cli/context/runner.md).
+PROBE_FILE = "claude-probe.json"
+
+
+def probe_passed(state_dir: Path, target: str) -> str | None:
+    """The version whose probe last passed on `target`, or None (none recorded, or the record
+    cannot be read: that only warns)."""
+    try:
+        found = state.load_state(state_dir, name=PROBE_FILE).get(target)
+    except (state.StateError, OSError):
+        return None
+    return found if isinstance(found, str) else None
+
+
+def record_probe(state_dir: Path, target: str, version: str | None) -> None:
+    """Keep `version` as the one whose probe passed on `target`; None forgets it (the probe
+    did not pass). OSError and StateError reach the caller."""
+    data = state.load_state(state_dir, name=PROBE_FILE)
+    if version is None:
+        if data.pop(target, None) is None:
+            return
+    else:
+        data[target] = version
+    state.save_state(state_dir, data, name=PROBE_FILE)
+
+
+def probe_stale_line(passed: str | None, installed: str | None) -> str | None:
+    """The warning for a start or `check` whose installed Claude Code is not the one whose
+    probe last passed on that target, or None."""
+    if passed is not None and passed == installed:
+        return None
+    before = f"last passed with {passed}" if passed else "has not passed on this target"
+    return (f"harness claude-code: the Unix socket probe {before}, installed "
+            f"{installed or 'an unknown version'}; run `maity runner check`")  # fmt: skip
 
 
 def agy_login(as_user: AsUser = RUNNER) -> Path:

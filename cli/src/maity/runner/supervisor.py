@@ -1096,6 +1096,12 @@ class Supervisor:
             if why is not None:
                 self.log(capabilities.claude_hooks_line(why))
                 return ("harness_refused", None)
+            # The placement pins its Unix socket settings; the agents' user's settings are
+            # merged in, so a start waits until they carry none (capabilities.SOCKET_SETTINGS).
+            why = capabilities.claude_socket_settings(target.as_user)
+            if why is not None:
+                self.log(capabilities.claude_socket_settings_line(why))
+                return ("harness_refused", None)
             # Every placement runs as the same OS user: the seccomp step is what keeps a
             # sandboxed command away from the other placements' sockets, and Claude Code says
             # nothing when it cannot run (capabilities.claude_seccomp).
@@ -1104,6 +1110,19 @@ class Supervisor:
                 self.log(capabilities.claude_seccomp_line(seccomp))
                 return ("harness_refused", None)
         return None
+
+    def _probe_warning(self, target: Target, view: GateView, name: str) -> None:
+        """A sandboxed Claude Code start on Linux whose installed version is not the one
+        whose `check` probe last passed on `target` is logged, never refused: the runner
+        installs Claude Code itself, and refusing every start after a version pin until
+        `check` runs would be an outage (cli/context/runner.md)."""
+        if not view.sandbox or not capabilities.claude_seccomp_applies(target.as_user):
+            return
+        passed = capabilities.probe_passed(self.cfg.state_dir, target.name)
+        installed = view.found.version if view.found is not None else None
+        stale = capabilities.probe_stale_line(passed, installed)
+        if stale is not None:
+            self.log(f"{name}: {target.name}: {stale}")
 
     def _seccomp(self, target: Target) -> ClaudeSeccomp:  # the field `capabilities` hides it
         """The seccomp preflight for `target` (Linux only, `ok` elsewhere): an `ok` is kept for
@@ -1134,6 +1153,8 @@ class Supervisor:
         harness = self.cfg.harnesses[p["harness"]]
         if harness.id not in adapters.READY:
             return self._wait(rec, f"no adapter for {harness.id} in this version", name)
+        if harness.id == "claude-code":
+            self._probe_warning(target, view, name)
         if harness.id == "codex":  # starts without what it cannot enforce, said at each start
             repository = config.normalise_repository(p["workspace"].get("repository") or "")
             grant = self.cfg.repositories.get(repository, config.RepositoryGrant())
