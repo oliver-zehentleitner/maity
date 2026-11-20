@@ -3469,7 +3469,7 @@ window.Maity = window.Maity || {};
         id: "plc-" + String(live.length + placementsOf(m[1]).length + 1).padStart(4, "0") + "n", project: fullOf(m[1]), agent,
         runner: { id: r.id, name: r.name }, target: body.target || null, harness: tool.id, mode, model: body.model || null,
         workspace: { clone, branch: (body.workspace && body.workspace.branch) || null, continues_existing: false },
-        desired: body.desired || "running", generation: 1, rejoin: false, stop_grace_seconds: body.stop_grace_seconds || 120,
+        desired: body.desired || "running", generation: 1, rejoin: false, fresh_session: false, stop_grace_seconds: body.stop_grace_seconds || 120,
         approval: { status: "approved", request_id: null, pending_change: null }, credential_id: null, reported_current: false,
         session_hint: null, logs_hint: null, active: true, closed_at: null, closed_reason: null,
         created_by: caller.id, proposed_by: null, foreign: false, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
@@ -3500,7 +3500,7 @@ window.Maity = window.Maity || {};
       if (body.rejoin && !(cred && cred.revoked_at)) {
         fail(400, "invalid", "the placement's credential is not revoked", path, { fields: { rejoin: "credential_not_revoked" } });
       }
-      p.generation += 1; p.desired = "running"; p.rejoin = !!body.rejoin; p.reported_current = false;
+      p.generation += 1; p.desired = "running"; p.rejoin = !!body.rejoin; p.fresh_session = !!body.fresh_session; p.reported_current = false;
       p.updated_by = me().member.id; p.updated_at = nowIso();
       return p;
     }],
