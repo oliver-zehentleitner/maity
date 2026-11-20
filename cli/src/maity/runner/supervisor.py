@@ -209,6 +209,19 @@ def _count(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
+def agent_dir_for(as_user: AsUser, agent_files: Path, placement: str) -> Path:
+    """`<agent files>/agents/<placement>`, made as the agents' user: `agents/` made and kept
+    0700 by the runner itself, since a mkdir with parents gives the mode to the last directory
+    only, so under a umask of 002 it would be 0775, which `maity gh`'s lead commands refuse
+    (`ghpr.owned_layout`, review A1758 of #2054); an older runner's 0775 is tightened."""
+    agents = agent_files / "agents"
+    as_user.mkdir(agents)
+    as_user.tighten(agents)
+    agent_dir = agents / placement
+    as_user.mkdir(agent_dir)
+    return agent_dir
+
+
 def stamp(moment: float | None) -> str | None:
     if moment is None:
         return None
@@ -1390,8 +1403,7 @@ class Supervisor:
         target = target or self.targets[self._default_target()]
         view = view or GateView.of(target, harness.id)
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
-        agent_dir = target.agent_files / "agents" / p["id"]
-        target.as_user.mkdir(agent_dir)
+        agent_dir = agent_dir_for(target.as_user, target.agent_files, p["id"])
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         found = view.found
         # The password holder first, so every sandbox of this start is denied a path that exists;

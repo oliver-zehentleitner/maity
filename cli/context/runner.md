@@ -4041,11 +4041,13 @@ grants no more than its base, context/trust.md). It also refuses when
 the hub does not answer, when `/me` does not list this project, for an
 isolated member, under `--for`, when `MAITY_STATE_DIR` is set under a
 placement, and when the runner's directory for the agent is not
-`…/agents/<this placement>/git` reached with no link and closed to group
-and others: `git/` must be this user's, while `agents/` and
-`<placement>/` may be the runner's user's, since in the `agent_user`
-layout the runner makes them and only `git/` is the agents' user's (the
-lead accepted this on #2054). The session that signs is read through the clone's checked
+`…/agents/<this placement>/git` reached with no link, all three this
+user's and none writable by group or others. In every layout the runner
+makes all three as the agents' user, this session's uid (`single`, ssh:
+the runner's own user; `agent_user`: the agent user, in whose own
+`~/.maity-runner` they lie), and keeps `agents/` at 0700 itself
+(`supervisor.agent_dir_for`, `AsUser.tighten`), since a mkdir with
+parents leaves it at 0775 under a umask of 002. The session that signs is read through the clone's checked
 `.git` descriptor, `maity/`, `state.json` and the credential each opened
 from the one before without following a link (`state.read_placed`,
 `Session.through`), before any client exists; where that cannot be done
@@ -4100,6 +4102,16 @@ its end, and a whole log would flood the lead's context.
   `state_dir` would be refused, and a second record only moves the trust
   (the lead's choice on the security leg's P3); the path is checked for
   links and for its directories' modes instead.
+- `agents/` and `<placement>/` allowed to be the runner's user's, `git/`
+  alone this user's (this PR's fourth version): it rested on the belief
+  that in the `agent_user` layout the runner makes the two upper
+  directories as itself; it makes all three as the agent user, in that
+  user's own `~/.maity-runner`, so the exemption fit no layout and let
+  another local user own `<placement>/` (review A1758; the lead withdrew
+  the acceptance).
+- Allowing the group-write bit a umask of 002 leaves on `agents/`, as the
+  runner's own-file check does for the ssh host's files: the runner makes
+  and tightens `agents/` to 0700 instead, so the check stays strict.
 - Allowing `--admin`, `--auto`, another merge method or
   `--delete-branch`: none of them is needed for the daily work, and each
   widens what a placed lead can do past the review and CI gate.

@@ -12,4 +12,6 @@
   state read through its checked `.git` (so not on Windows). Upgrade: to let
   a placed lead use them, add `lead = true` to the repository's grant and
   restart its placement; `maity runner check` warns about `lead` without
-  `pull_requests`.
+  `pull_requests`. The runner now makes and keeps the agents' `agents/`
+  directory at 0700, also under a umask of 002, and tightens one an
+  earlier runner left looser.

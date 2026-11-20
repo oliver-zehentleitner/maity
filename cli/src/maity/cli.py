@@ -1682,7 +1682,7 @@ def _hub_role(root: Path, opened: clonecheck.Opened | None) -> str | None:
         if not isinstance(member, str) or len(listed) != 1:
             raise ghpr.Refused(f"the hub lists no membership of yours in {project}")
         view = session.client.call("GET", session.project_path("members", member))
-    except (state.StateError, hub.HubError) as exc:
+    except (state.StateError, hub.HubError, sign.CredentialFormatError) as exc:
         raise ghpr.Refused(f"the hub did not say this member's role: {exc}") from None
     if _field(view, "id") != member:
         raise ghpr.Refused("the hub's member view is not the member /me named")

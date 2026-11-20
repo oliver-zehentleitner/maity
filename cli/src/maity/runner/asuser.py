@@ -152,6 +152,18 @@ class AsUser:
         if done.returncode != 0:
             raise OSError(f"cannot create {path} for the agents: {done.stderr.strip()[:200]}")
 
+    def tighten(self, path: Path) -> None:
+        """The directory `path` made 0700, also when it exists already with looser bits:
+        `mkdir -p -m 700` and `Path.mkdir(mode=0o700, parents=True)` give the mode to the last
+        directory only, and a parent made under a umask of 002 is 0775, which `maity gh`'s lead
+        commands refuse (`ghpr.owned_layout`, review A1758 of #2054)."""
+        if self.direct:
+            os.chmod(path, 0o700)
+            return
+        done = self.run(["chmod", "700", str(path)])
+        if done.returncode != 0:
+            raise OSError(f"cannot make {path} private for the agents: {done.stderr.strip()[:200]}")
+
     def read(self, path: Path, offset: int = 0, *, limit: int, under: Path) -> bytes:
         """At most `limit` bytes of the file from `offset` on: a regular file only, reached
         from `under` (the clone, the agents' files, their home) without following a link on

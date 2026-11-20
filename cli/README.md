@@ -1182,7 +1182,9 @@ refuses when the hub does not answer, when `/me` does not list this
 project, for an isolated member, when `MAITY_STATE_DIR` is set (the
 runner never sets it), and when the runner's directory for the agent is
 not this placement's (`…/agents/<placement id>/git`, reached with no link
-on the way, none of the three directories writable by group or others).
+on the way, all three directories the agents' user's and none writable by
+group or others; the runner keeps `agents/` at 0700 itself, also under a
+umask of 002).
 The session they sign with is the placement's own: its `state.json` and
 credential are read through the clone's `.git` as maity checked it,
 each opened from the one before without following a link and each a

@@ -253,13 +253,14 @@ def lead_granted(root: Path, dot_git: int | None = None) -> None:
 def owned_layout(where: Path) -> None:
     """Refused unless `…/agents/<placement>/git` is reached with no link anywhere on the way
     (its resolved path is the path as given) and `agents/`, `<placement>/` and `git/` are each
-    a real directory that group and others cannot write, `git/` this user's (the security
-    leg's P3 on #2054, tightened by the lead). The two above it may be this user's (`single`)
-    or the runner's user's (`agent_user`, where the runner makes them and only `git/` is the
-    agents' user's): either way a placed session cannot change them. A placed maity has
-    nothing else that names the runner's state directory, which is the operator's setting;
-    this narrows, but does not close, the case of an agent that controls its own environment
-    (agy, opencode)."""
+    a real directory of this user's that group and others cannot write (the security leg's P3
+    on #2054, tightened by the lead). In every layout the runner makes all three as the
+    agents' user, the uid this session runs as: under `single` and on an ssh host that user
+    is the runner's own, under `agent_user` it is the agent user, in whose own `~/.maity-runner`
+    they lie (`config.agent_files`, `supervisor` and `adapters.launch` through `as_user`); the
+    runner keeps `agents/` 0700 (`AsUser.tighten`). A placed maity has nothing else that names
+    where the runner keeps them; this narrows, but does not close, the case of an agent that
+    controls its own environment (agy, opencode)."""
     if os.path.realpath(where) != str(where):
         raise Refused(f"{clonecheck.GIT_PRIVATE_ENV} is reached through a link ({where})")
     if os.name == "nt":  # the lead commands refuse on Windows later (no descriptor read)
@@ -269,8 +270,8 @@ def owned_layout(where: Path) -> None:
             info = os.lstat(step)
         except OSError:
             raise Refused(f"the runner's directory {step} cannot be read") from None
-        if not stat.S_ISDIR(info.st_mode) or (step == where and info.st_uid != os.getuid()):
-            raise Refused(f"the runner's directory {step} is not one the runner makes")
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+            raise Refused(f"the runner's directory {step} is not a directory of this user's")
         if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
             raise Refused(f"the runner's directory {step} is writable by group or others")
 

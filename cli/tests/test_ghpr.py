@@ -22,6 +22,8 @@ from typing import Any
 import pytest
 
 from maity import cli, clonecheck, ghpr, hub, state
+from maity.runner import supervisor
+from maity.runner.asuser import AsUser
 
 REPOSITORY = "github.com/oliver-zehentleitner/maity"
 BRANCH = "agent-g/the-change"
@@ -665,15 +667,24 @@ SHA = "4a59187965ed2fca8c6ecb874d053823ba14ce91"
 ROLE_READS: list[str] = []
 
 
+def make_runner_layout(agent_files: Path, placement: str) -> Path:
+    """`agents/<placement>/git` as the runner makes it (supervisor.agent_dir_for, then
+    adapters.launch's `as_user.mkdir(records)`), under a umask of 002, the default of a manual
+    `maity runner serve` or sudo on Debian and Ubuntu (review A1758 of #2054): no chmod here."""
+    old = os.umask(0o002)
+    try:
+        agent_dir = supervisor.agent_dir_for(AsUser(), agent_files, placement)
+        AsUser().mkdir(agent_dir / "git")
+    finally:
+        os.umask(old)
+    return agent_dir / "git"
+
+
 def runner_layout(tmp_path: Path, placed: dict[str, Any], placement: str) -> Path:
     """The runner's directory for the agent as the runner lays it out,
-    `<state>/agents/<placement>/git`, holding `placed`'s records (git, pull_requests)."""
-    # Resolved (macOS's /var is a link) and 0700 each, as the runner makes them: the lead
-    # commands refuse a link on the way and a directory group or others can write.
-    where = tmp_path.resolve() / "state" / "agents" / placement / "git"
-    where.mkdir(parents=True)
-    for step in (where.parent.parent, where.parent, where):
-        step.chmod(0o700)
+    `<agent files>/agents/<placement>/git`, holding `placed`'s records (git, pull_requests).
+    Resolved (macOS's /var is a link): the lead commands refuse a link on the way."""
+    where = make_runner_layout(tmp_path.resolve() / "agent-files", placement)
     for name in (clonecheck.GIT_PATH.name, ghpr.PULL_REQUESTS):
         (where / name).write_bytes((placed["record"].parent / name).read_bytes())
     return where
@@ -1158,6 +1169,32 @@ def test_a_hub_error_on_me_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
         cli._hub_role(ROOT, OPENED)
 
 
+@pytest.mark.skipif(
+    os.name == "nt" or os.open not in os.supports_dir_fd,
+    reason="no descriptor walk here; the lead commands refuse on such a system",
+)
+def test_a_malformed_credential_is_a_refusal_not_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review A1758 of #2054 (P3): a credential that is not `mty1.<id>.<secret>` makes
+    Session.through raise CredentialFormatError; the role read turns it into a refusal like
+    the others (exit 4), before any call."""
+    monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    monkeypatch.delenv("MAITY_STATE_DIR", raising=False)
+    git = tmp_path / "clone" / ".git"
+    folder = git / "maity"
+    folder.mkdir(parents=True)
+    folder.chmod(0o700)
+    state.save_state(folder, {"hub": "https://hub.example", "full_name": PROJECT})
+    state.write_credential(folder, state.Secret("not-a-credential"))
+    top = os.open(git, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(ghpr.Refused, match="did not say"):
+            cli._hub_role(tmp_path / "clone", clonecheck.Opened(top=-1, git=top))
+    finally:
+        os.close(top)
+
+
 def test_a_state_dir_named_by_maity_state_dir_is_refused_under_a_placement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1237,7 +1274,8 @@ def test_a_git_swapped_after_the_check_is_never_read(tmp_path: Path) -> None:
     "spoil",
     ["maity is a link", "state.json is a link", "credential is a link",
      "credential hard-linked", "credential readable by others", "maity readable by group",
-     "credential a directory", "state.json too large"],
+     "credential a directory", "state.json too large", "state.json a FIFO",
+     "credential a FIFO"],
 )  # fmt: skip
 def test_a_spoiled_placement_state_is_refused_before_any_client(tmp_path: Path, spoil: str) -> None:
     """Review A1738 of #2054: the read boundary itself. Each step is opened from the one
@@ -1263,6 +1301,11 @@ def test_a_spoiled_placement_state_is_refused_before_any_client(tmp_path: Path, 
         elif spoil == "credential a directory":
             (folder / "credential").unlink()
             (folder / "credential").mkdir(mode=0o700)
+        elif spoil.endswith("a FIFO"):
+            # No writer: without O_NONBLOCK the open would wait forever (review A1758).
+            name = spoil.split(" ")[0]
+            (folder / name).unlink()
+            os.mkfifo(folder / name, 0o600)
         else:
             (folder / "state.json").write_bytes(b" " * (state.PLACED_STATE_MAX + 1))
             (folder / "state.json").chmod(0o600)
@@ -1319,6 +1362,50 @@ def test_the_runners_directory_must_be_real_and_closed_to_others(
         where.rmdir()
         where.write_text("")
     with pytest.raises(ghpr.Refused):
+        ghpr.owned_layout(where)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes; the lead commands refuse on Windows")
+def test_the_runner_makes_a_layout_the_lead_commands_take_under_a_loose_umask(
+    tmp_path: Path,
+) -> None:
+    """Review A1758 of #2054: under a umask of 002 a mkdir with parents leaves `agents/` at
+    0775, which owned_layout refuses; the runner makes and keeps it 0700 itself, and tightens
+    one an older runner left at 0775."""
+    base = tmp_path.resolve()
+    where = make_runner_layout(base / "fresh", "plc-0003")
+    assert stat.S_IMODE(os.stat(where.parent.parent).st_mode) == 0o700
+    ghpr.owned_layout(where)
+    older = base / "older" / "agents"
+    older.mkdir(parents=True)
+    older.chmod(0o775)  # what an older runner made under umask 002
+    where = make_runner_layout(base / "older", "plc-0003")
+    assert stat.S_IMODE(os.stat(older).st_mode) == 0o700
+    ghpr.owned_layout(where)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX owners; the lead commands refuse on Windows")
+@pytest.mark.parametrize("step", ["agents", "placement", "git"])
+def test_a_runner_directory_of_another_user_is_refused(
+    tmp_path: Path, step: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review A1758 of #2054: in every layout the runner makes all three as the agents' user,
+    this session's uid, so one owned by anybody else is refused (a test cannot chown, so the
+    owner lstat reports is replaced for that one directory)."""
+    where = make_runner_layout(tmp_path.resolve(), "plc-0003")
+    foreign = {"agents": where.parent.parent, "placement": where.parent, "git": where}[step]
+    real_lstat = os.lstat
+
+    def lstat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        info = real_lstat(path, *args, **kwargs)
+        if Path(path) != foreign:
+            return info
+        fields = list(info)
+        fields[stat.ST_UID] = os.getuid() + 1
+        return os.stat_result(fields)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+    with pytest.raises(ghpr.Refused, match="not a directory of this user's"):
         ghpr.owned_layout(where)
 
 

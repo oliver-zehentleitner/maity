@@ -389,7 +389,8 @@ def read_placed(top: int) -> tuple[dict[str, Any], Secret]:
     if sys.platform == "win32" or not nofollow or os.open not in os.supports_dir_fd:
         raise StateError("this system cannot read a placement's state through its descriptor")
     try:
-        folder = os.open("maity", os.O_RDONLY | os.O_DIRECTORY | nofollow, dir_fd=top)
+        flags = os.O_RDONLY | os.O_DIRECTORY | nofollow | getattr(os, "O_CLOEXEC", 0)
+        folder = os.open("maity", flags, dir_fd=top)
     except OSError as exc:
         raise StateError(f"the placement's .git/maity cannot be opened ({exc})") from None
     try:
@@ -411,10 +412,13 @@ def read_placed(top: int) -> tuple[dict[str, Any], Secret]:
 
 
 def _read_placed_file(folder: int, name: str, limit: int) -> bytes:
-    """`name` in the directory `folder`, opened without following a link and read through
-    that descriptor alone, after `_private_fd` passed it."""
+    """`name` in the directory `folder`, opened without following a link and without waiting
+    (a FIFO with no writer would block an open forever, review A1758 of #2054), read through
+    that descriptor alone after `_private_fd` passed it as a regular file."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags |= getattr(os, "O_CLOEXEC", 0)
     try:
-        fd = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=folder)
+        fd = os.open(name, flags, dir_fd=folder)
     except OSError as exc:
         raise StateError(f"the placement's {name} cannot be opened ({exc})") from None
     try:
