@@ -4578,7 +4578,16 @@ disk to one limit per placement.
 **Revisit when:** agy's sandbox is shown to write somewhere the runner can name per placement; opencode's adapter grants its file tools a writable path outside the clone; a harness needs its scratch reported to the hub
 
 Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`,
-passed as `MAITY_SCRATCH` with `TMPDIR` inside it. The runner removes it
+passed as `MAITY_SCRATCH` with `TMPDIR` inside it, but `TMPDIR` only when
+a Unix socket still fits under it: Claude Code binds its sandbox socket
+`claude-socks-<16 hex>.sock` (34 bytes) under `TMPDIR`, a socket path holds
+at most 107 bytes on Linux (103 on macOS), and a deep workspaces root made
+it 117 in cli 0.1.0a16,
+so no Claude Code placement's sandbox started. Where `<scratch>/tmp` leaves
+no room the session gets no `TMPDIR` at all (it starts from a clean
+environment, so tools use `/tmp`) and only `MAITY_SCRATCH` names the scratch
+(`adapters.scratch_tmpdir`). Under the default root `~/maity-workspaces` that
+is the usual case: a home longer than `/home/ab` already leaves no room. The runner removes it
 when the placement closes; after a stop it is to go on the clone's clock,
 which is not built yet (tsk-34gb7frfbsk7). Nothing
 in it counts as unsaved work, and only the operator sees its size and
