@@ -1179,10 +1179,15 @@ must be `manager`, so a project role built on manager counts and one
 built on any other role does not, whatever its name. maity also
 refuses when the hub does not answer, when `/me` does not list this
 project, for an isolated member, when `MAITY_STATE_DIR` is set (the
-runner never sets it), when the session's state is not this
-placement's clone's `.git/maity`, and when the runner's directory for
-the agent is not this placement's (`…/agents/<placement id>/git`). These
-commands are refused under `--for`. Everything gh prints, on either
+runner never sets it), and when the runner's directory for the agent is
+not this placement's (`…/agents/<placement id>/git`, reached with no link
+on the way, none of the three directories writable by group or others).
+The session they sign with is the placement's own: its `state.json` and
+credential are read through the clone's `.git` as maity checked it,
+each opened from the one before without following a link and each a
+private file or directory of this user's, before any request is built.
+On a system where maity cannot open files that way (Windows) the lead
+commands are refused. These commands are refused under `--for`. Everything gh prints, on either
 stream, reaches the terminal cleaned of the control characters a
 terminal acts on, since a confirmation can echo a title someone else
 wrote. These checks hold where the harness's sandbox holds; on agy and

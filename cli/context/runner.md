@@ -4040,9 +4040,13 @@ on manager counts, by the lead's decision on #2054: a project role
 grants no more than its base, context/trust.md). It also refuses when
 the hub does not answer, when `/me` does not list this project, for an
 isolated member, under `--for`, when `MAITY_STATE_DIR` is set under a
-placement, when the session's state is not the placement clone's
-`.git/maity`, and when the runner's directory for the agent is not
-`…/agents/<this placement>/git`. Everything gh prints is cleaned
+placement, and when the runner's directory for the agent is not
+`…/agents/<this placement>/git` reached with no link and closed to group
+and others. The session that signs is read through the clone's checked
+`.git` descriptor, `maity/`, `state.json` and the credential each opened
+from the one before without following a link (`state.read_placed`,
+`Session.through`), before any client exists; where that cannot be done
+(Windows) the lead commands are refused. Everything gh prints is cleaned
 before it reaches the terminal. These checks are defence in depth where
 the harness's sandbox holds (Claude Code, Codex); on agy and opencode,
 no boundary between placements, they are none either.
@@ -4082,11 +4086,17 @@ its end, and a whole log would flood the lead's context.
 - The literal role name `manager` only (this PR's second version): a
   project role built on manager would then be refused although it holds
   manager's rights, unlike every other right in the project.
-- Opening the state through the checked `.git` descriptor (review
-  A1719): the state is still read by path, but only after the same call
-  checked `.git` and only when it is the placement clone's `.git/maity`;
-  reading it through the descriptor would rework how every command
-  loads its session, which is wider than this card.
+- Reading the state by path and comparing it with the placement clone's
+  `.git/maity` afterwards (this PR's third version): the state and the
+  signing credential were already read when the comparison ran, so it
+  proved nothing about what was read (review A1738). The descriptor read
+  is taken only for the lead commands; the other commands keep loading
+  their session by path, which is wider than this card.
+- A runner's agents directory compared with its default state directory,
+  or recorded a second time by the runner: a runner with another
+  `state_dir` would be refused, and a second record only moves the trust
+  (the lead's choice on the security leg's P3); the path is checked for
+  links and for its directories' modes instead.
 - Allowing `--admin`, `--auto`, another merge method or
   `--delete-branch`: none of them is needed for the daily work, and each
   widens what a placed lead can do past the review and CI gate.

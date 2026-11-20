@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -231,6 +232,7 @@ def lead_granted(root: Path, dot_git: int | None = None) -> None:
             f"{clonecheck.GIT_PRIVATE_ENV} is not this placement's directory of the runner's"
             " (agents/<placement id>/git)"
         )
+    owned_layout(where)
     try:
         content = clonecheck.runner_record(root, dot_git, LEAD, 64)
     except FileNotFoundError:
@@ -246,6 +248,31 @@ def lead_granted(root: Path, dot_git: int | None = None) -> None:
     # file, so its line end is this system's: `\r\n` on Windows, lotse#ajwe's run of #2054).
     if content != LEAD_RECORD:
         raise Refused(f"the runner's record {LEAD} is not one it writes")
+
+
+def owned_layout(where: Path) -> None:
+    """Refused unless `…/agents/<placement>/git` is reached with no link anywhere on the way
+    (its resolved path is the path as given) and `agents/`, `<placement>/` and `git/` are each
+    a real directory that group and others cannot write, `git/` this user's (the security
+    leg's P3 on #2054, tightened by the lead). The two above it may be this user's (`single`)
+    or the runner's user's (`agent_user`, where the runner makes them and only `git/` is the
+    agents' user's): either way a placed session cannot change them. A placed maity has
+    nothing else that names the runner's state directory, which is the operator's setting;
+    this narrows, but does not close, the case of an agent that controls its own environment
+    (agy, opencode)."""
+    if os.path.realpath(where) != str(where):
+        raise Refused(f"{clonecheck.GIT_PRIVATE_ENV} is reached through a link ({where})")
+    if os.name == "nt":  # the lead commands refuse on Windows later (no descriptor read)
+        return
+    for step in (where.parent.parent, where.parent, where):
+        try:
+            info = os.lstat(step)
+        except OSError:
+            raise Refused(f"the runner's directory {step} cannot be read") from None
+        if not stat.S_ISDIR(info.st_mode) or (step == where and info.st_uid != os.getuid()):
+            raise Refused(f"the runner's directory {step} is not one the runner makes")
+        if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise Refused(f"the runner's directory {step} is writable by group or others")
 
 
 def strip_footer(text: str) -> tuple[str, int]:
@@ -431,14 +458,19 @@ def _tail(answer: bytes) -> str:
     return head + "".join(onboarding.clean(line) + "\n" for line in lines[-LOG_TAIL:])
 
 
-def check_role(role_of: Callable[[], str | None] | None) -> None:
+# Reads the caller's role base from the hub for the clone at a root, its `.git` as checked.
+RoleOf = Callable[[Path, "clonecheck.Opened | None"], "str | None"]
+
+
+def check_role(role_of: RoleOf | None, root: Path, opened: clonecheck.Opened | None = None) -> None:
     """Refused unless the hub names this member's role, by its base, `manager` now: a project
     role built on manager counts, one built on any other role does not (context/trust.md: a
     project role grants no more than its base). `role_of` reads the base with the session's
-    credential at each call; None, or a read that fails, refuses (fail closed)."""
+    credential at each call, that session read through `opened`, the clone's checked `.git`;
+    None, or a read that fails, refuses (fail closed)."""
     if role_of is None:
         raise Refused("the lead commands need this member's role from the hub")
-    role = role_of()
+    role = role_of(root, opened)
     if role != LEAD_ROLE:
         raise Refused(
             f"the lead commands are for a member whose role is {LEAD_ROLE} or built on it; "
@@ -483,7 +515,7 @@ def gh_env(environ: Mapping[str, str], gh: str) -> dict[str, str]:
     return env
 
 
-def run(args: argparse.Namespace, role_of: Callable[[], str | None] | None = None) -> int:
+def run(args: argparse.Namespace, role_of: RoleOf | None = None) -> int:
     """The call, under the runner's placement only (`clonecheck.placement_root`): gh's exit
     code. gh runs in an empty directory of its own, never in the clone, whose .git the
     session can shape: the repository, the branch and the body all come from maity. A lead
@@ -501,7 +533,7 @@ def run(args: argparse.Namespace, role_of: Callable[[], str | None] | None = Non
             repository, gh = granted(root, dot_git)
             if is_lead(args):
                 lead_granted(root, dot_git)
-                check_role(role_of)
+                check_role(role_of, root, opened)
             argv, stdin = command(args, root, repository, gh, opened)
     except clonecheck.Refused as exc:
         raise Refused(str(exc)) from None

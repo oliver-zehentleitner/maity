@@ -228,6 +228,24 @@ class Session:
             else:
                 self.client.for_resolve = lambda: _for_member_id(self, target)
 
+    @classmethod
+    def through(cls, root: Path, top: int) -> Session:
+        """The session of the runner's clone at `root`, its state and credential read through
+        `top`, the clone's `.git` as `clonecheck.opened_clone` checked it (state.read_placed),
+        never by a path: for the lead commands of `maity gh` (review A1738 of #2054). Its
+        client follows no rename by writing state back, and serves no `--for`."""
+        data, credential = state.read_placed(top)
+        stored = data.get("hub")
+        if not isinstance(stored, str):
+            raise state.StateError("the placement's state names no hub; run `maity resume`")
+        self = cls.__new__(cls)
+        self.dir = root / ".git" / "maity"
+        self.data = data
+        self.client = ProjectClient(
+            hub.hub_base(stored), sign.signing_key(credential), on_request=Session.on_request
+        )
+        return self
+
     @property
     def for_member(self) -> str | None:
         """The agent this command acts for through its bridge (`--for`), or None."""
@@ -1626,27 +1644,33 @@ def cmd_gh(args: argparse.Namespace) -> int:
         raise LocalRefusal(str(exc)) from None
 
 
-def _hub_role() -> str | None:
+def _hub_role(root: Path, opened: clonecheck.Opened | None) -> str | None:
     """The base of the role the hub gives the caller in this project now (`role_base`: a
     project role counts as the built-in role it is built on, never more, context/trust.md),
-    for the lead commands of `maity gh`. Bound to the credential that signed the calls, never
-    to a member id from local state (review A1720 of #2054): `GET /me` names who the hub
-    authenticated, refuses here for an isolated agent (/me answers one, §6.2), and must list
-    this project; that member's own view then gives `role_base`. Never from the resume
-    packet, never for an agent served with `--for`, never from a state directory named by
-    MAITY_STATE_DIR under a placement. A hub that does not answer refuses (ghpr.check_role)."""
+    for the lead commands of `maity gh`. The session is the placement's own: its state and
+    signing credential read through `opened`, the clone ghpr.run checked, before any client
+    exists (Session.through, review A1738 of #2054); refused where there is no such
+    descriptor (Windows). Bound to the credential that signed the calls, never to a member id
+    from local state (review A1720): `GET /me` names who the hub authenticated, refuses here
+    for an isolated agent (/me answers one, §6.2), and must list this project; that member's
+    own view then gives `role_base`. Never from the resume packet, never for an agent served
+    with `--for`, never under a placement with MAITY_STATE_DIR set. A hub that does not
+    answer refuses (ghpr.check_role)."""
     if Session.for_target is not None:
         raise ghpr.Refused("the lead commands act as this clone's own member, not with --for")
     if clonecheck.placed() and state.STATE_DIR_ENV in os.environ:
         # The runner never sets it: under a placement only the placement's own state counts.
         raise ghpr.Refused(f"the lead commands refuse {state.STATE_DIR_ENV} under a placement")
+    if opened is None:
+        raise ghpr.Refused(
+            "the lead commands read the placement's state only through its checked .git, "
+            "which this system cannot open that way"
+        )
     try:
-        session = Session()
-        root = clonecheck.placement_root()
-        if root is not None and session.dir.resolve() != (root / ".git" / "maity").resolve():
-            # The placement's own state only: the clone whose .git ghpr.run checked just now.
-            raise ghpr.Refused("the lead commands read only this placement's own state")
-        project = session.project
+        session = Session.through(root, opened.git)
+        project = session.data.get("full_name")
+        if not (isinstance(project, str) and _FULL_NAME.fullmatch(project)):
+            raise ghpr.Refused("the placement's state names no project; run `maity resume`")
         me = session.client.call("GET", "/me")
         if _field(me, "membership", "isolated") is not None:
             raise ghpr.Refused("an isolated member runs no lead command")
@@ -1658,7 +1682,7 @@ def _hub_role() -> str | None:
         if not isinstance(member, str) or len(listed) != 1:
             raise ghpr.Refused(f"the hub lists no membership of yours in {project}")
         view = session.client.call("GET", session.project_path("members", member))
-    except (state.StateError, hub.HubError, clonecheck.Refused) as exc:
+    except (state.StateError, hub.HubError) as exc:
         raise ghpr.Refused(f"the hub did not say this member's role: {exc}") from None
     if _field(view, "id") != member:
         raise ghpr.Refused("the hub's member view is not the member /me named")

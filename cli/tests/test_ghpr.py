@@ -668,8 +668,12 @@ ROLE_READS: list[str] = []
 def runner_layout(tmp_path: Path, placed: dict[str, Any], placement: str) -> Path:
     """The runner's directory for the agent as the runner lays it out,
     `<state>/agents/<placement>/git`, holding `placed`'s records (git, pull_requests)."""
-    where = tmp_path / "state" / "agents" / placement / "git"
+    # Resolved (macOS's /var is a link) and 0700 each, as the runner makes them: the lead
+    # commands refuse a link on the way and a directory group or others can write.
+    where = tmp_path.resolve() / "state" / "agents" / placement / "git"
     where.mkdir(parents=True)
+    for step in (where.parent.parent, where.parent, where):
+        step.chmod(0o700)
     for name in (clonecheck.GIT_PATH.name, ghpr.PULL_REQUESTS):
         (where / name).write_bytes((placed["record"].parent / name).read_bytes())
     return where
@@ -688,7 +692,7 @@ def lead(placed: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     state.write_file(record, "lead\n")
     ROLE_READS.clear()
 
-    def manager() -> str:
+    def manager(*_: Any) -> str:
         ROLE_READS.append("read")
         return "manager"
 
@@ -949,7 +953,7 @@ def test_a_member_the_hub_does_not_name_a_manager_is_refused(
     lead: dict[str, Any], role: str | None, monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:  # fmt: skip
-    monkeypatch.setattr(cli, "_hub_role", lambda: role)
+    monkeypatch.setattr(cli, "_hub_role", lambda *_: role)
     err = refused(["gh", "pr", "ready", "2045"], capsys)
     assert "manager or built on it" in err and ran(lead) is None
 
@@ -957,7 +961,7 @@ def test_a_member_the_hub_does_not_name_a_manager_is_refused(
 def test_a_hub_that_does_not_answer_refuses(
     lead: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def down() -> str:
+    def down(*_: Any) -> str:
         raise ghpr.Refused("the hub did not say this member's role: unreachable")
 
     monkeypatch.setattr(cli, "_hub_role", down)
@@ -998,7 +1002,7 @@ def test_a_missing_lead_record_names_the_grant_and_reads_no_role(
 def test_create_and_view_need_no_lead_record_and_no_role(
     placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def no_read() -> str:
+    def no_read(*_: Any) -> str:
         raise AssertionError("create and view read no role")
 
     monkeypatch.setattr(cli, "_hub_role", no_read)
@@ -1010,9 +1014,11 @@ def test_the_role_is_never_read_for_an_agent_served_with_for(
 ) -> None:
     monkeypatch.setattr(cli.Session, "for_target", "agt-other")
     with pytest.raises(ghpr.Refused, match="--for"):
-        cli._hub_role()
+        cli._hub_role(ROOT, OPENED)
 
 
+ROOT = Path("/ws/maity/agent-3")
+OPENED = clonecheck.Opened(top=-1, git=-1)  # never opened: Session.through is replaced
 PROJECT = "oliver-zehentleitner/maity"
 MEMBERS = "/projects/oliver-zehentleitner/maity/members/"
 
@@ -1036,31 +1042,31 @@ class _Client:
 def _session(
     monkeypatch: pytest.MonkeyPatch, answers: dict[str, Any], local_member: str = "agt-manager"
 ) -> _Client:
-    """A Session whose local state names `local_member` (a manager's id, say) while the hub
-    authenticates the credential as whoever `/me` in `answers` describes. Not placed, so the
-    placement's state check does not apply (its own test below)."""
+    """The placement's session as Session.through would read it, its state naming
+    `local_member` (a manager's id, say) while the hub authenticates the credential as
+    whoever `/me` in `answers` describes. Session.through itself is tested below on real
+    files; here it is replaced, and records the descriptor it was handed."""
     client = _Client(answers)
 
     class FakeSession:
-        project = PROJECT
-        dir = Path("/nowhere/.git/maity")
-
         def __init__(self) -> None:
             self.client = client
-            self.data = {"member_id": local_member}
-
-        @property
-        def me(self) -> str:
-            return local_member
+            self.data = {"member_id": local_member, "full_name": PROJECT}
 
         def project_path(self, *parts: str) -> str:
             return "/projects/" + PROJECT + "/" + "/".join(parts)
 
-    monkeypatch.setattr(cli, "Session", FakeSession)
-    monkeypatch.setattr(FakeSession, "for_target", None, raising=False)
-    monkeypatch.setattr(clonecheck, "placement_root", lambda *a, **k: None)
+    def through(root: Path, top: int) -> FakeSession:
+        client.calls.append(("through", f"{root}:{top}"))
+        return FakeSession()
+
+    monkeypatch.setattr(cli.Session, "through", through)
     monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    monkeypatch.delenv("MAITY_STATE_DIR", raising=False)
     return client
+
+
+THROUGH = ("through", f"{ROOT}:-1")  # the session read through the checked .git, first
 
 
 def _me(member: str, role: str = "coder", isolated: Any = None) -> dict[str, Any]:
@@ -1080,8 +1086,8 @@ def test_the_role_is_the_authenticated_callers_not_the_local_member_ids(
         MEMBERS + "agt-coder": {"id": "agt-coder", "role": "coder", "role_base": "coder"},
         MEMBERS + "agt-manager": {"id": "agt-manager", "role": "manager", "role_base": "manager"},
     }, local_member="agt-manager")  # fmt: skip
-    assert cli._hub_role() == "coder"
-    assert client.calls == [("GET", "/me"), ("GET", MEMBERS + "agt-coder")]
+    assert cli._hub_role(ROOT, OPENED) == "coder"
+    assert client.calls == [THROUGH, ("GET", "/me"), ("GET", MEMBERS + "agt-coder")]
 
 
 @pytest.mark.parametrize(("role", "base", "allowed"), [
@@ -1099,10 +1105,10 @@ def test_the_role_base_decides_not_the_roles_name(
         MEMBERS + "agt-l": {"id": "agt-l", "role": role, "role_base": base},
     })  # fmt: skip
     if allowed:
-        ghpr.check_role(cli._hub_role)
+        ghpr.check_role(cli._hub_role, ROOT, OPENED)
     else:
         with pytest.raises(ghpr.Refused, match="manager or built on it"):
-            ghpr.check_role(cli._hub_role)
+            ghpr.check_role(cli._hub_role, ROOT, OPENED)
 
 
 def test_an_isolated_member_is_refused_though_me_answers_it(
@@ -1115,8 +1121,8 @@ def test_an_isolated_member_is_refused_though_me_answers_it(
         MEMBERS + "agt-l": {"id": "agt-l", "role": "manager", "role_base": "manager"},
     })  # fmt: skip
     with pytest.raises(ghpr.Refused, match="isolated"):
-        cli._hub_role()
-    assert client.calls == [("GET", "/me")]
+        cli._hub_role(ROOT, OPENED)
+    assert client.calls == [THROUGH, ("GET", "/me")]
 
 
 def test_a_member_view_of_another_member_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1125,7 +1131,7 @@ def test_a_member_view_of_another_member_is_refused(monkeypatch: pytest.MonkeyPa
         MEMBERS + "agt-l": {"id": "agt-other", "role": "manager", "role_base": "manager"},
     })  # fmt: skip
     with pytest.raises(ghpr.Refused, match="not the member"):
-        cli._hub_role()
+        cli._hub_role(ROOT, OPENED)
 
 
 @pytest.mark.parametrize(
@@ -1143,13 +1149,13 @@ def test_a_me_that_does_not_list_this_project_refuses(
 ) -> None:
     _session(monkeypatch, {"/me": me})
     with pytest.raises(ghpr.Refused, match="no membership"):
-        cli._hub_role()
+        cli._hub_role(ROOT, OPENED)
 
 
 def test_a_hub_error_on_me_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
     _session(monkeypatch, {"/me": hub.HubError("unreachable")})
     with pytest.raises(ghpr.Refused, match="did not say"):
-        cli._hub_role()
+        cli._hub_role(ROOT, OPENED)
 
 
 def test_a_state_dir_named_by_maity_state_dir_is_refused_under_a_placement(
@@ -1161,20 +1167,137 @@ def test_a_state_dir_named_by_maity_state_dir_is_refused_under_a_placement(
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     monkeypatch.setenv("MAITY_STATE_DIR", "/elsewhere/state")
     with pytest.raises(ghpr.Refused, match="MAITY_STATE_DIR"):
-        cli._hub_role()
+        cli._hub_role(ROOT, OPENED)
     assert client.calls == []
 
 
-def test_only_the_placements_own_state_is_read(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Under a placement the session's state must be the placement clone's `.git/maity`,
-    the clone whose `.git` ghpr.run checked; another directory is refused before the hub."""
+def test_without_the_checked_git_no_session_is_built(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Where ghpr.run has no descriptor of the checked `.git` (Windows), the lead commands
+    refuse before any state is read or the hub asked (review A1738 of #2054)."""
     client = _session(monkeypatch, {"/me": _me("agt-l", role="manager")})
-    monkeypatch.setattr(clonecheck, "placement_root", lambda *a, **k: tmp_path / "clone")
-    with pytest.raises(ghpr.Refused, match="own state"):
-        cli._hub_role()
+    with pytest.raises(ghpr.Refused, match="checked .git"):
+        cli._hub_role(ROOT, None)
     assert client.calls == []
+
+
+# --- the placement's state read through the checked .git (state.read_placed) ---------------
+
+needs_dir_fd = pytest.mark.skipif(
+    os.name == "nt" or os.open not in os.supports_dir_fd,
+    reason="no descriptor walk here; the lead commands refuse on such a system",
+)
+
+
+def _placed_state(tmp_path: Path) -> tuple[Path, int]:
+    """A clone's `.git` with `maity/state.json` and `maity/credential` as maity writes them
+    (0700 directory, 0600 files), and an open descriptor of that `.git`."""
+    git = tmp_path / "clone" / ".git"
+    folder = git / "maity"
+    folder.mkdir(parents=True)
+    folder.chmod(0o700)
+    state.save_state(folder, {"hub": "https://hub.example", "full_name": PROJECT})
+    state.write_credential(folder, state.Secret("mty1.a.b"))
+    return folder, os.open(git, os.O_RDONLY | os.O_DIRECTORY)
+
+
+@needs_dir_fd
+def test_the_placements_state_is_read_through_the_checked_git(tmp_path: Path) -> None:
+    folder, top = _placed_state(tmp_path)
+    try:
+        data, credential = state.read_placed(top)
+    finally:
+        os.close(top)
+    assert data["full_name"] == PROJECT and credential.reveal() == "mty1.a.b"
+
+
+@needs_dir_fd
+@pytest.mark.parametrize(
+    "spoil",
+    ["maity is a link", "state.json is a link", "credential is a link",
+     "credential hard-linked", "credential readable by others", "maity readable by group",
+     "credential a directory", "state.json too large"],
+)  # fmt: skip
+def test_a_spoiled_placement_state_is_refused_before_any_client(tmp_path: Path, spoil: str) -> None:
+    """Review A1738 of #2054: the read boundary itself. Each step is opened from the one
+    before without following a link, and each must be maity's own private file or directory;
+    anything else is refused, so nothing a sandboxed session planted signs a call."""
+    folder, top = _placed_state(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir(mode=0o700)
+    try:
+        if spoil == "maity is a link":
+            folder.rename(elsewhere / "maity")
+            folder.symlink_to(elsewhere / "maity")
+        elif spoil in ("state.json is a link", "credential is a link"):
+            name = spoil.split(" ")[0]
+            (folder / name).rename(elsewhere / name)
+            (folder / name).symlink_to(elsewhere / name)
+        elif spoil == "credential hard-linked":
+            os.link(folder / "credential", elsewhere / "credential")
+        elif spoil == "credential readable by others":
+            (folder / "credential").chmod(0o644)
+        elif spoil == "maity readable by group":
+            folder.chmod(0o750)
+        elif spoil == "credential a directory":
+            (folder / "credential").unlink()
+            (folder / "credential").mkdir(mode=0o700)
+        else:
+            (folder / "state.json").write_bytes(b" " * (state.PLACED_STATE_MAX + 1))
+            (folder / "state.json").chmod(0o600)
+        with pytest.raises(state.StateError):
+            state.read_placed(top)
+    finally:
+        os.close(top)
+
+
+@needs_dir_fd
+def test_the_session_through_the_checked_git_signs_with_that_credential(
+    tmp_path: Path,
+) -> None:
+    """Session.through builds the client from the bytes read through the descriptor alone:
+    a state.json elsewhere that MAITY_STATE_DIR or a path would name plays no part."""
+    folder, top = _placed_state(tmp_path)
+    try:
+        session = cli.Session.through(tmp_path / "clone", top)
+    finally:
+        os.close(top)
+    assert session.data["full_name"] == PROJECT
+    assert session.dir == tmp_path / "clone" / ".git" / "maity"
+    assert session.client.base.startswith("https://hub.example")
+
+
+# --- the runner's directory for the agent (ghpr.owned_layout) --------------------------------
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes; the lead commands refuse on Windows")
+@pytest.mark.parametrize(
+    "spoil",
+    ["a link on the way", "agents writable by group", "placement writable by others",
+     "git of another kind"],
+)  # fmt: skip
+def test_the_runners_directory_must_be_real_and_closed_to_others(
+    tmp_path: Path, spoil: str
+) -> None:
+    """The security leg's P3 on #2054, tightened by the lead: no link anywhere on the way to
+    `agents/<placement>/git`, and none of the three writable by group or others."""
+    base = tmp_path.resolve()
+    where = base / "state" / "agents" / "plc-0003" / "git"
+    where.mkdir(parents=True)
+    for step in (where.parent.parent, where.parent, where):
+        step.chmod(0o700)
+    ghpr.owned_layout(where)  # as the runner makes it: passes
+    if spoil == "a link on the way":
+        (base / "link").symlink_to(base / "state")
+        where = base / "link" / "agents" / "plc-0003" / "git"
+    elif spoil == "agents writable by group":
+        where.parent.parent.chmod(0o770)
+    elif spoil == "placement writable by others":
+        where.parent.chmod(0o703)
+    else:
+        where.rmdir()
+        where.write_text("")
+    with pytest.raises(ghpr.Refused):
+        ghpr.owned_layout(where)
 
 
 @runs_gh
@@ -1216,7 +1339,7 @@ def test_the_footer_filter_drops_whole_lines_only() -> None:
 
 def test_check_role_fails_closed() -> None:
     with pytest.raises(ghpr.Refused):
-        ghpr.check_role(None)
+        ghpr.check_role(None, ROOT)
     with pytest.raises(ghpr.Refused, match="no role"):
-        ghpr.check_role(lambda: None)
-    ghpr.check_role(lambda: "manager")
+        ghpr.check_role(lambda *_: None, ROOT)
+    ghpr.check_role(lambda *_: "manager", ROOT)

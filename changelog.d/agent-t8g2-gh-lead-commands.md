@@ -8,7 +8,8 @@
   name, or the last 400 lines of the failed log). They need the runner
   grant `lead = true` beside `pull_requests = true` and the member's role
   `manager` or a project role built on it, which maity reads from the hub
-  at each call for the member the credential is. Upgrade: to let
+  at each call for the member the credential is, with the placement's
+  state read through its checked `.git` (so not on Windows). Upgrade: to let
   a placed lead use them, add `lead = true` to the repository's grant and
   restart its placement; `maity runner check` warns about `lead` without
   `pull_requests`.
