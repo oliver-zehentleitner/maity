@@ -534,7 +534,6 @@ class Workflows(unittest.TestCase):
         # The table's commit is the one whose hub-mariadb.yml first has the job. Needs each
         # commit and its parent: skipped in a local checkout that lacks them, failed on GitHub
         # Actions, where ci.yml's changelog job fetches them (a skip there would hide the check).
-        import os
         import subprocess
 
         def show(rev):

@@ -1066,13 +1066,13 @@ judged: a name that is no string literal (a `Column` object included), the colum
 an index other than a foreign key's target (`ForeignKeyConstraint`'s `columns`, the positional
 columns of `PrimaryKeyConstraint`, `UniqueConstraint` and `Index`, `create_foreign_key`'s
 `local_cols`/`remote_cols`, `create_primary_key`'s columns), the schema part of a three-part
-foreign-key target, and raw SQL in `op.execute`. A string target `"t.vector"` has no quoted form at
-all: SQLAlchemy splits it at its periods and writes each part plain, `quoted_name` or not. A tuple of
-`quoted_name` parts keeps the flag on SQLAlchemy 2.1, the pinned runtime (checked on 2.1.6), but not
-on 2.0.36, the floor in `pyproject.toml`: the review of #2025 reported it written plain there, and a
-check on 2026-11-20 found `ForeignKey` and `ForeignKeyConstraint` refusing the tuple with an
-`ArgumentError`. Both sources agree it is no form for the floor; the `Column` object quotes on both
-versions (same check), so `hub/README.md` names that one.
+foreign-key target, and raw SQL in `op.execute`. A foreign key's target carries no quote of its
+own: the reference takes the referenced column's flag (checked on SQLAlchemy 2.0.36 and 2.1.6,
+2026-11-20). A string target `"t.vector"` comes out quoted only when it resolves to a column with
+`quote=True`, `quoted_name` or not. A tuple of `quoted_name` parts aimed at a column without the flag
+comes out plain on 2.1.6, and 2.0.36, the floor in `pyproject.toml`, refuses the tuple with an
+`ArgumentError` (the review of #2025 had reported it written plain there). The `Column` object
+carries the flag on both versions, so `hub/README.md` names that one.
 
 ## On MariaDB a migration run commits per step, and a refusal stays where it refused
 
