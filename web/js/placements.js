@@ -3,11 +3,12 @@
 // what is wanted (`desired`), what the runner last reported, the
 // generation — with Stop for the runner's owner and the agent profile's
 // owner, Start and Restart for the runner's side only (§15.6: the runner's
-// owner, with members:admin or as the profile's owner), and Remove for the
+// owner, with members:admin or as the profile's owner) — Reset beside Restart, a
+// restart on a fresh harness session (`fresh_session`) — and Remove for the
 // runner's owner and the profile's owner, an own placement as much as a
 // `foreign` one (DELETE, §15.6; tsk-44x5grp6fcsq). Stop
-// asks nothing, it is the safe direction; a restart is confirmed with one
-// more click. A placement waiting for consent links to
+// asks nothing, it is the safe direction; a restart and a reset are confirmed
+// with one more click. A placement waiting for consent links to
 // its request in the inbox, which answers it. Every action is one contract
 // call; a refusal is the hub's envelope as it comes. Placement events
 // (§15.10) read the list again. Starting an agent on one of one's own
@@ -181,16 +182,30 @@ window.Maity = window.Maity || {};
         onclick: () => act(p, M.t("placements.stopping"), M.t("placements.not_stopped"), () => M.api.patch(path(p), { desired: "stopped" }), row) }, M.t("placements.stop"));
       const start = h("button", { type: "button", "aria-label": M.t("placements.start.label", { name }),
         onclick: () => act(p, M.t("placements.starting"), M.t("placements.not_started"), () => M.api.patch(path(p), { desired: "running" }), row) }, M.t("placements.start"));
-      // A restart re-runs the agent: one more click says so.
-      const restartWith = (rejoin) => {
-        const label = rejoin ? M.t("placements.restart_rejoin") : M.t("placements.restart");
-        const b = h("button", { type: "button", "aria-label": rejoin ? M.t("placements.restart_rejoin.label", { name }) : M.t("placements.restart.label", { name }) }, label);
+      // A restart re-runs the agent: one more click says so. A new join is a restart
+      // with `rejoin`, a reset one with `fresh_session` (§15.6): the agent starts on a fresh
+      // harness session instead of resuming the last one, the clone and its branches kept.
+      // Each with its words: the button, its label, the question, the yes, and the status line's.
+      const RESTARTS = {
+        restart: { body: {}, button: () => M.t("placements.restart"), label: (v) => M.t("placements.restart.label", v),
+          ask: (v) => M.t("placements.restart.ask", v), yes: () => M.t("placements.restart.yes"),
+          busy: () => M.t("placements.restarting"), failed: () => M.t("placements.not_restarted") },
+        rejoin: { body: { rejoin: true }, button: () => M.t("placements.restart_rejoin"), label: (v) => M.t("placements.restart_rejoin.label", v),
+          ask: (v) => M.t("placements.restart_rejoin.ask", v), yes: () => M.t("placements.restart_rejoin.yes"),
+          busy: () => M.t("placements.restarting"), failed: () => M.t("placements.not_restarted") },
+        reset: { body: { fresh_session: true }, button: () => M.t("placements.reset"), label: (v) => M.t("placements.reset.label", v),
+          ask: (v) => M.t("placements.reset.ask", v), yes: () => M.t("placements.reset.yes"),
+          busy: () => M.t("placements.resetting"), failed: () => M.t("placements.not_reset") },
+      };
+      const restartWith = (kind) => {
+        const k = RESTARTS[kind];
+        const b = h("button", { type: "button", "aria-label": k.label({ name }) }, k.button());
         b.addEventListener("click", () => {
           busy.add(p.id);
-          const yes = h("button", { type: "button", class: "primary", onclick: () => act(p, M.t("placements.restarting"), M.t("placements.not_restarted"),
-            () => M.api.post(path(p) + "/restart", rejoin ? { rejoin: true } : {}), row) }, rejoin ? M.t("placements.restart_rejoin.yes") : M.t("placements.restart.yes"));
+          const yes = h("button", { type: "button", class: "primary", onclick: () => act(p, k.busy(), k.failed(),
+            () => M.api.post(path(p) + "/restart", k.body), row) }, k.yes());
           const no = h("button", { type: "button", onclick: () => { busy.delete(p.id); draw(); } }, M.t("placements.cancel"));
-          append(clear(row), h("span", null, rejoin ? M.t("placements.restart_rejoin.ask", { name }) : M.t("placements.restart.ask", { name }), " "), yes, " ", no);
+          append(clear(row), h("span", null, k.ask({ name }), " "), yes, " ", no);
           yes.focus();
         });
         return b;
@@ -208,7 +223,7 @@ window.Maity = window.Maity || {};
         } }, M.t("placements.remove"));
       const starts = mayStart(p);
       append(row, p.desired === "running" ? stop : starts ? start : null,
-        starts ? [" ", restartWith(false), revoked(p) ? [" ", restartWith(true)] : null] : null,
+        starts ? [" ", restartWith("restart"), " ", restartWith("reset"), revoked(p) ? [" ", restartWith("rejoin")] : null] : null,
         " ", remove);
       return row;
     }
@@ -231,6 +246,7 @@ window.Maity = window.Maity || {};
           // The generation is for the curious: folded into the reported line, muted.
           h("dt", null, M.t("placements.reported")), h("dd", null, stateLine(ctx, p),
             h("span", { class: "muted placement-generation" }, " · ", M.t("placements.generation", { generation: String(p.generation) }),
+              p.fresh_session ? [" · ", M.t("placements.fresh_session")] : null,
               p.reported && p.reported.reported_at ? [" · ", M.t("placements.last_report", { ago: formatAgo(p.reported.reported_at, M.api.now()) })] : null))),
         actions(p),
         // The runner's owner sees how to look at it (§15.5: theirs only),
