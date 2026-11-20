@@ -5246,15 +5246,17 @@ beside the project's state instead (review of #884). Project settings have five 
 the links that changed; an empty field clears its link, and each refusal
 of the hub is said at its field.
 
-**Reason:** with up to six buttons in the row, the forge's name as the
-label took room the four new ones need, and the mark already shows the
-forge. The hub merges links by key (§6.11), so a form that sent all four
-would overwrite another admin's change to a link it did not touch.
+**Reason:** when the row gained the project's own links (four then, up
+to six buttons with the repository and the dashboard), the forge's name
+as the label took room they needed, and the mark already shows the
+forge; the row has grown since (Pull Requests, Actions, Docs). The hub
+merges links by key (§6.11), so a form that sent every link would
+overwrite another admin's change to a link it did not touch.
 
 **Rejected alternatives:**
 - The forge's name as the label, as before (the old header): wider, and
   it said twice what the mark says.
-- Sending all four links on every save (#846): it loses another admin's
+- Sending every link on every save (#846, four links then): it loses another admin's
   change made meanwhile.
 
 
@@ -6737,6 +6739,27 @@ the open columns could not be read"), in the same place as a failed closed
 read, and the board stays as drawn. A group that fails before its first page
 still fails the view, as before. A group read that answers without handing
 over a first page draws once the group is complete.
+
+Since tsk-ywf14h6qd6kq (2026-11-20, the review of #2043) an open column is
+treated as the closed ones are until it is complete. `M.api.getAll` also says
+whether more pages follow the first. A column whose later pages are still
+read holds no count and is marked busy, because a first page's count is not
+the column's. A later open page that fails no longer fails the whole read:
+that group keeps its first page, and its column holds no count and says
+"More cards of the open columns could not be read". Every other column keeps
+what it read, Done and Cancelled included. Before this change they lost their
+cards and showed the open column's failure, while the incomplete open column
+had no mark. Each failed group's column says that group's own reason. A line
+of its own above the columns says the same (the first reason that came), so
+a filter that hides that column still shows it. It is not the status line:
+that line says what the reader's own actions did, and a refused move said
+there would be replaced by this background read's failure (review A1711).
+Any read that clears the failure, a reload after a write included, empties
+that line. A read that fails otherwise after the
+first draw (a closed column, the read again of the cards changed meanwhile)
+still hands over the open groups' cards. Without them an open column would be
+left at its first page with a count. The closed columns say the failure, as
+before. A reload after a write reads every page before it draws, as before.
 
 **Reason:** on the maintainer's project the closed window was 783 cards,
 the largest group by far, and its pages follow each other through a

@@ -36,6 +36,7 @@ from maity_hub import (
     namespace,
     reports,
     restricted,
+    stars,
 )
 from maity_hub import tables as t
 from maity_hub.access import Membership
@@ -272,6 +273,9 @@ def _account(conn: Connection, human: Any) -> dict[str, Any]:
         "social": human.social or {},
         "links_visible": human.links_visible,
         "start_tabs": _start_tabs(conn, human.start_tabs),  # §5.1
+        # §5.1 "Stars", as `GET /me` shows them: an entry hidden while its project is not public
+        # would name a private project by its current name (hub/context/persistence.md c0e833f1).
+        "starred": stars.visible_of(conn, human.id, human.starred),
         "preferences": (
             {
                 "markdown": prefs.markdown,

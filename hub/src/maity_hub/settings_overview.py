@@ -203,6 +203,7 @@ ENTRIES: tuple[Entry, ...] = (
     Entry("MAITY_MAX_ORGS_PER_HUMAN", "limits", _limit("max_orgs_per_human"), admin=LIMITS),
     Entry("MAITY_MAX_PROJECTS_PER_OWNER", "limits", _limit("max_projects_per_owner"), admin=LIMITS),
     Entry("MAITY_MAX_ALIASES", "limits", _limit(limits.ALIASES), admin=LIMITS),
+    Entry("MAITY_MAX_STARRED_PER_HUMAN", "limits", _limit(limits.STARRED), admin=LIMITS),
     Entry(
         "MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT",
         "limits",

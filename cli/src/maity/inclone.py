@@ -2,8 +2,9 @@
 outside its `.git` (an attachment saved without `-o`: in `.git/maity-files/`), or, for a
 read, in the placement's scratch when it has one; never through a link.
 
-Under a placement maity runs outside the harness's sandbox (cli/context/runner.md), so a
-path the agent names must not take maity where the sandbox keeps the agent out. Every name
+Under a placement maity runs outside the harness's sandbox (cli/context/runner.md), except
+under Codex, whose `maity` runs inside it with the agent's own rights; so a path the agent
+names must not take maity where the sandbox keeps the agent out. Every name
 is looked up once, through descriptors: the walk starts at the clone's root as
 `clonecheck.opened_clone` opened and checked it together with `.git`, opens each directory
 on the way from the one before without following a link, refuses the clone's `.git` (by
@@ -32,6 +33,13 @@ from maity import clonecheck
 # the walk needs both. Windows has neither; there maity reads and writes no such file.
 WALKS = os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW")
 FOLDER = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+# A directory on the way to the placement's scratch, opened only to be passed through: with
+# O_PATH (Linux) that needs the right to search it, not to read it. A harness's sandbox may
+# hide the scratch's parents from reading and still let a path pass through them (Codex's
+# profile hides the workspaces root and opens the scratch again), and the agent's own shell
+# reaches the scratch the same way. Without O_PATH (macOS) such a directory is opened as
+# FOLDER, as before.
+PASS = (getattr(os, "O_PATH", 0) or os.O_RDONLY) | getattr(os, "O_DIRECTORY", 0)
 # File systems without hard links (vfat, some SMB and FUSE mounts): a new file is then made
 # with an exclusive create in the same directory and filled from maity's own descriptor.
 NO_HARD_LINKS = (errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS)
@@ -114,8 +122,9 @@ def _walk(
     without it (a caller that holds no check) the root is opened here, without following a
     link, and `.git` is read from it. With `from_top` (the placement's scratch, which no
     checked clone holds) the root itself is reached from `/`, every directory on the way
-    opened from the one before without following a link. A missing last directory named
-    `make` is created 0700 first."""
+    opened from the one before without following a link, only to be passed through (PASS),
+    so a parent the session's sandbox hides from reading does not stop it. A missing last
+    directory named `make` is created 0700 first."""
     if not WALKS:  # Windows
         raise Refused(
             f"{what} {given}: this system cannot open a file without following links,"
@@ -129,13 +138,20 @@ def _walk(
             os.close(fd)
             raise Refused(f"{what} {given}: the clone's root is its .git; maity writes no file")
     elif from_top:
-        fd = os.open(os.sep, FOLDER)
+        # Each directory down to the scratch is opened from the one before without following
+        # a link, as below, but only to pass through (PASS): it is checked to be a directory,
+        # and nothing is read from it. A link on the way is refused all the same: with
+        # O_DIRECTORY and O_NOFOLLOW, Linux refuses it (ENOTDIR), and `_open_at` names it a
+        # link; the S_ISDIR check below catches anything else that is no directory.
+        fd = os.open(os.sep, PASS)
         try:
             for name in root.parts[1:]:
-                inner = _open_at(fd, name, FOLDER, given, what)
+                inner = _open_at(fd, name, PASS, given, what)
                 os.close(fd)
                 fd = inner
-        except Refused:
+                if not stat.S_ISDIR(os.fstat(fd).st_mode):
+                    raise Refused(f"{what} {given}: {name} is not a directory")
+        except (Refused, OSError):
             os.close(fd)
             raise Refused(
                 f"{what} {given}: the way to the placement's scratch ({root}) is not plain"
