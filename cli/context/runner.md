@@ -1337,7 +1337,7 @@ block every opencode placement until that work lands.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-kf2kp09d6qew after the first live opencode test found a model-less placement running opencode's own free default (provider `opencode`, `hy4-flash-free`) instead of the configured `xai/grok-4.7`; card tsk-daa6e0gfncg0 and ops' note nte-22jpstv7c7x5 on tsk-kf2kp09d6qew (OpenCode 2.3.0 on oliver-pc01-l, 2026-11-19: the TUI has no `--model`, `opencode run` and `opencode mini` take `--model/-m`), and the lead's order for the fix (lotse, message 173278), 2026-11-20
+**Source:** card tsk-kf2kp09d6qew after the first live opencode test found a model-less placement running opencode's own free default (provider `opencode`, `hy4-flash-free`) instead of the configured `xai/grok-4.7`; card tsk-daa6e0gfncg0 and ops' note nte-22jpstv7c7x5 on tsk-kf2kp09d6qew (OpenCode 2.3.0 on oliver-pc01-l, 2026-11-19: the TUI has no `--model`, `opencode run` and `opencode mini` take `--model/-m`), and the lead's order for the fix (lotse, message 173278), 2026-11-20; ops' live check on a real OpenCode 2.3.0, note nte-mmnz3mk1247c on tsk-daa6e0gfncg0, 2026-11-20 (the TUI read the `OPENCODE_CONFIG` model only with `--standalone`; `opencode run` has no `--dir`)
 **See:** runner.md#opencode-grok-is-offered-its-command-rules-are-not-a-security-boundary — a94f2e01-c227-4d4f-baeb-d88c5f0d3c86 — as of 2026-11-18
 **Revisit when:** opencode stops reading the top-level `model` of the `OPENCODE_CONFIG` file, routes a placement's model somewhere else, or a provider other than the configured one becomes acceptable
 
@@ -1366,6 +1366,23 @@ would break again on the first upgrade); start the TUI as `opencode mini …
 --model` (ops' other option, not tried: it changes which command the
 interactive placements start, which nobody has run as a placement, and the
 lead ordered the configuration).
+
+Ops' live check on OpenCode 2.3.0 (nte-mmnz3mk1247c, same day) changed two
+points. First, the TUI starts with `--standalone`. Without it, 2.3's TUI
+attaches to a shared per-user background service (`opencode serve
+--service`) with its own configuration, so the session's `OPENCODE_CONFIG`
+and `OPENCODE_DISABLE_PROJECT_CONFIG` never reach it: ops saw opencode's own
+hosted model despite the config's `model`, and Grok with `--standalone`.
+This is a confinement point, not only the model: every opencode placement
+of that OS user would share one service, so neither the per-placement
+permission rules nor the switch that keeps the repository's own
+`opencode.json` and `.opencode/` out would apply. Second, `opencode run`
+has no `--dir` (`Unrecognized flag: --dir`), so the supervised start drops
+it and runs in the clone as its working directory, which the session
+already starts in (the workspace `path`; opencode has no workspace folder)
+and the loop's runs inherit; `--continue` then continues that directory's
+conversation. The probe's flags follow: `--standalone` and `--prompt` for
+the TUI, `--model` and `--continue` for `run`.
 
 **Reason:** a provider-`opencode` model is opencode-hosted (the command-rules
 constraint above), so running one sends the clone's conversation — the

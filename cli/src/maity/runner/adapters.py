@@ -814,9 +814,16 @@ def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     prompt = START_PROMPT + _sandbox_prompt(ctx)
     # The flags here are the ones `maity runner check` probes for (capabilities.OPENCODE_FLAGS).
     if ctx.placement.get("mode") == "interactive":
-        return Launch([ctx.binary, str(ctx.clone), "--prompt", prompt], env)
-    first = [ctx.binary, "run", "--dir", str(ctx.clone), "--model", model, prompt]
-    again = [ctx.binary, "run", "--dir", str(ctx.clone), "--model", model, "--continue", prompt]
+        # `--standalone`: without it 2.3's TUI attaches to the user's shared background service
+        # (`opencode serve --service`), which has its own configuration, so neither
+        # OPENCODE_CONFIG (the model, the rules) nor OPENCODE_DISABLE_PROJECT_CONFIG reaches it
+        # (ops' live check, nte-mmnz3mk1247c).
+        return Launch([ctx.binary, "--standalone", str(ctx.clone), "--prompt", prompt], env)
+    # `opencode run` has no `--dir`: it works in its working directory, the clone, where the
+    # session starts (a workspace.Workspace's `path`; opencode has no workspace folder) and the
+    # loop's runs inherit it. `--continue` is that directory's last conversation.
+    first = [ctx.binary, "run", "--model", model, prompt]
+    again = [ctx.binary, "run", "--model", model, "--continue", prompt]
     return _supervised(ctx, first, again, env)
 
 

@@ -77,12 +77,12 @@ def fake_maity(bin_dir: Path) -> None:
 
 
 # OpenCode 2.3.0's flags, as ops read them on the host (note nte-22jpstv7c7x5 on
-# tsk-kf2kp09d6qew, card tsk-daa6e0gfncg0): the TUI (no subcommand) takes a directory and
-# these, no `--model`; `opencode run` takes `--model/-m`. Its `--dir` and `--continue` are the
-# ones the supervised start already passed and ran with on 2.3 ("supervised is unaffected").
+# tsk-kf2kp09d6qew, and their live check nte-mmnz3mk1247c on tsk-daa6e0gfncg0): the TUI (no
+# subcommand) takes a directory and these, no `--model`; `opencode run [flags] [<message...>]`
+# takes these, no `--dir`.
 OPENCODE_23_TUI = ("--standalone", "--server", "--auto", "-c, --continue", "-s, --session",
                    "--prompt")  # fmt: skip
-OPENCODE_23_RUN = ("-m, --model", "--dir", "-c, --continue")
+OPENCODE_23_RUN = ("-m, --model", "-c, --continue", "--session")
 
 
 def opencode_23_flags(listed: tuple[str, ...]) -> set[str]:

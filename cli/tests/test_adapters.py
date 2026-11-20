@@ -811,12 +811,14 @@ def flags(argv: list[str]) -> set[str]:
 def test_opencode_launch(tmp_path: Path) -> None:
     # No model on the placement: the harness default (xai/grok-4.7) reaches opencode, not
     # opencode's own free default. OpenCode 2.3's TUI has no `--model` and exits on it
-    # (tsk-daa6e0gfncg0), so the interactive start names the model in its opencode.json.
+    # (tsk-daa6e0gfncg0), so the interactive start names the model in its opencode.json, and
+    # starts `--standalone`: otherwise the TUI attaches to the user's shared background
+    # service, which reads neither that file nor the project-config switch (nte-mmnz3mk1247c).
     ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
                   placement={**PLACEMENT, "mode": "interactive", "model": None})  # fmt: skip
     launch = adapters.launch(ctx)
     assert launch.env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
-    assert launch.argv == ["/usr/bin/opencode", str(ctx.clone), "--prompt",
+    assert launch.argv == ["/usr/bin/opencode", "--standalone", str(ctx.clone), "--prompt",
                            adapters.START_PROMPT]  # fmt: skip
     assert "--model" not in launch.argv and "-m" not in launch.argv
     assert flags(launch.argv) <= opencode_23_flags(OPENCODE_23_TUI)
@@ -842,18 +844,27 @@ def test_opencode_launch(tmp_path: Path) -> None:
 def test_opencode_supervised(tmp_path: Path) -> None:
     # A model-less supervised placement carries the harness default in both the first run and
     # the continuation: `opencode run` takes `--model` on 2.3, and the configuration names the
-    # same model.
+    # same model. 2.3's `run` has no `--dir` (nte-mmnz3mk1247c): it runs in the clone, the
+    # working directory the session starts in and the loop's runs inherit.
     ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
                   placement={**PLACEMENT, "mode": "supervised", "model": None})  # fmt: skip
     launch = adapters.launch(ctx)
     spec = json.loads(Path(launch.argv[-1]).read_text())
-    assert spec["first"][:4] == ["/usr/bin/opencode", "run", "--dir", str(ctx.clone)]
-    assert "--continue" in spec["again"] and "--continue" not in spec["first"]
-    assert spec["first"][4:6] == ["--model", "xai/grok-4.7"]
-    assert spec["again"][4:6] == ["--model", "xai/grok-4.7"]
+    assert spec["first"] == ["/usr/bin/opencode", "run", "--model", "xai/grok-4.7",
+                             adapters.START_PROMPT]  # fmt: skip
+    assert spec["again"] == ["/usr/bin/opencode", "run", "--model", "xai/grok-4.7",
+                             "--continue", adapters.START_PROMPT]  # fmt: skip
+    assert "--dir" not in spec["first"] + spec["again"]
     run = opencode_23_flags(OPENCODE_23_RUN)
     assert flags(spec["first"]) <= run and flags(spec["again"]) <= run
     assert json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())["model"] == "xai/grok-4.7"
+    # Its working directory: the session starts in the placement's workspace path
+    # (supervisor: `backend.start(name, place.path, …)`), which is the clone itself for a
+    # harness without a workspace folder, and the loop runs each `opencode run` there.
+    from maity.runner import workspace
+
+    assert not workspace.uses_folder("opencode")
+    assert spec["clone"] == str(ctx.clone)
 
 
 def test_opencode_placement_model_reaches_both_launch_forms(tmp_path: Path) -> None:
@@ -865,7 +876,7 @@ def test_opencode_placement_model_reaches_both_launch_forms(tmp_path: Path) -> N
         assert json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())["model"] == "opus"
         if mode == "supervised":
             spec = json.loads(Path(launch.argv[-1]).read_text())
-            assert spec["first"][4:6] == ["--model", "opus"]
+            assert spec["first"][2:4] == ["--model", "opus"]
 
 
 def test_the_check_probes_every_flag_the_opencode_launch_passes(tmp_path: Path) -> None:
@@ -882,7 +893,7 @@ def test_the_check_probes_every_flag_the_opencode_launch_passes(tmp_path: Path) 
             argv = [*spec["first"], *spec["again"]]
         command, probed = capabilities.OPENCODE_FLAGS[mode]
         assert argv[1 : 1 + len(command)] == list(command)
-        assert flags(argv) <= set(probed), mode
+        assert flags(argv) == set(probed), mode
 
 
 @pytest.mark.parametrize("mode", ["interactive", "supervised"])

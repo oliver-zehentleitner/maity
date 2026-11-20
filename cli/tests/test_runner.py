@@ -613,8 +613,8 @@ BOTH_MODES = 'modes = ["interactive", "supervised"]\nmodels = ["xai/grok"]\n'
 
 
 def test_check_finds_the_flags_both_opencode_starts_pass(bin_dir: Path) -> None:
-    # OpenCode 2.3: the TUI takes `--prompt`, `opencode run` takes `--dir`, `--model` and
-    # `--continue`, so both modes' starts pass (tsk-daa6e0gfncg0).
+    # OpenCode 2.3: the TUI takes `--standalone` and `--prompt`, `opencode run` takes `--model`
+    # and `--continue`, so both modes' starts pass (tsk-daa6e0gfncg0, nte-mmnz3mk1247c).
     fake_opencode(bin_dir / "opencode")
     cfg = parse(minimal(h=f"[harness.opencode]\n{BOTH_MODES}"))
     report = commands.Report()
@@ -631,7 +631,7 @@ def test_check_refuses_an_opencode_whose_command_lacks_a_flag_the_start_passes(
 ) -> None:
     # The class of tsk-daa6e0gfncg0: an opencode whose `run` no longer names `--model` (as its
     # 2.3 TUI dropped it) would exit on every supervised start, so `check` says so before one.
-    fake_opencode(bin_dir / "opencode", run=("--dir", "-c, --continue"))
+    fake_opencode(bin_dir / "opencode", run=("-c, --continue", "--session"))
     cfg = parse(minimal(h='[harness.opencode]\nmodels = ["xai/grok"]\n'))
     report = commands.Report()
     commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="agent_user")
@@ -644,13 +644,27 @@ def test_check_refuses_an_opencode_whose_command_lacks_a_flag_the_start_passes(
 
 def test_check_probes_only_the_configured_opencode_modes(bin_dir: Path) -> None:
     # A supervised-only harness (the default modes) never starts the TUI: a TUI without
-    # `--prompt` is no error.
-    fake_opencode(bin_dir / "opencode", tui=("--standalone",))
+    # `--standalone` is no error.
+    fake_opencode(bin_dir / "opencode", tui=("--prompt",))
     cfg = parse(minimal(h='[harness.opencode]\nmodes = ["supervised"]\nmodels = ["xai/grok"]\n'))
     report = commands.Report()
     commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="agent_user")
     assert not report.failed, report.lines
     assert not any("interactive start" in t for _, t in report.lines), report.lines
+
+
+def test_check_refuses_an_opencode_tui_without_standalone(bin_dir: Path) -> None:
+    # Without `--standalone` the TUI would attach to the user's shared service, which ignores
+    # the placement's configuration (nte-mmnz3mk1247c): an opencode whose TUI lacks it fails
+    # the interactive start's check.
+    fake_opencode(bin_dir / "opencode", tui=("--prompt",))
+    cfg = parse(minimal(h=f"[harness.opencode]\n{BOTH_MODES}"))
+    report = commands.Report()
+    commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="agent_user")
+    errors = [t for level, t in report.lines if level == "error"]
+    assert len(errors) == 1, report.lines
+    assert "`opencode --help` does not name --standalone" in errors[0]
+    assert "interactive start" in errors[0]
 
 
 def test_check_warns_when_opencode_help_cannot_be_read(bin_dir: Path) -> None:

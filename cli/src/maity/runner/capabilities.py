@@ -334,12 +334,13 @@ def agy_namespaces(path: str, as_user: AsUser = RUNNER) -> bool:
 
 # The flags the opencode adapter passes (adapters._opencode), by the command that must take
 # them: the TUI (no subcommand) for an interactive placement, `run` for a supervised one.
-# OpenCode 2.3 dropped `--model` from the TUI, and every interactive start exited on it
-# (tsk-daa6e0gfncg0); `maity runner check` reads each command's `--help` for these, so the next
-# such change shows before a start (cli/context/runner.md, the opencode model fail-closed).
+# OpenCode 2.3 dropped `--model` from the TUI, and every interactive start exited on it; its
+# `run` has no `--dir` (tsk-daa6e0gfncg0). `maity runner check` reads each command's `--help`
+# for these, so the next such change shows before a start (cli/context/runner.md, the opencode
+# model fail-closed).
 OPENCODE_FLAGS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
-    "interactive": ((), ("--prompt",)),
-    "supervised": (("run",), ("--dir", "--model", "--continue")),
+    "interactive": ((), ("--standalone", "--prompt")),
+    "supervised": (("run",), ("--model", "--continue")),
 }
 
 
