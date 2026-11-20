@@ -4778,7 +4778,7 @@ placement ends without asking what in it matters.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-w7qtcbzcshn9, filed by the lead from tsk-deaaanqsq5e2 (placed sessions bypassed `tools/run_slot.sh`'s slots), 2026-11-20; security's rejection of a directory shared by a user's placements and the lead's choice of the scratch, 2026-11-20
+**Source:** card tsk-w7qtcbzcshn9, filed by the lead from tsk-deaaanqsq5e2 (placed sessions bypassed `tools/run_slot.sh`'s slots), 2026-11-20; security's rejection of a directory shared by a user's placements and the lead's choice of the scratch, 2026-11-20; the security review of #2032 (other placements' scratch denied, scram with a per-placement password file), 2026-11-20
 **See:** runner.md — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-20
 **Revisit when:** a runner-mediated slot lock bounds heavy runs across placements (tsk-w7dx3h9mn8dp); each placement runs as its own OS user; `with_postgres.sh` moves its socket out of the data directory
 
@@ -4792,6 +4792,28 @@ is (the entry under See). Otherwise the runner logs that it left it out.
 No path is opened in any sandbox beyond the scratch, which the sandbox
 already writes and which goes when the placement closes. Within a
 placement, `with_postgres.sh` keeps reusing its own cluster across runs.
+
+Two hardening steps keep the scratch the placement's own:
+- **Other scratches denied.** Every other placement's scratch is listed at
+  the start (`supervisor.other_scratches`) and joins the private paths, as
+  the other clones' credentials do. Claude Code denies them (`denyRead`,
+  `denyWrite`). In Codex they stay inside the hidden workspaces root, so
+  `outermost` leaves them out of the profile. A listing that cannot be
+  completed refuses the start.
+- **Password-protected cluster.** The cluster takes a password: scratchop
+  `make` draws one per placement into `<scratch>/pg.pass`, 0600, created
+  exclusively without following a link and never overwritten, so a restart
+  keeps it. `MAITY_PG_PASSFILE` names it, and `with_postgres.sh` then makes
+  the cluster with `scram-sha-256`. The runner sets `MAITY_PG_DIR` only
+  beside a password file it vouched for. A cluster with `trust` is never
+  offered to a session.
+
+The password is defence in depth, for when the deny does not hold: a
+same-user process that reaches the socket path but not the session's files
+or environment (a harness without a per-path deny, such as opencode, or a
+configuration slip). A fully unsandboxed process of the same user can read
+the password (`/proc/<pid>/environ`, the file), and the password does not
+claim to stop it.
 
 **Reason:** the scripts' default, `~/.local/state/maity/`, is outside what
 either sandbox writes, so placed sessions ran their heavy suites without a
@@ -4818,6 +4840,10 @@ a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
 - The scripts' default under `~/.local/state/maity/`: that directory also
   holds `MAITY_STATE_DIR` credentials of agents joined by hand, so it
   cannot be opened to a sandbox.
+- A new password at each session start, passed in the environment: the
+  cluster outlives a restart, so each start would have to reset the role's
+  password (`postgres --single` with the server stopped) and could break a
+  run still using it. One password per placement in a file needs neither.
 
 ## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
 

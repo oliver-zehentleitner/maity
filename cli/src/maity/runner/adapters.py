@@ -228,6 +228,9 @@ class Context:
     # owns that parent, for one that hides nothing, and where there is no local `/tmp` scratch (an
     # ssh host, no uid).
     tmp_scratch_parent: Path | None = None
+    # The test cluster's password file in the scratch (scratchop.PG_PASS), when the runner's
+    # scratch make vouched for it; without one the session gets no test cluster (run_env).
+    pg_pass: Path | None = None
 
 
 # MAITY_RUN_NAME as tools/run_slot.sh and with_postgres.sh log it: `<handle>#<instance>`, both as
@@ -297,15 +300,18 @@ def pg_dir(scratch: Path | None) -> Path | None:
     return pg
 
 
-def run_env(scratch: Path | None) -> dict[str, str]:
-    """MAITY_RUN_SLOTS_DIR and MAITY_PG_DIR inside the placement's scratch, each where it can be."""
+def run_env(scratch: Path | None, pg_pass: Path | None = None) -> dict[str, str]:
+    """MAITY_RUN_SLOTS_DIR inside the placement's scratch, and MAITY_PG_DIR with
+    MAITY_PG_PASSFILE where the cluster's socket fits and its password file is there: a cluster
+    is made with scram-sha-256 only (the security review of #2032), never with trust."""
     if scratch is None:
         return {}
-    pg = pg_dir(scratch)
+    pg = pg_dir(scratch) if pg_pass is not None else None
     return {
         "MAITY_RUN_SLOTS_DIR": str(scratch / SLOTS),
-        **({"MAITY_PG_DIR": str(pg)} if pg is not None else {}),
-    }
+        **({"MAITY_PG_DIR": str(pg), "MAITY_PG_PASSFILE": str(pg_pass)}
+           if pg is not None and pg_pass is not None else {}),
+    }  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -338,7 +344,7 @@ def launch(ctx: Context) -> Launch:
         **({"MAITY_SCRATCH": str(ctx.scratch)} if ctx.scratch is not None else {}),
         **({"TMPDIR": str(tmp)} if (tmp := scratch_tmpdir(ctx.scratch)) is not None else {}),
         # The test slots and test cluster in the scratch, and who takes them (tools/run_slot.sh).
-        **run_env(ctx.scratch),
+        **run_env(ctx.scratch, ctx.pg_pass),
         **({"MAITY_RUN_NAME": name} if (name := run_name(ctx.placement)) is not None else {}),
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the

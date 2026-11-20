@@ -42,7 +42,7 @@ def test_made_with_tmp_measured_and_removed(tmp_path: Path) -> None:
     root = tmp_path / "ws"
     root.mkdir()
     room = _room(root)
-    assert scratchop.make(str(root), str(room)) == {"result": "made"}
+    assert scratchop.make(str(root), str(room)) == {"result": "made", "pg_pass": True}
     assert stat.S_IMODE((room / "tmp").stat().st_mode) == 0o700
     (room / "tmp" / "venv.bin").write_bytes(b"z" * 4000)
     (room / "loop").symlink_to(tmp_path)  # measured as a link, never followed
@@ -57,6 +57,54 @@ def test_made_with_tmp_measured_and_removed(tmp_path: Path) -> None:
     assert scratchop.remove(str(tmp_path / "none"), str(_room(tmp_path / "none"))) == {
         "result": "missing"
     }
+
+
+def test_the_pg_password_is_drawn_once_and_kept(tmp_path: Path) -> None:
+    """tsk-w7qtcbzcshn9 (security review of #2032): the test cluster's password, 0600 beside
+    its data directory, made once per placement; a restart keeps it, so the cluster keeps it."""
+    root = tmp_path / "ws"
+    root.mkdir()
+    room = _room(root)
+    old = os.umask(0o000)  # the mode is set, not left to the umask
+    try:
+        scratchop.make(str(root), str(room))
+    finally:
+        os.umask(old)
+    passfile = room / scratchop.PG_PASS
+    first = passfile.read_text()
+    assert len(first) == 65 and first.endswith("\n") and int(first, 16) >= 0
+    assert stat.S_IMODE(passfile.stat().st_mode) == 0o600
+    assert scratchop.make(str(root), str(room))["pg_pass"] is True
+    assert passfile.read_text() == first  # kept across a restart
+    other = _room(tmp_path / "other")
+    other.parent.parent.parent.mkdir()
+    scratchop.make(str(tmp_path / "other"), str(other))
+    assert (other / scratchop.PG_PASS).read_text() != first  # one per placement
+
+
+@pytest.mark.parametrize("planted", ["link", "dangling", "wide", "directory"])
+def test_a_planted_pg_password_is_never_written_through_or_vouched_for(
+    tmp_path: Path, planted: str
+) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    room = _room(root)
+    scratchop.make(str(root), str(room))
+    passfile = room / scratchop.PG_PASS
+    passfile.unlink()
+    victim = tmp_path / "victim"
+    victim.write_text("keep me")
+    if planted == "link":
+        passfile.symlink_to(victim)
+    elif planted == "dangling":
+        passfile.symlink_to(tmp_path / "nowhere")
+    elif planted == "wide":
+        passfile.write_text("a" * 64 + "\n")
+        passfile.chmod(0o644)
+    else:
+        passfile.mkdir()
+    assert scratchop.make(str(root), str(room))["pg_pass"] is False
+    assert victim.read_text() == "keep me" and not (tmp_path / "nowhere").exists()
 
 
 @pytest.mark.parametrize("linked", ["scratch", "holder", "project"])
@@ -123,7 +171,7 @@ def test_the_module_answers_in_one_line_and_says_link_by_its_exit_code(
     root.mkdir()
     room = _room(root)
     assert scratchop.main(["make", "--under", str(root), str(room)]) == 0
-    assert capsys.readouterr().out.strip() == '{"result": "made"}'
+    assert capsys.readouterr().out.strip() == '{"result": "made", "pg_pass": true}'
     (root / "other").mkdir()
     (root / "maity" / ".scratch" / "plc-0004").symlink_to(root / "other")
     assert scratchop.main(["remove", "--under", str(root), str(_room(root).parent / "plc-0004")]) \

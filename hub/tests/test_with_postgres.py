@@ -266,6 +266,81 @@ def test_the_database_is_named_after_who_runs_it(run: dict[str, str]) -> None:
     assert out.startswith("postgresql://postgres@/maity_test_coder_7_ab12_")
 
 
+def _passfile(run: dict[str, str], text: str = "ab" * 32 + "\n", mode: int = 0o600) -> Path:
+    passfile = Path(run["MAITY_PG_DIR"]).parent / "pg.pass"
+    passfile.write_text(text)
+    passfile.chmod(mode)
+    return passfile
+
+
+def test_with_a_password_file_the_cluster_takes_scram_and_the_url_the_password(
+    run: dict[str, str],
+) -> None:
+    """tsk-w7qtcbzcshn9 (security review of #2032): a placed session's cluster is made with
+    scram-sha-256 from the runner's password file, never with trust."""
+    passfile = _passfile(run)
+    run = {**run, "MAITY_PG_PASSFILE": str(passfile), "MAITY_RUN_NAME": "c#x"}
+    out = subprocess.run(
+        [SCRIPT, "sh", "-c", 'echo "$MAITY_TEST_DATABASE_URL|$PGPASSWORD"'],
+        env=run, check=True, capture_output=True, text=True,
+    ).stdout  # fmt: skip
+    url, password = out.strip().split("|")
+    assert url.startswith(f"postgresql://postgres:{'ab' * 32}@/maity_test_c_x_")
+    assert password == "ab" * 32
+    (initdb,) = [line for line in Path(run["FAKE_LOG"]).read_text().splitlines()
+                 if line.startswith("initdb")]  # fmt: skip
+    assert "-A scram-sha-256" in initdb and f"--pwfile={passfile}" in initdb
+    assert "trust" not in initdb
+
+
+def test_without_a_password_file_nothing_changes(run: dict[str, str]) -> None:
+    subprocess.run([SCRIPT, "true"], env=run, check=True)
+    (initdb,) = [line for line in Path(run["FAKE_LOG"]).read_text().splitlines()
+                 if line.startswith("initdb")]  # fmt: skip
+    assert "-A trust" in initdb
+
+
+@pytest.mark.parametrize("planted", ["wide", "link", "missing", "empty", "odd"])
+def test_a_password_file_that_is_not_the_runners_starts_nothing(
+    run: dict[str, str], tmp_path: Path, planted: str
+) -> None:
+    if planted == "wide":
+        passfile = _passfile(run, mode=0o644)
+    elif planted == "link":
+        real = _passfile(run)
+        passfile = tmp_path / "linked.pass"
+        passfile.symlink_to(real)
+    elif planted == "missing":
+        passfile = tmp_path / "none.pass"
+    elif planted == "empty":
+        passfile = _passfile(run, text="\n")
+    else:
+        passfile = _passfile(run, text="a'b\n")
+    refused = subprocess.run(
+        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSFILE": str(passfile)},
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert refused.returncode == 2 and "MAITY_PG_PASSFILE" in refused.stderr
+    log = Path(run["FAKE_LOG"]).read_text() if Path(run["FAKE_LOG"]).exists() else ""
+    assert "initdb" not in log and "pg_ctl" not in log
+
+
+def test_a_cluster_made_with_trust_is_not_used_with_a_password(run: dict[str, str]) -> None:
+    data = Path(run["MAITY_PG_DIR"])
+    (data / "PG_VERSION").touch()
+    (data / "pg_hba.conf").write_text("# a trust comment\nlocal   all   all   trust\n")
+    refused = subprocess.run(
+        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSFILE": str(_passfile(run))},
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert refused.returncode == 2 and "made with trust" in refused.stderr
+    assert calls(run, "start") == []
+    (data / "pg_hba.conf").write_text("# trust: not here\nlocal all all scram-sha-256\n")
+    subprocess.run([SCRIPT, "true"], env={**run, "MAITY_PG_PASSFILE": str(_passfile(run))},
+                   check=True)  # fmt: skip
+    assert len(calls(run, "start")) == 1
+
+
 @pytest.mark.skipif(not Path("/proc/self/fd").is_dir(), reason="needs /proc")
 def test_the_run_holds_a_slot_and_the_server_does_not(run: dict[str, str]) -> None:
     out = subprocess.run(

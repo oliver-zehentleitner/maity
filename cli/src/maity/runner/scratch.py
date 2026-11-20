@@ -47,10 +47,12 @@ def _under(path: Path) -> Path:
     return path.parents[2]
 
 
-def make(path: Path, as_user: AsUser = RUNNER) -> None:
-    """The scratch at `path` with `tmp` in it. scratchop.OnTheWay when a directory on the way
-    from the workspaces root is a link: nothing is made through it."""
-    as_user.scratch("make", _under(path), path)
+def make(path: Path, as_user: AsUser = RUNNER) -> bool:
+    """The scratch at `path` with `tmp` in it, and the test cluster's password file
+    (scratchop.PG_PASS): True when the scratch holds one the op vouches for, False when it does
+    not (something else at the name, or a host whose `maity` predates the file). scratchop.OnTheWay
+    when a directory on the way from the workspaces root is a link: nothing is made through it."""
+    return as_user.scratch("make", _under(path), path).get("pg_pass") is True
 
 
 def write_codex_home(

@@ -906,6 +906,38 @@ SIDES: dict[str, Callable[[], AsUser]] = {
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))
+def test_every_other_placements_scratch_is_listed(tmp_path: Path, side: str) -> None:
+    """tsk-w7qtcbzcshn9 (security review of #2032): a session reaches its own scratch only;
+    every other placement's, in its project and in others, goes to the sandbox's deny."""
+    ws = tmp_path / "ws"
+    as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    root = ws if host else ws.resolve()
+    own = root / "maity" / ".scratch" / "plc-0003"
+    others = [root / "maity" / ".scratch" / "plc-0004", root / "other" / ".scratch" / "plc-0009"]
+    for room in (own, *others):
+        (room / "tmp").mkdir(parents=True)
+    (ws / "maity" / "agent-3").mkdir()  # a clone is no scratch
+    assert supervisor.other_scratches(ws, own, as_user, host) == sorted(others)
+    assert supervisor.other_scratches(ws, None, as_user, host) == sorted([own, *others])
+    assert supervisor.other_scratches(tmp_path / "none", own, as_user, host) == []
+
+
+def test_a_scratch_listing_that_cannot_be_completed_refuses_the_start(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    holder = ws / "maity" / ".scratch"
+    (holder / "plc-0004").mkdir(parents=True)
+    holder.chmod(0o000)  # unreadable: it could hide a scratch
+    try:
+        if os.access(holder, os.R_OK):  # root reads it anyway: nothing to prove here
+            pytest.skip("running as a user that reads a 0000 directory")
+        with pytest.raises(workspace.Refused):
+            supervisor.other_scratches(ws, None, AsUser())
+    finally:
+        holder.chmod(0o700)
+
+
+@pytest.mark.parametrize("side", sorted(SIDES))
 @pytest.mark.parametrize("linked", ["clone", "repo", "git", "maity"])
 def test_other_credentials_are_listed_where_they_lie(
     tmp_path: Path, side: str, linked: str

@@ -11,6 +11,13 @@
 # when missing), MAITY_PG_BIN the directory of pg_ctl when it is not on the path. A run holds
 # one of the account's run slots (tools/run_slot.sh) while it runs; MAITY_RUN_NAME names it,
 # and the run's database (maity_test_<name>_<pid>).
+#
+# MAITY_PG_PASSFILE, when set, names a file whose first line is the password of the role
+# `postgres`: the cluster is then made with scram-sha-256 instead of trust, and the run reaches it
+# with that password (MAITY_TEST_DATABASE_URL carries it). The runner sets it for a placed session,
+# a file of its own in the placement's scratch, so that a process of the same OS user that can
+# reach the socket but not the session's files cannot use the cluster. The file must be a regular
+# file of this user with mode 600, or nothing starts; a cluster made with trust is not used with it.
 set -euo pipefail
 
 if [ "$#" -eq 0 ]; then
@@ -36,6 +43,25 @@ for tool in pg_ctl initdb psql flock; do
     exit 2
   fi
 done
+
+passfile="${MAITY_PG_PASSFILE:-}"
+password=""
+if [ -n "$passfile" ]; then
+  # find without -L does not follow a link: a link, a directory, another user's file or a wider
+  # mode prints nothing.
+  if [ -z "$(find "$passfile" -maxdepth 0 -type f -user "$(id -u)" -perm 600 2>/dev/null)" ]; then
+    echo "$0: MAITY_PG_PASSFILE ($passfile) is not a regular file of this user with mode 600" >&2
+    exit 2
+  fi
+  IFS= read -r password <"$passfile" || true
+  case "$password" in
+    '' | *[!A-Za-z0-9._~-]*)
+      echo "$0: MAITY_PG_PASSFILE's first line must be a password of letters, digits and ._~-" >&2
+      exit 2
+      ;;
+  esac
+  export PGPASSWORD="$password"
+fi
 
 # --stop on a directory without a cluster (a mistyped MAITY_PG_DIR) touches nothing and says so:
 # the server it meant may still be running.
@@ -70,7 +96,15 @@ if [ "$mode" = stop ]; then
   exit 0
 fi
 if [ ! -f "$dir/PG_VERSION" ]; then
-  initdb -D "$dir" -U postgres -A trust >/dev/null 7>&- 8>&- 9>&-
+  if [ -n "$password" ]; then
+    initdb -D "$dir" -U postgres -A scram-sha-256 "--pwfile=$passfile" >/dev/null 7>&- 8>&- 9>&-
+  else
+    initdb -D "$dir" -U postgres -A trust >/dev/null 7>&- 8>&- 9>&-
+  fi
+elif [ -n "$password" ] && grep -Eq '^[[:space:]]*[^#[:space:]].*[[:space:]]trust([[:space:]]|$)' "$dir/pg_hba.conf" 2>/dev/null; then
+  # A cluster made before the password was set still lets anyone on its socket in.
+  echo "$0: $dir was made with trust; stop it (--stop without MAITY_PG_PASSFILE) and remove it" >&2
+  exit 2
 fi
 if ! pg_ctl -D "$dir" status >/dev/null 2>&1; then
   pg_ctl -D "$dir" -w -l "$dir/server.log" -o "-c listen_addresses='' -k '$dir'" start >/dev/null 7>&- 8>&- 9>&-
@@ -80,7 +114,7 @@ if ! pg_ctl -D "$dir" status >/dev/null 2>&1; then
 fi
 if [ "$mode" = start ]; then
   rm -f "$started" # a server started with --start outlives the runs, also one a run started
-  echo "PostgreSQL is up: postgresql://postgres@/<database>?host=$dir"
+  echo "PostgreSQL is up: postgresql://postgres${password:+:<the password in MAITY_PG_PASSFILE>}@/<database>?host=$dir"
   exit 0
 fi
 flock -s 9
@@ -113,7 +147,7 @@ finish() {
 trap finish EXIT
 
 sql "create database \"$database\""
-export MAITY_TEST_DATABASE_URL="postgresql://postgres@/$database?host=$dir"
+export MAITY_TEST_DATABASE_URL="postgresql://postgres${password:+:$password}@/$database?host=$dir"
 status=0
 # At a terminal the command stays in the foreground, so that it can read (--pdb, breakpoint())
 # and Ctrl-C reaches it directly. A TERM or HUP sent to this script alone then waits for the

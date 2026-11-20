@@ -360,6 +360,9 @@ class Supervisor:
     scratch_cleared: set[str] = field(default_factory=set)
     # placement id -> the random leaf name of its agy `/tmp` scratch (TMP_NAMES_FILE).
     scratch_names: dict[str, str] = field(default_factory=dict)
+    # Placements whose last scratch make vouched for its test cluster's password file
+    # (scratchop.PG_PASS): only they are given MAITY_PG_DIR and MAITY_PG_PASSFILE.
+    pg_passes: set[str] = field(default_factory=set)
     # Serialises the TMP_NAMES_FILE write: `_save_scratch_names` holds it across snapshot + write,
     # so two start threads (or a start and a tick) never race a stale snapshot over a fresh one.
     scratch_names_lock: threading.Lock = field(default_factory=threading.Lock)
@@ -1369,7 +1372,9 @@ class Supervisor:
         target.as_user.mkdir(agent_dir)
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         found = view.found
-        private = self._private(target, place)
+        private = self._private(target, place, scratch)
+        with self.lock:
+            pg_ok = p["id"] in self.pg_passes
         tmp_parent = self._tmp_scratch_parent(target, harness)
         if tmp_parent is not None:
             self._make_tmp_parent(tmp_parent, target)
@@ -1399,6 +1404,7 @@ class Supervisor:
             git=self.cfg.git,
             scratch=scratch,
             tmp_scratch_parent=tmp_parent,
+            pg_pass=scratch / scratchop.PG_PASS if scratch is not None and pg_ok else None,
         )
 
     def _make_tmp_parent(self, parent: Path, target: Target) -> None:
@@ -1445,14 +1451,23 @@ class Supervisor:
         if workspace.scratch_in_tmp(harness.id):
             return self._tmp_scratch(p, target)
         path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host)
+        with self.lock:
+            self.pg_passes.discard(p["id"])
         try:
-            scratch.make(path, target.as_user)
+            vouched = scratch.make(path, target.as_user)
         except scratchop.OnTheWay:
             self.log(f"{p['id']}: no scratch: a directory on the way to {path} is a link")
             return None
         except (OSError, subprocess.SubprocessError) as exc:  # a host's maity without it, too
             self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
+        if vouched:
+            with self.lock:
+                self.pg_passes.add(p["id"])
+        else:  # the session then gets no test cluster: with trust it would be open on its socket
+            self.log(f"{p['id']}: no MAITY_PG_DIR: {path / scratchop.PG_PASS} is not a password "
+                     "file the runner made (a link or something else at the name, or a host "
+                     "whose maity predates it)")  # fmt: skip
         return path
 
     def _tmp_scratch(self, p: dict[str, Any], target: Target) -> Path | None:
@@ -1524,10 +1539,13 @@ class Supervisor:
             return workspace.tmp_scratch_of(uid, leaf), True
         return workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host), False
 
-    def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
+    def _private(
+        self, target: Target, place: workspace.Workspace, scratch: Path | None = None
+    ) -> tuple[Path, ...]:
         """What the agent's sandbox may not read, as the agents' side of `target` sees it: its
-        user's home secrets, its own files (every agent's socket, log and settings) and the
-        other clones' credentials it can list; here also the runner's state and config."""
+        user's home secrets, its own files (every agent's socket, log and settings), the
+        other clones' credentials and the other placements' scratch (all but `scratch`, its
+        own) it can list; here also the runner's state and config."""
         as_user = target.as_user
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
         try:
@@ -1536,6 +1554,13 @@ class Supervisor:
             self.log(f"{place.path.name}: not every clone under {target.workspaces} on "
                      f"{target.name} could be listed; not starting an agent whose sandbox "
                      "might read another's credential")  # fmt: skip
+            raise
+        try:
+            others += other_scratches(target.workspaces, scratch, as_user, target.host)
+        except workspace.Refused:
+            self.log(f"{place.path.name}: not every scratch under {target.workspaces} on "
+                     f"{target.name} could be listed; not starting an agent whose sandbox "
+                     "might read another placement's scratch")  # fmt: skip
             raise
         if not as_user.here:  # an ssh host: its home was read on connecting
             return private_paths(None, target.agent_files.parent, place.repo, others,
@@ -1831,6 +1856,38 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     own = _below_root(real_clone, real_root, root) / ".git" / "maity"
     named = {_below_root(p, real_root, root) for p in _canonical(found, as_user, refused)}
     return sorted(named - {own})
+
+
+def other_scratches(
+    workspaces: Path, own: Path | None, as_user: AsUser, host: str = ""
+) -> list[Path]:
+    """The scratch of every other placement under `workspaces` as it stands now
+    (`<root>/<project>/.scratch/<placement id>`, workspace.scratch_of), so the sandbox hides
+    them as it hides the other clones' credentials: a session reaches its own scratch only
+    (tsk-w7qtcbzcshn9, the security review of #2032; a scratch made later is covered from the
+    next start). Named as scratch_of names them: below the root resolved here, as given on an
+    ssh host. A listing that cannot be completed refuses the start (`workspace.Refused`): an
+    unreadable `.scratch` could hide one, and the sandbox would start without its deny."""
+    root = workspaces if host else workspaces.resolve()
+    refused = workspace.Refused("harness_refused")
+    found: list[Path] = []
+    if as_user.direct:
+        try:
+            for project in root.iterdir() if root.is_dir() else ():
+                holder = project / workspace.SCRATCH
+                if project.is_symlink() or holder.is_symlink() or not holder.is_dir():
+                    continue
+                found += [root / project.name / workspace.SCRATCH / e.name
+                          for e in holder.iterdir()]  # fmt: skip
+        except OSError as exc:
+            raise refused from exc
+    elif as_user.exists(root, "-d"):
+        listed = as_user.run(["find", str(root), "-mindepth", "3", "-maxdepth", "3",
+                              "-path", f"*/{workspace.SCRATCH}/*", "-print0"])  # fmt: skip
+        if listed.returncode != 0:  # some directory could not be read: the list may be short
+            raise refused
+        found = [root / Path(p).relative_to(root) for p in listed.stdout.split("\0") if p]
+    return sorted(set(found) - ({own} if own is not None else set()))
 
 
 # For each clone entry given: its two places for a credential, looked at through a link as

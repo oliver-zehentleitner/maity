@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import threading
 import time
@@ -218,9 +219,14 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
         # The test slots and cluster in the scratch (tsk-w7qtcbzcshn9), the cluster only where
         # its socket fits; no instance yet, so the handle alone.
         "MAITY_RUN_SLOTS_DIR": str(scratch / "slots"),
-        **({"MAITY_PG_DIR": str(pg)} if (pg := adapters.pg_dir(scratch)) is not None else {}),
+        **({"MAITY_PG_DIR": str(pg), "MAITY_PG_PASSFILE": str(scratch / "pg.pass")}
+           if (pg := adapters.pg_dir(scratch)) is not None else {}),
         "MAITY_RUN_NAME": "agent-3",
     }  # fmt: skip
+    # The cluster's password, drawn once for the placement in its scratch, 0600.
+    passfile = scratch / "pg.pass"
+    assert stat.S_IMODE(passfile.stat().st_mode) == 0o600
+    assert re.fullmatch(r"[0-9a-f]{64}\n", passfile.read_text())
     private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
     assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
     assert clone not in private.parents
@@ -3611,6 +3617,23 @@ def test_a_scratch_too_deep_for_a_pg_socket_is_said_in_the_log(
     ((_, _, env),) = backend.started
     assert "MAITY_PG_DIR" not in env and "MAITY_RUN_SLOTS_DIR" in env
     assert sum("plc-0003: no MAITY_PG_DIR" in line for line in logs) == 1
+
+
+def test_a_start_hides_every_other_placements_scratch_but_not_its_own(world: Any) -> None:
+    """tsk-w7qtcbzcshn9 (security review of #2032): the other placements' scratch goes into
+    the private paths, which become Claude Code's denyRead and denyWrite."""
+    sup, *_ = world
+    recorded(sup.cfg)
+    target = sup.targets["local"]
+    sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    own = sup._scratch(placement(), codex, target)
+    other = sup._scratch(placement(n=4), codex, target)
+    assert own is not None and other is not None
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    private = sup._private(target, place, own)
+    assert other in private and own not in private
+    assert {"plc-0003", "plc-0004"} <= sup.pg_passes  # both scratches vouched for their file
 
 
 def test_the_clone_and_scratch_sizes_are_measured_for_the_status(world: Any) -> None:

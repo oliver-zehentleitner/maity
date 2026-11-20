@@ -1304,9 +1304,15 @@ def test_the_test_slots_and_cluster_go_in_the_placements_own_scratch(tmp_path: P
     """tsk-w7qtcbzcshn9: the scripts' defaults under `~/.local/state` no sandbox writes, so the
     slots and the cluster go in the scratch, per placement; no path is opened beyond it."""
     room = Path("/srv/ws/maity/.scratch/plc-0003")
-    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=room))
+    passfile = room / "pg.pass"
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=room, pg_pass=passfile))
     assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
     assert launched.env["MAITY_PG_DIR"] == str(room / "pg")
+    assert launched.env["MAITY_PG_PASSFILE"] == str(passfile)
+    # Without a password file the runner vouched for, no cluster: it would be made with trust.
+    bare = adapters.launch(context(tmp_path / "b", "stub", scratch=room))
+    assert bare.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
+    assert "MAITY_PG_DIR" not in bare.env and "MAITY_PG_PASSFILE" not in bare.env
     claude = context(tmp_path / "c", sandbox=True, scratch=room)
     assert adapters.claude_settings(claude)["sandbox"]["filesystem"]["allowWrite"] == [str(room)]
     codex = context(tmp_path / "x", "codex", sandbox=True, scratch=room,
@@ -1327,8 +1333,9 @@ def test_a_cluster_whose_socket_would_not_fit_gets_no_pg_dir(tmp_path: Path) -> 
     assert adapters.pg_dir(fits) == fits / "pg"  # exactly at the limit fits
     deep = Path(str(fits) + "s")
     assert adapters.pg_dir(deep) is None
-    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=deep))
-    assert "MAITY_PG_DIR" not in launched.env
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=deep,
+                                      pg_pass=deep / "pg.pass"))  # fmt: skip
+    assert "MAITY_PG_DIR" not in launched.env and "MAITY_PG_PASSFILE" not in launched.env
     assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(deep / "slots")
     assert adapters.pg_dir(None) is None and adapters.run_env(None) == {}
 
@@ -1352,4 +1359,5 @@ def test_without_a_scratch_nothing_names_one(tmp_path: Path) -> None:
     assert ".scratch" not in adapters.codex_config(context(tmp_path / "x", "codex", sandbox=True))
     launched = adapters.launch(context(tmp_path / "s", "stub"))
     assert "MAITY_SCRATCH" not in launched.env and "TMPDIR" not in launched.env
-    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR", "MAITY_RUN_NAME"} & set(launched.env)
+    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR", "MAITY_PG_PASSFILE",
+                "MAITY_RUN_NAME"} & set(launched.env)  # fmt: skip

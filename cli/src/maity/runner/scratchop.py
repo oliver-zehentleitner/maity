@@ -56,6 +56,9 @@ TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 # name starts with a letter or digit (TOKEN), so `.scratch` is never one.
 SCRATCH = ".scratch"
 SCRATCH_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")  # a placement id, as the supervisor takes it
+# The test cluster's password (hub/scripts/with_postgres.sh, MAITY_PG_PASSFILE): drawn once per
+# placement when its scratch is made, beside the cluster's data directory `pg`, never inside it.
+PG_PASS = "pg.pass"
 LINK = 4  # the exit code for a link (or no directory) on the way: nothing was done
 _FOLDER = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
 # A path descriptor opens a directory without needing read or search on it (O_PATH, Linux), so
@@ -147,9 +150,32 @@ def _size(fd: int) -> int:
 
 def make(under: str, path: str) -> dict[str, object]:
     """The scratch at `path` with `tmp` in it, made as needed below the workspaces root,
-    which must be there (the runner makes it with the clone)."""
-    with _opened(under, [*_below(path, under), "tmp"], make=True):
-        return {"result": "made"}
+    which must be there (the runner makes it with the clone), and the test cluster's password
+    file in it (`pg_pass`: whether the scratch holds one this op can vouch for)."""
+    names = _below(path, under)
+    with _opened(under, [*names, "tmp"], make=True):
+        pass
+    with _opened(under, names, make=False) as scratch:
+        return {"result": "made", "pg_pass": _pg_pass(scratch)}
+
+
+def _pg_pass(dir_fd: int) -> bool:
+    """PG_PASS in the open scratch: a random password (64 hex digits) in a file made 0600
+    without following a link, once per placement; a file already there is kept as it is, so a
+    restart keeps the cluster's password. True when the name is a regular file of this user
+    with mode 0600 afterwards; a link, a directory or anything else there is left untouched
+    and gives False (with_postgres.sh then refuses it too)."""
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(PG_PASS, flags, 0o600, dir_fd=dir_fd)
+    except FileExistsError:
+        found = os.stat(PG_PASS, dir_fd=dir_fd, follow_symlinks=False)
+        return (stat.S_ISREG(found.st_mode) and found.st_uid == os.getuid()
+                and stat.S_IMODE(found.st_mode) == 0o600)  # fmt: skip
+    with os.fdopen(fd, "w") as handle:
+        os.fchmod(handle.fileno(), 0o600)  # the mode asked for is subject to the umask
+        handle.write(secrets.token_hex(32) + "\n")
+    return True
 
 
 def size(under: str, path: str) -> dict[str, object]:
