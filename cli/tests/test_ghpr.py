@@ -1211,6 +1211,28 @@ def test_the_placements_state_is_read_through_the_checked_git(tmp_path: Path) ->
 
 
 @needs_dir_fd
+def test_a_git_swapped_after_the_check_is_never_read(tmp_path: Path) -> None:
+    """kduz's probe on #2054 (A1739): `.git` replaced by a decoy after `opened_clone`
+    opened it and before the state is read. The read goes through the descriptor of the
+    `.git` that was checked, so the decoy's hub and credential are never seen (a path read,
+    as on ea5ca498, would take the decoy's)."""
+    folder, top = _placed_state(tmp_path)
+    clone = tmp_path / "clone"
+    try:
+        os.rename(clone / ".git", clone / ".git-moved")
+        decoy = clone / ".git" / "maity"
+        decoy.mkdir(parents=True, mode=0o700)
+        decoy.chmod(0o700)
+        state.save_state(decoy, {"hub": "https://attacker.example", "full_name": "o/decoy"})
+        state.write_credential(decoy, state.Secret("mty1.x.y"))
+        data, credential = state.read_placed(top)
+    finally:
+        os.close(top)
+    assert data == {"hub": "https://hub.example", "full_name": PROJECT}
+    assert credential.reveal() == "mty1.a.b"
+
+
+@needs_dir_fd
 @pytest.mark.parametrize(
     "spoil",
     ["maity is a link", "state.json is a link", "credential is a link",
