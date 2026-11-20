@@ -5006,15 +5006,24 @@ runner fetches it and hands it to the session read-only:
   commit}` (§15.5). The runner fetches that commit with its own git,
   outside the sandbox, https only, and takes only plain files (no links,
   no submodules; bounded in count and size) into
-  `~/.local/share/maity-runner/skills/keep-the-why/<commit>/`, with a
-  SHA-256 manifest written last and checked at every start.
+  `~/.local/share/maity-runner/skills/keep-the-why/<commit>-<source hash>/`
+  (one copy per source and commit, so another path at the same commit is
+  never handed out for it), with a SHA-256 manifest written last and
+  checked at every start, its source and commit included: every
+  directory, the manifest and every file checked for its type through no
+  link, and the same bounds as at the fetch. Of the runner's environment
+  the fetch keeps only the proxy and trust-root variables, never git
+  configuration or another `GIT_*` variable, which could change the
+  transport (the review of #2056).
 - Claude Code loads it with `--plugin-dir`, for that session only. The
   settings add `Read` on the copy, because the skill sends the agent to
   its `references/` and a Read outside the clone and the scratch is
   refused otherwise, even for a skill installed by hand. An `Edit` deny
   and the sandbox's `denyWrite` keep the copy unwritable from the session.
-- Every harness gets `MAITY_KTW_SKILL_DIR`, which `maity resume` names,
-  and for Claude Code the plugin's skill name, `keep-the-why:keep-the-why`:
+- Every harness gets `MAITY_KTW_SKILL_DIR`. `maity resume` then gives that
+  copy as the one way to load the skill, in place of the hub's load and
+  install texts (the review of #2056), and for Claude Code the plugin's
+  skill name, `keep-the-why:keep-the-why`:
   the session still loads the user's own skills, so a hand-installed
   `keep-the-why` shows beside it, may be another version, and is what a
   request for the plain name gets (the live check), while its references

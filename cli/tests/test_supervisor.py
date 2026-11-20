@@ -3765,6 +3765,19 @@ def test_a_placement_without_the_skill_fetches_nothing_and_reports_nothing(
     assert not any("Keep the Why" in line for line in logs)
 
 
+def test_a_malformed_skill_is_reported_missing_too(world: Any) -> None:
+    # The review of #2056: `{}` names a skill the runner cannot read, not no skill.
+    sup, backend, reports, clock, logs = world
+    recorded(sup.cfg)
+    sup.update([placement(keep_the_why={})])
+    settle(sup)
+    assert sup.records["plc-0003"].skill_missing is True
+    assert any("no Keep the Why skill: keep_the_why does not name" in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, "keep_the_why_unavailable")
+
+
 def test_the_running_detail_names_a_missing_sandbox_before_a_missing_skill() -> None:
     assert supervisor.running_detail(True, True) == "sandbox_unavailable"
     assert supervisor.running_detail(False, True) == "keep_the_why_unavailable"

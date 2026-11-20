@@ -63,8 +63,9 @@ def test_the_named_commit_is_fetched_as_a_plugin_of_plain_read_only_files(
 ) -> None:
     commit = _git(local, "rev-parse", "HEAD")
     root = skills.ensure(tmp_path / "skills", SOURCE, commit)
-    assert root == skills.plugin_root(tmp_path / "skills", commit)
-    skill = skills.skill_dir(tmp_path / "skills", commit)
+    assert root == skills.plugin_root(tmp_path / "skills", SOURCE, commit)
+    assert root.parent.name == skills.key(SOURCE, commit) and root.parent.name.startswith(commit)
+    skill = skills.skill_dir(tmp_path / "skills", SOURCE, commit)
     assert (skill / "SKILL.md").read_text() == "---\nname: keep-the-why\n---\n"
     assert (skill / "references" / "help.md").read_text() == "# help\n"
     assert not (root / "README.md").exists() and not (skill / "README.md").exists()
@@ -76,7 +77,25 @@ def test_the_named_commit_is_fetched_as_a_plugin_of_plain_read_only_files(
     manifest = json.loads((root.parent / skills.MANIFEST).read_text())
     assert manifest["commit"] == commit
     assert "plugin/skills/keep-the-why/SKILL.md" in manifest["files"]
-    assert not [p for p in (tmp_path / "skills" / "keep-the-why").iterdir() if p.name != commit]
+    left = [p.name for p in (tmp_path / "skills" / "keep-the-why").iterdir()]
+    assert left == [skills.key(SOURCE, commit)]  # no fetch directory left behind
+
+
+def test_a_manifest_of_another_source_or_commit_is_refused(tmp_path: Path, local: Path) -> None:
+    # The review of #2056: the copy is keyed and checked by source and commit both, so the same
+    # commit at another path of the tree is another copy, and a rewritten manifest is refused.
+    commit = _git(local, "rev-parse", "HEAD")
+    root = skills.ensure(tmp_path / "skills", SOURCE, commit)
+    other = SOURCE.replace("/skills/keep-the-why", "/skills/keep-the-why/")
+    assert skills.key(other, commit) != skills.key(SOURCE, commit)
+    with pytest.raises(skills.Unavailable, match="is not of"):
+        skills.verify(root.parent, other, commit)
+    manifest = root.parent / skills.MANIFEST
+    data = json.loads(manifest.read_text())
+    os.chmod(manifest, 0o644)
+    manifest.write_text(json.dumps({**data, "commit": "f" * 40}))
+    with pytest.raises(skills.Unavailable, match="is not of"):
+        skills.verify(root.parent, SOURCE, commit)
 
 
 def test_a_checked_copy_is_handed_out_again_without_a_fetch(
@@ -103,17 +122,96 @@ def test_a_changed_copy_is_refused_not_handed_out(tmp_path: Path, local: Path) -
     (skill / "SKILL.md").write_text("---\nname: keep-the-why\n---\n")
     (skill / "extra.md").write_text("added\n")
     with pytest.raises(skills.Unavailable, match="does not match its manifest"):
-        skills.verify(root.parent)
+        skills.verify(root.parent, SOURCE, commit)
     (skill / "extra.md").unlink()
     (skill / "link.md").symlink_to(skill / "SKILL.md")
-    with pytest.raises(skills.Unavailable, match="a link"):
-        skills.verify(root.parent)
+    with pytest.raises(skills.Unavailable, match="cannot be opened as a plain file"):
+        skills.verify(root.parent, SOURCE, commit)
+
+
+def test_a_cache_whose_roots_or_manifest_are_not_plain_is_refused(
+    tmp_path: Path, local: Path
+) -> None:
+    # The review of #2056: the copy, its plugin root and the manifest are checked too, never
+    # followed through a link.
+    commit = _git(local, "rev-parse", "HEAD")
+    skills_dir = tmp_path / "skills"
+    root = skills.ensure(skills_dir, SOURCE, commit)
+    copy = root.parent
+    manifest = copy / skills.MANIFEST
+    kept = tmp_path / "manifest.json"
+    manifest.rename(kept)
+    manifest.symlink_to(kept)
+    with pytest.raises(skills.Unavailable, match="cannot be opened as a plain file"):
+        skills.verify(copy, SOURCE, commit)
+    manifest.unlink()
+    kept.rename(manifest)
+    moved = tmp_path / "plugin"
+    root.rename(moved)
+    root.symlink_to(moved)
+    with pytest.raises(skills.Unavailable, match="not a plain directory"):
+        skills.verify(copy, SOURCE, commit)
+    root.unlink()
+    moved.rename(root)
+    skills.verify(copy, SOURCE, commit)  # put back: whole again
+
+
+def test_a_fifo_in_the_cache_is_refused_without_waiting_on_it(tmp_path: Path, local: Path) -> None:
+    commit = _git(local, "rev-parse", "HEAD")
+    root = skills.ensure(tmp_path / "skills", SOURCE, commit)
+    os.mkfifo(root / "skills" / "keep-the-why" / "pipe.md")
+    with pytest.raises(skills.Unavailable, match="not a plain file"):
+        skills.verify(root.parent, SOURCE, commit)  # returns at once; a read would block
+
+
+def test_the_bounds_hold_for_a_cached_copy_too(
+    tmp_path: Path, local: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commit = _git(local, "rev-parse", "HEAD")
+    root = skills.ensure(tmp_path / "skills", SOURCE, commit)
+    monkeypatch.setattr(skills, "MAX_FILES", 1)  # SKILL.md, help.md and plugin.json are 3
+    with pytest.raises(skills.Unavailable, match="too many files"):
+        skills.verify(root.parent, SOURCE, commit)
+    monkeypatch.setattr(skills, "MAX_FILES", 200)
+    monkeypatch.setattr(skills, "MANIFEST_MAX", 0)
+    monkeypatch.setattr(skills, "MAX_BYTES", 10)
+    with pytest.raises(skills.Unavailable):
+        skills.verify(root.parent, SOURCE, commit)
+
+
+def test_the_fetch_keeps_the_runners_proxy_and_trust_roots_and_nothing_else_of_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The review of #2056: an operator's proxy and CA reach the fetch; git configuration and
+    # the other GIT_* variables do not.
+    seen: dict[str, str] = {}
+
+    def run(
+        command: list[str], *, env: dict[str, str], **_: object
+    ) -> subprocess.CompletedProcess[bytes]:
+        seen.update(env)
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    for name, value in {
+        "HTTPS_PROXY": "http://proxy.example:3128", "NO_PROXY": "localhost",
+        "SSL_CERT_FILE": "/etc/ssl/ca.pem", "GIT_SSL_CAINFO": "/etc/ssl/ca.pem",
+        "GIT_CONFIG_PARAMETERS": "'core.sshCommand=evil'", "GIT_DIR": "/elsewhere",
+        "GIT_ALLOW_PROTOCOL": "ext:file:https",
+    }.items():  # fmt: skip
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(subprocess, "run", run)
+    skills._git(tmp_path / "git", "fetch")
+    assert seen["HTTPS_PROXY"] == "http://proxy.example:3128" and seen["NO_PROXY"] == "localhost"
+    assert seen["SSL_CERT_FILE"] == seen["GIT_SSL_CAINFO"] == "/etc/ssl/ca.pem"
+    assert "GIT_CONFIG_PARAMETERS" not in seen
+    assert seen["GIT_DIR"] == str(tmp_path / "git") and seen["GIT_ALLOW_PROTOCOL"] == "https"
+    assert seen["GIT_CONFIG_GLOBAL"] == os.devnull and seen["GIT_CONFIG_NOSYSTEM"] == "1"
 
 
 def test_a_commit_the_source_does_not_have_is_unavailable(tmp_path: Path, local: Path) -> None:
     with pytest.raises(skills.Unavailable, match="git fetch exited"):
         skills.ensure(tmp_path / "skills", SOURCE, "0" * 40)
-    assert not (tmp_path / "skills" / "keep-the-why" / ("0" * 40)).exists()
+    assert not (tmp_path / "skills" / "keep-the-why" / skills.key(SOURCE, "0" * 40)).exists()
 
 
 def test_a_link_or_a_submodule_in_the_skill_is_refused(tmp_path: Path, local: Path) -> None:
@@ -123,7 +221,7 @@ def test_a_link_or_a_submodule_in_the_skill_is_refused(tmp_path: Path, local: Pa
     commit = _git(local, "rev-parse", "HEAD")
     with pytest.raises(skills.Unavailable, match="not a plain file"):
         skills.ensure(tmp_path / "skills", SOURCE, commit)
-    assert not (tmp_path / "skills" / "keep-the-why" / commit).exists()
+    assert not (tmp_path / "skills" / "keep-the-why" / skills.key(SOURCE, commit)).exists()
 
 
 def test_a_tree_without_the_skill_is_unavailable(tmp_path: Path, local: Path) -> None:
@@ -183,9 +281,10 @@ def test_what_a_placement_names() -> None:
             skills.named({"keep_the_why": bad})
 
 
-def test_gc_removes_only_commits_no_placement_names(tmp_path: Path) -> None:
+def test_gc_removes_only_copies_no_placement_names(tmp_path: Path) -> None:
     parent = tmp_path / "keep-the-why"
-    for name in ("a" * 40, "b" * 40, ".fetch-x", "notes"):
+    kept, old = skills.key(SOURCE, "a" * 40), skills.key(SOURCE, "b" * 40)
+    for name in (kept, old, ".fetch-x", "notes", "c" * 40):
         (parent / name).mkdir(parents=True)
-    assert sorted(skills.remove_unused(tmp_path, {"a" * 40})) == [".fetch-x", "b" * 40]
-    assert sorted(p.name for p in parent.iterdir()) == ["a" * 40, "notes"]
+    assert sorted(skills.remove_unused(tmp_path, {kept})) == sorted([".fetch-x", old])
+    assert sorted(p.name for p in parent.iterdir()) == sorted([kept, "notes", "c" * 40])

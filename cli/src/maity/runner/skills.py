@@ -2,13 +2,14 @@
 
 The hub names the skill per placement as `keep_the_why: {source, commit}`: the release tree the
 resume packet names, and the git commit of it. The runner fetches exactly that commit with its
-own git, outside any sandbox, and keeps the skill's files in `skills_dir/keep-the-why/<commit>/`,
-laid out as a Claude Code plugin (`plugin/.claude-plugin/plugin.json`, `plugin/skills/
-keep-the-why/`), so a session loads it with `--plugin-dir` and nothing goes into the agents'
-home. Git checks every object against the commit id, so a moved tag changes nothing here; only
-regular files are taken, bounded in number and size, written 0644 in 0755 directories, and a
-`manifest.json` with each file's SHA-256 written last marks a copy as complete. A copy is
-checked against its manifest every time it is handed out. Nothing in the copy is ever run.
+own git, outside any sandbox, and keeps the skill's files in `skills_dir/keep-the-why/<key>/`
+(`key`: the commit and a hash of the source), laid out as a Claude Code plugin
+(`plugin/.claude-plugin/plugin.json`, `plugin/skills/keep-the-why/`), so a session loads it
+with `--plugin-dir` and nothing goes into the agents' home. Git checks every object against
+the commit id, so a moved tag changes nothing here. Only regular files are taken, bounded in
+number and size, written 0644 in 0755 directories, and a `manifest.json` with each file's
+SHA-256 written last marks a copy as complete. A copy is checked against its manifest every
+time it is handed out. Nothing in the copy is ever run.
 
 Why the runner and not the session: a placed session cannot write the harness's skills directory
 and has no network for an installer (cli/context/runner.md, tsk-172s8y208whg).
@@ -21,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from collections.abc import Mapping
@@ -46,14 +48,23 @@ class Unavailable(Exception):
     """The skill could not be fetched or checked; the message is for the runner's log."""
 
 
-def plugin_root(skills_dir: Path, commit: str) -> Path:
-    """What `--plugin-dir` names for this commit."""
-    return skills_dir / NAME / commit / PLUGIN
+KEY = re.compile(r"[0-9a-f]{40}-[0-9a-f]{16}")
 
 
-def skill_dir(skills_dir: Path, commit: str) -> Path:
+def key(source: str, commit: str) -> str:
+    """The cached copy's directory name: the commit and the source together, so one commit at
+    another path of a tree is another copy (the review of #2056)."""
+    return f"{commit}-{hashlib.sha256(source.encode('utf-8')).hexdigest()[:16]}"
+
+
+def plugin_root(skills_dir: Path, source: str, commit: str) -> Path:
+    """What `--plugin-dir` names for this source at this commit."""
+    return skills_dir / NAME / key(source, commit) / PLUGIN
+
+
+def skill_dir(skills_dir: Path, source: str, commit: str) -> Path:
     """The skill itself (`SKILL.md` and its references), as `MAITY_KTW_SKILL_DIR` names it."""
-    return plugin_root(skills_dir, commit) / "skills" / NAME
+    return plugin_root(skills_dir, source, commit) / "skills" / NAME
 
 
 def named(placement: Mapping[str, Any]) -> tuple[str, str] | None:
@@ -89,9 +100,9 @@ def split_source(source: str) -> tuple[str, str]:
 def ensure(skills_dir: Path, source: str, commit: str) -> Path:
     """The plugin root for `commit`, fetched now when no checked copy is there. Unavailable when
     it cannot be fetched or a copy does not match its manifest."""
-    final = skills_dir / NAME / commit
-    if (final / MANIFEST).is_file():
-        verify(final)
+    final = skills_dir / NAME / key(source, commit)
+    if os.path.lexists(final / MANIFEST):
+        verify(final, source, commit)
         return final / PLUGIN
     repository, path = split_source(source)
     parent = skills_dir / NAME
@@ -105,45 +116,111 @@ def ensure(skills_dir: Path, source: str, commit: str) -> Path:
         try:
             os.rename(staged, final)
         except OSError:
-            if not (final / MANIFEST).is_file():  # not another start's finished copy
+            if not os.path.lexists(final / MANIFEST):  # not another start's finished copy
                 raise Unavailable(f"cannot put the skill at {final}") from None
-    verify(final)
+    verify(final, source, commit)
     return final / PLUGIN
 
 
-def verify(copy: Path) -> None:
-    """Every file the manifest names, with its hash, and nothing else; no link anywhere."""
+MANIFEST_MAX = 64 * 1024
+
+
+def verify(copy: Path, source: str, commit: str) -> None:
+    """The copy of `source` at `commit`, as its manifest says, and every file the manifest
+    names, with its hash, and nothing else: the copy, its plugin
+    root and every directory below are real directories, the manifest and every file regular
+    files, none a link, within the same bounds as at the fetch (the review of #2056). A file is
+    opened without following a link and without waiting on a FIFO, and its type is checked on
+    the open descriptor before anything is read."""
+    for directory in (copy, copy / PLUGIN):
+        _kind(directory, stat.S_ISDIR, "directory")
     try:
-        manifest = json.loads((copy / MANIFEST).read_text(encoding="utf-8"))
+        manifest = json.loads(_read(copy / MANIFEST, MANIFEST_MAX).decode("utf-8"))
         files = manifest["files"]
         if not isinstance(files, dict):
             raise TypeError
-    except (OSError, ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError):
         raise Unavailable(f"{copy / MANIFEST} is not a manifest the runner wrote") from None
+    if manifest.get("source") != source or manifest.get("commit") != commit:
+        raise Unavailable(f"the skill's copy at {copy} is not of {source} at {commit}")
     found: dict[str, str] = {}
+    total = 0
     for dirpath, dirnames, filenames in os.walk(copy / PLUGIN, followlinks=False):
-        for entry in [*dirnames, *filenames]:
-            if os.path.islink(os.path.join(dirpath, entry)):
-                raise Unavailable(f"a link in the skill's copy: {os.path.join(dirpath, entry)}")
-        for filename in filenames:
-            full = Path(dirpath) / filename
-            found[full.relative_to(copy).as_posix()] = _sha256(full)
+        for name in dirnames:
+            _kind(Path(dirpath) / name, stat.S_ISDIR, "directory")
+        for name in filenames:
+            full = Path(dirpath) / name
+            if len(found) >= MAX_FILES + 1:  # the skill's files and plugin.json
+                raise Unavailable(f"the skill's copy at {copy} has too many files")
+            data = _read(full, MAX_BYTES + MANIFEST_MAX - total)  # the plugin.json on top
+            total += len(data)
+            found[full.relative_to(copy).as_posix()] = hashlib.sha256(data).hexdigest()
     if found != files:
         raise Unavailable(f"the skill's copy at {copy} does not match its manifest")
 
 
+def _kind(path: Path, test: Any, what: str) -> None:
+    """`path` itself (never a link's target) is a `what`."""
+    try:
+        mode = os.lstat(path).st_mode
+    except OSError:
+        raise Unavailable(f"{path} is missing from the skill's copy") from None
+    if stat.S_ISLNK(mode) or not test(mode):
+        raise Unavailable(f"{path} in the skill's copy is not a plain {what}")
+
+
+def _read(path: Path, limit: int) -> bytes:
+    """A regular file's bytes, at most `limit` of them; refused rather than waited on or
+    followed. The type is checked on the descriptor, so nothing swapped in between counts."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        raise Unavailable(f"{path} in the skill's copy cannot be opened as a plain file") from None
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise Unavailable(f"{path} in the skill's copy is not a plain file")
+        if info.st_size > limit:
+            raise Unavailable(f"the skill's copy is larger than {MAX_BYTES} bytes")
+        chunks: list[bytes] = []
+        size = 0
+        while chunk := os.read(fd, 65536):
+            size += len(chunk)
+            if size > limit:
+                raise Unavailable(f"the skill's copy is larger than {MAX_BYTES} bytes")
+            chunks.append(chunk)
+        return b"".join(chunks)
+    except OSError:
+        raise Unavailable(f"{path} in the skill's copy cannot be read") from None
+    finally:
+        os.close(fd)
+
+
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashlib.sha256(_read(path, MAX_BYTES + MANIFEST_MAX)).hexdigest()
+
+
+# What the runner's own environment may give git for the fetch: the basics, and the standard
+# proxy and trust-root variables an operator sets for the runner's network (the review of #2056).
+# Of git's own variables only the two trust-root ones, and no git configuration: the rest could
+# change the transport or run something.
+_KEPT_ENV = (
+    "PATH", "HOME", "LANG",
+    "https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "all_proxy", "ALL_PROXY",
+    "no_proxy", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR", "GIT_SSL_CAINFO", "GIT_SSL_CAPATH",
+)  # fmt: skip
 
 
 def _git(git_dir: Path, *args: str, binary: bool = False) -> Any:
     """git on the runner's own bare repository for this fetch: no prompt, no system or user
-    configuration, no hooks, https only."""
+    configuration, no hooks, https only; the runner's proxy and trust roots as its environment
+    names them (_KEPT_ENV)."""
     program = proc.program("git")
     if program is None:
         raise Unavailable("git is not installed for the runner")
     env = {
-        **{k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG")},
+        **{k: v for k, v in os.environ.items() if k in _KEPT_ENV},
         **proc.NO_PROMPT,
         "GIT_ALLOW_PROTOCOL": proc.allowed(_TRANSPORTS),
         "GIT_CONFIG_NOSYSTEM": "1",
@@ -229,7 +306,7 @@ def _write_manifest(into: Path, source: str, commit: str) -> None:
 
 
 def remove_unused(skills_dir: Path, keep: set[str]) -> list[str]:
-    """The cached commits no placement names any more, removed; returns them. For `gc`."""
+    """The cached copies (`key`) no placement names any more, removed; returns them. For `gc`."""
     removed: list[str] = []
     parent = skills_dir / NAME
     if not parent.is_dir():
@@ -237,7 +314,7 @@ def remove_unused(skills_dir: Path, keep: set[str]) -> list[str]:
     for entry in parent.iterdir():
         if entry.name in keep or entry.is_symlink() or not entry.is_dir():
             continue
-        if COMMIT.fullmatch(entry.name) or entry.name.startswith(".fetch-"):
+        if KEY.fullmatch(entry.name) or entry.name.startswith(".fetch-"):
             shutil.rmtree(entry)
             removed.append(entry.name)
     return removed

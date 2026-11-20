@@ -1023,6 +1023,8 @@ def antigravity_settings(ctx: Context) -> dict[str, Any]:
     denied = [git / "maity", *(_agy_private(path) for path in ctx.private)]
     deny = [f"{tool}({path})" for path in denied for tool in ("read_file", "write_file")]
     deny += [f"write_file({git / name})" for name in GIT_PROTECTED]
+    if ctx.skill is not None:  # the delivered skill, read through MAITY_KTW_SKILL_DIR, not written
+        deny += [f"write_file({ctx.skill})"]
     deny += [f"command({cmd})" for cmd in AGY_DENIED_COMMANDS]
     return {
         "agentMode": "",

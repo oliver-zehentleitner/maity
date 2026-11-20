@@ -1039,20 +1039,23 @@ def delivered_skill() -> str | None:
 def _ktw_loading(block: dict[str, Any], delivered: str | None = None) -> list[str]:
     """How to load the skill, whatever the machine has installed (§6.23): texts for the agent,
     never run here. Every field is optional: the block prints what it has. `delivered`: the
-    directory a runner put the skill in for this session, named first; the install texts stay
-    as the fallback."""
+    directory a runner put the skill in for this session. Then that copy is the one way to load
+    it, in place of the hub's `load` and `install` texts (the review of #2056): the hub's plain
+    name would pick a copy the agents' user installed, and an install would add another one."""
     skill = _dict(block.get("skill"))
-    lines = [inline(skill["load"])] if skill.get("load") else []
     if delivered and skill:
         # Claude Code names a plugin's skill `<plugin>:<skill>`; a plain `keep-the-why` beside it
         # is a copy the agents' user installed, which may be another version and whose files the
         # session cannot read (a live check on #2056).
-        lines.append(
-            f"Your runner delivered the skill for this session: {inline(delivered)}/SKILL.md "
-            f"(read-only). In Claude Code invoke it as `{DELIVERED_SKILL}`, not a plain "
-            "`keep-the-why`, which is another copy."
-        )
-    given = skill.get("install")
+        lines = [
+            f"Your runner delivered the skill for this session, read-only. Claude Code: invoke "
+            f"the `{DELIVERED_SKILL}` skill (Skill tool), not a plain `keep-the-why`, which is "
+            f"another copy. Any other agent: read {inline(delivered)}/SKILL.md and follow it."
+        ]
+        given = None
+    else:
+        lines = [inline(skill["load"])] if skill.get("load") else []
+        given = skill.get("install")
     install = [i for i in given if isinstance(i, str)] if isinstance(given, list) else []
     if install:
         lines += ["If the skill is not installed:", *[f"  {inline(i)}" for i in install]]

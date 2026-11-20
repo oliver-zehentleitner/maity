@@ -1253,7 +1253,8 @@ class Supervisor:
             scratch = self._scratch(p, harness, target)
             skill = self._skill(p, target)
             with self.lock:  # reported with `running` (keep_the_why_unavailable)
-                rec.skill_missing = skill is None and bool(p.get("keep_the_why"))
+                # Any value but null names a skill, a malformed one included (skills.named).
+                rec.skill_missing = skill is None and p.get("keep_the_why") is not None
             # A reset (§15.6): the generation's first session is a fresh one, never the last
             # conversation resumed; a later resume in it (after `hung`) continues the new one.
             reset = bool(p.get("fresh_session")) and rec.sessions == 0
