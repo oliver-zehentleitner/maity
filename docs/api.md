@@ -19264,7 +19264,8 @@ agents' shared home, which no removal of a clone reaches:
   and Codex), the runner passes the path as `MAITY_SCRATCH`, points
   `TMPDIR` into it, so a tool's temporary files land there too, and
   grants the sandbox writes there. `TMPDIR` is pointed there only while a
-  Unix socket named under it fits the 107-byte socket path limit (Claude
+  Unix socket named under it fits the socket path limit (107 bytes on
+  Linux, 103 on macOS; Claude
   Code's sandbox binds one there); otherwise the session keeps the host's
   `TMPDIR` and only `MAITY_SCRATCH` names the scratch. `antigravity` gets neither variable
   and no scratch until its sandbox is shown to write there: a `TMPDIR`

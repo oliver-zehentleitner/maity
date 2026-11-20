@@ -4317,7 +4317,8 @@ Each placement gets `<workspaces>/<project_id>/.scratch/<placement id>`,
 passed as `MAITY_SCRATCH` with `TMPDIR` inside it, but `TMPDIR` only when
 a Unix socket still fits under it: Claude Code binds its sandbox socket
 `claude-socks-<16 hex>.sock` (34 bytes) under `TMPDIR`, a socket path holds
-at most 107 bytes, and a deep workspaces root made it 117 in cli 0.1.0a16,
+at most 107 bytes on Linux (103 on macOS), and a deep workspaces root made
+it 117 in cli 0.1.0a16,
 so no Claude Code placement's sandbox started. Where `<scratch>/tmp` leaves
 no room the session keeps the host's `TMPDIR` (normally `/tmp`) and only
 `MAITY_SCRATCH` names the scratch (`adapters.scratch_tmpdir`). The runner removes it

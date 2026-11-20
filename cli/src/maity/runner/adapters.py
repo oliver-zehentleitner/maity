@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -223,11 +224,12 @@ class Context:
     tmp_scratch_parent: Path | None = None
 
 
-# A Unix socket's path holds at most 107 bytes on Linux (`sun_path` is 108, with its NUL).
-# Tools put sockets under TMPDIR: Claude Code's sandbox binds `claude-socks-<16 hex>.sock`
-# there (34 bytes) and does not start when the path is longer. A scratch deep in a workspaces
-# root made that path 117 bytes, so every Claude Code placement lost its sandbox (cli 0.1.0a16).
-SOCKET_PATH_MAX = 107
+# A Unix socket's path holds at most 107 bytes on Linux (`sun_path` is 108, with its NUL) and
+# 103 on macOS and the BSDs (104). Tools put sockets under TMPDIR: Claude Code's sandbox binds
+# `claude-socks-<16 hex>.sock` there (34 bytes) and does not start when the path is longer. A
+# scratch deep in a workspaces root made that path 117 bytes, so every Claude Code placement lost
+# its sandbox (cli 0.1.0a16).
+SOCKET_PATH_MAX = 107 if sys.platform.startswith("linux") else 103
 SOCKET_NAME_ROOM = len("claude-socks-0123456789abcdef.sock")
 
 
