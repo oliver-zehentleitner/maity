@@ -71,7 +71,9 @@ RAN = {"success", "failure", "cancelled", "timed_out"}
 # its history had the job: missing from the run, skipped or red, it stops the gate. A run from
 # before it is judged without it. Whether a commit is in the history is git's answer
 # (`merge-base --is-ancestor` in a full checkout), never a reading of the workflow file.
-# A new hub-mariadb* job gets its line here in the pull request that adds it.
+# A new hub-mariadb* job gets its line here in the first pull request after the one that adds
+# it: a squash merge makes the commit, so the adding pull request cannot name it. Until then a
+# run that lists the job stops the gate (below), and so does every --mariadb release.
 MARIADB_EXTRA_JOBS = {
     "hub-mariadb-11-8": "4fafdf1f80dedf7c50016d133984b013d8719588",  # #2022
 }

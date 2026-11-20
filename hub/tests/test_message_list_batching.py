@@ -12,11 +12,13 @@ from sqlalchemy import Engine
 
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.list_rows import flat_rows
 from tests.statements import count_executions
 
 P = "/projects/maintainer/maity"
 
 
+@flat_rows("/projects/{}/{}/conversations/{}/messages")
 def test_a_page_of_messages_costs_the_same_for_3_and_for_30(
     make_client: ClientFactory, migrated: Engine
 ) -> None:

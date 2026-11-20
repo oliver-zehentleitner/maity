@@ -5,6 +5,8 @@ from __future__ import annotations
 import contextlib
 import os
 import stat
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -204,7 +206,8 @@ def test_nothing_is_made_or_removed_through_a_link_on_the_way(tmp_path: Path, li
 
 @pytest.mark.parametrize(
     "name", ["maity/agent-3", "maity/.scratch", "maity/.scratch/plc-0003/tmp", "maity/x/plc-0003",
-             ".scratch/plc-0003", "maity/.scratch/agent-3", "Maity/.scratch/plc-0003"],
+             ".scratch/plc-0003", "maity/.scratch/agent-3", "Maity/.scratch/plc-0003",
+             "maity/.scratch/plc-0003\n", "maity\n/.scratch/plc-0003"],
 )  # fmt: skip
 def test_only_a_placements_scratch_is_made_measured_or_removed(tmp_path: Path, name: str) -> None:
     """A clone, the holder `.scratch` itself, anything below a scratch or of another shape:
@@ -218,6 +221,22 @@ def test_only_a_placements_scratch_is_made_measured_or_removed(tmp_path: Path, n
             op(str(root), str(target))
         assert not isinstance(refused.value, scratchop.OnTheWay)
     assert (target / "keep").read_text() == "k"
+
+
+def test_the_module_imports_only_the_standard_library_and_maity() -> None:
+    """It runs with `-I` on the agents' side and imports only the standard library and maity
+    modules that do the same: followed through, no module from anywhere else is loaded."""
+    probe = (
+        "import sys; before = set(sys.modules); import maity.runner.scratchop; "
+        "print('\\n'.join(sorted(m for m in set(sys.modules) - before "
+        "if m.split('.')[0] not in sys.stdlib_module_names and m.split('.')[0] != 'maity')))"
+    )
+    src = str(Path(scratchop.__file__).resolve().parents[2])
+    done = subprocess.run(
+        [sys.executable, "-I", "-c", f"import sys; sys.path.insert(0, {src!r}); {probe}"],
+        capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+    assert done.stdout.strip() == ""
 
 
 def test_a_scratch_shaped_path_under_another_root_is_refused(tmp_path: Path) -> None:

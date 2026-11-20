@@ -15,6 +15,7 @@ from maity_hub import tables as t
 from maity_hub.notifications import positions, records
 from tests import factory, flow
 from tests.conftest import ClientFactory
+from tests.list_rows import flat_rows
 from tests.test_personal_requests import _file
 
 N = "/me/notifications"
@@ -585,6 +586,7 @@ def _statements(engine: Engine, call: Any) -> int:
     return count_statements(engine, call, async_engines=False)
 
 
+@flat_rows("/me/notifications")
 def test_the_bell_costs_the_same_statements_for_more_personal_requests(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:

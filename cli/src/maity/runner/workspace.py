@@ -133,7 +133,7 @@ def scratch_of(root: Path, project: str, placement_id: str, host: str = "") -> P
     """The placement's scratch under `root` (§15.5), built from validated tokens and kept
     inside `root` as a clone's path is (locate). Not resolved: what is there is the agents'
     to write, and the runner reaches it only from the root down (scratchop)."""
-    if not (TOKEN.match(project) and SCRATCH_ID.match(placement_id)):
+    if not (TOKEN.fullmatch(project) and SCRATCH_ID.fullmatch(placement_id)):
         raise Refused("workspace_in_use", "workspace_unrecorded")
     base = root if host else root.resolve()
     return base / project / SCRATCH / placement_id
@@ -178,7 +178,7 @@ def locate(root: Path, project: str, clone: str, host: str = "", folder: bool = 
     """The clone's path under `root` (for `folder`, the workspace folder's). On an ssh host
     `root` is a remote path, validated by the configuration and never resolved here; the
     tokens cannot leave it either way."""
-    if not (TOKEN.match(project) and TOKEN.match(clone)):
+    if not (TOKEN.fullmatch(project) and TOKEN.fullmatch(clone)):
         raise Refused("workspace_in_use", "workspace_unrecorded")
     if host:
         return Workspace(root / project / clone, project, clone, host, folder)
