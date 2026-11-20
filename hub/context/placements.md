@@ -839,3 +839,46 @@ one boolean. A boolean column cleared by every generation bump: each path
 that bumps the generation would have to know about it. Leaving it to a
 replacement with `handover: none` (§15.14): not built, and it makes a new
 placement and clone, where the owner wants the same clone and branches.
+
+## A profile that is not a member yet is admitted by its placement
+
+**Id:** UUID-PENDING
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-swrhej87tp0c; the owner's decision req-emyp23q0fhmz (only the owner decides where their agent joins); the approved contract req-dbwaaxf20w1q (docs/api.md §15.6 "A profile that is not a member yet", §15.9, §6.2)
+**Revisit when:** placements take `takes_over` or `handover`, an agent may admit a profile, or the member rule's exchange recheck (§3.3) changes
+**See:** placements.md#a-new-profiles-placement-re-checks-its-creator-at-the-pickup-and-the-exchange — ac153895-7fbe-49a5-adad-6e5403d4fd6f — as of 2026-11-20
+
+A human who owns a profile with no active membership in the project
+places it by `{"agent":{"id"}}`, with the right they would need to create
+its first join (`members:admin`, or trust `member` under "Bringing your
+own agent") and on a runner of their own. The placement takes the first
+join's fields and stores them in `new_profile` beside the new column
+`placement.agent_id`; the pickup mints a first join (neither
+`new_instance` nor `replaces`), and its exchange makes the membership. A
+profile that is a member by the exchange gets an instance instead,
+within `max_instances`. Join and placement share one check of the fields
+(`routes.joins.assignment`, `first_join_fields`) and one recheck of the
+creator at the pickup and the exchange (`routes.joins.admission_holds`).
+Removing the membership closes the profile's placements still without a
+credential, and deleting the profile closes those that admit it.
+
+**Reason:** the placement already carries the owner's consent, and a
+profile made on its own should not need a join line to reach a runner
+of the owner's (confirmed: the owner's decision and the approved
+contract). One check for both ways, so a placement gives nothing a join
+could not, and a recheck as at a member's join's exchange, where
+`member_agents` turned `off` does not void what was handed out: the
+hub's reading (inferred), as the contract names the limits but not the
+policy switch.
+
+**Rejected alternatives:** a join line first, exchanged by hand, then a
+placement of the member: rejected by the owner's decision; the reason
+beyond "only the owner decides where their agent joins" is not
+recorded. A separate admit endpoint: rejected in the approved contract;
+why is not recorded, the hub's reading is that it would copy the join's
+checks a second time (inferred). Reusing `new_handle` with the profile's
+handle instead of a new column: its unique key per project would refuse
+the second placement of one profile, which the contract lets add an
+instance.

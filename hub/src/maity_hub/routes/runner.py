@@ -44,7 +44,7 @@ from maity_hub.errors import ApiError, invalid, not_found
 from maity_hub.ids import new_id
 from maity_hub.models import Strict
 from maity_hub.routes.events import FALLBACK_SECONDS, answer, parse_after, parse_limit
-from maity_hub.routes.joins import join_link
+from maity_hub.routes.joins import admission_holds, join_link
 from maity_hub.runners import (
     event_project_ids,
     listening_key,
@@ -691,8 +691,11 @@ def pick_up(
         project = conn.execute(
             select(t.project).where(t.project.c.id == placement.project_id)
         ).one()
-        if not allowed_projects.admits_membership(conn, placement.membership_id, project):
-            # a rejoin included: a member its owner unticked keeps its membership (§6.3)
+        if not allowed_projects.admits(
+            conn, allowed_projects.of_profile(conn, pl.agent_of(conn, placement)), project
+        ):
+            # a rejoin included: a member its owner unticked keeps its membership (§6.3);
+            # and a profile placed while not a member, whose list may have changed since
             raise _pickup_refused("project_not_allowed")
         j = t.join_link.c
         earlier = conn.execute(
@@ -760,8 +763,9 @@ def pick_up(
 def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]:
     """The join's agent, assignment and instance: for a member, a new instance within
     the team's `max_instances`, or for a rejoin one that replaces the instance of the
-    revoked credential (§6.17, §15.9); for a profile the exchange creates, its stored
-    fields (§3.1). Also what the credential will bind."""
+    revoked credential (§6.17, §15.9); for a profile the exchange creates, or one placed
+    while not a member, its stored fields (§3.1, §15.6). Also what the credential will
+    bind: the member id, else the handle."""
     if placement.membership_id is not None:
         member = conn.execute(
             select(t.membership).where(t.membership.c.id == placement.membership_id)
@@ -787,6 +791,17 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
             "new_instance": replaces is None,
             "replaces": replaces,
         }, str(member.agent_id)
+    profile = placement.new_profile or {}
+    # The subagent instruction as the placement took it (§3.1, §15.6); a placement stored
+    # before it took one has none.
+    told: dict[str, Any] = {
+        "subagents": bool(profile.get("subagents")),
+        "subagents_language": (
+            profile.get("subagents_language") if profile.get("subagents") else None
+        ),
+    }
+    if placement.agent_id is not None:
+        return _admission_fields(conn, placement, profile, told)
     taken = conn.execute(
         select(t.agent_profile.c.id).where(
             t.agent_profile.c.owner_id == placement.created_by,
@@ -797,7 +812,6 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
     if taken is not None or aliased not in (None, "placement"):
         # the exchange would refuse it: no code that can never work
         raise _pickup_refused("handle_taken")
-    profile = placement.new_profile or {}
     creator = SimpleNamespace(
         project_id=placement.project_id,
         created_by=placement.created_by,
@@ -817,17 +831,50 @@ def _join_fields(conn: Connection, placement: Any) -> tuple[dict[str, Any], str]
         "areas": profile.get("areas") or [],
         "capabilities": profile.get("capabilities") or [],
         "briefing": profile.get("briefing"),
+        **told,
     }, str(placement.new_handle)
+
+
+def _admission_fields(
+    conn: Connection, placement: Any, profile: dict[str, Any], told: dict[str, Any]
+) -> tuple[dict[str, Any], str]:
+    """A profile placed while it was not a member (§15.6): a first join with the stored
+    fields, neither `new_instance` nor `replaces` (§15.9), whose creator could still create
+    it now. A profile that is a member by now gets an instance at the exchange, within
+    `max_instances`: a pickup beyond it is refused here, as a member's is."""
+    fields = {
+        "agent_id": placement.agent_id,
+        "trust": profile.get("trust") or "member",
+        "role": profile.get("role") or "coder",
+        "reports_to": profile.get("reports_to"),
+        "areas": profile.get("areas") or [],
+        "capabilities": profile.get("capabilities") or [],
+        "briefing": profile.get("briefing"),
+        **told,
+        "new_instance": False,
+        "replaces": None,
+    }
+    stored = SimpleNamespace(
+        project_id=placement.project_id, created_by=placement.created_by, **fields
+    )
+    if not admission_holds(conn, stored):
+        raise _pickup_refused("creator_lacks_authority")
+    member = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == placement.project_id,
+            t.membership.c.agent_id == placement.agent_id,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
+    if member is not None:
+        instances.refuse_over_quota(conn, member)
+    handle: str = conn.execute(
+        select(t.agent_profile.c.handle).where(t.agent_profile.c.id == placement.agent_id)
+    ).scalar_one()
+    return fields, handle
 
 
 def _owner_audience(conn: Connection, placement: Any) -> list[str]:
     """`join_picked_up` goes to the agent profile's owner and `trust:owner` (§8.2). A
     profile the exchange will create is the placement creator's."""
-    owner = placement.created_by
-    if placement.membership_id is not None:
-        owner = conn.execute(
-            select(t.agent_profile.c.owner_id)
-            .join(t.membership, t.membership.c.agent_id == t.agent_profile.c.id)
-            .where(t.membership.c.id == placement.membership_id)
-        ).scalar_one()
-    return [f"member:{owner}", "trust:owner"]
+    return [f"member:{pl.profile_owner(conn, placement)}", "trust:owner"]

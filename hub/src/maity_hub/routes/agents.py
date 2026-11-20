@@ -21,6 +21,7 @@ from maity_hub import (
     limits,
     moderation,
     namespace,
+    placements,
     public_people,
     public_projects,
 )
@@ -363,6 +364,8 @@ def delete_profile(
         change = Change(project, actor_in(project.id), by, by, credential_id, via)
         target = conn.execute(select(t.membership).where(t.membership.c.id == member.id)).one()
         apply_remove(conn, change, target)
+    # Placements that would admit it where it is no member yet: no pickup makes one (§6.3).
+    placements.profile_deleted(conn, agent_id, actor_in, by)
     avatars.remove_upload(conn, agent_id)  # the generated one applies (§6.10)
     conn.execute(
         update(t.agent_profile)

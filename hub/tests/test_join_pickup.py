@@ -713,3 +713,181 @@ def test_the_hub_revoking_an_unused_pickup_names_nobody_and_tells_nobody(
         told = conn.execute(select(t.event.c.seq).where(t.event.c.kind == "join_revoked")).all()
     assert joins and all(j.revoked_at is not None and j.revoked_by is None for j in joins)
     assert told == []
+
+
+# --- a profile that is not a member yet (§15.6, §15.9) -------------------------------------
+
+
+def _own_profile(s: Setup, handle: str = "agent-own") -> str:
+    """A profile made on its own (`POST /agents`, §6.3): no membership anywhere."""
+    made = s.owner.post("/agents", {"handle": handle, "display_name": "Own agent"})
+    assert made.status_code == 201, made.text
+    agent_id: str = made.json()["id"]
+    return agent_id
+
+
+def _membership(s: Setup, agent_id: str) -> Any:
+    with s.engine.connect() as conn:
+        return conn.execute(
+            select(t.membership).where(
+                t.membership.c.agent_id == agent_id, t.membership.c.active.is_(True)
+            )
+        ).first()
+
+
+def test_a_profile_not_yet_a_member_joins_at_its_first_pickup(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §15.9: the pickup is a first join, neither new_instance nor replaces, bound to the
+    # handle; its exchange makes the membership with the stored join fields.
+    agent_id = _own_profile(setup)
+    placement = placed(
+        setup,
+        agent={"id": agent_id},
+        trust="guest",
+        role="reviewer",
+        briefing="You review the runner.",
+        subagents=True,
+    )
+    assert _membership(setup, agent_id) is None
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    assert picked.json()["credential_will_bind"] == "agent-own"
+    with setup.engine.connect() as conn:
+        join = conn.execute(
+            select(t.join_link).where(t.join_link.c.placement_id == placement["id"])
+        ).one()
+    assert (join.agent_id, join.new_instance, join.replaces) == (agent_id, False, None)
+    joined = exchange(make_client(), picked.json())
+    assert joined.status_code == 201, joined.text
+    assert joined.headers["Maity-Member-Id"] == agent_id
+    member = _membership(setup, agent_id)
+    assert (member.trust, member.role, member.briefing) == ("guest", "reviewer", join.briefing)
+    assert member.briefing == "You review the runner." and member.subagents is True
+    assert member.subagents_by == setup.owner.id
+    row = placement_row(setup, placement["id"])
+    assert row.membership_id == member.id
+    assert row.credential_id == joined.headers["Maity-Credential-Id"]
+
+
+def test_a_new_profiles_placement_takes_the_subagent_instruction(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    placement = placed(setup, agent={"handle": "agent-s", "display_name": "S"}, subagents=True)
+    joined = exchange(make_client(), pick_up(setup, placement).json())
+    assert joined.status_code == 201, joined.text
+    assert _membership(setup, joined.headers["Maity-Member-Id"]).subagents is True
+
+
+def test_a_profile_its_owner_no_longer_allows_here_is_not_picked_up(setup: Setup) -> None:
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    with setup.engine.begin() as conn:  # the owner unticked every project (§6.3)
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == agent_id)
+            .values(allowed_projects=[])
+        )
+    refused = pick_up(setup, placement)
+    assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+    assert refused.json()["error"]["details"] == {"why": "project_not_allowed"}
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+def test_a_profile_placed_while_not_a_member_follows_its_creators_standing(
+    setup: Setup, make_client: ClientFactory, when: str
+) -> None:
+    # §15.9: trust admin, placed by an owner who is only an admin by the pickup or the
+    # exchange: what the creator could no longer give in a first join.
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id}, trust="admin")
+    if when == "pickup":
+        _demote_owner(setup)
+        refused = pick_up(setup, placement)
+        assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+        assert refused.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+        return
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    _demote_owner(setup)
+    assert exchange(make_client(), picked.json()).status_code == 404
+    assert _membership(setup, agent_id) is None
+
+
+def test_a_profile_that_joined_by_a_line_meanwhile_gets_an_instance(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §15.9: a member by the exchange: the exchange adds an instance within max_instances,
+    # instance_quota beyond it, never not_found; the stored join fields change nothing.
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id}, role="reviewer")
+    picked = pick_up(setup, placement).json()
+    line = flow.exchange(make_client(), flow.join(setup.owner, "maity", agent={"id": agent_id}))
+    assert line.status_code == 201, line.text
+    over = exchange(make_client(), picked)
+    assert (over.status_code, error(over)) == (409, "instance_quota")
+    _allow_instances(setup.engine, agent_id, 2)
+    again = pick_up(setup, placement)
+    assert again.status_code == 201, again.text
+    joined = exchange(make_client(), again.json())
+    assert joined.status_code == 201, joined.text
+    assert joined.headers["Maity-Instance"] != line.headers["Maity-Instance"]
+    member = _membership(setup, agent_id)
+    assert member.role == "coder"  # the line's, not the placement's
+    assert placement_row(setup, placement["id"]).membership_id == member.id
+
+
+def test_of_two_placements_of_a_profile_the_second_adds_an_instance(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    agent_id = _own_profile(setup)
+    first = placed(setup, agent={"id": agent_id})
+    second = placed(setup, agent={"id": agent_id})
+    picked = [pick_up(setup, p).json() for p in (first, second)]
+    assert exchange(make_client(), picked[0]).status_code == 201
+    over = exchange(make_client(), picked[1])
+    assert (over.status_code, error(over)) == (409, "instance_quota")
+    _allow_instances(setup.engine, agent_id, 2)
+    joined = exchange(make_client(), pick_up(setup, second).json())
+    assert joined.status_code == 201, joined.text
+    with setup.engine.connect() as conn:
+        members = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.agent_id == agent_id)
+        ).all()
+    assert len(members) == 1
+
+
+def test_removing_the_membership_closes_the_placements_still_without_a_credential(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §6.2: a removal is not undone by a placement still waiting for its pickup.
+    agent_id = _own_profile(setup)
+    first = placed(setup, agent={"id": agent_id})
+    waiting = placed(setup, agent={"id": agent_id})
+    assert exchange(make_client(), pick_up(setup, first).json()).status_code == 201
+    _allow_instances(setup.engine, agent_id, 2)
+    picked = pick_up(setup, waiting).json()
+    removed = setup.owner.delete(f"/projects/maintainer/maity/members/{agent_id}")
+    assert removed.status_code == 200, removed.text
+    row = placement_row(setup, waiting["id"])
+    assert (row.active, row.closed_reason) == (None, "membership_removed")
+    assert exchange(make_client(), picked).status_code == 404
+    later = pick_up(setup, waiting)
+    assert (later.status_code, error(later)) == (409, "pickup_not_allowed")
+    assert later.json()["error"]["details"] == {"why": "not_running"}
+    assert _membership(setup, agent_id) is None
+
+
+def test_a_deleted_profiles_waiting_placement_closes(setup: Setup) -> None:
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    deleted = setup.owner.client.delete(
+        f"/api/v1/agents/{agent_id}", headers={"X-CSRF-Token": setup.owner.csrf}
+    )
+    assert deleted.status_code == 200, deleted.text
+    row = placement_row(setup, placement["id"])
+    assert (row.active, row.closed_reason) == (None, "removed")
+    later = pick_up(setup, placement)
+    assert (later.status_code, error(later)) == (409, "pickup_not_allowed")

@@ -1166,6 +1166,40 @@ def test_the_per_instance_placement_downgrade_refuses_while_a_membership_holds_t
         ).scalars().all() == [first["id"]]
 
 
+def test_the_placement_agent_id_downgrade_refuses_while_a_placement_names_only_it(
+    make_client: Any, migrated: Engine
+) -> None:
+    """20261120205253 down (§15.6): the old check needs a membership or a new handle, so the
+    downgrade refuses while a placement admits a profile by `agent_id` alone."""
+    from sqlalchemy import delete
+
+    from maity_hub import tables as t
+    from tests import flow
+    from tests.test_placements import REPOSITORY, Setup, placed
+    from tests.test_runner_stream import attach, hello
+    from tests.test_runners import paired
+
+    revision = "20261120205253_plc_agent_id"
+    owner = flow.human(make_client, migrated)
+    flow.project(owner, repository={"url": REPOSITORY})
+    runner = paired(make_client, owner)
+    attach(owner, runner)
+    client = make_client()
+    assert hello(client, runner).status_code == 200
+    agent = flow.agent(make_client, owner, role="member")
+    s = Setup(owner, runner, client, agent, migrated)
+    own = owner.post("/agents", {"handle": "agent-own", "display_name": "Own"}).json()["id"]
+    admitting = placed(s, agent={"id": own})
+    with pytest.raises(RuntimeError, match="agent_id alone"):
+        downgrade(migrated, _before(migrated, revision))
+    with migrated.begin() as conn:
+        conn.execute(delete(t.placement).where(t.placement.c.id == admitting["id"]))
+    downgrade(migrated, _before(migrated, revision))
+    assert current_revision(migrated) == _before(migrated, revision)
+    migrate(migrated)
+    assert current_revision(migrated) == head_revision(migrated)
+
+
 def test_profiles_public_switches_every_account_on_and_indexes_every_page(engine: Engine) -> None:
     """20261102110000 up: every account's `public_profile` is on (§16.9, tsk-my5gvj4warte), a
     new account defaults to on, and every stored page is `indexed` until it renders again. It
