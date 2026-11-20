@@ -239,6 +239,11 @@ class Session:
                 self.data["hub"] = hub.hub_base(hub_url)
         stored = self.data.get("hub")
         if not isinstance(stored, str):
+            if clonecheck.placed():  # --hub names only the clone's hub here (PLACED_NO_HUB)
+                raise state.StateError(
+                    "this placed clone holds a credential but no hub URL: ask the runner's "
+                    "owner to restart the placement; the runner joins it again"
+                )
             raise state.StateError(
                 "this clone holds a credential but no hub URL; run `maity resume --hub <url>`"
             )
@@ -486,11 +491,13 @@ def cmd_join(args: argparse.Namespace) -> int:
     derived = False
     try:
         directory = state.resolve_state_dir()
-    except state.NotInClone as outside:  # before a join, outside a clone: a directory of its own
+    except (state.NotInClone, state.NoGit) as outside:
+        # Before a join, outside a clone or without git (unplaced, as checked above): a
+        # directory of the agent's own, as before.
         directory = _identity_dir(url, target, outside)
         derived = True
     except state.StateError as exc:
-        # Not "outside a clone": a clone whose state directory cannot be named fails closed.
+        # A runner's clone it cannot place: the state directory cannot be named, fails closed.
         raise LocalRefusal(
             f"this clone's state directory cannot be named: {exc}. Nothing was sent; the join "
             "code still works"

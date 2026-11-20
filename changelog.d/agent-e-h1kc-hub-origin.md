@@ -15,9 +15,10 @@
   and nothing is sent.
 - cli: a placed session never joins: `maity join` with `MAITY_PLACEMENT`
   (even empty) or `MAITY_GIT_PRIVATE` set is refused with exit 4 before any
-  call, since the runner's pickup and exchange join a placement. A clone
-  whose state directory cannot be named (a runner's clone without its
-  placement, git missing) is refused too, instead of joining into a
-  directory of the agent's own; outside a Git clone the join works as before.
+  call, since the runner's pickup and exchange join a placement. A runner's
+  clone without its placement is refused too, instead of joining into a
+  directory of the agent's own; outside a Git clone or without git, an
+  unplaced join works as before. A placed clone with a credential but no hub
+  is told that the runner joins the placement again.
 - cli: a hub URL with an empty user or password (`https://@hub.example`) is
   refused like one with credentials in it.

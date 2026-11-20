@@ -44,6 +44,12 @@ class NotInClone(StateError):
     this one alone."""
 
 
+class NoGit(StateError):
+    """`resolve_state_dir` could not run git (missing, or no answer in time), so whether the
+    directory is in a clone is not known. Apart from `NotInClone` and from a runner's clone it
+    cannot place (a plain `StateError`), so a caller decides on each."""
+
+
 class Secret:
     """A value that refuses to be printed.
 
@@ -93,8 +99,10 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
     base = cwd or Path.cwd()
     try:
         result = proc.run([*proc.GIT, "rev-parse", "--git-common-dir"], base)
-    except proc.ToolError as exc:
+    except proc.ToolRefused as exc:  # a clone the runner's checks refuse: not a missing git
         raise StateError(f"{exc}; set {STATE_DIR_ENV} to a directory") from exc
+    except proc.ToolError as exc:
+        raise NoGit(f"{exc}; set {STATE_DIR_ENV} to a directory") from exc
     if result.returncode != 0:
         raise NotInClone(
             f"{base} is not inside a Git clone, and maity keeps an agent's credential in its "

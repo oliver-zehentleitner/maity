@@ -1007,28 +1007,51 @@ def test_a_join_with_a_placement_variable_set_is_refused(
     assert fake.seen == []  # nothing sent
 
 
-@pytest.mark.parametrize("case", ["marked, placement unset", "no git"])
-def test_a_join_where_the_state_directory_cannot_be_named_is_refused(
-    clone: Path,
-    fake: fakehub.FakeHub,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    case: str,
+def test_a_join_in_a_runners_clone_without_its_placement_is_refused(
+    clone: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Unplaced, only "not inside a Git clone" leads to a directory of the agent's own; a
-    runner's clone without its placement, or git missing, is refused before the join page is
-    fetched."""
-    if case == "marked, placement unset":  # clonecheck.Refused
-        (clone / ".git" / "maity").mkdir(mode=0o700)
-        (clone / ".git" / "maity" / "placement").write_text("plc-0003\n")
-    else:  # proc.ToolError
-        (tmp_path / "no-git").mkdir()
-        monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
+    """Unplaced, a clone holding the runner's marker (clonecheck.Refused) gets no directory of
+    the agent's own: refused before the join page is fetched."""
+    (clone / ".git" / "maity").mkdir(mode=0o700)
+    (clone / ".git" / "maity" / "placement").write_text("plc-0003\n")
     assert cli.main(_join_line(fake)) == cli.EXIT_REFUSED
     assert "state directory cannot be named" in capsys.readouterr().err
     assert not (clone / ".git" / "maity" / "credential").exists()
     assert fake.seen == []  # nothing sent
+
+
+def test_an_unplaced_join_without_git_derives_the_identity_directory(
+    no_clone: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Outside a placement, git missing (`state.NoGit`) joins into a directory of the agent's
+    own, as without a clone."""
+    (tmp_path / "no-git").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
+    with pytest.raises(state.NoGit):
+        state.resolve_state_dir()
+    line = [*_join_line(fake), "--no-resume"]
+    assert cli.main(line) == cli.EXIT_OK, output(capsys)
+    host = state.host_dir(fake.url.removeprefix("http://"))
+    directory = no_clone / ".local" / "state" / "maity" / host / "agent-b"
+    assert state.credential_path(directory).read_bytes() == fakehub.CREDENTIAL.encode()
+    assert ("POST", f"/api/v1/join/{fakehub.TOKEN}") in [(s.method, s.path) for s in fake.seen]
+
+
+def test_a_placed_clone_without_a_hub_is_told_the_runner_joins_it(
+    placed: Path, joined: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Under a placement `resume --hub` names no hub of its own, so the hint is the runner's
+    join, not `resume --hub`."""
+    data = state.load_state(joined)
+    del data["hub"]
+    state.save_state(joined, data)
+    assert cli.main(["messages"]) != cli.EXIT_OK
+    err = capsys.readouterr().err
+    assert "the runner joins it again" in err and "resume --hub" not in err
 
 
 def test_a_redirect_is_refused_not_followed(
