@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from conftest import OPENCODE_23_RUN, OPENCODE_23_TUI, opencode_23_flags
 
 from maity import __version__, clonecheck
 from maity.runner import adapters, config, loop, scratch, scratchop, supervisor
@@ -803,16 +804,24 @@ OPENCODE_HARNESS = config.Harness(
 )  # fmt: skip
 
 
+def flags(argv: list[str]) -> set[str]:
+    return {word for word in argv if word.startswith("-")}
+
+
 def test_opencode_launch(tmp_path: Path) -> None:
-    # No model on the placement: the harness default (xai/grok-4.7) reaches opencode as
-    # `--model`, not opencode's own free default.
+    # No model on the placement: the harness default (xai/grok-4.7) reaches opencode, not
+    # opencode's own free default. OpenCode 2.3's TUI has no `--model` and exits on it
+    # (tsk-daa6e0gfncg0), so the interactive start names the model in its opencode.json.
     ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
                   placement={**PLACEMENT, "mode": "interactive", "model": None})  # fmt: skip
     launch = adapters.launch(ctx)
     assert launch.env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
-    assert launch.argv == ["/usr/bin/opencode", str(ctx.clone), "--model", "xai/grok-4.7",
-                           "--prompt", adapters.START_PROMPT]  # fmt: skip
+    assert launch.argv == ["/usr/bin/opencode", str(ctx.clone), "--prompt",
+                           adapters.START_PROMPT]  # fmt: skip
+    assert "--model" not in launch.argv and "-m" not in launch.argv
+    assert flags(launch.argv) <= opencode_23_flags(OPENCODE_23_TUI)
     settings = json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())
+    assert settings["model"] == "xai/grok-4.7"
     rules = settings["permission"]
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
@@ -832,34 +841,74 @@ def test_opencode_launch(tmp_path: Path) -> None:
 
 def test_opencode_supervised(tmp_path: Path) -> None:
     # A model-less supervised placement carries the harness default in both the first run and
-    # the continuation: interactive and supervised share `chosen`.
+    # the continuation: `opencode run` takes `--model` on 2.3, and the configuration names the
+    # same model.
     ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
                   placement={**PLACEMENT, "mode": "supervised", "model": None})  # fmt: skip
-    spec = json.loads(Path(adapters.launch(ctx).argv[-1]).read_text())
+    launch = adapters.launch(ctx)
+    spec = json.loads(Path(launch.argv[-1]).read_text())
     assert spec["first"][:4] == ["/usr/bin/opencode", "run", "--dir", str(ctx.clone)]
     assert "--continue" in spec["again"] and "--continue" not in spec["first"]
     assert spec["first"][4:6] == ["--model", "xai/grok-4.7"]
     assert spec["again"][4:6] == ["--model", "xai/grok-4.7"]
+    run = opencode_23_flags(OPENCODE_23_RUN)
+    assert flags(spec["first"]) <= run and flags(spec["again"]) <= run
+    assert json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())["model"] == "xai/grok-4.7"
 
 
-def test_opencode_refuses_a_model_that_is_not_configured(tmp_path: Path) -> None:
-    # Fail closed: a placement model outside the harness's `models` (here opencode's own free
-    # default) would send the conversation to opencode's servers, so the start is refused
-    # instead of carried as `--model`.
+def test_opencode_placement_model_reaches_both_launch_forms(tmp_path: Path) -> None:
+    # A placement's own model (one of `models`) wins over the default in either form.
+    for mode in ("interactive", "supervised"):
+        ctx = context(tmp_path / mode, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
+                      placement={**PLACEMENT, "mode": mode, "model": "opus"})  # fmt: skip
+        launch = adapters.launch(ctx)
+        assert json.loads(Path(launch.env["OPENCODE_CONFIG"]).read_text())["model"] == "opus"
+        if mode == "supervised":
+            spec = json.loads(Path(launch.argv[-1]).read_text())
+            assert spec["first"][4:6] == ["--model", "opus"]
+
+
+def test_the_check_probes_every_flag_the_opencode_launch_passes(tmp_path: Path) -> None:
+    # `maity runner check` reads `--help` for capabilities.OPENCODE_FLAGS: a flag the adapter
+    # passes but the probe does not look for would let the next tsk-daa6e0gfncg0 through.
+    from maity.runner import capabilities
+
+    for mode in ("interactive", "supervised"):
+        ctx = context(tmp_path / mode, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
+                      placement={**PLACEMENT, "mode": mode, "model": None})  # fmt: skip
+        argv = adapters.launch(ctx).argv
+        if mode == "supervised":
+            spec = json.loads(Path(argv[-1]).read_text())
+            argv = [*spec["first"], *spec["again"]]
+        command, probed = capabilities.OPENCODE_FLAGS[mode]
+        assert argv[1 : 1 + len(command)] == list(command)
+        assert flags(argv) <= set(probed), mode
+
+
+@pytest.mark.parametrize("mode", ["interactive", "supervised"])
+def test_opencode_refuses_a_model_that_is_not_configured(tmp_path: Path, mode: str) -> None:
+    # Fail closed in both forms: a placement model outside the harness's `models` (here
+    # opencode's own free default) would send the conversation to opencode's servers, so the
+    # start is refused, before an opencode.json naming it is written.
     ctx = context(tmp_path, harness=OPENCODE_HARNESS, binary="/usr/bin/opencode",
-                  placement={**PLACEMENT, "model": "opencode/hy4-flash-free"})  # fmt: skip
+                  placement={**PLACEMENT, "mode": mode,
+                             "model": "opencode/hy4-flash-free"})  # fmt: skip
     with pytest.raises(adapters.NotYet):
         adapters.launch(ctx)
+    assert not (ctx.agent_dir / "opencode.json").exists()
 
 
-def test_opencode_refuses_when_no_model_can_be_resolved(tmp_path: Path) -> None:
+@pytest.mark.parametrize("mode", ["interactive", "supervised"])
+def test_opencode_refuses_when_no_model_can_be_resolved(tmp_path: Path, mode: str) -> None:
     # No placement model and no harness default (a harness configured without `models`): nothing
-    # safe to pass, so the start is refused rather than left to opencode's free default.
+    # safe to pass, so the start is refused rather than left to opencode's free default, in
+    # both forms; no opencode.json without a `model` is left for a later start either.
     harness = config.Harness("opencode", ("interactive", "supervised"), "interactive")
     ctx = context(tmp_path, harness=harness, binary="/usr/bin/opencode",
-                  placement={**PLACEMENT, "model": None})  # fmt: skip
+                  placement={**PLACEMENT, "mode": mode, "model": None})  # fmt: skip
     with pytest.raises(adapters.NotYet):
         adapters.launch(ctx)
+    assert not (ctx.agent_dir / "opencode.json").exists()
 
 
 def test_codex_is_advertised_as_sandbox_confined(monkeypatch: pytest.MonkeyPatch) -> None:

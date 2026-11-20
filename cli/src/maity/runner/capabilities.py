@@ -332,6 +332,44 @@ def agy_namespaces(path: str, as_user: AsUser = RUNNER) -> bool:
     return done.returncode == 0
 
 
+# The flags the opencode adapter passes (adapters._opencode), by the command that must take
+# them: the TUI (no subcommand) for an interactive placement, `run` for a supervised one.
+# OpenCode 2.3 dropped `--model` from the TUI, and every interactive start exited on it
+# (tsk-daa6e0gfncg0); `maity runner check` reads each command's `--help` for these, so the next
+# such change shows before a start (cli/context/runner.md, the opencode model fail-closed).
+OPENCODE_FLAGS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    "interactive": ((), ("--prompt",)),
+    "supervised": (("run",), ("--dir", "--model", "--continue")),
+}
+
+
+def opencode_missing_flags(
+    binary: str, path: str, modes: tuple[str, ...], as_user: AsUser = RUNNER
+) -> dict[str, tuple[str, ...] | None]:
+    """A diagnostic for `maity runner check`: per mode of `modes`, the OPENCODE_FLAGS its
+    command's `--help` does not name, as the agents' user; None where the help could not be
+    read (a failed or timed-out call). It starts no session and needs no sign-in."""
+    missing: dict[str, tuple[str, ...] | None] = {}
+    for mode in modes:
+        if mode not in OPENCODE_FLAGS:
+            continue
+        command, flags = OPENCODE_FLAGS[mode]
+        try:
+            done = as_user.run([binary, *command, "--help"], env={"PATH": path, "LC_ALL": "C"},
+                               timeout=VERSION_TIMEOUT)  # fmt: skip
+        except (subprocess.TimeoutExpired, OSError):
+            missing[mode] = None
+            continue
+        text = f"{done.stdout or ''}\n{done.stderr or ''}"
+        if done.returncode != 0 or not text.strip():
+            missing[mode] = None
+            continue
+        missing[mode] = tuple(
+            flag for flag in flags if not re.search(rf"(?<![\w-]){re.escape(flag)}(?![\w-])", text)
+        )
+    return missing
+
+
 # Claude Code's Linux sandbox runs each command under bubblewrap in a user namespace, and its
 # seccomp step (`apply-seccomp`) opens a second user namespace inside that one and maps the user
 # there. Ubuntu (seen on 26.04) ships the AppArmor profile `bwrap-userns-restrict`, which denies

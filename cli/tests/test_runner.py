@@ -10,6 +10,7 @@ from pathlib import Path
 
 import fakehub
 import pytest
+from conftest import fake_opencode
 
 from maity import cli, state
 from maity.runner import adapters, commands, config
@@ -535,7 +536,7 @@ def test_check_finds_opencode_and_its_version(
     # on, so nothing refuses it here.
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "opencode", "0.5.3")
+    fake_opencode(bin_dir / "opencode", "0.5.3")
     paired.write_text(paired.read_text() + '\n[harness.opencode]\nmodels = ["xai/grok"]\n')
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
@@ -554,7 +555,7 @@ def test_check_warns_opencode_is_unsandboxed_under_single_layout(
     # backend.local.layout at its "single" default.
     fake_tool(bin_dir, "tmux")
     fake_tool(bin_dir, "maity")
-    fake_tool(bin_dir, "opencode", "0.5.3")
+    fake_opencode(bin_dir / "opencode", "0.5.3")
     paired.write_text(paired.read_text() + '\n[harness.opencode]\nmodels = ["xai/grok"]\n')
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
@@ -582,7 +583,7 @@ def test_check_refuses_opencode_when_a_sandbox_is_required(
     # claude-code and antigravity (capabilities.sandbox_refused), `require_sandbox = true` under
     # [harness.opencode] turns the residual-risk warning into an error (exit 1); without it the
     # local check through `_check_harness` only warns.
-    fake_tool(bin_dir, "opencode", "0.5.3")
+    fake_opencode(bin_dir / "opencode", "0.5.3")
     cfg = parse(minimal(h=f'[harness.opencode]\nmodels = ["xai/grok"]{extra}\n'))
     report = commands.Report()
     commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="single")
@@ -598,7 +599,7 @@ def test_check_warns_opencode_generically_under_the_agent_user_layout(bin_dir: P
     # The local check threads backend.local.layout into `_check_opencode`. Under agent_user the
     # warning takes the generic wording ("as the agents' user"), not single's "the runner's own
     # user": this fails if the call site hard-codes the layout to "single".
-    fake_tool(bin_dir, "opencode", "0.5.3")
+    fake_opencode(bin_dir / "opencode", "0.5.3")
     cfg = parse(minimal(h='[harness.opencode]\nmodels = ["xai/grok"]\n'))
     report = commands.Report()
     commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="agent_user")
@@ -606,6 +607,63 @@ def test_check_warns_opencode_generically_under_the_agent_user_layout(bin_dir: P
     assert len(warning) == 1, report.lines
     assert "an agent can run any command as the agents' user" in warning[0]
     assert "under layout single" not in warning[0]
+
+
+BOTH_MODES = 'modes = ["interactive", "supervised"]\nmodels = ["xai/grok"]\n'
+
+
+def test_check_finds_the_flags_both_opencode_starts_pass(bin_dir: Path) -> None:
+    # OpenCode 2.3: the TUI takes `--prompt`, `opencode run` takes `--dir`, `--model` and
+    # `--continue`, so both modes' starts pass (tsk-daa6e0gfncg0).
+    fake_opencode(bin_dir / "opencode")
+    cfg = parse(minimal(h=f"[harness.opencode]\n{BOTH_MODES}"))
+    report = commands.Report()
+    commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="agent_user")
+    ok = [t for level, t in report.lines if level == "ok" and "start's flags" in t]
+    assert len(ok) == 2, report.lines
+    assert any("`opencode` takes the interactive" in t for t in ok), ok
+    assert any("`opencode run` takes the supervised" in t for t in ok), ok
+    assert not report.failed, report.lines
+
+
+def test_check_refuses_an_opencode_whose_command_lacks_a_flag_the_start_passes(
+    bin_dir: Path,
+) -> None:
+    # The class of tsk-daa6e0gfncg0: an opencode whose `run` no longer names `--model` (as its
+    # 2.3 TUI dropped it) would exit on every supervised start, so `check` says so before one.
+    fake_opencode(bin_dir / "opencode", run=("--dir", "-c, --continue"))
+    cfg = parse(minimal(h='[harness.opencode]\nmodels = ["xai/grok"]\n'))
+    report = commands.Report()
+    commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="agent_user")
+    errors = [t for level, t in report.lines if level == "error"]
+    assert len(errors) == 1, report.lines
+    assert "`opencode run --help` does not name --model" in errors[0]
+    assert "supervised start" in errors[0] and "tsk-daa6e0gfncg0" in errors[0]
+    assert report.failed
+
+
+def test_check_probes_only_the_configured_opencode_modes(bin_dir: Path) -> None:
+    # A supervised-only harness (the default modes) never starts the TUI: a TUI without
+    # `--prompt` is no error.
+    fake_opencode(bin_dir / "opencode", tui=("--standalone",))
+    cfg = parse(minimal(h='[harness.opencode]\nmodes = ["supervised"]\nmodels = ["xai/grok"]\n'))
+    report = commands.Report()
+    commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="agent_user")
+    assert not report.failed, report.lines
+    assert not any("interactive start" in t for _, t in report.lines), report.lines
+
+
+def test_check_warns_when_opencode_help_cannot_be_read(bin_dir: Path) -> None:
+    # A `--help` that fails says nothing about the flags: a warning, not an error.
+    script = bin_dir / "opencode"
+    script.write_text('#!/bin/sh\n[ "$1" = --version ] && echo 2.3.0 || exit 3\n')
+    script.chmod(0o755)
+    cfg = parse(minimal(h=f"[harness.opencode]\n{BOTH_MODES}"))
+    report = commands.Report()
+    commands._check_harness(report, cfg.harnesses["opencode"], str(bin_dir), layout="agent_user")
+    warned = [t for level, t in report.lines if level == "warn" and "could not be read" in t]
+    assert len(warned) == 2, report.lines
+    assert not report.failed, report.lines
 
 
 def test_check_warns_about_inherited_claude_settings(

@@ -76,6 +76,44 @@ def fake_maity(bin_dir: Path) -> None:
     path.chmod(0o755)
 
 
+# OpenCode 2.3.0's flags, as ops read them on the host (note nte-22jpstv7c7x5 on
+# tsk-kf2kp09d6qew, card tsk-daa6e0gfncg0): the TUI (no subcommand) takes a directory and
+# these, no `--model`; `opencode run` takes `--model/-m`. Its `--dir` and `--continue` are the
+# ones the supervised start already passed and ran with on 2.3 ("supervised is unaffected").
+OPENCODE_23_TUI = ("--standalone", "--server", "--auto", "-c, --continue", "-s, --session",
+                   "--prompt")  # fmt: skip
+OPENCODE_23_RUN = ("-m, --model", "--dir", "-c, --continue")
+
+
+def opencode_23_flags(listed: tuple[str, ...]) -> set[str]:
+    """The flags of OPENCODE_23_TUI or OPENCODE_23_RUN, one word each."""
+    return {flag for entry in listed for flag in entry.split(", ")}
+
+
+def fake_opencode(
+    path: Path,
+    version: str = "2.3.0",
+    tui: tuple[str, ...] = OPENCODE_23_TUI,
+    run: tuple[str, ...] = OPENCODE_23_RUN,
+) -> None:
+    """An opencode that prints `version`, and for `--help` and `run --help` the flags given;
+    anything else fails, as 2.3's root command does on a flag it does not know."""
+    path.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        f"  --version) echo '{version}' ;;\n"
+        "  --help) echo 'opencode [project]'\n"
+        + "".join(f"    echo '  {flag}'\n" for flag in tui)
+        + "    ;;\n"
+        "  'run --help') echo 'opencode run [message..]'\n"
+        + "".join(f"    echo '  {flag}'\n" for flag in run)
+        + "    ;;\n"
+        "  *) echo 'ERROR  Unrecognized flag' >&2; exit 1 ;;\n"
+        "esac\n"
+    )
+    path.chmod(0o755)
+
+
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """No test sees the developer's git config or a MAITY_STATE_DIR from the shell, and none
