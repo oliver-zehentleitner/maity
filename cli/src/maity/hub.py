@@ -41,6 +41,7 @@ class HubError(Exception):
         self.status = status
         self.details: dict[str, Any] = {}
         self.retry_after: float | None = None  # seconds, from a 429's or 503's Retry-After
+        self.unreached = False  # no answer came through: set by `unreached` alone
 
 
 # `MAITY_ERROR_LINE=<nonce>`: a command that fails and handles it itself ends its stderr with
@@ -55,11 +56,11 @@ ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")  # fullmatch only: `$` would ta
 
 def error_code(exc: HubError) -> str | None:
     """What a machine line says for a refusal: the hub's code and, for `forbidden`, its
-    `details.reason`; `network` when the hub was not reached; None when neither holds. A
-    `code` that is no string (a proxy's `{"error": {"code": 409}}`) holds no code either."""
+    `details.reason`; `network` when no answer came through (`unreached`: the hub not
+    reached, or its answer broken off); None when neither holds. A `code` that is no string
+    (a proxy's `{"error": {"code": 409}}`) holds no code either."""
     if exc.code is None:
-        unreached = exc.status is None and str(exc).startswith("cannot reach ")
-        return "network" if unreached else None
+        return "network" if exc.unreached else None
     if not isinstance(exc.code, str) or not ERROR_CODE.fullmatch(exc.code):
         return None
     reason = exc.details.get("reason")
@@ -275,9 +276,9 @@ def _parent(host: str) -> str | None:
     return parent if "." in parent else None
 
 
-def segment(value: str) -> str:
-    """One path segment, percent-encoded the way the canonical string expects it."""
-    return urllib.parse.quote(value, safe="-_.~")
+# One path segment, percent-encoded the way the canonical string expects it: the one encoder
+# the query's canonical form uses too.
+segment = sign.encode
 
 
 def _error_from(exc: urllib.error.HTTPError, what: str) -> HubError:
@@ -416,18 +417,25 @@ def get_text(url: str, timeout: float = 30.0) -> str:
             return body.decode(charset, errors="replace")
     except urllib.error.HTTPError as exc:
         raise _error_from(exc, safe_url(url)) from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        reason = getattr(exc, "reason", exc)
-        raise HubError(f"cannot reach {safe_url(url)}: {reason}") from exc
-    except http.client.HTTPException as exc:
-        raise broke_off(safe_url(url), exc) from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise unreached(safe_url(url), exc) from exc
 
 
-def broke_off(where: str, exc: http.client.HTTPException) -> HubError:
-    """An answer that broke off (a status line, headers or a body cut short: BadStatusLine,
-    IncompleteRead, RemoteDisconnected): a lost connection like any other, with no status
-    and no code, so `wait` retries it and every other command fails once with this line."""
-    return HubError(f"{where} broke off its answer ({onboarding.inline(type(exc).__name__)})")
+def unreached(where: str, exc: OSError | http.client.HTTPException) -> HubError:
+    """No answer came through, at each of the three places a connection is opened
+    (`get_text`, `_exchange`, `Client._send`; an `HTTPError` is an answer and never comes
+    here). An `OSError` (`URLError`, a timeout, a refused or reset connection, an SSL EOF,
+    and `RemoteDisconnected`, which is both) is "cannot reach"; any other `HTTPException` is
+    an answer that broke off (a status line, headers or a body cut short: BadStatusLine,
+    IncompleteRead), a lost connection like any other. Either has no status and no code, so
+    `wait` retries it and every other command fails once with this line, and `unreached` is
+    set, so the machine line says `network` for both (`error_code`)."""
+    if isinstance(exc, OSError):
+        err = HubError(f"cannot reach {where}: {getattr(exc, 'reason', exc)}")
+    else:
+        err = HubError(f"{where} broke off its answer ({onboarding.inline(type(exc).__name__)})")
+    err.unreached = True
+    return err
 
 
 @dataclass(frozen=True)
@@ -456,10 +464,8 @@ def _exchange(
             facts: Message = response.headers
     except urllib.error.HTTPError as exc:
         raise _error_from(exc, what) from exc
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise HubError(f"cannot reach {safe_url(url)}: {getattr(exc, 'reason', exc)}") from exc
-    except http.client.HTTPException as exc:
-        raise broke_off(safe_url(url), exc) from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise unreached(safe_url(url), exc) from exc
     value = raw.decode("utf-8", errors="replace").strip()
     if not sign.is_credential(value):
         raise HubError(f"the {what} exchange answered with something that is not a credential")
@@ -689,10 +695,8 @@ class Client:
                     if limit > 0:
                         continue
                 raise err from exc
-            except (urllib.error.URLError, TimeoutError, OSError) as exc:
-                raise HubError(f"cannot reach {self.base}: {getattr(exc, 'reason', exc)}") from exc
-            except http.client.HTTPException as exc:
-                raise broke_off(self.base, exc) from exc
+            except (OSError, http.client.HTTPException) as exc:
+                raise unreached(self.base, exc) from exc
         raise AssertionError("unreachable")
 
 

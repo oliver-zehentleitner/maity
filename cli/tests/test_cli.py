@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import stat
@@ -286,7 +287,11 @@ def test_the_error_line_comes_only_on_request_and_from_the_code_fields(
     err = hub.HubError("join: x: reason: dummysecret", code="Bad Code")
     assert hub.error_code(err) is None
     assert hub.error_code(hub.HubError("x", code="instance_quota\n", status=409)) is None
-    assert hub.error_code(hub.HubError("cannot reach https://h: down")) == "network"
+    # `network` is the `unreached` flag, for a hub not reached and an answer that broke off
+    # alike; a message's wording decides nothing (tsk-b6083ktng3dw).
+    assert hub.error_code(hub.unreached("https://h", ConnectionRefusedError("down"))) == "network"
+    assert hub.error_code(hub.unreached("https://h", http.client.IncompleteRead(b"{"))) == "network"
+    assert hub.error_code(hub.HubError("cannot reach https://h: down")) is None
     assert hub.error_code(hub.HubError("not a hub URL: x")) is None
 
 
