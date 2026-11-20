@@ -496,17 +496,25 @@ empty leftover directory is harmless; removing someone else's is not.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** lead's card tsk-h1kcv3bd82gg, 2026-11-20
+**Source:** lead's card tsk-h1kcv3bd82gg, 2026-11-20; review of PR #2065, 2026-11-20
 
 On a clone whose `state.json` already names a hub, `--hub` (on `maity resume` and on
 `maity help`) passes only for that hub's origin, and the stored URL stays as it is. Origin
 means scheme, host and port, compared after the normalisation `hub_base` and the host
 comparison of the exchange already use (lowercase, IDNA, one trailing dot dropped) with the
 scheme's default port filled in, so `https://Hub.example:443/` and `https://hub.example` are
-one origin; the path is not compared, as `hub_base` drops it. Another origin is refused with
-exit 4 before anything is written or sent, and the message names the stored hub's origin and
-says that a new join is the way to change it. A first `resume --hub` after the page-driven
-join, where the credential exists but no state names a hub yet, stores the hub as before.
+one origin; the path is not compared, as `hub_base` drops it. An IP literal is compared in
+its canonical spelling (`[2001:0DB8:0:0:0:0:0:1]` is `[2001:db8::1]`), checked before the
+trailing dot is dropped, so `127.0.0.1.` stays a name and not that address; only the
+comparison uses that spelling, the stored URL is never rewritten. `help --hub` treats only
+"not inside a Git clone" as before a join: when the state directory cannot be named for any
+other reason (a runner's clone it cannot place, git missing) it fails closed with exit 4 and
+fetches nothing, since that clone may hold a state that names a hub. Another origin is
+refused with exit 4 before anything is written or sent, and the message names the stored
+hub's origin and the given one, each printed the same way (an IPv6 host in brackets, the port
+only when it is not the default), and says that a new join is the way to change it. A first
+`resume --hub` after the page-driven join, where the credential exists but no state names a
+hub yet, stores the hub as before.
 `maity join` is unchanged: it refuses while the clone holds a credential, and a new join
 writes a new state with the hub its exchange accepted.
 
