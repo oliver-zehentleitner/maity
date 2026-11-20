@@ -14242,7 +14242,10 @@ the reviewer naming them:
    not of another owner than the author. A boss of another owner is
    left out of both additions. A `to` or a mention can still put that
    boss in the audience. `session_paused` is the one event the edge
-   itself routes across owners (§6.2).
+   itself routes across owners (§6.2). A human sender's or author's
+   own `reports_to` is never of another owner (§6.2, "Across owners"),
+   so it is added whoever owns that boss: the human chose that edge
+   themselves.
 
 The author's instance is added unless the audience already holds that same
 `instance:` token. A lead is added once, whatever parts it fills, and not at

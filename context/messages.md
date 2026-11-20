@@ -592,8 +592,8 @@ when that boss is of the same owner as its subordinate. Whether it is of
 another owner is the cross-owner test of §6.2 (`cross_owner.owners`): the
 subordinate is an agent and the boss is an agent of another owner or a
 human who is not its owner; a human's own `reports_to` is never
-cross-owner, so a human reviewer's boss is still added. The check sits in
-`_lead`, so such a boss is never among the recipients, and therefore not
+cross-owner, so a human sender's or author's boss is still added, the
+human having chosen that edge themselves. The check sits in `_lead`, so such a boss is never among the recipients, and therefore not
 among the card's own flow that `routes/events._deliver_review` hands the
 owner's gate as `passes`. A `to` or a mention naming that boss puts it in
 the audience as for any message, and the gate judges it as anyone else's.
