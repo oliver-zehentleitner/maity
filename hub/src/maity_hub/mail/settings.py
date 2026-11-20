@@ -19,7 +19,7 @@ from maity_hub import clock, secretbox
 from maity_hub import instance_settings as store
 from maity_hub import tables as t
 from maity_hub.errors import invalid
-from maity_hub.mail import address, headers
+from maity_hub.mail import address
 from maity_hub.mail.environment import (
     DEFAULT_PORTS,
     GRACE_MAX,
@@ -30,7 +30,9 @@ from maity_hub.mail.environment import (
     MailConfigError,
     MailEnvironment,
     Sender,
-    is_loopback,
+    ascii_secret,
+    sender_ok,
+    tls_refused,
     valid_host,
 )
 
@@ -274,7 +276,7 @@ def patch(
         elif name == "password":
             if secret_key is None:
                 errors[name] = "secret_key_missing"
-            elif not _ascii(value, MAX_PASSWORD):
+            elif not ascii_secret(value, MAX_PASSWORD):
                 errors[name] = "invalid"
             else:
                 changes[name] = value
@@ -289,7 +291,7 @@ def patch(
     before = resolve(conn, env, secret_key)
     host = changes["host"] if "host" in changes else before.value("host")
     tls = changes["tls"] if "tls" in changes else before.value("tls")
-    if (tls or DEFAULTS["tls"]) == "none" and host is not None and not is_loopback(str(host)):
+    if tls_refused(tls or DEFAULTS["tls"], host):
         raise invalid({"tls" if "tls" in changes else "host": "loopback_host_only"})
     for name, value in changes.items():
         if name != "password":
@@ -322,24 +324,16 @@ def record_test(conn: Connection, outcome: dict[str, Any], by: str) -> None:
 def tls_refusal(resolved: Resolved) -> str | None:
     """`loopback_host_only` when the settings in effect pair `tls: none` with a host that
     is not loopback, wherever each value came from (§16.2)."""
-    host, tls = resolved.value("host"), resolved.value("tls")
-    if tls == "none" and host is not None and not is_loopback(str(host)):
+    if tls_refused(resolved.value("tls"), resolved.value("host")):
         return "loopback_host_only"
     return None
-
-
-def _ascii(value: object, maximum: int) -> bool:
-    """SMTP `AUTH` takes the username and the password as ASCII only."""
-    return headers.printable(value, maximum) and isinstance(value, str) and value.isascii()
 
 
 def _sender(value: object) -> object | None:
     if not isinstance(value, dict) or not set(value) <= {"address", "name"}:
         return None
     name = value.get("name")
-    if not address.valid(value.get("address")):
-        return None
-    if name is not None and not headers.valid_name(name):
+    if not sender_ok(value.get("address"), name):
         return None
     return {"address": value["address"], **({"name": name} if name else {})}
 
@@ -357,7 +351,7 @@ store.register(
     store.Setting("mail.host", _when(valid_host)),
     store.Setting("mail.port", _whole(1, 65535)),
     store.Setting("mail.tls", _when(lambda v: v in TLS_MODES), DEFAULTS["tls"]),
-    store.Setting("mail.username", _when(lambda v: _ascii(v, MAX_USERNAME))),
+    store.Setting("mail.username", _when(lambda v: ascii_secret(v, MAX_USERNAME))),
     store.Setting("mail.from", _sender),
     store.Setting("mail.reply_to", _when(address.valid)),
     store.Setting("mail.max_per_hour", _whole(1, MAX_PER_HOUR), DEFAULTS["max_per_hour"]),
