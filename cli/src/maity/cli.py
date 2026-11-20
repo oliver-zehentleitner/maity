@@ -199,7 +199,7 @@ class Session:
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
         if not state.has_credential(self.dir):
-            if os.environ.get(clonecheck.PLACEMENT_ENV):
+            if clonecheck.placed():
                 # Under the runner the clone has joined; Claude Code's sandbox hides its
                 # credential, and only a `maity` call of its own runs outside the sandbox.
                 raise state.StateError(SANDBOXED_CALL)
@@ -6378,7 +6378,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
         return EXIT_REFUSED
     if (
         args.command == "runner"
-        and clonecheck.PLACEMENT_ENV in os.environ  # set, even empty: a placed session
+        and clonecheck.placed()  # set, even empty: a placed session
         and args.runner_command not in runner_commands.IN_SESSION
     ):
         _err("`maity runner` is the operator's: it does not run for a placed agent")

@@ -1300,9 +1300,118 @@ def test_the_socket_limit_is_pinned_per_platform_and_counted_in_bytes() -> None:
     assert adapters.scratch_tmpdir(wide) is None
 
 
+def test_the_test_slots_and_cluster_go_in_the_placements_own_scratch(tmp_path: Path) -> None:
+    """tsk-w7qtcbzcshn9: the scripts' defaults under `~/.local/state` no sandbox writes, so the
+    slots and the cluster go in the scratch, per placement; no path is opened beyond it."""
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    passfile = Path("/srv/ws/.maity-pg/plc-0003")
+    bare = adapters.launch(context(tmp_path / "b", "stub", scratch=room))
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=room, pg_pass=passfile))
+    assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
+    # The cluster and its password come from `pgenv`, outside the sandbox, never in the launch's
+    # env (tmux keeps that in its session environment) or the loop's spec (the review of #2032).
+    assert not {"MAITY_PG_DIR", "MAITY_PG_PASSWORD"} & set(launched.env)
+    pgenv = [*AsUser().runner_module("pgenv"), "/srv/ws", str(passfile), str(room / "pg"), "--"]
+    assert launched.argv == [*pgenv, *bare.argv]
+    # Without a password file the runner vouched for, no cluster: it would be made with trust.
+    assert bare.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
+    assert "MAITY_PG_DIR" not in bare.env and "maity.runner.pgenv" not in bare.argv
+    claude = context(tmp_path / "c", sandbox=True, scratch=room)
+    assert adapters.claude_settings(claude)["sandbox"]["filesystem"]["allowWrite"] == [str(room)]
+    codex = context(tmp_path / "x", "codex", sandbox=True, scratch=room,
+                    workspaces=Path("/srv/ws"))  # fmt: skip
+    written = [line for line in adapters.codex_config(codex).splitlines()
+               if line.endswith('= "write"')]  # fmt: skip
+    assert written == [f'"{tmp_path / "x" / "ws" / "maity" / "agent-3"}" = "write"',
+                       f'"{tmp_path / "x" / "ws" / "maity" / "agent-3" / ".git"}" = "write"',
+                       f'"{room}" = "write"']  # fmt: skip
+
+
+def test_an_ssh_hosts_session_gets_no_test_cluster(tmp_path: Path) -> None:
+    """pgenv is a module of the runner's own interpreter, never a `maity` subcommand (an agent's
+    `maity` runs outside its sandbox): a host whose interpreter the runner does not know gets
+    no cluster, and nothing is started through `maity runner`."""
+
+    class Elsewhere(AsUser):
+        @property
+        def here(self) -> bool:
+            return False
+
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    ctx = context(tmp_path / "r", "stub", scratch=room, as_user=Elsewhere(),
+                  pg_pass=Path("/srv/ws/.maity-pg/plc-0003"))  # fmt: skip
+    launched = adapters.pg_launch(ctx, adapters.Launch(["stub"], {}))
+    assert launched.argv == ["stub"]
+
+
+def test_a_claude_code_placement_gets_the_test_slots_but_no_cluster(tmp_path: Path) -> None:
+    """Claude Code's sandbox refuses socket(AF_UNIX) even in the placement's own scratch (a
+    probe on #2032), so with_postgres.sh's cluster cannot start there: no pgenv, even with a
+    password file, while the slots stay (tsk-zk2cse7s2rf7 brings the cluster over TCP)."""
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    passfile = Path("/srv/ws/.maity-pg/plc-0003")
+    assert adapters.pg_dir(room) is not None  # the socket would fit: only the harness decides
+    assert not adapters.gets_test_cluster("claude-code")
+    assert adapters.gets_test_cluster("codex") and adapters.gets_test_cluster("stub")
+    ctx = context(tmp_path / "c", scratch=room, pg_pass=passfile)
+    assert adapters.pg_launch(ctx, adapters.Launch(["claude"], {})).argv == ["claude"]
+    launched = adapters.launch(ctx)
+    assert launched.argv[0] == "/usr/bin/claude" and "maity.runner.pgenv" not in launched.argv
+    assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
+    assert not {"MAITY_PG_DIR", "MAITY_PG_PASSWORD"} & set(launched.env)
+    # Codex is not probed yet and keeps the cluster.
+    codex = context(tmp_path / "x", "codex", scratch=room, pg_pass=passfile)
+    assert adapters.pg_launch(codex, adapters.Launch(["codex"], {})).argv[1:4] == [
+        "-I", "-m", "maity.runner.pgenv"]  # fmt: skip
+
+
+def test_an_agy_placement_gets_no_test_slots_or_cluster(tmp_path: Path) -> None:
+    """agy's scratch under `/tmp` is read-only to it but for `tmp` (the review of #2032), so a
+    slot directory or cluster there could not be written: it keeps the scripts' defaults."""
+    room = Path("/tmp/maity-scratch-1000/" + "a" * 32)  # noqa: S108 - a path, nothing written
+    folder = tmp_path / "g" / "ws"
+    ctx = context(tmp_path / "g", "antigravity", scratch=room,
+                  pg_pass=Path("/srv/ws/.maity-pg/plc-0003"))  # fmt: skip
+    launched = adapters.launch(dataclasses.replace(ctx, folder=folder))
+    assert launched.env["MAITY_SCRATCH"] == str(room)
+    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR"} & set(launched.env)
+    assert "maity.runner.pgenv" not in launched.argv
+
+
+def test_a_cluster_whose_socket_would_not_fit_gets_no_pg_dir(tmp_path: Path) -> None:
+    # with_postgres.sh binds `<MAITY_PG_DIR>/.s.PGSQL.<port>`; past the Unix socket limit the
+    # server cannot start, so the session gets no MAITY_PG_DIR (the slots still go there).
+    room = adapters.SOCKET_PATH_MAX - adapters.PG_SOCKET_ROOM - 1 - len("/pg")
+    fits = Path("/" + "s" * (room - 1))
+    assert len(str(fits / "pg")) + 1 + adapters.PG_SOCKET_ROOM == adapters.SOCKET_PATH_MAX
+    assert adapters.pg_dir(fits) == fits / "pg"  # exactly at the limit fits
+    deep = Path(str(fits) + "s")
+    assert adapters.pg_dir(deep) is None
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=deep,
+                                      pg_pass=Path("/w/.maity-pg/plc-0003")))  # fmt: skip
+    assert "MAITY_PG_DIR" not in launched.env and "maity.runner.pgenv" not in launched.argv
+    assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(deep / "slots")
+    assert adapters.pg_dir(None) is None and adapters.run_env(None) == {}
+
+
+def test_the_run_name_is_handle_and_instance(tmp_path: Path) -> None:
+    placement = {**PLACEMENT, "agent": {"id": "agt-b", "handle": "maity-coder-7"},
+                 "instance": "xpde"}  # fmt: skip
+    launched = adapters.launch(context(tmp_path / "s", "stub", placement=placement))
+    assert launched.env["MAITY_RUN_NAME"] == "maity-coder-7#xpde"
+    assert adapters.run_name({**placement, "instance": None}) == "maity-coder-7"  # before a join
+    for bad in ("a b", "a\tb", "#x", "", None, "x" * 65, "agent\n", "a\nb"):
+        assert adapters.run_name({**placement, "agent": {"handle": bad}}) is None
+        assert adapters.run_name({**placement, "instance": bad}) == "maity-coder-7"
+    assert adapters.run_name({"id": "plc-0003"}) is None
+    assert adapters.run_name({"agent": "maity-coder-7"}) is None
+
+
 def test_without_a_scratch_nothing_names_one(tmp_path: Path) -> None:
     ctx = context(tmp_path, sandbox=True)
     assert "allowWrite" not in adapters.claude_settings(ctx)["sandbox"]["filesystem"]
     assert ".scratch" not in adapters.codex_config(context(tmp_path / "x", "codex", sandbox=True))
     launched = adapters.launch(context(tmp_path / "s", "stub"))
     assert "MAITY_SCRATCH" not in launched.env and "TMPDIR" not in launched.env
+    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR", "MAITY_PG_PASSWORD",
+                "MAITY_RUN_NAME"} & set(launched.env)  # fmt: skip

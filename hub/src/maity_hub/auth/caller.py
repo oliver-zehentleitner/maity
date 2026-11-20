@@ -23,7 +23,7 @@ from typing import Any
 
 from sqlalchemy import ColumnElement, Connection, and_, or_, select, update
 
-from maity_hub import availability, clock, read_limits, timing
+from maity_hub import availability, clock, ids, read_limits, timing
 from maity_hub import tables as t
 from maity_hub.admin import instance_admin_id_query
 from maity_hub.auth import credentials, nonces, verifiers
@@ -506,7 +506,13 @@ def _verifier(row: Any) -> str | None:
 
 
 def _credential(conn: Connection, credential_id: str) -> Any:
-    if is_runner_credential(credential_id):
+    """The credential row a presented id names, on both paths and in the precheck. An id the
+    hub could not have issued names no credential and is refused as an unknown one, before
+    any query (§1 `unauthenticated`): a signed call's id arrives as the header sent it."""
+    runner = is_runner_credential(credential_id)
+    if not ids.has_shape("runner_credential" if runner else "credential", credential_id):
+        raise unauthenticated()
+    if runner:
         return _runner_credential(conn, credential_id)
     row = conn.execute(
         select(

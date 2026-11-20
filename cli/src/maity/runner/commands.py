@@ -57,6 +57,8 @@ class Refused(Exception):
 # runner's own launch (the loop on an ssh host, the stub, Claude Code's hook, the pane's log):
 # the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
 # runner's own, and an agent's call of it is refused (cli.main).
+# Not `pgenv`: it reads a placement's password and starts any command outside the sandbox, so it
+# is no `maity runner` subcommand at all; the runner starts it as a module (adapters.pg_launch).
 IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
 # Of those, the ones that act on a file the call names: the loop's spec (what it runs) and the
 # pane's log (what it cuts). An agent's `maity` runs outside its sandbox, so such a file must
@@ -107,8 +109,9 @@ def runner_own_file(command: str, given: str) -> bool:
         return False
     if not shaped or not supervisor.PLACEMENT_ID.fullmatch(placement):
         return False
-    placed = os.environ.get(clonecheck.PLACEMENT_ENV)
-    if placed and placed != placement:
+    # Under a placement only its own file; set but not a placement id (empty included) is a
+    # placed session of unknown identity, which owns no file.
+    if clonecheck.placed() and clonecheck.placement_id() != placement:
         return False
     uid = os.getuid()
     step = root
@@ -1111,12 +1114,8 @@ def cmd_worktree_prune(args: argparse.Namespace) -> int:
     (worktree.prune_orphans, AsUser.worktree_prune). Internal, the supervisor's own: refused for a
     placed agent, which cannot redirect it at another path, and needs `--repo` to name the clone.
     There is no in-session remover; a placed agent's leftover is cleared when the placement next
-    starts."""
-    if clonecheck.PLACEMENT_ENV in os.environ:  # empty-string-safe: a placed session is placed
-        raise Refused(
-            "`maity runner worktree-prune` is the runner's placement-start hygiene, not a placed "
-            "agent's to call; a leftover worktree is cleared when the placement next starts"
-        )
+    starts. The refusal for a placed session is cli.main's, before this runs: worktree-prune
+    is not in IN_SESSION."""
     if not args.repo:
         raise Refused("`maity runner worktree-prune` needs --repo to name the clone to prune")
     print(json.dumps(worktree.prune_orphans(args.repo)))
@@ -1159,7 +1158,8 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     # through its own `maity`, so the CLI reaches the same ops the module path does; `codex`
     # takes the config.toml text on stdin, and `--auth` is only its auth.json link target.
     r = rsub.add_parser("scratchop")
-    r.add_argument("op", choices=(*scratchop.OPS, "codex"))
+    # `pgmake` and `pgremove`: the test clusters' password holder and a placement's file in it.
+    r.add_argument("op", choices=(*scratchop.OPS, "codex", "pgmake", "pgremove"))
     r.add_argument("--under", required=True)
     r.add_argument("--auth")  # codex only: the auth.json link target; left out for the others
     r.add_argument("path")

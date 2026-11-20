@@ -1095,7 +1095,9 @@ def test_a_nul_in_the_git_email_fails_when_the_file_is_loaded(tmp_path: Path) ->
     assert any(p.startswith("git.email: ") for p in info.value.problems), info.value.problems
 
 
-@pytest.mark.parametrize("placement", ["plc-0003", ""])
+@pytest.mark.parametrize(
+    "placement", ["plc-0003", "", " ", "plc-0003\n", "PLC-0003", "../plc-0003"]
+)
 @pytest.mark.parametrize(
     "argv",
     [["scratchop", "remove", "--under", "/", "/maity/.scratch/plc-0003"],
@@ -1156,6 +1158,31 @@ def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
     else:
         assert code == cli.EXIT_REFUSED and reached == []
         assert "for a placed agent" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("placed", ["plc-0003", "plc-0004", None])
+def test_pgenv_is_no_maity_command(monkeypatch: pytest.MonkeyPatch, placed: str | None) -> None:
+    """The review of #2032: pgenv reads a placement's password and starts any command, and an
+    agent's `maity` runs outside its sandbox, so `maity runner pgenv` does not exist, under a
+    placement (its own or another's MAITY_PLACEMENT) or without one; nothing is started."""
+    from maity.runner import pgenv
+
+    reached: list[object] = []
+
+    def fake(argv: object = None) -> int:
+        reached.append(argv)
+        return 0
+
+    monkeypatch.setattr(pgenv, "main", fake)
+    if placed is None:
+        monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    else:
+        monkeypatch.setenv("MAITY_PLACEMENT", placed)
+    argv = ["runner", "pgenv", "/w", "/w/.maity-pg/plc-0003", "/w/pg", "--", "sh", "-c", "true"]
+    with pytest.raises(SystemExit) as usage:
+        cli.main(argv)
+    assert usage.value.code == 2 and reached == []
+    assert "pgenv" not in commands.IN_SESSION
 
 
 def test_the_runner_calls_on_the_agents_side_carry_no_placement(
@@ -1349,6 +1376,31 @@ def test_under_a_placement_only_that_placements_file_gets_through(
     assert not commands.runner_own_file("loop", str(other))
     monkeypatch.delenv("MAITY_PLACEMENT")  # the runner's own calls carry none
     assert commands.runner_own_file("loop", str(other))
+
+
+PLACEMENT_VALUES = [None, "", " ", "plc-0003", "plc-0003\n", "PLC-0003", "../plc-0003", "plc-0004"]
+
+
+@pytest.mark.parametrize("value", PLACEMENT_VALUES)
+@pytest.mark.parametrize("name", sorted(commands.IN_SESSION_FILE))
+def test_a_placed_session_owns_only_its_own_placements_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str, value: str | None
+) -> None:
+    """Set, even empty, MAITY_PLACEMENT is a placed session: plc-0003's file is its own only
+    for plc-0003. An empty or malformed id is a placed session of unknown identity and owns
+    no file; never read as unplaced, which would take any placement's file. Unset, the
+    runner's own calls take it as before."""
+    own = _runner_home(monkeypatch, tmp_path)
+    if value is None:
+        monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    else:
+        monkeypatch.setenv("MAITY_PLACEMENT", value)
+    allowed = value in (None, "plc-0003")
+    assert commands.runner_own_file(name, str(own[name])) is allowed
+    reached = _reaching(monkeypatch)
+    code = cli.main(["runner", *_in_session_argv(name, str(own[name]))])
+    assert (code == 0) is allowed
+    assert reached == ([f"maity.runner.{name}"] if allowed else [])
 
 
 def test_runner_is_refused_with_for(capsys: pytest.CaptureFixture[str]) -> None:

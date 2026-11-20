@@ -4828,6 +4828,14 @@ window.Maity = window.Maity || {};
         const page = rest.slice(0, limit);
         return { items: page, next_cursor: rest.length > limit ? btoa(JSON.stringify(at(page[page.length - 1]))) : null };
       }
+      // A test pages the open lists, window.MAITY_FIXTURE_TASK_PAGE cards a page, the cursor their
+      // offset (smoke: getAll's own cursor loop under the board, tsk-ywf14h6qd6kq); unset, a list
+      // comes whole as before.
+      const size = Number(window.MAITY_FIXTURE_TASK_PAGE) || 0;
+      if (size > 0 && q === null && !query.get("order") && !wanted.some((s) => s === "all" || s === "done" || s === "cancelled")) {
+        const from = Number(query.get("cursor") || 0);
+        return { items: items.slice(from, from + size), next_cursor: from + size < items.length ? String(from + size) : null };
+      }
       return { items, next_cursor: null };
     }],
     // One card (§6), its notes (§6.16, fixtures/<slug>/task-notes.json) and
@@ -6102,9 +6110,9 @@ window.Maity = window.Maity || {};
     const q = fullPath.indexOf("?");
     const asked = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
-    // A test holds an answer back, or refuses it, with window.MAITY_FIXTURE_HOLD(method, path) (smoke);
-    // unset, nothing waits for it.
-    const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked);
+    // A test holds an answer back, or refuses it, with window.MAITY_FIXTURE_HOLD(method, path,
+    // path with its query) (smoke); unset, nothing waits for it.
+    const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked, fullPath);
     return (held ? Promise.all([loadFixtures(), held]) : loadFixtures()).then(() => {
       // §5.4: the bundle is each single route's own answer for this caller, errors included; the
       // route itself needs no session and stays open in a window. MAITY_FIXTURE_NO_BOOTSTRAP plays
@@ -6300,9 +6308,13 @@ window.Maity = window.Maity || {};
   // refused before this) and no change of the zone was saved while it was on its way; a saved
   // change of the settings sets it from their answer.
   let zoneSaves = 0;
-  function request(method, path, body, raw, signal, headers) {
+  // quiet: a read started before the drawing knows whether there is a session (the boot's
+  // notifications head, js/app.js): its 401, enrolment 403 or 503 maintenance tells the page
+  // nothing, since the drawing has not yet read the session and the window that would decide it
+  // (tsk-zf3wd9t5gjab).
+  function request(method, path, body, raw, signal, headers, quiet) {
     const saves = zoneSaves;
-    const answer = requestOnce(method, path, body, raw, signal, headers);
+    const answer = requestOnce(method, path, body, raw, signal, headers, quiet);
     const setZone = (name) => { if (M.i18n && M.i18n.setZone) M.i18n.setZone(name); };
     if (method === "GET" && path === "/me") {
       return answer.then((m) => { if (saves === zoneSaves && m && m.member && m.member.kind === "human") setZone(m.member.timezone); return m; });
@@ -6312,15 +6324,18 @@ window.Maity = window.Maity || {};
     }
     return answer;
   }
-  function requestOnce(method, path, body, raw, signal, headers) {
+  function requestOnce(method, path, body, raw, signal, headers, quiet) {
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
     // A tab's presence (§18.4) changes nothing the page shows, so it keeps what is kept.
     if (method !== "GET" && !(method === "POST" && path === "/me/presence") && M.onWrite) M.onWrite(path);
     const epoch = M.sessionEpoch || 0;
     // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
-    // place (js/maintenance.js), and the caller gets the refusal as before.
-    const told = (err) => { if (err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
+    // place (js/maintenance.js), and the caller gets the refusal as before. Not by a quiet read:
+    // the boot's head is refused while /bootstrap, which a window lets through, still runs, and
+    // the redraw it would start asks the next quiet head, refused again, without end; the drawing
+    // learns the window from its own reads and asks the head again itself (tsk-zf3wd9t5gjab).
+    const told = (err) => { if (!quiet && err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
     const single = () => {
@@ -6356,6 +6371,7 @@ window.Maity = window.Maity || {};
         if (sessionBlocked || epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
         return answer;
       }, (err) => {
+        if (quiet) throw err;
         if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path, epoch);
         // The hub moved a running session into enrolment (§2.8.5): the setup is all it reaches now.
         if (err && err.status === 403 && err.details && err.details.reason === "second_factor_enrolment_required" && M.onEnrolmentRequired) M.onEnrolmentRequired();
@@ -6372,13 +6388,15 @@ window.Maity = window.Maity || {};
   const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4). first, where given, is called
-  // with the first page's items as soon as it is in, before the next is asked (the board draws
-  // from its open columns' first pages, tsk-qw08c8ds214g); the pages asked stay the same.
+  // with the first page's items as soon as it is in, before the next is asked, and whether more
+  // pages follow (the board draws from its open columns' first pages, tsk-qw08c8ds214g, and keeps
+  // a column's count back while its later pages are read, tsk-ywf14h6qd6kq); the pages asked stay
+  // the same.
   async function getAll(path, first) {
     const sep = path.includes("?") ? "&" : "?";
     let page = await request("GET", path + sep + "limit=200");
     const items = page.items.slice();
-    if (first) first(items.slice());
+    if (first) first(items.slice(), !!page.next_cursor);
     while (page.next_cursor) {
       page = await request("GET", path + sep + "limit=200&cursor=" + encodeURIComponent(page.next_cursor));
       items.push(...page.items);
@@ -6407,7 +6425,9 @@ window.Maity = window.Maity || {};
     fixtureMailTestTo,
     source,
     ApiError,
-    get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),
+    // opts: { signal } cancels the read; { quiet } (request, above) tells the page of no 401,
+    // enrolment 403 or maintenance 503.
+    get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal, undefined, !!(opts && opts.quiet)),
     getAll,
     // The boot's bundle (§5.4, above): prime(project or null, live) gives a token for unprime.
     prime,

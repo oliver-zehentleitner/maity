@@ -20,6 +20,18 @@ public site at maity.dev is `docs/index.html`, not this.
   value (or, without it, the `csrf_token` of `/auth/session`) as
   `X-CSRF-Token`. A mismatch comes back as 403 `csrf_mismatch` and is
   shown as an error.
+- **The boot's reads.** A page load asks `GET /bootstrap` (`docs/api.md`
+  §5.4: the window, the session, `/me`, and on a project view its event
+  head, the project and its members) and, beside it, the notifications
+  head `GET /me/notifications?limit=0`, which is not a part of the bundle.
+  That head is asked before the session is known, so its 401 for a visitor
+  (or a 403 for a session that owes the second factor) ends nothing and is
+  dropped; once the session is read, a head that failed so is asked again
+  the usual way. A view drawn at once after another one (Settings leading
+  a member without project:admin on to `settings/mine`) takes the same
+  head while it is fresh (in flight, or answered less than 2 s before, with
+  no write of the tab since). Settings → Mine's own
+  `GET …/me/settings` starts beside the project's reads, not after them.
 
 ## Projects and routes
 

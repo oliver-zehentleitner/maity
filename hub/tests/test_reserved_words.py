@@ -98,19 +98,32 @@ CONSTRAINTS = {
 }
 
 
+# The calls that make a name object with a quote flag (op.f is conv(name)).
+NAME_OBJECTS = ("quoted_name", "conv", "f")
+
+
 def _literal(node: ast.expr | None) -> tuple[str, bool] | None:
     """The name a node spells and whether quoted_name quotes it; None when it is no literal."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value, False
-    if isinstance(node, ast.Call) and _callee(node) == "quoted_name":
-        inner = _literal(_arg(node, 0, "value"))
+    if isinstance(node, ast.Call) and _callee(node) in ("quoted_name", "conv"):
+        # Nested names follow SQLAlchemy's constructors (sql/elements.py, 2.0.36 and 2.1.6 alike):
+        # conv, a _truncated_label, takes the quote of a name object passed in over its own
+        # argument; quoted_name keeps the inner flag unless its own quote is given (not None).
+        value = _arg(node, 0, "value")
+        inner = _literal(value)
         if inner is None:
             return None
         flag = _arg(node, 1, "quote")
+        named = isinstance(value, ast.Call) and _callee(value) in NAME_OBJECTS
+        if named and _callee(node) == "conv":
+            return inner
+        if flag is None or (isinstance(flag, ast.Constant) and flag.value is None):
+            return inner
         return inner[0], isinstance(flag, ast.Constant) and flag.value is True
-    if isinstance(node, ast.Call) and _callee(node) in ("f", "conv"):
-        # op.f("…"), sa.schema.conv("…"): the name as written, quoted by the dialect
-        return _literal(_arg(node, 0, "name" if _callee(node) == "f" else "value"))
+    if isinstance(node, ast.Call) and _callee(node) == "f":
+        # op.f("…"): the name as written, quoted by the dialect
+        return _literal(_arg(node, 0, "name"))
     return None
 
 
@@ -190,9 +203,9 @@ def _target(node: ast.expr | None) -> list[tuple[str, ast.expr | None]]:
     string, or a ("table", "column") tuple.
 
     SQLAlchemy splits a string at its periods and writes each part plain, quoted_name or not, so
-    a reserved part of a string target has no quoted form: the key is then named by a tuple of
-    quoted_name parts (kept by SQLAlchemy 2.1, the pinned runtime; the review found 2.0.36
-    dropping the flag) or by the Column object."""
+    a reserved part of a string target has no quoted form: the key is then named by the Column
+    object (quoted from 2.0.36, the floor, on), or by a tuple of quoted_name parts, which only
+    SQLAlchemy 2.1, the pinned runtime, takes (2.0.36 refuses it)."""
     if isinstance(node, ast.Tuple) and len(node.elts) >= 2:
         return [("table", node.elts[-2]), ("column", node.elts[-1])]
     spelled = _literal(node)
@@ -292,6 +305,22 @@ op.create_table(
     ),
     "a conv name quoted": (
         'op.create_index(sa.schema.conv(quoted_name("vector", True)), "t", ["v"])'
+    ),
+    "a conv name with its own quote": 'op.create_index(sa.schema.conv("vector", True), "t", ["v"])',
+    "a conv name with its own quote, by keyword": (
+        'op.create_index(sa.schema.conv(value="vector", quote=True), "t", ["v"])'
+    ),
+    # nested names, as SQLAlchemy builds them: conv keeps the inner flag over its own,
+    # quoted_name keeps it unless it gives one of its own
+    "a conv over a quoted name, whose flag wins over conv's": (
+        'op.create_index(sa.schema.conv(quoted_name("vector", True), False), "t", ["v"])'
+    ),
+    "a conv over a quoted name, whose flag wins, by keyword": (
+        "op.create_index("
+        'sa.schema.conv(value=quoted_name("vector", True), quote=False), "t", ["v"])'
+    ),
+    "a quoted_name with quote None over a quoted name": (
+        'op.create_index(quoted_name(quoted_name("vector", True), None), "t", ["v"])'
     ),
 }
 
@@ -419,6 +448,27 @@ UNQUOTED_FORMS = {
     ),
     "an index named through conv": (
         'op.create_index(sa.schema.conv("vector"), "t", ["v"])',
+        "index",
+    ),
+    "a conv over an unquoted name, whose flag wins over conv's": (
+        'op.create_index(sa.schema.conv(quoted_name("vector", False), True), "t", ["v"])',
+        "index",
+    ),
+    "a conv over an unquoted name, whose flag wins, by keyword": (
+        "op.create_index("
+        'sa.schema.conv(value=quoted_name("vector", False), quote=True), "t", ["v"])',
+        "index",
+    ),
+    "a conv over a conv that is unquoted": (
+        'op.create_index(sa.schema.conv(sa.schema.conv("vector", False), True), "t", ["v"])',
+        "index",
+    ),
+    "a conv over op.f, which has no flag": (
+        'op.create_index(sa.schema.conv(op.f("vector"), True), "t", ["v"])',
+        "index",
+    ),
+    "a quoted_name whose own False overrides a quoted name": (
+        'op.create_index(quoted_name(quoted_name("vector", True), False), "t", ["v"])',
         "index",
     ),
     "a quote=True on the call that renames": (

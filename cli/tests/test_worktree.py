@@ -348,14 +348,28 @@ def test_a_blocked_scope_gets_no_restart_hint(placed: Path) -> None:
 # --- the supervisor's internal CLI surface (no agent-callable op) ------------------------------
 
 
+@pytest.mark.parametrize("value", ["", " ", "plc-0003", "plc-0003\n", "PLC-0003", "../plc-0003"])
 def test_worktree_prune_cli_is_refused_for_a_placed_agent(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], value: str
 ) -> None:
     """`maity runner worktree-prune` is the runner's placement-start hygiene, not a placed
-    agent's to call: a placed session cannot redirect it at a path of its own."""
-    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
-    with pytest.raises(commands.Refused):
-        commands.cmd_worktree_prune(argparse.Namespace(repo="/some/clone"))
+    agent's to call: a placed session cannot redirect it at a path of its own. The refusal is
+    cli.main's gate (worktree-prune is not in IN_SESSION), for any value of MAITY_PLACEMENT,
+    empty included, before the handler runs."""
+    from maity import cli
+
+    assert "worktree-prune" not in commands.IN_SESSION
+    pruned: list[str] = []
+
+    def prune(repo: str) -> list[str]:
+        pruned.append(repo)
+        return []
+
+    monkeypatch.setattr(worktree, "prune_orphans", prune)
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, value)
+    assert cli.main(["runner", "worktree-prune", "--repo", "/some/clone"]) == cli.EXIT_REFUSED
+    assert "does not run for a placed agent" in capsys.readouterr().err
+    assert pruned == []
 
 
 def test_worktree_prune_cli_needs_a_repo(monkeypatch: pytest.MonkeyPatch) -> None:

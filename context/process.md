@@ -467,7 +467,10 @@ read-only token and lets the tag through only when:
   shallow checkout, a commit it cannot get, a git error) stops the gate,
   never passes it, so both gate jobs check out with `fetch-depth: 0`. A
   run that lists a `hub-mariadb*` job the table does not know stops it
-  too, until the pull request that adds the job adds its line. The jobs
+  too, until the first pull request after the one that adds the job
+  adds its line: the squash merge makes the commit the line names, so
+  the adding pull request cannot know it, and every hub release and
+  image tag stops in between. The jobs
   API lists a job by its name, the same as its key only while no job of
   `hub-mariadb.yml` sets `name:` (`test_release_gate.py` holds it so); a
   renamed job reads as missing, which stops the gate. A run
