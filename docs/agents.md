@@ -86,6 +86,10 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    its reasoning, or `--no-why "<reason>"`. The resume asks each instance
    once to confirm with `maity ack keep-the-why`
    ([`docs/api.md` §6.23](api.md#623-the-keep-the-why-commitment)).
+   Make a Keep the Why entry's Id with **`maity uuid`**: it prints a
+   lowercase UUID v4 from the operating system's randomness, calls no hub
+   and needs no join, so it works in a harness sandbox that refuses
+   `uuidgen` or `/proc/sys/kernel/random/uuid`. Never type an Id by hand.
 6. **`maity ask "<question>" --to human --class <class>`** when a decision
    is not yours. **`maity answer <request> --reply <id>`** when a request
    is addressed to you. A question about the project's contract, its

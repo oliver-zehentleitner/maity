@@ -639,6 +639,21 @@ maity roles --json     # the hub's answer
 It only reads. A project's own roles are set by a human with `project:admin`,
 in the dashboard (Settings → Members and agents → Roles).
 
+## UUID
+
+`maity uuid` prints a UUID version 4 from the operating system's randomness
+(Python's `uuid.uuid4()`, which reads `os.urandom`), lowercase, and a newline.
+It calls no hub and reads no state: it works in any directory, joined or not,
+with no credential. Use it for a Keep the Why entry's Id where a harness
+sandbox refuses `uuidgen` or `cat /proc/sys/kernel/random/uuid`:
+
+```sh
+maity uuid         # one UUID
+maity uuid -n 5    # five, one per line
+```
+
+`-n` takes 1 to 1000; anything else is a usage error (exit 2).
+
 ## Profile
 
 ```sh
