@@ -459,8 +459,9 @@ agents outlive it.
 **Status:** active
 **Evidence:** inferred
 **Source:** card tsk-bj6fs628q6pd (a placed runner agent's field report that the sandbox refuses every OS UUID v4 source); the Keep the Why skill 0.20.3 (`SKILL.md`, the `Id` rule) and `AGENTS.md` (every entry's Id is made by an OS command, never from memory)
-**Verification:** corroborated — the allowlist mechanism is read from `adapters.py` and `docs/runners.md`; the live-session efficacy is not yet observed
+**Verification:** contradicted — the allowlist mechanism still reads from `adapters.py` and `docs/runners.md` as described, but the inferred live-session efficacy is contradicted: observed in a Claude Code runner placement (CLI 0.1.0a17), 2026-11-20, a plain `cat /proc/sys/kernel/random/uuid` and `uuidgen` were both refused by the harness (denied, "don't ask" mode); card tsk-1rejhywcw3qh reports the `/proc` read refused for three further placed sessions the same day
 **See:** runner.md — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-15
+**See:** commands.md#maity-uuid-makes-keep-the-why-ids-where-uuidgen-is-refused — 2b2be9a9-25d6-4396-b35d-5a2c242a4997 — as of 2026-11-20
 **Revisit when:** `/proc/sys/kernel/random/uuid` stops being a usable OS UUID v4 source, the skill drops the OS-command Id rule, or a harness changes how its command allowlist matches an exact command
 
 The runner allows exactly one command for making a UUID v4,
