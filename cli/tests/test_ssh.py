@@ -573,7 +573,7 @@ def test_the_attach_hint_quotes_every_word(tmp_path: Path, fake_ssh: Path) -> No
     sup, _, _, _, _ = remote_world(tmp_path, fake_ssh)
     hint = sup.targets["build-2"].attach_hint("maity_maity_agent-3")
     assert shlex.split(hint)[:5] == ["ssh", "-t", "-p", "2222", "maity@b2.lan"]
-    assert shlex.split(hint)[-2:] == ["-t", "maity_maity_agent-3"]
+    assert shlex.split(hint)[-2:] == ["-t", "=maity_maity_agent-3"]
 
 
 def test_the_operators_ssh_configuration_cannot_forward_or_run_local_commands(

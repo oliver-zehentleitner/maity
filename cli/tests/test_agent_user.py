@@ -381,7 +381,7 @@ def test_the_attach_hint_goes_through_sudo() -> None:
     socket = Path("/home/maity-agent/.maity-runner/tmux.sock")
     assert tmux.attach_hint(socket, "maity_maity_agent-3", AsUser("maity-agent")) == (
         "sudo -u maity-agent tmux -S /home/maity-agent/.maity-runner/tmux.sock attach -t "
-        "maity_maity_agent-3"
+        "=maity_maity_agent-3"
     )
     assert tmux.attach_hint(socket, "maity_x_y", AsUser()).startswith("tmux -S ")
 

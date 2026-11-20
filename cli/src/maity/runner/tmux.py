@@ -11,6 +11,7 @@ reads sets `update-environment` empty (a client attaching later passes nothing o
 Every session carries `@maity_placement` and `@maity_generation`, so a runner restart
 rebuilds its picture from tmux, not from memory. Commands are argv lists built from validated
 tokens, never shell strings, except the `pipe-pane` command (logcap), whose words are quoted.
+Every `-t` names its session exactly (`session_target`, `pane_target`), never by a prefix.
 """
 
 from __future__ import annotations
@@ -153,10 +154,25 @@ def waits_below(listing: str, root: int) -> bool:
     return any(is_wait(args) for args in _descendants(listing, root))
 
 
+def session_target(name: str) -> str:
+    """The `-t` target for the session named `name` and no other. Without a session of that
+    exact name, tmux takes a bare `name` as the start of another session's name (or as a
+    pattern), so a command for a session that is gone would reach one whose name starts with
+    it (`maity_p_c` and `maity_p_c-2`); a leading `=` accepts only the exact name."""
+    return f"={name}"
+
+
+def pane_target(name: str) -> str:
+    """The `-t` target for the active pane of the session named exactly `name`
+    (`session_target`): with the `:`, the word is read as a session and nothing else, not
+    first as a window or a pane of the current session."""
+    return f"{session_target(name)}:"
+
+
 def attach_words(socket: Path, name: str, as_user: AsUser) -> list[str]:
     """How the runner's owner attaches to a session: through sudo where the socket is the
     agents' user's."""
-    attach = ["tmux", "-S", str(socket), "attach", "-t", name]
+    attach = ["tmux", "-S", str(socket), "attach", "-t", session_target(name)]
     return ["sudo", "-u", as_user.user, *attach] if as_user.user else attach
 
 
@@ -269,12 +285,15 @@ class Tmux:
             *extra, "--", *argv,
         ]  # fmt: skip
         self._check(command)
+        target = pane_target(name)
         try:
-            self._check(self._tmux("set-option", "-t", name, "@maity_placement", placement))
-            self._check(self._tmux("set-option", "-t", name, "@maity_generation", str(generation)))
+            self._check(self._tmux("set-option", "-t", target, "@maity_placement", placement))
+            self._check(
+                self._tmux("set-option", "-t", target, "@maity_generation", str(generation))
+            )
             # The pane's output goes through logcap, which holds the log to `log_keep`.
             keep = [*self.as_user.runner_module("logcap"), str(log), str(self.log_keep)]
-            self._check(self._tmux("pipe-pane", "-o", "-t", name, shlex.join(keep)))
+            self._check(self._tmux("pipe-pane", "-o", "-t", target, shlex.join(keep)))
         except TmuxError:
             self.kill(name)  # an unlabelled session would run on, invisible to the runner
             raise
@@ -295,7 +314,7 @@ class Tmux:
 
     def kill(self, name: str) -> None:
         try:
-            self._check(self._tmux("kill-session", "-t", name))
+            self._check(self._tmux("kill-session", "-t", session_target(name)))
         except TmuxError:
             pass  # already gone
 
@@ -306,7 +325,7 @@ class Tmux:
         None when tmux could not say."""
         try:
             out = self._check(
-                self._tmux("display-message", "-p", "-t", name, "#{session_attached}")
+                self._tmux("display-message", "-p", "-t", pane_target(name), "#{session_attached}")
             )
         except TmuxError:
             return None
@@ -317,7 +336,7 @@ class Tmux:
         """A hash of what the session's pane shows now, to tell whether it changed; the text
         itself is never kept, logged or sent. None when tmux could not say."""
         try:
-            out = self._check(self._tmux("capture-pane", "-p", "-t", name))
+            out = self._check(self._tmux("capture-pane", "-p", "-t", pane_target(name)))
         except TmuxError:
             return None
         return hashlib.sha256(out.encode("utf-8", "replace")).hexdigest()
@@ -326,7 +345,7 @@ class Tmux:
         """Which of `texts` the session's pane shows now; the pane's text itself is never
         kept, logged or sent. None when tmux could not say."""
         try:
-            out = self._check(self._tmux("capture-pane", "-p", "-t", name))
+            out = self._check(self._tmux("capture-pane", "-p", "-t", pane_target(name)))
         except TmuxError:
             return None
         return frozenset(text for text in texts if text in out)
@@ -349,11 +368,11 @@ class Tmux:
     def type_text(self, name: str, text: str) -> None:
         """Type text into the session's pane without pressing Enter: `-l` sends it literally,
         so no word of it is read as a key name."""
-        self._check(self._tmux("send-keys", "-t", name, "-l", text))
+        self._check(self._tmux("send-keys", "-t", pane_target(name), "-l", text))
 
     def submit(self, name: str) -> None:
         """Press Enter in the session's pane."""
-        self._check(self._tmux("send-keys", "-t", name, "Enter"))
+        self._check(self._tmux("send-keys", "-t", pane_target(name), "Enter"))
 
     def type_line(self, name: str, line: str) -> None:
         """Type one line into the session's pane and press Enter."""
@@ -362,7 +381,7 @@ class Tmux:
 
     def environment_of(self, name: str) -> dict[str, str]:
         """The environment a session's processes get (for tests and `check`)."""
-        out = self._check(self._tmux("show-environment", "-t", name))
+        out = self._check(self._tmux("show-environment", "-t", session_target(name)))
         server = self._check(self._tmux("show-environment", "-g"))
         found: dict[str, str] = {}
         for line in (server + out).splitlines():
