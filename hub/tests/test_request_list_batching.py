@@ -11,6 +11,7 @@ from sqlalchemy import Engine
 
 from tests import flow
 from tests.conftest import ClientFactory
+from tests.list_rows import flat_rows
 from tests.statements import count_statements
 from tests.test_claims import _claim
 from tests.test_requests import asked
@@ -63,6 +64,7 @@ def _statements(engine: Engine, call: Callable[[], Any]) -> int:
     return count_statements(engine, checked)
 
 
+@flat_rows("/projects/{}/{}/requests", "/requests")
 def test_a_page_of_requests_costs_the_same_for_5_and_for_30(
     make_client: ClientFactory, migrated: Engine
 ) -> None:

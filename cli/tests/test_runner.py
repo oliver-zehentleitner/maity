@@ -1160,6 +1160,31 @@ def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
         assert "for a placed agent" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("placed", ["plc-0003", "plc-0004", None])
+def test_pgenv_is_no_maity_command(monkeypatch: pytest.MonkeyPatch, placed: str | None) -> None:
+    """The review of #2032: pgenv reads a placement's password and starts any command, and an
+    agent's `maity` runs outside its sandbox, so `maity runner pgenv` does not exist, under a
+    placement (its own or another's MAITY_PLACEMENT) or without one; nothing is started."""
+    from maity.runner import pgenv
+
+    reached: list[object] = []
+
+    def fake(argv: object = None) -> int:
+        reached.append(argv)
+        return 0
+
+    monkeypatch.setattr(pgenv, "main", fake)
+    if placed is None:
+        monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    else:
+        monkeypatch.setenv("MAITY_PLACEMENT", placed)
+    argv = ["runner", "pgenv", "/w", "/w/.maity-pg/plc-0003", "/w/pg", "--", "sh", "-c", "true"]
+    with pytest.raises(SystemExit) as usage:
+        cli.main(argv)
+    assert usage.value.code == 2 and reached == []
+    assert "pgenv" not in commands.IN_SESSION
+
+
 def test_the_runner_calls_on_the_agents_side_carry_no_placement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

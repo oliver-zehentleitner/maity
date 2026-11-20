@@ -18,7 +18,9 @@
 .door-form .intro{color:var(--muted);margin:0 0 6px;font-size:.95rem}
 .door-form form{display:grid;gap:4px}
 .door-form label{font-size:.875rem;font-weight:600;margin-top:12px}
-.door-form input,.door-form select{height:46px;padding:0 14px;border:1px solid var(--field,#8a939d);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;font-size:1rem;width:100%}
+/* An input's edge (WCAG 1.4.11, 3:1 on --surface and --bg). landing.css has no light --field, so the hub's own door pages draw the
+   fallback: the dashboard's light --field (web/css/app.css), which sets it itself when it draws the frame. */
+.door-form input,.door-form select{height:46px;padding:0 14px;border:1px solid var(--field,#7d8691);border-radius:10px;background:var(--surface);color:var(--text);font:inherit;font-size:1rem;width:100%}
 :root[data-theme="dark"] .door-form{--field:#6b747e}
 .door-form input:focus-visible,.door-form select:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-glow)}
 .door-form .btn{width:100%;justify-content:center;margin-top:20px;min-height:48px;border:0;font:inherit;font-weight:600;cursor:pointer}

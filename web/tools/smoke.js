@@ -294,7 +294,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   }).map((e) => e.id);
   const gets = [];
   const realGet = win.Maity.api.get;
-  win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
+  win.Maity.api.get = (p, o) => { gets.push(p); return realGet(p, o); };
   const realAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => { gets.push(p); return realAll(p); };
   docListeners.DOMContentLoaded(); await tick(); await tick();
@@ -11578,7 +11578,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && main.querySelector(".first-hint") && text(main).includes("No cards yet. Your agents put the work here"), "empty board: subtitle and first hint");
   await go("#/maintainer/plain/inbox");
   expect(text(main).includes("No open requests.") && text(main).includes("Your agents ask here when they need you"), "empty inbox: first hint");
-  win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
+  win.Maity.api.get = (p, o) => { gets.push(p); return realGet(p, o); };
   win.Maity.api.post = realPost;
 
   // Group chats (docs/api.md §9.2): in the list, open, write, manage, remove, read along.
@@ -14058,7 +14058,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   let soOut = false;
   win.Maity.api.post = (p, b) => (p === "/auth/logout" ? (soOut = true, Promise.resolve({})) : soPost(p, b));
   win.Maity.api.endSession = () => {};
-  win.Maity.api.get = (p) => (soOut && (p === "/auth/session" || p === "/me") ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : soGet(p));
+  win.Maity.api.get = (p, o) => (soOut && (p === "/auth/session" || p === "/me") ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : soGet(p, o));
   await go("#/all"); for (let k = 0; k < 4; k++) await tick();
   expect(pzCalls.includes("start human"), "presence: a human's page starts it after /me " + JSON.stringify(pzCalls));
   await go("#/invite/void-xxxxxxxxxxxxxxxx6"); for (let k = 0; k < 6; k++) await tick();
@@ -17385,6 +17385,97 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "boot: a 503 window's part carries retry_after from its end " + JSON.stringify([raErr && raErr.status, raErr && raErr.code, raWait]));
   }
 
+  // The boot's order (tsk-zf3wd9t5gjab): the notifications head is asked beside /bootstrap, not after it;
+  // asked before the session is known it is quiet, and asked again the usual way once the session is;
+  // a drawing that leads on at once (Settings to settings/mine) asks no second head; Mine's own read
+  // starts beside the context, not after the head and the drawing it leads on to.
+  {
+    const A = win.Maity.api.fixtureAsked;
+    const HEAD = "GET /me/notifications?limit=0";
+    const MINE = "GET /projects/maintainer/maity/me/settings";
+    const EVENTS = "GET /projects/maintainer/maity/events?after=latest&wait=0";
+    const count = (list, x) => list.filter((y) => y === x).length;
+    const unauth = (p) => new win.Maity.api.ApiError("Not signed in", 401, p, "unauthenticated");
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 10; k++) await tick();
+    // While /bootstrap is held, the head is asked already.
+    let boFree = null;
+    win.MAITY_FIXTURE_HOLD = (m, p) => (p === "/bootstrap" && !boFree ? new Promise((res) => { boFree = res; }) : null);
+    A.length = 0;
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 4; k++) await tick();
+    const boHeld = A.slice();
+    if (boFree) boFree();
+    win.MAITY_FIXTURE_HOLD = null; for (let k = 0; k < 10; k++) await tick();
+    expect(boHeld[0] === "GET /bootstrap?project=maintainer/maity" && boHeld.includes(HEAD) && count(A, HEAD) === 1 && !!main.querySelector("section.view-board"),
+      "boot order: the notifications head is asked while /bootstrap is still out, once, and the page draws " + JSON.stringify([boHeld, count(A, HEAD)]));
+    // A visitor's boot (the session 401): the head's 401 is dropped, no "session ended". Each case
+    // starts away from the board, whose followRoute keeps a second go() there from drawing anew.
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 10; k++) await tick();
+    win.MAITY_FIXTURE_HOLD = (m, p) => (p === "/auth/session" || p === "/me" || p === "/me/notifications" ? Promise.reject(unauth(p)) : null);
+    A.length = 0;
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 10; k++) await tick();
+    const boVisitor = A.slice();
+    const boEnded = !!main.querySelector(".session-ended");
+    const boSignIn = !!byId("login-email");
+    win.MAITY_FIXTURE_HOLD = null;
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 10; k++) await tick();
+    expect(boVisitor.includes(HEAD) && !boEnded && boSignIn && !!main.querySelector("section.view-board"),
+      "boot order: a signed-out boot's head answers 401 and is dropped quietly: the sign-in without \"session ended\" " + JSON.stringify([boVisitor, boEnded, boSignIn]));
+    // Signed in, the early head meets a 401 (the cookie of a session that ended meanwhile, say): nothing
+    // ends on it, and once the session is read the head is asked again the usual way.
+    let boOnce = false;
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 10; k++) await tick();
+    win.MAITY_FIXTURE_HOLD = (m, p) => (p === "/me/notifications" && !boOnce ? (boOnce = true, Promise.reject(unauth(p))) : null);
+    A.length = 0;
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 10; k++) await tick();
+    win.MAITY_FIXTURE_HOLD = null;
+    expect(boOnce && count(A, HEAD) === 2 && !main.querySelector(".session-ended") && !!main.querySelector("section.view-board"),
+      "boot order: an early head's 401 ends nothing; the drawing asks it again once the session is read " + JSON.stringify(A.filter((x) => x.includes("notifications"))));
+    // Settings for a member without project:admin leads on to settings/mine: one head for both drawings,
+    // and Mine's read asked while the head is still out, before the second drawing's event head.
+    const boGet = win.Maity.api.get;
+    win.Maity.api.get = (p, o) => boGet(p, o).then((v) => (p === "/me"
+      ? Object.assign({}, v, { projects: v.projects.map((x) => Object.assign({}, x, { trust: "member", role: "coder" })) }) : v));
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 10; k++) await tick();
+    let hdFree = null;
+    win.MAITY_FIXTURE_HOLD = (m, p) => (p === "/me/notifications" && !hdFree ? new Promise((res) => { hdFree = res; }) : null);
+    A.length = 0;
+    await go("#/maintainer/maity/settings"); for (let k = 0; k < 4; k++) await tick();
+    const stHeld = A.slice();
+    if (hdFree) hdFree();
+    win.MAITY_FIXTURE_HOLD = null; for (let k = 0; k < 10; k++) await tick();
+    const stAll = A.slice();
+    const stDrawn = /settings\/mine$/.test(win.location.hash) && !!main.querySelector("form.my-settings");
+    win.Maity.api.get = boGet;
+    expect(stHeld.includes(MINE) && count(stAll, HEAD) === 1 && count(stAll, MINE) === 1
+      && stAll.indexOf(MINE) < stAll.lastIndexOf(EVENTS) && stDrawn,
+      "boot order: Settings → settings/mine asks one head, and Mine's read beside it, before the second drawing's event head "
+      + JSON.stringify([stHeld, stAll, stDrawn]));
+    // An owner at Settings gets General: Mine's read is not asked for it.
+    A.length = 0;
+    await go("#/maintainer/maity/settings"); for (let k = 0; k < 10; k++) await tick();
+    expect(!A.includes(MINE) && count(A, HEAD) === 1 && !!byId("project-language"),
+      "boot order: an owner's Settings (General) asks no Mine read " + JSON.stringify(A));
+    // The root and the sign-in lead on before the context: their drawing asks no head, the page they
+    // lead to asks its one; a visitor's sign-in asks none at all.
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 10; k++) await tick();
+    A.length = 0;
+    await go("#/"); for (let k = 0; k < 10; k++) await tick();
+    const rtHeads = A.filter((x) => x === HEAD);
+    A.length = 0;
+    await go("#/login"); for (let k = 0; k < 10; k++) await tick();
+    const lgHeads = A.filter((x) => x === HEAD);
+    win.MAITY_FIXTURE_HOLD = (m, p) => (p === "/auth/session" || p === "/me" ? Promise.reject(unauth(p)) : null);
+    A.length = 0;
+    await go("#/login"); for (let k = 0; k < 10; k++) await tick();
+    const outHeads = A.filter((x) => x === HEAD);
+    const outSignIn = !!byId("login-email");
+    win.MAITY_FIXTURE_HOLD = null;
+    expect(rtHeads.length === 1 && lgHeads.length === 1 && outHeads.length === 0 && outSignIn,
+      "boot order: the root and the sign-in, signed in, ask one head (the page they lead to); a visitor's sign-in none "
+      + JSON.stringify([rtHeads.length, lgHeads.length, outHeads.length, outSignIn]));
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 10; k++) await tick();
+  }
+
   // Report (§16.8, tsk-7ze5w6ymf7bw), inside a project: a card, a person or agent, the project and a
   // message from someone else, each by the id the member's read gives; one's own page and message
   // offer none. The form asks a reason first and keeps the text to 2 KiB; a refusal is the hub's;
@@ -18928,7 +19019,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const mtRefused = await win.Maity.api.get("/projects").then(() => null, (err) => err);
   expect(mtRefused && mtRefused.status === 503 && mtRefused.code === "maintenance" && mtRefused.details.text === "Moving the database"
     && mtRefused.details.retry_after > 0, "maintenance: the fixture hub refuses other calls with 503 maintenance, the window in its details");
+  // The boot's quiet notifications head is refused with 503 while /bootstrap, which a window lets
+  // through, is answered: that refusal starts no redraw (tsk-zf3wd9t5gjab), whose next quiet head
+  // would be refused again without end. One boot draws the full page, and it stays.
+  const mtAsked = win.Maity.api.fixtureAsked;
+  const mtCount = (x) => mtAsked.filter((y) => y.startsWith(x)).length;
+  mtAsked.length = 0;
   await go("#/all"); await mtSettle();
+  const mtFirst = [mtCount("GET /bootstrap"), mtCount("GET /me/notifications")];
+  await mtSettle(); await mtSettle();
+  const mtLater = [mtCount("GET /bootstrap"), mtCount("GET /me/notifications")];
+  expect(mtFirst[0] === 1 && mtFirst[1] === 1 && JSON.stringify(mtLater) === JSON.stringify(mtFirst) && main.querySelector(".maintenance-page"),
+    "maintenance: a running window refuses the boot's quiet head, and the full page is drawn by one boot, no redraw after it "
+    + JSON.stringify([mtFirst, mtLater, !!main.querySelector(".maintenance-page")]));
   const mtPage = main.querySelector(".maintenance-page");
   expect(mtPage && mtPage.all().some((e) => e.tagName === "H2" && e.textContent === "Maintenance") && text(mtPage).includes("Moving the database") && text(mtPage).includes("back at")
     && btn(mtPage, "End maintenance now") && mtPage.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/admin/maintenance")
@@ -18951,7 +19054,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(main.querySelector(".maintenance-page") && text(main).includes("Told by a refusal") && mtBanner(), "maintenance: a 503 maintenance shows the full page at once");
   // Someone other than the instance admin, signed in: the full page at /admin/maintenance too, with a way out.
   const mtMeGet = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/me" ? mtMeGet(p).then((v) => ({ ...v, member: { ...v.member, instance_admin: false } })) : mtMeGet(p));
+  win.Maity.api.get = (p, o) => (p === "/me" ? mtMeGet(p, o).then((v) => ({ ...v, member: { ...v.member, instance_admin: false } })) : mtMeGet(p, o));
   await go("#/admin/maintenance"); await mtSettle();
   expect(main.querySelector(".maintenance-page") && !mtSection() && !btn(main, "End maintenance now") && header.querySelector("button.maintenance-sign-out")
     && header.querySelector("button.maintenance-sign-out").textContent === "Sign out",
@@ -18962,7 +19065,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     let soOut = false;
     win.Maity.api.post = (p, b) => (p === "/auth/logout" ? (soOut = true, Promise.resolve({})) : soPost(p, b));
     win.Maity.api.endSession = () => {};
-    win.Maity.api.get = (p) => (soOut && (p === "/auth/session" || p === "/me") ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : soGet(p));
+    win.Maity.api.get = (p, o) => (soOut && (p === "/auth/session" || p === "/me") ? Promise.reject(new win.Maity.api.ApiError("signed out", 401, p, "unauthenticated")) : soGet(p, o));
     header.querySelector("button.maintenance-sign-out").click(); await mtSettle(); await mtSettle();
     expect(soOut && main.querySelector(".maintenance-page") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login")
       && !header.querySelector("button.maintenance-sign-out"), "maintenance: Sign out posts /auth/logout during a window, and the visitor's full page follows");
@@ -18970,7 +19073,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     if (win.Maity.notify && win.Maity.notify.resume) win.Maity.notify.resume();
   }
   // A visitor without a session: the full page through the drawing itself, with the way to the sign-in.
-  win.Maity.api.get = (p) => (p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("x", 401, p, "unauthenticated", {})) : mtMeGet(p));
+  win.Maity.api.get = (p, o) => (p === "/auth/session" ? Promise.reject(new win.Maity.api.ApiError("x", 401, p, "unauthenticated", {})) : mtMeGet(p, o));
   await go("#/all"); await mtSettle();
   expect(main.querySelector(".maintenance-page") && main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/login") && !byId("login-email")
     && !header.querySelector("button.maintenance-sign-out"), "maintenance: a visitor without a session gets the full page, not the public page or the sign-in, and no Sign out");
@@ -18999,7 +19102,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await i18n.follow(null);
   }
   // A session that must set up its second factor first (§2.8.5): the full page as well, with the same way out.
-  win.Maity.api.get = (p) => (p === "/auth/session" ? mtMeGet(p).then((s) => ({ ...s, second_factor: "enrolment_required" })) : mtMeGet(p));
+  win.Maity.api.get = (p, o) => (p === "/auth/session" ? mtMeGet(p, o).then((s) => ({ ...s, second_factor: "enrolment_required" })) : mtMeGet(p, o));
   await go("#/all"); await mtSettle();
   expect(main.querySelector(".maintenance-page") && header.querySelector("button.maintenance-sign-out") && !main.querySelector(".security-enrol"),
     "maintenance: a session that must set up its second factor gets the full page and a way to sign out");

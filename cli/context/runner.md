@@ -4109,7 +4109,7 @@ the clone and code that can put a file there can remove it itself.
 
 **Id:** 783e476c-3975-43de-9c4e-7c3a5da57be7
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** card tsk-bg81webs911m (the rest of the card: every path maity reads for the agent, the lead's list of those paths and of the ways out to test (an absolute path, `../`, `.git/maity/`, a symbolic link, a hard link), and the order to offer no `-o -` under a placement), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed; the scratch paragraph from card tsk-dpe3d5g5eh4k (the lead's go, 2026-11-17)
 **See:** runner.md#under-a-placement-maity-writes-a-file-only-inside-the-clone-and-reads-its-records-from-the-runners-directory — 818828af-24cb-4b2a-be54-1bff2211ccb0 — as of 2026-11-13
@@ -4170,6 +4170,53 @@ goes wherever the command line sent it, which maity cannot see.
 **Known gap:** a file whose other name is removed between the open and
 the link count reads as one link; that takes write access to the
 directory of that other name.
+
+## The walk to the placement's scratch passes through the directories above it, never reads them
+
+**Id:** 0bab0087-a0f1-4809-9e5c-31c878f35d11
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** cards tsk-x6wvgna4w95x and tsk-vt5hye6a6k6v; reviews A1715 and A1716 of PR #2053; live probe A1718 in a Codex placement on maity 0.1.0a17 and a second Codex placement's refusal, 2026-11-20; `cli/src/maity/inclone.py`. The refusal and its message are confirmed by the probe; the choice of fix and the rejected alternatives are the author's, not yet reviewed
+**See:** runner.md#under-a-placement-maity-reads-a-file-for-the-agent-only-inside-the-clone-or-the-placements-scratch-and-writes-no-attachment-to-standard-output — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-20
+**Revisit when:** a harness's sandbox hides a directory on the way to the scratch from search, not only from reading; a harness that runs `maity` inside its sandbox is supported on a system without `O_PATH`
+
+On the way from `/` to the recorded scratch, `inclone._walk` opens each
+directory with `O_PATH | O_DIRECTORY | O_NOFOLLOW` (Linux), from the one
+before, checks that it is a directory, and reads nothing from it. Below
+the scratch, and for the file itself, nothing changes: each directory is
+opened without following a link, and the file must be a regular file with
+one link. Where there is no `O_PATH` (macOS) the directories above the
+scratch are opened for reading, as before.
+
+**Reason:** Codex runs `maity` inside its bwrap sandbox. Its profile hides
+the workspaces root (`"none"`) and opens the scratch again (`"write"`), so a
+path still leads through the hidden directories, but they cannot be opened
+for reading. The walk opened each of them for reading, so under Codex every
+file in the scratch was refused with "the way to the placement's scratch
+(…) is not plain directories", absolute or relative, for `--body-file` and
+`--attach` alike (probe A1718). The agent's own shell had just written the
+file through the same path, so the session holds the right to search those
+directories. `O_PATH` needs that right and nothing more.
+
+**Boundary:** a descriptor opened with `O_PATH` reads nothing. A link on the
+way is still refused: with `O_NOFOLLOW`, `O_PATH` opens the link itself,
+which is no directory. Under Claude Code, maity runs outside the sandbox as
+the agents' user. Passing through a directory gives it nothing that this
+user's own path lookup does not already give, and the file checks are as
+before.
+
+**Rejected alternatives:**
+- Starting the walk at the recorded scratch path by name (`os.open(root,
+  O_NOFOLLOW)`): the kernel follows a link in every component but the last,
+  so a link above the scratch would no longer be refused.
+- Making the scratch's parents readable in the Codex profile: every Codex
+  session could then list the workspaces root and the other placements'
+  scratch names, which the profile hides on purpose.
+- Telling Codex agents to keep such files in the clone: a review's evidence
+  or another head's clone in the work tree is what the scratch exists to
+  keep out of commits (docs/agents.md).
 
 ## The runner nudges an interactive agent that stopped listening, then resumes it
 
@@ -4799,6 +4846,111 @@ placement ends without asking what in it matters.
   end is the placement's.
 - Its size in `workspace_outcome`: a new field for something the
   operator alone acts on; the lead kept the hub out of it.
+
+## A placement's test slots and test cluster live in its own scratch, so its slots bound only its own runs
+
+**Id:** 2ce039de-925e-4244-9a90-8336e9375d68
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-w7qtcbzcshn9, filed by the lead from tsk-deaaanqsq5e2 (placed sessions bypassed `tools/run_slot.sh`'s slots), 2026-11-20; security's rejection of a directory shared by a user's placements and the lead's choice of the scratch, 2026-11-20; the security review of #2032 (other placements' scratch denied, scram with a per-placement password kept outside every sandbox), 2026-11-20; red team's probe that Claude Code's sandbox refuses a Unix socket in the own scratch, and the lead's ruling to leave the cluster out of Claude Code placements and not to allow Unix sockets there, 2026-11-20
+**See:** runner.md — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-20
+**Revisit when:** a runner-mediated slot lock bounds heavy runs across placements (tsk-w7dx3h9mn8dp); each placement runs as its own OS user; `with_postgres.sh` moves its socket out of the data directory; the test cluster reaches Claude Code placements over TCP (tsk-zk2cse7s2rf7); a Codex session is found unable to start the cluster
+
+The runner sets `MAITY_RUN_SLOTS_DIR=<scratch>/slots` for every placement
+with a scratch beside its clone, and `MAITY_RUN_NAME=<handle>#<instance>`
+(the handle alone before the hub has named an instance; a value of any
+other shape is left out). The session gets `MAITY_PG_DIR=<scratch>/pg` and
+its password only where `<scratch>/pg/.s.PGSQL.<port>` fits a Unix socket
+path (`adapters.pg_dir`, room for a five-digit port), as `TMPDIR` does (the
+entry under See). Otherwise the runner logs that it left them out. A
+Claude Code placement gets no test cluster yet (`adapters.gets_test_cluster`):
+on Linux its sandbox refuses `socket(AF_UNIX)` with EPERM (seccomp, before
+any path is checked), even inside the placement's own scratch, so the
+runner draws no password file for it and starts it without `pgenv`. macOS
+is untested and treated the same. Its test slots work as everywhere. A
+cluster over TCP on 127.0.0.1 for these placements is tsk-zk2cse7s2rf7.
+Codex keeps the cluster, though no Codex session has started one yet. No path
+is opened in any sandbox beyond the scratch, which the sandbox already
+writes and which goes when the placement closes. Within a placement,
+`with_postgres.sh` keeps reusing its own cluster across runs.
+
+Two hardening steps keep the scratch the placement's own:
+- **Other scratches denied.** Every other placement's scratch is listed at
+  the start (`supervisor.other_scratches`) and joins the private paths, as
+  the other clones' credentials do. Claude Code denies them (`denyRead`,
+  `denyWrite`). In Codex they stay inside the hidden workspaces root, so
+  `outermost` leaves them out of the profile. A listing that cannot be
+  completed refuses the start. The list covers the scratches that exist at
+  the start. One made while a Claude Code session runs is a known residual,
+  tracked as tsk-rbys2j9q0m48: that session can read it, but live probes
+  showed it can neither write it (the sandbox writes only its own paths)
+  nor connect to that placement's cluster socket (the sandbox refuses
+  every Unix socket, its own included). agy and opencode are not kept out
+  by these rules.
+- **Password-protected cluster.** The cluster takes a password, which
+  `with_postgres.sh` gets as `MAITY_PG_PASSWORD` and uses to make the
+  cluster with `scram-sha-256`. The runner draws it once per placement into
+  `<workspaces>/.maity-pg/<placement id>` (scratchop `pg_make`: 0600,
+  created exclusively without following a link, never overwritten, removed
+  at the close). That holder is 0700, outside every scratch and clone, and
+  at a fixed path, so every sandbox is denied it from its first start; a
+  placement made later adds no path to deny. The session never reads the
+  file. The runner starts it through `pgenv`, which reads the password
+  outside the sandbox and sets it, with `MAITY_PG_DIR`, in the session's
+  process environment, never on a command line or in tmux's environment
+  (`launch.env` reaches tmux as `-e`). Both are set or neither, so a
+  cluster with `trust` is never made in a scratch. `pgenv` is a module the
+  runner starts with its own interpreter, never a `maity runner`
+  subcommand: an agent's `maity` runs outside its sandbox, and `pgenv`
+  starts any command it is given. So placements on an ssh host, whose
+  interpreter the runner does not know, get no test cluster yet.
+
+The password keeps out a same-user process that can reach the socket path
+but not the session's files or process environment. A fully unsandboxed
+process of the same user can read the session's environment, and the
+password does not claim to stop it.
+
+**Reason:** the scripts' default, `~/.local/state/maity/`, is outside what
+either sandbox writes, so placed sessions ran their heavy suites without a
+slot and without a line in the slot log. Placements of one OS user serve
+different projects and must stay apart, so a cluster or a slot file must
+not be writable by two of them. A writable data directory lets its writer
+plant PostgreSQL configuration (`archive_command`, preloaded libraries,
+include files) that runs when another session starts the server, and
+shared lock files allow squatting. The scratch is already per placement,
+0700, made without following a link and removed at the close, so it adds
+nothing to what security reviews.
+
+The cost: slots now bound one placement's runs only. They no longer queue
+the heavy suites of different placements on one machine. That is left to
+a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
+
+**Rejected alternatives:**
+- One `<workspaces>/.runs` shared by a user's sandboxed placements (the
+  first shape of this card): rejected by security for the reasons above.
+- A new `<workspaces>/.runs/<placement-id>` per placement: the same
+  lifecycle as the scratch, plus a second directory to make, grant,
+  remove and collect. Its only gain is a socket path about 20 bytes
+  shorter.
+- The scripts' default under `~/.local/state/maity/`: that directory also
+  holds `MAITY_STATE_DIR` credentials of agents joined by hand, so it
+  cannot be opened to a sandbox.
+- A new password at each session start: the cluster outlives a restart,
+  so each start would have to reset the role's password (`postgres
+  --single` with the server stopped) and could break a run still using it.
+  One password per placement needs neither.
+- The password file in the placement's own scratch, read by the session:
+  the scratch is not denied to a session that started before it existed.
+- Denying the whole workspaces root and re-allowing the own clone and
+  scratch: it rests on an allow inside a deny that is not shown to work in
+  this sandbox, and the own credential's deny would sit inside it.
+- A non-superuser cluster role: the hub's own tests run as a superuser
+  (`hub/tests/test_db_role.py`).
+- Claude Code's `allowAllUnixSockets`, so its sessions could bind the
+  cluster's socket: on Linux it turns the sandbox's whole seccomp filter
+  off, not only the socket rule (red team's probe). A cluster over TCP on
+  127.0.0.1, which the sandbox allows, comes in tsk-zk2cse7s2rf7 instead.
 
 ## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
 

@@ -97,8 +97,9 @@ window.Maity = window.Maity || {};
 
   // The counts, per project too (by_project, computed by the hub over
   // every unread item, §18.2), and the head for the long-poll; no items.
-  async function read() {
-    const answer = await M.api.get("/me/notifications?limit=0");
+  // opts: { quiet } for the boot's head, asked before the session is known (js/app.js).
+  async function read(opts) {
+    const answer = await M.api.get("/me/notifications?limit=0", opts && opts.quiet ? { quiet: true } : undefined);
     state.counts = answer.counts;
     state.byProject = answer.by_project || {};
     if ("sessions_rev" in answer) knowSessionsRev(answer.sessions_rev);
