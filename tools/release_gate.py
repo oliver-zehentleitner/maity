@@ -15,7 +15,8 @@ writes:
   the run's commit defines it (missing, skipped or red, it stops the gate);
   a run whose file predates that job counts on 11.4 alone. A file whose
   jobs cannot be read, or in which no `hub-mariadb` job is read, stops the
-  gate instead of reading as one that predates the job. A run that
+  gate instead of reading as one that predates the job, and so does a run
+  that lists a `hub-mariadb*` job not read from its file. A run that
   skipped the suite counts for nothing unless a job beside it went red, and
   only main's own workflow file counts: the run's ref is main and the commit
   it ran is on main.
@@ -159,36 +160,89 @@ MARIADB_WORKFLOW = ".github/workflows/hub-mariadb.yml"
 
 # A block-mapping key on one line: bare or quoted, `:`, then nothing or a value or comment.
 KEY = re.compile(r"""(["']?)([A-Za-z_][A-Za-z0-9_-]*)\1[ \t]*:(?:[ \t]+(.*))?$""")
+# The top-level keys of a workflow file. A line at column 0 that is none of them is no key the
+# reader knows: in `jobs:` the continuation of a job's value wrapped there (a quoted string, a
+# flow collection, a plain scalar), elsewhere a document marker or a root that is no mapping.
+WORKFLOW_KEYS = {"name", "run-name", "on", "permissions", "env", "defaults", "concurrency", "jobs"}
+# YAML breaks lines at LF, CR and CRLF only; str.splitlines also breaks at U+2028, U+0085 and
+# others, which may stand inside a comment or a quoted value.
+LINE_BREAK = re.compile(r"\r\n?|\n")
+# A quoted value closed on its own line (YAML's escapes: \x in double quotes, '' in single).
+CLOSED = {'"': re.compile(r'"(?:[^"\\]|\\.)*"'), "'": re.compile(r"'(?:[^']|'')*'")}
+
+
+def _one_line(value: str) -> bool:
+    """Whether a key's value ends on its line: no quoted string or flow collection left open."""
+    if value[:1] in CLOSED:
+        return CLOSED[value[0]].match(value) is not None
+    if value[:1] not in ("{", "["):
+        return True
+    depth, quote = 0, ""
+    for char in value:
+        if quote:
+            quote = "" if char == quote else quote
+        elif char in "\"'":
+            quote = char
+        elif char in "{[":
+            depth += 1
+        elif char in "}]":
+            depth -= 1
+            if depth == 0:
+                return True
+    return False
 
 
 def workflow_job_ids(text: str) -> set[str] | None:
     """The keys under a workflow's top-level `jobs:`, read from its text; None when unsure.
 
     No YAML parser: the gate runs on the bare interpreter. It reads the block layout only:
-    one top-level `jobs:` with nothing but a comment after it, its keys bare or quoted at one
-    indent, comment lines anywhere. Anything else is None: no `jobs:` line or a second one, a
-    value on it (flow style, an anchor), no key under it, a tab in the indent, or a line at
-    the keys' indent or shallower that is no key. An empty set would read every job as one
-    the file predates; None stops the gate.
+    top-level workflow keys at column 0 (a `---` before the first), one `jobs:` among them
+    with nothing but a comment after it, its keys bare or quoted at one indent, comment lines
+    anywhere. None for what it can tell it does not read: no `jobs:` line or a second one, a
+    value on it (flow style, an anchor), no key under it, a tab in the indent, a line at the
+    keys' indent or shallower that is no key, a line at column 0 that is no workflow key (a
+    value wrapped there, a document marker, a root that is no mapping), and a quoted value or
+    flow collection that does not close on its line. An empty or short set would read a job
+    as one the file predates; None stops the gate. The run's own job list backs this up
+    (mariadb_state), for a wrapped value this reading cannot tell from a key.
     """
     ids: set[str] = set()
-    seen = inside = False
+    seen = inside = started = False
     indent = 0
-    for line in text.splitlines():
+    block = -1  # the depth of the key whose block scalar (`|`, `>`) runs below it
+    for line in LINE_BREAK.split(text):
         stripped = line.lstrip(" ")
-        if not stripped.strip() or stripped.startswith("#"):
+        if not stripped.strip(" \t") or stripped.startswith("#"):
             continue
         depth = len(line) - len(stripped)
+        if block >= 0 and depth > block:
+            continue
+        block = -1
         if stripped.startswith("\t") and (depth == 0 or (inside and depth <= (indent or depth))):
             return None
+        entry = stripped
+        while re.match(r"-(?:[ \t]|$)", entry):  # `- key: value` in a sequence
+            entry = entry[1:].lstrip(" \t")
+        found = KEY.match(entry)
+        value = ((found.group(3) or "") if found else "").strip()
+        if value[:1] in ("|", ">"):
+            block = depth
+        elif not _one_line(value):
+            return None
         if depth == 0:
+            if stripped.rstrip() == "---" and not started:
+                started = True
+                continue
+            started = True
+            if entry is not stripped and not inside:
+                continue  # a sequence entry at column 0 under a key before `jobs:`
+            if not (found and entry is stripped and found.group(2) in WORKFLOW_KEYS):
+                return None
             if inside and not ids:
                 return None
-            found = KEY.match(line)
-            inside = bool(found and found.group(2) == "jobs")
-            if inside and found:
-                rest = (found.group(3) or "").strip()
-                if seen or (rest and not rest.startswith("#")):
+            inside = found.group(2) == "jobs"
+            if inside:
+                if seen or (value and not value.startswith("#")):
                     return None
                 seen = True
             continue
@@ -197,10 +251,9 @@ def workflow_job_ids(text: str) -> set[str] | None:
         indent = indent or depth
         if depth > indent:
             continue
-        key = KEY.match(stripped)
-        if depth < indent or not key:
+        if depth < indent or not found or entry is not stripped:
             return None
-        ids.add(key.group(2))
+        ids.add(found.group(2))
     return ids or None
 
 
@@ -330,6 +383,17 @@ def mariadb_state(api: Api, sha: str, git: Git) -> State:
                 "jobs"
             ]
         }
+        unread = sorted(n for n in jobs if n.startswith("hub-mariadb") and n not in defined)
+        if unread:
+            # The run has a job the reader did not find in its file: the reader missed part of
+            # the jobs: block, and what it did read cannot tell which jobs had to pass.
+            return State(
+                "fail",
+                f"the run lists {', '.join(unread)}, which the gate did not read from"
+                f" {MARIADB_WORKFLOW} at {run['head_sha']} ({run['html_url']}): write its jobs:"
+                f" block in the plain block layout on main and start hub-mariadb by hand from"
+                f" main (sha {sha})",
+            )
         # A job the run's workflow file defines must have passed: missing or skipped is red.
         # Only a job the file does not define is left out, for runs from before it existed.
         required = [name for name in MARIADB_EXTRA_JOBS if name in defined]

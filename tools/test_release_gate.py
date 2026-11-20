@@ -66,6 +66,29 @@ UNKNOWN = "e" * 40  # a commit the checkout cannot get
 OLD = "f" * 40  # a commit of main whose hub-mariadb.yml predates hub-mariadb-11-8
 UNREADABLE = "9" * 40  # a commit of main whose workflow file cannot be read
 NO_SUITE = "8" * 40  # a commit of main whose workflow file reads without a hub-mariadb job
+WRAPPED = "7" * 40  # today's hub-mariadb.yml with a hub-mariadb value wrapped to column 0
+WRAPPED_KEY = "6" * 40  # the same, where the wrapped line spells a top-level key (`env:`)
+
+
+def wrapped_workflow(value):
+    """Today's hub-mariadb.yml with `value` under the hub-mariadb job, before hub-mariadb-11-8.
+
+    YAML reads such a value (a quoted string or flow collection continued at column 0) as one
+    value of that job, and all four jobs; the gate's reader must not end the jobs block there."""
+    text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")
+    return text.replace("\n  hub-mariadb:\n", "\n  hub-mariadb:\n    x-wrapped:\n" + value, 1)
+
+
+WRAPPED_FORMS = {
+    "a double-quoted string": '      NOTE: "first\nsecond line"\n',
+    "a single-quoted string": "      NOTE: 'first\nsecond line'\n",
+    "a flow map": "      NOTE: {a: 1,\nb: 2}\n",
+    "a flow sequence": "      NOTE: [a,\nb]\n",
+}
+WORKFLOW_TEXTS = {
+    WRAPPED: wrapped_workflow(WRAPPED_FORMS["a double-quoted string"]),
+    WRAPPED_KEY: wrapped_workflow('      NOTE: "first\nenv: second"\n'),
+}
 ALL_JOBS = {"decide", "hub-mariadb", "hub-mariadb-11-8", "report"}
 
 
@@ -77,6 +100,8 @@ class FakeGit:
             return None
         if sha == NO_SUITE:
             return {"decide", "report"}
+        if sha in WORKFLOW_TEXTS:
+            return g.workflow_job_ids(WORKFLOW_TEXTS[sha])  # the real reader on a real layout
         return ALL_JOBS - {"hub-mariadb-11-8"} if sha == OLD else ALL_JOBS
 
     def on_main(self, sha):
@@ -269,6 +294,27 @@ class MariaDb(unittest.TestCase):
             "::error::no hub-mariadb job read from .github/workflows/hub-mariadb.yml", out
         )
         self.assertNotIn("predates", out)
+
+    def test_a_value_wrapped_to_column_0_does_not_let_a_red_11_8_pass(self):
+        # The reader read {decide, hub-mariadb} here before: 11.8 "predated" the file, exit 0.
+        for sha in (WRAPPED, WRAPPED_KEY):
+            stop = "::error::cannot read .github/workflows/hub-mariadb.yml at " + sha
+            for result in ("failure", "success"):
+                with self.subTest(sha=sha, result=result):
+                    jobs = {5: {"hub-mariadb": "success", "hub-mariadb-11-8": result}}
+                    code, out = gate(self.api([maria(5, sha, "hub-mariadb hand " + TAG)], jobs))
+                    self.assertEqual(code, 1, out)
+                    self.assertIn(stop, out)
+                    self.assertNotIn("predates", out)
+
+    def test_a_run_listing_a_hub_mariadb_job_its_file_lacks_stops(self):
+        # Whatever the reader missed: the run's own job list names a job the file did not give.
+        # (OLD's file reads without hub-mariadb-11-8; this run lists it, red.)
+        runs = [maria(5, OLD, "hub-mariadb hand " + TAG)]
+        jobs = {5: {"hub-mariadb": "success", "hub-mariadb-11-8": "failure"}}
+        code, out = gate(FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **jobs}))
+        self.assertEqual(code, 1, out)
+        self.assertIn("::error::the run lists hub-mariadb-11-8, which the gate did not read", out)
 
     def test_a_red_11_8_beside_a_skipped_suite_stops_instead_of_an_older_green_run(self):
         runs = [maria(6, TAG), maria(5, TAG)]
@@ -537,6 +583,86 @@ class Workflows(unittest.TestCase):
         for layout, text in layouts.items():
             with self.subTest(layout):
                 self.assertEqual(g.workflow_job_ids(text), {"a", "b"})
+
+    def test_a_job_value_wrapped_to_column_0_is_none(self):
+        for form, value in WRAPPED_FORMS.items():
+            with self.subTest(form):
+                self.assertIsNone(g.workflow_job_ids(wrapped_workflow(value)))
+
+    def test_lines_break_where_yaml_breaks_them(self):
+        # U+2028, U+2029, U+0085, \x0b, \x0c, \x1c-\x1e are no line breaks in YAML: inside a
+        # comment or a quoted value they must neither end the block nor start a job. CR alone
+        # and CRLF are.
+        jobs = "jobs:\n  hub-mariadb:\n{}  hub-mariadb-11-8:\n    runs-on: u\n"
+        both = {"hub-mariadb", "hub-mariadb-11-8"}
+        cases = {
+            "U+2028 in a comment": (jobs.format("    # note\u2028more\n    runs-on: u\n"), both),
+            "U+2028 in a comment, then a job's spelling": (
+                "jobs:\n  hub-mariadb:\n    # note\u2028  hub-mariadb-11-8:\n    runs-on: u\n",
+                {"hub-mariadb"},
+            ),
+            "U+2028 in a quoted value": (jobs.format('    run: "x\u2028y"\n'), both),
+            "U+2029 and U+0085 in a quoted value": (
+                jobs.format('    env:\n      A: "hello\u2029world\x85!"\n'),
+                both,
+            ),
+            "\\x0b, \\x0c and \\x1c in a comment": (
+                jobs.format("    # a\x0bb\x0cc\x1cd\n    runs-on: u\n"),
+                both,
+            ),
+        }
+        for case, (text, expected) in cases.items():
+            with self.subTest(case):
+                self.assertEqual(g.workflow_job_ids(text), expected)
+        for eol in ("\r", "\r\n"):
+            with self.subTest(repr(eol)):
+                text = eol.join(["on: push", "jobs:  # x", "  a:", "    x: 1", "  b:", ""])
+                self.assertEqual(g.workflow_job_ids(text), {"a", "b"})
+
+    def test_markers_sequences_and_block_scalars_that_are_read(self):
+        layouts = {
+            "a document start first": "---\non: push\njobs:\n  a:\n  b:\n",
+            "a sequence at column 0 under on:": "on:\n- push\n- pull_request\njobs:\n  a:\n  b:\n",
+            "a block scalar with unclosed quotes in it": (
+                'jobs:\n  a:\n    run: |\n      X: "open\n      Y: [1,\n  b:\n'
+            ),
+            "a step list with a block scalar": (
+                "jobs:\n  a:\n    steps:\n      - run: |\n          K: 'x\n  b:\n"
+            ),
+            "closed quotes and flow values": (
+                "jobs:\n  a:\n    x: \"a\\\"b\" # c\n    y: 'it''s'\n"
+                '    z: [1, "]", {k: v}]\n  b:\n'
+            ),
+        }
+        for layout, text in layouts.items():
+            with self.subTest(layout):
+                self.assertEqual(g.workflow_job_ids(text), {"a", "b"})
+
+    def test_markers_roots_and_open_values_are_none(self):
+        layouts = {
+            "a root block scalar": "|\njobs:\n  hub-mariadb:\n",
+            "a document end before jobs:": "on: push\n...\njobs:\n  hub-mariadb:\n    runs-on: u\n",
+            "a document end inside jobs:": (
+                "jobs:\n  hub-mariadb:\n    runs-on: u\n...\n  hub-mariadb-11-8:\n    runs-on: u\n"
+            ),
+            "a second document start": "on: push\n---\njobs:\n  hub-mariadb:\n",
+            "jobs: inside a quoted name": 'name: "hello\njobs:\n  hub-mariadb: {}\n"\n',
+            "a quoted value wrapped, indented": (
+                'jobs:\n  hub-mariadb:\n    env:\n      X: "a\n      b"\n  hub-mariadb-11-8:\n'
+            ),
+            "a flow value wrapped, indented": (
+                "jobs:\n  hub-mariadb:\n    needs: [a,\n      b]\n  hub-mariadb-11-8:\n"
+            ),
+            "a quote inside an open flow value": (
+                'jobs:\n  hub-mariadb:\n    x: [a, "b]\n  c"]\n  hub-mariadb-11-8:\n'
+            ),
+            "a plain value wrapped to column 0": (
+                "jobs:\n  hub-mariadb:\n    x: first\nsecond\n  hub-mariadb-11-8:\n"
+            ),
+        }
+        for layout, text in layouts.items():
+            with self.subTest(layout):
+                self.assertIsNone(g.workflow_job_ids(text))
 
     def test_a_workflow_whose_jobs_cannot_be_read_is_none_not_empty(self):
         # Empty would read hub-mariadb-11-8 as "predates it" and let 11.4 count alone.

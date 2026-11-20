@@ -457,14 +457,20 @@ read-only token and lets the tag through only when:
   suite reads as the tag (the list `decide` compares; `git diff`) is
   green: the 11.4 suite and, since 2026-11-20, the 11.8 subset beside it.
   Whether a run had the 11.8 job is read from `hub-mariadb.yml` at the
-  run's commit, not from the jobs the run lists: a file that defines it
+  run's commit, not from the jobs the run lists (those only catch a
+  misread, below): a file that defines it
   and a run where it is missing, skipped or red stops the gate, and only a
   file from before the job lets 11.4 count alone. The gate reads the
-  file's `jobs:` block without a YAML parser, in the block layout only; a
-  file it cannot read that way, or in which it reads no `hub-mariadb`
-  job, stops the gate, since an empty read would let every run count as
-  one from before the job. A run that skipped the
-  suite counts for nothing, unless a job beside it went red. Only runs of
+  file's `jobs:` block without a YAML parser, in the block layout only,
+  and stops on what it can tell it does not read (another layout, a
+  value of a job wrapped to column 0 or left open on its line, a
+  document marker), on a file in which it reads no
+  `hub-mariadb` job, and on a run whose own job list names a
+  `hub-mariadb*` job it did not read from the file: an empty or short
+  read would let the run count as one from before the job. A reader
+  without a parser cannot tell every wrapped value from a top-level key,
+  so the run's job list is the check that does not depend on it. A run
+  that skipped the suite counts for nothing, unless a job beside it went red. Only runs of
   main's own workflow file count: the run's ref is main and the commit
   it ran is on main, since a dispatch on another ref runs that ref's
   copy of `hub-mariadb.yml`, which could keep the title and the job's
@@ -512,10 +518,13 @@ the tag lacks.
   one may be red; found in review.
 - Reading the jobs with PyYAML: the gate runs on the release job's bare
   interpreter, standard library only, and a reader that stops the gate on
-  any layout it does not know guards the same.
+  what it does not read, with the run's job list behind it, guards the
+  same.
 - Reading an unknown layout as no jobs (the first version of the 11.8
   rule): `jobs:  # comment`, a quoted key or another indent made the
-  11.8 job read as one the file predates; found in review.
+  11.8 job read as one the file predates; found in review. So did a value
+  of a job wrapped to column 0 in the second version, which ended the
+  block early; found in review, hence the job-list check.
 
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 

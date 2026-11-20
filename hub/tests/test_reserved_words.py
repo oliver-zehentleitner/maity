@@ -108,9 +108,9 @@ def _literal(node: ast.expr | None) -> tuple[str, bool] | None:
             return None
         flag = _arg(node, 1, "quote")
         return inner[0], isinstance(flag, ast.Constant) and flag.value is True
-    if isinstance(node, ast.Call) and _callee(node) in ("f", "conv") and len(node.args) == 1:
+    if isinstance(node, ast.Call) and _callee(node) in ("f", "conv"):
         # op.f("…"), sa.schema.conv("…"): the name as written, quoted by the dialect
-        return _literal(node.args[0])
+        return _literal(_arg(node, 0, "name" if _callee(node) == "f" else "value"))
     return None
 
 
@@ -166,6 +166,11 @@ def _names(call: ast.Call) -> list[tuple[str, ast.expr | None]]:
         found.append(("constraint", _keyword(call, "name")))
     if callee == "ForeignKey":
         found += _target(_arg(call, 0, "column"))
+    if callee == "ForeignKeyConstraint":
+        refcolumns = _arg(call, 1, "refcolumns")
+        if isinstance(refcolumns, (ast.List, ast.Tuple)):
+            for target in refcolumns.elts:
+                found += _target(target)
     if callee == "create_foreign_key":
         # op.create_foreign_key(name, source, referent, …); in a batch the source is the batch's.
         if table is not None:
@@ -181,10 +186,15 @@ def _names(call: ast.Call) -> list[tuple[str, ast.expr | None]]:
 
 
 def _target(node: ast.expr | None) -> list[tuple[str, ast.expr | None]]:
-    """The table and column of a ForeignKey's "table.column" (or "schema.table.column") string.
+    """The table and column a foreign key points at: a "table.column" (or "schema.table.column")
+    string, or a ("table", "column") tuple.
 
-    SQLAlchemy splits the string at its periods and writes each part plain, quoted_name or not,
-    so a reserved part has no quoted form here: the key is then named by its Column object."""
+    SQLAlchemy splits a string at its periods and writes each part plain, quoted_name or not, so
+    a reserved part of a string target has no quoted form: the key is then named by a tuple of
+    quoted_name parts (kept by SQLAlchemy 2.1, the pinned runtime; the review found 2.0.36
+    dropping the flag) or by the Column object."""
+    if isinstance(node, ast.Tuple) and len(node.elts) >= 2:
+        return [("table", node.elts[-2]), ("column", node.elts[-1])]
     spelled = _literal(node)
     if spelled is None:
         return []
@@ -271,6 +281,15 @@ op.create_table(
     ),
     "an ordinary ForeignKey target": 'sa.ForeignKey("human.id", ondelete="CASCADE")',
     "a ForeignKey on a Column object": "sa.ForeignKey(position.c.vector)",
+    "a ForeignKey to a tuple of quoted names": (
+        'sa.ForeignKey((quoted_name("vector", True), quoted_name("vector", True)))'
+    ),
+    "a ForeignKeyConstraint to a quoted tuple": (
+        'sa.ForeignKeyConstraint(["v"], [("t", quoted_name("vector", True))], name="fk")'
+    ),
+    "an ordinary ForeignKeyConstraint": (
+        'sa.ForeignKeyConstraint(["human_id"], ["human.id"], ondelete="CASCADE")'
+    ),
     "a conv name quoted": (
         'op.create_index(sa.schema.conv(quoted_name("vector", True)), "t", ["v"])'
     ),
@@ -376,6 +395,27 @@ UNQUOTED_FORMS = {
     "a ForeignKey through quoted_name, which it splits plain": (
         'sa.ForeignKey(quoted_name("t.vector", True))',
         "column",
+    ),
+    "a ForeignKey to a tuple of the word": ('sa.ForeignKey(("t", "vector"))', "column"),
+    "a ForeignKeyConstraint to a column of the word": (
+        'sa.ForeignKeyConstraint(["v"], ["t.vector"])',
+        "column",
+    ),
+    "a ForeignKeyConstraint to a table of the word, by keyword": (
+        'sa.ForeignKeyConstraint(columns=["v"], refcolumns=["vector.id"])',
+        "table",
+    ),
+    "a ForeignKeyConstraint through quoted_name, which it splits plain": (
+        'sa.ForeignKeyConstraint(["v"], [quoted_name("t.vector", True)])',
+        "column",
+    ),
+    "an index named through op.f by keyword": (
+        'op.create_index(op.f(name="vector"), "t", ["v"])',
+        "index",
+    ),
+    "an index named through conv by keyword": (
+        'op.create_index(sa.schema.conv(value="vector"), "t", ["v"])',
+        "index",
     ),
     "an index named through conv": (
         'op.create_index(sa.schema.conv("vector"), "t", ["v"])',
