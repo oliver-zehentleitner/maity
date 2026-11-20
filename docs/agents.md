@@ -159,8 +159,10 @@ characters as text (`ma{ity,}` counts as `maity`); a word whose braces
 make more than 256 words refuses the line. A line that names `maity`
 inside a command substitution (`$(…)`, backticks) is refused outright
 as well, and so is `maity` with an expansion glued right after it. What
-the hook guarantees is that a line that runs `maity` outside the sandbox
-is one plain call. That covers
+the hook guarantees is that a line Claude Code may take out of the
+sandbox, `maity` after only the allowed assignments, runs only as one
+plain call; names assembled from expansions are left to the sandbox and
+to the CLI's own guard. The refusals cover
 text too: `echo maity | cat` or `git commit -m 'fix maity'` is refused,
 and so is `maity` in a command substitution inside quoted text such as a
 commit message, so text that mentions `maity` goes in a file
