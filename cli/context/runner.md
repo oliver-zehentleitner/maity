@@ -5057,7 +5057,19 @@ after `maity`, but argparse also takes the group after `--` or a global
 option. One check where the CLI reads its arguments makes the rules' shape
 the CLI's own, on every harness at once.
 
-**Rejected alternative:** widening each harness's rules to every spelling
-argparse accepts. They differ by harness, argparse also accepts abbreviated
-options, and a missed spelling would leave a gap that the CLI's check closes
-for all of them.
+The check runs right after argparse has parsed the arguments, on what it
+took as the command. Where argparse itself refuses a spelling first (before
+Python 3.13 it reads a second `--` as the command, "invalid choice"), that
+refusal stands. The message differs then, but it is still a usage error
+(exit 2) and nothing runs.
+
+**Rejected alternatives:**
+- Widening each harness's rules to every spelling argparse accepts. They
+  differ by harness, argparse also accepts abbreviated options, and a missed
+  spelling would leave a gap that the CLI's check closes for all of them.
+- A check on the raw words before parsing ("`runner` among the words, but
+  not first"). It would refuse legitimate commands: `placement start
+  --runner <name>` with a runner named `runner`, and any message text with
+  the word. A raw check that avoids that would have to re-implement
+  argparse's reading of global options, abbreviations and `--`, which is
+  more fragile than taking argparse's own result.

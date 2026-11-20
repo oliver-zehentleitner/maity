@@ -6350,9 +6350,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
         # The runner's commands are its operator's, and the rules that keep them from placed
         # agents look for `runner` right after `maity`: argparse also takes it after `--` or a
         # global option (`maity -- runner …`, `maity --for x runner …`). Nothing runs.
-        _err(
-            "`maity runner` is taken only as the first argument: nothing may come before `runner`"
-        )
+        _err("`maity runner` is taken only as the first argument: nothing may come before `runner`")
         return EXIT_USAGE
     if extra and getattr(args, "handler", None) in _RESTRICTED_HANDLERS:
         # Never repeated: what is left over may be the restricted text itself (§13).
