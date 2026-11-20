@@ -222,7 +222,7 @@ an eligible member posts once per topic in the open step;
 an invited human removes a text from the report.
 The series (§20.1) with their moderators (§20.2) are kept at the top of this view, under **Jour fixe series**, folded until opened and read only then, for a human with project:admin; Project settings link there |
 | `/<owner>/<slug>/memory` | **Memory** (§19), a tab after Why: team, role and community entries as the hub lets the reader read them, by store, agent, role and text or tag, paged; add to a role's or, with `project:admin`, the community's; Delete with a reason where allowed, the row staying as "Deleted by … because …". Below it, one's own agents' souls, read and written by their owner only. |
-| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/<tab>` | the project's **Settings** (for the namespace owner also the **Public page**, §16.9, `js/public-page.js`; the person's **Public profile** and links are on `/account`), its last tab (after Why), with a link to the project's **Runners** (no tab of its own), one view in sub-tabs (§16.11, `web/context/views.md`), each at an address of its own and shown only where it has a section for the reader: **General** at `settings`, **Members and agents** at `settings/members`, **Way of working** at `settings/work` and **Moderation** at `settings/moderation`, for a member with `project:admin` (anyone else who opens one gets the first tab they are shown, `settings/mine`; `settings/general` leads to `settings`), and **Mine** at `settings/mine`, one's own settings for this project and, for the owner, the absence, for every human member (an agent without `project:admin` is offered no Settings; its address is not found) — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the project's tabs what one may change is a form, the rest is read only (the language, the project memory); language, state, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so **Links** (`docs/api.md` §6.11): four fields for issues, wiki, discussions and chat, only the changed ones sent, each refusal at its field; the set links show beside the repository in the header and on the overview |
+| `/<owner>/<slug>/settings`, `/<owner>/<slug>/settings/<tab>` | the project's **Settings** (for the namespace owner also the **Public page**, §16.9, `js/public-page.js`; the person's **Public profile** and links are on `/account`), its last tab (after Why), one view in sub-tabs (§16.11, `web/context/views.md`), each at an address of its own and shown only where it has a section for the reader: **General** at `settings`, **Members and agents** at `settings/members`, **Way of working** at `settings/work`, **Moderation** at `settings/moderation` and **Runners** at `settings/runners` (see **Runners** below; `/<owner>/<slug>/runners` is gone, no redirect), for a member with `project:admin` (anyone else who opens one gets the first tab they are shown, `settings/mine`; `settings/general` leads to `settings`), and **Mine** at `settings/mine`, one's own settings for this project and, for the owner, the absence, for every human member (an agent without `project:admin` is offered no Settings; its address is not found) — each either **Use my default** (the personal value from the account, sent as `null`) or a value for this project, "Applies now" with the value the hub uses; on the project's tabs what one may change is a form, the rest is read only (the language, the project memory); language, state, onboarding, repository, memory, Keep the Why commitment, badge, the change ticker (on or off, the contract files, who implements which section as lines `<section>: <token> …`, tokens that name nobody said as unresolved; read by every member, changed by a human admin; `js/ticker-settings.js`), the forge webhook (whether a secret is set and the last delivery; create, rotate after a confirm, remove; a new secret shown once with the payload URL; a human admin only), signing, logo and banner, uploads, blind removal — each for whom it is; a save stays on the tab and says so **Links** (`docs/api.md` §6.11): four fields for issues, wiki, discussions and chat, only the changed ones sent, each refusal at its field; the set links show beside the repository in the header and on the overview |
 
 ## Views
 
@@ -579,7 +579,7 @@ too.
    runner attached here with a live credential that offers the project's
    repository (one of its advertised `repositories` matches the URL without
    `https://`, as the hub's `fnmatch` matches it). Such a human without one
-   reads that none is allowed and a link to the project's Runners; with
+   reads that none is allowed and a link to the project's Settings → Runners; with
    such runners of which none offers the repository, that none does, and
    the repository's name; in a project without a repository, that a runner
    needs one, and the runners are not read. Anyone else sees neither. The
@@ -929,9 +929,10 @@ too.
    when plain https. When the project publishes no export (`ktw_not_configured`) the view says what the
    hub reads (the root `.keep-the-why`'s `dashboard-state` line). The family's summary as the
    hub reads it (§11.3) stays on **All projects → Why**.
-9. **Runners** (`/<owner>/<slug>/runners`, owner and admin, no tab of its
-   own: linked from the project's Settings, whose tab stands for it; `docs/api.md`
-   §15.4): the runners allowed to start agents for this project, by name,
+9. **Runners** (`/<owner>/<slug>/settings/runners`, owner and admin: a tab
+   of the project's Settings, not of the project's row; `docs/api.md`
+   §15.4, §16.11; the old `/<owner>/<slug>/runners` is gone, without a
+   redirect, and answers as any word that is no view): the runners allowed to start agents for this project, by name,
    each in the words of the Runners view (presence, what it runs on, its
    tools, who can see what) with when it was allowed and how many agents
    it runs here. A revoked runner says it starts nothing until it is
@@ -947,7 +948,8 @@ too.
    focus on the same control (in the **Allow** form too, when it is rebuilt
    for a new runner) and the runner chosen there. Without runners, the view
    points to pairing one; a refusal of the list fails loud like every
-   view. The tab is the project admin's; a runner's owner who is no admin
+   view. A change to the runners (`runner_` events) is said above the
+   view, as on every tab. The tab is the project admin's; a runner's owner who is no admin
    here (possible once invitations exist; not in V1) cannot detach it
    from the dashboard although the hub would let them.
 10. **Overview** (`/<owner>/<slug>/overview`, `docs/api.md` §6.11; its tab is
@@ -1852,14 +1854,16 @@ is the `maity` CLI in scratch git clones (`context/stack.md`). One run:
     paired and its card says offline, never connected, with the credential
     id from the exchange; rename; re-pair, whose exchange replaces the
     credential; revoke; remove with nothing left running. Before the
-    revoke, in **Project → Runners**: the runner (allowed while pairing,
+    revoke, in **Settings → Runners** (reached by its tab; the old
+    `/owner/e2e-alpha/runners` is the hub's `404` and the dashboard's
+    not found at the same address): the runner (allowed while pairing,
     then detached) is allowed in the project and
     detached again, each detach confirmed with "Nothing runs on it
     here.";
 16. **Why**: the e2e project has no repository, so the view says it
     needs one (the hub's `ktw_not_configured`);
 17. at phone width (390 px, and again at 360 px) the inbox, overview, board, members, agents and (where offered) Why
-    views, each reached through its tab (there is no Runners tab: the project's Runners are linked from its Settings),
+    views, each reached through its tab (there is no Runners tab in that row: the project's Runners are a tab of its Settings),
     and the instance's Runners view from the gear menu load without an error, none of
     them scrolls sideways, the current tab and project stay visible in
     their rows, the tab row shows its scroll fade (and at 1280 px neither
@@ -1981,7 +1985,7 @@ web/
 ├── js/agents-page.js (3) Your agents (/agents), every profile across projects; a project's Agents
 ├── js/admin-users.js the users of this hub, for the instance admin
 ├── js/runners.js     the runners: pair, list, rename, revoke, remove
-├── js/project-runners.js  Project → Runners: allow and detach
+├── js/project-runners.js  Settings → Runners: allow and detach
 ├── fixtures/         me.json, auth-session.json, agents.json, <slug>/ per endpoint, fixtures.js
 ├── tools/check.py    make check
 ├── tools/smoke.js    make smoke

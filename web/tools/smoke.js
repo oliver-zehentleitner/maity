@@ -2533,24 +2533,32 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = srGetAll; win.Maity.api.get = srGet;
   win.Maity.api.post = srPost;
   await go("#/maintainer/maity/inbox");
-  // Project → Runners (docs/api.md §15.4): the runners allowed in a project.
+  // Settings → Runners (docs/api.md §15.4, §16.11): the runners allowed in a project, a tab of
+  // the project's Settings since tsk-ert2k23kr5m4; the old /<owner>/<slug>/runners is gone.
+  const PR = "#/maintainer/maity/settings/runners";
   const prTab = () => header.querySelectorAll("nav.views a").find((a) => a.textContent === "Runners");
-  // No tab of its own any more (the maintainer, 2026-10-31): Settings links it.
-  expect(!prTab(), "project runners: no tab of its own");
+  const prSubTab = () => main.querySelectorAll("nav.settings-tabs a").find((a) => a.textContent === "Runners");
+  expect(!prTab(), "project runners: not listed in the project's row of tabs");
   await go("#/maintainer/maity/settings"); await tick();
-  const prLink = main.querySelectorAll("a").find((a) => a.textContent === "This project's runners");
-  expect(prLink && prLink.getAttribute("href") === "#/maintainer/maity/runners", "project runners: linked from the project's Settings for its admin");
+  expect(prSubTab() && prSubTab().getAttribute("href") === PR && !main.querySelectorAll("a").some((a) => a.getAttribute("href") === "#/maintainer/maity/runners"),
+    "project runners: a tab of the project's Settings for its admin, no link to the old address " + (prSubTab() && prSubTab().getAttribute("href")));
+  expect(win.Maity.neverAPage(["maintainer", "maity", "runners"]) === true && win.Maity.neverAPage(["maintainer", "maity", "settings", "runners"]) === false,
+    "project runners: the old address can never be a page, the tab's can");
+  await go("#/maintainer/maity/runners"); await tick();
+  expect(text(main).includes("Page not found") && !main.querySelector("article.runner") && win.Maity.route.current().path === "/maintainer/maity/runners",
+    "project runners: the old address is not found, without a redirect " + win.Maity.route.current().path);
   const prWrites = [];
   const prPost = win.Maity.api.post, prDel = win.Maity.api.del;
   win.Maity.api.post = (p, b) => { prWrites.push(["POST", p, b]); return prPost(p, b); };
   win.Maity.api.del = (p) => { prWrites.push(["DELETE", p]); return prDel(p); };
-  await go("#/maintainer/maity/runners"); await tick();
+  await go(PR); await tick();
   const prSettingsTab = header.querySelectorAll("nav.views a").find((a) => a.textContent === "Settings");
-  expect(prSettingsTab && prSettingsTab.getAttribute("aria-current") === "page" && main.querySelector("section.view-runners") && !main.querySelector("section.view-settings"),
-    "project runners: the Settings tab stands for it, the view keeps its own name");
+  expect(prSettingsTab && prSettingsTab.getAttribute("aria-current") === "page" && main.querySelector("section.view-settings section.project-runners")
+    && prSubTab() && prSubTab().getAttribute("aria-current") === "page",
+    "project runners: the Settings tab and its Runners tab are current");
   const prCard = (name) => main.querySelectorAll("article.runner").find((a) => a.getAttribute("aria-label") === name);
-  expect(plainTitle() === "Runners · Maity · Maity" && main.querySelectorAll("article.runner").length === 2 && prCard("cluster") && prCard("home-laptop"),
-    "project runners: the attached runners, by name");
+  expect(plainTitle() === "Settings · Maity · Maity" && main.querySelectorAll("article.runner").length === 2 && prCard("cluster") && prCard("home-laptop"),
+    "project runners: the attached runners, by name " + plainTitle());
   const prLaptop = text(prCard("home-laptop"));
   expect(prLaptop.includes("online") && prLaptop.includes("1 agent running here") && prLaptop.includes("Claude Code 2.1.308")
     && prLaptop.includes("Agents on home-laptop run as one user, oliver") && !prLaptop.includes("does not allow"),
@@ -2560,11 +2568,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/runners"
     ? prAllN(p).then((r) => ({ items: r.items.map((a) => (a.runner.name === "cluster" ? Object.assign({}, a, { runner: Object.assign({}, a.runner, { credential_state: "none" }) }) : a)), next_cursor: null }))
     : prAllN(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/runners"); await tick();
+  await go("#/maintainer/maity/inbox"); await go(PR); await tick();
   expect(text(prCard("cluster")).includes("It has not been paired yet: it starts nothing until it is") && !text(prCard("cluster")).includes("again"),
     "project runners: a runner never paired is not told to pair again");
   win.Maity.api.getAll = prAllN;
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/runners"); await tick();
+  await go("#/maintainer/maity/inbox"); await go(PR); await tick();
   const prSelect = byId("allow-runner");
   expect(prSelect && prSelect.querySelectorAll("option").length === 1 && prSelect.value === "rnr-0003", "project runners: only the own runners not attached here are offered");
   // The 30-second refresh leaves an unchanged Allow form and the focused Detach where they are.
@@ -2592,7 +2600,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.getAll = prAll0;
   await fireIntervals(); await tick(); await tick();
   main.querySelector(".allow-runner form").dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
-  expect((document.activeElement === main.querySelector(".view-runners .send-status") || (document.activeElement && document.activeElement.className.startsWith("send-status")))
+  expect((document.activeElement === main.querySelector(".project-runners .send-status") || (document.activeElement && document.activeElement.className.startsWith("send-status")))
     && text(document.activeElement).includes("build-box is allowed here."), "project runners: after an action the status line has the focus and says what happened");
   prProto.focus = prFocus; document.activeElement = undefined;
   expect(JSON.stringify(prWrites[0]) === JSON.stringify(["POST", "/projects/maintainer/maity/runners", { runner_id: "rnr-0003" }]) && prCard("build-box")
@@ -2638,17 +2646,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A refusal fails loud, as in every view; the empty state; no tab for a member.
   const prAll = win.Maity.api.getAll;
   win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/runners" ? Promise.reject(new win.Maity.api.ApiError("nope", 404, p, "not_found")) : prAll(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/runners"); await tick();
+  await go("#/maintainer/maity/inbox"); await go(PR); await tick();
   expect(main.querySelector(".error") && !text(main).includes("cannot allow runners"), "project runners: a 404 is an error, not a missing feature");
   win.Maity.api.getAll = (p) => (p === "/projects/maintainer/maity/runners" || p === "/runners" ? Promise.resolve({ items: [], next_cursor: null }) : prAll(p));
-  await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/runners"); await tick();
+  await go("#/maintainer/maity/inbox"); await go(PR); await tick();
   expect(text(main).includes("No runner is allowed in this project yet.") && text(main).includes("You have no runner yet. Pair one on the Runners page."),
     "project runners: the empty state points to pairing");
   win.Maity.api.getAll = prAll;
   const prGet = win.Maity.api.get;
   win.Maity.api.get = (p) => (p === "/me" ? prGet(p).then((m) => { m.projects.find((x) => x.slug === "maity").trust = "member"; return m; }) : prGet(p));
-  await go("#/maintainer/maity/runners"); await tick();
-  expect(!prTab() && text(main).includes("Page not found"), "project runners: no tab and no view for a member");
+  await go(PR); await tick();
+  expect(!prTab() && !prSubTab() && !main.querySelector("article.runner") && win.Maity.route.current().path === "/maintainer/maity/settings/mine",
+    "project runners: no tab and no runners for a member, led on to Mine " + win.Maity.route.current().path);
   win.Maity.api.get = prGet;
   await go("#/maintainer/maity/team"); for (let k = 0; k < 4; k++) await tick();
 
@@ -5539,7 +5548,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const plSaid = text(main.querySelector(".join-slot form.join-form .send-status"));
   expect(!main.querySelector(".join-slot .join-runner-fields") && plNone
     && text(plNone) === "None of your paired runners is allowed in this project yet. Allow one under this project's Runners."
-    && plNone.querySelector("a").getAttribute("href") === "#/maintainer/maity/runners"
+    && plNone.querySelector("a").getAttribute("href") === "#/maintainer/maity/settings/runners"
     && plSaid === "Not placed on the runner: There is no runner and tool to start it with yet: the part on a runner says why.",
     "placements: no paired runner of one's own allowed here: no runner fields, where to allow one, and a start says why " + (plNone && text(plNone)) + " | " + plSaid);
   byId("placement-new-on").checked = false; byId("placement-new-on").dispatch("change"); for (let k = 0; k < 2; k++) await tick();
@@ -14646,7 +14655,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.patch = (p, b) => { nlPatches.push([p, b]); return nlPatch(p, b); };
   await go("#/maintainer/maity/settings"); for (let k = 0; k < 4; k++) await tick();
   const msTabs = () => main.querySelectorAll("nav.settings-tabs a").map((a) => text(a) + "=" + a.getAttribute("href") + (a.getAttribute("aria-current") ? "*" : "")).join();
-  const msAll = (on) => [["General", ""], ["Members and agents", "/members"], ["Way of working", "/work"], ["Moderation", "/moderation"], ["Mine", "/mine"]]
+  const msAll = (on) => [["General", ""], ["Members and agents", "/members"], ["Way of working", "/work"], ["Moderation", "/moderation"], ["Runners", "/runners"], ["Mine", "/mine"]]
     .map(([label, path]) => label + "=#/maintainer/maity/settings" + path + (label === on ? "*" : "")).join();
   expect(!header.querySelectorAll("nav.views a").some((a) => a.textContent.startsWith("My settings"))
     && msTabs() === msAll("General") && main.querySelector("nav.settings-tabs").className === "view-tabs settings-tabs"
@@ -14660,7 +14669,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // Each tab by its address, marked; every section's heading on exactly one tab (tsk-chtvqs62cd10).
   {
     const msWhere = {};
-    for (const [label, path] of [["General", ""], ["Members and agents", "/members"], ["Way of working", "/work"], ["Moderation", "/moderation"], ["Mine", "/mine"]]) {
+    for (const [label, path] of [["General", ""], ["Members and agents", "/members"], ["Way of working", "/work"], ["Moderation", "/moderation"], ["Runners", "/runners"], ["Mine", "/mine"]]) {
       await go("#/maintainer/maity/settings" + path); for (let k = 0; k < 6; k++) await tick();
       expect(win.location.hash === "#/maintainer/maity/settings" + path && msTabs() === msAll(label), "settings: " + label + " opens by its address, marked " + msTabs());
       main.querySelectorAll("h2.panel-title").forEach((t) => { (msWhere[text(t)] = msWhere[text(t)] || []).push(label); });

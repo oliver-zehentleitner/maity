@@ -49,7 +49,9 @@ def handle_reserved(handle: str, *, of_agent: bool = False) -> bool:
 
 # The views of a project in the dashboard (§16.11): `/<owner>/<slug>/<view>…`. A slug is never
 # one of them, so that `/<owner>/<word>` stays free for pages of an owner's own. `members` is
-# no view since the Team view moved to `team`, and stays reserved (the maintainer, 2026-11-10).
+# no view since the Team view moved to `team`, and stays reserved (the maintainer, 2026-11-10);
+# `runners` likewise since the project's runners became the Settings tab `settings/runners`
+# (tsk-ert2k23kr5m4, no redirect).
 # `placements` is the tab "Where they run" (tsk-3s3eb6bsp15n, context/routing.md).
 PROJECT_VIEWS = frozenset(
     {
@@ -58,6 +60,9 @@ PROJECT_VIEWS = frozenset(
         "settings", "tasks", "team", "ticker", "why",
     }
 )  # fmt: skip
+
+# Reserved as slugs, but no view any more: `404` with the shell, as any word that is no view.
+RESERVED_NO_VIEW = frozenset({"members", "runners"})
 
 # The first segments the hub answers itself (§16.11, "Hub paths"). A path under one of them
 # that names nothing is `not_found`, never the app shell. `r` and the files for crawlers
@@ -112,7 +117,7 @@ def never_a_page(raw_path: str) -> bool:
     if shaped and len(segments) == 2 and segments[1] == "agents":
         return True  # `/<handle>/agents` names nothing (§16.9)
     if shaped and len(segments) >= 3 and segments[1] != "agents":
-        if segments[2] not in PROJECT_VIEWS - {"members"}:
+        if segments[2] not in PROJECT_VIEWS - RESERVED_NO_VIEW:
             return True  # a project's view word that is no view
         if segments[2] == "why":
             return False  # a topic's file path: no bound on the depth

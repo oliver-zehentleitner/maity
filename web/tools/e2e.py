@@ -609,6 +609,8 @@ SETTINGS_TABS = {
     "Members and agents": "settings/members",
     "Way of working": "settings/work",
     "Moderation": "settings/moderation",
+    # The project's runners (tsk-ert2k23kr5m4): a view of its own, no panel of forms.
+    "Runners": "settings/runners",
     "Mine": "settings/mine",
 }
 
@@ -6294,11 +6296,23 @@ def message_step(run: Run, page: Page, alpha: Path, agent_id: str) -> None:
 
 
 def project_runners_step(run: Run, page: Page, name: str) -> None:
-    """Project → Runners (docs/api.md §15.4): allow and detach a paired runner."""
+    """Settings → Runners (docs/api.md §15.4, §16.11, tsk-ert2k23kr5m4): allow and detach a paired
+    runner on the Settings tab; the old /<owner>/<slug>/runners is gone, without a redirect."""
+    run.step("project runners: the old address is the hub's 404 and the dashboard's not found, no redirect")
+    got = page.goto(f"{run.base}/owner/e2e-alpha/runners")
+    assert got is not None and got.status == 404, got and got.status
+    run.problems[:] = [p for p in run.problems if p != "GET /owner/e2e-alpha/runners answered 404"]
+    expect(page.locator("main section.view-unknown")).to_contain_text("Page not found")
+    expect(page).to_have_url(re.compile(re.escape(run.base) + r"/owner/e2e-alpha/runners$"))
+    expect(page.locator("article.runner")).to_have_count(0)
     page.goto(f"{run.base}/owner/e2e-alpha/settings")
-    page.get_by_role("link", name="This project's runners", exact=True).click()
-    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/runners$"))
-    view = page.locator("main section.view-runners")
+    # Not in the project's row of tabs; a tab of Settings.
+    expect(page.locator("nav.views").get_by_role("link", name="Runners", exact=True)).to_have_count(0)
+    expect(page.locator("main a[href$='/owner/e2e-alpha/runners']")).to_have_count(0)
+    page.locator("main nav.settings-tabs").get_by_role("link", name="Runners", exact=True).click()
+    expect(page).to_have_url(re.compile(r"/owner/e2e-alpha/settings/runners$"))
+    expect(page.locator("main nav.settings-tabs a[aria-current='page']")).to_have_text("Runners")
+    view = page.locator("main section.view-settings section.project-runners")
     expect(view.locator("h2").first).to_be_visible()
     run.step("project runners: allow the paired runner in a project and detach it")
     card = view.locator("article.runner", has=page.get_by_role("heading", name=name))
@@ -6323,7 +6337,7 @@ def project_runners_step(run: Run, page: Page, name: str) -> None:
     run.a11y(page, "project runners")
     bootstrap_boot(run, page)
     start_on_runner_form(run, page, name)
-    page.goto(f"{run.base}/owner/e2e-alpha/runners")
+    page.goto(f"{run.base}/owner/e2e-alpha/settings/runners")
     expect(card).to_contain_text("no agent running here")
     detach()
     expect(view).to_contain_text("No runner is allowed in this project yet.")
@@ -8433,6 +8447,7 @@ SETTINGS_SECTIONS = {
     "Way of working": ["Who closes a card", "Memory", "Keep the Why commitment", "Keep the Why personal settings",
                        "Jour fixe series"],
     "Moderation": ["Remove a reported message", "Files waiting to be sent"],
+    "Runners": [],
     "Mine": ["Your absence"],
 }
 
@@ -8450,7 +8465,10 @@ def settings_tabs_step(run: Run, page: Page) -> None:
         expect(page).to_have_url(re.compile(re.escape("/owner/e2e-alpha/" + path) + "$"))
         expect(nav.locator("a.view-tab")).to_have_text(list(SETTINGS_TABS))
         expect(nav.locator('a[aria-current="page"]')).to_have_text(tab)
-        expect(page.locator("main h2.panel-title").first).to_be_visible()
+        if tab == "Runners":
+            expect(page.locator("main section.view-settings section.project-runners")).to_be_visible()
+        else:
+            expect(page.locator("main h2.panel-title").first).to_be_visible()
         page.wait_for_timeout(300)  # Mine reads the member's settings; the public page its owner
         titles = page.locator("main h2.panel-title").all_inner_texts()
         for title in titles:

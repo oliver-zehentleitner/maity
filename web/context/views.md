@@ -1752,7 +1752,7 @@ show their lists without a form. Members has two blue buttons at the top,
 Invite user and Join agent; its own invitation form is gone (since 2026-11-12 in the Team page's
 shared head, Join as the Join an agent menu: 79438329). The project
 view `runners` keeps its route and its Settings tab mark, but has no tab:
-the project's Settings links it. `/invite` reads the projects one after
+the project's Settings links it (since 2026-11-20 a tab of Settings, and the route is gone: 1245c407). `/invite` reads the projects one after
 the other and draws again when another project is chosen. A counter
 drops an older pass still reading, as `renderSeq` does in the router;
 without it, two passes append their lists twice.
@@ -4207,7 +4207,8 @@ redraws the tab it was made on.
 
 Grouping: General holds what the project is and where it lives (state,
 language, repository and its grant, links, name and transfer, public
-page, badge, ticker and webhook, logo and banner, the runners link);
+page, badge, ticker and webhook, logo and banner; the runners link until it
+became the Runners tab, 1245c407);
 Members and agents who joins on what terms and who reads what (members'
 own agents, agents of owners who are not members, onboarding, restricted
 access, signing); Way of working how work is done and kept (who closes a
@@ -4241,6 +4242,50 @@ Back land on the same tab. A tab bar of its own with arrow-key roving
 (`role="tablist"`): the dashboard's view tabs are links, and the card asks
 for the existing pattern. Keep the Why personal settings on Mine, as
 proposed: see the reason.
+
+## The project's runners are a tab of its Settings at settings/runners; the old /runners view is gone without a redirect
+
+**Id:** 1245c407-69b3-4219-b052-b7b74c8a9c6b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the owner in the project chat, 2026-11-19, relayed on the card tsk-ert2k23kr5m4 (the Runners page "should become a tab of settings"; asked about keeping the old address: no, no legacy); the tab's place, its permission and the hub's `404` are the implementer's, 2026-11-20
+**Revisit when:** a runner's owner who is no admin gets a way to detach from the dashboard (1cf107b2), or the Settings tabs are regrouped
+**See:** views.md#a-projects-settings-are-in-sub-tabs-one-address-each-general-members-and-agents-way-of-working-moderation-and-mine — bc864bf2-d64b-4947-b3d6-3d3a2e500eea — as of 2026-11-20
+**See:** views.md#the-header-gets-a--menu-to-bring-someone-in-invitations-get-their-own-page-runners-lose-their-tab — 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc — as of 2026-11-20
+**See:** views.md#project--runners-is-the-project-admins-tab-refreshes-redraw-in-place-and-a-missing-list-fails-loud — 1cf107b2-991d-42e4-aa35-9dd8f84216eb — as of 2026-11-20
+**See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-20
+
+What `/<owner>/<slug>/runners` showed (the attached runners, Allow it here,
+Detach, the 30-second refresh, the "runners changed" notice) is the
+**Runners** tab of the project's Settings, at `settings/runners`, between
+Moderation and Mine, drawn by `js/project-runners.js` under the Settings
+heading and tab row. It is offered to `project:admin` alone, the rule the
+old route had (1cf107b2); anyone else who types the address is led to the
+first tab they are shown, as for every Settings tab. The link "This
+project's runners" on General is gone, and every in-app link (the start
+on a runner's "Allow one under …") points at the tab. `runners` is no
+project view any more: the dashboard's NAV has no entry for it, and the
+hub's `never_a_page` answers `/<owner>/<slug>/runners…` with `404` and the
+shell, as it answers `members` (§16.11). The word stays reserved as a
+slug, so no project can take it.
+
+**Reason:** the tab and the removal without a redirect are the owner's
+(confirmed); why he wanted a tab was not said (unknown). Read from the
+code (inferred): since the Settings became sub-tabs (bc864bf2) the
+runners were the one project-admin part reached by a link out of
+Settings to a page of their own, under a Settings tab mark that was not
+a tab. The `404` follows the alpha rule (e34ae588): an address the
+dashboard no longer serves is not found, not kept alive.
+
+**Rejected alternative:** keeping `/<owner>/<slug>/runners` as an alias
+or a redirect to the tab: the owner's "no legacy". A tab back in the
+project's row: taken out on 2026-10-31 (3f6eadd3). A section among the
+General forms: the runners are a list with its own reads, refresh and
+status line, not a form saved through the project's `PATCH`. Leaving the
+hub's shell at `200` for the old address: the dashboard would say "not
+found" where the hub says the page exists, against the rule that the
+path's words alone decide the status.
 
 ## The meat-proxy switch has its two parts under it, each sent alone; the hub decides the switch and the note
 
