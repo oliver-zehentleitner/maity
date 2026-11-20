@@ -422,8 +422,11 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # placement that is not its owner cannot reach another placement's scratch there.
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private),
                                         *_shared_tmp(ctx)],
+                           # The private paths are not writable either: the runner's files
+                           # (~/.maity-runner on an ssh host) are what `maity runner` takes.
                            "denyWrite": [f"{git}/maity",
                                          *(f"{git}/{name}" for name in GIT_PROTECTED),
+                                         *(str(p) for p in ctx.private),
                                          *_shared_tmp(ctx)],
                            # Commands write the placement's scratch besides the clone (§15.5).
                            **({"allowWrite": [str(ctx.scratch)]}

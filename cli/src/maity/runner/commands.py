@@ -82,7 +82,8 @@ def runner_own_file(command: str, given: str) -> bool:
     `~/.maity-runner` (targets.AGENT_FILES): the loop's spec at `agents/<placement>/loop.json`,
     the pane's log at `logs/<placement>.log`. An allow list, checked on every call, with or
     without `MAITY_PLACEMENT`: the path resolved (links and `..` followed) must be that one,
-    an existing regular file of this user that neither group nor others may write."""
+    an existing regular file of this user with one link that neither group nor others may
+    write."""
     home = _own_home()
     if home is None:
         return False
@@ -108,6 +109,7 @@ def runner_own_file(command: str, given: str) -> bool:
         return False
     return (
         stat.S_ISREG(info.st_mode)
+        and info.st_nlink == 1  # not a hard link to another file of this user
         and info.st_uid == os.getuid()
         and not info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
     )

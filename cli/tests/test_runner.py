@@ -1226,7 +1226,7 @@ def _reaching(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 WRONG_FILES = [
     "clone", "relative", "temp", "home-dotdir", "other-name", "not-a-placement", "other-dir",
-    "link-out", "link-dir", "group-writable", "missing", "directory", "dotdot",
+    "link-out", "link-dir", "hard-link", "group-writable", "missing", "directory", "dotdot",
 ]  # fmt: skip
 
 
@@ -1263,6 +1263,7 @@ def test_an_in_session_command_takes_only_the_file_the_runner_wrote_for_it(
         "other-dir": root / ("logs/plc-0003.json" if name == "loop" else "agents/plc-0003.log"),
         "link-out": root / shape[0] / "link",
         "link-dir": root / "linked" / shape[1],
+        "hard-link": own[name],
         "group-writable": own[name],
         "missing": root / shape[0] / ("plc-0004.log" if name == "logcap" else "loop.json"),
         "directory": own[name],
@@ -1279,6 +1280,8 @@ def test_an_in_session_command_takes_only_the_file_the_runner_wrote_for_it(
     elif where == "link-dir":
         (root / "linked").symlink_to(outside.parent)
         (outside.parent / shape[1]).write_text("{}")
+    elif where == "hard-link":
+        os.link(own[name], tmp_path / "elsewhere")  # the same inode under another name
     elif where == "group-writable":
         own[name].chmod(0o620)
     elif where == "missing" and name == "loop":

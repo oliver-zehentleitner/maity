@@ -976,9 +976,12 @@ def test_the_home_secrets_are_listed_under_the_home_resolved(tmp_path: Path) -> 
 def test_claude_code_denies_reading_the_runner_state_and_home_secrets(tmp_path: Path) -> None:
     secrets = (tmp_path / "st", tmp_path / "home" / ".ssh")
     ctx = context(tmp_path, private=secrets, workspaces=tmp_path / "ws", sandbox=True)
-    deny = adapters.claude_settings(ctx)["sandbox"]["filesystem"]["denyRead"]
+    fs = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
+    deny = fs["denyRead"]
     assert deny == [f"{ctx.clone}/.git/maity", *(str(p) for p in secrets)]
     assert str(tmp_path / "ws") not in deny  # it holds the clone; see the context entry
+    # Not writable either: the runner's files on the agents' side are among them (S201/S202).
+    assert all(str(p) in fs["denyWrite"] for p in secrets)
 
 
 def test_other_clones_credentials_are_private_as_they_stand_at_start(tmp_path: Path) -> None:
