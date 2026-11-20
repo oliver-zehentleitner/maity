@@ -520,3 +520,43 @@ and the question before the reload catches the common case, typed text.
   (drafts, edits by row, editors drawn anew): rejected, too wide for
   the benefit; each round of review found more places, and the
   reload is a click the person makes on purpose.
+
+## The banners' reads start before the page's view, and the sign-in banner reads the ended sessions only for an approval it cannot trace
+
+**Id:** 6c656522-4e27-4f29-9854-4edae2d3548f
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the cards tsk-qw08c8ds214g (the board's serial chain) and tsk-g776fdyg6ekc (the ended sessions on every page), from the page-load measurement under tsk-a5pxwgkgr73e (nte-6t6wyf3dna2d, nte-jkgy6vtpvgst); the lead's go for every page, 2026-11-20; docs/api.md §2.6.5 (`GET /auth/sessions`, `?ended=true`, `approved_by`)
+**See:** refresh.md#the-bell-pins-security-alerts-but-no-sign-in-the-notifications-page-lists-the-current-sessions-read-again-when-sessions_rev-moves — 09f74f56-7c6c-4d94-a499-ef804b022f3a — as of 2026-11-20
+**Revisit when:** a banner needs something from the page's view before it can read, the hub says in the active list whether an approver's chain is still live, or ops' rerun on oliver-pc01-l shows no gain
+
+The page's `render()` starts the two banners' reads (the sign-in banner's sessions,
+`js/sessions.js` `bannerSessions`, and the factor banner's `GET /auth/second-factor`,
+`js/factor-banner.js` `warm`) right after the boot and before the view runs. The banners
+are still drawn after the view, from those reads. The factor banner keeps its rules: no
+read while "Later" holds for this session, and none ahead of Security, which reads afresh
+anyway. A `sessions_rev` that moved while the view ran makes the sign-in banner read its
+sessions again rather than draw from the earlier read.
+
+The sign-in banner reads `GET /auth/sessions`, the active sessions. It reads the ended
+ones too (`?ended=true`) only when an active session's `approved_by` names a session that
+is not among them. That is the one case in which an ended session shows in the banner: an
+ended mail sign-in stays up while a session it approved, directly or through ended ones in
+between, is still active. Every other ended session leaves the banner as it is. The
+Security → Sessions list, the bell's pinned alerts and the Notifications page keep reading
+the ended ones where they show or judge them.
+
+**Reason:** the board's reads took about 1.2 s cold, and both banners' reads waited
+for all of them, though they depend on nothing the page reads. They were half of the
+board's fourth wave. The ended sessions are 16–18 kB on every page for a banner that
+needs them only for that one chain. The fallback keeps the banner exactly as it was, the
+chain case included.
+
+**Rejected alternatives:**
+- Starting the reads only on the board: `render()` is shared, the reads and their count
+  stay the same, and every page gains (the lead chose every page).
+- Dropping `?ended=true` from the banner altogether: an ended mail sign-in whose approved
+  session is still active would lose its banner, which §2.6.5 keeps.
+- Making the banners' reads part of `/bootstrap`: a contract change, which is not in
+  these cards.
