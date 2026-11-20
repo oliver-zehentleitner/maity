@@ -15,6 +15,7 @@ import urllib.parse
 from datetime import timedelta
 from importlib.resources import files
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Request
@@ -656,9 +657,13 @@ def admission_holds(conn: Connection, row: Any) -> bool:
     (§15.9): still the profile's owner and an active member, and either with
     `members:admin` and what an invitation's issuer needs for its trust and role (§3.4), or
     with trust `member` and the join within "Bringing your own agent", its limits and
-    `member_agents_max` included. As at a member's join's exchange, `member_agents` turned
-    `off` does not void it. `row` is the join, or the placement's stored fields: its
-    `project_id`, `created_by`, `agent_id`, `trust`, `role`, `areas` and `capabilities`."""
+    `member_agents_max` included. Unlike a member's join at its exchange, `member_agents`
+    turned `off` since the placement voids a member's: a placement acts on its creator's
+    continuing authority, a join already handed out does not (§3.1). A profile that is a
+    member by now gets an instance instead, which the creator must be able to add to that
+    membership as a `new_instance` join would (§3.1, §15.9): the stored fields then count
+    for nothing. `row` is the join, or the placement's stored fields: its `project_id`,
+    `created_by`, `agent_id`, `trust`, `role`, `areas` and `capabilities`."""
     owner = conn.execute(
         select(t.agent_profile.c.owner_id).where(t.agent_profile.c.id == row.agent_id)
     ).scalar()
@@ -673,11 +678,33 @@ def admission_holds(conn: Connection, row: Any) -> bool:
     ).first()
     if creator is None:
         return False
+    member = conn.execute(
+        select(t.membership).where(
+            t.membership.c.project_id == row.project_id,
+            t.membership.c.agent_id == row.agent_id,
+            t.membership.c.active.is_(True),
+        )
+    ).first()
     if has_scope(creator.trust, creator.role_base, "human", "members:admin"):
+        if member is not None:
+            # A new instance of an admin or a proxy is the owner's to give (§3.1).
+            instance = SimpleNamespace(
+                project_id=row.project_id,
+                created_by=row.created_by,
+                trust=member.trust,
+                role=member.role,
+            )
+            return invitations.issuer_holds(conn, instance)
         return invitations.issuer_holds(conn, row)
     if creator.trust != "member":
         return False
     project = conn.execute(select(t.project).where(t.project.c.id == row.project_id)).one()
+    if project.member_agents != "on":
+        return False
+    if member is not None:
+        # A membership an admin raised beyond the limits gets new instances only through
+        # `members:admin`; an instance takes no slot of `member_agents_max` (§3.1).
+        return within_limits(member)
     if (
         row.trust not in MEMBER_RULE_TRUSTS
         or project_roles.base_of(project, row.role) not in MEMBER_RULE_ROLES
@@ -1438,7 +1465,8 @@ def _require_pickup_holds(conn: Connection, row: Any) -> None:
         # A profile the exchange creates: its creator still may give it (§3.4, §15.9).
         or (row.agent_id is None and not invitations.issuer_holds(conn, row))
         # A profile placed while not a member: its creator could still create this first
-        # join, whether or not another way made it a member meanwhile (§15.9).
+        # join, or, if another way made it a member meanwhile, add an instance to that
+        # membership, against the policy as it is now (§3.1, §15.9).
         or (admits(row) and not admission_holds(conn, row))
     ):
         raise not_found()

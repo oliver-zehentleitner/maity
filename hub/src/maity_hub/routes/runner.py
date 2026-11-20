@@ -840,8 +840,10 @@ def _admission_fields(
 ) -> tuple[dict[str, Any], str]:
     """A profile placed while it was not a member (§15.6): a first join with the stored
     fields, neither `new_instance` nor `replaces` (§15.9), whose creator could still create
-    it now. A profile that is a member by now gets an instance at the exchange, within
-    `max_instances`: a pickup beyond it is refused here, as a member's is."""
+    it now, against the policy as it is now (`member_agents` included). A profile that is a
+    member by now gets an instance at the exchange, which its creator must be able to add
+    to that membership, within `max_instances`: a pickup beyond it is refused here, as a
+    member's is."""
     fields = {
         "agent_id": placement.agent_id,
         "trust": profile.get("trust") or "member",

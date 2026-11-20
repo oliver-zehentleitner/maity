@@ -1554,6 +1554,23 @@ def test_without_member_agents_a_member_admits_nothing(setup: Setup) -> None:
     assert refused.json()["error"]["details"] == {"scope": "members:admin"}  # as before
 
 
+def test_a_member_changes_an_admitting_placement_only_as_its_profiles_owner(setup: Setup) -> None:
+    # §15.6: "Bringing your own agent" covers creating the placement only. A spec change
+    # still needs members:admin and the runner; `desired` stays the profile owner's.
+    agent_id = _own_profile(setup.owner)
+    _as_member_with_member_agents(setup)
+    body = placed(setup, agent={"id": agent_id})
+    path = f"/projects/maintainer/maity/placements/{body['id']}"
+    refused = setup.owner.patch(path, {"stop_grace_seconds": 30})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "members:admin"}
+    assert _stored(setup, body["id"]).stop_grace_seconds != 30
+    for desired in ("stopped", "running"):
+        changed = setup.owner.patch(path, {"desired": desired})
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["desired"] == desired
+
+
 @pytest.mark.parametrize("field", [{"trust": "member"}, {"briefing": "x"}, {"subagents": True}])
 def test_a_member_by_id_takes_no_join_fields(setup: Setup, field: dict[str, Any]) -> None:
     refused = place(setup, **field)

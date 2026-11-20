@@ -985,25 +985,29 @@ def forget_boss(conn: Connection, project_id: str, membership_id: int) -> None:
             )
 
 
-def membership_removed(conn: Connection, membership_id: int, actor: Actor | None, by: str) -> None:
-    removed = conn.execute(
+def _membership_and_waiting(conn: Connection, membership_id: int) -> list[Any]:
+    """A membership's active placements, and the project's placements of its profile that
+    hold no credential yet, those made while it was not a member included (§6.2): a removal
+    or an isolation is not undone by a placement still waiting for its pickup."""
+    member = conn.execute(
         select(t.membership.c.project_id, t.membership.c.agent_id).where(
             t.membership.c.id == membership_id
         )
     ).one()
     closing = active_rows(conn, t.placement.c.membership_id == membership_id)
-    if removed.agent_id is not None:
-        # And the project's placements of the profile that hold no credential yet, those made
-        # while it was not a member included (§6.2): a removal is not undone by a placement
-        # still waiting for its pickup.
+    if member.agent_id is not None:
         closing += active_rows(
             conn,
-            t.placement.c.project_id == removed.project_id,
-            t.placement.c.agent_id == removed.agent_id,
+            t.placement.c.project_id == member.project_id,
+            t.placement.c.agent_id == member.agent_id,
             t.placement.c.membership_id.is_(None),
             t.placement.c.credential_id.is_(None),
         )
-    for placement in closing:
+    return closing
+
+
+def membership_removed(conn: Connection, membership_id: int, actor: Actor | None, by: str) -> None:
+    for placement in _membership_and_waiting(conn, membership_id):
         withdraw_open_request(conn, placement, "the membership was removed", actor)
         close_now(conn, placement, "membership_removed", actor, by)
     # Its proposals go with it, a placement's and every other kind's (`proposals`): a go
@@ -1024,8 +1028,9 @@ def membership_removed(conn: Connection, membership_id: int, actor: Actor | None
 
 def membership_isolated(conn: Connection, membership_id: int, actor: Actor | None, by: str) -> None:
     """An isolated agent's placements close at once, as for a removal; lifting the
-    isolation does not reopen them (§6.2, §15.5)."""
-    for placement in active_rows(conn, t.placement.c.membership_id == membership_id):
+    isolation does not reopen them (§6.2, §15.5). The project's placements of its profile
+    still waiting for a credential close with them."""
+    for placement in _membership_and_waiting(conn, membership_id):
         withdraw_open_request(conn, placement, "the agent was isolated", actor)
         close_now(conn, placement, "membership_isolated", actor, by)
 

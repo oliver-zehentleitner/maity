@@ -16,7 +16,13 @@ from maity_hub.routes import agents, joins
 from tests import factory, flow
 from tests import test_runners as runners
 from tests.conftest import ClientFactory
-from tests.test_placements import REPOSITORY, Setup, events_of, placed
+from tests.test_placements import (
+    REPOSITORY,
+    Setup,
+    _as_member_with_member_agents,
+    events_of,
+    placed,
+)
 from tests.test_runner_stream import attach, hello, send
 from tests.test_runners import error, paired
 
@@ -857,6 +863,116 @@ def test_of_two_placements_of_a_profile_the_second_adds_an_instance(
     assert len(members) == 1
 
 
+def _member_agents(s: Setup, value: str) -> None:
+    with s.engine.begin() as conn:
+        conn.execute(update(t.project).values(member_agents=value))
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+def test_member_agents_turned_off_ends_a_members_placement(
+    setup: Setup, make_client: ClientFactory, when: str
+) -> None:
+    # §3.1, §15.9: a placement acts on its creator's continuing authority, read against the
+    # policy at the pickup and again at the exchange; a pickup join handed out before the
+    # switch goes with it, unlike a member's own join (test_member_agents).
+    agent_id = _own_profile(setup)
+    _as_member_with_member_agents(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    if when == "pickup":
+        _member_agents(setup, "off")
+        refused = pick_up(setup, placement)
+        assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+        assert refused.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+        return
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    _member_agents(setup, "off")
+    gone = exchange(make_client(), picked.json())
+    assert (gone.status_code, error(gone)) == (404, "not_found")
+    assert _membership(setup, agent_id) is None
+
+
+def test_member_agents_turned_off_leaves_an_admins_placement(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # The rule's scope: a creator with members:admin never placed under member_agents.
+    agent_id = _own_profile(setup)
+    _member_agents(setup, "on")
+    placement = placed(setup, agent={"id": agent_id})
+    _member_agents(setup, "off")
+    picked = pick_up(setup, placement)
+    assert picked.status_code == 201, picked.text
+    joined = exchange(make_client(), picked.json())
+    assert joined.status_code == 201, joined.text
+    assert _membership(setup, agent_id) is not None
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+@pytest.mark.parametrize("raised", [False, True])
+def test_a_members_placement_adds_an_instance_only_where_the_member_may(
+    setup: Setup, make_client: ClientFactory, when: str, raised: bool
+) -> None:
+    # §3.1, §15.9: the profile joined by the member's own line after the placement. The
+    # pickup adds an instance to that membership, which needs what a new_instance join for
+    # it needs of the creator: a membership an admin raised beyond the member limits gets
+    # one only through members:admin, whatever the placement's stored fields say.
+    agent_id = _own_profile(setup)
+    _as_member_with_member_agents(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    early = pick_up(setup, placement).json() if when == "exchange" else None
+    line = flow.exchange(make_client(), flow.join(setup.owner, "maity", agent={"id": agent_id}))
+    assert line.status_code == 201, line.text
+    _allow_instances(setup.engine, agent_id, 2)
+    if raised:
+        with setup.engine.begin() as conn:
+            conn.execute(
+                update(t.membership)
+                .where(t.membership.c.agent_id == agent_id)
+                .values(trust="admin")
+            )
+    if early is None:
+        picked = pick_up(setup, placement)
+        if raised:
+            assert (picked.status_code, error(picked)) == (409, "pickup_not_allowed")
+            assert picked.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+            return
+        assert picked.status_code == 201, picked.text
+        early = picked.json()
+    joined = exchange(make_client(), early)
+    if raised:
+        assert (joined.status_code, error(joined)) == (404, "not_found")
+        assert placement_row(setup, placement["id"]).membership_id is None
+        return
+    assert joined.status_code == 201, joined.text
+    assert joined.headers["Maity-Instance"] != line.headers["Maity-Instance"]
+    assert placement_row(setup, placement["id"]).membership_id == _membership(setup, agent_id).id
+
+
+@pytest.mark.parametrize("when", ["pickup", "exchange"])
+def test_an_admins_placement_adds_an_instance_of_an_admin_only_as_an_owner(
+    setup: Setup, make_client: ClientFactory, when: str
+) -> None:
+    # §3.1, §15.9: the profile joined with trust admin after the placement; its creator,
+    # an admin by now, may still give the stored first join (trust member) but not a new
+    # instance of an admin member, which is the owner's to give.
+    agent_id = _own_profile(setup)
+    placement = placed(setup, agent={"id": agent_id})
+    early = pick_up(setup, placement).json() if when == "exchange" else None
+    line = flow.exchange(
+        make_client(), flow.join(setup.owner, "maity", agent={"id": agent_id}, trust="admin")
+    )
+    assert line.status_code == 201, line.text
+    _allow_instances(setup.engine, agent_id, 2)
+    _demote_owner(setup)
+    if early is None:
+        refused = pick_up(setup, placement)
+        assert (refused.status_code, error(refused)) == (409, "pickup_not_allowed")
+        assert refused.json()["error"]["details"] == {"why": "creator_lacks_authority"}
+        return
+    gone = exchange(make_client(), early)
+    assert (gone.status_code, error(gone)) == (404, "not_found")
+
+
 def test_removing_the_membership_closes_the_placements_still_without_a_credential(
     setup: Setup, make_client: ClientFactory
 ) -> None:
@@ -878,16 +994,51 @@ def test_removing_the_membership_closes_the_placements_still_without_a_credentia
     assert _membership(setup, agent_id) is None
 
 
-def test_a_deleted_profiles_waiting_placement_closes(setup: Setup) -> None:
+def test_isolating_the_membership_closes_the_placements_still_without_a_credential(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §6.2: an isolation closes the profile's waiting placements as a removal does, those
+    # made while it was not a member included.
     agent_id = _own_profile(setup)
+    waiting = placed(setup, agent={"id": agent_id})
+    line = flow.exchange(make_client(), flow.join(setup.owner, "maity", agent={"id": agent_id}))
+    assert line.status_code == 201, line.text
+    isolated = setup.owner.post(
+        f"/projects/maintainer/maity/members/{agent_id}/isolate", {"reason": "it did a thing"}
+    )
+    assert isolated.status_code == 200, isolated.text
+    row = placement_row(setup, waiting["id"])
+    assert (row.active, row.closed_reason) == (None, "membership_isolated")
+    later = pick_up(setup, waiting)
+    assert (later.status_code, error(later)) == (409, "pickup_not_allowed")
+    assert later.json()["error"]["details"] == {"why": "not_running"}
+
+
+def test_a_deleted_profiles_waiting_placement_closes(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    # §6.3: the cascade delete closes it at once (`removed`), on the owner's authority
+    # alone: a member under "Bringing your own agent", without members:admin. The event
+    # names the owner, and the unused pickup is revoked with it.
+    agent_id = _own_profile(setup)
+    _as_member_with_member_agents(setup)
     placement = placed(setup, agent={"id": agent_id})
     picked = pick_up(setup, placement)
     assert picked.status_code == 201, picked.text
     deleted = setup.owner.client.delete(
-        f"/api/v1/agents/{agent_id}", headers={"X-CSRF-Token": setup.owner.csrf}
+        f"/api/v1/agents/{agent_id}?cascade=true", headers={"X-CSRF-Token": setup.owner.csrf}
     )
     assert deleted.status_code == 200, deleted.text
     row = placement_row(setup, placement["id"])
     assert (row.active, row.closed_reason) == (None, "removed")
+    closed = events_of(setup, "placement_updated")[-1]
+    assert closed["payload"]["closed_reason"] == "removed"
+    assert (closed["actor"]["kind"], closed["actor"]["member_id"]) == ("member", setup.owner.id)
+    with setup.engine.connect() as conn:
+        join = conn.execute(
+            select(t.join_link).where(t.join_link.c.placement_id == placement["id"])
+        ).one()
+    assert join.revoked_at is not None
+    assert exchange(make_client(), picked.json()).status_code == 404
     later = pick_up(setup, placement)
     assert (later.status_code, error(later)) == (409, "pickup_not_allowed")

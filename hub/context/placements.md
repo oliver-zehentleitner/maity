@@ -846,8 +846,8 @@ placement and clone, where the owner wants the same clone and branches.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-swrhej87tp0c; the owner's decision req-emyp23q0fhmz (only the owner decides where their agent joins); the approved contract req-dbwaaxf20w1q (docs/api.md §15.6 "A profile that is not a member yet", §15.9, §6.2)
-**Revisit when:** placements take `takes_over` or `handover`, an agent may admit a profile, or the member rule's exchange recheck (§3.3) changes
+**Source:** card tsk-swrhej87tp0c; the owner's decision req-emyp23q0fhmz (only the owner decides where their agent joins); the approved contract req-dbwaaxf20w1q (docs/api.md §15.6 "A profile that is not a member yet", §15.9, §6.2); the contract's ruling on `member_agents` and the added instance (§3.1, §15.9, commit cd3a12da); the lead's rulings on review A1796 (deletion, `PATCH`, isolation)
+**Revisit when:** placements take `takes_over` or `handover`, an agent may admit a profile, or the new-instance rule of §3.1 changes
 **See:** placements.md#a-new-profiles-placement-re-checks-its-creator-at-the-pickup-and-the-exchange — ac153895-7fbe-49a5-adad-6e5403d4fd6f — as of 2026-11-20
 
 A human who owns a profile with no active membership in the project
@@ -857,21 +857,43 @@ own agent") and on a runner of their own. The placement takes the first
 join's fields and stores them in `new_profile` beside the new column
 `placement.agent_id`; the pickup mints a first join (neither
 `new_instance` nor `replaces`), and its exchange makes the membership. A
-profile that is a member by the exchange gets an instance instead,
-within `max_instances`. Join and placement share one check of the fields
-(`routes.joins.assignment`, `first_join_fields`) and one recheck of the
-creator at the pickup and the exchange (`routes.joins.admission_holds`).
-Removing the membership closes the profile's placements still without a
-credential, and deleting the profile closes those that admit it.
+profile that is a member by the pickup or the exchange (by a line, or
+another placement's exchange) gets an instance instead, by the new-instance
+rule against that membership (`max_instances`, else `instance_quota`),
+and only while the creator may add one to it as a `new_instance` join
+would: `members:admin`, with trust `owner` for an admin or proxy member,
+or under "Bringing your own agent" a membership within its limits. Join
+and placement share one check of the fields (`routes.joins.assignment`,
+`first_join_fields`) and one recheck of the creator at the pickup and the
+exchange (`routes.joins.admission_holds`), read against the policy as it
+is then: `member_agents` turned `off` after a member's placement ends it
+(`creator_lacks_authority` at the pickup, `not_found` at the exchange),
+its pickup join already handed out included; one made with
+`members:admin` is unaffected. The admitting right under "Bringing your
+own agent" covers creating the placement only: a spec change by `PATCH`
+still needs `members:admin` and the runner, while `desired` stays the
+profile owner's. Removing or isolating the membership closes the
+profile's placements still without a credential (`membership_removed`,
+`membership_isolated`), and deleting the profile closes those that admit
+it at once with `removed`, on the owner's authority alone (no
+`members:admin`, the owner as the event's actor), their unused pickups
+revoked.
 
 **Reason:** the placement already carries the owner's consent, and a
 profile made on its own should not need a join line to reach a runner
 of the owner's (confirmed: the owner's decision and the approved
 contract). One check for both ways, so a placement gives nothing a join
-could not, and a recheck as at a member's join's exchange, where
-`member_agents` turned `off` does not void what was handed out: the
-hub's reading (inferred), as the contract names the limits but not the
-policy switch.
+could not. Unlike a member's own join, which survives `member_agents`
+turned `off`, a placement acts on its creator's continuing authority,
+while a join already handed out does not, so its pickup and exchange
+read that authority as it is then; and the placement was made under the
+right to a first join, not to a further instance, so an instance needs
+the creator's right to that one (confirmed: the contract's ruling,
+docs/api.md §3.1 and §15.9, commit cd3a12da). Closing with `removed` on
+deletion, a spec change kept to `members:admin`, and an isolation closing
+the waiting placements as a removal does are the lead's rulings on review
+A1796, whose contract text follows on the contract branch (confirmed;
+`removed` was an open reading before, as the contract names no reason).
 
 **Rejected alternatives:** a join line first, exchanged by hand, then a
 placement of the member: rejected by the owner's decision; the reason
