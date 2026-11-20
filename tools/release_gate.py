@@ -11,10 +11,12 @@ writes:
   a commit of main with the same files the suite reads as the tagged commit
   (the list `decide` in hub-mariadb.yml compares, MARIADB_PATHS below). The
   newest such run must have passed: its `hub-mariadb` job (MariaDB 11.4) and
-  its `hub-mariadb-11-8` job (the subset on 11.8). A run without the 11.8 job
-  ran a workflow file from before that job existed, and counts on 11.4 alone. A run that skipped the suite counts for
-  nothing, and only main's own workflow file counts: the run's ref is main
-  and the commit it ran is on main.
+  its `hub-mariadb-11-8` job (the subset on 11.8), when hub-mariadb.yml at
+  the run's commit defines it (missing, skipped or red, it stops the gate);
+  a run whose file predates that job counts on 11.4 alone. A run that
+  skipped the suite counts for nothing unless a job beside it went red, and
+  only main's own workflow file counts: the run's ref is main and the commit
+  it ran is on main.
 
 - with --upgrade-page (the hub): the tagged checkout's docs/upgrade/<version>.md
   for the version in hub/pyproject.toml, complete (tools/upgrade_page.py). Run
@@ -60,9 +62,10 @@ MARIADB_PATHS = (
 DONE = "completed"
 # A job that ran the suite and ended; skipped (nothing to test) is not one.
 RAN = {"success", "failure", "cancelled", "timed_out"}
-# The jobs of hub-mariadb.yml that must pass besides `hub-mariadb`, the 11.4 suite. A run whose
-# workflow file predates one (the job is not in its list at all) is judged without it; GitHub
-# lists a skipped job too, so a missing job is one the file did not have.
+# The jobs of hub-mariadb.yml that must pass besides `hub-mariadb`, the 11.4 suite. Whether a
+# run had to run one is read from the workflow file at the run's commit: a file that does not
+# define it predates it, and the run is judged without it; a defined job that is missing from
+# the run, skipped or red stops the gate.
 MARIADB_EXTRA_JOBS = ("hub-mariadb-11-8",)
 HAND = re.compile(r"hub-mariadb hand (head|[0-9a-f]{40})")
 
@@ -149,6 +152,23 @@ def tested(run: dict) -> str | None:
     return None
 
 
+MARIADB_WORKFLOW = ".github/workflows/hub-mariadb.yml"
+
+
+def workflow_job_ids(text: str) -> set[str]:
+    """The keys under a workflow's top-level `jobs:`, read from its text (no YAML parser)."""
+    ids: set[str] = set()
+    inside = False
+    for line in text.splitlines():
+        if re.match(r"\S", line):
+            inside = line.rstrip() == "jobs:"
+            continue
+        found = re.match(r"  ([A-Za-z0-9_-]+):\s*(#.*)?$", line)
+        if inside and found:
+            ids.add(found.group(1))
+    return ids
+
+
 class Git:
     """The checkout's history; a commit it lacks is fetched before it is judged."""
 
@@ -181,6 +201,20 @@ class Git:
         if code == 1:
             return False
         return None
+
+    def workflow_jobs(self, sha: str) -> set[str] | None:
+        """The job ids hub-mariadb.yml defines at sha; None when the file cannot be read.
+
+        A job of that file has no `name:` (Workflows in test_release_gate.py holds it so), so
+        its id is the name the jobs API lists."""
+        if not self._have(sha):
+            return None
+        shown = subprocess.run(
+            ["git", "show", f"{sha}:{MARIADB_WORKFLOW}"], capture_output=True, check=False
+        )
+        if shown.returncode != 0:
+            return None
+        return workflow_job_ids(shown.stdout.decode("utf-8", "replace"))
 
     def same(self, a: str, b: str) -> bool | None:
         """Whether a and b hold the same MARIADB_PATHS; None when that cannot be told."""
@@ -238,24 +272,46 @@ def mariadb_state(api: Api, sha: str, git: Git) -> State:
                 f"hub-mariadb on {commit}, same hub files as {sha}, is {run['status']}:"
                 f" {run['html_url']}",
             )
+        defined = git.workflow_jobs(run["head_sha"])
+        if defined is None:
+            return State(
+                "fail",
+                f"cannot read {MARIADB_WORKFLOW} at {run['head_sha']} ({run['html_url']}):"
+                " re-run this job",
+            )
         jobs = {
             j["name"]: j["conclusion"]
             for j in api.get(f"actions/runs/{run['id']}/jobs", filter="latest", per_page=100)[
                 "jobs"
             ]
         }
+        # A job the run's workflow file defines must have passed: missing or skipped is red.
+        # Only a job the file does not define is left out, for runs from before it existed.
+        required = [name for name in MARIADB_EXTRA_JOBS if name in defined]
+        extra_red = [
+            f"{name} is {jobs.get(name) or 'missing'}"
+            for name in required
+            if jobs.get(name) != "success"
+        ]
         result = jobs.get("hub-mariadb")
         if result not in RAN:
+            # The suite did not run (decide skipped the run); a red extra job beside it still
+            # stops the gate instead of letting an older green run answer.
+            if any(jobs.get(name) in RAN for name in required) and extra_red:
+                return State(
+                    "fail",
+                    f"hub-mariadb is {result or 'missing'}, {', '.join(extra_red)} on {commit},"
+                    f" same hub files as {sha} ({run['html_url']}): start hub-mariadb by hand"
+                    f" from main (Actions, hub-mariadb, Run workflow, sha {sha})"
+                    " and re-run this job when it is green",
+                )
             continue
-        red = [f"hub-mariadb is {result}"] if result != "success" else []
-        red += [
-            f"{name} is {jobs[name]}"
-            for name in MARIADB_EXTRA_JOBS
-            if name in jobs and jobs[name] != "success"
-        ]
+        red = ([f"hub-mariadb is {result}"] if result != "success" else []) + extra_red
         if not red:
-            alone = [name for name in MARIADB_EXTRA_JOBS if name not in jobs]
-            note = f" (a run without {', '.join(alone)}: its workflow predates it)" if alone else ""
+            alone = [name for name in MARIADB_EXTRA_JOBS if name not in defined]
+            note = (
+                f" (its workflow file has no {', '.join(alone)}: it predates it)" if alone else ""
+            )
             return State(
                 "ok",
                 f"hub-mariadb passed on {commit}, same hub files as {sha}{note}:"

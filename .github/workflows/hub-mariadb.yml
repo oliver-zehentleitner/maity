@@ -209,9 +209,9 @@ jobs:
       - shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          # red when either MariaDB job is: a failure first, then a cancel; else the 11.4 suite's result, so only
-          # a run of the full suite closes the issue (a skipped 11.4 beside a green 11.8 changes nothing)
-          RESULT: ${{ (needs.hub-mariadb.result == 'failure' || needs.hub-mariadb-11-8.result == 'failure') && 'failure' || ((needs.hub-mariadb.result == 'cancelled' || needs.hub-mariadb-11-8.result == 'cancelled') && 'cancelled' || needs.hub-mariadb.result) }}
+          # red when either MariaDB job is: a failure first, then a cancel; green only when both passed, so a
+          # skipped job beside a green one changes nothing and never closes the issue
+          RESULT: ${{ (needs.hub-mariadb.result == 'failure' || needs.hub-mariadb-11-8.result == 'failure') && 'failure' || ((needs.hub-mariadb.result == 'cancelled' || needs.hub-mariadb-11-8.result == 'cancelled') && 'cancelled' || ((needs.hub-mariadb.result == 'success' && needs.hub-mariadb-11-8.result == 'success') && 'success' || 'skipped')) }}
           HAND: ${{ github.event_name == 'workflow_dispatch' && !(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') }}
           SHA: ${{ needs.decide.outputs.sha }}
           BASE: ${{ needs.decide.outputs.base }}

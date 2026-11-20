@@ -1058,7 +1058,7 @@ little in a hub whose rule is `op.*` and Core only.
 that reflects `notification_position` and writes `vector` names that column itself, as with the JSON
 type above. The list in the test is kept by hand from the vendors' reserved-word pages. The revisions
 are checked by an `ast` walk over the calls that name tables and columns: `Column`/`column` (also
-inside `add_column`, on one line or several), `Table`/`table`/`create_table`/`drop_table`,
+inside `add_column`, on one line or several), `Table`/`table`/`create_table`/`drop_table`/`batch_alter_table`,
 `rename_table`, `alter_column` (the column and `new_column_name`), `drop_column`, `add_column`'s table,
 the columns of `create_index`/`create_unique_constraint`, and the names of indexes and constraints
 (`Index`, `create_index`/`drop_index`, `create_*_constraint`, `create_foreign_key`, `drop_constraint`,

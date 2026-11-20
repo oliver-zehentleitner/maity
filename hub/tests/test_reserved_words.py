@@ -102,11 +102,11 @@ def _literal(node: ast.expr | None) -> tuple[str, bool] | None:
     """The name a node spells and whether quoted_name quotes it; None when it is no literal."""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value, False
-    if isinstance(node, ast.Call) and _callee(node) == "quoted_name" and node.args:
-        inner = _literal(node.args[0])
+    if isinstance(node, ast.Call) and _callee(node) == "quoted_name":
+        inner = _literal(_arg(node, 0, "value"))
         if inner is None:
             return None
-        flag = node.args[1] if len(node.args) > 1 else _keyword(node, "quote")
+        flag = _arg(node, 1, "quote")
         return inner[0], isinstance(flag, ast.Constant) and flag.value is True
     if isinstance(node, ast.Call) and _callee(node) == "f" and len(node.args) == 1:
         return _literal(node.args[0])  # op.f("…"): the name as written, quoted by the dialect
@@ -133,7 +133,8 @@ def _on_op(call: ast.Call) -> bool:
 
 
 def _names(call: ast.Call) -> list[tuple[str, ast.expr | None]]:
-    """(what, node) for every identifier the call names: tables and columns."""
+    """(what, node) for every identifier the call names: tables, columns, indexes and
+    constraints. For a call in QUOTE_KEYWORD the name it creates comes first."""
     callee, table = _callee(call), (0 if _on_op(call) else None)
     shift = 1 if table is not None else 0
     found: list[tuple[str, ast.expr | None]] = []
@@ -142,7 +143,7 @@ def _names(call: ast.Call) -> list[tuple[str, ast.expr | None]]:
         if node is None and call.args and _literal(call.args[0]) is not None:
             node = call.args[0]
         found.append(("column", node))
-    elif callee in ("Table", "table", "create_table", "drop_table"):
+    elif callee in ("Table", "table", "create_table", "drop_table", "batch_alter_table"):
         found.append(("table", _arg(call, 0, "table_name" if callee != "Table" else "name")))
     elif callee == "rename_table":
         found += [("table", _arg(call, 0, "old_table_name"))]
@@ -172,7 +173,8 @@ def _names(call: ast.Call) -> list[tuple[str, ast.expr | None]]:
 
 
 def unquoted_names(source: str) -> list[str]:
-    """`<line>: <table|column> <name>` for every reserved name in source left unquoted."""
+    """`<line>: <table|column|index|constraint> <name>` for every reserved name in source left
+    unquoted."""
     missing = []
     for call in (n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.Call)):
         keyword = _keyword(call, "quote")
@@ -181,12 +183,13 @@ def unquoted_names(source: str) -> list[str]:
             and isinstance(keyword, ast.Constant)
             and keyword.value is True
         )
-        for what, node in _names(call):
+        names = _names(call)
+        created = names[0][1] if flagged and names else None
+        for what, node in names:
             spelled = _literal(node)
             if spelled is None or spelled[0].lower() not in UNQUOTED:
                 continue
-            created = node is _arg(call, 0, "name") or node is _keyword(call, "name")
-            if spelled[1] or (flagged and created):
+            if spelled[1] or (node is not None and node is created):
                 continue
             missing.append(f"{call.lineno}: {what} {spelled[0]}")
     return missing
@@ -227,6 +230,9 @@ op.create_table(
     ),
     "an ordinary name": 'sa.Column("body", sa.Text())',
     "an index named by quoted_name": ('op.create_index(quoted_name("vector", True), "t", ["v"])'),
+    "a table created by keyword, quote=True": ('op.create_table(table_name="vector", quote=True)'),
+    "quoted_name by keywords": 'sa.Column(quoted_name(value="vector", quote=True), X)',
+    "a batch on a quoted table": 'op.batch_alter_table(quoted_name("vector", True))',
     "an ordinary op.f name": 'sa.PrimaryKeyConstraint("id", name=op.f("pk_notification_position"))',
 }
 
@@ -254,6 +260,15 @@ UNQUOTED_FORMS = {
     "a single-quoted name": ("sa.Column('vector', JSON_VALUE)", "column"),
     "a lightweight table of the word": ('sa.table("vector", sa.column("id"))', "table"),
     "a lightweight column of the word": ('sa.table("t", sa.column("vector", X))', "column"),
+    "quoted_name by keyword without quote": (
+        'sa.Column(quoted_name(value="vector", quote=None), X)',
+        "column",
+    ),
+    "a batch on a table of the word": ('with op.batch_alter_table("vector") as b: pass', "table"),
+    "a batch on a table of the word, by keyword": (
+        'op.batch_alter_table(table_name="vector")',
+        "table",
+    ),
     "an index named the word": ('op.create_index("vector", "t", ["v"])', "index"),
     "an index named by keyword": (
         'op.create_index(index_name="vector", table_name="t", columns=["v"])',
