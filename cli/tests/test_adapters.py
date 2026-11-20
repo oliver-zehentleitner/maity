@@ -711,32 +711,40 @@ def test_the_agy_shared_tmp_parent_is_hidden_from_a_non_agy_sandbox(tmp_path: Pa
 def test_a_placements_own_tmpdir_leaf_is_opened_again_and_its_siblings_stay_hidden(
     tmp_path: Path,
 ) -> None:
-    """tsk-0zb9mgzmbwn4: a placement's own TMPDIR leaf under the hidden per-user `/tmp` parent
-    is opened again for it alone, in Claude Code's sandbox (allowWrite and allowRead within the
-    denied parent) and in Codex's profile (`write` within `none`); a sibling leaf stays hidden."""
-    parent = tmp_path / "shared-tmp" / "maity-scratch-1002"
+    """tsk-0zb9mgzmbwn4: a Codex placement's own TMPDIR leaf under the hidden per-user `/tmp`
+    parent is opened again for it alone (`write` within `none`), and a sibling leaf stays
+    hidden. Claude Code's sandbox never opens such a leaf: live, it mounted one re-opened under
+    a denied parent read-only (Claude Code 2.1.329), so the supervisor gives it none. Paths
+    only, nothing is made: short, as the runner's, so the leaf is the session's TMPDIR."""
+    parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
     own, sibling = parent / ("a" * 32), parent / ("b" * 32)
+
+    def codex_fs(**extra: Any) -> dict[str, str]:
+        ctx = context(
+            tmp_path, harness_id="codex", binary="/usr/bin/codex",
+            clone=tmp_path / "ws" / "proj" / "agent-3", workspaces=tmp_path / "ws",
+            private=(tmp_path / "st",), tmp_scratch_parent=parent, tmpdir=own / "tmp",
+            placement={**PLACEMENT, "mode": "supervised"}, **extra,
+        )  # fmt: skip
+        fs: dict[str, str] = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"][
+            "filesystem"
+        ]
+        return fs
+
+    filesystem = codex_fs()
+    assert filesystem[str(parent)] == "none" and filesystem[str(own)] == "write"
+    assert _effective_rule(filesystem, own / "tmp" / "pytest-1") == "write"
+    assert _effective_rule(filesystem, sibling / "tmp") == "none"
+    # Where the scratch's own `tmp` fits, that is the TMPDIR, and the leaf is not opened.
+    room = Path("/srv/ws/proj/.scratch/plc-0003")
+    assert adapters.scratch_tmpdir(room) is not None
+    assert str(own) not in codex_fs(scratch=room)
+    # Claude Code: the parent stays denied, and no leaf is opened, even if one were given.
     claude = adapters.claude_settings(
         context(tmp_path / "c", sandbox=True, tmp_scratch_parent=parent, tmpdir=own / "tmp")
     )["sandbox"]["filesystem"]
     assert str(parent) in claude["denyRead"] and str(parent) in claude["denyWrite"]
-    assert claude["allowWrite"] == [str(own)] and claude["allowRead"] == [str(own)]
-    assert str(sibling) not in claude["allowWrite"] + claude["allowRead"]
-    codex = context(
-        tmp_path, harness_id="codex", binary="/usr/bin/codex",
-        clone=tmp_path / "ws" / "proj" / "agent-3", workspaces=tmp_path / "ws",
-        private=(tmp_path / "st",), tmp_scratch_parent=parent, tmpdir=own / "tmp",
-        placement={**PLACEMENT, "mode": "supervised"},
-    )  # fmt: skip
-    filesystem = tomllib.loads(adapters.codex_config(codex))["permissions"]["maity"]["filesystem"]
-    assert filesystem[str(parent)] == "none" and filesystem[str(own)] == "write"
-    assert _effective_rule(filesystem, own / "tmp" / "pytest-1") == "write"
-    assert _effective_rule(filesystem, sibling / "tmp") == "none"
-    # Without one, nothing is opened under the parent (the earlier shape).
-    plain = adapters.claude_settings(
-        context(tmp_path / "p", sandbox=True, tmp_scratch_parent=parent)
-    )["sandbox"]["filesystem"]
-    assert "allowRead" not in plain and "allowWrite" not in plain
+    assert "allowRead" not in claude and str(own) not in claude.get("allowWrite", [])
 
 
 def test_a_scratch_without_room_for_a_socket_gets_the_short_tmpdir_the_runner_made(

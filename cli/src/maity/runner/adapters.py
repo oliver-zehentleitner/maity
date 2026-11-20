@@ -481,11 +481,15 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
 # --- Claude Code ------------------------------------------------------------------------------
 
 
-def _own_writable(ctx: Context) -> list[str]:
-    """What the placement's commands may write besides the clone: its scratch, and the leaf of
-    its own TMPDIR (Context.tmpdir) under the per-user `/tmp` parent its sandbox otherwise
-    hides. A sibling leaf there stays hidden."""
-    return [str(p) for p in (ctx.scratch, ctx.tmpdir.parent if ctx.tmpdir else None) if p]
+def own_tmp_leaf(ctx: Context) -> Path | None:
+    """The leaf of the placement's own TMPDIR under the per-user `/tmp` parent, to open again
+    in its sandbox: only when that TMPDIR is the one the session gets (session_tmpdir), so the
+    sandbox never opens a leaf the session does not use. Only Codex's profile opens it: Claude
+    Code's sandbox mounts a leaf re-opened under a denied parent read-only, so the supervisor
+    gives a Claude Code placement none (workspace.OWN_TMPDIR_HARNESSES)."""
+    if ctx.tmpdir is None or session_tmpdir(ctx) != ctx.tmpdir:
+        return None
+    return ctx.tmpdir.parent
 
 
 def _shared_tmp(ctx: Context) -> list[str]:
@@ -551,12 +555,9 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
                                          *(f"{git}/{name}" for name in GIT_PROTECTED),
                                          *(str(p) for p in ctx.private),
                                          *_shared_tmp(ctx)],
-                           # Commands write the placement's scratch besides the clone (§15.5),
-                           # and its own TMPDIR leaf under the hidden per-user parent, opened
-                           # again for this placement alone (tsk-0zb9mgzmbwn4).
-                           **({"allowWrite": own} if (own := _own_writable(ctx)) else {}),
-                           **({"allowRead": [str(ctx.tmpdir.parent)]}
-                              if ctx.tmpdir is not None else {})},
+                           # Commands write the placement's scratch besides the clone (§15.5).
+                           **({"allowWrite": [str(ctx.scratch)]}
+                              if ctx.scratch is not None else {})},
             "excludedCommands": ["maity *"],
         }  # fmt: skip
         # `maity` runs outside the sandbox only as one plain call: the hook refuses a line
@@ -797,7 +798,7 @@ def codex_config(ctx: Context) -> str:
     # opened again below (the clone, the scratch) keeps a hidden path inside it listed.
     # The placement's own TMPDIR leaf (Context.tmpdir) is opened again under the hidden per-user
     # `/tmp` parent, as the scratch is under the hidden workspaces root (tsk-0zb9mgzmbwn4).
-    own_tmp = ctx.tmpdir.parent if ctx.tmpdir is not None else None
+    own_tmp = own_tmp_leaf(ctx)
     reopened = (ctx.clone, *(p for p in (ctx.scratch, own_tmp) if p is not None))
     # The agy per-user `/tmp` scratch parent is hidden too (its own scratch sits beside the
     # clone, so Codex has no need to reach `/tmp`'s scratch of another placement of this user).

@@ -5042,38 +5042,53 @@ separate item of the incident card.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-0zb9mgzmbwn4, 2026-11-20 (the lead's go for this shape, with a live check before the merge); `cli/src/maity/runner/supervisor.py` (`_tmpdir`, `_remove_tmpdir`), `adapters.py` (`session_tmpdir`, the sandbox rules). The shape and the rejected alternatives are the author's, not yet reviewed, and Claude Code's handling of the re-opened leaf is not yet checked live
+**Source:** card tsk-0zb9mgzmbwn4, 2026-11-20 (the lead's go for this shape, with a live check before the merge); the ops live check on a runner host, 2026-11-20, with Claude Code 2.1.329 and Codex 0.171.0; `cli/src/maity/runner/supervisor.py` (`_tmpdir`, `_remove_tmpdir`, `_remove_stale`), `workspace.py` (`OWN_TMPDIR_HARNESSES`), `adapters.py` (`session_tmpdir`, `own_tmp_leaf`). The live results are confirmed; the shape and the rejected alternatives are the author's and the lead's
 **See:** runner.md#agys-scratch-lives-under-the-hosts-shared-temp-directory-not-beside-the-clone — 8ec06e26-42b6-47b7-9f23-2bad37da3dfa — as of 2026-11-20
 **See:** runner.md#a-placements-scratch-lives-beside-its-clone-one-per-placement-and-is-never-kept — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-20
-**Revisit when:** the live check shows that Claude Code's sandbox does not let a placement write a leaf it re-opens inside a denied parent; Claude Code moves its sandbox socket out of TMPDIR; placements get an OS user each
+**Revisit when:** the runner pins a new Claude Code version (check again whether its sandbox lets a placement write a leaf re-opened inside a denied parent); Claude Code moves its sandbox socket out of TMPDIR; placements get an OS user each
 
-Where a Claude Code or Codex placement's scratch leaves no room for a Unix
-socket under its `tmp`, as under the default `~/maity-workspaces`, the runner
-makes `tmp` in a fresh 0700 leaf with a random name under the per-user
+Where a Codex placement's scratch leaves no room for a Unix socket under its
+`tmp`, as under the default `~/maity-workspaces`, the runner makes `tmp` in
+a fresh 0700 leaf with a random name under the per-user
 `/tmp/maity-scratch-<uid>` parent, the one agy's scratch uses, and sets it
-as the session's TMPDIR. The placement's sandbox already hides that parent;
-it opens this one leaf again for the placement alone: Claude Code through
-`allowWrite` and `allowRead`, Codex through `write` within `none`. A
-sibling leaf stays hidden. The leaf is recorded like agy's (the scratch
-names file), made fresh at every start, and removed when the placement
-closes. Where the scratch's own `tmp` fits, it stays the TMPDIR. Where the
-leaf would not fit either (macOS with a uid longer than four digits), and
-on an ssh host, the session gets no TMPDIR, as before.
+as the session's TMPDIR. Codex's profile already hides that parent (`none`)
+and opens this one leaf again (`write`) for the placement alone; a sibling
+leaf stays hidden. The leaf is recorded like agy's (the scratch names file),
+made fresh at every start, and removed when the placement closes. A leaf
+that a restart fails to remove, agy's included, is kept on record
+(`tmp_scratch_stale.json`) and tried again at every start and at the close,
+so a failed removal orphans nothing (review A1769). If another user on the
+host has made `/tmp/maity-scratch-<uid>` first, the runner refuses it and
+makes no leaf, and the session starts without a TMPDIR, as before (security
+review A1770). Where the scratch's own `tmp` fits, it stays the TMPDIR.
+Where the leaf would not fit either (macOS with a uid longer than four
+digits), and on an ssh host, the session gets no TMPDIR, as before.
 
-**Reason:** without a TMPDIR the temporary files of the session's tools and
-of Claude Code itself went to the shared `/tmp`. Every placement of the same
-OS user could see them, possibly another owner's. Before the socket rule
-(#2014) they stayed in the scratch. A leaf under the parent that the
-sandboxes already hide gives the same separation as the scratch, with a
-path short enough for the socket, and reuses the make, record and removal
-code agy's scratch already has.
+A Claude Code placement gets no leaf and starts without a TMPDIR, as before.
+The live check showed why. In Claude Code 2.1.329 an `allowWrite` and
+`allowRead` on the leaf beat the parent's `denyRead`, so the leaf is visible
+and its siblings stay hidden, but not the parent's `denyWrite`. The leaf is
+mounted read-only, so `echo x > "$TMPDIR/a"` and `mktemp` failed with
+"Read-only file system", and so did Claude Code's own cwd file. Codex 0.171.0
+wrote the leaf, sealed the siblings, and refused listing the parent.
+
+**Reason:** without a TMPDIR the temporary files of the session's tools went
+to the shared `/tmp`. Every placement of the same OS user could see them,
+possibly another owner's. Before the socket rule (#2014) they stayed in the
+scratch. A leaf under the parent that the sandbox already hides gives the
+same separation as the scratch, with a path short enough for the socket, and
+reuses the make, record and removal code agy's scratch already has.
 
 **Rejected alternatives:**
+- Dropping the parent from Claude Code's `denyWrite`, so that its leaf is
+  writable: under one OS user a sibling leaf's 0700 separates nothing, so
+  every Claude Code placement could write the others' TMPDIR. The sandbox is
+  never given a wider allow (the parent, or `/tmp`) to make a leaf work (the
+  lead's call with security review A1770).
 - `CLAUDE_CODE_TMPDIR` in the scratch, independent of the socket rule: it
-  covers only Claude Code's own temporary files, and the tools a session
-  runs (test runners, package installers, compilers) still use TMPDIR. It
-  stays the fallback for Claude Code if the live check shows its sandbox
-  does not honour the re-opened leaf.
+  covers only Claude Code's own temporary files, and the tools a session runs
+  (test runners, package installers, compilers) still use TMPDIR. It is not
+  part of this change; it can be a card of its own.
 - A separate per-user parent that no sandbox hides, with random leaves:
   same-user sandboxed placements could list it and reach each other's
   temporary files, which is weaker than the scratch.

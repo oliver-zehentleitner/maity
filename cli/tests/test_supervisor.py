@@ -3524,7 +3524,24 @@ def test_a_placement_without_room_under_its_scratch_gets_a_short_tmpdir_of_its_o
     parent = workspace.TMP_SCRATCH_ROOT.resolve() / f"maity-scratch-{target.as_user.uid()}"
     assert leaf.parent == parent and leaf.name == sup.scratch_names["plc-0003"]
     assert stat.S_IMODE(leaf.stat().st_mode) == 0o700
-    assert sup._remove_tmpdir(p, target) and not leaf.exists()
+    # A restart whose old leaf cannot be removed (once) still gets a fresh leaf, and the old one
+    # is kept on record, saved, and removed at the close (review A1769): nothing is orphaned.
+    real_remove = scratch.tmp_remove
+
+    def fails(path: Path, as_user: Any) -> int | None:
+        raise OSError("busy")
+
+    monkeypatch.setattr(scratch, "tmp_remove", fails)
+    again = sup._tmpdir(p, deep, target)
+    assert again is not None and again.parent != leaf and leaf.exists()
+    assert sup.scratch_stale["plc-0003"] == [leaf.name]
+    assert state.load_state(sup.cfg.state_dir, name=supervisor.TMP_STALE_FILE) == {
+        "plc-0003": [leaf.name]
+    }
+    monkeypatch.setattr(scratch, "tmp_remove", real_remove)
+    assert sup._remove_stale(p, target) and not leaf.exists()
+    assert "plc-0003" not in sup.scratch_stale
+    assert sup._remove_tmpdir(p, target) and not again.parent.exists()
     # agy's leaf is its scratch, removed with it, not here.
     agy = placement(harness="antigravity")
     assert sup._remove_tmpdir(agy, target)
@@ -3739,6 +3756,26 @@ def test_a_claude_code_placement_gets_no_password_file(
     ctx = sup._context(placement(n=4), codex, place, target, scratch=other)
     assert ctx.pg_pass is not None and ctx.pg_pass == holder / "plc-0004"
     assert ctx.pg_pass.is_file()
+
+
+def test_only_a_codex_placement_gets_a_tmpdir_leaf_of_its_own(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-0zb9mgzmbwn4, the live check of 2026-11-20: Codex 0.171.0 writes a leaf re-opened
+    under the hidden parent, Claude Code 2.1.329 mounts it read-only. So with no room under
+    the scratch, a Codex placement gets its own TMPDIR leaf and a Claude Code one none."""
+    sup, *_ = world
+    recorded(sup.cfg)
+    target = sup.targets["local"]
+    sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    deep = Path("/") / ("w" * 500) / "maity" / ".scratch" / "plc-0003"  # no room under it
+    monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)  # room under the test's root
+    claude = config.Harness("claude-code", ("supervised",), "supervised")
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    assert sup._context(placement(), claude, place, target, scratch=deep).tmpdir is None
+    ctx = sup._context(placement(n=4), codex, place, target, scratch=deep)
+    assert ctx.tmpdir is not None and ctx.tmpdir.is_dir()
 
 
 def _stat_mode(path: Path) -> int:
