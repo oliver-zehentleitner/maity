@@ -4801,7 +4801,9 @@ Two hardening steps keep the scratch the placement's own:
   `outermost` leaves them out of the profile. A listing that cannot be
   completed refuses the start. The list covers the scratches that exist at
   the start. One made while a Claude Code session runs is a known residual,
-  tracked as tsk-rbys2j9q0m48. agy and opencode are not kept out by these
+  tracked as tsk-rbys2j9q0m48: that session can read it, but a live probe
+  showed it can neither write it (the sandbox writes only its own paths)
+  nor reach its cluster's socket. agy and opencode are not kept out by these
   rules.
 - **Password-protected cluster.** The cluster takes a password, which
   `with_postgres.sh` gets as `MAITY_PG_PASSWORD` and uses to make the
