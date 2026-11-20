@@ -726,6 +726,40 @@ def test_an_ok_preflight_is_kept_and_any_other_answer_is_read_again(
     assert asked == ["asked", "asked"]
 
 
+def test_an_ssh_target_reads_its_preflight_again_after_it_was_unreachable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The host behind an ssh target's name may be another machine or a new kernel when it
+    comes back: its kept `ok` is forgotten while it is unreachable. A local target keeps it."""
+    from maity.runner.asuser import Ssh
+
+    answers = [SECCOMP_ANSWERS["ok"], SECCOMP_ANSWERS["no_seccomp"]]
+    asked: list[object] = []
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        asked.append(as_user)
+        return answers.pop(0)
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = lambda line: None
+    local = sup.targets["local"]
+    local.seccomp = SECCOMP_ANSWERS["ok"]
+    sup._reachable(local, False, 1.0, "gone")
+    assert local.seccomp == SECCOMP_ANSWERS["ok"]  # the local machine does not change
+    host = replace(local, name="build-9", as_user=Ssh(name="build-9"), seccomp=None,
+                   reachable=True, unreachable_since=None)  # fmt: skip
+    assert sup._seccomp(host).outcome == "ok"
+    assert sup._seccomp(host).outcome == "ok"  # kept while it stays reachable
+    assert len(asked) == 1
+    sup._reachable(host, False, 2.0, "connection refused")
+    assert host.seccomp is None
+    sup._reachable(host, True, 3.0)
+    found = sup._seccomp(host)
+    assert found.outcome == "no_seccomp" and len(asked) == 2  # read again: now refused
+    assert host.seccomp is None  # and not kept
+
+
 @pytest.mark.parametrize(("platform", "tools"), [("darwin", True), ("linux", False)])
 def test_no_preflight_under_seatbelt_or_without_claude_codes_sandbox(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, tools: bool

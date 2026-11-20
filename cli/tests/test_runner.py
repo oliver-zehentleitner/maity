@@ -1008,6 +1008,8 @@ PROBE_MISSING = (
          "Claude Code exited 1 (its login?)"),
         ("timeout", "inconclusive", "no answer within 180 s"),
         ("oserror", "inconclusive", "Claude Code did not start: No such file or directory"),
+        ("undecodable", "inconclusive", "Claude Code's output could not be read"),
+        ((0, b"\xff\xfe"), "inconclusive", "Claude Code's output could not be read"),
     ],
 )  # fmt: skip
 def test_the_socket_probe_reads_the_runtimes_lines_and_fails_closed_otherwise(
@@ -1032,6 +1034,8 @@ def test_the_socket_probe_reads_the_runtimes_lines_and_fails_closed_otherwise(
             raise subprocess.TimeoutExpired(argv, 180)
         if answer == "oserror":
             raise FileNotFoundError(2, "No such file or directory")
+        if answer == "undecodable":  # text-mode decoding of the output failed
+            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
         assert isinstance(answer, tuple)
         return subprocess.CompletedProcess(argv, answer[0], "the model's answer", answer[1])
 
@@ -1226,6 +1230,63 @@ def test_check_keeps_the_passed_probe_version_and_warns_on_another(
     said = marked(capsys, "probe last passed with 2.1.324, installed 2.1.325")
     assert [s.split()[0] for s in said] == ["error"], said
     assert state.load_state(state_dir, name=capabilities.PROBE_FILE) == {"local": "2.1.324"}
+
+
+@pytest.mark.parametrize("unclean", [None, "claude_hooks_off", "claude_socket_settings"])
+def test_check_reads_the_settings_before_it_runs_and_keeps_the_probe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unclean: str | None
+) -> None:
+    """Locally as on a host: the hook and socket settings come first, and the headless probe
+    runs, and its pass is kept, only while they are clean; otherwise an older pass is
+    forgotten and the stale-version error follows."""
+    from maity import state
+    from maity.runner import capabilities, commands
+
+    order: list[str] = []
+    monkeypatch.setattr(capabilities, "claude_sandbox_tools", lambda: ("bwrap", "socat"))
+    monkeypatch.setattr(capabilities, "which", lambda tool, path, as_user: f"/usr/bin/{tool}")
+    monkeypatch.setattr(capabilities, "sandbox_version_ok", lambda harness, version: True)
+    monkeypatch.setattr(
+        capabilities, "claude_nested_userns", lambda path, as_user: capabilities.NestedUserns("ok")
+    )
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+
+    def settings(name: str) -> object:
+        def read(as_user: object) -> str | None:
+            order.append(name)
+            return "~/.claude/settings.json sets x" if name == unclean else None
+
+        return read
+
+    monkeypatch.setattr(capabilities, "claude_hooks_off", settings("claude_hooks_off"))
+    monkeypatch.setattr(capabilities, "claude_socket_settings", settings("claude_socket_settings"))
+
+    def probe(*args: object) -> capabilities.SocketProbe:
+        order.append("probe")
+        return capabilities.SocketProbe("ok")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    state_dir = tmp_path / "st"
+    state_dir.mkdir(mode=0o700)
+    state.save_state(state_dir, {"local": "2.1.324"}, name=capabilities.PROBE_FILE)
+    harness = config.Harness("claude-code", ("interactive", "supervised"), "interactive")
+    report = commands.Report()
+    commands._check_claude_code(report, harness, version="2.1.325", binary="/usr/bin/claude",
+                                state_dir=state_dir)  # fmt: skip
+    kept = state.load_state(state_dir, name=capabilities.PROBE_FILE)
+    if unclean is None:
+        assert order == ["claude_hooks_off", "claude_socket_settings", "probe"]
+        assert kept == {"local": "2.1.325"}
+        assert not report.failed, report.lines
+    else:
+        assert order == ["claude_hooks_off", "claude_socket_settings"]  # no probe
+        assert kept == {}
+        assert ("warn", "harness claude-code: probe not run: the settings above refuse every "
+                "sandboxed start") in report.lines  # fmt: skip
+        stale = [lvl for lvl, text in report.lines if "probe has not passed" in text]
+        assert stale == ["error"], report.lines
 
 
 def test_check_runs_no_seccomp_preflight_under_seatbelt(

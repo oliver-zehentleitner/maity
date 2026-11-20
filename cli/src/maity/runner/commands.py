@@ -694,12 +694,14 @@ def _check_claude_code(
         (report.error if refused else report.warn)(line)
     else:
         report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
+        # The settings first: the headless probe runs, and its pass is kept, only under
+        # settings a start accepts.
+        clean = _check_claude_hooks(report, as_user, "")
+        clean = _check_claude_socket_settings(report, as_user, "") and clean
         if tools == ("bwrap", "socat"):  # bubblewrap's nesting; Seatbelt has none
             _check_claude_nesting(report, agent_path, as_user)
             record = None if state_dir is None else ProbeRecord(state_dir, "local", version)
-            _check_claude_seccomp(report, as_user, "", binary, agent_path, record)
-        _check_claude_hooks(report, as_user, "")
-        _check_claude_socket_settings(report, as_user, "")
+            _check_claude_seccomp(report, as_user, "", binary, agent_path, record, clean)
     _check_claude_settings(report, as_user, "")
 
 
@@ -746,10 +748,13 @@ def _check_claude_seccomp(
     binary: str | None,
     agent_path: str,
     record: ProbeRecord | None = None,
+    settings_clean: bool = True,
 ) -> None:
     """Linux only: what Claude Code's seccomp step needs from the host (capabilities.
     claude_seccomp). Anything but `ok` is an error: the supervisor starts no sandboxed Claude
-    Code placement on it, an unreadable answer included. On `ok`, the headless probe."""
+    Code placement on it, an unreadable answer included. On `ok`, the headless probe, only
+    when the hook and socket settings are clean (`settings_clean`): otherwise it is not run
+    and no pass is kept, as for a probe that did not pass."""
     found = capabilities.claude_seccomp(as_user)
     if found.outcome != "ok":
         report.error(f"{where}{capabilities.claude_seccomp_line(found)}")
@@ -759,8 +764,15 @@ def _check_claude_seccomp(
         f"{where}harness claude-code: seccomp for blocking Unix sockets: machine "
         f"{found.arch}, kernel seccomp filtering present"
     )
-    if binary is not None:
-        _check_claude_socket_probe(report, as_user, where, binary, agent_path, record)
+    if binary is None:
+        return
+    if not settings_clean:
+        _keep_probe(report, where, record, False)
+        report.warn(f"{where}harness claude-code: probe not run: the settings above refuse "
+                    "every sandboxed start")  # fmt: skip
+        _probe_stale(report, where, record)
+        return
+    _check_claude_socket_probe(report, as_user, where, binary, agent_path, record)
 
 
 def _probe_stale(report: Report, where: str, record: ProbeRecord | None) -> None:
@@ -818,29 +830,31 @@ def _check_claude_socket_probe(
         )
 
 
-def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:
+def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> bool:
     """With the sandbox on, the runner's hook must run: settings that switch hooks off
-    refuse every start of a sandboxed agent (supervisor), so `check` says so as an error."""
+    refuse every start of a sandboxed agent (supervisor), so `check` says so as an error.
+    True when the settings are clean."""
     why = capabilities.claude_hooks_off(as_user)
     if why is None:
         report.ok(f"{where}harness claude-code: hooks are not switched off")
-    else:
-        report.error(f"{where}{capabilities.claude_hooks_line(why)}")
+        return True
+    report.error(f"{where}{capabilities.claude_hooks_line(why)}")
+    return False
 
 
-def _check_claude_socket_settings(report: Report, as_user: AsUser, where: str) -> None:
+def _check_claude_socket_settings(report: Report, as_user: AsUser, where: str) -> bool:
     """With the sandbox on, the managed and the agents' user's settings must carry no Unix
-    socket setting
-    (capabilities.SOCKET_SETTINGS): such settings refuse every start of a sandboxed agent
-    (supervisor), so `check` says so as an error."""
+    socket setting (capabilities.SOCKET_SETTINGS): such settings refuse every start of a
+    sandboxed agent (supervisor), so `check` says so as an error. True when they are clean."""
     why = capabilities.claude_socket_settings(as_user)
     if why is None:
         report.ok(
             f"{where}harness claude-code: the managed and user settings carry no Unix socket "
             "setting"
         )
-    else:
-        report.error(f"{where}{capabilities.claude_socket_settings_line(why)}")
+        return True
+    report.error(f"{where}{capabilities.claude_socket_settings_line(why)}")
+    return False
 
 
 def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
@@ -942,9 +956,10 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             elif harness.id == "claude-code":
                 record = ProbeRecord(cfg.state_dir, name, probe.version)
                 where = f"{name}: "
-                _check_claude_seccomp(report, as_user, where, probe.path, target.agent_path, record)
-                _check_claude_hooks(report, as_user, where)
-                _check_claude_socket_settings(report, as_user, where)
+                clean = _check_claude_hooks(report, as_user, where)
+                clean = _check_claude_socket_settings(report, as_user, where) and clean
+                _check_claude_seccomp(report, as_user, where, probe.path, target.agent_path,
+                                      record, clean)  # fmt: skip
             if harness.id == "antigravity":
                 _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
             if harness.id == "opencode":

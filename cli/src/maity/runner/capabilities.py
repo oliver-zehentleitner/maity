@@ -617,6 +617,10 @@ def claude_socket_probe(binary: str, path: str, as_user: AsUser = RUNNER) -> Soc
         return SocketProbe("inconclusive", f"no answer within {SOCKET_PROBE_TIMEOUT} s")
     except OSError as exc:
         return SocketProbe("inconclusive", f"Claude Code did not start: {exc.strerror or exc}")
+    except ValueError:  # UnicodeDecodeError included: output that is not text
+        return SocketProbe("inconclusive", "Claude Code's output could not be read")
+    if not isinstance(done.stderr, str | None):
+        return SocketProbe("inconclusive", "Claude Code's output could not be read")
     said = (done.stderr or "").splitlines()
     if any(SOCKET_PROBE_MISSING in line for line in said):
         return SocketProbe("off", "Claude Code found no seccomp helper")

@@ -505,6 +505,47 @@ def test_check_names_the_host_on_its_claude_code_seccomp_and_probe_lines(
         assert any(level == "error" and "probe has not passed" in text for level, text in mine)
 
 
+@pytest.mark.parametrize("unclean", ["claude_hooks_off", "claude_socket_settings"])
+def test_check_runs_no_probe_on_a_host_whose_settings_refuse_a_start(
+    tmp_path: Path, fake_ssh: Path, monkeypatch: pytest.MonkeyPatch, unclean: str
+) -> None:
+    """The hook and socket settings are read first; while either refuses every sandboxed start
+    the headless probe does not run, and no pass is kept (an older one is forgotten)."""
+    from maity import state
+
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path) + "\n[harness.claude-code]\n")
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    (tmp_path / "remote" / "ws").mkdir(parents=True)
+    cfg = config.load(path)
+    target = targets.ssh_hosts(cfg)[1]
+    found = {h: capabilities.Probe(None, None, None) for h in cfg.harnesses}
+    found["claude-code"] = capabilities.Probe("/r/bin/claude", "2.1.329", None)
+    monkeypatch.setattr(
+        targets, "probe_remote", lambda as_user, harnesses, path: (found, {"claude-code": True},
+                                                                    set())  # fmt: skip
+    )
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    monkeypatch.setattr(capabilities, "claude_hooks_off", lambda as_user: None)
+    monkeypatch.setattr(capabilities, "claude_socket_settings", lambda as_user: None)
+    monkeypatch.setattr(capabilities, unclean, lambda as_user: "~/.claude/settings.json sets x")
+
+    def probe(*args: object) -> capabilities.SocketProbe:
+        raise AssertionError("no probe under settings that refuse a start")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    state.save_state(cfg.state_dir, {"build-2": "2.1.329"}, name=capabilities.PROBE_FILE)
+    report = commands.Report()
+    commands._check_host(report, cfg, target)
+    assert state.load_state(cfg.state_dir, name=capabilities.PROBE_FILE) == {}
+    lines = [(level, re.sub(r"/\S*", "", text)) for level, text in report.lines]
+    assert ("warn", "build-2: harness claude-code: probe not run: the settings above refuse "
+            "every sandboxed start") in lines  # fmt: skip
+    assert any(level == "error" and "probe has not passed" in text for level, text in lines)
+
+
 def test_stop_all_names_a_host_it_could_not_reach(
     tmp_path: Path, fake_ssh: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

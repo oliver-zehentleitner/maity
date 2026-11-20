@@ -4960,7 +4960,7 @@ a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
 **Type:** constraint
 **Status:** open
 **Evidence:** inferred
-**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032, 2026-11-20; the ops team's read-only reading of the Claude Code 2.1.328 and 2.1.329 binaries (minified): the supported machines, the helper's resolution and the built-in helper handed in by file descriptor, the warning sent to the sandbox runtime's debug logger, 2026-11-20; `/proc/self/status` of an unconfined shell on a test host (`Seccomp: 0`, `Seccomp_filters: 0`), 2026-11-20; the ops team's live run of Claude Code 2.1.329 on an x64 Linux runner host (a throwaway session, no placement): headless with `SRT_DEBUG=1` the filter was applied, the interactive interface showed no sandbox-runtime line while it ran, 2026-11-20; the lead's decision for the static preflight, the headless probe in `check` only and dropping the pane check, 2026-11-20; the security review of #2063 (the pinned socket settings, the user settings refused) and the lead's decision to warn, not refuse, on a version whose probe has not passed, 2026-11-20; the security delta review of #2063 (the settings read only at a start), 2026-11-20
+**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032, 2026-11-20; the ops team's read-only reading of the Claude Code 2.1.328 and 2.1.329 binaries (minified): the supported machines, the helper's resolution and the built-in helper handed in by file descriptor, the warning sent to the sandbox runtime's debug logger, 2026-11-20; `/proc/self/status` of an unconfined shell on a test host (`Seccomp: 0`, `Seccomp_filters: 0`), 2026-11-20; the ops team's live run of Claude Code 2.1.329 on an x64 Linux runner host (a throwaway session, no placement): headless with `SRT_DEBUG=1` the filter was applied, the interactive interface showed no sandbox-runtime line while it ran, 2026-11-20; the lead's decision for the static preflight, the headless probe in `check` only and dropping the pane check, 2026-11-20; the security review of #2063 (the pinned socket settings, the user settings refused) and the lead's decision to warn, not refuse, on a version whose probe has not passed, 2026-11-20; the security delta review of #2063 (the settings read only at a start), 2026-11-20; the code review of #2063 and the review lead's decision (an ssh target's kept preflight forgotten while unreachable, the settings read before the probe), 2026-11-21
 **See:** runner.md#a-placements-test-slots-and-test-cluster-live-in-its-own-scratch-so-its-slots-bound-only-its-own-runs — 2ce039de-925e-4244-9a90-8336e9375d68 — as of 2026-11-20
 **Revisit when:** every move of the Claude Code version pin (`capabilities.CHECKED`): run the `check` probe, and read the supported machines and the probe's two lines from the binary again; Claude Code shows the block's state itself or fails closed without the step; it is verified whether Claude Code reloads user settings during a session; each placement runs as its own OS user
 
@@ -5001,9 +5001,21 @@ Claude Code once headless as the agents' user
 left on, `SRT_DEBUG=1`, one harmless command, a bounded timeout. Its
 standard error decides: the runtime's line that it applies the seccomp
 filter for Unix socket blocking is `ok`; its warning that the helper is not
-available is an error that the block is off; a timeout, a non-zero exit or
-neither line is an error that the block is not confirmed. The model's
-answer is not kept. Operators run `check` after every version pin.
+available is an error that the block is off; a timeout, a non-zero exit,
+output that cannot be decoded or neither line is an error that the block
+is not confirmed. The model's answer is not kept. Operators run `check`
+after every version pin. `check` reads the hook and socket settings first
+and runs the probe only while both are clean: a pass under settings that
+refuse every start would be kept for a configuration no start runs with,
+so none is run or kept then.
+
+An `ok` preflight is kept in `Target.seccomp`. A local target keeps it for
+the service's run; an ssh target forgets it when it turns unreachable
+(`Supervisor._reachable`), because the machine that answers under that
+name when it is back may be another one or run another kernel. A re-read
+at every start was weighed and left out: a dropped connection is the
+point where the host behind the name can change, and the reviewers chose
+that cheaper refresh.
 
 `check` keeps, per target, the Claude Code version whose probe passed in
 the state directory (`capabilities.PROBE_FILE`, written with

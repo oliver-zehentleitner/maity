@@ -675,6 +675,10 @@ class Supervisor:
             return
         target.reachable = up
         target.unreachable_since = None if up else (target.unreachable_since or now)
+        if not up and target.remote:
+            # The host that answers under this name when it comes back may be another machine
+            # or a new kernel: its seccomp preflight is read again (_seccomp).
+            target.seccomp = None
         if up:
             self.log(f"target {target.name}: reachable")
         else:
@@ -1130,8 +1134,9 @@ class Supervisor:
 
     def _seccomp(self, target: Target) -> ClaudeSeccomp:  # the field `capabilities` hides it
         """The seccomp preflight for `target` (Linux only, `ok` elsewhere): an `ok` is kept for
-        the service's lifetime, any other answer is read again at the next start, so a host
-        that could not be read starts once it can."""
+        the service's lifetime, on an ssh host until it turns unreachable (_reachable); any
+        other answer is read again at the next start, so a host that could not be read starts
+        once it can."""
         if not capabilities.claude_seccomp_applies(target.as_user):
             return ClaudeSeccomp("ok")
         if target.seccomp is not None:
