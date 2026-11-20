@@ -4109,7 +4109,7 @@ the clone and code that can put a file there can remove it itself.
 
 **Id:** 783e476c-3975-43de-9c4e-7c3a5da57be7
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** card tsk-bg81webs911m (the rest of the card: every path maity reads for the agent, the lead's list of those paths and of the ways out to test (an absolute path, `../`, `.git/maity/`, a symbolic link, a hard link), and the order to offer no `-o -` under a placement), 2026-11-13; the shapes and the rejected alternatives below are the author's, not yet reviewed; the scratch paragraph from card tsk-dpe3d5g5eh4k (the lead's go, 2026-11-17)
 **See:** runner.md#under-a-placement-maity-writes-a-file-only-inside-the-clone-and-reads-its-records-from-the-runners-directory — 818828af-24cb-4b2a-be54-1bff2211ccb0 — as of 2026-11-13
@@ -4170,6 +4170,53 @@ goes wherever the command line sent it, which maity cannot see.
 **Known gap:** a file whose other name is removed between the open and
 the link count reads as one link; that takes write access to the
 directory of that other name.
+
+## The walk to the placement's scratch passes through the directories above it, never reads them
+
+**Id:** 0bab0087-a0f1-4809-9e5c-31c878f35d11
+**Type:** decision
+**Type:** incident
+**Status:** active
+**Evidence:** inferred
+**Source:** cards tsk-x6wvgna4w95x and tsk-vt5hye6a6k6v; reviews A1715 and A1716 of PR #2053; live probe A1718 in a Codex placement on maity 0.1.0a17 and a second Codex placement's refusal, 2026-11-20; `cli/src/maity/inclone.py`. The refusal and its message are confirmed by the probe; the choice of fix and the rejected alternatives are the author's, not yet reviewed
+**See:** runner.md#under-a-placement-maity-reads-a-file-for-the-agent-only-inside-the-clone-or-the-placements-scratch-and-writes-no-attachment-to-standard-output — 783e476c-3975-43de-9c4e-7c3a5da57be7 — as of 2026-11-20
+**Revisit when:** a harness's sandbox hides a directory on the way to the scratch from search, not only from reading; a harness that runs `maity` inside its sandbox is supported on a system without `O_PATH`
+
+On the way from `/` to the recorded scratch, `inclone._walk` opens each
+directory with `O_PATH | O_DIRECTORY | O_NOFOLLOW` (Linux), from the one
+before, checks that it is a directory, and reads nothing from it. Below
+the scratch, and for the file itself, nothing changes: each directory is
+opened without following a link, and the file must be a regular file with
+one link. Where there is no `O_PATH` (macOS) the directories above the
+scratch are opened for reading, as before.
+
+**Reason:** Codex runs `maity` inside its bwrap sandbox. Its profile hides
+the workspaces root (`"none"`) and opens the scratch again (`"write"`), so a
+path still leads through the hidden directories, but they cannot be opened
+for reading. The walk opened each of them for reading, so under Codex every
+file in the scratch was refused with "the way to the placement's scratch
+(…) is not plain directories", absolute or relative, for `--body-file` and
+`--attach` alike (probe A1718). The agent's own shell had just written the
+file through the same path, so the session holds the right to search those
+directories. `O_PATH` needs that right and nothing more.
+
+**Boundary:** a descriptor opened with `O_PATH` reads nothing. A link on the
+way is still refused: with `O_NOFOLLOW`, `O_PATH` opens the link itself,
+which is no directory. Under Claude Code, maity runs outside the sandbox as
+the agents' user. Passing through a directory gives it nothing that this
+user's own path lookup does not already give, and the file checks are as
+before.
+
+**Rejected alternatives:**
+- Starting the walk at the recorded scratch path by name (`os.open(root,
+  O_NOFOLLOW)`): the kernel follows a link in every component but the last,
+  so a link above the scratch would no longer be refused.
+- Making the scratch's parents readable in the Codex profile: every Codex
+  session could then list the workspaces root and the other placements'
+  scratch names, which the profile hides on purpose.
+- Telling Codex agents to keep such files in the clone: a review's evidence
+  or another head's clone in the work tree is what the scratch exists to
+  keep out of commits (docs/agents.md).
 
 ## The runner nudges an interactive agent that stopped listening, then resumes it
 
