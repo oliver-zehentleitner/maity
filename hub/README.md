@@ -342,17 +342,23 @@ The machine-readable API description is at `/api/v1/openapi.json`;
 
 Work in a virtual environment of your own, so the tests see the locked set
 and the `maity-hub` command; without that command the test of the entry point
-is skipped:
+is skipped. `make dev` makes it; activate it, so `maity-hub` is on the path
+(the entry-point test, `scripts/smoke_join.sh`):
 
 ```sh
-python3 -m venv .venv && . .venv/bin/activate
-```
-
-```sh
-make install    # the locked set from requirements/ with hashes, then the hub editable
+make dev        # .venv with the locked set from requirements/ (wheels, hashed), then the hub editable
+. .venv/bin/activate
 make check      # black --check, ruff, mypy --strict (src, tests, scripts), pytest
 make format     # black and ruff --fix
 ```
+
+The targets run `.venv/bin/python` when it exists, else `python3`, the one CI
+sets up; `PYTHON=` names another. Selecting the interpreter does not put
+`.venv/bin` on the path; activating does. `make install` puts the same locked set
+into that Python's environment, as CI does. `make dev` creates the venv inside
+make, so a sandbox that allows `make` but not a bare `python3 -m venv` can
+still set it up. With `MAITY_SCRATCH` set (a runner placement), pip's cache
+goes to `$MAITY_SCRATCH/pip-cache` unless `PIP_CACHE_DIR` is set.
 
 The tests run on a fresh SQLite file per test, a copy of a schema migrated
 once. `make test` runs them in parallel, one worker per core (pytest-xdist);
@@ -429,9 +435,9 @@ a fixed number of statements; `tests/test_view_batching.py` holds that.
 
 `scripts/smoke_join.sh` runs a fresh hub on loopback and joins two agents
 the two ways a pasted join line can go: with plain `curl` exactly as the
-join page says, and with the `maity` CLI (`make install`, then
+join page says, and with the `maity` CLI (`make dev`, `. .venv/bin/activate`, then
 `pip install -e ../cli`
-first). Each agent then asks its human, the human answers both, and each
+first, so both commands are on the path). Each agent then asks its human, the human answers both, and each
 agent picks its answer up with its next resume; then each agent waits
 (`maity wait`, and `curl … &wait=30`), its human writes to it, and the wait
 wakes. It exits 0 only when all of that worked.
@@ -453,7 +459,7 @@ and the image ships is pinned, with hashes, in `requirements/`:
 | File | Holds | Used by |
 |---|---|---|
 | `runtime.txt` | the hub's dependencies | the image, the join smoke and the browser end-to-end test in CI |
-| `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make install`, every hub CI job |
+| `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make dev`, `make install`, every hub CI job |
 | `build.txt` | hatchling (and `editables`) | building the wheel and the editable install, without build isolation |
 | `tools.txt` | uv and pip-audit | `make lock-check` and the advisory audit in CI, each in an environment of its own |
 | `release.txt` | build, twine and hatchling, with the `build.txt` pins | `make release-build`: the sdist and wheel for PyPI (`release-hub.yml`, the `hub-dist` CI job) |

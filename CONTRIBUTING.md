@@ -30,15 +30,15 @@ family). Turn it on once per clone:
 
 ```sh
 git config core.hooksPath tools/hooks
-python3 -m venv hub/.venv && make -C hub install PYTHON=.venv/bin/python
+make -C hub dev
 pipx install --force "keep-the-why-lint==$(sed -n 's/.* # lint-v//p' .github/workflows/ktw-lint.yml)"
 ```
 
-The second line is the hub's environment from the hashed lock, the same
-one CI installs; the hook uses it for both packages (or the Python that
-`MAITY_HOOK_PYTHON` names). It stops before checking when black, ruff or
-mypy there differ from the pins in `hub/requirements/dev.txt`: after a
-lock change, run `make -C hub install PYTHON=.venv/bin/python` again.
+The second line makes the hub's environment, `hub/.venv`, from the hashed
+lock, the same set CI installs; the hook uses it for both packages (or the
+Python that `MAITY_HOOK_PYTHON` names). It stops before checking when black,
+ruff or mypy there differ from the pins in `hub/requirements/dev.txt`: after
+a lock change, run `make -C hub dev` again.
 Likewise it stops when the `ktw-lint` on PATH (or the one
 `MAITY_HOOK_KTW_LINT` names) is not the version CI pins (`# lint-vX` in
 `.github/workflows/ktw-lint.yml`), naming both versions and the install
@@ -192,9 +192,10 @@ verified.
 
 Everything runs on the machine you work on; there is no shared test system.
 
-- **Hub:** in `hub/`, `make install` into a venv of its own, then `make check`, which
-  runs the whole suite with one worker per core; on the machine the project's agents
-  share, `make lint typecheck` and the affected test files instead (below). The tests
+- **Hub:** in `hub/`, `make dev` (the venv `hub/.venv`, which the other targets then
+  use; `make install` installs the same set into the Python that `PYTHON=` names), then
+  `make check`, which runs the whole suite with one worker per core; on the machine the
+  project's agents share, `make lint typecheck` and the affected test files instead (below). The tests
   run on SQLite by default, one file per test (`hub/README.md`, "Develop").
 - **Hub on PostgreSQL:** `scripts/with_postgres.sh pytest -n 2 <test files>` from
   `hub/`; it starts a local server and gives the run a database of its own. Without a
