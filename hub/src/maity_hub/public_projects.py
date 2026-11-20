@@ -85,6 +85,64 @@ def served(conn: Connection, project: Any) -> bool:
     )
 
 
+def served_among(conn: Connection, project_ids: Collection[str]) -> set[str]:
+    """Of `project_ids`, those that have a page now: `served` for many projects at once, in at
+    most five statements whatever their number (the starred tabs on every `GET /me`, §5.1). An
+    id that names no project is simply not among them."""
+    ids = sorted(set(project_ids))
+    if not ids:
+        return set()
+    p = t.project.c
+    rows = conn.execute(
+        select(p.id, p.owner_org_id, p.owner_human_id).where(
+            p.id.in_(ids), p.public_page == "on", p.state != "archived"
+        )
+    ).all()
+    if not rows:
+        return set()
+    held = moderation.holds_of(conn, "project", [row.id for row in rows])
+    org_ids = sorted({row.owner_org_id for row in rows if row.owner_org_id is not None})
+    human_ids = sorted({row.owner_human_id for row in rows if row.owner_org_id is None})
+    orgs: set[str] = set()
+    if org_ids:
+        orgs = set(
+            conn.execute(
+                select(t.org.c.id).where(t.org.c.id.in_(org_ids), t.org.c.deleted_at.is_(None))
+            ).scalars()
+        )
+        orgs -= set(moderation.holds_of(conn, "org", sorted(orgs)))
+    humans: set[str] = set()
+    if human_ids:
+        h = t.human.c
+        humans = set(
+            conn.execute(
+                select(h.id).where(
+                    h.id.in_(human_ids),
+                    h.account_status == "active",
+                    h.deleted_at.is_(None),
+                    h.suspended_at.is_(None),
+                )
+            ).scalars()
+        )
+    served_owners = orgs | humans
+    return {
+        row.id
+        for row in rows
+        if row.id not in held and (row.owner_org_id or row.owner_human_id) in served_owners
+    }
+
+
+def public_for_outsiders(conn: Connection, project_ids: Collection[str]) -> set[str]:
+    """Of `project_ids`, those public for a reader who is no member: `served_among`, and none
+    at all while the instance serves no public pages (`MAITY_PUBLIC_PAGES` off, §16.9). Fail
+    closed, as ruled for the stars (hub/context/persistence.md c0e833f1). `served` itself does
+    not ask: most of its callers render pages, which happens only while pages are served, and
+    the others (`agent_owners.effective`, `landing_stats`) keep their own rules."""
+    if not public_pages.serving():
+        return set()
+    return served_among(conn, project_ids)
+
+
 def team(conn: Connection, project_id: str) -> tuple[list[Any], list[Any]]:
     """Who the page names (§16.9): every human member and every agent, by handle, whatever
     their profile says; an open project never only counts them. Active memberships only, in

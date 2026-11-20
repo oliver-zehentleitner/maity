@@ -983,6 +983,11 @@ The runner service starts and stops agents on this machine for a hub
 ([`docs/api.md`](https://github.com/oliver-zehentleitner/maity/blob/main/docs/api.md) §15). It never reads `MAITY_STATE_DIR`: its state lives under `hub.state_dir` of its
 own configuration.
 
+`runner` is taken only as the first argument: nothing may come before it,
+neither a global option (`--for`) nor `--`. `maity --for x runner …` and
+`maity -- runner …` are refused with exit 2 before anything runs; every
+other command keeps its global options.
+
 ```sh
 maity runner pair https://<hub>/r/<token> --code K3PF-9QZD-1MWA   # or --code-file - (stdin)
 maity runner check                                               # exits 1 on any error
