@@ -3629,6 +3629,48 @@ def test_a_placement_without_room_under_its_scratch_gets_a_short_tmpdir_of_its_o
     assert sup._remove_tmpdir(agy, target)
 
 
+def test_a_stop_between_the_two_record_writes_loses_no_leaf(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review A1769 delta: a restart that cannot remove the old leaf moves it to the stale
+    record; the stale record is written before the names record, so a stop between the two
+    writes still finds the old leaf at the next start (it is then in both records)."""
+    sup, *_ = world
+    target = sup.targets["local"]
+    p = placement(harness="codex")
+    deep = Path("/") / ("w" * 500) / "maity" / ".scratch" / "plc-0003"
+    monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)
+    first = sup._tmpdir(p, deep, target)
+    assert first is not None
+    old = first.parent
+    real_remove, real_save = scratch.tmp_remove, state.save_state
+
+    def fails(path: Path, as_user: Any) -> int | None:
+        raise OSError("busy")
+
+    class Stop(Exception):
+        pass
+
+    def stops_after_the_stale_record(state_dir: Path, data: Any, name: str) -> Any:
+        written = real_save(state_dir, data, name)
+        if name == supervisor.TMP_STALE_FILE:
+            raise Stop  # the process ends between the two writes
+        return written
+
+    monkeypatch.setattr(scratch, "tmp_remove", fails)
+    monkeypatch.setattr(state, "save_state", stops_after_the_stale_record)
+    with pytest.raises(Stop):
+        sup._tmpdir(p, deep, target)
+    monkeypatch.setattr(state, "save_state", real_save)
+    monkeypatch.setattr(scratch, "tmp_remove", real_remove)
+    sup.scratch_names, sup.scratch_stale = {}, {}
+    sup.load()  # the next start reads the records from disk
+    known = [*sup.scratch_stale.get("plc-0003", []), sup.scratch_names.get("plc-0003")]
+    assert old.name in known
+    assert sup._remove_stale(p, target) and sup._remove_tmpdir(p, target)
+    assert not old.exists()
+
+
 def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
     world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

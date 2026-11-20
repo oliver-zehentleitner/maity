@@ -464,8 +464,11 @@ class Supervisor:
             with self.lock:
                 names = dict(self.scratch_names)
                 stale = {pid: list(leaves) for pid, leaves in self.scratch_stale.items() if leaves}
-            state.save_state(self.cfg.state_dir, names, name=TMP_NAMES_FILE)
+            # The stale record first: a leaf moved there from the names record must be on disk
+            # there before the names record forgets it, so a stop between the two writes loses
+            # no leaf (review A1769); it is then in both, and its second removal finds nothing.
             state.save_state(self.cfg.state_dir, stale, name=TMP_STALE_FILE)
+            state.save_state(self.cfg.state_dir, names, name=TMP_NAMES_FILE)
 
     # --- the loop --------------------------------------------------------------------------
 
