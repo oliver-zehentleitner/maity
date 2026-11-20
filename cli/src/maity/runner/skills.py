@@ -86,8 +86,12 @@ def split_source(source: str) -> tuple[str, str]:
     """`(repository URL, path in the tree)` of a `<repository>/tree/<ref>/<path>` source, the
     form the hub derives its Git fallback from (ktw_skill.skill); the ref is not used, the
     commit is. GitLab's `/-/tree/` works too."""
-    parts = urlsplit(source)
-    if parts.scheme != "https" or not parts.hostname or parts.query or parts.fragment:
+    try:  # a bad authority (`https://[::1/…`) raises ValueError: unavailable, not a crash
+        parts = urlsplit(source)
+        hostname = parts.hostname
+    except ValueError as exc:
+        raise Unavailable(f"the skill's source is not a URL: {exc}") from None
+    if parts.scheme != "https" or not hostname or parts.query or parts.fragment:
         raise Unavailable("the skill's source is not a plain https URL")
     if "@" in parts.netloc:  # no login in it, empty or not (the review of #2056)
         raise Unavailable("the skill's source names a login; the runner fetches without one")

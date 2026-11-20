@@ -334,6 +334,8 @@ def test_the_source_splits_into_repository_and_path(source: str, expected: tuple
         "https://user:secret@github.com/o/ktw/tree/v1/skills/keep-the-why",
         "https://token@github.com/o/ktw/tree/v1/skills/keep-the-why",
         "https://@github.com/o/ktw/tree/v1/skills/keep-the-why",
+        "https://[::1/o/ktw/tree/v1/skills/keep-the-why",  # urlsplit raises ValueError
+        "https://[github.com]/o/ktw/tree/v1/skills/keep-the-why",
     ],
 )
 def test_a_source_the_runner_does_not_fetch_is_unavailable(source: str) -> None:

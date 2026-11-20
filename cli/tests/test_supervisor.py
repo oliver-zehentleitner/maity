@@ -3802,6 +3802,49 @@ def test_a_malformed_skill_is_reported_missing_too(world: Any) -> None:
     assert states(reports)[-1] == ("running", None, "keep_the_why_unavailable")
 
 
+def test_a_source_that_is_no_url_starts_the_session_without_the_skill(world: Any) -> None:
+    # The review of #2056 (A1799): urlsplit's ValueError is unavailable, not a start crash.
+    sup, backend, reports, clock, logs = world
+    recorded(sup.cfg)
+    sup.update([placement(keep_the_why={**KTW, "source": "https://[::1/o/tree/v1/skills"})])
+    settle(sup)
+    assert len(backend.started) == 1
+    assert sup.records["plc-0003"].skill_missing is True
+    assert any("no Keep the Why skill: the skill's source is not a URL" in line for line in logs)
+    assert not any("start failed" in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, "keep_the_why_unavailable")
+
+
+def test_a_stop_while_the_skill_is_fetched_does_not_start(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The review of #2056 (A1799): a fetch may take minutes; the stop it outlasted holds.
+    import threading
+
+    sup, backend, reports, _, _ = world
+    recorded(sup.cfg)
+    gate, fetching = threading.Event(), threading.Event()
+
+    def ensure(*_: Any) -> Path:
+        fetching.set()
+        gate.wait(5)
+        return Path(sup.cfg.skills_dir) / "keep-the-why" / KTW["commit"] / "plugin"
+
+    monkeypatch.setattr(skills, "ensure", ensure)
+    sup.update([placement(keep_the_why=KTW)])
+    sup.tick()
+    assert fetching.wait(5)
+    sup.update([placement(keep_the_why=KTW, desired="stopped")])
+    gate.set()
+    for task in list(sup.tasks.values()):
+        task.join(5)
+    sup.tick()
+    assert backend.started == []
+    assert states(reports)[-1] == ("stopped", "stopped_by_hub", None)
+
+
 def test_the_running_detail_names_a_missing_sandbox_before_a_missing_skill() -> None:
     assert supervisor.running_detail(True, True) == "sandbox_unavailable"
     assert supervisor.running_detail(False, True) == "keep_the_why_unavailable"

@@ -1252,6 +1252,10 @@ class Supervisor:
                 return
             scratch = self._scratch(p, harness, target)
             skill = self._skill(p, target)
+            if not self._wants(p["id"], p["generation"]):  # so may a fetch of the skill
+                with self.lock:
+                    rec.enter(self.now(), "stopped", "stopped_by_hub")
+                return
             with self.lock:  # reported with `running` (keep_the_why_unavailable)
                 # Any value but null names a skill, a malformed one included (skills.named).
                 rec.skill_missing = skill is None and p.get("keep_the_why") is not None
