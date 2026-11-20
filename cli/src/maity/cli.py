@@ -6324,6 +6324,12 @@ def _main(argv: Sequence[str] | None = None) -> int:
     if args.for_target is not None and args.command == "join":
         _err("--for applies to project commands; join is the bridge's own: run it without --for")
         return EXIT_USAGE
+    if args.for_target is not None and args.command == "runner":
+        _err(
+            "--for applies to project commands; `maity runner` is the operator's: "
+            "run it without --for"
+        )
+        return EXIT_USAGE
     if args.command == "runner" and sys.platform == "win32":
         _err(
             "the runner does not run on Windows: it needs tmux and POSIX OS users. "
@@ -6336,6 +6342,21 @@ def _main(argv: Sequence[str] | None = None) -> int:
         and args.runner_command not in runner_commands.IN_SESSION
     ):
         _err("`maity runner` is the operator's: it does not run for a placed agent")
+        return EXIT_REFUSED
+    if (
+        args.command == "runner"
+        and args.runner_command in runner_commands.IN_SESSION_FILE
+        and not runner_commands.runner_own_file(
+            args.runner_command,
+            getattr(args, runner_commands.IN_SESSION_FILE[args.runner_command]),
+        )
+    ):
+        # Checked on every call, not only under a placement: an agent's `maity` runs outside
+        # its sandbox and can drop MAITY_PLACEMENT from its own environment.
+        _err(
+            f"`maity runner {args.runner_command}` takes only the file the runner wrote for it "
+            "in ~/.maity-runner (agents/<placement>/loop.json, logs/<placement>.log)"
+        )
         return EXIT_REFUSED
     try:
         _load_texts(args)

@@ -1640,6 +1640,41 @@ def test_tmux_starts_the_server_under_a_clean_environment(
     assert pipe[-1].endswith(f"-m maity.runner.logcap {log} {10 * 1024 * 1024}")
 
 
+@pytest.mark.parametrize("there", [False, True])
+def test_on_an_ssh_host_the_pane_log_exists_before_logcap_starts(
+    tmp_path: Path, there: bool
+) -> None:
+    """`maity runner logcap` takes only an existing runner file (commands.runner_own_file), so
+    on an ssh host the log is made before pipe-pane, and one already there is kept."""
+    from maity.runner.asuser import AsUser as Direct
+
+    writes: list[tuple[Path, str]] = []
+
+    class Remote(Direct):
+        @property
+        def direct(self) -> bool:
+            return False
+
+        def exists(self, path: Path, kind: str = "-e") -> bool:
+            return there and kind == "-f"
+
+        def write(self, path: Path, text: str) -> Path:
+            writes.append((path, text))
+            return path
+
+        def mkdir(self, path: Path) -> None:
+            return None
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(list(argv), 0, "", "")
+
+    backend = tmux.Tmux(tmp_path / "s.sock", tmp_path / "tmux.conf", "/home/agent",
+                        "/usr/bin:/bin", tmp_path / "logs", run=run, as_user=Remote())  # fmt: skip
+    backend.start("maity_maity_agent-3", tmp_path, ["stub"], {}, "plc-0003", 1)
+    log = tmp_path / "logs" / "plc-0003.log"
+    assert ((log, "") in writes) is not there
+
+
 def test_a_pane_log_is_held_to_its_limit_with_the_newest_output(tmp_path: Path) -> None:
     from maity.runner import logcap
 
