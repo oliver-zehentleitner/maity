@@ -155,10 +155,15 @@ def _anchors(state_dir: Path) -> dict[str, str]:
 
 
 def _record(state_dir: Path, name: str, digest: str) -> None:
+    """Unavailable when the record cannot be written: the copy is then not handed out, rather
+    than a StateError escaping the start (the review of #2056)."""
     with _anchors_lock:
         found = _anchors(state_dir)
         found[name] = digest
-        state.save_state(state_dir, found, name=ANCHORS)
+        try:
+            state.save_state(state_dir, found, name=ANCHORS)
+        except (OSError, state.StateError) as exc:
+            raise Unavailable(f"cannot record the skill's copy in {state_dir}: {exc}") from None
 
 
 MANIFEST_MAX = 64 * 1024

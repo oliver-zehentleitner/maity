@@ -9,7 +9,6 @@ from typing import Any
 
 import fakehub
 import pytest
-from conftest import posix
 from test_onboarding import packet
 
 from maity import cli, onboarding, state
@@ -79,14 +78,14 @@ def test_an_optional_project_is_told_how_to_load_the_skill() -> None:
     assert "maity ack keep-the-why" not in text
 
 
-@posix  # only the runner sets it, and the runner is POSIX: "/home/..." is no Windows path
 def test_a_skill_the_runner_delivered_is_the_one_way_to_load_it(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # tsk-172s8y208whg: MAITY_KTW_SKILL_DIR, set by the runner (runner/skills.py), replaces the
     # hub's load and install texts (the review of #2056): one instruction per harness, the
-    # qualified name for Claude Code. A value that is no absolute path is ignored.
-    where = "/home/op/.local/share/maity-runner/skills/keep-the-why/" + "c" * 40
+    # qualified name for Claude Code. A value that is no absolute path is ignored. An absolute
+    # path of this platform, so the test runs on Windows too.
+    where = str(tmp_path / "skills" / "keep-the-why" / ("c" * 40))
     monkeypatch.setenv("MAITY_KTW_SKILL_DIR", where)
     text = onboarding.render(packet(keep_the_why=LOADING))
     assert (

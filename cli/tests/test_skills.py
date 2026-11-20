@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from conftest import posix
 
+from maity import state
 from maity.runner import skills
 
 # The runner and its skills directory are POSIX (links, modes, FIFOs), as test_scratchop.py is.
@@ -131,6 +132,21 @@ def test_without_a_record_the_commit_is_fetched_again_and_compared(
     with pytest.raises(skills.Unavailable, match="not what commit"):
         skills.ensure(tmp_path / "skills", tmp_path / "other", SOURCE, commit)
     assert not (tmp_path / "other" / skills.ANCHORS).exists()
+
+
+def test_a_record_that_cannot_be_written_is_unavailable_not_a_crash(
+    tmp_path: Path, local: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The review of #2056: supervisor._skill catches Unavailable and OSError, so a StateError
+    # from the state directory must not escape the start as itself.
+    commit = _git(local, "rev-parse", "HEAD")
+
+    def refuse(*_: object, **__: object) -> Path:
+        raise state.StateError("the state directory is not private")
+
+    monkeypatch.setattr(state, "save_state", refuse)
+    with pytest.raises(skills.Unavailable, match="cannot record the skill's copy"):
+        skills.ensure(tmp_path / "skills", tmp_path / "state", SOURCE, commit)
 
 
 def test_a_manifest_of_another_source_or_commit_is_refused(tmp_path: Path, local: Path) -> None:
