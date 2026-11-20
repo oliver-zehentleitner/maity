@@ -2279,3 +2279,32 @@ permissions it has, short of a raw `maity api` call.
   command would only ever fail.
 - Setting a member's role from here: that is `PATCH …/members/<id>`, a general members
   command, not one about roles.
+
+## `maity uuid` makes Keep the Why Ids where `uuidgen` is refused
+
+**Id:** 2b2be9a9-25d6-4396-b35d-5a2c242a4997
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-1rejhywcw3qh, the owner's decision (2026-11-20); `cli/tests/test_uuid.py`
+**Revisit when:** every harness sandbox a placement runs in allows an OS UUID command
+
+`maity uuid` prints a lowercase UUID v4 from `uuid.uuid4()` (the OS's randomness through
+`os.urandom`), `-n N` for 1 to 1000 of them. It calls no hub, reads no state and needs no
+join, so it runs wherever `maity` runs.
+
+**Reason:** placed sessions may run `maity` in every harness sandbox, but `uuidgen` and
+`cat /proc/sys/kernel/random/uuid` are often refused there. The Keep the Why skill requires
+an entry's Id to come from a command, never typed by hand, so an agent there had no way to
+make one.
+
+**Rejected alternatives:**
+- Allow `uuidgen` or the `/proc` read in the harness allow lists: each harness has its own
+  list and sandbox, and `maity` is already allowed in all of them, so one command in `maity`
+  covers every harness at once.
+- The lead hands out UUIDs on request: it cost a round trip for every entry and kept the
+  lead busy with work a command can do.
+
+The decision, the refused commands and the lead handing out UUIDs are confirmed by the
+card. That the allow lists were left alone because `maity` already reaches every harness is
+inferred: the card only puts changing them out of scope.
