@@ -49,7 +49,7 @@ def _placement_id(cfg: config.Config, which: str) -> str:
     known = [
         p for p in _status(cfg).get("placements") or []
         if isinstance(p, dict) and isinstance(p.get("id"), str)
-        and supervisor.PLACEMENT_ID.match(p["id"])
+        and supervisor.PLACEMENT_ID.fullmatch(p["id"])
     ]  # fmt: skip
     if any(p["id"] == which for p in known):
         return which
@@ -58,7 +58,7 @@ def _placement_id(cfg: config.Config, which: str) -> str:
         raise Refused(f"{onboarding.inline(which)} names more than one placement; use the id")
     if by_agent:
         return str(by_agent[0])
-    if supervisor.PLACEMENT_ID.match(which):
+    if supervisor.PLACEMENT_ID.fullmatch(which):
         return which
     raise Refused(f"no placement {onboarding.inline(which)} on this runner")
 
@@ -370,7 +370,7 @@ def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) 
     as_user = _as_user(cfg)
     root = cfg.local.workspaces
     try:
-        projects = sorted(p.name for p in root.iterdir() if workspace.TOKEN.match(p.name))
+        projects = sorted(p.name for p in root.iterdir() if workspace.TOKEN.fullmatch(p.name))
     except OSError as exc:
         raise Refused(f"cannot list {root} ({exc})") from None
     for project in projects:
@@ -383,7 +383,7 @@ def _collect_scratch(cfg: config.Config, active: set[str] | None, remove: bool) 
             if entry.name in running:
                 print(f"scratch  {entry}: kept (a session of the placement is still there)")
                 continue
-            if not workspace.SCRATCH_ID.match(entry.name) or entry.is_symlink():
+            if not workspace.SCRATCH_ID.fullmatch(entry.name) or entry.is_symlink():
                 print(f"scratch  {onboarding.inline(str(entry))}: not a placement's; left as it is")
                 continue
             if not remove:

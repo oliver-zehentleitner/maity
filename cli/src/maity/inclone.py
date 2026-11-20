@@ -2,8 +2,9 @@
 outside its `.git` (an attachment saved without `-o`: in `.git/maity-files/`), or, for a
 read, in the placement's scratch when it has one; never through a link.
 
-Under a placement maity runs outside the harness's sandbox (cli/context/runner.md), so a
-path the agent names must not take maity where the sandbox keeps the agent out. Every name
+Under a placement maity runs outside the harness's sandbox (cli/context/runner.md), except
+under Codex, whose `maity` runs inside it with the agent's own rights; so a path the agent
+names must not take maity where the sandbox keeps the agent out. Every name
 is looked up once, through descriptors: the walk starts at the clone's root as
 `clonecheck.opened_clone` opened and checked it together with `.git`, opens each directory
 on the way from the one before without following a link, refuses the clone's `.git` (by
@@ -139,8 +140,9 @@ def _walk(
     elif from_top:
         # Each directory down to the scratch is opened from the one before without following
         # a link, as below, but only to pass through (PASS): it is checked to be a directory,
-        # and nothing is read from it. A link on the way is refused all the same: O_NOFOLLOW
-        # with O_PATH opens the link itself, which is no directory.
+        # and nothing is read from it. A link on the way is refused all the same: with
+        # O_DIRECTORY and O_NOFOLLOW, Linux refuses it (ENOTDIR), and `_open_at` names it a
+        # link; the S_ISDIR check below catches anything else that is no directory.
         fd = os.open(os.sep, PASS)
         try:
             for name in root.parts[1:]:
@@ -149,7 +151,7 @@ def _walk(
                 fd = inner
                 if not stat.S_ISDIR(os.fstat(fd).st_mode):
                     raise Refused(f"{what} {given}: {name} is not a directory")
-        except Refused:
+        except (Refused, OSError):
             os.close(fd)
             raise Refused(
                 f"{what} {given}: the way to the placement's scratch ({root}) is not plain"

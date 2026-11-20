@@ -776,7 +776,7 @@ join again. Asymmetric keys remain the revisit condition
 Rules the hub applies: `|Maity-Timestamp − server time| ≤ 300 s`, else
 `timestamp_skew` with `details.server_time` so the client can resync; a
 nonce is unique per credential, remembered for 600 s (on PostgreSQL at least 600 s, until a sweep deletes it), else `nonce_reused`;
-an unknown credential id is `unauthenticated` (on both paths, so the two never disagree); any other failure is `signature_invalid`. On PostgreSQL the spent nonces are kept in the database, shared by every replica, with an epoch taken from the database's clock: a signed request whose `Maity-Timestamp` predates the epoch is `timestamp_skew`, so a request captured before a crash or a failover of the database (which loses the nonces and sets a new epoch) is not replayed after it. On SQLite and MariaDB the nonces are kept in the hub process, and a request that predates the process's start is `timestamp_skew`, for the same reason across a restart. Signed requests need
+an unknown credential id is `unauthenticated` (on both paths, so the two never disagree), and so is an id of a form the hub never issues, which it refuses without looking it up; any other failure is `signature_invalid`. On PostgreSQL the spent nonces are kept in the database, shared by every replica, with an epoch taken from the database's clock: a signed request whose `Maity-Timestamp` predates the epoch is `timestamp_skew`, so a request captured before a crash or a failover of the database (which loses the nonces and sets a new epoch) is not replayed after it. On SQLite and MariaDB the nonces are kept in the hub process, and a request that predates the process's start is `timestamp_skew`, for the same reason across a restart. Signed requests need
 `Idempotency-Key` on `POST`/`PATCH` like bearer ones.
 
 **Signing required.** A project whose policy has `signing: required`
@@ -20303,11 +20303,15 @@ own `maity join` writes it, as in a runner's join pickup (§15.9):
      - Local mode does this before it reads anything in `.git/maity`,
        copies from it or sets `MAITY_STATE_DIR` there. The CLI does it
        itself for `MAITY_STATE_DIR` (the directory and its two parents)
-       whenever `MAITY_SUPERVISOR` is set and `MAITY_PLACEMENT` is not,
-       which is local mode's sessions alone (a runner's carry
-       `MAITY_PLACEMENT`): every `maity resume` and every `maity wait`
+       whenever `MAITY_SUPERVISOR` is set and `MAITY_PLACEMENT` is absent
+       from the environment, which is local mode's sessions alone (a
+       runner's carry `MAITY_PLACEMENT`, and set, even empty, it marks a
+       placed session): every `maity resume` and every `maity wait`
        local mode runs between runs, and every `maity` command in the
-       harness's session, checks at its own open.
+       harness's session, checks at its own open. Not built yet, as local
+       mode is not: today the CLI resolves `MAITY_STATE_DIR`, links
+       included, without this check, and reads `MAITY_SUPERVISOR` only to
+       send it with `maity resume` (§15.11).
      - A harness may write `.git`, so during a run it could replace its
        `.git/maity` with a link to another workspace's; making a link
        needs no read access to its target. Checked only at the start,

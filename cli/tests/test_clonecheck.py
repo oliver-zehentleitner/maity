@@ -94,6 +94,16 @@ def test_supervisor_takes_the_placement_id_pattern_from_clonecheck() -> None:
     assert supervisor.PLACEMENT_ID is clonecheck.PLACEMENT_ID
 
 
+def test_the_scratch_takes_the_placement_id_pattern_from_clonecheck() -> None:
+    from maity.runner import scratchop, workspace
+
+    # By name, not only by identity: re.compile caches, so an equal pattern compiled again
+    # would be the same object.
+    assert scratchop.PLACEMENT_ID is clonecheck.PLACEMENT_ID
+    assert scratchop.SCRATCH_ID is clonecheck.PLACEMENT_ID
+    assert workspace.SCRATCH_ID is clonecheck.PLACEMENT_ID
+
+
 def test_a_plain_clone_reads_as_before(placed: Path) -> None:
     facts = gitfacts.collect(placed)
     assert facts.remote_head == facts.head

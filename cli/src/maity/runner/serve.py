@@ -279,7 +279,7 @@ class Service:
                     }
                     for p in self.placements
                     # never a path or a line from an unchecked id
-                    if isinstance(p.get("id"), str) and supervisor.PLACEMENT_ID.match(p["id"])
+                    if isinstance(p.get("id"), str) and supervisor.PLACEMENT_ID.fullmatch(p["id"])
                 ],
                 "updated_at": utc(),
             },

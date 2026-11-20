@@ -6342,9 +6342,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _main(argv: Sequence[str] | None = None) -> int:
     _utf8_streams()
     parser = build_parser()
-    if _restricted_argv(sys.argv[1:] if argv is None else argv):
+    words = list(sys.argv[1:] if argv is None else argv)
+    if _restricted_argv(words):
         _quiet_ancestors(parser)
     args, extra = parser.parse_known_args(argv)
+    if args.command == "runner" and words[:1] != ["runner"]:
+        # The runner's commands are its operator's, and the rules that keep them from placed
+        # agents look for `runner` right after `maity`: argparse also takes it after `--` or a
+        # global option (`maity -- runner …`, `maity --for x runner …`). Nothing runs.
+        _err("`maity runner` is taken only as the first argument: nothing may come before `runner`")
+        return EXIT_USAGE
     if extra and getattr(args, "handler", None) in _RESTRICTED_HANDLERS:
         # Never repeated: what is left over may be the restricted text itself (§13).
         parser.error(_RESTRICTED_ARGV_HINT)
@@ -6363,12 +6370,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
             return EXIT_USAGE
     if args.for_target is not None and args.command == "join":
         _err("--for applies to project commands; join is the bridge's own: run it without --for")
-        return EXIT_USAGE
-    if args.for_target is not None and args.command == "runner":
-        _err(
-            "--for applies to project commands; `maity runner` is the operator's: "
-            "run it without --for"
-        )
         return EXIT_USAGE
     if args.command == "runner" and sys.platform == "win32":
         _err(
