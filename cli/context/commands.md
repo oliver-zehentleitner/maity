@@ -2285,8 +2285,8 @@ permissions it has, short of a raw `maity api` call.
 **Id:** 2b2be9a9-25d6-4396-b35d-5a2c242a4997
 **Type:** decision
 **Status:** active
-**Evidence:** inferred
-**Source:** card tsk-1rejhywcw3qh, the owner's decision (2026-11-20); `cli/tests/test_uuid.py`
+**Evidence:** confirmed
+**Source:** card tsk-1rejhywcw3qh, the owner's decision (2026-11-20); the lead's confirmation of the allow-list reason, 2026-11-20; `cli/tests/test_uuid.py`
 **Revisit when:** every harness sandbox a placement runs in allows an OS UUID command
 
 `maity uuid` prints a lowercase UUID v4 from `uuid.uuid4()` (the OS's randomness through
@@ -2306,5 +2306,5 @@ make one.
   lead busy with work a command can do.
 
 The decision, the refused commands and the lead handing out UUIDs are confirmed by the
-card. That the allow lists were left alone because `maity` already reaches every harness is
-inferred: the card only puts changing them out of scope.
+card. That the allow lists were left alone because `maity` already reaches every harness was
+confirmed by the lead, since the card only puts changing them out of scope.
