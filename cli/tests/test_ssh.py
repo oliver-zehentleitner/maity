@@ -799,6 +799,35 @@ def test_a_hosts_settings_that_switch_hooks_off_are_read_on_the_host(
     assert capabilities.claude_hooks_off(target.as_user) is not None
 
 
+def test_a_hosts_unix_socket_settings_are_read_on_the_host(tmp_path: Path, fake_ssh: Path) -> None:
+    """As the hook switches: the remote user's and the managed settings, read on the host; a
+    socket key, an unreadable file or a host that does not answer refuses."""
+    cfg = load(tmp_path)
+    target = targets.ssh_hosts(cfg)[1]
+    assert capabilities.claude_socket_settings(target.as_user) is None
+    user = tmp_path / "remote" / "home" / ".claude" / "settings.json"
+    user.parent.mkdir()
+    user.write_text('{"permissions": {}, "sandbox": {"enabled": true}}')
+    assert capabilities.claude_socket_settings(target.as_user) is None
+    user.write_text('{"sandbox": {"network": {"allowAllUnixSockets": false}}}')
+    why = capabilities.claude_socket_settings(target.as_user)
+    assert why is not None and "sets sandbox.network.allowAllUnixSockets" in why
+    assert str(user) in why
+    user.write_text("{not json")
+    why = capabilities.claude_socket_settings(target.as_user)
+    assert why is not None and "cannot be read as JSON" in why
+    user.unlink()
+    managed = capabilities.CLAUDE_MANAGED["linux"]
+    managed.parent.mkdir(parents=True)
+    managed.write_text('{"sandbox": {"seccompConfig": {}}}')
+    why = capabilities.claude_socket_settings(target.as_user)
+    assert why is not None and "sets sandbox.seccompConfig" in why
+    managed.unlink()
+    assert capabilities.claude_socket_settings(target.as_user) is None
+    (tmp_path / "down-b2.lan").touch()  # a host that does not answer: unknown, so refused
+    assert capabilities.claude_socket_settings(target.as_user) is not None
+
+
 @pytest.mark.parametrize(
     ("version", "on"),
     [("2.1.294", False), ("2.1.295", True), ("2.1.295-rc.1", False), ("2.1.295-dev", False),
