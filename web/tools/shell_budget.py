@@ -3,11 +3,12 @@
 Reads web/index.html: every <script src> and <link rel="stylesheet" href>, and every @import of
 a stylesheet it loads, followed. Counts the files, their bytes as stored, and their bytes
 gzipped (level 9, what a compressed answer is near), and fails when one of the three is over
-tools/shell-budget.json. Files a script loads later by a name it builds (another language's
-catalog, the fixtures, Keep the Why's views) are not counted: the shell does not name them.
+tools/shell-budget.json, or when the files are fewer: `files` is the count itself. Files a
+script loads later by a name it builds (another language's catalog, the fixtures, Keep the
+Why's views) are not counted: the shell does not name them.
 
-A pull request that needs more raises the number in shell-budget.json, so the raise is in its
-diff and its review (context/performance.md, item 15; web/context/stack.md). Python standard
+A pull request that needs more raises the number in shell-budget.json, and one that drops a
+file lowers `files`, so the change is in its diff and its review (context/performance.md, item 15; web/context/stack.md). Python standard
 library only: python3 web/tools/shell_budget.py [--root DIR]
 """
 
@@ -95,6 +96,11 @@ def check(root, budget_path):
         value = budget.get(key)
         if not isinstance(value, int) or isinstance(value, bool):
             problems.append(f"{os.path.basename(budget_path)}: `{key}` is not a whole number")
+        elif key == "files" and measured[key] < budget[key]:
+            problems.append(
+                f"{key}: {measured[key]} under the budget of {budget[key]}; lower it in "
+                f"{os.path.relpath(budget_path, root)} so the budget stays the count"
+            )
         elif measured[key] > budget[key]:
             problems.append(
                 f"{key}: {measured[key]} over the budget of {budget[key]}; raise it in "

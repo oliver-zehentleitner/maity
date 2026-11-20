@@ -437,7 +437,8 @@ numbers (2 against 8 chats, 5 against 30 requests, 3 against 20 entries).
 A route whose cost grows today is in `GROWING` with what it reads per row; its test asserts
 that the cost grows, so the entry fails and leaves once the fix lands. 25 of the 59 list
 routes grew when the guard came (2026-11-20; 21 first, on SQLite and PostgreSQL, four more
-after the review, on SQLite); each is to become a card of its own, and none was fixed in this
+after the review, on SQLite), plus `…/jour-fixe/rounds` for two readers of an owner circle
+(27 `GROWING` entries); each is to become a card of its own, and none was fixed in this
 change. A route whose cost depends on who reads it is measured once per reader, each with a
 `case`; a `GROWING` entry `<route> [<case>]` names only that reader, so the route's other
 tests stay flat. The jour fixe's rounds are flat for a project-wide series and for an owner

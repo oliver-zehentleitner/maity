@@ -36,8 +36,9 @@ Measured on 2026-11-08 from the hub's request log and local statement counts:
   again every 0.4–3 s.
 - **Flat per row** (3 vs 30 rows): every other list. **Contradicted, open:** the statement
   test of every list route (item 15, 2026-11-20, on SQLite and PostgreSQL) found 25 of the 59
-  list routes growing per row, among them `/me`, `/projects`, `/agents`, a project's placements
-  and runners, and the org lists; they are listed in `GROWING` in `hub/tests/list_rows.py`, each to
+  list routes growing per row, plus `…/jour-fixe/rounds` for two readers of an owner circle,
+  among them `/me`, `/projects`, `/agents`, a project's placements and runners, and the org
+  lists; they are listed in `GROWING` in `hub/tests/list_rows.py`, each to
   become a card. The 2026-11-08 count covered the lists the pages read most, not every route.
 - **Baseline with a test account** (headless browser, median of 3 runs, cold and warm):
   the load event at 0.7–0.8 s on every page, warm no faster than cold, because all 101–103

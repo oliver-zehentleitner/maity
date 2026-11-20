@@ -368,7 +368,8 @@ The Why view mounts Keep the Why's views (timeline, graph, family, search, thoug
 bytes as stored or their bytes gzipped (level 9) are over `tools/shell-budget.json`. A file
 from another origin, or one the shell names that is missing, fails as well, since it cannot be
 measured. Files a script loads later by a name it builds (another language's catalog, the
-fixtures, the Keep the Why views) are not counted. `files` is today's count, 105; the byte
+fixtures, the Keep the Why views) are not counted. `files` is today's count, 105, and fewer
+files fail as well, so a pull request that drops one lowers it (review of #2039); the byte
 budgets are the 2026-11-20 sizes (2,858,060 and 824,626 gzipped) with about 5 % on top. A
 pull request that needs more raises the number in the JSON file, so the raise is in its diff.
 
