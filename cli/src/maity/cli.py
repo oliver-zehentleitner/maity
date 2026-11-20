@@ -3828,8 +3828,14 @@ def cmd_placement_restart(args: argparse.Namespace) -> int:
     session = Session()
     placement = _placement(session, args.which)
     path = session.project_path("placements", placement["id"], "restart")
-    answer = session.client.call("POST", path, body={"rejoin": True} if args.rejoin else {})
-    return _done(args, answer, f"placement {onboarding.inline(placement['id'])} restarting")
+    body: dict[str, Any] = {}
+    if args.rejoin:
+        body["rejoin"] = True
+    if args.fresh_session:
+        body["fresh_session"] = True  # a reset (§15.6): a fresh harness session, same clone
+    answer = session.client.call("POST", path, body=body)
+    how = " on a fresh session" if args.fresh_session else ""
+    return _done(args, answer, f"placement {onboarding.inline(placement['id'])} restarting{how}")
 
 
 def cmd_runners(args: argparse.Namespace) -> int:
@@ -6007,6 +6013,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--rejoin",
         action="store_true",
         help="with a new credential, after the old one was revoked (§15.6)",
+    )
+    r.add_argument(
+        "--fresh-session",
+        action="store_true",
+        help="a reset: start on a fresh harness session instead of resuming the last "
+        "conversation; the clone and its branches stay (§15.6)",
     )
     _json_flag(r)
     _on_request_flag(r)

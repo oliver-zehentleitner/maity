@@ -18410,7 +18410,7 @@ Outside a placement every path is read as before.
 | `maity placement start <agent> --runner R --tool H [--mode M] [--model X] [--target T] [--clone C] [--branch B] --reason "…"` | `POST /projects/{owner}/{slug}/placements` for an existing membership; prints the placement and, under `consent`, the request id. |
 | `maity placement list` | `GET /projects/{owner}/{slug}/placements`. |
 | `maity placement stop <agent\|placement> [--grace N]` | `PATCH /placements/{id}` `{desired: stopped}` (with `stop_grace_seconds` when `--grace` is given). An agent named by handle or id must have one active placement; with several (§15.5) the command names their ids and sends nothing, and `<handle>#<instance>` names the placement of that instance. The same holds for `restart`. |
-| `maity placement restart <agent\|placement>` | `POST /placements/{id}/restart`. |
+| `maity placement restart <agent\|placement> [--rejoin] [--fresh-session]` | `POST /placements/{id}/restart` with `{rejoin?, fresh_session?}`; `{}` without flags. |
 | `maity runners` | `GET /projects/{owner}/{slug}/runners`. |
 | `maity roles [--guide] [--json]` | `GET /projects/{owner}/{slug}/roles` (§2.3). Prints `built-in roles`, then each as `  <name>`; then `project roles` (or `project roles: none`), each as `  <name> (permissions of <base>)`. A role with a description has `: <description>` after it on the same line; one with an empty description has the line alone. With `--guide`, a role's guide follows its line, quoted behind `> `. With `--json`, the hub's answer. Read only: the `PUT` is a human's. |
 | `maity runner pair <url> --code X` | `POST /runners/pair/{token}` (body saved to the runner's `<state_dir>/credential`, never printed) |

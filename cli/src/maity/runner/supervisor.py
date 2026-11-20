@@ -613,6 +613,8 @@ class Supervisor:
             record = self.records.setdefault(p["id"], Record(generation=p["generation"], since=now))
             if record.generation != p["generation"]:
                 record.generation, record.restarts, record.crashes = p["generation"], 0, []
+                record.sessions = 0  # the failure report is the new generation's (§15.7)
+            record.reports_sessions = "fresh_session" in p
             record.enter(now, "failed", "harness_refused", detail="target_unknown")
             return
         if where not in snapshots:
@@ -713,6 +715,9 @@ class Supervisor:
                 if self.cfg.harnesses[p["harness"]].id == "codex":
                     self._folder_prompt(rec, mine, backend, now)
             if rec.state != "stopping" and (self.first_tick or rec.state not in LIVE):
+                # A live session of this generation was started, whether or not a save of its
+                # count reached actual.json: a later resume in it continues it, never a reset.
+                rec.sessions = max(rec.sessions, 1)
                 rec.enter(now, "running", "adopted", started_at=None)
             elif rec.state == "starting" and now - (rec.started_at or now) >= RUNNING_AFTER:
                 on = rec.sandbox  # the start's own view, not the tool in use now (§15.16)

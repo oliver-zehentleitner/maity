@@ -4239,7 +4239,7 @@ looks at each interactive session once a minute.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-r4apvj4kbf3a (the runner honours a reset for every harness it supports and reports it); docs/api.md §15.6, §15.7, §15.14
+**Source:** card tsk-r4apvj4kbf3a (the runner honours a reset for every harness it supports and reports it); card tsk-dqxmc1f0cxj0 (an adopted session counted, the count reset on every new generation); docs/api.md §15.6, §15.7, §15.14
 **See:** https://github.com/oliver-zehentleitner/maity — 37b4b9a1-a0f0-4f6f-bb26-b607590ffa18 — as of 2026-11-20
 **Revisit when:** the runner keeps the harness's session id and resumes on every start (§15.14), or the hub's report model stops refusing unknown fields
 
@@ -4270,6 +4270,16 @@ the loop's `again` continues the clone's latest conversation, which after
 a first run that failed before writing one is the conversation before the
 reset; left as it is, since the loop's handling sits beside a change in
 flight there (#2016) and the same holds for every restart today.
+
+An adopted live session of the current generation counts as one started
+(`sessions` at least 1), and every path that takes a new generation sets
+`sessions` back to 0, the `target_unknown` refusal included (card
+tsk-dqxmc1f0cxj0, from the review of #2020). A runner restarted inside a
+reset's generation before a save carried the count to actual.json, or
+without actual.json, would otherwise hold 0 for a session that runs, and a
+`hung` end later would start fresh a second time instead of resuming;
+saving the count at the start alone would still miss a lost actual.json.
+The refusal's report would carry the generation before's count.
 
 ## A stopped agent's clone stays for its retention time, then the runner removes it
 
