@@ -291,8 +291,8 @@ def _is_runner(word: str, written: str) -> bool:
 def _substituted(names: Sequence[str]) -> list[str]:
     """Each name, and each part of it between backticks. `_split` keeps a backtick in the
     word as text, but the shell ends the word of the command a backtick opens or closes
-    there and reads what stands between as a line of its own, so `` `maity` ``,
-    `` x=`maity` `` and `` `env maity` `` hold the word `maity` (cli/context/runner.md)."""
+    there and reads what stands between as a line of its own, in which `maity` is a word
+    however the word around it goes on (cli/context/runner.md)."""
     return [part for name in names for part in (name, *name.split("`"))]
 
 

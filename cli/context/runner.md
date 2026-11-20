@@ -3462,11 +3462,10 @@ names the plain form, `maity …` at the start of the line, and
 `--body-file` for text that mentions `maity`, since such text is refused
 as well (`echo maity | cat`, `git log --grep maity`). A word whose path
 ends in `/maity` (in any case) counts as `maity` in every position, so
-`cd /some/path/maity && make` is refused outright. A word counts as
-`maity` also as each part of it between backticks, since the shell
-reads the text between them as a line of its own, so `` echo `maity` ``,
-`` x=`maity` `` and `` `env maity` `` are refused outright too
-(tsk-12zb1s0zgdjw: a correction to the reading, with a Bash
+`cd /some/path/maity && make` is refused outright. A command
+substitution in any form (backticks included, also inside double
+quotes, or `$(…)`) that names `maity` is refused too, since the shell
+reads the substitution's text as a line of its own (tsk-12zb1s0zgdjw: a correction to the reading, with a Bash
 differential test, not a new decision). A line in which
 `maity` is no word, only part of a longer one (`maity.md`, `maity/`, a
 clone directory named after a handle such as

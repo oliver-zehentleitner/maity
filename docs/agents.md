@@ -156,9 +156,13 @@ also once the backslashes and quotes in it are taken off, and a word
 with a brace also as each of its alternatives and as each word its
 brace expansion makes, as Bash expands its braces, quoted and escaped
 characters as text (`ma{ity,}` counts as `maity`); a word whose braces
-make more than 256 words refuses the line. That covers
+make more than 256 words refuses the line. A line that names `maity`
+inside a command substitution (`$(…)`, backticks) is refused outright
+as well. That covers
 text too: `echo maity | cat` or `git commit -m 'fix maity'` is refused,
-so text that mentions `maity` goes in a file (`--body-file`).
+and so is `maity` in a command substitution inside quoted text such as a
+commit message, so text that mentions `maity` goes in a file
+(`--body-file`).
 `maity runner` is the runner's own command: in a placed Claude Code
 session, a line in which a word `runner` follows a word `maity` is refused,
 also when `runner` is only text, quoted or not, so such text goes in a file
