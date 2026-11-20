@@ -2174,9 +2174,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-a"; byId("join-agent").dispatch("change");
   const srPlacedWhy = text(srPanel().querySelector(".join-runner-why"));
   await srSubmit();
-  expect(srMade.length === 1 && srPlacedWhy === "This agent already runs on a runner here: one placement per agent. Its row is under Managed agents."
-    && srSaid() === "Not placed on the runner: " + srPlacedWhy,
-    "placements: an agent placed now is said so and not sent " + srPlacedWhy);
+  // §15.5: one placement per instance, within max_instances (1 when the view names none, §6.18):
+  // Agent A's placement made above holds no instance yet and counts, so it is at its limit.
+  expect(srMade.length === 1 && srPlacedWhy === "Agent A has 1 of 1 instances, its limit. Its owner raises the limit in the agent's rulebook before another one starts."
+    && srSaid() === "Not placed on the runner: " + srPlacedWhy && srPanel().querySelector(".join-runner-another").hidden,
+    "placements: an agent at its instance limit is said so and not sent " + srPlacedWhy);
+  // An agent that runs already with room under its limit starts another instance: the count and
+  // where the others run are said, and the clone it gets is the next free <handle>-N there.
+  byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+  const srAnother = text(srPanel().querySelector(".join-runner-another"));
+  expect(srPanel().querySelector(".join-runner-why").hidden
+    && srAnother === "This starts another instance of Agent C: 1 of 3 instances now, on home-laptop."
+    && byId("placement-new-clone").getAttribute("placeholder") === "agent-c-2",
+    "placements: an agent with room starts another instance, with the count, its runners and the next clone "
+    + JSON.stringify([srAnother, byId("placement-new-clone").getAttribute("placeholder")]));
   // §15.6: by id only an active member of the project; a profile of one's own not in it yet joins by a line first.
   byId("join-agent").value = "agt-s1"; byId("join-agent").dispatch("change");
   const srOutsideWhy = text(srPanel().querySelector(".join-runner-why"));
@@ -2418,6 +2429,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   srCancel().click(); await tick();
   await win.Maity.api.patch("/projects/maintainer/maity", { policy: { max_placements: 8 }, reason: "back for the tests" });
   srMade.pop();
+  // The hub's instance_quota for an agent the form saw room for (a start that raced another,
+  // §15.5): the refusal names the agent's limit and who raises it.
+  await srOpen();
+  byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+  const iqPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => (p === "/projects/maintainer/maity/placements"
+    ? Promise.reject(new win.Maity.api.ApiError("the team has as many instances as its rulebook allows", 409, p, "instance_quota", { max: 3 }))
+    : iqPost(p, b));
+  await srSubmit();
+  const iqSaid = srForm() && srForm().querySelector(".send-status");
+  expect(iqSaid && text(iqSaid) === "Not placed on the runner: the agent has as many instances as its limit of 3 allows; its owner raises the limit in the agent's rulebook before another one starts.",
+    "placements: instance_quota from the hub names the agent's limit and who raises it " + (iqSaid && text(iqSaid)));
+  win.Maity.api.post = iqPost;
+  srCancel().click(); await tick();
   // A project's own roles follow the built-in ones in a new profile's role, on any base, as the hub's
   // validate_assignment takes them (tsk-0e7mrvccjttn); since tsk-hdczmsq2r431 that is the join form's
   // role, the one a new profile started on a runner is sent with. The fixture refuses a role the project

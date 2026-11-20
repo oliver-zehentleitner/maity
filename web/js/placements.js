@@ -433,17 +433,19 @@ window.Maity = window.Maity || {};
     const offer = h("input", { type: "checkbox", id: id("on"), "aria-describedby": id("on") + "-hint" });
     // What the read brought: the fields, or a line saying why there are none.
     const box = h("div", { class: "join-runner-box" });
-    // What the chosen agent means here: not in the project yet, or placed already.
+    // What the chosen agent means here: not in the project yet, or at its instance limit.
     const why = h("p", { class: "hint join-runner-why", role: "status", hidden: true });
+    // An agent that runs already and has room: the next one is another instance (§15.5).
+    const another = h("p", { class: "hint join-runner-another", role: "status", hidden: true });
     const el = h("fieldset", { class: "join-runner wide" },
       h("legend", null, M.t("placements.new.legend")),
       h("div", { class: "join-offer" }, offer, " ", h("label", { for: id("on") }, M.t("placements.new.offer"))),
       h("p", { class: "hint", id: id("on") + "-hint" }, M.t("placements.new.hint")),
-      why, box);
+      why, another, box);
     box.hidden = true;
 
     let fields = null;          // the controls, once one's runners were read and one offers the repository
-    let placed = new Set();     // the agents with an active placement here (§15.5)
+    let current = [];           // the project's active placements, read with the runners (§15.5)
     let chosen = { id: "", member: null, handle: "" };
     let round = 0;              // each turning on reads anew; an answer after it was turned off draws nothing
 
@@ -540,11 +542,12 @@ window.Maity = window.Maity || {};
       if (!repo) { say(h("p", { class: "hint placement-new-none" }, M.t("placements.new.no_repository"))); return; }
       say(h("p", { class: "muted", role: "status" }, M.t("placements.new.reading")));
       let runners;
+      let placements;
       try {
-        const [attached, current] = await Promise.all([M.api.getAll(ctx.base + "/runners"), M.api.getAll(ctx.base + "/placements")]);
+        const [attached, listed] = await Promise.all([M.api.getAll(ctx.base + "/runners"), M.api.getAll(ctx.base + "/placements")]);
         if (mine !== round) return;
         runners = attached.items.filter((a) => a.runner.owner_id === ctx.me.id && a.runner.credential_state === "active" && !a.runner.removed_at);
-        placed = new Set(current.items.filter((p) => p.active && p.agent.id).map((p) => p.agent.id));
+        placements = listed.items.filter((p) => p.active);
       } catch (err) {
         say(h("p", { class: "send-status failed" }, M.t("placements.new.runners_failed", { reason: err.message })));
         return;
@@ -560,7 +563,9 @@ window.Maity = window.Maity || {};
         say(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.no_runner_offers", { repository: h("code", null, name) })));
         return;
       }
+      current = placements;
       fields = build(runners);
+      fields.runner.addEventListener("change", () => follow(chosen.id, chosen.member, chosen.handle));
       say(fields.set);
       follow(chosen.id, chosen.member, chosen.handle);
       hooks.changed();
@@ -569,26 +574,60 @@ window.Maity = window.Maity || {};
     offer.addEventListener("change", () => {
       box.hidden = !offer.checked;
       if (offer.checked) load();
-      else { round += 1; fields = null; clear(box); }
+      else { round += 1; fields = null; current = []; clear(box); }
       follow(chosen.id, chosen.member, chosen.handle);
       hooks.changed();
     });
 
-    // §15.6: an agent by id is an active member of the project; one placed here already has its
-    // placement (§15.5, one per membership).
+    // How many instances a member holds as the hub counts them for a new placement (§15.5): its
+    // active instances, plus its active placements that hold no instance yet (no credential
+    // before the first pickup), against its `max_instances` (1 when its view names none, §6.18).
+    function instancesOf(member) {
+      const live = (member.instances || []).filter((i) => !i.revoked_at).length;
+      const mine = current.filter((p) => p.agent && p.agent.id === member.id);
+      const waiting = mine.filter((p) => !p.credential_id).length;
+      const max = member.team && Number.isInteger(member.team.max_instances) ? member.team.max_instances : 1;
+      const where = [...new Set(mine.map((p) => p.runner && p.runner.name).filter(Boolean))];
+      return { count: live + waiting, max, where };
+    }
+    // §15.6: an agent by id is an active member of the project, and has room under its instance
+    // limit for one more (§15.5: one placement per instance, several per membership).
     function blocked() {
       if (!chosen.id) return null;
       if (!chosen.member) return M.t("placements.new.not_member");
-      if (placed.has(chosen.id)) return M.t("placements.new.placed");
+      const n = instancesOf(chosen.member);
+      if (n.count >= n.max) return M.t("placements.new.instance_full", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max) });
       return null;
+    }
+    // An agent that runs already, with room: what the start adds and where the others run.
+    function anotherText() {
+      if (!chosen.member || blocked()) return null;
+      const n = instancesOf(chosen.member);
+      if (!n.count) return null;
+      const where = n.where.length ? M.t("placements.new.instance_where", { runners: M.fmt.list(n.where) }) : M.t("placements.new.instance_where_none");
+      return M.t("placements.new.instance_room", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max), where });
+    }
+    // The clone a start without one gets, as the hub picks it (§15.5 `workspace`): the handle,
+    // else the first `<handle>-N` no active placement on the chosen runner names.
+    function cloneFor(handle) {
+      if (!fields || !handle) return handle;
+      const taken = new Set(current.filter((p) => p.runner && p.runner.id === fields.runner.value)
+        .map((p) => p.workspace && p.workspace.clone).filter(Boolean));
+      if (!taken.has(handle)) return handle;
+      let n = 2;
+      while (taken.has(handle + "-" + n)) n += 1;
+      return handle + "-" + n;
     }
     function follow(agentId, member, handle) {
       chosen = { id: agentId || "", member: member || null, handle: handle || "" };
       const text = offer.checked ? blocked() : null;
       why.hidden = !text;
       why.textContent = text || "";
+      const more = offer.checked ? anotherText() : null;
+      another.hidden = !more;
+      another.textContent = more || "";
       if (fields) fields.set.disabled = !offer.checked;
-      if (fields) fields.clone.setAttribute("placeholder", member ? member.handle : chosen.handle || M.t("placements.new.clone_placeholder"));
+      if (fields) fields.clone.setAttribute("placeholder", member ? cloneFor(member.handle) : chosen.handle || M.t("placements.new.clone_placeholder"));
     }
 
     function body() {
@@ -613,6 +652,14 @@ window.Maity = window.Maity || {};
     // A refusal into the form's status line: the project's limit of placements reached by name,
     // with where a human admin raises it (§6.1 max_placements, tsk-6s5n7egy4e5r); else said(err).
     const refuse = (status, err) => {
+      // The agent at its instance limit, by the hub (a start that raced another, §15.5): the
+      // limit in effect and who raises it, as the form says before sending (blocked()).
+      if (err.code === "instance_quota") {
+        const n = chosen.member ? instancesOf(chosen.member) : { max: 1 };
+        const max = err.details && Number.isInteger(err.details.max) ? err.details.max : n.max;
+        status.fail(M.t("placements.new.failed"), { message: M.t("placements.new.instance_quota", { max: String(max) }) });
+        return;
+      }
       if (err.code !== "placement_quota") { status.fail(M.t("placements.new.failed"), said(err)); return; }
       const max = err.details && Number.isInteger(err.details.max) ? err.details.max : (ctx.project.policy || {}).max_placements;
       status.fail(M.t("placements.new.failed"), { message: M.t("placements.new.quota", { max: max === undefined ? 8 : max }) });

@@ -19056,9 +19056,6 @@ clone Z. It is the only thing the hub asks of a runner.
   run" is a list: the member view's `placements` (§15.11), or this
   project's placements of that agent. At most one active placement names
   a given credential (`credential_id`): a second is `placement_exists`.
-  The dashboard's part is not built yet, tsk-rfa7fwa2sz5g: its start
-  form still leaves out a member that runs and says nothing about
-  `max_instances`.
 - **Within the agent's instance limit.** The membership's
   `agent.max_instances` (§6.18), which the agent profile's owner sets,
   bounds its placements: a placement is created, and a proposal filed,
