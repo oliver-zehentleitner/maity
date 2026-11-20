@@ -222,13 +222,17 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
         "MAITY_RUN_NAME": "agent-3",
     }  # fmt: skip
     # The cluster's password, drawn once for the placement in the holder outside every scratch.
+    # The holder exists on every start; the file only where the cluster's socket fits (a deep
+    # test path leaves no room for it, and then neither file nor pgenv).
     root = sup.cfg.local.workspaces.resolve()
     passfile = root / ".maity-pg" / "plc-0003"
-    assert stat.S_IMODE(passfile.stat().st_mode) == 0o600
     assert stat.S_IMODE(passfile.parent.stat().st_mode) == 0o700
-    assert re.fullmatch(r"[0-9a-f]{64}\n", passfile.read_text())
-    assert passfile.read_text().strip() not in " ".join(argv)  # never on a command line
-    if (pg := adapters.pg_dir(scratch)) is not None:  # started through pgenv, where it fits
+    if (pg := adapters.pg_dir(scratch)) is None:
+        assert not passfile.exists() and "maity.runner.pgenv" not in argv
+    else:  # started through pgenv
+        assert stat.S_IMODE(passfile.stat().st_mode) == 0o600
+        assert re.fullmatch(r"[0-9a-f]{64}\n", passfile.read_text())
+        assert passfile.read_text().strip() not in " ".join(argv)  # never on a command line
         assert argv[1:4] == ["-I", "-m", "maity.runner.pgenv"]
         assert argv[4:9] == [str(root), str(passfile), str(pg), "--", argv[9]]
         argv = argv[9:]
@@ -3666,6 +3670,10 @@ def test_a_closed_placements_password_file_goes_with_it(world: Any) -> None:
     sup.update([placement()])
     settle(sup)
     holder = sup.cfg.local.workspaces.resolve() / ".maity-pg"
+    if not (holder / "plc-0003").exists():  # a test path too deep for the socket: none made
+        assert adapters.pg_dir(scratch_of(sup)) is None
+        (holder / "plc-0003").write_text("a" * 64 + "\n")  # as a start where it fits leaves
+        (holder / "plc-0003").chmod(0o600)
     assert (holder / "plc-0003").is_file()
     backend.kill("maity_maity_agent-3")
     sup.update([])

@@ -783,8 +783,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("scratch: this system cannot open a directory without following links",
                   file=sys.stderr)  # fmt: skip
             return 1
-        op = pg_make if args[0] == "pgmake" else pg_remove
-        return _emit(lambda: op(args[2], args[3]))
+        pg_op = pg_make if args[0] == "pgmake" else pg_remove
+        return _emit(lambda: pg_op(args[2], args[3]))
     if args and args[0] == "tmpparent":
         if len(args) != 2:
             print("usage: scratchop tmpparent PATH", file=sys.stderr)

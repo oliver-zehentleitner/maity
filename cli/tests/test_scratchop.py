@@ -226,7 +226,7 @@ def test_the_module_answers_in_one_line_and_says_link_by_its_exit_code(
     root.mkdir()
     room = _room(root)
     assert scratchop.main(["make", "--under", str(root), str(room)]) == 0
-    assert capsys.readouterr().out.strip() == '{"result": "made", "pg_pass": true}'
+    assert capsys.readouterr().out.strip() == '{"result": "made"}'
     (root / "other").mkdir()
     (root / "maity" / ".scratch" / "plc-0004").symlink_to(root / "other")
     assert scratchop.main(["remove", "--under", str(root), str(_room(root).parent / "plc-0004")]) \
