@@ -1223,8 +1223,16 @@ def test_a_placed_agent_cannot_hand_an_in_session_command_its_own_file(
         target.symlink_to(clone / "s.json")
     monkeypatch.chdir(clone)
     reached: list[str] = []
+
+    def reach(name: str) -> Callable[[list[str]], int]:
+        def main(argv: list[str]) -> int:
+            reached.append(name)
+            return 0
+
+        return main
+
     for module in (loop, logcap):
-        monkeypatch.setattr(module, "main", lambda argv, m=module: reached.append(m.__name__) or 0)
+        monkeypatch.setattr(module, "main", reach(module.__name__))
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     argv = {"loop": ["loop", "--spec", str(target)], "logcap": ["logcap", str(target), "1"]}
     assert cli.main(["runner", *argv[name]]) == cli.EXIT_REFUSED
@@ -1243,6 +1251,11 @@ def test_outside_a_placement_the_file_is_not_checked(
     monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
     clone = _placed_clone(tmp_path)
     reached: list[str] = []
-    monkeypatch.setattr(loop, "main", lambda argv: reached.append("loop") or 0)
+
+    def main(argv: list[str]) -> int:
+        reached.append("loop")
+        return 0
+
+    monkeypatch.setattr(loop, "main", main)
     assert cli.main(["runner", "loop", "--spec", str(clone / "s.json")]) == 0
     assert reached == ["loop"]
