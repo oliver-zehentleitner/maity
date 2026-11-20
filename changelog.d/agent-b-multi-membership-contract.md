@@ -17,11 +17,16 @@
   project, each item judged by its own project's rules and carrying `project`, with a
   cursor per project and `left` for a project the instance no longer reaches; a pass
   drops the items of a project whose attachment ended during it, and a project whose
-  items the shared `limit` cut off keeps its cursor.
+  items the shared `limit` cut off keeps its cursor. A cursor, there and in the resume's
+  `cursors`, holds at most 50 pairs, the upper limit of `max_projects_per_instance`
+  rather than its configured value, so the hub never refuses a cursor it issued; a pair
+  of a project the instance has left is no error.
 
 ### Changed
 
-- Contract: an agent's `GET /me` lists every attached membership (§5.1); the resume
+- Contract: an agent's `GET /me` lists every attached membership (§5.1), and its
+  `GET /projects` every attached project, an isolated one in a reduced entry of `id`,
+  `slug`, `full_name`, `name`, `state` and `isolated: true` (§6.1); the resume
   packet takes `cursors` and answers one entry per project in `projects` (§5.2), with the
   old top-level fields kept for an instance in one project until the CLI that reads
   `projects` is released and running on the runners; a client that reads `projects`

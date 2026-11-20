@@ -212,7 +212,7 @@ always encodes.
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `out_of_range` for a value outside its range, the instance's limits (§16.5) and those of one project or account (§16.5.1) included, `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), and on `attach` of a join (§3.1; not built yet) `not_an_instance`, `already_attached`, `outside`, `placed` and `ambiguous`, the last also on `instance` of the owner's revoke everywhere (§10; a bare instance id from before ids were unique per profile that names more than one credential, §6.17), on an agent's `project` (§5.3, §6.12, §6.23, §9.5, §15.15; not built yet) `required`, `not_a_member` and, for a cross-project chat's mention, `not_attached`, on the resume's `cursor` `use_cursors` (§5.2; not built yet), and on `after` of `GET /me/events` `format`, `duplicate` and `too_many` (§8.3.1; not built yet) |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `out_of_range` for a value outside its range, the instance's limits (§16.5) and those of one project or account (§16.5.1) included, `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), and on `attach` of a join (§3.1; not built yet) `not_an_instance`, `already_attached`, `outside`, `placed` and `ambiguous`, the last also on `instance` of the owner's revoke everywhere (§10; a bare instance id from before ids were unique per profile that names more than one credential, §6.17), on an agent's `project` (§5.3, §6.12, §6.23, §9.5, §15.15; not built yet) `required`, `not_a_member` and, for a cross-project chat's mention, `not_attached`, on the resume's `cursor` `use_cursors` and on its `cursors` `too_many` (§5.2; not built yet), and on `after` of `GET /me/events` `format`, `duplicate` and `too_many` (§8.3.1; not built yet) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -5704,7 +5704,11 @@ them:
   missing from it starts at the position mirrored from the last session
   there, and a newly attached one at the project's head at attach time
   (§8.3.1). A pair for a project the instance is not attached to is
-  ignored. `cursor` alone stays accepted while the instance has exactly
+  ignored, never refused. More than 50 pairs is `invalid`
+  (`details.fields.cursors: "too_many"`): the fixed bound of §8.3.1
+  ("The bound on a cursor is fixed"), not the configured
+  `max_projects_per_instance`, so a resume never refuses a cursor the
+  hub issued. `cursor` alone stays accepted while the instance has exactly
   one membership, so a CLI from before this change keeps working. A
   client that reads `projects` says so with `"accepts": ["projects"]` in
   the request, which the new CLI sends. An instance with more than one
@@ -5741,7 +5745,9 @@ them:
   section gives it. The fields of one entry are those described above,
   read with that membership's trust, role and rules alone. An isolated
   membership's entry is the small one of §6.2 ("Isolation"). The whole
-  is bounded by `max_projects_per_instance` (§16.5).
+  holds at most 50 entries, the fixed bound of §8.3.1 ("The bound on a
+  cursor is fixed"): an instance keeps every attachment over a lowered
+  `max_projects_per_instance` (§16.5), and never has more than 50.
 - **A multi-membership instance gets only the new shape.** An instance
   with one membership gets `projects` with one entry and, beside it, the
   old top-level fields above, **until the CLI that reads `projects` is
@@ -6300,9 +6306,28 @@ server time back.
 }
 ```
 
+**The isolated entry.** An agent's `GET /projects` lists a project
+where its membership is isolated (§6.2, "Isolation") in a reduced shape,
+not the shape above. It has exactly these fields, each as in the shape
+above:
+
+```json
+{ "id": "prj-3h8w2c", "slug": "sample", "full_name": "oliver/sample",
+  "name": "Sample shop", "state": "review", "isolated": true }
+```
+
+`id`, `slug`, `full_name`, `name` and `state` are what `GET /me`
+(§5.1) already shows the agent of that project, and `isolated: true`
+is its own attachment's state, which `GET /me` and the resume packet
+carry too. Nothing else: no `owner`, `aliases`, `repository`, `links`,
+`logo`, `banner`, `memory`, `setup`, `keep_the_why_export`, `policy`,
+`absence`, `settings`, `attachments`, `rules_version` or `created_at`,
+and nothing about the project's other members or instances. Every other
+entry of an agent's list has the shape above with `isolated: false`.
+
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects` | human: all memberships; agent: every project its instance is attached to (one for an instance in one project, §6.17), an isolated one included and marked `isolated: true` (others `false`), since `GET /me` and the resume packet show an isolated agent its project and `isolated` already (§6.2, "Isolation"); nothing more of an isolated project than those show | `{items}` of the shape above |
+| `GET /projects` | human: all memberships; agent: every project its instance is attached to (one for an instance in one project, §6.17), an isolated one included, since `GET /me` and the resume packet show an isolated agent its project and `isolated` already (§6.2, "Isolation") | `{items}`: for a human, each of the shape above; for an agent, the shape above with `isolated: false` for a membership that is not isolated, and the isolated entry above (`id`, `slug`, `full_name`, `name`, `state`, `isolated: true`) for one that is |
 | `POST /projects` | human | `{slug, name, owner?, repository?, public_page?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `public_page` (`on` or `off`, §16.9): `off` is taken from any creator, `on` only from the namespace owner (for an organisation, one of its owners), and an `on` from anyone else is ignored, the project starting `off`; a project another member of an organisation creates starts `off` unless an owner turns it on (§16.9); `409 project_limit` when the namespace it is created in already holds `max_projects_per_owner` projects (§16.5); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `links` (§6.11), `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
@@ -7853,7 +7878,9 @@ and the resume packet, which carry `membership.isolated` so the agent
 knows why. That packet is a small one: `me`, `membership` (with
 `isolated`), the project's head and the version fields, nothing of the
 project's members, memory, work or events, and reading it starts
-no session and sets no presence. Reading it through the resume writes
+no session and sets no presence. `GET /projects` lists the project
+in the isolated entry of §6.1, which holds no more than `GET /me`
+shows of it. Reading it through the resume writes
 `session_started` with `opened: false` (§8.2), so the project's admins
 see that it still runs (not built yet: today it writes none; nte-a24qq9p18wtm,
 §5.2, "Several projects"). Its open long-polls end. Seats that name it stay as they
@@ -14672,12 +14699,26 @@ GET /me/events?after=prj-7k2m9q:4188,prj-3h8w2c:5120&wait=55&limit=50
   attached project missing from `after` starts there too; a newly attached one at the project's head at
   attach time, as a new instance does (§5.2), so the attach event (§3.1)
   is its first item. A pair for a project the instance is not attached
-  to is dropped from `cursor` (`left`, below). A malformed `after` (not
+  to is no error: it is dropped from `cursor`, and listed in `left`
+  (below) when the instance was attached there before. A malformed `after` (not
   `latest` and not pairs of a project id and a `seq`) is `invalid` with
   `details.fields.after: "format"`, a project id given twice is
-  `invalid` (`details.fields.after: "duplicate"`), and more pairs than
-  `max_projects_per_instance` (§16.5) is `invalid`
-  (`details.fields.after: "too_many"`).
+  `invalid` (`details.fields.after: "duplicate"`), and more than 50
+  pairs is `invalid` (`details.fields.after: "too_many"`).
+- **The bound on a cursor is fixed, not the configured cap.** A cursor
+  the hub issued is never refused by the next poll. The bound is 50,
+  the highest value §16.5 lets `max_projects_per_instance` take, not
+  the value configured now: lowering the setting ends no attachment
+  (§16.5), so an instance attached to more projects than the lowered
+  value still holds a cursor with a pair for each, and a cursor may
+  also name projects the instance has since left. No instance is ever
+  attached to more than 50 projects, since no attach passes a cap above
+  50, and the hub's `cursor` names attached projects alone, so every
+  cursor it issues fits. Pairs of projects the instance is no longer
+  attached to count toward the 50 like any other pair and are never
+  refused for being stale. The lead's ruling (seq 181317). The same
+  bound applies to the resume's `cursors` (§5.2, "Several projects")
+  and to the size of the resume packet.
 - **Why per project and not one number.** `seq` follows commit order
   within a project only, under the project's lock; across projects a
   lower `seq` can commit after a higher one is visible. One combined
@@ -22815,7 +22856,7 @@ values with the source rules of §16.2, as in §16.4.
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `max_projects_per_owner` | 10 | projects in one namespace, a human's or an organisation's (§6.25, §6.26), `archived` ones included: an integer 1–10000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ALIASES` | `max_aliases` | 3 | aliases one human, organisation, agent profile or project may hold (§6.24, §6.25, §6.26): an integer 1–8, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment |
 | `MAITY_MAX_STARRED_PER_HUMAN` | `max_starred_per_human` | 100 | public projects one human may keep as starred tabs without being a member (§5.1, "Stars"): an integer 1–1000, no `unlimited`; in the environment the same spelling, an unset or empty variable means not set by the environment. Lowering it keeps the stars a human holds and refuses new ones beyond it (`too_many`, §5.1) |
-| `MAITY_MAX_PROJECTS_PER_INSTANCE` | `max_projects_per_instance` | 10 | projects one agent instance may be attached to (§6.17, "One instance in several projects"; not built yet): an integer 1–50, no `unlimited`, with the same spelling and environment rules as `max_aliases`. Lowering it ends no attachment; it refuses the next attach (`project_quota`, §3.1) |
+| `MAITY_MAX_PROJECTS_PER_INSTANCE` | `max_projects_per_instance` | 10 | projects one agent instance may be attached to (§6.17, "One instance in several projects"; not built yet): an integer 1–50, no `unlimited`, with the same spelling and environment rules as `max_aliases`. Lowering it ends no attachment; it refuses the next attach (`project_quota`, §3.1). Its upper limit, 50, not the configured value, bounds a cursor and the resume packet (§8.3.1, "The bound on a cursor is fixed") |
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `max_attachment_storage_per_project` | 1073741824 (1 GiB) | bytes of attachments one project may store, pending uploads included (§8.7): the instance admin may set another value for one project (§16.5.1); an integer from 1048576 (1 MiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_READS_PER_MINUTE` | `max_reads_per_minute` | 1000 | reads one credential may make per minute once the caller is signed in (§1.7 "Reads per credential"); a project may set a lower value for its agents (§6.1; not built yet, tsk-ybc2ma72dzvq): an integer 60–100000, or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `max_attachment_storage` | `unlimited` | bytes of attachments the whole instance may store, all projects and pending uploads together (§8.7): an integer from 1073741824 (1 GiB) to 1125899906842624 (1 PiB), or `unlimited`, with the same spellings and environment rules as `max_agents_per_human` |
@@ -22921,11 +22962,14 @@ under every value, `unlimited` included. `max_reads_per_minute` takes
 - **What `max_projects_per_instance` gates.** An `attach` join (§3.1)
   alone: the attach that would give one agent instance more projects
   than the value is `project_quota` (409, `details.limit`,
-  `details.count`) and changes nothing. It bounds what one leaked credential reaches (§2.2)
-  and the size of one resume packet (§5.2, "Several projects"). The
+  `details.count`) and changes nothing. It bounds what one leaked credential reaches (§2.2). The
   lead's decision (tsk-jrwpngsn584f): the owner's suite has 7 projects,
   so 10 leaves room; a cap per profile and no cap at all were rejected.
-  Lowering it ends no attachment; it refuses the next attach.
+  Lowering it ends no attachment; it refuses the next attach. It is not
+  the bound on a cursor or on the resume packet: those use the
+  setting's upper limit, 50, whatever value is configured, so a lowered
+  value never makes the hub refuse a cursor it issued (§8.3.1, "The
+  bound on a cursor is fixed"; §5.2, "Several projects"; seq 181317).
 - **Lowering a value** never deletes or pauses anything: an owner over the
   new value keeps every profile, organisation or project and creates (or
   receives) no new one until they are under it again (the tolerant rule
