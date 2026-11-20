@@ -175,8 +175,11 @@ def _pg_parts(path: str, under: str) -> list[str]:
         names = list(PurePath(path).relative_to(PurePath(under)).parts)
     except ValueError:
         raise OSError(f"{path} is not inside {under}") from None
-    if not names or names[0] != PG_HOLDER or len(names) > 2 or (
-        len(names) == 2 and not SCRATCH_ID.fullmatch(names[1])
+    if (
+        not names
+        or names[0] != PG_HOLDER
+        or len(names) > 2
+        or (len(names) == 2 and not SCRATCH_ID.fullmatch(names[1]))
     ):
         raise OSError(f"{path} is not the test clusters' password holder or a file in it")
     return names
