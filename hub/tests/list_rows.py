@@ -96,8 +96,7 @@ def same_for_3_and_30(
         def heard(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
             # SQLite's `PRAGMA query_only`, switched on a pooled connection whose last use was a
             # write (`db.read_transaction`): which connection the pool hands out decides it, not
-            # the rows. Seen once in a run under load (13 against 14 for `…/overview`) and again
-            # with a minute between the two counts.
+            # the rows. Seen with a minute between the two counts of `…/overview`.
             if not statement.lstrip().upper().startswith("PRAGMA"):
                 seen[0] += 1
 

@@ -31,6 +31,15 @@ P = "/projects/maintainer/maity"
 _STEP = count(1)
 
 
+@pytest.fixture(autouse=True)
+def _own_steps() -> None:
+    """`_STEP` from 1 in every test: which reporter, author or status a row gets by it then
+    depends on the test alone, not on how many rows the tests before it made (an overview of
+    3 rows without a human reporter read the reporting humans only at 30, 11 against 12)."""
+    global _STEP
+    _STEP = count(1)
+
+
 @pytest.fixture
 def owner(make_client: ClientFactory, migrated: Engine) -> flow.Human:
     human = flow.human(make_client, migrated)
@@ -192,9 +201,16 @@ def test_jour_fixe_rounds_cost_the_same_for_3_and_for_30(
 
 
 @flat_rows("/projects/{}/{}/jour-fixe/rounds")
-@pytest.mark.parametrize("reader", ["circle owner", "moderator", "owned agent"])
+@pytest.mark.parametrize(
+    "case",
+    [
+        "owner circle, read by the circle owner",
+        "owner circle, read by the moderator",
+        "owner circle, read by the owned agent",
+    ],
+)
 def test_jour_fixe_rounds_of_an_owner_circle_cost_the_same_for_3_and_for_30(
-    reader: str, owner: flow.Human, make_client: ClientFactory, migrated: Engine
+    case: str, owner: flow.Human, make_client: ClientFactory, migrated: Engine
 ) -> None:
     """The rounds of a series for one human's own agents (§20.7), read by that human, by the
     round's moderator and by another of the human's agents: `circle.reads` decides each round,
@@ -202,10 +218,10 @@ def test_jour_fixe_rounds_of_an_owner_circle_cost_the_same_for_3_and_for_30(
     from tests.test_jour_fixe_circle import Circle
 
     circle = Circle(owner, make_client, migrated, [clock.now()])
-    by: dict[str, Any] = {
-        "circle owner": circle.friend,
-        "moderator": circle.lead,
-        "owned agent": circle.worker,
+    by: dict[str, Any] = {  # the cases as string literals: the guard reads them (GROWING)
+        "owner circle, read by the circle owner": circle.friend,
+        "owner circle, read by the moderator": circle.lead,
+        "owner circle, read by the owned agent": circle.worker,
     }
 
     def grow(n: int) -> None:
@@ -224,9 +240,9 @@ def test_jour_fixe_rounds_of_an_owner_circle_cost_the_same_for_3_and_for_30(
     same_for_3_and_30(
         migrated,
         "/projects/{}/{}/jour-fixe/rounds",
-        lambda: by[reader].get(f"{P}/jour-fixe/rounds?limit=200"),
+        lambda: by[case].get(f"{P}/jour-fixe/rounds?limit=200"),
         grow,
-        case=f"owner circle, read by the {reader}",
+        case=case,
     )
 
 
@@ -589,16 +605,24 @@ def test_the_overview_s_reports_cost_the_same_for_3_and_for_30(
     reporters = [owner.id] + [flow.agent(make_client, owner).id for _ in range(3)]
     created_by = _membership(migrated, owner.id)
 
+    made = [0]
+
     def grow(n: int) -> None:
         for _ in range(n):
+            # The reporters by this test's own count, so the first 3 rows already hold a human
+            # and agents: by the shared `_STEP`, whether the owner reported one of them hung on
+            # the tests that ran before, and the 30 rows' one read of the reporting humans came
+            # on top (11 against 12 on PostgreSQL in CI).
             i = next(_STEP)
+            reporter = reporters[made[0] % 4]
+            made[0] += 1
             factory.card(
                 migrated,
                 project_id,
                 created_by,
                 status="review",
                 report={
-                    "reported_by": reporters[i % 4],
+                    "reported_by": reporter,
                     "reported_at": clock.rfc3339(clock.now() + timedelta(seconds=i)),
                     "verification": "tests pass",
                     "pr_status": "found",

@@ -427,9 +427,17 @@ catalog, one object's own parts, a setting). The new tests measure with `same_fo
 first (so a first read's one-time write is not row cost), then 3 rows and 27 more, the list
 showing exactly 27 more rows, the statements on the sync engine the same both times. SQLite's
 `PRAGMA query_only`, which `db.read_transaction` switches on a pooled connection whose last use
-was a write, is not counted: which connection the pool hands out decides it, not the rows (it
-made one run under load count 13 against 14). A seed must reach the code that runs per row:
-an enrollment with an empty `attach` reads no project names, so that test attaches one. The
+was a write, is not counted: which connection the pool hands out decides it, not the rows
+(seen with a minute between the two counts). A seed must reach the code that runs per row:
+an enrollment with an empty `attach` reads no project names, so that test attaches one. And
+its first 3 rows must already hold every kind the 30 hold: a view reads each kind once, so a
+kind that comes only with the 27 adds a statement that is no row cost. The overview's reports
+picked their reporter (the owner or one of three agents) by a counter shared by the file's
+tests, so whether the 3 held the human depended on the tests before it: it counted 11
+against 12 on PostgreSQL in CI, and recording the statements on PostgreSQL showed the extra one
+reading the reporting humans; a 13 against 14 on SQLite once under load was most likely the
+same. The counter now starts
+again in every test, and the reporters follow the test's own rows. The
 older tests that already measured a list (`test_view_batching`, the requests, the bell, the
 chat lists, the memory, the admin's users) only gained the decorator and keep their own
 numbers (2 against 8 chats, 5 against 30 requests, 3 against 20 entries).

@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.routing import iter_route_contexts
 from sqlalchemy import Engine, select
@@ -187,7 +188,69 @@ def claims(files: Iterable[Path]) -> dict[str, list[str]]:
     return found
 
 
-def unaccounted(routes: set[str], claimed: set[str]) -> dict[str, set[str]]:
+def _literals(node: ast.AST, where: str) -> list[str]:
+    assert isinstance(node, ast.List | ast.Tuple), f"{where}: the cases as a literal list"
+    found = []
+    for item in node.elts:
+        assert isinstance(item, ast.Constant) and isinstance(
+            item.value, str
+        ), f"{where}: a case that is no string literal"
+        found.append(item.value)
+    return found
+
+
+def measured_cases(files: Iterable[Path]) -> set[str]:
+    """`"<route> [<case>]"` for every case a `@flat_rows` test passes to `same_for_3_and_30`:
+    a `case="…"` literal, or `case=case` with `@pytest.mark.parametrize("case", [...])`."""
+    found: set[str] = set()
+    for path in files:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for test in ast.walk(tree):
+            if not isinstance(test, ast.FunctionDef):
+                continue
+            where = f"{path.name}::{test.name}"
+            routes: list[str] = []
+            given: list[str] = []
+            calls = [d for d in test.decorator_list if isinstance(d, ast.Call)]
+            named = [getattr(d.func, "id", getattr(d.func, "attr", "")) for d in calls]
+            if "flat_rows" not in named:
+                continue  # a case of another test is no case of a list's cost
+            for decorator, called in zip(calls, named, strict=True):
+                if called == "flat_rows":
+                    routes += [
+                        a.value
+                        for a in decorator.args
+                        if isinstance(a, ast.Constant) and isinstance(a.value, str)
+                    ]
+                first = decorator.args[0] if decorator.args else None
+                if (
+                    called == "parametrize"
+                    and isinstance(first, ast.Constant)
+                    and first.value == "case"
+                ):
+                    given = _literals(decorator.args[1], where)
+            for call in ast.walk(test):
+                if not isinstance(call, ast.Call):
+                    continue
+                for keyword in call.keywords:
+                    if keyword.arg != "case":
+                        continue
+                    value = keyword.value
+                    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                        cases = [value.value]
+                    else:
+                        assert isinstance(value, ast.Name) and value.id == "case" and given, (
+                            f"{where}: a case the guard cannot read; pass a literal, or "
+                            '`case=case` with @pytest.mark.parametrize("case", [...])'
+                        )
+                        cases = given
+                    found |= {f"{route} [{case}]" for route in routes for case in cases}
+    return found
+
+
+def unaccounted(
+    routes: set[str], claimed: set[str], cases: set[str] | None = None
+) -> dict[str, set[str]]:
     """What the guard fails on, by kind; empty when every GET route is accounted for."""
     lists = (claimed, set(NOT_LISTS), set(ITEMS_INSIDE), set(CATALOGS))
     listed = set().union(*lists)
@@ -202,6 +265,10 @@ def unaccounted(routes: set[str], claimed: set[str]) -> dict[str, set[str]]:
             entry.split(" [", 1)[0] for entry in list_rows.GROWING
         }
         - claimed,
+        "GROWING [case] entries no test measures": {
+            entry for entry in list_rows.GROWING if " [" in entry
+        }
+        - (cases or set()),
         "LIST_KEYS entries for a route not in NOT_LISTS": set(LIST_KEYS) - set(NOT_LISTS),
     }
     return {kind: found for kind, found in problems.items() if found}
@@ -249,8 +316,9 @@ def naming_items(app_routes: Any) -> set[str]:
 
 
 def test_every_get_route_is_a_measured_list_or_listed_as_none(client: Any) -> None:
-    claimed = claims(sorted(TESTS.glob("test_*.py")))
-    assert unaccounted(_get_routes(client.app.routes), set(claimed)) == {}
+    files = sorted(TESTS.glob("test_*.py"))
+    claimed = claims(files)
+    assert unaccounted(_get_routes(client.app.routes), set(claimed), measured_cases(files)) == {}
 
 
 def test_no_route_of_not_lists_names_items(client: Any) -> None:
@@ -340,3 +408,22 @@ def test_a_new_list_route_without_a_test_fails_the_guard(tmp_path: Path) -> None
     missing = "GET routes in no @flat_rows test and in none of NOT_LISTS, ITEMS_INSIDE, CATALOGS"
     assert problems[missing] == {"/new-list"}
     assert naming_items(app.routes) == {"/projects/{}/{}/tasks", "/new-list"}
+
+
+def test_a_growing_case_no_test_measures_fails_the_guard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `[case]` entry counts only while a test still passes that case (cq59 at #2039)."""
+    measured = tmp_path / "test_measured.py"
+    measured.write_text(
+        "@flat_rows('/x')\n"
+        "@pytest.mark.parametrize('case', ['read by a', 'read by b'])\n"
+        "def test_it(case):\n"
+        "    same_for_3_and_30(engine, '/x', call, grow, case=case)\n",
+        encoding="utf-8",
+    )
+    cases = measured_cases([measured])
+    assert cases == {"/x [read by a]", "/x [read by b]"}
+    monkeypatch.setattr(list_rows, "GROWING", {"/x [read by a]": "", "/x [read by c]": ""})
+    problems = unaccounted({"/x"}, {"/x"}, cases)
+    assert problems["GROWING [case] entries no test measures"] == {"/x [read by c]"}
