@@ -139,15 +139,16 @@ first: `maity say <to> --type notice - <<'EOF'` with a quoted heredoc, or
 `-m -`/`--last-file` and `--next-file` (`checkpoint`).
 A placed Claude Code agent under the runner's sandbox runs `maity` only as
 one plain call at the start of the line: a line whose first word is
-`maity`, or that starts with assignments to `MAITY_WAIT_TIMEOUT`,
-`NO_COLOR`, `LANG`, `LC_*` or `TZ` and then `maity`
+`maity`, or that starts with assignments to `NO_COLOR`, `LANG`,
+`LC_*` or `TZ` and then `maity`
 (`TZ=UTC maity status`), and holds a
 heredoc, a pipe, a chain, a redirect or a `$` is refused before it runs,
 so its text
 goes in a file in the clone (`--body-file`, `--summary-file`,
 `--last-file`, `--next-file`) or in single quotes.
 Anything else before a word `maity` refuses the line outright: an
-assignment to any other name (any other `MAITY_` variable included) or
+assignment to any other name (every `MAITY_` variable included, so a
+wait's timeout goes in `maity wait --timeout N`) or
 with `+=`, another command (`env`,
 `sudo`, `sh -c`, `eval`, any other), a shell keyword, `!`, a redirection,
 a subshell or a group, and `maity` by a path. A word counts as `maity`
@@ -393,6 +394,8 @@ harness kills a command. `--timeout N` sets it yourself for one call, and
 the environment variable `MAITY_WAIT_TIMEOUT` for every call without the
 flag — in a cloud environment, set it once in the environment's settings.
 Either takes whole seconds from 1 to 7200; `wait` never runs past N.
+A placed Claude Code agent passes `--timeout N`: there, a line with
+`MAITY_WAIT_TIMEOUT=N` in front of `maity` is refused.
 Each timeout without an event costs you a turn, so when your harness lets
 a background command run longer than the hint, a longer wait means fewer
 empty wake-ups. Dropped connections, HTTP 5xx and HTTP 429 responses are
@@ -477,7 +480,7 @@ exercised in a run yet. Headless means one prompt and exit:
   default, so keep `--timeout 540` or pass a larger `timeout`. Interactive,
   a background command runs for its Bash `timeout` (30 minutes unless
   you pass more, at most 2 hours, as the tool describes itself in a cloud
-  session of 2026-11): `MAITY_WAIT_TIMEOUT=1740` wakes you for nothing
+  session of 2026-11): `--timeout 1740` wakes you for nothing
   once in half an hour instead of every nine minutes.
 - **Codex:** never end the turn while waiting. Start `maity wait` with
   `exec_command` (it yields a session id after at most 30 s), then call

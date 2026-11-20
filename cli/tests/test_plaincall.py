@@ -285,7 +285,6 @@ AFTER_COMMENT_LINES = [
     "# it's\nmaity status",
     '# "\nmaity status',
     "# note\nTZ=UTC maity status",
-    "# note\nMAITY_WAIT_TIMEOUT=5 maity wait",
     "# note\nNO_COLOR=1 LC_ALL=C maity status",
     "# note\nmaity runner status",
     "# note\nmaity status && maity status",
@@ -300,6 +299,7 @@ PREFIXED_AFTER_COMMENT_LINES = [
     "# note\nenv maity status",
     "# note\n/some/path/maity status",
     "# note\nTZ=UTC X=1 maity status",
+    "# note\nMAITY_WAIT_TIMEOUT=5 maity wait",
 ]
 # Comment lines that do not stand at the start, or lines with no `maity` word after them.
 NOT_PAST_COMMENT_LINES = [
@@ -434,7 +434,6 @@ def test_other_command_lines_are_left_to_the_permission_rules(command: str) -> N
 
 # Assignments before `maity` to each name that may stand there: one, several, a quoted value.
 ASSIGNMENTS = [
-    "MAITY_WAIT_TIMEOUT=5",
     "NO_COLOR=1",
     "LANG=C.UTF-8",
     "LC_ALL=C",
@@ -443,10 +442,15 @@ ASSIGNMENTS = [
     "TZ=UTC LANG=C",
     "TZ='x y'",
     'TZ="x y"',
-    "MAITY_WAIT_TIMEOUT=5 NO_COLOR=1 LANG=C LC_ALL=C TZ=UTC",
+    "NO_COLOR=1 LANG=C LC_ALL=C TZ=UTC",
 ]
-# Assignments to any other name, and every `+=`.
+# Assignments to any other name, `MAITY_WAIT_TIMEOUT` included (tsk-f5fy2zq26xcy), and
+# every `+=`.
 NOT_ALLOWED = [
+    "MAITY_WAIT_TIMEOUT=5",
+    "MAITY_WAIT_TIMEOUT=5 TZ=UTC",
+    "TZ=UTC MAITY_WAIT_TIMEOUT=5",
+    "NO_COLOR=1 LANG=C LC_ALL=C TZ=UTC MAITY_WAIT_TIMEOUT=5",
     "PATH=.",
     "LD_PRELOAD=x.so",
     "DYLD_INSERT_LIBRARIES=x",
@@ -494,6 +498,11 @@ RUNNER_TRUSTED = (
     "MAITY_ERROR_LINE",
     "MAITY_SCRATCH",
 )
+# The `MAITY_` names documented for agents in docs/agents.md and read by maity. None may stand
+# before `maity` either: `MAITY_WAIT_TIMEOUT` was allowed until the S200 re-check showed such a
+# line without the credential in a placement; a placed agent passes `maity wait --timeout N`
+# (tsk-f5fy2zq26xcy, context/runner.md 63492c65).
+AGENT_FACING = ("MAITY_WAIT_TIMEOUT",)
 AGENTS_MD = SRC.parent.parent / "docs" / "agents.md"
 
 
@@ -511,26 +520,22 @@ def code_maity_names() -> set[str]:
 
 
 def test_the_scan_finds_every_runner_trusted_name_and_no_unclassified_one() -> None:
-    allowed = {n for n in plaincall.ALLOWED_BEFORE_MAITY if n.startswith("MAITY_")}
-    assert code_maity_names() == set(RUNNER_TRUSTED) | allowed
+    assert code_maity_names() == set(RUNNER_TRUSTED) | set(AGENT_FACING)
 
 
-def test_no_runner_trusted_name_is_on_the_allow_list() -> None:
+def test_no_maity_name_is_on_the_allow_list() -> None:
     names = plaincall.ALLOWED_BEFORE_MAITY
     assert isinstance(names, tuple)
-    assert not set(names) & set(RUNNER_TRUSTED)
-    patterns = [n for n in names if n.startswith("MAITY") and not re.fullmatch(r"MAITY_\w+", n)]
-    assert not patterns  # no `MAITY_*`: a `MAITY_` name stands on the list by its name
-    for name in [*RUNNER_TRUSTED, *code_maity_names() - set(names), "MAITY_FOO", "MAITY_"]:
+    assert not [n for n in names if n.upper().startswith("MAITY")]
+    for name in [*RUNNER_TRUSTED, *AGENT_FACING, *code_maity_names(), "MAITY_FOO", "MAITY_"]:
         assert plaincall._ASSIGNMENT.match(name + "=1") is None, name
 
 
-def test_every_maity_name_on_the_allow_list_is_read_by_maity_and_documented_for_agents() -> None:
+def test_every_agent_facing_maity_name_is_read_by_maity_and_documented_for_agents() -> None:
     docs = AGENTS_MD.read_text(encoding="utf-8")
-    for name in plaincall.ALLOWED_BEFORE_MAITY:
-        if name.startswith("MAITY_"):
-            assert name in code_maity_names(), name
-            assert re.search(rf"`{name}(=[^`]*)?`", docs), name
+    for name in AGENT_FACING:
+        assert name in code_maity_names(), name
+        assert re.search(rf"`{name}(=[^`]*)?`", docs), name
 
 
 @pytest.mark.parametrize("name", RUNNER_TRUSTED)
@@ -538,8 +543,13 @@ def test_maity_after_a_runner_trusted_name_is_refused_outright(name: str) -> Non
     assert plaincall.refusal(bash(f"{name}=1 maity status")) == plaincall.PREFIX_REFUSED
 
 
-def test_maity_wait_after_its_timeout_variable_passes() -> None:
-    assert plaincall.refusal(bash("MAITY_WAIT_TIMEOUT=5 maity wait")) is None
+def test_maity_wait_after_its_timeout_variable_is_refused_with_the_flag_as_the_way_out() -> None:
+    assert plaincall.prefixed("MAITY_WAIT_TIMEOUT=5 maity wait")
+    assert plaincall.refusal(bash("MAITY_WAIT_TIMEOUT=5 maity wait")) == plaincall.PREFIX_REFUSED
+    assert "`maity wait --timeout N`" in plaincall.PREFIX_REFUSED
+    assert "MAITY_WAIT_TIMEOUT" not in plaincall.PREFIX_REFUSED
+    assert plaincall.refusal(bash("maity wait --timeout 5")) is None
+    assert plaincall.refusal(bash("TZ=UTC maity wait --timeout 5")) is None
 
 
 @pytest.mark.parametrize("prefix", ASSIGNMENTS)
@@ -689,14 +699,14 @@ S203_WRAPPERS = [
     "TZ=UTC nice",
     "NO_COLOR=1 env",
 ]
-# The allowed names, as in #1942: a single plain call after them passes, held to one plain call.
+# The allowed names, as in #1942 less `MAITY_WAIT_TIMEOUT` (tsk-f5fy2zq26xcy): a single plain
+# call after them passes, held to one plain call.
 S183_ALLOWED_SINGLE = [
     "TZ=1 maity status",
     "TZ=UTC maity status",
     "NO_COLOR=1 maity status",
     "LANG=C maity status",
     "LC_ALL=C maity status",
-    "MAITY_WAIT_TIMEOUT=5 maity wait",
     "TZ=UTC LANG=C.UTF-8 NO_COLOR=1 maity status",
 ]
 

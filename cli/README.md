@@ -1410,8 +1410,9 @@ needs it.
 Code's sandbox, as a plain `maity …` call. The runner's hook keeps a
 placed session to that one plain call: a line with a command, a wrapper
 or a path in front of `maity` is refused before it runs, and only
-assignments to `MAITY_WAIT_TIMEOUT`, `NO_COLOR`, `LANG`, `LC_*` or `TZ`
-may stand before it, the line then held to one plain call. The runner
+assignments to `NO_COLOR`, `LANG`, `LC_*` or `TZ` may stand before it,
+the line then held to one plain call (a wait's timeout goes in
+`maity wait --timeout N`). The runner
 does not rely on how Claude Code's sandbox exclusion treats a call with
 something in front of `maity`. The hook needs Claude Code 2.1.295 or
 later; the version whose sandbox was last checked is recorded, and with

@@ -97,12 +97,11 @@ FAILED = (
 )
 PREFIX_REFUSED = (
     "A line in which `maity` is a word runs only as one plain `maity …` call at the start of "
-    "the line, after nothing but assignments to MAITY_WAIT_TIMEOUT, NO_COLOR, LANG, LC_* or "
-    "TZ: no "
-    "other assignment, command, keyword, `!`, redirection, subshell or group before it, and "
+    "the line, after nothing but assignments to NO_COLOR, LANG, LC_* or TZ: no other "
+    "assignment, command, keyword, `!`, redirection, subshell or group before it, and "
     "`maity` by its name, not by a path. Run "
-    "`maity …` at the start of the line; text that mentions `maity` goes in a file in this "
-    "clone, passed with `--body-file`."
+    "`maity …` at the start of the line; a wait's timeout goes in `maity wait --timeout N`; "
+    "text that mentions `maity` goes in a file in this clone, passed with `--body-file`."
 )
 
 
@@ -110,9 +109,10 @@ PREFIX_REFUSED = (
 # family. An assignment can pick the program the shell runs or load code into it (`PATH`,
 # `LD_PRELOAD`, `PYTHONPATH`, `BASH_ENV`, ...), and the runner's own `MAITY_` variables decide
 # what maity trusts (the placement, the clone's `.git`, the state directory), so the names are
-# allowed, not refused, and a `MAITY_` name only when docs/agents.md documents it for agents
-# (context/runner.md). `test_plaincall.py` fails when a runner-trusted name is added here.
-ALLOWED_BEFORE_MAITY = ("MAITY_WAIT_TIMEOUT", "NO_COLOR", "LANG", "LC_*", "TZ")
+# allowed, not refused, and no `MAITY_` name is among them: `MAITY_WAIT_TIMEOUT=N maity wait`
+# would not get the credential in a placement, so a placed agent passes `maity wait --timeout N`
+# (cli/context/runner.md). `test_plaincall.py` fails when a `MAITY_` name is added here.
+ALLOWED_BEFORE_MAITY = ("NO_COLOR", "LANG", "LC_*", "TZ")
 # An allowed name, unquoted, then `=`; `+=` is refused as well. The value is not judged here:
 # `plain` refuses one that expands.
 _ASSIGNMENT = re.compile(
