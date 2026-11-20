@@ -591,7 +591,12 @@ reserve and SQLAlchemy does not quote by itself (`vector`, reserved since
 MariaDB 11.7) carries `quote=True`, in `tables.py` and in every revision
 that names it; a table read with `autoload_with` loses the flag.
 `tests/test_reserved_words.py` holds the list of such words and fails on a
-name from it without the flag. SQLite runs in Alembic's batch mode, so column
+name from it without the flag. An `op.*` call that names a table, an index or
+a constraint has no `quote=True`: write the name there as
+`sa.sql.quoted_name("vector", True)`, and a foreign key to it as a tuple of
+such names (`sa.ForeignKey((quoted_name("t", True), quoted_name("vector", True)))`)
+or by the `Column` object, never as a `"t.vector"` string, which SQLAlchemy
+splits and writes plain. SQLite runs in Alembic's batch mode, so column
 changes work there too. Every revision has a working `downgrade()`; the
 test suite migrates up and down on each engine. A revision spells out its
 column types instead of importing them from `maity_hub` (autogenerate

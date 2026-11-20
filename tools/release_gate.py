@@ -11,9 +11,13 @@ writes:
   a commit of main with the same files the suite reads as the tagged commit
   (the list `decide` in hub-mariadb.yml compares, MARIADB_PATHS below). The
   newest such run must have passed: its `hub-mariadb` job (MariaDB 11.4) and
-  its `hub-mariadb-11-8` job (the subset on 11.8), when hub-mariadb.yml at
-  the run's commit defines it (missing, skipped or red, it stops the gate);
-  a run whose file predates that job counts on 11.4 alone. A run that
+  its `hub-mariadb-11-8` job (the subset on 11.8), when the run's commit
+  comes after the one that added it (missing, skipped or red, it stops the gate);
+  a run whose commit predates that job (git ancestry against the commit
+  that added it, MARIADB_EXTRA_JOBS) counts on 11.4 alone. A history git
+  cannot answer from (a shallow checkout, a missing commit) stops the
+  gate, and so does a run that lists a `hub-mariadb*` job the table does
+  not know. A run that
   skipped the suite counts for nothing unless a job beside it went red, and
   only main's own workflow file counts: the run's ref is main and the commit
   it ran is on main.
@@ -62,11 +66,15 @@ MARIADB_PATHS = (
 DONE = "completed"
 # A job that ran the suite and ended; skipped (nothing to test) is not one.
 RAN = {"success", "failure", "cancelled", "timed_out"}
-# The jobs of hub-mariadb.yml that must pass besides `hub-mariadb`, the 11.4 suite. Whether a
-# run had to run one is read from the workflow file at the run's commit: a file that does not
-# define it predates it, and the run is judged without it; a defined job that is missing from
-# the run, skipped or red stops the gate.
-MARIADB_EXTRA_JOBS = ("hub-mariadb-11-8",)
+# The jobs of hub-mariadb.yml that must pass besides `hub-mariadb`, the 11.4 suite, each with
+# the commit of main that added it. A run whose workflow commit (head_sha) has that commit in
+# its history had the job: missing from the run, skipped or red, it stops the gate. A run from
+# before it is judged without it. Whether a commit is in the history is git's answer
+# (`merge-base --is-ancestor` in a full checkout), never a reading of the workflow file.
+# A new hub-mariadb* job gets its line here in the pull request that adds it.
+MARIADB_EXTRA_JOBS = {
+    "hub-mariadb-11-8": "4fafdf1f80dedf7c50016d133984b013d8719588",  # #2022
+}
 HAND = re.compile(r"hub-mariadb hand (head|[0-9a-f]{40})")
 
 
@@ -152,23 +160,6 @@ def tested(run: dict) -> str | None:
     return None
 
 
-MARIADB_WORKFLOW = ".github/workflows/hub-mariadb.yml"
-
-
-def workflow_job_ids(text: str) -> set[str]:
-    """The keys under a workflow's top-level `jobs:`, read from its text (no YAML parser)."""
-    ids: set[str] = set()
-    inside = False
-    for line in text.splitlines():
-        if re.match(r"\S", line):
-            inside = line.rstrip() == "jobs:"
-            continue
-        found = re.match(r"  ([A-Za-z0-9_-]+):\s*(#.*)?$", line)
-        if inside and found:
-            ids.add(found.group(1))
-    return ids
-
-
 class Git:
     """The checkout's history; a commit it lacks is fetched before it is judged."""
 
@@ -202,19 +193,25 @@ class Git:
             return False
         return None
 
-    def workflow_jobs(self, sha: str) -> set[str] | None:
-        """The job ids hub-mariadb.yml defines at sha; None when the file cannot be read.
+    def contains(self, ancestor: str, sha: str) -> bool | None:
+        """Whether ancestor is in sha's history; None when that cannot be told.
 
-        A job of that file has no `name:` (Workflows in test_release_gate.py holds it so), so
-        its id is the name the jobs API lists."""
-        if not self._have(sha):
-            return None
-        shown = subprocess.run(
-            ["git", "show", f"{sha}:{MARIADB_WORKFLOW}"], capture_output=True, check=False
+        A shallow checkout cannot tell: a cut history reads "not an ancestor", which would let
+        a run count without a job it had. So it is None there, as for a commit the checkout
+        cannot get and any other git error."""
+        shallow = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"], capture_output=True, check=False
         )
-        if shown.returncode != 0:
+        if shallow.returncode != 0 or shallow.stdout.strip() != b"false":
             return None
-        return workflow_job_ids(shown.stdout.decode("utf-8", "replace"))
+        if not (self._have(ancestor) and self._have(sha)):
+            return None
+        code = self._run("merge-base", "--is-ancestor", ancestor, sha)
+        if code == 0:
+            return True
+        if code == 1:
+            return False
+        return None
 
     def same(self, a: str, b: str) -> bool | None:
         """Whether a and b hold the same MARIADB_PATHS; None when that cannot be told."""
@@ -272,22 +269,38 @@ def mariadb_state(api: Api, sha: str, git: Git) -> State:
                 f"hub-mariadb on {commit}, same hub files as {sha}, is {run['status']}:"
                 f" {run['html_url']}",
             )
-        defined = git.workflow_jobs(run["head_sha"])
-        if defined is None:
-            return State(
-                "fail",
-                f"cannot read {MARIADB_WORKFLOW} at {run['head_sha']} ({run['html_url']}):"
-                " re-run this job",
-            )
         jobs = {
             j["name"]: j["conclusion"]
             for j in api.get(f"actions/runs/{run['id']}/jobs", filter="latest", per_page=100)[
                 "jobs"
             ]
         }
-        # A job the run's workflow file defines must have passed: missing or skipped is red.
-        # Only a job the file does not define is left out, for runs from before it existed.
-        required = [name for name in MARIADB_EXTRA_JOBS if name in defined]
+        unknown = sorted(
+            n
+            for n in jobs
+            if n.startswith("hub-mariadb") and n != "hub-mariadb" and n not in MARIADB_EXTRA_JOBS
+        )
+        if unknown:
+            # A job the table does not know: whether it had to pass cannot be told.
+            return State(
+                "fail",
+                f"the run lists {', '.join(unknown)}, which tools/release_gate.py does not know"
+                f" ({run['html_url']}): add it to MARIADB_EXTRA_JOBS with the commit that added"
+                " it, and re-run this job",
+            )
+        had: dict[str, bool | None] = {}
+        for name, added in MARIADB_EXTRA_JOBS.items():
+            had[name] = git.contains(added, run["head_sha"])
+            if had[name] is None:
+                return State(
+                    "fail",
+                    f"cannot tell whether {run['head_sha']} ({run['html_url']}) has {added},"
+                    f" the commit that added {name} (a shallow checkout, a commit the"
+                    " checkout cannot get): check out with full history and re-run this job",
+                )
+        # A job the run's commit had must have passed: missing or skipped is red. One it lists
+        # counts too, had or not. Only a job from after the run's commit is left out.
+        required = [name for name in MARIADB_EXTRA_JOBS if had[name] or name in jobs]
         extra_red = [
             f"{name} is {jobs.get(name) or 'missing'}"
             for name in required
@@ -308,10 +321,8 @@ def mariadb_state(api: Api, sha: str, git: Git) -> State:
             continue
         red = ([f"hub-mariadb is {result}"] if result != "success" else []) + extra_red
         if not red:
-            alone = [name for name in MARIADB_EXTRA_JOBS if name not in defined]
-            note = (
-                f" (its workflow file has no {', '.join(alone)}: it predates it)" if alone else ""
-            )
+            alone = [name for name in MARIADB_EXTRA_JOBS if name not in required]
+            note = f" (its commit predates {', '.join(alone)})" if alone else ""
             return State(
                 "ok",
                 f"hub-mariadb passed on {commit}, same hub files as {sha}{note}:"

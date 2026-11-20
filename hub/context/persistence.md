@@ -1027,7 +1027,7 @@ reflection.
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-5cah3a82dv63 (found in the review of pull request #2020 on MariaDB 11.8; the lead's go for quoting over a rename, 2026-11-20); the MariaDB KB "Reserved Words" (`VECTOR`, 11.7+); `hub/tests/test_reserved_words.py`
+**Source:** card tsk-5cah3a82dv63 (found in the review of pull request #2020 on MariaDB 11.8; the lead's go for quoting over a rename, 2026-11-20); card tsk-07hb18s4j47f (the walk's further calls, from the review of #2022); the MariaDB KB "Reserved Words" (`VECTOR`, 11.7+); `hub/tests/test_reserved_words.py`
 **Revisit when:** SQLAlchemy's MySQL/MariaDB reserved lists gain `vector` (`test_sqlalchemy_still_lacks_vector` fails), or the hub starts writing raw SQL against `notification_position`
 
 MariaDB 11.7 made `vector` a reserved word, and `notification_position` has a column of that name.
@@ -1053,20 +1053,23 @@ little in a hub whose rule is `op.*` and Core only.
   (above).
 - Waiting for SQLAlchemy to list the word: an operator on 11.7+ could not install the hub meanwhile,
   and the next word would surprise the same way.
+- A line-based pattern over the revisions instead of the `ast` walk (the first version of the test):
+  it misread calls over several lines and missed renames; found in review.
 
 **Known limit:** a table read with `autoload_with` gets plain names without the flag, so a revision
 that reflects `notification_position` and writes `vector` names that column itself, as with the JSON
-type above. The list in the test is kept by hand from the vendors' reserved-word pages. The revisions
-are checked by an `ast` walk over the calls that name tables and columns: `Column`/`column` (also
-inside `add_column`, on one line or several), `Table`/`table`/`create_table`/`drop_table`/`batch_alter_table`,
-`rename_table`, `alter_column` (the column and `new_column_name`), `drop_column`, `add_column`'s table,
-the columns of `create_index`/`create_unique_constraint`, and the names of indexes and constraints
-(`Index`, `create_index`/`drop_index`, `create_*_constraint`, `create_foreign_key`, `drop_constraint`,
-a `name=` on a constraint, also through `op.f`). Those operations have no `quote=True`, so
-there a reserved name is written `sa.sql.quoted_name("vector", True)`; Alembic writes a plain string
-unquoted on MariaDB (`MODIFY vector`, `DROP COLUMN vector`). Not judged: a name that is no string
-literal, the column lists of a foreign or primary key, and raw SQL in `op.execute`. A line-based pattern came first and was
-replaced after review: it misread calls over several lines and missed renames.
+type above (inferred from how reflection builds its columns; not tested). The list in the test is
+kept by hand from the vendors' reserved-word pages. The revisions are checked by an `ast` walk over
+the calls that name tables, columns, indexes and constraints; which calls, and what each quoted form
+looks like, are in `hub/tests/test_reserved_words.py` and in `hub/README.md`, Migrations. Not
+judged: a name that is no string literal (a `Column` object included), the column lists of a key or
+an index other than a foreign key's target (`ForeignKeyConstraint`'s `columns`, the positional
+columns of `PrimaryKeyConstraint`, `UniqueConstraint` and `Index`, `create_foreign_key`'s
+`local_cols`/`remote_cols`, `create_primary_key`'s columns), the schema part of a three-part
+foreign-key target, and raw SQL in `op.execute`. A string target `"t.vector"` has no quoted form at
+all: SQLAlchemy splits it at its periods and writes each part plain, `quoted_name` or not. A tuple of
+`quoted_name` parts keeps the flag on SQLAlchemy 2.1, the pinned runtime (checked on 2.1.6; the
+review of #2025 found 2.0.36, the floor in `pyproject.toml`, dropping it).
 
 ## On MariaDB a migration run commits per step, and a refusal stays where it refused
 
