@@ -37,6 +37,13 @@ class StateError(Exception):
     """The state directory or a file in it cannot be used as it is."""
 
 
+class NotInClone(StateError):
+    """`resolve_state_dir` found no clone: git answered that the directory is in none. Every
+    other reason it cannot name the state directory (git missing, a runner's clone it cannot
+    place) stays a plain `StateError`, so a caller that acts only outside a clone catches
+    this one alone."""
+
+
 class Secret:
     """A value that refuses to be printed.
 
@@ -89,7 +96,7 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
     except proc.ToolError as exc:
         raise StateError(f"{exc}; set {STATE_DIR_ENV} to a directory") from exc
     if result.returncode != 0:
-        raise StateError(
+        raise NotInClone(
             f"{base} is not inside a Git clone, and maity keeps an agent's credential in its "
             "clone. Run maity from the clone the agent works in; without one, give this agent "
             f"a directory of its own and set it for every maity command, e.g. "

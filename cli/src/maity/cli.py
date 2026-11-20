@@ -192,14 +192,10 @@ def _keep_hub(stored: str, given: str) -> None:
     clone's hub changes only by a new join (cli/context/credentials.md)."""
     if hub.same_origin(stored, given):
         return
-    scheme, host, port = hub.origin(stored)
-    shown = f"[{host}]" if ":" in host else host
-    if port != hub.DEFAULT_PORTS[scheme]:
-        shown = f"{shown}:{port}"
     raise LocalRefusal(
-        f"this clone is joined to the hub at {scheme}://{shown}, and --hub names "
-        f"{hub.safe_url(hub.hub_base(given))}, another origin. A clone's hub is fixed: it "
-        "changes only by a new join (`maity join <url> --code <code>`). Nothing was changed"
+        f"this clone is joined to the hub at {hub.shown_origin(stored)}, and --hub names "
+        f"{hub.shown_origin(given)}, another origin. A clone's hub is fixed: it changes only "
+        "by a new join (`maity join <url> --code <code>`). Nothing was changed"
     )
 
 
@@ -4826,12 +4822,17 @@ def cmd_api(args: argparse.Namespace) -> int:
 def cmd_help(args: argparse.Namespace) -> int:
     if args.hub:
         base = hub.hub_base(args.hub)
-        directory: Path | None
+        stored: object = None
         try:
-            directory = state.resolve_state_dir()
-        except state.StateError:
-            directory = None  # outside a clone: before a join, no stored hub to keep
-        stored = state.load_state(directory).get("hub") if directory is not None else None
+            stored = state.load_state(state.resolve_state_dir()).get("hub")
+        except state.NotInClone:
+            pass  # outside a clone: before a join, no stored hub to keep
+        except state.StateError as exc:
+            # A clone whose state cannot be read may name a hub: fails closed, nothing fetched.
+            raise LocalRefusal(
+                "--hub is checked against the hub this clone is joined to, and its state "
+                f"cannot be read: {exc}. Nothing was fetched"
+            ) from None
         if isinstance(stored, str):
             _keep_hub(stored, args.hub)
             base = hub.hub_base(stored)

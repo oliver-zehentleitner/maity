@@ -697,6 +697,10 @@ def test_resume_adopts_a_credential_from_the_page_driven_join(
         ("https://hub.example", "https://hub.example/j/abc?x=1"),
         ("http://localhost", "http://localhost:80"),
         ("https://hub.example:8443", "https://Hub.Example:8443/api"),
+        # An IP literal is compared in its canonical spelling.
+        ("https://[2001:db8::1]", "https://[2001:0DB8:0:0:0:0:0:1]"),
+        ("https://[::1]", "https://[0:0:0:0:0:0:0:1]"),
+        ("http://[::1]:8000", "http://[::1]:8000/x"),
     ],
 )
 def test_same_origin(a: str, b: str) -> None:
@@ -711,6 +715,11 @@ def test_same_origin(a: str, b: str) -> None:
         ("https://hub.example", "https://sub.hub.example"),
         ("http://localhost:8000", "http://127.0.0.1:8000"),
         ("http://localhost", "https://localhost"),
+        ("https://[2001:db8::1]", "https://[2001:db8::2]"),
+        ("https://[::1]", "https://127.0.0.1"),
+        ("https://[::ffff:127.0.0.1]", "https://127.0.0.1"),
+        # A trailing dot makes a name, not the address: checked before the dot is dropped.
+        ("https://127.0.0.1", "https://127.0.0.1."),
     ],
 )
 def test_another_origin(a: str, b: str) -> None:
@@ -779,6 +788,105 @@ def test_a_new_join_is_the_way_to_another_hub(
     join = ["join", f"{fake.url}/j/{fakehub.TOKEN}", "--code", fakehub.CODE]
     assert cli.main(join) == cli.EXIT_OK, output(capsys)
     assert state.load_state(directory)["hub"] == fake.url
+
+
+@pytest.mark.parametrize("case", ["marked, placement unset", "placement invalid", "no git"])
+def test_help_hub_where_the_clones_state_cannot_be_read_fails_closed(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    """`help --hub` treats only "not inside a Git clone" (`state.NotInClone`) as before a
+    join. A clone whose state directory cannot be named may hold a state that names a hub, so
+    every other reason is refused with exit 4 and nothing is fetched, not even from the hub
+    `--hub` names."""
+    for name in ("MAITY_PLACEMENT", "GIT_DIR", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    if case == "marked, placement unset":  # clonecheck.Refused
+        (clone / ".git" / "maity").mkdir(mode=0o700, exist_ok=True)
+        (clone / ".git" / "maity" / "placement").write_text("plc-0003\n")
+    elif case == "placement invalid":  # clonecheck.Refused
+        monkeypatch.setenv("MAITY_PLACEMENT", "not a placement id")
+        monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    else:  # proc.ToolError
+        (tmp_path / "no-git").mkdir()
+        monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
+    with pytest.raises(state.StateError) as raised:
+        state.resolve_state_dir()
+    assert not isinstance(raised.value, state.NotInClone)
+    assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "state cannot be read" in err and "Nothing was fetched" in err
+    assert fake.seen == []  # nothing fetched
+
+
+def test_help_hub_outside_a_clone_fetches(
+    bin_dir: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Outside a Git clone (git answers so: `state.NotInClone`) `help --hub` is before a join
+    and fetches from the hub it names, as before."""
+    for name in ("MAITY_PLACEMENT", "GIT_DIR", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))  # no repository above it
+    monkeypatch.chdir(outside)
+    with pytest.raises(state.NotInClone):
+        state.resolve_state_dir()
+    assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_OK, output(capsys)
+    assert capsys.readouterr().out == "# Maity help\n"
+    assert [s.method for s in fake.seen] == ["GET"]
+
+
+def test_a_same_origin_hub_flag_in_another_ipv6_spelling_keeps_the_stored_url(
+    joined: Path,
+) -> None:
+    """The origin is compared with the IP literal in its canonical spelling; the stored URL is
+    not rewritten to the given one or to that spelling."""
+    data = state.load_state(joined)
+    data["hub"] = "https://[2001:db8::1]:8443"
+    state.save_state(joined, data)
+    before = _state_bytes(joined)
+    session = cli.Session("https://[2001:0DB8:0:0:0:0:0:1]:8443/")
+    assert session.data["hub"] == "https://[2001:db8::1]:8443"
+    assert session.client.base == "https://[2001:db8::1]:8443"
+    assert _state_bytes(joined) == before
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_the_refusal_shows_both_origins_alike(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], command: list[str]
+) -> None:
+    """Stored and given origin are printed the same way: an IPv6 host in brackets, in its
+    canonical spelling, the port only when it is not the scheme's default."""
+    data = state.load_state(joined)
+    data["hub"] = "https://[0:0::1]:8443"
+    state.save_state(joined, data)
+    before = _state_bytes(joined)
+    given = "https://[0:0:0:0:0:0:0:1]:8444/j/abc"
+    assert cli.main([*command, "--hub", given]) == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "joined to the hub at https://[::1]:8443, and --hub names https://[::1]:8444," in err
+    assert cli.main([*command, "--hub", "https://[::2]"]) == cli.EXIT_REFUSED
+    assert "--hub names https://[::2], another origin" in capsys.readouterr().err
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize(
+    "url", ["https://@hub.example", "https://:@hub.example", "https://@hub.example/j/abc"]
+)
+def test_a_url_with_an_empty_userinfo_is_refused(url: str) -> None:
+    """An empty user or password is a userinfo part all the same."""
+    with pytest.raises(hub.HubError, match="credentials in it"):
+        hub.hub_base(url)
 
 
 def test_a_redirect_is_refused_not_followed(

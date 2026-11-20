@@ -175,7 +175,9 @@ def hub_base(url: str) -> str:
         raise HubError(f"not a hub URL: {safe_url(url)}") from None
     if port == 0:
         raise HubError(f"not a hub URL: {safe_url(url)}")
-    if parts.username or parts.password:
+    # Compared with None: an empty user or password (`https://@hub`, `https://:@hub`) is a
+    # userinfo part all the same, and the stored URL never carries one.
+    if parts.username is not None or parts.password is not None:
         raise HubError("refusing a URL with credentials in it")
     if parts.scheme not in ("https", "http") or not parts.hostname:
         raise HubError(f"not a hub URL: {safe_url(url)}")
@@ -188,21 +190,47 @@ DEFAULT_PORTS = {"https": 443, "http": 80}
 
 
 def origin(url: str) -> tuple[str, str, int]:
-    """The origin of a hub URL as `hub_base` accepts it: scheme, host and port, the host as
-    `_host` compares it (lowercase, IDNA, no trailing dot) and the port filled in with the
-    scheme's default, so `https://Hub.example:443/x` and `https://hub.example` are one
-    origin. The path is not part of it, as `hub_base` drops it."""
+    """The origin of a hub URL as `hub_base` accepts it: scheme, host and port, the port filled
+    in with the scheme's default, so `https://Hub.example:443/x` and `https://hub.example` are
+    one origin. The path is not part of it, as `hub_base` drops it. The host is an IP literal
+    in its one canonical spelling (`[2001:0DB8::0:1]` is `2001:db8::1`), or a name as `_host`
+    compares it (lowercase, IDNA, one trailing dot dropped). A name with a trailing dot that
+    reads as an address after the dot is dropped (`127.0.0.1.`) keeps its dot: a name, never
+    that address. Only the comparison uses this form; a stored URL stays as it was given."""
     base = hub_base(url)
     parts = urllib.parse.urlsplit(base)
+    port = parts.port or DEFAULT_PORTS[parts.scheme]
+    raw = parts.hostname or ""
+    if _is_ip(raw):  # checked before `_host` drops a trailing dot
+        return parts.scheme, str(ipaddress.ip_address(raw)), port
     host = _host(base)
     if host is None:
         raise HubError(f"not a hub URL: {safe_url(url)}")
-    return parts.scheme, host, parts.port or DEFAULT_PORTS[parts.scheme]
+    return parts.scheme, f"{host}." if _is_ip(host) else host, port
+
+
+def _is_ip(host: str) -> bool:
+    """An IP literal as `ipaddress` reads it, nothing a resolver would make of a name."""
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
 
 
 def same_origin(a: str, b: str) -> bool:
     """Whether two hub URLs name the same origin (`origin`)."""
     return origin(a) == origin(b)
+
+
+def shown_origin(url: str) -> str:
+    """A hub URL's origin as one prints it: `scheme://host`, an IPv6 host in brackets, the
+    port only when it is not the scheme's default. The same form for every URL it is given,
+    so two origins side by side differ only where they differ."""
+    scheme, host, port = origin(url)
+    shown = f"[{host}]" if ":" in host else host
+    suffix = "" if port == DEFAULT_PORTS[scheme] else f":{port}"
+    return f"{scheme}://{shown}{suffix}"
 
 
 def join_target(url: str) -> str:
