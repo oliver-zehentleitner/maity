@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Annotated
 
@@ -19,6 +20,8 @@ from maity_hub.db import retrying_async
 from maity_hub.errors import ApiError, forbidden, humans_only, invalid, not_found, unauthenticated
 from maity_hub.forge import Forge
 from maity_hub.net import Origin
+
+log = logging.getLogger(__name__)
 
 
 def engine_of(request: Request) -> Engine:
@@ -136,10 +139,20 @@ async def authenticated(
             await conn.run_sync(_end_session, ended)
         raise unauthenticated("the sign-in has to start again") from None
     except Exception:
-        # A refusal after the nonce was spent rolled the spend back with the rest; it is
-        # spent again, committed on its own, before the refusal is answered (§2.2).
+        # A refusal after the nonce was spent in the database rolled the spend back with the
+        # rest; it is spent again, committed on its own, before the refusal is answered (§2.2).
+        # Nothing is recorded where the process's window keeps the nonce, so nothing runs there.
         if facts.nonces_spent:
-            await retrying_async(lambda: _keep_nonces_spent(engine, facts))
+            try:
+                await retrying_async(lambda: _keep_nonces_spent(engine, facts))
+            except Exception as failed:
+                # The refusal is still the answer, never a 500; the nonce stays unspent, as it
+                # was before the claim again existed (hub/context/auth.md fbc8c3e0). The line
+                # names the failure's type only: no nonce, credential or statement in it.
+                log.warning(
+                    "a refused request's nonce could not be claimed again (%s); it stays unspent",
+                    type(failed).__name__,
+                )
         raise
     request.state.caller = caller
     if caller.kind == "human" and caller.human_id is not None:

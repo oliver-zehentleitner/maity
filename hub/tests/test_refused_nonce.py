@@ -13,10 +13,12 @@ from typing import Any
 
 import pytest
 from sqlalchemy import Engine, select, update
+from sqlalchemy.ext.asyncio import AsyncEngine
 
-from maity_hub import clock
+from maity_hub import clock, deps
 from maity_hub import tables as t
 from maity_hub.auth import credentials
+from maity_hub.auth.caller import RequestFacts
 from maity_hub.ids import new_id
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -186,6 +188,71 @@ def test_a_refused_request_leaves_its_nonce_in_the_shared_table(
     with migrated.connect() as conn:
         spent = conn.execute(select(t.request_nonce.c.credential_id, t.request_nonce.c.nonce)).all()
     assert [tuple(row) for row in spent] == [(agent.credential_id, headers["Maity-Nonce"])]
+
+
+def test_a_refusal_claims_again_only_what_the_database_claimed(
+    agent: factory.Agent,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The follow-up transaction runs only for a nonce claimed in the database (PostgreSQL);
+    the process's window (SQLite, MariaDB) kept its own, so a refusal there checks out no
+    connection for it."""
+    runs: list[set[tuple[str, str]]] = []
+    original = deps._keep_nonces_spent
+
+    async def counted(engine: AsyncEngine, facts: RequestFacts) -> None:
+        runs.append(set(facts.nonces_spent))
+        await original(engine, facts)
+
+    monkeypatch.setattr(deps, "_keep_nonces_spent", counted)
+    client = make_client()
+    _isolate(migrated, agent, True)
+    headers = _sign(agent, "GET", f"{API}{PROJECT}/tasks")
+    assert client.get(f"{API}{PROJECT}/tasks", headers=headers).status_code == 403
+    if migrated.dialect.name == "postgresql":
+        assert runs == [{(agent.credential_id, headers["Maity-Nonce"])}]
+    else:
+        assert runs == []
+    _isolate(migrated, agent, False)
+    _reused(client.get(f"{API}{PROJECT}/tasks", headers=headers))
+
+
+def test_a_failed_claim_again_still_answers_the_refusal(
+    agent: factory.Agent,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A claim again that fails is logged as a warning without the nonce or the credential,
+    and the refusal is still the answer, never a 500; the nonce then stays unspent on
+    PostgreSQL (hub/context/auth.md fbc8c3e0)."""
+    headers = _sign(agent, "GET", f"{API}{PROJECT}/tasks")
+    nonce = headers["Maity-Nonce"]
+
+    def failing(conn: Any, facts: RequestFacts) -> None:
+        raise RuntimeError(f"the store is gone ({agent.credential_id} {nonce})")
+
+    monkeypatch.setattr(deps, "keep_nonces_spent", failing)
+    _isolate(migrated, agent, True)
+    with caplog.at_level("WARNING", logger="maity_hub.deps"):
+        refused = make_client().get(f"{API}{PROJECT}/tasks", headers=headers)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "isolated"
+    warned = [r for r in caplog.records if r.name == "maity_hub.deps"]
+    if migrated.dialect.name != "postgresql":
+        assert warned == []  # the process's window kept the nonce; nothing ran to fail
+        return
+    assert [(r.levelname, r.getMessage()) for r in warned] == [
+        (
+            "WARNING",
+            "a refused request's nonce could not be claimed again (RuntimeError); it stays unspent",
+        )
+    ]
+    with migrated.connect() as conn:
+        assert conn.execute(select(t.request_nonce.c.nonce)).all() == []
 
 
 # --- Maity-On-Request has a request id's shape --------------------------------------------

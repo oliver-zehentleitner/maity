@@ -526,18 +526,22 @@ the window holds nothing of the request.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-thjx5bdqnq9f; checked on 2026-11-20 on SQLite and PostgreSQL with `tests/test_refused_nonce.py`
+**Source:** card tsk-thjx5bdqnq9f; review of pull request #2074; checked on 2026-11-20 on SQLite and PostgreSQL with `tests/test_refused_nonce.py`
 **See:** auth.md#a-request-run-again-after-a-deadlock-is-still-the-first-user-of-its-nonce — 05c462cb-0a99-41e7-98d3-c226c085a697 — as of 2026-11-20
-**Revisit when:** the nonce claim moves out of the authentication transaction, or the process's nonce window goes away
+**Revisit when:** the nonce claim moves out of the authentication transaction, or the process's nonce window goes away; or the hub runs behind another HTTP server: the canonical string relies on no line feed appearing in a header value or in the raw path, which the current server refuses
 
 A signed request spends its nonce inside the authentication transaction, and several refusals
 come after that in the same transaction: an isolated agent, a read past the limit, another
 project, a bridge's `Maity-For` refusal, a runner outside `/runner/*`. Their rollback undid the
 spend on PostgreSQL, where the nonce is a row; in the process's window (SQLite, MariaDB) it
-stayed spent. Now `RequestFacts.nonces_spent` keeps what the request spent across its runs, and
-`deps.authenticated` claims those nonces again in a committed transaction of their own whenever
-the authentication ends in an exception, before the refusal is answered
-(`caller.keep_nonces_spent`; a no-op where the process keeps the nonces).
+stayed spent. Now `RequestFacts.nonces_spent` keeps what the request spent in the database
+across its runs, and `deps.authenticated` claims those nonces again in a committed transaction
+of their own whenever the authentication ends in an exception, before the refusal is answered
+(`caller.keep_nonces_spent`). A nonce the process's window holds is not recorded, so a refusal
+on SQLite or MariaDB opens no such transaction. If the claim again still fails after its
+retries, a warning without nonce or credential is logged and the original refusal is answered
+all the same, never a 500; that nonce then stays unspent on PostgreSQL, as it was before. That
+is the accepted limit, set in the pull request's review: the refusal never turns into a 500.
 
 **Reason:** a refused request sent again unchanged inside the timestamp window was accepted on
 PostgreSQL once the refusal's condition had ended, while SQLite and MariaDB answered
@@ -547,12 +551,12 @@ accepted path, the one every signed request takes: no extra commit, no second co
 lives in the one function every authentication runs through, beside the two other writes that
 commit on their own after a refusal (a due runner revocation, an ended second-factor session),
 and it leaves 05c462cb intact: a deadlock's retry still rolls the claim back and is the first
-user again. Between the rollback and the new claim, a copy of the request sent at that very
-moment could claim the nonce first; it meets the same state, and so the same refusal, unless
-the condition ends in that instant.
+user again. A copy of the request that arrives while the original is still authenticating, or
+between its rollback and the new claim, can claim the nonce first; it meets the same state, and
+so the same refusal, unless the refusal's condition ends within that time.
 
 **Rejected alternative:** claiming the nonce in its own committed transaction before the rest
-of the authentication. It closes that instant too, but costs every signed request one more
+of the authentication. It closes that window too, but costs every signed request one more
 transaction; claiming it from inside the authentication transaction would hold two pooled
 connections per request (a pool exhausted by requests each waiting for their second), and
 claiming it before the transaction would mean verifying the signature in a transaction of its

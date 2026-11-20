@@ -61,9 +61,10 @@ class RequestFacts:
     # The credentials this request's read was counted for (§1.7 "Reads per credential"): one
     # per request like `request`, so a run again of its transaction is not counted again.
     reads_paid: set[str] = field(default_factory=set, compare=False)
-    # The (credential, nonce) pairs this request spent (§2.2), kept across its transaction's
-    # runs like `reads_paid`, so that `keep_nonces_spent` can spend them again once a refusal
-    # has rolled the transaction back.
+    # The (credential, nonce) pairs this request spent in the database (§2.2, PostgreSQL),
+    # kept across its transaction's runs like `reads_paid`, so that `keep_nonces_spent` can
+    # spend them again once a refusal has rolled the transaction back. The process's window
+    # (SQLite, MariaDB) is outside the transaction and records nothing here.
     nonces_spent: set[tuple[str, str]] = field(default_factory=set, compare=False)
     # MAITY_MAX_READS_PER_MINUTE as the environment set it (None: the admin's or the default),
     # and the route's pattern for the read limit's log line (§1.7 "Reads per credential").
@@ -454,14 +455,14 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
         raise ApiError(401, "signature_invalid", "the signature does not verify")
     _refuse_revoked(row)  # only now: the signature proved possession (§1.3)
     # Only a verified request spends its nonce, so a forger cannot burn them.
-    spent_first = (
-        nonces.first_use(conn, credential_id, nonce)
-        if nonces.shared(conn)
-        else NONCES.first_use(credential_id, nonce, facts.request)
-    )
-    if not spent_first:
+    if nonces.shared(conn):
+        if not nonces.first_use(conn, credential_id, nonce):
+            raise ApiError(401, "nonce_reused", "this nonce was used within the window")
+        # Only the database's claim is undone by a refusal's rollback; the process's window
+        # keeps its own, so a refusal there opens no transaction to claim it again.
+        facts.nonces_spent.add((credential_id, nonce))
+    elif not NONCES.first_use(credential_id, nonce, facts.request):
         raise ApiError(401, "nonce_reused", "this nonce was used within the window")
-    facts.nonces_spent.add((credential_id, nonce))
     if is_runner_credential(row.id):
         return _runner(conn, row, facts)
     caller = _agent(conn, row, "signed", renew, facts)
@@ -476,10 +477,9 @@ def keep_nonces_spent(conn: Connection, facts: RequestFacts) -> None:
     """Spend again, in `conn`'s own transaction, the nonces this request spent before a
     refusal rolled its authentication back (§2.2): a refused request keeps its nonce spent,
     so the same request sent again is `nonce_reused` once the refusal's condition ends, as
-    it already is where the process keeps the nonces (hub/context/auth.md fbc8c3e0). An insert
-    that finds the nonce spent meanwhile leaves it spent."""
-    if not nonces.shared(conn):
-        return  # the process's window is outside the transaction and kept them
+    it already is where the process keeps the nonces (hub/context/auth.md fbc8c3e0). Only
+    the database's claims are recorded, so this runs only where they live. An insert that
+    finds the nonce spent meanwhile leaves it spent."""
     for credential_id, nonce in sorted(facts.nonces_spent):
         nonces.first_use(conn, credential_id, nonce)
 
