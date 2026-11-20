@@ -456,10 +456,19 @@ window.MAITY_I18N["nl"] = {
   "board.claim.unclaimed": "Niet geclaimd",
   "board.closed.failed": "De gesloten kaarten konden niet worden gelezen: {reason}",
   "board.closed.loading": "De gesloten kaarten worden gelezen…",
+  "board.closed.more_failed": "Meer gesloten kaarten konden niet worden gelezen: {reason}",
+  "board.closed.more_loaded": {
+    "one": "{count} gesloten kaart geladen",
+    "other": "{count} gesloten kaarten geladen"
+  },
   "board.closed.recheck_failed": "Kon niet controleren of de gesloten kaarten tijdens het lezen zijn gewijzigd: {reason}",
   "board.closed.show_more": {
     "one": "Nog {count} gesloten kaart tonen",
     "other": "Nog {count} gesloten kaarten tonen"
+  },
+  "board.closed.show_more_loaded": {
+    "one": "Meer tonen ({count} geladen)",
+    "other": "Meer tonen ({count} geladen)"
   },
   "board.column.other": "Overig",
   "board.column.unknown": "Onbekende status",
@@ -507,6 +516,7 @@ window.MAITY_I18N["nl"] = {
   "board.new_subtask": "Nieuwe deeltaak",
   "board.no_match": "Geen kaart komt overeen met het filter.",
   "board.not_saved": "Niet opgeslagen: {reason}",
+  "board.open.more_failed": "Verdere kaarten van de open kolommen konden niet worden gelezen: {reason}",
   "board.place.above": "{id} staat nu boven {other}.",
   "board.place.below": "{id} staat nu onder {other}.",
   "board.place.bottom": "{id} staat nu onderaan.",
@@ -3011,7 +3021,6 @@ window.MAITY_I18N["nl"] = {
   "nav.messages": "Berichten",
   "nav.organisation": "Organisatie",
   "nav.overview": "Overzicht",
-  "nav.runners": "Runners",
   "nav.runners.changed": "De runners zijn gewijzigd.",
   "nav.settings": "Instellingen",
   "nav.ticker": "Ticker",
@@ -3734,6 +3743,7 @@ window.MAITY_I18N["nl"] = {
   "project.link.actions_on": "Actions op {forge}",
   "project.link.chat": "Chat",
   "project.link.discussions": "Discussies",
+  "project.link.docs": "Docs",
   "project.link.issues": "Issues",
   "project.link.ktw_dashboard": "Keep the Why-dashboard",
   "project.link.opens": "{what} (opent in een nieuw tabblad)",
@@ -4659,7 +4669,6 @@ window.MAITY_I18N["nl"] = {
   "settings.repo.title": "Repository",
   "settings.repo.unchanged": "Niets gewijzigd.",
   "settings.repo.url": "URL",
-  "settings.runners_link": "De runners van dit project",
   "settings.saving": "Opslaan…",
   "settings.see_fields": "zie de hieronder gemarkeerde velden",
   "settings.signing.anyway": "Ondertekening toch vereisen",

@@ -1567,6 +1567,14 @@
     "en": "2ed9637177518fe0",
     "text": "71fa498079717f17"
   },
+  "board.closed.more_failed": {
+    "en": "78a211d7681f0c96",
+    "text": "94086155dad31ac4"
+  },
+  "board.closed.more_loaded": {
+    "en": "40937c0812598f97",
+    "text": "f09b8a69a5c1fb60"
+  },
   "board.closed.recheck_failed": {
     "en": "a778f95d9908435e",
     "text": "3e64e50ad92b77a9"
@@ -1574,6 +1582,10 @@
   "board.closed.show_more": {
     "en": "9a777e4ebf5e3b6f",
     "text": "0554f0e8d3362499"
+  },
+  "board.closed.show_more_loaded": {
+    "en": "dda1304e917dddb0",
+    "text": "171082232ceb8e35"
   },
   "board.column.other": {
     "en": "1f1260ddd48575a9",
@@ -1758,6 +1770,10 @@
   "board.not_saved": {
     "en": "831641bc8e3a7e90",
     "text": "d3c1ec0fe5706ec4"
+  },
+  "board.open.more_failed": {
+    "en": "cb7818238dc9933a",
+    "text": "30fa66c590681590"
   },
   "board.place.above": {
     "en": "2efb23440159457c",
@@ -11199,10 +11215,6 @@
     "en": "f82745f8413486e5",
     "text": "ffe20a4fc97f32cc"
   },
-  "nav.runners": {
-    "en": "9aa56c3dab3c6957",
-    "text": "e98aef21e99228bc"
-  },
   "nav.runners.changed": {
     "en": "eb0c69dfb9a75fab",
     "text": "ec700d3740e07a49"
@@ -13778,6 +13790,10 @@
   "project.link.discussions": {
     "en": "508bf6941031d9f3",
     "text": "66dcae7220d0ec1f"
+  },
+  "project.link.docs": {
+    "en": "6f604d6dbea6ddd6",
+    "text": "6f604d6dbea6ddd6"
   },
   "project.link.issues": {
     "en": "80fe81e1bb562fa0",
@@ -17322,10 +17338,6 @@
   "settings.repo.url": {
     "en": "c6ef2fb0345c4753",
     "text": "c6ef2fb0345c4753"
-  },
-  "settings.runners_link": {
-    "en": "3162924245f70b05",
-    "text": "50b11267cef966fa"
   },
   "settings.saving": {
     "en": "4e65400e023b52a3",

@@ -43,7 +43,8 @@ from maity_hub.errors import (
     unauthenticated,
 )
 from maity_hub.mail import address as addresses
-from maity_hub.notifications import preferences, records
+from maity_hub.notifications import records
+from maity_hub.notifications.address import void_pending_address
 from maity_hub.ratelimit import Attempt, Limiter
 from maity_hub.views import human_member
 
@@ -211,7 +212,7 @@ def end_presented(conn: Connection, presented: str | None) -> None:
     change of an account without its session takes it (`write_guard.share`). A deletion of
     that account then runs before or after this, never across it; after it, the session is
     ended already and nothing is written."""
-    if not presented:
+    if not presented or not presented.isascii():  # a non-ASCII value names no session
         return
     which = t.human_session.c.id_hash == session_id_hash(presented)
     owner = conn.execute(
@@ -288,7 +289,7 @@ def change_password(body: PasswordChange, request: Request, caller: HumanCaller)
         # The reset links of the old password die with it, and so does an unconfirmed new
         # address (§2.10).
         password_resets.password_changed(conn, row.id)
-        preferences.void_pending_address(conn, row.id)
+        void_pending_address(conn, row.id)
         # A security notice with its mail at once, as a reset's (§2.1, §18.1).
         records.write(
             conn,

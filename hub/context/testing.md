@@ -1,14 +1,15 @@
 # Testing
 
-## Test matrix: full check on SQLite, the suite again on PostgreSQL 17 and MariaDB 11.4
+## Test matrix: full check on SQLite, the suite again on PostgreSQL 17 and MariaDB 11.4, a subset on MariaDB 11.8
 
 **Id:** c7d0850a-a677-4f0f-a209-e64da3b0fe8f
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the coordinator's brief for the hub skeleton, 2026-10-21 (SQLite, PostgreSQL and MariaDB in CI); implementation session, 2026-10-21 (job split, versions, shared-database fixture)
+**Source:** the coordinator's brief for the hub skeleton, 2026-10-21 (SQLite, PostgreSQL and MariaDB in CI); implementation session, 2026-10-21 (job split, versions, shared-database fixture); card tsk-5cah3a82dv63 (the subset on MariaDB 11.8, #2022)
 **Revisit when:** a user reports a difference between MySQL and MariaDB, or a query relies on behaviour the two engines implement differently
 **See:** https://github.com/oliver-zehentleitner/maity — 3dacd29b-bd09-4757-80bb-7f3cfbd9af91 — as of 2026-10-21
+**See:** persistence.md#a-name-mysql-or-mariadb-reserve-is-quoted-with-quotetrue-not-renamed — e70b5933-72f5-4951-b024-b92fe22dc521 — as of 2026-11-20
 
 CI runs `make check` (black, ruff, mypy strict, pytest) on SQLite with
 an editable install, pytest alone against a PostgreSQL 17 and a MariaDB
@@ -24,6 +25,11 @@ the parallel suite below.
 Which engines run in CI — SQLite, PostgreSQL and MariaDB — came from
 the coordinator's brief; the job split, the versions and the fixture were
 decided in the implementation session.
+
+Since 2026-11-20 `hub-mariadb` also runs a subset on MariaDB 11.8 LTS: the
+migrations, the schema checks and the notification tests. 11.7 reserved
+`vector`, a column name of the hub, and 11.4 alone could not show it (the
+entry on reserved names in `persistence.md`). The full suite stays on 11.4.
 
 **Reason:** lint and types do not depend on the database, so they run
 once; the tests are what differs per engine. An editable install tests
@@ -84,7 +90,7 @@ is what such a race exercises.
 **Evidence:** confirmed
 **Source:** card tsk-ta0xcr6s4qwg (the coordinator's proposal after hub jobs took 60 to 90 minutes, 2026-10-27); implementation session, 2026-10-28 (local before/after measurement)
 **Revisit when:** a test needs state shared between workers, or the CI runners change their core count
-**See:** testing.md#test-matrix-full-check-on-sqlite-the-suite-again-on-postgresql-17-and-mariadb-114 — c7d0850a-a677-4f0f-a209-e64da3b0fe8f — as of 2026-10-28
+**See:** testing.md#test-matrix-full-check-on-sqlite-the-suite-again-on-postgresql-17-and-mariadb-114-a-subset-on-mariadb-118 — c7d0850a-a677-4f0f-a209-e64da3b0fe8f — as of 2026-10-28
 
 `make test` runs pytest with `-n auto` (pytest-xdist). On SQLite each test
 still gets its own file, but a migrated one is copied from a template that

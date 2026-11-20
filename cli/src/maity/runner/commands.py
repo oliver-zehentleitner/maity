@@ -16,7 +16,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from .. import hub, onboarding, state
+from .. import clonecheck, hub, onboarding, state
 from . import (
     adapters,
     capabilities,
@@ -35,6 +35,8 @@ from . import (
     targets,
     tools,
     trust,
+    workspace,
+    worktree,
 )
 from .asuser import RUNNER, AsUser
 
@@ -56,6 +58,77 @@ class Refused(Exception):
 # the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
 # runner's own, and an agent's call of it is refused (cli.main).
 IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
+# Of those, the ones that act on a file the call names: the loop's spec (what it runs) and the
+# pane's log (what it cuts). An agent's `maity` runs outside its sandbox, so such a file must
+# be the one the runner wrote for it, never one an agent chose (runner_own_file).
+IN_SESSION_FILE = {"loop": "spec", "logcap": "log"}
+
+
+def _own_home() -> Path | None:
+    """This OS user's home from the user database, not from `HOME`, which a caller sets."""
+    try:
+        import pwd  # noqa: PLC0415 - POSIX only; the runner's agents' side is POSIX
+    except ImportError:
+        return None
+    try:
+        return Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except KeyError:
+        return None
+
+
+def runner_own_file(command: str, given: str) -> bool:
+    """Whether `given` is the file the runner hands `maity runner <command>`. The runner calls
+    these through `maity` only on an ssh host, where its files lie in the agents' user's
+    `~/.maity-runner` (targets.AGENT_FILES): the loop's spec at `agents/<placement>/loop.json`,
+    the pane's log at `logs/<placement>.log`. An allow list, checked on every call, with or
+    without `MAITY_PLACEMENT`. The path must be written as exactly that one (absolute, the home
+    from the user database, not from `HOME`; no `..`, no doubled or trailing slash), and no
+    step from `~/.maity-runner` down may be a link: each directory is this user's and others
+    may not write it, and the file is an existing regular file of this user with one link
+    that neither group nor others may write. Under a placement it must be that placement's own file.
+    """
+    home = _own_home()
+    if home is None or "\0" in given or not os.path.isabs(given):
+        return False
+    if os.path.normpath(given) != given or given.startswith("//"):
+        return False
+    root = home / targets.AGENT_FILES
+    try:
+        rel = Path(given).relative_to(root).parts
+    except ValueError:
+        return False
+    if command == "loop":
+        shaped = len(rel) == 3 and rel[0] == "agents" and rel[2] == "loop.json"
+        placement = rel[1] if shaped else ""
+    elif command == "logcap":
+        shaped = len(rel) == 2 and rel[0] == targets.LOGS and rel[1].endswith(".log")
+        placement = rel[1].removesuffix(".log") if shaped else ""
+    else:
+        return False
+    if not shaped or not supervisor.PLACEMENT_ID.fullmatch(placement):
+        return False
+    # Under a placement only its own file; set but not a placement id (empty included) is a
+    # placed session of unknown identity, which owns no file.
+    if clonecheck.placed() and clonecheck.placement_id() != placement:
+        return False
+    uid = os.getuid()
+    step = root
+    for part in ("", *rel):
+        step = step / part if part else step
+        try:
+            info = os.lstat(step)
+        except OSError:
+            return False
+        last = step == root.joinpath(*rel)
+        kind = stat.S_ISREG(info.st_mode) if last else stat.S_ISDIR(info.st_mode)
+        # The file is written 0600; its directories may carry the user's group-write bit (an
+        # umask of 002 makes the parents), never the others'.
+        barred = stat.S_IWGRP | stat.S_IWOTH if last else stat.S_IWOTH
+        if not kind or info.st_uid != uid or info.st_mode & barred:
+            return False
+        if last and info.st_nlink != 1:  # not a hard link to another file of this user
+            return False
+    return True
 
 
 # --- pair ------------------------------------------------------------------------------------
@@ -559,6 +632,38 @@ def _check_agy_workspaces(report: Report, root: Path, as_user: AsUser, where: st
             return
 
 
+def _check_codex_home(report: Report, cfg: config.Config, as_user: AsUser = RUNNER) -> None:
+    """Codex's per-placement CODEX_HOME must lie under the workspaces root, which the codex
+    sandbox re-opens for the placement, not under a path it hides (the state directory): under
+    a hidden path Codex's own sandbox cannot create or run its per-command helper, so no
+    command runs and `maity resume` never starts (card tsk-hv7jbgy75zjt). The home sits inside
+    the placement scratch (adapters.codex_home), so codex must be a harness that gets one and
+    the workspaces root must not be inside the state directory; `check` reports either from the
+    local configuration before a placement starts, and does not confirm that the scratch is
+    created when a placement actually runs (a runtime fall-back to no scratch is beyond it)."""
+    if "codex" not in cfg.harnesses or cfg.local is None:
+        return
+    if "codex" not in workspace.SCRATCH_HARNESSES:  # a regression guard: no scratch, no home
+        report.error(
+            "harness codex: no scratch is carved for codex placements, so CODEX_HOME would fall "
+            "under the hidden state directory and Codex could run no command"
+        )
+        return
+    workspaces = cfg.local.workspaces.resolve() if as_user.here else cfg.local.workspaces
+    state_dir = cfg.state_dir.resolve() if as_user.here else cfg.state_dir
+    if workspaces == state_dir or state_dir in workspaces.parents:
+        report.error(
+            f"harness codex: the workspaces root {workspaces} is inside the state directory "
+            f"{state_dir}, which the codex sandbox hides; Codex's CODEX_HOME would be hidden and "
+            "no command could run. Move the workspaces out of the state directory"
+        )
+    else:
+        report.ok(
+            f"harness codex: CODEX_HOME lies in each placement's scratch under {workspaces}, "
+            "which the codex sandbox re-opens"
+        )
+
+
 def _check_claude_code(
     report: Report,
     harness: config.Harness,
@@ -802,6 +907,8 @@ def cmd_check(args: argparse.Namespace) -> int:
             )  # fmt: skip
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
+        if "codex" in cfg.harnesses:
+            _check_codex_home(report, cfg, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
@@ -996,6 +1103,23 @@ def _installer(command: Any) -> Any:
     return handler
 
 
+# --- worktree-prune --------------------------------------------------------------------------
+
+
+def cmd_worktree_prune(args: argparse.Namespace) -> int:
+    """The supervisor's git-free prune of a Claude Code subagent's leftover worktree under a
+    clone's `.claude/worktrees/`, run on the agents' side on placement start
+    (worktree.prune_orphans, AsUser.worktree_prune). Internal, the supervisor's own: refused for a
+    placed agent, which cannot redirect it at another path, and needs `--repo` to name the clone.
+    There is no in-session remover; a placed agent's leftover is cleared when the placement next
+    starts. The refusal for a placed session is cli.main's, before this runs: worktree-prune
+    is not in IN_SESSION."""
+    if not args.repo:
+        raise Refused("`maity runner worktree-prune` needs --repo to name the clone to prune")
+    print(json.dumps(worktree.prune_orphans(args.repo)))
+    return 0
+
+
 # --- parser ----------------------------------------------------------------------------------
 
 
@@ -1026,13 +1150,29 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
         ["--under", a.under, *(["--bytes", str(a.bytes)] if a.bytes is not None else []),
          *(["--offset", str(a.offset)] if a.offset is not None else []), a.path]
     ))  # fmt: skip
-    # Internal too: a placement's scratch made, measured or removed on the agents' side,
-    # every directory from the workspaces root opened without following a link (scratchop).
+    # Internal too: a placement's scratch made, measured or removed on the agents' side, and
+    # Codex's launch-time writes inside its per-placement home (codex), every directory from
+    # the workspaces root opened without following a link (scratchop). An ssh host runs these
+    # through its own `maity`, so the CLI reaches the same ops the module path does; `codex`
+    # takes the config.toml text on stdin, and `--auth` is only its auth.json link target.
     r = rsub.add_parser("scratchop")
-    r.add_argument("op", choices=scratchop.OPS)
+    r.add_argument("op", choices=(*scratchop.OPS, "codex"))
     r.add_argument("--under", required=True)
+    r.add_argument("--auth")  # codex only: the auth.json link target; left out for the others
     r.add_argument("path")
-    r.set_defaults(handler=lambda a: scratchop.main([a.op, "--under", a.under, a.path]))
+    r.set_defaults(handler=lambda a: scratchop.main(
+        ["codex", "--under", a.under, *(["--auth", a.auth] if a.auth else []), a.path]
+        if a.op == "codex" else [a.op, "--under", a.under, a.path]
+    ))  # fmt: skip
+    # Internal (no `help`, so not listed): the supervisor's own git-free prune of a Claude Code
+    # subagent's leftover worktree under the clone's `.claude/worktrees/` on placement start, so
+    # the clone reads as plain again (worktree). The runner runs no git in an existing clone, so
+    # this removes by file operations only; it is refused for a placed agent, which cannot
+    # redirect it at another path. An ssh host runs it through its own `maity`.
+    r = rsub.add_parser("worktree-prune")
+    r.add_argument("--repo", help=argparse.SUPPRESS)  # supervisor only: the clone to prune
+    r.set_defaults(handler=cmd_worktree_prune)
+
     # Internal too: what a pane's output goes through on an ssh host, holding its log to
     # limits.log_keep_bytes (logcap).
     r = rsub.add_parser("logcap")

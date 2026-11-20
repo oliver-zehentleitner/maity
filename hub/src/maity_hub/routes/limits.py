@@ -11,7 +11,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection, select
 
-from maity_hub import limit_overrides, limits, namespace
+from maity_hub import limit_overrides, limits, namespace, read_limits
 from maity_hub import tables as t
 from maity_hub.admin import require_instance_admin
 from maity_hub.auth import second_factor
@@ -37,7 +37,10 @@ def patch_limits(
         require_instance_admin(conn, caller.principal_id)
         second_factor.require_step_up(conn, hub, caller)  # §2.8.4
         limits.patch(conn, hub, body, caller.principal_id)
-        return JSONResponse(limits.view(conn, hub))
+        answer = limits.view(conn, hub)
+    # Once committed: a read in between would otherwise cache the old value again.
+    read_limits.forget_instance_value()
+    return JSONResponse(answer)
 
 
 # --- per project and per account (§16.5.1) -------------------------------------------------

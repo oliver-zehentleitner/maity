@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import unicodedata
 from typing import Annotated, Any
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 from pydantic_core import PydanticCustomError
+
+from maity_hub.plain_text import plain_name
 
 HANDLE_PATTERN = r"^[a-z0-9][a-z0-9-]{1,30}$"
 SLUG_PATTERN = r"^[a-z0-9][a-z0-9-]{1,62}$"
@@ -17,26 +18,15 @@ def title(**kwargs: Any) -> Any:
     return Field(min_length=1, max_length=200, **kwargs)
 
 
-# A name is one line of plain text: it is shown on one line and may reach a mail's header
-# (§18.5). By category, so every C0 and C1 control character and both Unicode line breaks
-# are refused, not only the ASCII ones.
-NOT_ONE_LINE = frozenset({"Cc", "Zl", "Zp"})
-
-
-def one_line(value: str) -> bool:
-    """Whether `value` holds no control or line-break character (Unicode Cc, Zl, Zp)."""
-    return not any(unicodedata.category(ch) in NOT_ONE_LINE for ch in value)
-
-
-def _one_line(value: str) -> str:
-    if not one_line(value):
+def _plain(value: str) -> str:
+    if not plain_name(value):
         raise PydanticCustomError("control_character", "a name is one line of plain text")
     return value
 
 
-Name = Annotated[str, AfterValidator(_one_line)]
+Name = Annotated[str, AfterValidator(_plain)]
 """A name field (a project's `name`, an agent's `display_name`): `control_character`
-for a character `one_line` refuses (§1.7)."""
+for a character `plain_name` refuses (§1.7.1)."""
 
 
 def markdown(**kwargs: Any) -> Any:

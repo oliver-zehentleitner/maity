@@ -11,14 +11,56 @@ The page has five sections, as second-level headings in this order:
     ## What cannot be undone
     ## The way back
 
-Each section holds text (a line such as "Nothing." counts).
+Each section holds text (a line such as "Nothing." counts); an HTML comment
+alone is no text, since the rendered page shows nothing there.
+
+The page is read as CommonMark reads it, as far as headings and text go: a
+line ends only at a line feed, a carriage return or both (not at U+2028 or
+the other breaks str.splitlines() knows); a
+byte order mark at the start is dropped; a fenced code block opens with three
+or more backticks or tildes at the start of the line and closes only with a
+run of the same character at least as long (an unclosed one runs to the end);
+a heading or an HTML comment inside it is code, not structure. A fence line
+with one to three leading spaces makes the whole file refused ("write code
+fences at the start of the line"), wherever it stands: in a list item, inside
+a fence or inside a comment too. That check is a plain scan of the lines, with
+no fence or comment state: fail-closed by construction, and the repository has
+no such fence. A line indented by four columns or more (spaces, a tab
+counting to the next multiple of four) is an indented code block unless it
+continues paragraph text (the line before is a non-blank text line); code
+opens no fence and is no heading, and its content, comments too,
+counts as text. An HTML comment that starts a line opens a block up to its
+`-->` (or the end), and a heading inside it is no heading. Not followed: list
+items, so a line indented four columns inside one is read as code, and a fence
+indented inside one makes the file refused.
 
 `check` (ci, every pull request): the hub's version is the one in
 hub/pyproject.toml. Once CHANGELOG.md has that version's section (the release
 pull request folds it in), its page must exist and be complete; before that,
 nothing is asked. `--version X` checks the page of X whatever CHANGELOG.md says;
-tools/release_gate.py asks for the tagged version this way.
-Standard library only.
+tools/release_gate.py asks for the tagged version this way. `check` also asks,
+always, that docs/upgrade/README.md links every version page in docs/upgrade/:
+the docs site renders only that README (docs/nav.yml), so its links are the way
+a reader of the site finds the version pages. A page counts as linked only by
+a list line of the README: at the start of the line (column 0, no space
+before it) `- ` (or `* `), then `[text]` with no `[`, `]`, `<`, backtick or
+backslash in the text (so no code span, raw HTML tag, comment or autolink opens
+there) and not starting with `!`, then at once `(dest)`, then anything. dest
+is the page's file name, with an optional `./` in front, an optional
+`#fragment` after, optionally inside `<...>`, so
+`- [0.1.0a9](<./0.1.0a9.md#top>)` names 0.1.0a9.md; dest has no backtick
+either. A line in a fenced or indented code block or in an HTML comment block
+does not count; a comment opened inside a line hides no later line. Nothing
+else counts: no reference link, no link inside a paragraph, no image. The
+grammar is one pattern, not a parser: a list line inside an HTML block other
+than a comment (a `<div>`) still counts, though CommonMark shows it as raw
+HTML; any form the rule does not know is refused. A known edge fails closed,
+on purpose: a listing line right after a list item that opened a comment on
+an indented line is refused, though CommonMark ends that comment with the list item and shows the
+link (a list item whose fence goes on to an indented line is refused by the
+fence rule). For the README, the error message names the plain line
+`- [version](version.md)` to add; on a version page, a section so hidden is
+reported missing. Standard library only.
 """
 
 from __future__ import annotations
@@ -37,6 +79,23 @@ SECTIONS = (
     "The way back",
 )
 VERSION = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
+# CommonMark: an ATX heading and a fence are indented by at most three spaces. FENCE keeps that
+# reading, but problems() and unlisted() refuse a file with a fence indented 1-3 spaces
+# (indented_fences()) before lines() reads it, so lines() meets such a fence only in a file
+# already refused; in a checked file every fence opens at the start of the line.
+HEADING = re.compile(r"^ {0,3}## (.*)$")
+ATX = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+# A fence line with leading spaces, anywhere in the file: it makes the file refused.
+INDENTED_FENCE = re.compile(r"^ {1,3}(`{3,}|~{3,})")
+COMMENT_START = re.compile(r"^ {0,3}<!--")
+# An HTML comment, or an unclosed one up to the end of the section.
+COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
+# The README's list line that links a version page: "- [text](dest)"; the module's docstring has the rules.
+LIST_LINK = re.compile(
+    r"^[-*] \[(?!!)[^\[\]`\\<]+\]"
+    r"\((?P<open><)?(?:\./)?(?P<name>[^\s()<>#`\\/]+)(?:#[^\s()<>`\\]*)?(?(open)>)\)"
+)
 
 
 def hub_version(root: Path = ROOT) -> str:
@@ -62,19 +121,11 @@ def problems(root: Path, version: str) -> list[str]:
             f"{name} is missing: every hub release has an upgrade page"
             " (docs/upgrade/README.md has the template)"
         ]
-    headings: list[str] = []
-    bodies: dict[str, list[str]] = {}
-    fence = False
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.startswith("```"):
-            # A fence line is no text of its own: an empty code block leaves a section empty.
-            fence = not fence
-            continue
-        if not fence and line.startswith("## "):
-            headings.append(line[3:].strip())
-            bodies[headings[-1]] = []
-        elif headings:
-            bodies[headings[-1]].append(line)
+    text = path.read_text(encoding="utf-8-sig")
+    fences = indented_fences(name, text)
+    if fences:
+        return fences
+    headings, bodies = sections(text)
     found = [h for h in headings if h in SECTIONS]
     out = []
     missing = [s for s in SECTIONS if s not in found]
@@ -83,9 +134,147 @@ def problems(root: Path, version: str) -> list[str]:
     elif found != list(SECTIONS) or len(set(found)) != len(found):
         out.append(f"{name}: the sections must appear once each, in this order: " + "; ".join(SECTIONS))
     for section in SECTIONS:
-        if section in bodies and not any(line.strip() for line in bodies[section]):
+        if section in bodies and not has_text(*bodies[section]):
             out.append(f"{name}: '## {section}' is empty (write 'Nothing.' if nothing applies)")
     return out
+
+
+def split(text: str) -> list[str]:
+    """The lines of a text, ended only where CommonMark ends a line: at \\n, \\r\\n or \\r.
+    str.splitlines() also breaks at U+2028, U+2029, U+0085, \\x0b, \\x0c and \\x1c-\\x1e, which
+    CommonMark reads as characters of the line: a fence or heading after one is no fence or
+    heading on the rendered page, and must be none here either."""
+    out = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if out[-1] == "":
+        out.pop()  # the newline that ends the last line starts no line of its own
+    return out
+
+
+def indented_fences(name: str, text: str) -> list[str]:
+    """One error per line that is a fence line with 1-3 leading spaces, wherever it stands
+    (in a list item, a fence or a comment too): such a line makes the whole file refused.
+    A plain line scan, no fence or comment state; the module's docstring has the reason."""
+    return [
+        f"{name}:{number}: write code fences at the start of the line"
+        for number, line in enumerate(split(text), start=1)
+        if INDENTED_FENCE.match(line)
+    ]
+
+
+def indent(line: str) -> int:
+    """The columns of a line's leading spaces and tabs, a tab counting to the next multiple of four."""
+    width = 0
+    for char in line:
+        if char == " ":
+            width += 1
+        elif char == "\t":
+            width += 4 - width % 4
+        else:
+            break
+    return width
+
+
+def lines(text: str) -> list[tuple[str, str]]:
+    """Each line of a page with its kind: "heading" (a `##` heading, given as its title),
+    "code" (in a fenced or indented code block), "comment" (in an HTML comment block that
+    opens at the start of a line) or "text"; fence lines are left out.
+    The module's docstring has the rules."""
+    out: list[tuple[str, str]] = []
+    fence: str | None = None  # the opening run of the open fence
+    comment = False
+    paragraph = False  # the line before is paragraph text, which an indented line continues
+    for line in split(text):
+        if fence is not None:
+            closing = FENCE.match(line)
+            if (
+                closing
+                and closing.group(1)[0] == fence[0]
+                and len(closing.group(1)) >= len(fence)
+                and not closing.group(2).strip(" \t")
+            ):
+                # A fence line is no text of its own: an empty code block leaves a section empty.
+                fence = None
+            else:
+                out.append(("code", line))
+            continue
+        if comment:
+            comment = "-->" not in line
+            out.append(("comment", line))
+            continue
+        if not line.strip(" \t"):
+            paragraph = False
+            out.append(("text", line))
+            continue
+        if indent(line) >= 4 and not paragraph:
+            out.append(("code", line))
+            continue
+        opening = FENCE.match(line)
+        if opening and not (opening.group(1)[0] == "`" and "`" in opening.group(2)):
+            fence = opening.group(1)
+            paragraph = False
+            continue
+        heading = HEADING.match(line)
+        if heading:
+            out.append(("heading", heading.group(1).strip()))
+            paragraph = False
+            continue
+        start = COMMENT_START.match(line)
+        if start:
+            comment = "-->" not in line[start.end() :]
+            paragraph = False
+            out.append(("comment", line))
+            continue
+        paragraph = not ATX.match(line)
+        out.append(("text", line))
+    return out
+
+
+def sections(text: str) -> tuple[list[str], dict[str, tuple[list[str], list[str]]]]:
+    """The second-level headings in order, and per heading its body as (prose lines,
+    comment block lines included; code lines)."""
+    headings: list[str] = []
+    bodies: dict[str, tuple[list[str], list[str]]] = {}
+    for kind, line in lines(text):
+        if kind == "heading":
+            headings.append(line)
+            bodies[line] = ([], [])
+        elif headings:
+            bodies[headings[-1]][1 if kind == "code" else 0].append(line)
+    return headings, bodies
+
+
+def has_text(prose: list[str], code: list[str]) -> bool:
+    """Whether a section's body shows anything: code, or prose besides HTML comments."""
+    return any(line.strip() for line in code) or bool(COMMENT.sub("", "\n".join(prose)).strip())
+
+
+def links(text: str) -> set[str]:
+    """The page names the README's list lines link; the module's docstring has the rules.
+    Only text lines count: code, headings and HTML comment blocks (as lines() opens them,
+    at the start of a line) are left out."""
+    names = set()
+    for kind, line in lines(text):
+        found = LIST_LINK.match(line) if kind == "text" else None
+        if found:
+            names.add(found.group("name"))
+    return names
+
+
+def unlisted(root: Path) -> list[str]:
+    """The version pages in docs/upgrade/ that docs/upgrade/README.md does not link."""
+    folder = root / "docs" / "upgrade"
+    readme = folder / "README.md"
+    text = readme.read_text(encoding="utf-8-sig") if readme.is_file() else ""
+    fences = indented_fences("docs/upgrade/README.md", text)
+    if fences:
+        return fences
+    linked = links(text)
+    return [
+        f"docs/upgrade/README.md does not link {page.name}: add the list line"
+        f' "- [{page.stem}]({page.name})" to docs/upgrade/README.md (only such a line counts)'
+        for page in sorted(folder.glob("*.md"))
+        if page.name != "README.md" and page.name not in linked
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -94,16 +283,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", help="check this version's page, released or not")
     args = parser.parse_args(argv)
     version = args.version or hub_version(ROOT)
+    found = unlisted(ROOT)
     if not args.version and not released(ROOT, version):
         print(f"hub {version} is not folded into CHANGELOG.md yet: no upgrade page asked")
-        return 0
-    found = problems(ROOT, version)
+        complete = None
+    else:
+        page = problems(ROOT, version)
+        found += page
+        complete = not page
     for problem in found:
         print(f"::error::{problem}")
-    if found:
-        return 1
-    print(f"docs/upgrade/{version}.md: complete")
-    return 0
+    if complete:
+        print(f"docs/upgrade/{version}.md: complete")
+    return 1 if found else 0
 
 
 if __name__ == "__main__":

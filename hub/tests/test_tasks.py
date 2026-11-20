@@ -377,7 +377,8 @@ def test_a_closed_cursor_the_hub_did_not_give_is_refused(
 ) -> None:
     """A naive time, another list's scope, a cursor of another kind, a position out of the
     board's columns or of 64 bits, a time whose UTC value is out of range, an id with a
-    NUL: 400, never a 500, on the closed columns' SQL path and on the whole board's."""
+    NUL or one that does not encode as UTF-8: 400, never a 500, on the closed columns' SQL
+    path and on the whole board's."""
     _closed_cards(owner, migrated, 3)
     at = CLOSED_BASE.isoformat()
     for status in ("done,cancelled", "all"):
@@ -392,6 +393,7 @@ def test_a_closed_cursor_the_hub_did_not_give_is_refused(
             [5, "0001-01-01T00:00:00+14:00", "tsk-x"],
             [5, "9999-12-31T23:59:59-14:00", "tsk-x"],
             [5, at, "tsk-\x00x"],
+            [5, at, "tsk-\ud800x"],  # a lone surrogate: JSON carries it, UTF-8 does not
             [5, at, "tsk-" + "x" * 40],
         ]
         refused = [paging._encode(["closed", *f, bound]) for f in forged]

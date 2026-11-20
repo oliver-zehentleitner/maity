@@ -82,7 +82,10 @@ def forwarded(request: Any) -> bool:
 def addressed_to(conn: Connection, request: Any, mine: Membership) -> bool:
     """`to=me`: whoever holds the request now (§7). Before a forward that is `to`;
     after one, the holding member, or every admin while the admins hold it as a pool;
-    an earlier holder no longer. Never an agent it is held for (§9.6)."""
+    an earlier holder no longer. Never an agent it is held for (§9.6).
+
+    `routes/overview.py` `_addressed_sql` restates this in plain columns for a request
+    without `held` and `cover` (with `_in_own_right` below): a change here is a change there."""
     if request.personal or held_back(request, mine.principal_id):
         return False
     if request.holder_member is not None:
@@ -127,6 +130,7 @@ def originally_addressed(conn: Connection, request: Any, mine: Membership) -> bo
 
 
 def _in_own_right(request: Any, mine: Membership) -> bool:
+    # Restated in SQL by `routes/overview.py` `_addressed_sql`.
     if request.to_kind == "member":
         return bool(request.to_member == mine.id)
     if request.to_kind == "owner":

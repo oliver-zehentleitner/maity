@@ -116,10 +116,8 @@ def human_body(conn: Connection, human_id: str) -> dict[str, Any]:
                 else None
             ),
             # §5.1, "Experiment notice": null until the person confirmed it.
-            "experiment_notice_understood_at": (
-                clock.rfc3339(human.experiment_notice_understood_at)
-                if human.experiment_notice_understood_at is not None
-                else None
+            "experiment_notice_understood_at": clock.rfc3339_or_none(
+                human.experiment_notice_understood_at
             ),
             # The human's own limit, with the reason other readers may not see (§6.12).
             "limit": limit_view(human),

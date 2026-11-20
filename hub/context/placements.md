@@ -802,3 +802,40 @@ not, and the removal stops a placement that runs. A check at the runner's pickup
 cannot tell whose start it carries out, so it would refuse the owner's
 own rejoin, or need a stored record of who started; the start already
 knows who asks.
+
+## A reset is a restart with `fresh_session`, stored as the generation it made
+
+**Id:** 37b4b9a1-a0f0-4f6f-bb26-b607590ffa18
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r4apvj4kbf3a (the owner's request in chat, 2026-11-19, for a Reset beside Restart on a placement held as `failed`/`hung`/`idle`; the card fixes the shape: "a restart with a fresh-session flag"); the contract, docs/api.md §15.5, §15.6, §15.7, §15.14
+**Revisit when:** the runner keeps the harness's session id per placement (§15.14, "The session continues"), or a second kind of restart needs a flag of its own
+
+A reset is `POST …/placements/{id}/restart` with `fresh_session: true`:
+everything a restart is (the same right, a new `generation`, `desired:
+running`, a cleared `crash_loop`, combinable with `rejoin`), and the new
+generation starts the harness on a fresh session instead of resuming the
+last one. The hub stores the generation the reset made
+(`placement.fresh_session_generation`, never cleared) and every view reads
+`fresh_session` as that generation being the current one
+(`placements.fresh_session`). A plain restart or a change of spec moves
+the generation and so ends the reset without a write of its own; a stop
+and a start keep the generation, and the reset still holds for its start.
+A runner's report takes `sessions` (§15.7), stored only when sent.
+
+**Reason:** a restart already carries everything a reset needs (who may,
+the generation the runner acts on, the hung hold it lifts); only what the
+start does with the harness's conversation differs. The hold that brought
+the card (`hung`/`idle` until the generation moves) is lifted the same way.
+A generation instead of a boolean leaves no flag to clear on every other
+path that bumps the generation (spec changes, settling a proposal, a
+plain restart), where a forgotten clear would make a later restart drop
+the conversation unasked.
+
+**Rejected alternatives:** a route of its own (`…/reset`): a second copy of
+the restart's rights, proposal settling, flapping and rejoin checks for
+one boolean. A boolean column cleared by every generation bump: each path
+that bumps the generation would have to know about it. Leaving it to a
+replacement with `handover: none` (§15.14): not built, and it makes a new
+placement and clone, where the owner wants the same clone and branches.

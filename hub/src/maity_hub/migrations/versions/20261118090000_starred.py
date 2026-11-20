@@ -3,7 +3,7 @@ as tabs without a membership. NULL, every existing account's value, is no star. 
 drops the column and the stars with it.
 
 Revision ID: 20261118090000_starred
-Revises: 20261117230000_limit_override
+Revises: 20261120090000_fresh_session
 Create Date: 2026-11-18
 """
 
@@ -15,7 +15,7 @@ from alembic import op
 from maity_hub.types import JSON_VALUE
 
 revision: str = "20261118090000_starred"
-down_revision: str | None = "20261117230000_limit_override"
+down_revision: str | None = "20261120090000_fresh_session"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -815,7 +815,7 @@ def load_catalog(path):
 
 # Literals that read as words but stay as they are in every language: the strict-mode
 # directive, product names, the brand in a page title, keys as a browser names them.
-NOT_PROSE = {"use strict", " · Maity", "Codex", "Antigravity", "Hermes", "Kimi Code", "Cline", "Claude Code",
+NOT_PROSE = {"use strict", " · Maity", "Codex", "Antigravity", "Hermes", "Kimi Code", "Cline", "Claude Code", "OpenCode",
              "⌘+Enter", "Ctrl+Enter", "Strg+Enter", "Control+Enter Meta+Enter",
              "Maity", "GitHub", "GitLab", "Gitea", "HTTP ", "SHA-256 ", "[U+", "?c=", "XXXX-XXXX-XXXX", "de", "staging",
              "badge ok", "reply primary", "nofollow ugc",
@@ -1615,8 +1615,10 @@ def asks_first(code, at, src=None):
     head = code[:m.start()]
     named = re.search(r"\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*$", head)
     if named:
-        # The name M.stepUp.run is given must be this binding: the nearest declaration of that
-        # name in the blocks around the run, not another one of the same name (xyfr at #1547).
+        # The name M.stepUp.run is given must be this binding: the `const` or `let` of that name
+        # seen at the run (declaration_of: walking out from the block around the run, the first
+        # block that declares it; there the last before the run, else the first), not another one
+        # of the same name (xyfr at #1547).
         name = named.group(1)
         blocks = brace_blocks(code)
         return any(declaration_of(code, blocks, name, r.start()) == named.start(1)

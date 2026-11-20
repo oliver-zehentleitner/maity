@@ -29,14 +29,9 @@ from maity_hub.config import Settings
 from maity_hub.cover import still_with as cover_still_with
 from maity_hub.cover import view as cover_view
 from maity_hub.languages import known as known_language
-from maity_hub.seen import latest_call
+from maity_hub.seen import latest_call, presence_by_age
 
-ONLINE = timedelta(seconds=120)
-AWAY = timedelta(hours=2)
-
-
-def ts(moment: datetime | None) -> str | None:
-    return clock.rfc3339(moment) if moment is not None else None
+ts = clock.rfc3339_or_none
 
 
 DELETED_NAME = "Deleted account"
@@ -296,7 +291,7 @@ def project_view(
         "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings, owner_handle, confirmed_by),
-        # The project's own links (§6.11), all four keys, null where none is set.
+        # The project's own links (§6.11), all five keys, null where none is set.
         "links": project_links.view(project.links),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),
@@ -386,12 +381,7 @@ def presence(row: Any, session: Any, listening: bool) -> str:
         return "offline"
     # From the latest call the stored time may stand for (§2.4, `seen`): a member that calls
     # is never shown away.
-    age = clock.now() - latest_call(seen)
-    if age <= ONLINE:
-        return "online"
-    if age <= AWAY:
-        return "away"
-    return "offline"
+    return presence_by_age(clock.now() - latest_call(seen))
 
 
 def _carried_presence(conn: Connection, served_ids: set[int]) -> dict[int, str]:

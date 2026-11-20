@@ -21,6 +21,7 @@ from maity_hub import (
     account_deletion,
     avatars,
     chat_access,
+    chat_access_history,
     contacts,
     cross_chats,
     export,
@@ -164,6 +165,7 @@ KEPT_THOUGH_READ = {"project"}
 EXPORT_THROUGH: dict[str, ModuleType] = {
     "avatar_image": avatars,  # the avatar URL, never the image
     "chat_access": chat_access,  # exported: `chat_access`, `{allow, deny}`
+    "chat_access_history": chat_access_history,  # exported: `chat_access_history`
     "contact": contacts,  # exported: `contacts` and `contact_of`
     "cross_chat": cross_chats,  # export_of, which export.py calls
     "cross_chat_participant": cross_chats,

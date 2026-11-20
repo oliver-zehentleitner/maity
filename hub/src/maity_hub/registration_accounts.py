@@ -40,8 +40,9 @@ from maity_hub.admin import instance_admin_id
 from maity_hub.auth import passwords, sessions
 from maity_hub.ids import new_id
 from maity_hub.mail.text import quoted
-from maity_hub.models import HANDLE_PATTERN, one_line
+from maity_hub.models import HANDLE_PATTERN
 from maity_hub.notifications import records
+from maity_hub.plain_text import plain_name
 
 WRONG_PASSWORDS_BEFORE_VOID = 5  # §2.7.3
 PENDING_ACCOUNT_FOR = timedelta(days=30)  # undecided, then deleted (§2.7.5)
@@ -81,9 +82,9 @@ def claim_address(
 ) -> bool:
     """Write the address as the account's verified address (§18.4), unique across the
     accounts; False when another account holds it."""
-    from maity_hub.notifications import preferences
+    from maity_hub.notifications import address
 
-    return preferences.claim_verified(conn, normalized, human_id, secret_key=secret_key)
+    return address.claim_verified(conn, normalized, human_id, secret_key=secret_key)
 
 
 def admitted(
@@ -122,7 +123,7 @@ def check_names(conn: Connection, handle: str, display_name: str) -> dict[str, s
     elif handles.holder(conn, handles.HUMANS, handle) is not None:
         # a human's or an organisation's handle, or a human's alias (§6.24, §6.26)
         errors["handle"] = "taken"
-    if not 1 <= len(display_name) <= DISPLAY_NAME_MAX or not one_line(display_name):
+    if not 1 <= len(display_name) <= DISPLAY_NAME_MAX or not plain_name(display_name):
         errors["display_name"] = "invalid"
     return errors
 

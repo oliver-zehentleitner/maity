@@ -51,9 +51,6 @@ window.Maity = window.Maity || {};
     // One event by its number (js/event.js, §8.9), the target of a `seq 68216` link: it opens
     // the event where it lives, so it has no tab of its own.
     { route: "events", view: "event", get label() { return M.t("nav.event"); }, tab: false },
-    // The account-level view is views.runners; this one is the project's,
-    // linked from the project's Settings, no tab of its own (the maintainer, 2026-10-31).
-    { route: "runners", view: "projectRunners", get label() { return M.t("nav.runners"); }, tab: false, current: "settings", section: "runners", admin: true, watch: /^runner_/, get changed() { return M.t("nav.runners.changed"); } },
     // Where the hub knows the Keep the Why export (docs/api.md §6.1, §11.3).
     { route: "why", get label() { return M.t("nav.why"); } },
     // What the agents and members have written down (js/memory.js, §19, tsk-6tqytgmcp17p).
@@ -310,11 +307,13 @@ window.Maity = window.Maity || {};
   };
   const BOOK = "M2 2.5A1.5 1.5 0 013.5 1H13v11H3.5a.5.5 0 000 1H13v1.5H3.5A1.5 1.5 0 012 13V2.5zM5 4v1h5V4H5z";
   // The project's own links (§6.11), in this order, each with its word and a 16 × 16 mark
-  // (Octicons, MIT): an issue, a book, a speech bubble, a chat bubble.
+  // (Octicons, MIT): an issue, a book, a speech bubble, a page, a chat bubble. Docs stands
+  // after Discussions and before Chat, where the maintainer listed it (tsk-qeftb8bg0yt6).
   const OWN_LINKS = [
     ["issues", () => M.t("project.link.issues"), "M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm9 3a1 1 0 11-2 0 1 1 0 012 0zm-.25-6.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z"],
     ["wiki", () => M.t("project.link.wiki"), BOOK],
     ["discussions", () => M.t("project.link.discussions"), "M1.75 1A1.75 1.75 0 000 2.75v6.5C0 10.216.784 11 1.75 11H3v3.25a.75.75 0 001.28.53L7.56 11H11.25A1.75 1.75 0 0013 9.25v-6.5A1.75 1.75 0 0011.25 1H1.75z"],
+    ["docs", () => M.t("project.link.docs"), "M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"],
     ["chat", () => M.t("project.link.chat"), "M2.75 2h10.5c.966 0 1.75.784 1.75 1.75v7A1.75 1.75 0 0113.25 12.5H6.06L3.28 14.78A.75.75 0 012 14.25V12.5h-.25A1.75 1.75 0 010 10.75v-7C0 2.784.784 2 1.75 2h1z"],
   ];
   // The links that are set, as plain https only: what the header and the overview show.
@@ -624,7 +623,7 @@ window.Maity = window.Maity || {};
     status.el);
   }
 
-  // The project's own links (§6.11), for project:admin: four fields, only
+  // The project's own links (§6.11), for project:admin: five fields, only
   // the changed ones sent (the hub merges by key, so another admin's change
   // to another link meanwhile stays), each refusal said at its field.
   function linksForm(ctx) {
@@ -786,6 +785,9 @@ window.Maity = window.Maity || {};
     ["members", () => M.t("settings.tab.members")],
     ["work", () => M.t("settings.tab.work")],
     ["moderation", () => M.t("settings.tab.moderation")],
+    // The project's runners (js/project-runners.js), at settings/runners since tsk-ert2k23kr5m4;
+    // /<owner>/<slug>/runners is gone without a redirect (web/context/views.md).
+    ["runners", () => M.t("settings.tab.runners")],
     ["mine", () => M.t("settings.tab.mine")],
   ];
   const humanAdminOf = (ctx) => ctx.me.kind === "human" && ctx.canAdmin;
@@ -841,6 +843,8 @@ window.Maity = window.Maity || {};
   ];
   // Mine is every human's (one's own settings); the project's tabs are for project:admin.
   function settingsTabOffered(ctx, tab) {
+    // The runners are a view of their own, not a panel of forms: for project:admin, as their old route was.
+    if (tab === "runners") return ctx.canAdmin && !!M.projectRunners;
     if (tab === "mine") return ctx.me.kind === "human" || SETTINGS_SECTIONS.some((s) => s.tab === tab && s.when(ctx));
     return ctx.canAdmin && SETTINGS_SECTIONS.some((s) => s.tab === tab && s.when(ctx));
   }
@@ -1944,10 +1948,13 @@ window.Maity = window.Maity || {};
       }
       return;
     }
+    if (tab === "runners") {
+      // Its own reads, refresh and status line; nothing here is saved through projectPanel.
+      await M.projectRunners.tab(ctx, root);
+      return;
+    }
     append(root,
       h("p", { class: "muted" }, M.t("settings.intro")),
-      // The project's runners, no tab of their own any more.
-      tab === "general" ? h("p", { class: "settings-runners" }, h("a", { href: projectLink(ctx.slug, "runners") }, M.t("settings.runners_link"))) : null,
       saved,
       projectPanel(ctx, tab));
     const wanted = settingsFocus ? Array.from(root.querySelectorAll("input")).find((el) => el.id === settingsFocus) : null;
@@ -2334,13 +2341,29 @@ window.Maity = window.Maity || {};
       watch(b);
     });
   }
-  function renderBanner(ctx) {
+  // The two banners' reads, started before the page's view runs (tsk-qw08c8ds214g): they do not
+  // depend on the page, and after the view they waited on all of its reads (the board's 1.2 s).
+  // The banners are still drawn after the view. The sessions' read carries the sessions_rev it
+  // began under: a sign-in or an end meanwhile reads them again (renderBanner).
+  function startBannerReads(ctx) {
+    if (!ctx.me || ctx.me.kind !== "human") return null;
+    if (M.factorBanner) M.factorBanner.warm(factorSession, /^\/account\/security(?:\/|$)/.test(M.route.current().path));
+    if (!M.sessions) return null;
+    const rev = sessionsRev();
+    const reading = M.sessions.bannerSessions();
+    reading.catch(() => {});
+    return { rev, reading };
+  }
+  // early: what startBannerReads() began for this render; without it, or with sessions_rev moved
+  // since, the sessions are read now.
+  function renderBanner(ctx, early) {
     if (!M.sessions || !ctx.me || ctx.me.kind !== "human") return; // a human's sessions only
     const main = document.getElementById("main");
     const seq = ++bannerSeq;
     bannerFor = sessionsRev();
+    const reading = early && early.rev === bannerFor ? early.reading : null;
     const drop = () => { const old = main.querySelector(".signin-banner"); if (old) main.removeChild(old); };
-    M.sessions.banner(ctx, () => render()).then((b) => {
+    M.sessions.banner(ctx, () => render(), reading).then((b) => {
       if (seq !== bannerSeq) return;
       drop();
       bannerShown = !!b;
@@ -2612,6 +2635,7 @@ window.Maity = window.Maity || {};
     // The account's tabs (Organisations among them) and a project's Settings (Project and Mine)
     // are forms: one reading column (web/context/views.md).
     const root = h("section", { class: "view view-" + viewName + (["account", "orgs", "settings"].includes(viewName) ? " form-column" : "") });
+    const bannerReads = startBannerReads(ctx);
     try {
       if (empty) {
         // A personal request (§7) reaches its human without a membership:
@@ -2671,12 +2695,14 @@ window.Maity = window.Maity || {};
     // A view's own tab rows that scroll sideways (the account's, js/account.js), set up now that
     // they are in the page and have a width: the current tab in sight, the fade on the side with more.
     root.querySelectorAll("nav.account-tabs").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
-    renderBanner(ctx);
+    renderBanner(ctx, bannerReads);
     renderFactorBanner(ctx);
     // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
     // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").
     ctx.onDispose(M.notify.onSessionsRev(() => { if (seq === renderSeq && sessionsRev() !== bannerFor) renderBanner(ctx); }));
-    watch(ctx, where, known ? item : null, main);
+    // Settings → Runners says when the runners changed, as their own route did (runner_ events).
+    const runnersTab = known && !!item && item.route === "settings" && (where.args || [])[0] === "runners";
+    watch(ctx, where, runnersTab ? { watch: /^runner_/, changed: M.t("nav.runners.changed") } : known ? item : null, main);
     if (reuse) keepFresh(seq, reuse, keptSlug, keptSlug ? null : ctx.keptProject || null);
     let label = M.t("not_found.title");
     if (empty) label = M.t("view.no_projects");

@@ -488,6 +488,8 @@ class Status(Strict):
     detail: str | None = None
     exit_code: int | None = Field(default=None, ge=-(2**31), le=2**31 - 1)
     restarts: int = Field(ge=0, le=2**31 - 1)
+    # Fresh sessions of the generation (§15.7); a runner from before it sends none.
+    sessions: int | None = Field(default=None, ge=0, le=2**31 - 1)
     retry_at: AwareDatetime | None = None
     crash_count: int | None = Field(default=None, ge=0, le=2**31 - 1)
     crash_window_seconds: int | None = Field(default=None, ge=0, le=2**31 - 1)

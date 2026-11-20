@@ -18,13 +18,14 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .. import __version__, clonecheck, ghpr, proc
-from . import config, stub, trust
+from . import config, scratch, stub, trust
 from .asuser import AsUser
 
 START_PROMPT = (
@@ -47,7 +48,8 @@ GIT_PROMPT = (
 CLAUDE_MAITY_PROMPT = (
     " Run every `maity` command alone, as one plain call: a line that pipes, chains with `;`, "
     "`&&` or `||`, redirects, sends it to the background with `&`, uses `$(...)`, a heredoc "
-    "or a `$` is refused. Pass longer text in a file in this clone (`--body-file`)."
+    "or a `$` outside single quotes is refused. Pass longer text in a file in this clone "
+    "(`--body-file`)."
 )
 # What a line that starts with `maity` may not hold in opencode's rules (opencode_config).
 MAITY_NOT_PLAIN = (";", "&", "|", "<", ">", "`", "$", "\n")
@@ -91,6 +93,11 @@ PULL_REQUEST_PROMPT = (
     "(a file in this clone) and read one with `maity gh pr view [<number>]`; `gh` itself "
     "does not run here."
 )
+
+# `maity runner` is the operator's and the runner's; no agent runs it from its shell. Its
+# in-session commands (the loop, the pane's log, the hook) are started by the runner or by the
+# harness itself, never through an agent's command tool (runner_own_file is the boundary).
+MAITY_RUNNER_DENIED = ("maity runner", "maity runner *")
 
 
 # What in a clone's .git redirects git's configuration, hooks or object sources: never
@@ -214,12 +221,49 @@ class Context:
     # The placement's scratch (§15.5), made by the supervisor; None where the harness gets none
     # (workspace.SCRATCH_HARNESSES).
     scratch: Path | None = None
+    # The agy per-user `/tmp` scratch parent, hidden from this placement's sandbox so it cannot
+    # reach another placement's scratch there; set only for a placement whose sandbox hides it
+    # (workspace.TMP_SCRATCH_PARENT_HIDERS: Claude Code, Codex). None for an agy placement, which
+    # owns that parent, for one that hides nothing, and where there is no local `/tmp` scratch (an
+    # ssh host, no uid).
+    tmp_scratch_parent: Path | None = None
+
+
+# A Unix socket's path holds at most 107 bytes on Linux (`sun_path` is 108, with its NUL) and
+# 103 on macOS and the BSDs (104). Tools put sockets under TMPDIR: Claude Code's sandbox binds
+# `claude-socks-<16 hex>.sock` there (34 bytes) and does not start when the path is longer. A
+# scratch deep in a workspaces root made that path 117 bytes, so every Claude Code placement lost
+# its sandbox (cli 0.1.0a16).
+def socket_path_max(platform: str = sys.platform) -> int:
+    """The longest Unix socket path, in bytes, on `platform` (`sys.platform`'s form)."""
+    return 107 if platform.startswith("linux") else 103
+
+
+SOCKET_PATH_MAX = socket_path_max()
+SOCKET_NAME_ROOM = len("claude-socks-0123456789abcdef.sock")
+
+
+def scratch_tmpdir(scratch: Path | None) -> Path | None:
+    """The TMPDIR inside the placement's scratch, or None when there is no scratch or when a
+    socket named like Claude Code's under it would not fit a Unix socket path: then the session
+    gets no TMPDIR at all (the runner starts it with a clean environment, so tools use their
+    default, /tmp) and only `MAITY_SCRATCH` names the scratch. Under the default workspaces root
+    `~/maity-workspaces` that is the usual case: a home longer than `/home/ab` leaves no room."""
+    if scratch is None:
+        return None
+    tmp = scratch / "tmp"
+    if len(os.fsencode(tmp)) + 1 + SOCKET_NAME_ROOM > SOCKET_PATH_MAX:
+        return None
+    return tmp
 
 
 @dataclass(frozen=True)
 class Launch:
     argv: list[str]
     env: dict[str, str]
+    # The start continues the harness's last conversation (`ctx.resume` where the harness
+    # can); False: a fresh session, which `reported.sessions` counts (§15.7).
+    resumed: bool = False
 
 
 def launch(ctx: Context) -> Launch:
@@ -240,8 +284,8 @@ def launch(ctx: Context) -> Launch:
         **ctx.extra_env,
         # Its scratch, and temporary files inside it, so a review's or a test's leftovers go
         # when the placement ends instead of piling up in the agents' home (§15.5).
-        **({"MAITY_SCRATCH": str(ctx.scratch), "TMPDIR": str(ctx.scratch / "tmp")}
-           if ctx.scratch is not None else {}),  # fmt: skip
+        **({"MAITY_SCRATCH": str(ctx.scratch)} if ctx.scratch is not None else {}),
+        **({"TMPDIR": str(tmp)} if (tmp := scratch_tmpdir(ctx.scratch)) is not None else {}),
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
     # session's variables are gone (clonecheck.placement_root), instead of trusting that.
@@ -270,8 +314,8 @@ def launch(ctx: Context) -> Launch:
     # (an empty record also clears one a former grant left).
     ctx.as_user.write(records / ghpr.PULL_REQUESTS, pull_requests_record(ctx))
     # Where maity also reads a file the agent names (inclone): its scratch, or nowhere.
-    scratch = f"{ctx.scratch}\n" if ctx.scratch is not None else ""
-    ctx.as_user.write(records / clonecheck.SCRATCH_RECORD, scratch)
+    scratch_record = f"{ctx.scratch}\n" if ctx.scratch is not None else ""
+    ctx.as_user.write(records / clonecheck.SCRATCH_RECORD, scratch_record)
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)
@@ -324,6 +368,12 @@ def _supervised(ctx: Context, first: list[str], again: list[str], env: dict[str,
 # --- Claude Code ------------------------------------------------------------------------------
 
 
+def _shared_tmp(ctx: Context) -> list[str]:
+    """The agy per-user `/tmp` scratch parent to hide from this placement's sandbox, as a list
+    for a deny rule; empty for an agy placement (which owns it) or where there is none."""
+    return [str(ctx.tmp_scratch_parent)] if ctx.tmp_scratch_parent is not None else []
+
+
 def claude_settings(ctx: Context) -> dict[str, Any]:
     """The grant (§6.1): maity, git, the repository's own allow list, and file tools inside
     the clone and the placement's scratch only. Absolute paths take a double slash in Claude
@@ -345,7 +395,7 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny = [f"Edit(/{git}/{name}{'/**' if name in ('hooks', 'info') else ''})"
             for name in GIT_PROTECTED]  # fmt: skip
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
-    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED)]
+    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
         # stays in the model's context; the bare name takes it out of the model's context
@@ -371,9 +421,16 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # signs with it, runs outside.
             # Not the workspaces root: re-opening this clone inside it (`allowRead`) could
             # re-open its credential as well, and that order is unverified here.
-            "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private)],
+            # The agy per-user `/tmp` scratch parent is hidden from read and write alike, so a
+            # placement that is not its owner cannot reach another placement's scratch there.
+            "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private),
+                                        *_shared_tmp(ctx)],
+                           # The private paths are not writable either: the runner's files
+                           # (~/.maity-runner on an ssh host) are what `maity runner` takes.
                            "denyWrite": [f"{git}/maity",
-                                         *(f"{git}/{name}" for name in GIT_PROTECTED)],
+                                         *(f"{git}/{name}" for name in GIT_PROTECTED),
+                                         *(str(p) for p in ctx.private),
+                                         *_shared_tmp(ctx)],
                            # Commands write the placement's scratch besides the clone (§15.5).
                            **({"allowWrite": [str(ctx.scratch)]}
                               if ctx.scratch is not None else {})},
@@ -550,7 +607,7 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     if ctx.placement.get("mode") == "interactive":
         trust_clone(ctx)
         if ctx.resume:  # `--continue`: the clone's latest conversation, with its context
-            return Launch([*base, "--continue", RESUME_PROMPT], env)
+            return Launch([*base, "--continue", RESUME_PROMPT], env, resumed=True)
         return Launch([*base, START_PROMPT + _sandbox_prompt(ctx)], env)
     # Headless (`-p`) asks for no folder trust and records none: nothing to pre-accept.
     # No background command may hold a run open past its turn (§6.2).
@@ -587,6 +644,24 @@ def outermost(paths: Sequence[Path], opened: Sequence[Path] = ()) -> tuple[Path,
     return tuple(p for p in unique if not any(hidden_by(p, q) for q in unique))
 
 
+def codex_home(ctx: Context) -> Path:
+    """Codex's per-placement CODEX_HOME. Inside the placement scratch (§15.5) when it has one,
+    so it lies under the workspaces root the codex sandbox re-opens for this placement (and
+    hides from every other placement): there Codex's own sandbox can read and run its
+    per-command helper (`CODEX_HOME/tmp/arg0-linux`). The home is read-only to the session
+    (the runner writes its control files once, below), so the sandbox reads and executes the
+    helper, it does not create it. Under the runner's state directory the sandbox hides the
+    home (bwrap mounts over it), and then Codex runs no command at all, so `maity resume`
+    never starts (card tsk-hv7jbgy75zjt). Without a scratch (no workspaces root to carve, or
+    one that could not be made) it stays in the runner's directory as before, where the
+    sandbox hides it; `maity runner check` verifies from the local configuration that Codex is
+    given a scratch and the workspaces root is outside the state directory, but does not catch
+    a runtime fall-back to no scratch."""
+    if ctx.scratch is not None:
+        return ctx.scratch / "codex-home"
+    return ctx.agent_dir / "codex-home"
+
+
 def codex_config(ctx: Context) -> str:
     """`config.toml` in the placement's own CODEX_HOME (§6.1): Codex's sandbox with the
     workspace profile, the clone's `.git` writable (commits need it), no approvals asked,
@@ -598,7 +673,10 @@ def codex_config(ctx: Context) -> str:
     # stays readable, since the agent's `maity` runs inside the sandbox. Every directory
     # opened again below (the clone, the scratch) keeps a hidden path inside it listed.
     reopened = (ctx.clone, *((ctx.scratch,) if ctx.scratch is not None else ()))
-    roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private),
+    # The agy per-user `/tmp` scratch parent is hidden too (its own scratch sits beside the
+    # clone, so Codex has no need to reach `/tmp`'s scratch of another placement of this user).
+    shared = (ctx.tmp_scratch_parent,) if ctx.tmp_scratch_parent is not None else ()
+    roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private, *shared),
                       opened=reopened)  # fmt: skip
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
     return (
@@ -619,7 +697,21 @@ def codex_config(ctx: Context) -> str:
         f"{json.dumps(str(ctx.clone / '.git' / 'hooks'))} = \"read\"\n"
         f"{json.dumps(str(ctx.clone / '.git' / 'config'))} = \"read\"\n"
         # The placement's scratch (§15.5), under the hidden workspaces root, opened again.
-        + (f'{json.dumps(str(ctx.scratch))} = "write"\n' if ctx.scratch is not None else "") + "\n"
+        + (f'{json.dumps(str(ctx.scratch))} = "write"\n' if ctx.scratch is not None else "")
+        # Codex's own CODEX_HOME sits inside that writable scratch (codex_home), so the profile
+        # names it read, not write: a sandboxed command may read the home — its config.toml,
+        # any rules file, the auth.json link, and the per-command helper under tmp, which it
+        # also runs — but may write nothing there. The runner writes those control files once
+        # before the session starts; the session cannot rewrite the configuration a later
+        # restart reads. Read also keeps the home reachable (not hidden), so the helper stays
+        # readable and runnable. The same single source builds the launch env's CODEX_HOME, so
+        # the two never drift. Omitted when there is no scratch to carve: CODEX_HOME then stays
+        # in the runner's directory, which this profile hides, and `maity runner check` verifies
+        # the configuration before a placement starts (Codex is given a scratch, the workspaces
+        # root is outside the state directory), though a runtime fall-back to no scratch is
+        # beyond what it catches.
+        + (f'{json.dumps(str(codex_home(ctx)))} = "read"\n' if ctx.scratch is not None else "")
+        + "\n"
         "[permissions.maity.network]\nenabled = true\n\n"
         "[permissions.maity.network.domains]\n" + domains
         # Nobody answers a headless run: the question tool is not offered (cli/context/runner.md).
@@ -629,15 +721,25 @@ def codex_config(ctx: Context) -> str:
 
 def _codex(ctx: Context, env: dict[str, str]) -> Launch:
     assert ctx.binary is not None  # noqa: S101 - the supervisor checked the probe
-    home = ctx.agent_dir / "codex-home"
-    ctx.as_user.write(home / "config.toml", codex_config(ctx))
+    home = codex_home(ctx)
+    config_text = codex_config(ctx)
     # The login of whoever runs the agents (the operator, or the agents' user), linked so
     # that a token refresh lands in the original; a link left from an earlier launch that
-    # points elsewhere, or nowhere, is replaced (AsUser.link).
+    # points elsewhere, or nowhere, is replaced. Linked only when there is a login to link.
     own = None if not ctx.as_user.direct else os.environ.get("CODEX_HOME")
     login = Path(own or ctx.as_user.home() / ".codex") / "auth.json"
-    if ctx.as_user.exists(login, "-f"):
-        ctx.as_user.link(login, home / "auth.json")
+    auth = login if ctx.as_user.exists(login, "-f") else None
+    if ctx.scratch is not None:
+        # The home sits in the agent-writable scratch: its control files are written to a
+        # descriptor opened without following a link from the workspaces root, so a codex-home
+        # swapped for a link is refused, never written through, out of the scratch.
+        scratch.write_codex_home(home, config_text, auth, ctx.as_user)
+    else:
+        # No scratch to carve: the home stays in the runner's own directory, below no
+        # agent-writable parent, so the plain writes are safe there.
+        ctx.as_user.write(home / "config.toml", config_text)
+        if auth is not None:
+            ctx.as_user.link(auth, home / "auth.json")
     ctx.as_user.mkdir(ctx.clone / ".git" / "maity")
     env = {**env, "CODEX_HOME": str(home)}
     model = ctx.placement.get("model")
@@ -665,7 +767,7 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     # After the allows: the last match wins. The rules are meant to allow `maity` only as one
     # plain call, as the Claude Code hook has it (plaincall). Without a sandbox these rules are
     # not a boundary, see cli/context/runner.md.
-    bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
+    bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)})
     bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
     # The clone's credential is neither readable nor writable; nothing under .git is edited
@@ -693,8 +795,19 @@ def _opencode(ctx: Context, env: dict[str, str]) -> Launch:
     # Without the switch the repository's opencode.json wins over OPENCODE_CONFIG, and its
     # .opencode/ directories bring agents, commands and plugins.
     env = {**env, "OPENCODE_DISABLE_PROJECT_CONFIG": "1", "OPENCODE_CONFIG": str(path)}
-    model = ctx.placement.get("model")
-    chosen = ["--model", model] if model else []
+    # No model on the placement: fall back to the harness default (config validates it is one
+    # of `models`). Fail closed when the effective model is empty or not among `models`: with
+    # no `--model`, opencode runs its own default, a provider-`opencode`, opencode-hosted model,
+    # so the clone's content would go to opencode's servers instead of the configured provider
+    # (cli/context/runner.md, the opencode model fail-closed). Both modes below share `chosen`.
+    model = ctx.placement.get("model") or ctx.harness.default_model
+    if not model or model not in ctx.harness.models:
+        raise NotYet(
+            f"opencode model {model!r} is not among the configured models "
+            f"{ctx.harness.models!r}: refusing the start rather than letting opencode run its "
+            f"own default, which would send the conversation to opencode's servers"
+        )
+    chosen = ["--model", model]
     if ctx.placement.get("mode") == "interactive":
         prompt = START_PROMPT + _sandbox_prompt(ctx)
         return Launch([ctx.binary, str(ctx.clone), *chosen, "--prompt", prompt], env)
@@ -725,7 +838,7 @@ AGY_MAITY_PROMPT = (
 # rest of `~/.gemini` stays readable to agy's own sandbox, which keeps its scratch there.
 AGY_LOGIN = Path(".gemini") / "antigravity-cli" / "antigravity-oauth-token"
 # What agy's command rules match by prefix: GIT_DENIED without its globs, and gh.
-AGY_DENIED_COMMANDS = ("git -c", "git --config-env", "git --exec-path", "gh")
+AGY_DENIED_COMMANDS = ("git -c", "git --config-env", "git --exec-path", "gh", "maity runner")
 
 
 # Why a command grant is not given to agy as a rule. agy does not match a `command(...)` rule
@@ -817,7 +930,7 @@ def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
     extra = AGY_MAITY_PROMPT + _sandbox_prompt(ctx)
     if ctx.placement.get("mode") == "interactive":
         if ctx.resume:  # `-c`: the folder's latest conversation, so this placement's
-            return Launch([*base, "-c", "-i", RESUME_PROMPT], env)
+            return Launch([*base, "-c", "-i", RESUME_PROMPT], env, resumed=True)
         return Launch([*base, "-i", folder + START_PROMPT + extra], env)
     # `-c` continues the latest conversation of the working directory: the placement's own
     # folder, so never another placement's (cli/context/runner.md).

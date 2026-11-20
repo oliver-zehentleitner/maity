@@ -436,9 +436,16 @@ window.MAITY_I18N["zh-Hans"] = {
   "board.claim.unclaimed": "未认领",
   "board.closed.failed": "无法读取已关闭的卡片： {reason}",
   "board.closed.loading": "正在读取已关闭的卡片…",
+  "board.closed.more_failed": "无法读取更多已关闭的卡片：{reason}",
+  "board.closed.more_loaded": {
+    "other": "已加载 {count} 张已关闭的卡片"
+  },
   "board.closed.recheck_failed": "无法检查已关闭的卡片在读取期间是否有更改：{reason}",
   "board.closed.show_more": {
     "other": "再显示 {count} 张已关闭的卡片"
+  },
+  "board.closed.show_more_loaded": {
+    "other": "显示更多（已加载 {count} 张）"
   },
   "board.column.other": "其他",
   "board.column.unknown": "未知状态",
@@ -486,6 +493,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "board.new_subtask": "新建子任务",
   "board.no_match": "没有卡片符合筛选条件。",
   "board.not_saved": "未保存： {reason}",
+  "board.open.more_failed": "无法读取未关闭列中的其余卡片： {reason}",
   "board.place.above": "{id} 现在位于 {other} 之上。",
   "board.place.below": "{id} 现在位于 {other} 之下。",
   "board.place.bottom": "{id} 现在位于最下方。",
@@ -2944,7 +2952,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "nav.messages": "消息",
   "nav.organisation": "组织",
   "nav.overview": "概览",
-  "nav.runners": "运行器",
   "nav.runners.changed": "运行器已变更。",
   "nav.settings": "设置",
   "nav.ticker": "动态",
@@ -3641,6 +3648,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "project.link.actions_on": "{forge} 上的 Actions",
   "project.link.chat": "聊天",
   "project.link.discussions": "讨论",
+  "project.link.docs": "文档",
   "project.link.issues": "议题",
   "project.link.ktw_dashboard": "Keep the Why 控制台",
   "project.link.opens": "{what}（在新标签页中打开）",
@@ -4553,7 +4561,6 @@ window.MAITY_I18N["zh-Hans"] = {
   "settings.repo.title": "仓库",
   "settings.repo.unchanged": "未作任何更改。",
   "settings.repo.url": "URL",
-  "settings.runners_link": "此项目的运行器",
   "settings.saving": "正在保存…",
   "settings.see_fields": "请查看下方标记的字段",
   "settings.signing.anyway": "仍然要求签名",

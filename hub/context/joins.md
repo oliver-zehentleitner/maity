@@ -235,7 +235,7 @@ invited one accept. A `disabled` address is still that account's
 verified address: §18.7 only stops mail to it after hard failures, the
 address keeps its place in the one-account-per-address constraint, and
 setting and verifying it again enables it. The rest of the hub treats
-`disabled` as verified too (`notifications/preferences.py`). A `pending`
+`disabled` as verified too (`notifications/address.py`). A `pending`
 address was never confirmed by its mailbox, so accepting with it would
 let anyone bind an invitation to an address they only typed.
 Both sides normalize with `strip().lower()` (`registration.normalized`
@@ -484,3 +484,29 @@ revocation says what happened without naming the deleted human as the actor.
 - One revoking `UPDATE … WHERE` per cascade as before: the ids it hit are not known, so no event
   can name them; `revoke` selects the rows and revokes each with its own conditional update, so a
   join revoked meanwhile is neither attributed nor announced twice.
+
+
+## The join page's restricted-texts sentence follows `resolve()`: an owner's isolation does not stop it
+
+**Id:** 0795a336-f4b2-42b7-a7a8-a74cc8e73741
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** docs/api.md §3.2 item 2 and §6.1 "Who is in the set"; `restricted.py` `resolve` and `would_admit_agent`; card tsk-nkwg0gztpmqg, PR #2006, accepted as the decision in its review, 2026-11-19
+**Revisit when:** §6.1 "Who is in the set" gates on the owner's isolation, or `resolve()` changes its owner gate
+
+Under `nobody_except` the join page says "You will read and write this project's restricted
+texts." when the agent is listed, the join's trust is above `guest`, and the owner is an active
+member above `guest`. Whether the owner is isolated is not checked, because `resolve()` does not
+check it for a listed agent's owner either. The isolation the set gates on is the agent's own (§6.1),
+and a membership that does not exist yet cannot be isolated when the page is served. Under
+`all_except` the owner must be in the set, so `resolve()`'s own isolation check applies to the
+owner there.
+
+**Reason:** the page promises what the exchange will write. `restricted.would_admit_agent` asks the
+same predicates as `resolve()`, so the sentence and the `restricted_changed` the exchange writes
+(`cause: joined`) agree.
+
+**Rejected alternative:** also leaving the sentence out when the owner is isolated. The page would
+then disagree with the set the exchange actually writes: the new agent enters the set, and its page
+said nothing.

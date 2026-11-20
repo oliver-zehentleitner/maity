@@ -19,6 +19,7 @@ import tempfile
 import time
 import unicodedata
 import urllib.parse
+import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -198,7 +199,7 @@ class Session:
     def __init__(self, hub_url: str | None = None) -> None:
         self.dir = state.resolve_state_dir()
         if not state.has_credential(self.dir):
-            if os.environ.get(clonecheck.PLACEMENT_ENV):
+            if clonecheck.placed():
                 # Under the runner the clone has joined; Claude Code's sandbox hides its
                 # credential, and only a `maity` call of its own runs outside the sandbox.
                 raise state.StateError(SANDBOXED_CALL)
@@ -3828,8 +3829,14 @@ def cmd_placement_restart(args: argparse.Namespace) -> int:
     session = Session()
     placement = _placement(session, args.which)
     path = session.project_path("placements", placement["id"], "restart")
-    answer = session.client.call("POST", path, body={"rejoin": True} if args.rejoin else {})
-    return _done(args, answer, f"placement {onboarding.inline(placement['id'])} restarting")
+    body: dict[str, Any] = {}
+    if args.rejoin:
+        body["rejoin"] = True
+    if args.fresh_session:
+        body["fresh_session"] = True  # a reset (§15.6): a fresh harness session, same clone
+    answer = session.client.call("POST", path, body=body)
+    how = " on a fresh session" if args.fresh_session else ""
+    return _done(args, answer, f"placement {onboarding.inline(placement['id'])} restarting{how}")
 
 
 def cmd_runners(args: argparse.Namespace) -> int:
@@ -4804,6 +4811,28 @@ def cmd_help(args: argparse.Namespace) -> int:
             raise state.StateError("not joined in this clone; pass --hub <url>")
         base = hub.hub_base(stored)
     print(onboarding.clean(hub.get_text(f"{base}{hub.API}/help")), end="")
+    return EXIT_OK
+
+
+UUID_MAX = 1000
+
+
+def _uuid_count(value: str) -> int:
+    """N for `maity uuid -n`: a whole number from 1 to UUID_MAX."""
+    try:
+        count = int(value, 10)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a whole number") from None
+    if not 1 <= count <= UUID_MAX:
+        raise argparse.ArgumentTypeError(f"must be 1 to {UUID_MAX}, not {count}")
+    return count
+
+
+def cmd_uuid(args: argparse.Namespace) -> int:
+    """UUIDs v4 from the OS's randomness (`uuid.uuid4` reads os.urandom), lowercase, one per
+    line: no hub, no state, no join, so it runs in any sandbox that lets `maity` run, where
+    `uuidgen` often does not (cli/context/commands.md)."""
+    print("\n".join(str(uuid.uuid4()) for _ in range(args.count)))
     return EXIT_OK
 
 
@@ -6008,6 +6037,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="with a new credential, after the old one was revoked (§15.6)",
     )
+    r.add_argument(
+        "--fresh-session",
+        action="store_true",
+        help="a reset: start on a fresh harness session instead of resuming the last "
+        "conversation; the clone and its branches stay (§15.6)",
+    )
     _json_flag(r)
     _on_request_flag(r)
     r.set_defaults(handler=cmd_placement_restart)
@@ -6039,6 +6074,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--hub", help="hub URL, for use before joining")
     p.set_defaults(handler=cmd_help)
+
+    p = add(
+        "uuid",
+        "print a random UUID v4, e.g. a Keep the Why entry's Id",
+        "Print a UUID version 4 from the operating system's randomness, lowercase, one per "
+        "line. It calls no hub and needs no join, credential or state: use it for a Keep the "
+        "Why entry's Id where uuidgen is not available or not allowed.",
+    )
+    p.add_argument(
+        "-n",
+        dest="count",
+        type=_uuid_count,
+        default=1,
+        metavar="N",
+        help=f"print N UUIDs, 1 to {UUID_MAX} (default 1)",
+    )
+    p.set_defaults(handler=cmd_uuid)
     return parser
 
 
@@ -6312,6 +6364,12 @@ def _main(argv: Sequence[str] | None = None) -> int:
     if args.for_target is not None and args.command == "join":
         _err("--for applies to project commands; join is the bridge's own: run it without --for")
         return EXIT_USAGE
+    if args.for_target is not None and args.command == "runner":
+        _err(
+            "--for applies to project commands; `maity runner` is the operator's: "
+            "run it without --for"
+        )
+        return EXIT_USAGE
     if args.command == "runner" and sys.platform == "win32":
         _err(
             "the runner does not run on Windows: it needs tmux and POSIX OS users. "
@@ -6320,10 +6378,25 @@ def _main(argv: Sequence[str] | None = None) -> int:
         return EXIT_REFUSED
     if (
         args.command == "runner"
-        and clonecheck.PLACEMENT_ENV in os.environ  # set, even empty: a placed session
+        and clonecheck.placed()  # set, even empty: a placed session
         and args.runner_command not in runner_commands.IN_SESSION
     ):
         _err("`maity runner` is the operator's: it does not run for a placed agent")
+        return EXIT_REFUSED
+    if (
+        args.command == "runner"
+        and args.runner_command in runner_commands.IN_SESSION_FILE
+        and not runner_commands.runner_own_file(
+            args.runner_command,
+            getattr(args, runner_commands.IN_SESSION_FILE[args.runner_command]),
+        )
+    ):
+        # Checked on every call, not only under a placement: an agent's `maity` runs outside
+        # its sandbox and can drop MAITY_PLACEMENT from its own environment.
+        _err(
+            f"`maity runner {args.runner_command}` takes only the file the runner wrote for it "
+            "in ~/.maity-runner (agents/<placement>/loop.json, logs/<placement>.log)"
+        )
         return EXIT_REFUSED
     try:
         _load_texts(args)

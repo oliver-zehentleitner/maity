@@ -439,11 +439,12 @@ pinned uv instead of a second tool.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
+**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); card tsk-5cah3a82dv63 (the 11.8 job beside the 11.4 suite, #2022); card tsk-07hb18s4j47f (from the reviews of #2022 and #2025: the reader, then the table of introducing commits, lotse's decision of 2026-11-20 after three review rounds); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
 **Revisit when:** ci stops running on every push to main, hub-mariadb comes back into the pull request gate, or GitHub's run list starts carrying a dispatch's inputs
 **See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-09
 **See:** process.md#mariadb-checks-main-after-every-ci-run-and-every-hour-not-every-pull-request-postgresql-and-sqlite-stay-in-the-gate — 75a2382c-6a3d-450d-873e-8aade80d6e3b — as of 2026-11-09
 **See:** https://github.com/oliver-zehentleitner/maity — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-09
+**See:** https://github.com/oliver-zehentleitner/maity — e70b5933-72f5-4951-b024-b92fe22dc521 — as of 2026-11-20
 
 The first job of `release-hub.yml` and `release-cli.yml` (`check`), and of
 `publish-image.yml` on a tag (`gate`), no longer runs tests. It runs
@@ -455,7 +456,23 @@ read-only token and lets the tag through only when:
 - for the hub and its image also: the newest hub-mariadb run that
   actually ran the suite on a commit of main with the same files the
   suite reads as the tag (the list `decide` compares; `git diff`) is
-  green. A run that skipped the suite counts for nothing. Only runs of
+  green: the 11.4 suite and, since 2026-11-20, the 11.8 subset beside it.
+  Whether a run had the 11.8 job is git's answer, not the workflow
+  file's: `tools/release_gate.py` keeps a table of each job beside the
+  11.4 suite and the commit of main that added it (`hub-mariadb-11-8`,
+  `4fafdf1f`, #2022), and a run whose workflow commit has that commit in
+  its history (`git merge-base --is-ancestor`) needs the job green;
+  missing, skipped or red stops the gate. Only a run from before that
+  commit counts on 11.4 alone. A history git cannot answer from (a
+  shallow checkout, a commit it cannot get, a git error) stops the gate,
+  never passes it, so both gate jobs check out with `fetch-depth: 0`. A
+  run that lists a `hub-mariadb*` job the table does not know stops it
+  too, until the pull request that adds the job adds its line. The jobs
+  API lists a job by its name, the same as its key only while no job of
+  `hub-mariadb.yml` sets `name:` (`test_release_gate.py` holds it so); a
+  renamed job reads as missing, which stops the gate. A run
+  that skipped the suite counts for nothing, unless a job beside it went
+  red. Only runs of
   main's own workflow file count: the run's ref is main and the commit
   it ran is on main, since a dispatch on another ref runs that ref's
   copy of `hub-mariadb.yml`, which could keep the title and the job's
@@ -501,6 +518,19 @@ the tag lacks.
 - Skipping a run whose commit cannot be compared, or one still running
   (the first version): an older green run then decides although a newer
   one may be red; found in review.
+- Reading the jobs from `hub-mariadb.yml` at the run's commit with a
+  reader of its own (#2022, and three rounds of #2025): a file that
+  defines the job needs it, one that does not predates it. Every round
+  of review found another layout the reader got wrong, a comment after
+  `jobs:`, quoted keys, values wrapped to column 0, open quotes and flow
+  values, anchors, tags, sequence items, and a wrong read let 11.4 count
+  alone; the table asks git a question with one answer instead.
+- Reading it with PyYAML: the gate runs on the release job's bare
+  interpreter, standard library only, and the file's layout would still
+  decide what the gate requires.
+- The run's job list alone: it is blind to a job the run does not list
+  (a partial re-run, a job that never started), so the commit decides
+  and the list only adds the jobs the table does not know.
 
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 
@@ -1885,7 +1915,7 @@ because every version of an image stays in the history.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf; card tsk-deaaanqsq5e2 (the slot log, the lead's go, 2026-11-17)
+**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf; card tsk-deaaanqsq5e2 (the slot log, the lead's go, 2026-11-17; running without a slot when the slot directory cannot be written, the lead's go, 2026-11-20)
 **Revisit when:** contributors no longer share one machine and account, the shared machine gets enough memory for more parallel runs (two runs at once no longer bring a reap near), or CI checks a pull request's merge with the current main on PostgreSQL before review
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the tests it affects on
@@ -1908,6 +1938,13 @@ promise an end line for every run: once a run is over, a start line without a ma
 cannot be written is ignored. `who` is `MAITY_RUN_NAME`, which each run sets to
 `handle#instance`. Its purpose is measuring which run holds a slot how long and for whom (card
 tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
+
+Since 2026-11-20 a run that cannot write the slot directory or a slot file in it does not fail:
+the script warns once on stderr and runs the command without a slot and without a log line, as
+it does without `flock`. `MAITY_RUN_SLOTS_DIR` points it to a directory the run may write.
+`make smoke SLOT=` is only for a machine where nothing else runs tests. The slot file is opened
+with `command exec`, so a failed open never ends the script, even in bash's POSIX mode; a holder
+whose `.who` is empty or missing shows as `unknown` in the waiting message.
 
 **Reason:**
 - SQLite does not show PostgreSQL's errors, and CI as the first PostgreSQL run finds them only
@@ -1951,6 +1988,14 @@ tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
   and for measuring which kind of run holds a slot, `pytest -n` or `make smoke` says enough. The
   slot's `.who` file names the run the same way. 0640 rather than group-writable: every run that
   writes the log is the account's own, so only reading it needs the group.
+- Running without a slot when the directory cannot be written (card tsk-deaaanqsq5e2, the lead's
+  go, 2026-11-20): a Claude Code or Codex session the runner places may write only its clone, its
+  temporary directory and its scratch, not `~/.local/state/maity`. Under `set -e` the `mkdir` or
+  the slot file's open ended the script before the command ran, so such agents skipped the slot
+  with `make smoke SLOT=` or a set `MAITY_RUN_SLOT`, and their runs were not logged either. A
+  run without a slot is no worse than that, and the warning says what was lost and how to get it
+  back. A writable shared slot directory for placements is the runner's to give, on a card of
+  its own.
 
 **Rejected alternatives:**
 - A server per contributor: what was done before, and what used the memory.
@@ -1968,6 +2013,10 @@ tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
   but the `exec` goes, and with it the pid and the signals the command gets today.
 - For the slot log, the whole command line cut at 200 characters (the first version): more than
   the measurement needs, kept in a file that is not cleaned up.
+- For a slot directory the run cannot write, failing as before: it does not get the run a slot,
+  it only teaches agents to skip the slot by hand, without a warning and without a log line.
+- For the same case, running without a slot silently: the run would not show in the log, and no
+  one would learn why or that `MAITY_RUN_SLOTS_DIR` fixes it.
 
 ## An opt-in pre-push hook runs CI's lint and types for the packages a push touches, with the lock's tool versions
 
@@ -2244,7 +2293,8 @@ server, count as minor (the coordinator's scope for #1475).
   passes too; a name such as `127.example.com` is a server of its own) is a proxy in front of
   github.com, as in Claude Code's cloud sessions, which serves git and not the API, so it stands for
   github.com. A URL without a host (a local path,
-  `file://` with or without `localhost`) names no server to ask and stops the check.
+  `file://` with or without `localhost`, the scheme in any case) names no server to ask and stops the
+  check.
 
 **Rejected alternatives:**
 - `LC_ALL=C` for the whole script: it would also make git speak English and hide what the exit code
@@ -2758,3 +2808,67 @@ view of them.
 The check counts the five headings and that each has text; it cannot tell
 whether the text is right. That is what the confirmation by the lead and ops
 before the tag is for.
+
+**Fences, comments and the list of pages (2026-11-18):** (Source: the P3
+follow-ups of the review of #1846, card tsk-tzknz9zzy1m2.) The check reads a
+page as CommonMark does for what it counts, since GitHub and the docs site
+render it that way and a page that renders right must not be refused, nor a
+heading the reader cannot see accepted. A byte order mark is dropped. A fence
+is three or more backticks or tildes at the start of the line (a backtick
+fence's info string has no backtick); it closes only with a run of the same
+character at least as long, and an unclosed one runs to the end. A line
+indented by four columns or more (a tab counts to the next four) is an
+indented code block unless it continues paragraph text: it is no fence and no
+heading, and it counts as text, comments in it too, as a code block with
+content does; list items are not followed, so such a line in one is code. A
+second-level heading may be indented by up to three spaces. An HTML comment
+alone is no text, so `<!-- TODO -->` cannot stand in for `Nothing.`; a comment
+that starts a line runs as a block to its `-->` (or the end), and a heading
+inside it is no section. Comments are cut from prose only, never from code,
+where they show. Not followed either, on purpose: HTML blocks other than
+comments (a heading inside a `<div>` counts, as does a section holding only a
+link reference definition), closing `#`s, `##` plus a tab, and setext
+headings (refused, so the author writes a plain `## ` heading). Each needs
+markup no page uses. The alternative, a Markdown library, was left out: the
+check runs in ci's changelog job and the release gate on the standard library
+alone. `docs/upgrade/README.md` lists every version page, oldest first: the
+docs site renders only that README (`docs/nav.yml`), so its links are how a
+site reader finds a page. `check` refuses, on every pull request and before
+the fold too, a version page the README does not link. A page counts as
+linked only by a list line `- [version](version.md)` (or `* `, at column 0
+with no space in front; `./`, a `#fragment` and angle brackets allowed; no
+`[`, `]`, `<`, backtick or backslash in the text, so no code span, raw HTML
+tag, comment or autolink opens there and spans the destination) that is no
+code and in no comment block opened at the start of a line. Reference links,
+links inside a paragraph and images do not count; the error names the line
+to add. Why so narrow: each round of a fuller recognizer (inline and
+reference links on the rendered text) found the next edge: a reference
+resolved to the wrong label, an image, a link glued across a code span or a
+comment, an escaped bracket, an unclosed `<!--` that hid
+every later link; a list line is all the README needs, and the check stays
+standard library only. A full CommonMark inline parser was left out for the
+same reason as a Markdown library. The release gate does not ask again,
+since the release pull request has passed ci. Listing each version in
+`docs/nav.yml` as a page of its own was left out: it would grow the site's
+navigation by one entry per release. Review round 4 (A1420) showed a list
+item's own fence or comment (an item `- ~~~` with an indented list line under
+it) faking a list line that CommonMark shows as code, so the list line now
+starts at column 0. A fence line with one to three leading spaces makes the
+README or version page refused as a whole ("write code fences at the start of
+the line", with the line's number), wherever it stands: in a list item, inside
+a fence or inside a comment too. The check is a plain scan of the lines, with
+no fence or comment state. Reason (lead, round 5): CommonMark's closing rules
+for indented fences cannot be followed by a few patterns without failing
+open: round 4's rule (an indented fence closes only on one indented at least
+as far) let a re-opened fence, an empty code block and a hidden duplicate
+heading pass (A1435); the scan is fail-closed by construction, the repository
+has no such fence, and a refusal costs one edit. Rejected: following
+CommonMark's fence-indent closing (round 4, failed open per A1435), and
+refusing only a less-indented closer (still needs fence state). One edge
+fails closed, on purpose: a list line right after a list item that opened a
+comment on an indented line is refused, though CommonMark ends the comment
+with the item and shows the link. The error names the line to add, or the
+section reported missing. Reason (lead, 2026-11-18): a refusal of a correct
+but odd README costs one edit; a parser costs a review round each time; fail
+closed beats fail open. Rejected: following list items (their indent and
+where they end), built and dropped as round 4's option A.

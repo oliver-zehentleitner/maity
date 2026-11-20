@@ -3,11 +3,12 @@
 // what is wanted (`desired`), what the runner last reported, the
 // generation — with Stop for the runner's owner and the agent profile's
 // owner, Start and Restart for the runner's side only (§15.6: the runner's
-// owner, with members:admin or as the profile's owner), and Remove for the
+// owner, with members:admin or as the profile's owner) — Reset beside Restart, a
+// restart on a fresh harness session (`fresh_session`) — and Remove for the
 // runner's owner and the profile's owner, an own placement as much as a
 // `foreign` one (DELETE, §15.6; tsk-44x5grp6fcsq). Stop
-// asks nothing, it is the safe direction; a restart is confirmed with one
-// more click. A placement waiting for consent links to
+// asks nothing, it is the safe direction; a restart and a reset are confirmed
+// with one more click. A placement waiting for consent links to
 // its request in the inbox, which answers it. Every action is one contract
 // call; a refusal is the hub's envelope as it comes. Placement events
 // (§15.10) read the list again. Starting an agent on one of one's own
@@ -181,16 +182,30 @@ window.Maity = window.Maity || {};
         onclick: () => act(p, M.t("placements.stopping"), M.t("placements.not_stopped"), () => M.api.patch(path(p), { desired: "stopped" }), row) }, M.t("placements.stop"));
       const start = h("button", { type: "button", "aria-label": M.t("placements.start.label", { name }),
         onclick: () => act(p, M.t("placements.starting"), M.t("placements.not_started"), () => M.api.patch(path(p), { desired: "running" }), row) }, M.t("placements.start"));
-      // A restart re-runs the agent: one more click says so.
-      const restartWith = (rejoin) => {
-        const label = rejoin ? M.t("placements.restart_rejoin") : M.t("placements.restart");
-        const b = h("button", { type: "button", "aria-label": rejoin ? M.t("placements.restart_rejoin.label", { name }) : M.t("placements.restart.label", { name }) }, label);
+      // A restart re-runs the agent: one more click says so. A new join is a restart
+      // with `rejoin`, a reset one with `fresh_session` (§15.6): the agent starts on a fresh
+      // harness session instead of resuming the last one, the clone and its branches kept.
+      // Each with its words: the button, its label, the question, the yes, and the status line's.
+      const RESTARTS = {
+        restart: { body: {}, button: () => M.t("placements.restart"), label: (v) => M.t("placements.restart.label", v),
+          ask: (v) => M.t("placements.restart.ask", v), yes: () => M.t("placements.restart.yes"),
+          busy: () => M.t("placements.restarting"), failed: () => M.t("placements.not_restarted") },
+        rejoin: { body: { rejoin: true }, button: () => M.t("placements.restart_rejoin"), label: (v) => M.t("placements.restart_rejoin.label", v),
+          ask: (v) => M.t("placements.restart_rejoin.ask", v), yes: () => M.t("placements.restart_rejoin.yes"),
+          busy: () => M.t("placements.restarting"), failed: () => M.t("placements.not_restarted") },
+        reset: { body: { fresh_session: true }, button: () => M.t("placements.reset"), label: (v) => M.t("placements.reset.label", v),
+          ask: (v) => M.t("placements.reset.ask", v), yes: () => M.t("placements.reset.yes"),
+          busy: () => M.t("placements.resetting"), failed: () => M.t("placements.not_reset") },
+      };
+      const restartWith = (kind) => {
+        const k = RESTARTS[kind];
+        const b = h("button", { type: "button", "aria-label": k.label({ name }) }, k.button());
         b.addEventListener("click", () => {
           busy.add(p.id);
-          const yes = h("button", { type: "button", class: "primary", onclick: () => act(p, M.t("placements.restarting"), M.t("placements.not_restarted"),
-            () => M.api.post(path(p) + "/restart", rejoin ? { rejoin: true } : {}), row) }, rejoin ? M.t("placements.restart_rejoin.yes") : M.t("placements.restart.yes"));
+          const yes = h("button", { type: "button", class: "primary", onclick: () => act(p, k.busy(), k.failed(),
+            () => M.api.post(path(p) + "/restart", k.body), row) }, k.yes());
           const no = h("button", { type: "button", onclick: () => { busy.delete(p.id); draw(); } }, M.t("placements.cancel"));
-          append(clear(row), h("span", null, rejoin ? M.t("placements.restart_rejoin.ask", { name }) : M.t("placements.restart.ask", { name }), " "), yes, " ", no);
+          append(clear(row), h("span", null, k.ask({ name }), " "), yes, " ", no);
           yes.focus();
         });
         return b;
@@ -208,7 +223,7 @@ window.Maity = window.Maity || {};
         } }, M.t("placements.remove"));
       const starts = mayStart(p);
       append(row, p.desired === "running" ? stop : starts ? start : null,
-        starts ? [" ", restartWith(false), revoked(p) ? [" ", restartWith(true)] : null] : null,
+        starts ? [" ", restartWith("restart"), " ", restartWith("reset"), revoked(p) ? [" ", restartWith("rejoin")] : null] : null,
         " ", remove);
       return row;
     }
@@ -231,6 +246,7 @@ window.Maity = window.Maity || {};
           // The generation is for the curious: folded into the reported line, muted.
           h("dt", null, M.t("placements.reported")), h("dd", null, stateLine(ctx, p),
             h("span", { class: "muted placement-generation" }, " · ", M.t("placements.generation", { generation: String(p.generation) }),
+              p.fresh_session ? [" · ", M.t("placements.fresh_session")] : null,
               p.reported && p.reported.reported_at ? [" · ", M.t("placements.last_report", { ago: formatAgo(p.reported.reported_at, M.api.now()) })] : null))),
         actions(p),
         // The runner's owner sees how to look at it (§15.5: theirs only),
@@ -398,6 +414,13 @@ window.Maity = window.Maity || {};
   //   refuse(status, err): a refusal into a status line, placement_quota with its link;
   // - reread(): read again while it is on (the panel opened anew, a placement made).
   // hooks.changed(): turned on or off, or read; the form shows and hides its fields.
+  // The tools that start only on a model named in the placement: opencode without `--model`
+  // runs opencode's own default, an opencode-hosted model, and the clone's conversation would go
+  // to opencode's servers (docs/api.md §15.3, docs/runners.md "OpenCode (Grok)"). The form
+  // offers such a tool only with the models its runner names, with no "runner's default", and
+  // leaves it out where the runner names none (web/context/views.md, the opencode model entry).
+  const MODEL_NAMED = new Set(["opencode"]);
+
   function runnerPart(ctx, hooks) {
     if (!M.placements.startOffered(ctx)) return null;
     const words = M.runnerWords;
@@ -434,19 +457,36 @@ window.Maity = window.Maity || {};
       runner.value = runners[0].runner.id;
       const target = select("target");
       const tool = select("tool");
-      tool.setAttribute("aria-describedby", id("tool") + "-none");
       const mode = select("mode");
       const model = select("model");
       const noTool = h("p", { class: "hint", id: id("tool") + "-none", hidden: true }, M.t("placements.new.no_tool"));
+      // A tool left out because its runner names no model for it (MODEL_NAMED, above).
+      const noModel = h("p", { class: "hint placement-new-no-model", id: id("tool") + "-no-model", hidden: true });
+      const modelHint = h("p", { class: "hint", id: id("model") + "-hint", hidden: true }, M.t("placements.new.model_named"));
+      // A control is described only by the hints shown now: a screen reader reads a hidden
+      // element named in aria-describedby too, so a hint that does not apply is not named.
+      const describe = (control, hints) => {
+        const shown = hints.filter((x) => !x.hidden).map((x) => x.id).join(" ");
+        if (shown) control.setAttribute("aria-describedby", shown);
+        else control.removeAttribute("aria-describedby");
+      };
       const caps = () => (runners.find((a) => a.runner.id === runner.value).runner.capabilities || {});
-      const tools = () => (caps().harnesses || []).filter((x) => x.available !== false && (!target.value || (x.targets || []).includes(target.value)));
+      const installed = () => (caps().harnesses || []).filter((x) => x.available !== false && (!target.value || (x.targets || []).includes(target.value)));
+      const tools = () => installed().filter((x) => !MODEL_NAMED.has(x.id) || (x.models || []).length);
       const harness = () => tools().find((x) => x.id === tool.value);
       const fillModes = () => {
         const x = harness();
         const modes = x ? x.modes || [] : [];
         append(clear(mode), modes.map((m) => h("option", { value: m }, Object.hasOwn(words.MODES, m) ? words.MODES[m] : m)));
         mode.value = x && modes.includes(x.default_mode) ? x.default_mode : modes[0] || "";
-        append(clear(model), h("option", { value: "" }, M.t("placements.new.model_default")), (x ? x.models || [] : []).map((m) => h("option", { value: m }, m)));
+        // A tool of MODEL_NAMED starts only on a model chosen here: no "runner's default", and
+        // the placeholder keeps the required select empty until one is.
+        const named = !!x && MODEL_NAMED.has(x.id);
+        append(clear(model), h("option", { value: "" }, named ? M.t("placements.new.model_choose") : M.t("placements.new.model_default")),
+          (x ? x.models || [] : []).map((m) => h("option", { value: m }, m)));
+        model.required = named;
+        modelHint.hidden = !named;
+        describe(model, [modelHint]);
       };
       const fillTools = () => {
         const kept = tool.value;
@@ -455,6 +495,10 @@ window.Maity = window.Maity || {};
         tool.value = list.some((x) => x.id === kept) ? kept : list.length ? list[0].id : "";
         // Nothing to start with: the hub would refuse it (harness_not_offered).
         noTool.hidden = !!list.length;
+        const left = installed().filter((x) => !list.includes(x)).map((x) => words.toolName(x.id));
+        noModel.hidden = !left.length;
+        noModel.textContent = left.length ? M.t("placements.new.no_model", { tools: M.fmt.list(left) }) : "";
+        describe(tool, [noTool, noModel]);
         fillModes();
       };
       const fillTargets = () => {
@@ -475,9 +519,9 @@ window.Maity = window.Maity || {};
       const set = h("fieldset", { class: "join-runner-fields" },
         field("runner", M.t("placements.new.runner"), runner),
         field("target", M.t("placements.new.target"), target),
-        h("div", { class: "field" }, h("label", { for: id("tool") }, M.t("placements.new.tool")), tool, noTool),
+        h("div", { class: "field" }, h("label", { for: id("tool") }, M.t("placements.new.tool")), tool, noTool, noModel),
         field("mode", M.t("placements.new.mode"), mode),
-        field("model", M.t("placements.new.model"), model),
+        h("div", { class: "field" }, h("label", { for: id("model") }, M.t("placements.new.model")), model, modelHint),
         field("clone", M.t("placements.new.clone"), clone, M.t("placements.new.clone_hint")),
         field("branch", M.t("placements.new.branch"), branch),
         h("div", { class: "field wide" }, h("label", { for: id("reason") },
@@ -507,7 +551,7 @@ window.Maity = window.Maity || {};
       }
       if (!runners.length) {
         say(h("p", { class: "hint placement-new-none" }, M.tn("placements.new.none",
-          { link: h("a", { href: ctx.link("runners") }, M.t("placements.new.none_link")) })));
+          { link: h("a", { href: ctx.link("settings", "runners") }, M.t("placements.new.none_link")) })));
         return;
       }
       const name = repositoryName(repo);
@@ -579,7 +623,10 @@ window.Maity = window.Maity || {};
       el,
       on: () => offer.checked,
       ready: () => offer.checked && !!fields && !!fields.tool.value,
+      // A tool that needs a model named (MODEL_NAMED) without one chosen: words, else null.
+      unnamed: () => (fields && fields.model.required && !fields.model.value ? M.t("placements.new.model_missing", { tool: words.toolName(fields.tool.value) }) : null),
       first: () => (fields ? fields.runner : offer),
+      model: () => (fields ? fields.model : offer),
       follow, blocked, body, said, refuse,
       reread: () => { if (offer.checked) load(); },
     };

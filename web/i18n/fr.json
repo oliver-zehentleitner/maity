@@ -449,10 +449,19 @@
   "board.claim.unclaimed": "Pas prise en charge",
   "board.closed.failed": "Impossible de lire les cartes fermées : {reason}",
   "board.closed.loading": "Lecture des cartes fermées…",
+  "board.closed.more_failed": "Impossible de lire plus de cartes fermées : {reason}",
+  "board.closed.more_loaded": {
+    "one": "{count} carte fermée chargée",
+    "other": "{count} cartes fermées chargées"
+  },
   "board.closed.recheck_failed": "Impossible de vérifier si les cartes fermées ont changé pendant leur lecture : {reason}",
   "board.closed.show_more": {
     "one": "Afficher {count} autre carte fermée",
     "other": "Afficher {count} autres cartes fermées"
+  },
+  "board.closed.show_more_loaded": {
+    "one": "Afficher plus ({count} chargée)",
+    "other": "Afficher plus ({count} chargées)"
   },
   "board.column.other": "Autre",
   "board.column.unknown": "Statut inconnu",
@@ -500,6 +509,7 @@
   "board.new_subtask": "Nouvelle sous-tâche",
   "board.no_match": "Aucune carte ne correspond au filtre.",
   "board.not_saved": "Non enregistré : {reason}",
+  "board.open.more_failed": "Impossible de lire les autres cartes des colonnes ouvertes : {reason}",
   "board.place.above": "{id} est maintenant au-dessus de {other}.",
   "board.place.below": "{id} est maintenant en dessous de {other}.",
   "board.place.bottom": "{id} est maintenant tout en bas.",
@@ -2983,7 +2993,6 @@
   "nav.messages": "Messages",
   "nav.organisation": "Organisation",
   "nav.overview": "Vue d'ensemble",
-  "nav.runners": "Runners",
   "nav.runners.changed": "Les runners ont changé.",
   "nav.settings": "Paramètres",
   "nav.ticker": "Fil d'actualité",
@@ -3707,6 +3716,7 @@
   "project.link.actions_on": "Actions sur {forge}",
   "project.link.chat": "Discussion",
   "project.link.discussions": "Discussions",
+  "project.link.docs": "Docs",
   "project.link.issues": "Issues",
   "project.link.ktw_dashboard": "Tableau de bord Keep the Why",
   "project.link.opens": "{what} (s'ouvre dans un nouvel onglet)",
@@ -4637,7 +4647,6 @@
   "settings.repo.title": "Dépôt",
   "settings.repo.unchanged": "Rien n'a changé.",
   "settings.repo.url": "URL",
-  "settings.runners_link": "Les runners de ce projet",
   "settings.saving": "Enregistrement…",
   "settings.see_fields": "voir les champs marqués ci-dessous",
   "settings.signing.anyway": "Exiger la signature quand même",
