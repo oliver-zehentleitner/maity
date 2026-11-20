@@ -5692,6 +5692,38 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "board: answered in reverse, each column holds the cards of one status=all read, in the board's order " + JSON.stringify([bgGot, bgWant]));
   }
 
+  // The board draws from each open group's first page (tsk-qw08c8ds214g): the open column's later pages
+  // come with the whole read, which draws again; one that fails after the first draw is said in the
+  // closed-read line, and the board stays as drawn.
+  {
+    const fpAll = win.Maity.api.getAll;
+    const fpColumn = (st) => main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === st);
+    const fpCards = (st) => (fpColumn(st) ? fpColumn(st).querySelectorAll("article.card").length : -1);
+    const fpLive = () => main.querySelectorAll("p.visually-hidden").find((x) => x.getAttribute("role") === "status");
+    let fpRest = null;
+    // The open column in two pages: its first card at once, the rest held until released.
+    win.Maity.api.getAll = (p, first) => {
+      if (!/^\/projects\/maintainer\/maity\/tasks\?status=open$/.test(p)) return fpAll(p, first);
+      return fpAll(p).then((r) => {
+        if (first) first(r.items.slice(0, 1));
+        return new Promise((res, rej) => { fpRest = { go: () => res(r), fail: () => rej(new Error("hub unreachable")) }; });
+      });
+    };
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    const fpEarly = fpCards("open");
+    fpRest.go(); for (let k = 0; k < 8; k++) await tick();
+    const fpLate = fpCards("open");
+    expect(fpEarly === 1 && fpLate > 1,
+      "board: drawn from the open column's first page, its later page drawn when the whole read is in " + JSON.stringify([fpEarly, fpLate]));
+    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    fpRest.fail(); for (let k = 0; k < 8; k++) await tick();
+    expect(fpCards("open") === 1 && fpLive() && text(fpLive()) === "More cards of the open columns could not be read: hub unreachable"
+      && !main.querySelector(".columns .error"),
+      "board: a later open page failing after the first draw is said as such, the board kept " + JSON.stringify([fpCards("open"), fpLive() && text(fpLive())]));
+    win.Maity.api.getAll = fpAll;
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+  }
+
   // The board is drawn once the four open groups have answered (tsk-a5pxwgkgr73e): the closed group's pages
   // follow, its columns say they are being read and hold no count, then fill in; a closed read that fails says
   // so in those columns and leaves the open ones as drawn.

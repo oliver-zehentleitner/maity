@@ -486,6 +486,7 @@
   "board.new_subtask": "新しいサブタスク",
   "board.no_match": "フィルターに一致するカードはありません。",
   "board.not_saved": "保存されませんでした: {reason}",
+  "board.open.more_failed": "未クローズの列の残りのカードを読み込めませんでした: {reason}",
   "board.place.above": "{id} は {other} の上になりました。",
   "board.place.below": "{id} は {other} の下になりました。",
   "board.place.bottom": "{id} は一番下になりました。",
