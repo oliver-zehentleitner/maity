@@ -1227,6 +1227,7 @@ def _reaching(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 WRONG_FILES = [
     "clone", "relative", "temp", "home-dotdir", "other-name", "not-a-placement", "other-dir",
     "link-out", "link-dir", "hard-link", "group-writable", "missing", "directory", "dotdot",
+    "link-to-own", "root-link", "other-writable-dir", "double-slash", "fifo", "foreign",
 ]  # fmt: skip
 
 
@@ -1264,6 +1265,12 @@ def test_an_in_session_command_takes_only_the_file_the_runner_wrote_for_it(
         "link-out": root / shape[0] / "link",
         "link-dir": root / "linked" / shape[1],
         "hard-link": own[name],
+        "link-to-own": clone / "own",
+        "fifo": own[name],
+        "foreign": own[name],
+        "root-link": own[name],
+        "other-writable-dir": own[name],
+        "double-slash": str(own[name]).replace("/.maity-runner/", "/.maity-runner//"),
         "group-writable": own[name],
         "missing": root / shape[0] / ("plc-0004.log" if name == "logcap" else "loop.json"),
         "directory": own[name],
@@ -1280,6 +1287,20 @@ def test_an_in_session_command_takes_only_the_file_the_runner_wrote_for_it(
     elif where == "link-dir":
         (root / "linked").symlink_to(outside.parent)
         (outside.parent / shape[1]).write_text("{}")
+    elif where == "fifo":
+        own[name].unlink()
+        os.mkfifo(own[name], 0o600)
+    elif where == "foreign":
+        mine = os.getuid()
+        monkeypatch.setattr(os, "getuid", lambda: mine + 1)  # files of another user
+    elif where == "link-to-own":
+        (clone / "own").symlink_to(own[name])
+    elif where == "root-link":
+        moved = tmp_path / "real-runner"
+        root.rename(moved)
+        root.symlink_to(moved)
+    elif where == "other-writable-dir":
+        own[name].parent.chmod(0o777)
     elif where == "hard-link":
         os.link(own[name], tmp_path / "elsewhere")  # the same inode under another name
     elif where == "group-writable":
@@ -1313,6 +1334,27 @@ def test_the_runners_own_file_gets_through(
     reached = _reaching(monkeypatch)
     assert cli.main(["runner", *_in_session_argv(name, str(own[name]))]) == 0
     assert reached == [f"maity.runner.{name}"]
+
+
+def test_under_a_placement_only_that_placements_file_gets_through(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    own = _runner_home(monkeypatch, tmp_path)
+    other = own["loop"].parent.parent / "plc-0004" / "loop.json"
+    other.parent.mkdir()
+    other.write_text("{}")
+    other.chmod(0o600)
+    monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
+    assert commands.runner_own_file("loop", str(own["loop"]))
+    assert not commands.runner_own_file("loop", str(other))
+    monkeypatch.delenv("MAITY_PLACEMENT")  # the runner's own calls carry none
+    assert commands.runner_own_file("loop", str(other))
+
+
+def test_runner_is_refused_with_for(capsys: pytest.CaptureFixture[str]) -> None:
+    """`--for` sits before the command, past the harnesses' `maity runner` deny rules."""
+    assert cli.main(["--for", "x", "runner", "loop", "--spec", "/x"]) == cli.EXIT_USAGE
+    assert "`maity runner` is the operator's" in capsys.readouterr().err
 
 
 def test_without_a_home_in_the_user_database_nothing_gets_through(

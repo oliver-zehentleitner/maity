@@ -81,16 +81,20 @@ def runner_own_file(command: str, given: str) -> bool:
     these through `maity` only on an ssh host, where its files lie in the agents' user's
     `~/.maity-runner` (targets.AGENT_FILES): the loop's spec at `agents/<placement>/loop.json`,
     the pane's log at `logs/<placement>.log`. An allow list, checked on every call, with or
-    without `MAITY_PLACEMENT`: the path resolved (links and `..` followed) must be that one,
-    an existing regular file of this user with one link that neither group nor others may
-    write."""
+    without `MAITY_PLACEMENT`. The path must be written as exactly that one (absolute, the home
+    from the user database, not from `HOME`; no `..`, no doubled or trailing slash), and no
+    step from `~/.maity-runner` down may be a link: each directory is this user's and others
+    may not write it, and the file is an existing regular file of this user with one link
+    that neither group nor others may write. Under a placement it must be that placement's own file.
+    """
     home = _own_home()
-    if home is None:
+    if home is None or "\0" in given or not os.path.isabs(given):
         return False
-    root = Path(os.path.realpath(home / targets.AGENT_FILES))
-    path = Path(os.path.realpath(given))
+    if os.path.normpath(given) != given or given.startswith("//"):
+        return False
+    root = home / targets.AGENT_FILES
     try:
-        rel = path.relative_to(root).parts
+        rel = Path(given).relative_to(root).parts
     except ValueError:
         return False
     if command == "loop":
@@ -103,16 +107,27 @@ def runner_own_file(command: str, given: str) -> bool:
         return False
     if not shaped or not supervisor.PLACEMENT_ID.fullmatch(placement):
         return False
-    try:
-        info = path.lstat()
-    except OSError:
+    placed = os.environ.get(clonecheck.PLACEMENT_ENV)
+    if placed and placed != placement:
         return False
-    return (
-        stat.S_ISREG(info.st_mode)
-        and info.st_nlink == 1  # not a hard link to another file of this user
-        and info.st_uid == os.getuid()
-        and not info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
-    )
+    uid = os.getuid()
+    step = root
+    for part in ("", *rel):
+        step = step / part if part else step
+        try:
+            info = os.lstat(step)
+        except OSError:
+            return False
+        last = step == root.joinpath(*rel)
+        kind = stat.S_ISREG(info.st_mode) if last else stat.S_ISDIR(info.st_mode)
+        # The file is written 0600; its directories may carry the user's group-write bit (an
+        # umask of 002 makes the parents), never the others'.
+        barred = stat.S_IWGRP | stat.S_IWOTH if last else stat.S_IWOTH
+        if not kind or info.st_uid != uid or info.st_mode & barred:
+            return False
+        if last and info.st_nlink != 1:  # not a hard link to another file of this user
+            return False
+    return True
 
 
 # --- pair ------------------------------------------------------------------------------------

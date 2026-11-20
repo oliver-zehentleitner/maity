@@ -6312,6 +6312,12 @@ def _main(argv: Sequence[str] | None = None) -> int:
     if args.for_target is not None and args.command == "join":
         _err("--for applies to project commands; join is the bridge's own: run it without --for")
         return EXIT_USAGE
+    if args.for_target is not None and args.command == "runner":
+        _err(
+            "--for applies to project commands; `maity runner` is the operator's: "
+            "run it without --for"
+        )
+        return EXIT_USAGE
     if args.command == "runner" and sys.platform == "win32":
         _err(
             "the runner does not run on Windows: it needs tmux and POSIX OS users. "

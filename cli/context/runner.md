@@ -1904,18 +1904,26 @@ the host's own `maity`, on internal subcommands (`maity runner loop`,
 `maity runner stub`). `maity runner loop` and `maity runner logcap` take
 only the file the runner wrote for them there:
 `~/.maity-runner/agents/<placement>/loop.json` and
-`~/.maity-runner/logs/<placement>.log`, resolved (links and `..`
-followed), a regular file of this user with a single link that neither
-group nor others may write, the home taken from the user database, not from `HOME`
-(`commands.runner_own_file`). It is checked on every call, not only under
-`MAITY_PLACEMENT`, which an agent can drop from its own `maity`'s
-environment: an agent's `maity` runs outside its sandbox (security round
-5, S201/S202). Every harness also denies `maity runner` in its command
-rules (`adapters.MAITY_RUNNER_DENIED`, agy's `AGY_DENIED_COMMANDS`): no
-agent needs it, the runner and the harness start the in-session commands
+`~/.maity-runner/logs/<placement>.log` (`commands.runner_own_file`). The
+path must be written as exactly that one, with the home from the user
+database, not from `HOME`, and no `..` or doubled slash; no step from
+`~/.maity-runner` down may be a link, each directory is this user's and
+not writable by others, and the file is an existing regular file of this
+user with a single link that neither group nor others may write. Under a
+placement it must be that placement's own file. So on an ssh host the
+runner makes the pane's log before pipe-pane starts logcap. It is checked
+on every call, not only under `MAITY_PLACEMENT`, which an agent can drop
+from its own `maity`'s environment: an agent's `maity` runs outside its
+sandbox (security round 5, S201/S202), and `maity --for … runner` is
+refused. Claude Code, opencode and agy also deny `maity runner` in their
+command rules (`adapters.MAITY_RUNNER_DENIED`, agy's
+`AGY_DENIED_COMMANDS`; Codex runs `maity` inside its sandbox): no agent
+needs it, the runner and the harness start the in-session commands
 themselves. Claude Code's sandbox also denies writes to every private
-path, `~/.maity-runner` among them. The lasting answer is a runner command an agent cannot reach
-at all. The join runs the host's `maity` too, so the
+path, `~/.maity-runner` among them. The checked path is opened again by
+`loop` and `logcap`, so this rests on the agent being unable to write
+under `~/.maity-runner`; the lasting answer is a runner command an agent
+cannot reach at all, with the file checked on the descriptor it uses. The join runs the host's `maity` too, so the
 agent's credential is written on the host and never passes through the
 runner. Workspace records are keyed `<host>:<path>`. A sandbox's read
 denies are the host's: the remote user's home secrets, its
