@@ -631,7 +631,9 @@ public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, 
   the `moderation.hold` the Board and the card page read), and no hidden card's id is in another card's view
   (`public_cards.outside_views`, called once by `views.task_views` for an `OutsideReader`: `depends_on`,
   `ships_with`, `related`, `parent`, the `children` counts and a release's pull requests, groups and blockers,
-  with one query for the hidden ids of a page; the lead's rulings 6 and 7, 2026-11-19).
+  with one query for the hidden ids of a page; the lead's rulings 6 and 7, 2026-11-19). A known residual, not
+  cleaned (§2.3 as adopted in req-mfnmm9m8fgsd): an older entry of a visible card's history can still name a hidden
+  card's id in a past `depends_on`, `related` or `parent` change, and a body or a note can name its id as text.
 - An allow-list of the project view's keys (`OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from
   outside until it is named; never `repository`, `settings` beyond `language` (`role_rules`), `memory` or
   `setup`, and the links as the public page shows them.

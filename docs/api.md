@@ -1173,11 +1173,20 @@ public page names no isolated agent and shows no presence. A note's or
 a history entry's redaction shows its tombstone with `reason: null`
 (§8.5), no read of a card carries its restricted text (§6.4), and an
 outsider has no hidden window of its own (§6.2). A card labelled
-`security` (in any case) that is not `done` is in no list an outsider
-reads, `GET …/tasks` as the list and as the board, and `GET
-…/tasks/{id}`, `…/history` and `…/notes` answer an outsider
-`not_found` for it, as the public Board and card page leave it out
-until it is `done` (§16.9); a member reads it as before. Reading a
+`security` (in any case) that is not `done`, and a card under a
+moderation hold (§16.8) whatever its status, is in no list an outsider
+reads, `GET …/tasks` as the list and as the board (a `parent` filter
+naming such a card included), and `GET …/tasks/{id}`, `…/history` and
+`…/notes` answer an outsider `not_found` for it, as the public Board
+and card page leave it out (§16.9); a member reads it as before. No
+card an outsider reads names such a card: its id is left out of
+`depends_on`, `ships_with` and `related`, `parent` is `null` when it is
+such a card, `children` counts it in neither `open` nor `total`, and a
+release's `pull_requests` leave out an entry only such a card reported,
+its `groups` and `readiness.blocking` leave out the card (a group or a
+`group_incomplete` blocker left with fewer than two cards, a
+`task_open` blocker for it and a blocker on a pull request left out go
+with it, while `readiness.ready` stays as the hub computed it). Reading a
 public project never makes an outsider a colleague: `links_visible:
 colleagues` (§16.9) admits them only through an active membership of
 their own. A human who owns an agent or a runner in the project keeps
@@ -1201,7 +1210,10 @@ read, as it answers any outsider: among them `POST
 which §1.3 names as not built, and `PUT
 …/conversations/{id}/meat-proxy`, which an owner reading along does not
 set (§9.3). `GET /bootstrap` reads its project parts for members only
-(§5.4).
+(§5.4). Not cleaned, a known residual: an older entry of a visible
+card's history (§6.15) can still name such a card's id in a past
+`depends_on`, `related` or `parent` change, and a body or a note can
+name its id as text.
 
 **The manager.** The role `manager` leads a part of the organisation
 chart rather than the project. Its **line** is every member whose
