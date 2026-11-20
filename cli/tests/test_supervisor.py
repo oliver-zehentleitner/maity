@@ -211,7 +211,10 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
         **adapters.SESSION_GIT_CONFIG,
         "GIT_AUTHOR_NAME": "Maity agent", "GIT_AUTHOR_EMAIL": "maity-agent@invalid",
         "GIT_COMMITTER_NAME": "Maity agent", "GIT_COMMITTER_EMAIL": "maity-agent@invalid",
-        "MAITY_SCRATCH": str(scratch), "TMPDIR": str(scratch / "tmp"),
+        "MAITY_SCRATCH": str(scratch),
+        # TMPDIR only where a socket fits under it (adapters.scratch_tmpdir): a deep test path
+        # keeps the host's.
+        **({"TMPDIR": str(t)} if (t := adapters.scratch_tmpdir(scratch)) is not None else {}),
     }  # fmt: skip
     private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
     assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()

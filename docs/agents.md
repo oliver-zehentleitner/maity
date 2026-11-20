@@ -144,7 +144,7 @@ goes in a file in the clone (`--body-file`, `--summary-file`,
 `--last-file`, `--next-file`) or in single quotes.
 
 Under a runner placement a Claude Code, Codex or agy session also has a
-scratch: `$MAITY_SCRATCH`, with `TMPDIR` inside it. For Claude Code and
+scratch: `$MAITY_SCRATCH`, with `TMPDIR` inside it when the path is short enough for a socket (often it is not set, and tools then use `/tmp`, so write scratch files to `$MAITY_SCRATCH` by name). For Claude Code and
 Codex it sits beside your clone (not in it); for agy it is a writable
 directory the runner manages outside your clone, since agy's sandbox
 cannot write beside the clone. Either way you reach it as
