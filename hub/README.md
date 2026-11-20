@@ -593,10 +593,12 @@ that names it; a table read with `autoload_with` loses the flag.
 `tests/test_reserved_words.py` holds the list of such words and fails on a
 name from it without the flag. An `op.*` call that names a table, an index or
 a constraint has no `quote=True`: write the name there as
-`sa.sql.quoted_name("vector", True)`, and a foreign key to it as a tuple of
-such names (`sa.ForeignKey((quoted_name("t", True), quoted_name("vector", True)))`)
-or by the `Column` object, never as a `"t.vector"` string, which SQLAlchemy
-splits and writes plain. SQLite runs in Alembic's batch mode, so column
+`sa.sql.quoted_name("vector", True)`, and a foreign key to it by the
+`Column` object (`sa.ForeignKey(t.c.vector)`, with `t` a `sa.Table` whose
+column carries `quote=True`), which keeps the flag from the floor in
+`pyproject.toml` (`sqlalchemy>=2.0.36`) on. Not as a `"t.vector"` string,
+which SQLAlchemy splits and writes plain, and not as a tuple of
+`quoted_name` parts, which only 2.1 takes. SQLite runs in Alembic's batch mode, so column
 changes work there too. Every revision has a working `downgrade()`; the
 test suite migrates up and down on each engine. A revision spells out its
 column types instead of importing them from `maity_hub` (autogenerate

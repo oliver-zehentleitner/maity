@@ -1027,7 +1027,7 @@ reflection.
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-5cah3a82dv63 (found in the review of pull request #2020 on MariaDB 11.8; the lead's go for quoting over a rename, 2026-11-20); card tsk-07hb18s4j47f (the walk's further calls, from the review of #2022); the MariaDB KB "Reserved Words" (`VECTOR`, 11.7+); `hub/tests/test_reserved_words.py`
+**Source:** card tsk-5cah3a82dv63 (found in the review of pull request #2020 on MariaDB 11.8; the lead's go for quoting over a rename, 2026-11-20); card tsk-07hb18s4j47f (the walk's further calls, from the review of #2022); a check of the foreign-key forms on SQLAlchemy 2.0.36 and 2.1.6, 2026-11-20; the MariaDB KB "Reserved Words" (`VECTOR`, 11.7+); `hub/tests/test_reserved_words.py`
 **Revisit when:** SQLAlchemy's MySQL/MariaDB reserved lists gain `vector` (`test_sqlalchemy_still_lacks_vector` fails), or the hub starts writing raw SQL against `notification_position`
 
 MariaDB 11.7 made `vector` a reserved word, and `notification_position` has a column of that name.
@@ -1068,8 +1068,11 @@ columns of `PrimaryKeyConstraint`, `UniqueConstraint` and `Index`, `create_forei
 `local_cols`/`remote_cols`, `create_primary_key`'s columns), the schema part of a three-part
 foreign-key target, and raw SQL in `op.execute`. A string target `"t.vector"` has no quoted form at
 all: SQLAlchemy splits it at its periods and writes each part plain, `quoted_name` or not. A tuple of
-`quoted_name` parts keeps the flag on SQLAlchemy 2.1, the pinned runtime (checked on 2.1.6; the
-review of #2025 found 2.0.36, the floor in `pyproject.toml`, dropping it).
+`quoted_name` parts keeps the flag on SQLAlchemy 2.1, the pinned runtime (checked on 2.1.6), but not
+on 2.0.36, the floor in `pyproject.toml`: the review of #2025 reported it written plain there, and a
+check on 2026-11-20 found `ForeignKey` and `ForeignKeyConstraint` refusing the tuple with an
+`ArgumentError`. Both sources agree it is no form for the floor; the `Column` object quotes on both
+versions (same check), so `hub/README.md` names that one.
 
 ## On MariaDB a migration run commits per step, and a refusal stays where it refused
 

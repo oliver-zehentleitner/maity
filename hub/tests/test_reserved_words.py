@@ -190,9 +190,9 @@ def _target(node: ast.expr | None) -> list[tuple[str, ast.expr | None]]:
     string, or a ("table", "column") tuple.
 
     SQLAlchemy splits a string at its periods and writes each part plain, quoted_name or not, so
-    a reserved part of a string target has no quoted form: the key is then named by a tuple of
-    quoted_name parts (kept by SQLAlchemy 2.1, the pinned runtime; the review found 2.0.36
-    dropping the flag) or by the Column object."""
+    a reserved part of a string target has no quoted form: the key is then named by the Column
+    object (quoted from 2.0.36, the floor, on), or by a tuple of quoted_name parts, which only
+    SQLAlchemy 2.1, the pinned runtime, takes (2.0.36 refuses it)."""
     if isinstance(node, ast.Tuple) and len(node.elts) >= 2:
         return [("table", node.elts[-2]), ("column", node.elts[-1])]
     spelled = _literal(node)
