@@ -64,7 +64,8 @@ window.Maity = window.Maity || {};
     restricted_changed: () => M.t("memberpage.kind.restricted_changed"),
   };
 
-  const ownAgentOf = (ctx, m) => m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
+  // An outsider of a public project (docs/api.md §2.3) manages nothing in it, an agent of their own included.
+  const ownAgentOf = (ctx, m) => !ctx.outsider && m.kind === "agent" && ctx.me.kind === "human" && m.owner_id === ctx.me.id;
 
   // The instance that speaks for the member now: the online one, else the newest.
   function currentInstance(m) {
@@ -97,7 +98,7 @@ window.Maity = window.Maity || {};
       m.paused ? pill(M.t("memberpage.paused"), "member-pill-paused") : null];
     // Chat: one's own agent's direct chat, anyone else a group chat with them chosen (§9.2).
     const groupOk = !M.trust.guest(ctx) && !["accepted", "archived"].includes(ctx.project.state);
-    const chat = m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human" ? null
+    const chat = m.id === ctx.me.id || m.removed_at || ctx.me.kind !== "human" || ctx.outsider ? null
       : ownAgentOf(ctx, m) ? ctx.link("chat", m.id) : groupOk ? ctx.link("chat", "new") + "?with=" + encodeURIComponent(m.id) : null;
     // Actions lead to where each one is done (#643): nothing is done here.
     const actions = [];
@@ -269,8 +270,10 @@ window.Maity = window.Maity || {};
       append(root, crumb, h("p", { class: "error", role: "alert" }, M.t("members.no_such", { id })));
       return;
     }
-    const offered = TABS.filter(([k]) => k !== "briefing" || readsBriefing(ctx, m));
-    const chosen = offered.some(([k]) => k === tab) ? tab : "activity";
+    // An outsider (§2.3) reads Cards alone: Activity reads the event feed, Briefing the
+    // briefings and Sessions & credentials what a member view shows them only in part.
+    const offered = TABS.filter(([k]) => (ctx.outsider ? k === "cards" : k !== "briefing" || readsBriefing(ctx, m)));
+    const chosen = offered.some(([k]) => k === tab) ? tab : offered[0][0];
     // The cards held, for the header's line, from the instances' claims where the hub counts them.
     const claims = (m.instances || []).some((i) => typeof i.claims === "number")
       ? (m.instances || []).filter((i) => !i.revoked_at).reduce((n, i) => n + (i.claims || 0), 0) : null;

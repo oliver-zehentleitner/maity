@@ -91,6 +91,8 @@ window.Maity = window.Maity || {};
   // nobody yet. The dot is decoration; the words say it.
   function holderPresence(ctx, holder) {
     const member = (ctx.memberById || {})[holder];
+    // An outsider reads no presence (docs/api.md §2.3): nothing to say beside the holder.
+    if (ctx.outsider) return h("span", { class: "holder-presence", "data-holder": holder });
     return h("span", { class: "holder-presence", "data-holder": holder }, member
       ? [" · ", h("span", { class: "dot " + (member.presence || "offline"), "aria-hidden": "true" }),
         " " + presenceWord(member.presence), M.dom.isSilentAgent(member) ? [" · ", M.dom.silentSince(member, ctx.canAdmin)] : null]
@@ -192,7 +194,8 @@ window.Maity = window.Maity || {};
   // In the opened card: its parent and related cards for whoever may edit
   // it, and a subtask to start under it for every member.
   function familyEditor(ctx, c, byId, manage) {
-    if (!manage || !manage.reload) return null;
+    // An outsider (docs/api.md §2.3) edits no card and starts no subtask.
+    if (!manage || !manage.reload || ctx.outsider) return null;
     const closed = (t) => t.status === "done" || t.status === "cancelled";
     const others = Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
     const parts = [];
@@ -600,10 +603,12 @@ window.Maity = window.Maity || {};
       if (target) target.focus();
     };
     const E = M.boardEdit;
-    const controls = manage ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
+    // An outsider (docs/api.md §2.3) moves, assigns and places no card: no row of controls, no drag.
+    const writes = manage && !ctx.outsider;
+    const controls = writes ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
       E.orderControl(ctx, c, manage.columnOf(c), manage.place)) : null;
     // Movable to another column, or within its own by tasks:admin.
-    const movable = manage && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
+    const movable = writes && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
     const draggable = movable && !inPanel;
     const el = h("article", {
       class: "card card-" + c.kind + (draggable ? " movable" : ""),
@@ -651,8 +656,8 @@ window.Maity = window.Maity || {};
             watchers: c.contract.watchers.map((w, i) => [i ? ", " : null, M.dom.memberRef(ctx, w)]) })
           : M.tn("board.contract.line", { state: M.dom.word("contract", c.contract.state), arbiter: arbiterName(ctx, c.contract.arbiter) }))
         : null,
-      // Its section from the repository (§6.8).
-      c.contract && M.contractPanel ? M.contractPanel.panel(ctx, c, redraw) : null,
+      // Its section from the repository (§6.8); not for an outsider, who reads no …/contract (§2.3).
+      c.contract && M.contractPanel && !ctx.outsider ? M.contractPanel.panel(ctx, c, redraw) : null,
       checkpoint(ctx, c),
       subtasks(ctx, c, byId, inPanel),
       inPanel ? familyEditor(ctx, c, byId, manage) : null,
@@ -683,7 +688,7 @@ window.Maity = window.Maity || {};
     const kept = prior && (returning || (prior.fromTitle && prior.id === wanted)) ? prior.snapshot() : null;
     let marked = wanted || returning;
     // releases:write (docs/api.md §2.3): reviewer, ops, or trust owner or admin.
-    ctx.canRelease = M.trust.releases(ctx);
+    ctx.canRelease = !ctx.outsider && M.trust.releases(ctx);
     const E = M.boardEdit;
     const since = new Date(Date.now() - CLOSED_WINDOW_DAYS * 86400000).toISOString().replace(/\.\d{3}Z$/, "Z");
     // The cards in column groups read side by side, each following its own pages, instead of one
@@ -1456,10 +1461,11 @@ window.Maity = window.Maity || {};
       silentOnly.addEventListener("change", () => { filter.silent = silentOnly.checked; draw(); });
     }
 
-    const newButton = h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, M.t("board.new_card"));
+    // An outsider (docs/api.md §2.3) creates no card.
+    const newButton = ctx.outsider ? null : h("button", { type: "button", "aria-expanded": "false", "aria-controls": "new-card-box" }, M.t("board.new_card"));
     formBox.id = "new-card-box";
     const closeForm = () => { clear(formBox); newButton.setAttribute("aria-expanded", "false"); newButton.focus(); };
-    newButton.addEventListener("click", () => {
+    if (newButton) newButton.addEventListener("click", () => {
       if (newButton.getAttribute("aria-expanded") === "true") { closeForm(); return; }
       const f = E.newCardForm(ctx, items, async (body) => {
         const created = await M.api.post(ctx.base + "/tasks", body);

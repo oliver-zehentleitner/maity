@@ -18247,6 +18247,66 @@
     "en": "1a8185ac38f28117",
     "text": "9ca524d0b7f3ec0c"
   },
+  "tabs.outsider": {
+    "en": "c954775e568a706b",
+    "text": "e2ab5e13cafeaa7b"
+  },
+  "tabs.outsider_said": {
+    "en": "85149be017de9b85",
+    "text": "046cdc8ae83ec4e2"
+  },
+  "tabs.outsider_starred": {
+    "en": "8773fcc5468dba40",
+    "text": "7953b449e1e3284a"
+  },
+  "tabs.outsider_starred_said": {
+    "en": "cf003902fae432f0",
+    "text": "e5eb6aa91d6819dd"
+  },
+  "tabs.star": {
+    "en": "ee6e629a98dc66cd",
+    "text": "bc143049a7babcb4"
+  },
+  "tabs.star_failed": {
+    "en": "6dabc29ec91be16e",
+    "text": "95d6e6d2f9b72a74"
+  },
+  "tabs.star_refused.duplicate": {
+    "en": "7b81af33a1c1d982",
+    "text": "6d4be5924bce6ad5"
+  },
+  "tabs.star_refused.member": {
+    "en": "d24d1afa79c89404",
+    "text": "a5810e42dde35ff9"
+  },
+  "tabs.star_refused.not_public": {
+    "en": "96320fcb44285a42",
+    "text": "8bb6cd9cfeaba93a"
+  },
+  "tabs.star_refused.too_many": {
+    "en": "e67b9e539c2dea9b",
+    "text": "7a0c779ccbec3d87"
+  },
+  "tabs.star_refused.too_many_hidden": {
+    "en": "4caf1d14d04ed698",
+    "text": "97c86fe6f639ee6b"
+  },
+  "tabs.starred_now": {
+    "en": "a894db587912930d",
+    "text": "d7e2cae7b1dfc9f0"
+  },
+  "tabs.unstar": {
+    "en": "35927f42380e942f",
+    "text": "88d9c432b756fdab"
+  },
+  "tabs.unstar_failed": {
+    "en": "b5f86b4249ac9a21",
+    "text": "d528de0527ff2935"
+  },
+  "tabs.unstarred": {
+    "en": "fb313301fa2007be",
+    "text": "824b64bb9ad8117f"
+  },
   "team.distribution": {
     "en": "f357bcd7dce1d03e",
     "text": "96d53f090d6cab4e"

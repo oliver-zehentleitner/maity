@@ -132,7 +132,8 @@ window.Maity = window.Maity || {};
   function emptyState(ctx) {
     return [h("h2", null, M.t("why.title")), h("div", { class: "empty-state why-empty" },
       h("p", null, M.t("why.empty")),
-      h("p", { class: "muted" }, ctx.project && ctx.project.repository ? M.t("why.empty.no_line") : M.t("why.empty.no_repository")))];
+      // An outsider (docs/api.md §2.3) reads no repository of the project: no setup step said to them.
+      ctx.outsider ? null : h("p", { class: "muted" }, ctx.project && ctx.project.repository ? M.t("why.empty.no_line") : M.t("why.empty.no_repository")))];
   }
 
   M.why = { statusWord, summaryBox, attentionList, unavailable, reasonText, emptyState };
