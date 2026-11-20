@@ -1901,12 +1901,20 @@ connection with strict host keys and no forwarding. The agents' files
 `~/.maity-runner/`. That home is learned on the first connection. What the
 agents run, the supervised loop and the `stub` included, starts through
 the host's own `maity`, on internal subcommands (`maity runner loop`,
-`maity runner stub`). Under a placement, `maity runner loop` and
-`maity runner logcap` take only a file the runner wrote in its own
-directory: a spec or log path inside a placed clone, a placement scratch
-or a temporary directory is refused (`commands.agent_writable`), since an
-agent's `maity` runs outside its sandbox (security round 5, S201/S202; the
-lasting answer is a runner command an agent cannot reach at all). The join runs the host's `maity` too, so the
+`maity runner stub`). `maity runner loop` and `maity runner logcap` take
+only the file the runner wrote for them there:
+`~/.maity-runner/agents/<placement>/loop.json` and
+`~/.maity-runner/logs/<placement>.log`, resolved (links and `..`
+followed), a regular file of this user that neither group nor others may
+write, the home taken from the user database, not from `HOME`
+(`commands.runner_own_file`). It is checked on every call, not only under
+`MAITY_PLACEMENT`, which an agent can drop from its own `maity`'s
+environment: an agent's `maity` runs outside its sandbox (security round
+5, S201/S202). Every harness also denies `maity runner` in its command
+rules (`adapters.MAITY_RUNNER_DENIED`, agy's `AGY_DENIED_COMMANDS`): no
+agent needs it, the runner and the harness start the in-session commands
+themselves. The lasting answer is a runner command an agent cannot reach
+at all. The join runs the host's `maity` too, so the
 agent's credential is written on the host and never passes through the
 runner. Workspace records are keyed `<host>:<path>`. A sandbox's read
 denies are the host's: the remote user's home secrets, its

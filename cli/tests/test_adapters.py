@@ -178,6 +178,7 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert "Bash(git *)" not in allow  # `-c`, `--no-index` and friends run or read anything
     assert "Bash(git commit *)" in allow and "Bash(git push *)" in allow
     assert "Bash(git -c *)" in deny and "Bash(git * --no-index*)" in deny
+    assert "Bash(maity runner)" in deny and "Bash(maity runner *)" in deny  # S201/S202
     assert f"Edit(/{ws}/**)" in allow and f"Read(/{ws}/**)" in allow
     assert allow[-1].startswith("Write(//")  # absolute paths take the double slash
     assert f"Read(/{ws}/.git/maity/**)" in deny
@@ -816,7 +817,7 @@ def test_opencode_launch(tmp_path: Path) -> None:
     assert list(rules)[0] == "*" and rules["*"] == "deny"  # first: the last match wins
     assert rules["bash"]["*"] == "deny" and rules["bash"]["make test *"] == "allow"
     assert "git *" not in rules["bash"] and rules["bash"]["git commit *"] == "allow"
-    denied = (*adapters.GIT_DENIED, *adapters.GH_DENIED)
+    denied = (*adapters.GIT_DENIED, *adapters.GH_DENIED, *adapters.MAITY_RUNNER_DENIED)
     maity = [f"maity *{char}*" for char in adapters.MAITY_NOT_PLAIN]
     # Denies last: the last match wins. `maity` only as one plain call, as for Claude Code.
     assert list(rules["bash"])[-len(maity) - len(denied) :] == [*denied, *maity]

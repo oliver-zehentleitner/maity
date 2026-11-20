@@ -6327,17 +6327,17 @@ def _main(argv: Sequence[str] | None = None) -> int:
         return EXIT_REFUSED
     if (
         args.command == "runner"
-        and clonecheck.PLACEMENT_ENV in os.environ
         and args.runner_command in runner_commands.IN_SESSION_FILE
-        and runner_commands.agent_writable(
-            getattr(args, runner_commands.IN_SESSION_FILE[args.runner_command])
+        and not runner_commands.runner_own_file(
+            args.runner_command,
+            getattr(args, runner_commands.IN_SESSION_FILE[args.runner_command]),
         )
     ):
-        # The runner writes these files in its own directory; one the agent could write would
-        # let it run, or cut, anything outside its sandbox.
+        # Checked on every call, not only under a placement: an agent's `maity` runs outside
+        # its sandbox and can drop MAITY_PLACEMENT from its own environment.
         _err(
-            f"`maity runner {args.runner_command}` takes only the runner's own file under a "
-            "placement, not one in the clone, a scratch or a temporary directory"
+            f"`maity runner {args.runner_command}` takes only the file the runner wrote for it "
+            "in ~/.maity-runner (agents/<placement>/loop.json, logs/<placement>.log)"
         )
         return EXIT_REFUSED
     try:

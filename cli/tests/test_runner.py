@@ -11,8 +11,8 @@ from pathlib import Path
 import fakehub
 import pytest
 
-from maity import cli, clonecheck, state
-from maity.runner import commands, config
+from maity import cli, state
+from maity.runner import adapters, commands, config
 
 MINIMAL = """\
 [hub]
@@ -1127,7 +1127,10 @@ IN_SESSION_ARGV = {
 
 @pytest.mark.parametrize("name", sorted(IN_SESSION_ARGV))
 def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], name: str
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    name: str,
 ) -> None:
     """With valid arguments and handlers that do nothing: the commands the runner starts in
     the session reach their handler under a placement, any other one (`trust`) does not."""
@@ -1145,7 +1148,9 @@ def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
     for module in (loop, stub, plaincall, logcap, trust):
         monkeypatch.setattr(module, "main", handler(module.__name__))
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
-    code = cli.main(["runner", *IN_SESSION_ARGV[name]])
+    own = _runner_home(monkeypatch, tmp_path)  # loop and logcap take only the runner's file
+    argv = _in_session_argv(name, str(own[name])) if name in own else IN_SESSION_ARGV[name]
+    code = cli.main(["runner", *argv])
     if name in commands.IN_SESSION:
         assert code == 0 and reached == [f"maity.runner.{name}"]
     else:
@@ -1183,45 +1188,28 @@ def test_the_runner_calls_on_the_agents_side_carry_no_placement(
 # --- S201/S202: an in-session command's file must be the runner's ----------------------------
 
 
-def _placed_clone(root: Path) -> Path:
-    clone = root / "ws" / "maity" / "agent-3"
-    (clone / ".git" / "maity").mkdir(parents=True)
-    (clone / clonecheck.MARKER_PATH).write_text("plc-0003\n")
-    return clone
+def _runner_home(monkeypatch: pytest.MonkeyPatch, root: Path) -> dict[str, Path]:
+    """An agents' user's home as on an ssh host, with the runner's two files for plc-0003."""
+    home = root / "home"
+    files = {
+        "loop": home / ".maity-runner" / "agents" / "plc-0003" / "loop.json",
+        "logcap": home / ".maity-runner" / "logs" / "plc-0003.log",
+    }
+    for path in files.values():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+        path.chmod(0o600)
+    monkeypatch.setattr(commands, "_own_home", lambda: home)
+    return files
 
 
-@pytest.mark.parametrize("name", sorted(commands.IN_SESSION_FILE))
-@pytest.mark.parametrize("where", ["clone", "relative", "scratch", "agy", "temp", "link"])
-def test_a_placed_agent_cannot_hand_an_in_session_command_its_own_file(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    tmp_path: Path,
-    name: str,
-    where: str,
-) -> None:
-    """`maity` runs outside the agent's sandbox, so `loop --spec` (what it runs) and `logcap`
-    (what it cuts) refuse a file the agent could have written: in its clone, its scratch, a
-    temporary directory, or reached through a link; the handler is never called."""
+def _in_session_argv(name: str, path: str) -> list[str]:
+    return {"loop": ["loop", "--spec", path], "logcap": ["logcap", path, "1"]}[name]
+
+
+def _reaching(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     from maity.runner import logcap, loop
 
-    monkeypatch.setattr(commands, "TEMP_ROOTS", (str(tmp_path / "tmp"),))
-    monkeypatch.setenv("TMPDIR", str(tmp_path / "tmp"))
-    clone = _placed_clone(tmp_path)
-    runner_own = tmp_path / "state" / "agents" / "plc-0003" / "loop.json"
-    runner_own.parent.mkdir(parents=True)
-    runner_own.write_text("{}")
-    target = {
-        "clone": clone / "s.json",
-        "relative": Path("s.json"),
-        "scratch": tmp_path / "ws" / "maity" / ".scratch" / "plc-0003" / "s.json",
-        "agy": tmp_path / "maity-scratch-1000" / "x" / "s.json",
-        "temp": tmp_path / "tmp" / "s.json",
-        "link": tmp_path / "state" / "link.json",
-    }[where]
-    if where == "link":
-        (clone / "s.json").write_text("{}")
-        target.symlink_to(clone / "s.json")
-    monkeypatch.chdir(clone)
     reached: list[str] = []
 
     def reach(name: str) -> Callable[[list[str]], int]:
@@ -1233,29 +1221,121 @@ def test_a_placed_agent_cannot_hand_an_in_session_command_its_own_file(
 
     for module in (loop, logcap):
         monkeypatch.setattr(module, "main", reach(module.__name__))
-    monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
-    argv = {"loop": ["loop", "--spec", str(target)], "logcap": ["logcap", str(target), "1"]}
-    assert cli.main(["runner", *argv[name]]) == cli.EXIT_REFUSED
-    assert "only the runner's own file" in capsys.readouterr().err
+    return reached
+
+
+WRONG_FILES = [
+    "clone", "relative", "temp", "home-dotdir", "other-name", "not-a-placement", "other-dir",
+    "link-out", "link-dir", "group-writable", "missing", "directory", "dotdot",
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("placed", [True, False])
+@pytest.mark.parametrize("name", sorted(commands.IN_SESSION_FILE))
+@pytest.mark.parametrize("where", WRONG_FILES)
+def test_an_in_session_command_takes_only_the_file_the_runner_wrote_for_it(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    name: str,
+    where: str,
+    placed: bool,
+) -> None:
+    """`maity` runs outside the agent's sandbox, so `loop --spec` (what it runs) and `logcap`
+    (what it cuts) take only the runner's own file in ~/.maity-runner, on every call: with
+    MAITY_PLACEMENT dropped from the environment too. Any other path, a link out of it, a
+    file of the wrong shape or mode is refused and the handler never runs."""
+    own = _runner_home(monkeypatch, tmp_path)
+    root = tmp_path / "home" / ".maity-runner"
+    clone = tmp_path / "ws" / "maity" / "agent-3"
+    clone.mkdir(parents=True)
+    outside = clone / "s.json"
+    outside.write_text("{}")
+    outside.chmod(0o600)
+    shape = {"loop": ("agents/plc-0003", "loop.json"), "logcap": ("logs", "plc-0003.log")}[name]
+    targets: dict[str, Path | str] = {
+        "clone": outside,
+        "relative": "s.json",
+        "temp": tmp_path / "tmp" / "s.json",
+        "home-dotdir": tmp_path / "home" / ".config" / "s.json",
+        "other-name": root / shape[0] / "other.json",
+        "not-a-placement": root / ("agents/x/loop.json" if name == "loop" else "logs/x.log"),
+        "other-dir": root / ("logs/plc-0003.json" if name == "loop" else "agents/plc-0003.log"),
+        "link-out": root / shape[0] / "link",
+        "link-dir": root / "linked" / shape[1],
+        "group-writable": own[name],
+        "missing": root / shape[0] / ("plc-0004.log" if name == "logcap" else "loop.json"),
+        "directory": own[name],
+        "dotdot": f"{root}/{shape[0]}/../../.maity-runner-x/{shape[1]}",
+    }
+    target = targets[where]
+    if where in ("temp", "home-dotdir", "other-name", "not-a-placement", "other-dir"):
+        path = Path(target)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+        path.chmod(0o600)
+    elif where == "link-out":
+        Path(target).symlink_to(outside)
+    elif where == "link-dir":
+        (root / "linked").symlink_to(outside.parent)
+        (outside.parent / shape[1]).write_text("{}")
+    elif where == "group-writable":
+        own[name].chmod(0o620)
+    elif where == "missing" and name == "loop":
+        own["loop"].unlink()
+    elif where == "directory":
+        own[name].unlink()
+        own[name].mkdir()
+    monkeypatch.chdir(clone)
+    if placed:
+        monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
+    else:
+        monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    reached = _reaching(monkeypatch)
+    assert cli.main(["runner", *_in_session_argv(name, str(target))]) == cli.EXIT_REFUSED
+    assert "only the file the runner wrote for it" in capsys.readouterr().err
     assert reached == []
-    # The runner's own file in its state directory still gets through.
-    own = {"loop": ["loop", "--spec", str(runner_own)], "logcap": ["logcap", str(runner_own), "1"]}
-    assert cli.main(["runner", *own[name]]) == 0 and reached == [f"maity.runner.{name}"]
 
 
-def test_outside_a_placement_the_file_is_not_checked(
+@pytest.mark.parametrize("placed", [True, False])
+@pytest.mark.parametrize("name", sorted(commands.IN_SESSION_FILE))
+def test_the_runners_own_file_gets_through(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, name: str, placed: bool
+) -> None:
+    own = _runner_home(monkeypatch, tmp_path)
+    if placed:
+        monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
+    else:
+        monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    reached = _reaching(monkeypatch)
+    assert cli.main(["runner", *_in_session_argv(name, str(own[name]))]) == 0
+    assert reached == [f"maity.runner.{name}"]
+
+
+def test_without_a_home_in_the_user_database_nothing_gets_through(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from maity.runner import loop
+    own = _runner_home(monkeypatch, tmp_path)
+    monkeypatch.setattr(commands, "_own_home", lambda: None)
+    assert not commands.runner_own_file("loop", str(own["loop"]))
 
-    monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
-    clone = _placed_clone(tmp_path)
-    reached: list[str] = []
 
-    def main(argv: list[str]) -> int:
-        reached.append("loop")
-        return 0
+def test_the_home_comes_from_the_user_database_not_from_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An agent can set HOME for its own `maity`; the allow list does not follow it."""
+    pwd = pytest.importorskip("pwd")
+    fake = tmp_path / "home" / ".maity-runner" / "agents" / "plc-0003" / "loop.json"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("{}")
+    fake.chmod(0o600)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    assert commands._own_home() == Path(pwd.getpwuid(os.getuid()).pw_dir)
+    assert not commands.runner_own_file("loop", str(fake))
 
-    monkeypatch.setattr(loop, "main", main)
-    assert cli.main(["runner", "loop", "--spec", str(clone / "s.json")]) == 0
-    assert reached == ["loop"]
+
+def test_no_harness_lets_an_agent_run_maity_runner_from_its_shell(tmp_path: Path) -> None:
+    """Claude Code and opencode deny `maity runner` in their command rules, agy in its
+    command list; the boundary stays runner_own_file, these keep the call from starting."""
+    assert {"maity runner", "maity runner *"} <= set(adapters.MAITY_RUNNER_DENIED)
+    assert "maity runner" in adapters.AGY_DENIED_COMMANDS

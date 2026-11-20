@@ -59,30 +59,58 @@ class Refused(Exception):
 # runner's own, and an agent's call of it is refused (cli.main).
 IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
 # Of those, the ones that act on a file the call names: the loop's spec (what it runs) and the
-# pane's log (what it cuts). An agent's `maity` runs outside its sandbox, so under a placement
-# such a file must be one the runner wrote, never one the agent could write from inside it.
+# pane's log (what it cuts). An agent's `maity` runs outside its sandbox, so such a file must
+# be the one the runner wrote for it, never one an agent chose (runner_own_file).
 IN_SESSION_FILE = {"loop": "spec", "logcap": "log"}
-# Directories a sandboxed agent writes besides its clone and scratch: the temporary ones.
-TEMP_ROOTS: tuple[str, ...] = ("/tmp", "/var/tmp", "/dev/shm")  # noqa: S108
 
 
-def agent_writable(given: str) -> bool:
-    """Whether `given` lies where a placed agent can write: inside a placed clone (one with
-    the runner's placement marker), inside a placement scratch (`.scratch`, or the agy
-    `maity-scratch-<uid>` parent), or under a temporary directory. Resolved first, so neither
-    a relative path (which starts at the clone) nor a link leads past the check. The
-    runner's own files (its state directory) are none of these."""
+def _own_home() -> Path | None:
+    """This OS user's home from the user database, not from `HOME`, which a caller sets."""
+    try:
+        import pwd  # noqa: PLC0415 - POSIX only; the runner's agents' side is POSIX
+    except ImportError:
+        return None
+    try:
+        return Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except KeyError:
+        return None
+
+
+def runner_own_file(command: str, given: str) -> bool:
+    """Whether `given` is the file the runner hands `maity runner <command>`. The runner calls
+    these through `maity` only on an ssh host, where its files lie in the agents' user's
+    `~/.maity-runner` (targets.AGENT_FILES): the loop's spec at `agents/<placement>/loop.json`,
+    the pane's log at `logs/<placement>.log`. An allow list, checked on every call, with or
+    without `MAITY_PLACEMENT`: the path resolved (links and `..` followed) must be that one,
+    an existing regular file of this user that neither group nor others may write."""
+    home = _own_home()
+    if home is None:
+        return False
+    root = Path(os.path.realpath(home / targets.AGENT_FILES))
     path = Path(os.path.realpath(given))
-    named = os.environ.get("TMPDIR")
-    temps = {os.path.realpath(t) for t in (*TEMP_ROOTS, *([named] if named else []))}
-    for parent in (path, *path.parents):
-        if str(parent) in temps:
-            return True
-        if parent.name == ".scratch" or parent.name.startswith("maity-scratch-"):
-            return True
-        if (parent / clonecheck.MARKER_PATH).exists():
-            return True
-    return False
+    try:
+        rel = path.relative_to(root).parts
+    except ValueError:
+        return False
+    if command == "loop":
+        shaped = len(rel) == 3 and rel[0] == "agents" and rel[2] == "loop.json"
+        placement = rel[1] if shaped else ""
+    elif command == "logcap":
+        shaped = len(rel) == 2 and rel[0] == targets.LOGS and rel[1].endswith(".log")
+        placement = rel[1].removesuffix(".log") if shaped else ""
+    else:
+        return False
+    if not shaped or not supervisor.PLACEMENT_ID.fullmatch(placement):
+        return False
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return (
+        stat.S_ISREG(info.st_mode)
+        and info.st_uid == os.getuid()
+        and not info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+    )
 
 
 # --- pair ------------------------------------------------------------------------------------
