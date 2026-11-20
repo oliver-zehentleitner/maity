@@ -5015,9 +5015,9 @@ per target and installed version for the service's run
 (`Target.probe_warned`), and the start goes ahead. `check` reports the
 same line as an error, so the operator sees it, when its probe does not
 pass or is not run; a pass in the same run is recorded before anything is
-compared, so it adds no such line. The runner installs Claude Code itself, so refusing
-every start after a version pin until someone runs `check` would be an
-outage.
+compared, so it adds no such line. The runner installs Claude Code
+itself, so refusing every start after a version pin until someone runs
+`check` would be an outage.
 
 **Reason:** every placement of a host runs as the same OS user, so the
 seccomp step is the only thing between a sandboxed command and the other
