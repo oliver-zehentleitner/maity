@@ -4772,6 +4772,53 @@ placement ends without asking what in it matters.
 - Its size in `workspace_outcome`: a new field for something the
   operator alone acts on; the lead kept the hub out of it.
 
+## A placement's test slots and test cluster live in its own scratch, so its slots bound only its own runs
+
+**Id:** 2ce039de-925e-4244-9a90-8336e9375d68
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-w7qtcbzcshn9, filed by the lead from tsk-deaaanqsq5e2 (placed sessions bypassed `tools/run_slot.sh`'s slots), 2026-11-20; security's rejection of a directory shared by a user's placements and the lead's choice of the scratch, 2026-11-20
+**See:** runner.md — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-20
+**Revisit when:** a runner-mediated slot lock bounds heavy runs across placements (tsk-w7dx3h9mn8dp); each placement runs as its own OS user; `with_postgres.sh` moves its socket out of the data directory
+
+The runner sets `MAITY_RUN_SLOTS_DIR=<scratch>/slots` and
+`MAITY_PG_DIR=<scratch>/pg` for every placement that has a scratch, and
+`MAITY_RUN_NAME=<handle>#<instance>` (the handle alone before the hub has
+named an instance; a value of any other shape is left out).
+`MAITY_PG_DIR` is set only when `<scratch>/pg/.s.PGSQL.<port>` fits a Unix
+socket path (`adapters.pg_dir`, room for a five-digit port), as `TMPDIR`
+is (the entry under See). Otherwise the runner logs that it left it out.
+No path is opened in any sandbox beyond the scratch, which the sandbox
+already writes and which goes when the placement closes. Within a
+placement, `with_postgres.sh` keeps reusing its own cluster across runs.
+
+**Reason:** the scripts' default, `~/.local/state/maity/`, is outside what
+either sandbox writes, so placed sessions ran their heavy suites without a
+slot and without a line in the slot log. Placements of one OS user serve
+different projects and must stay apart, so a cluster or a slot file must
+not be writable by two of them. A writable data directory lets its writer
+plant PostgreSQL configuration (`archive_command`, preloaded libraries,
+include files) that runs when another session starts the server, and
+shared lock files allow squatting. The scratch is already per placement,
+0700, made without following a link and removed at the close, so it adds
+nothing to what security reviews.
+
+The cost: slots now bound one placement's runs only. They no longer queue
+the heavy suites of different placements on one machine. That is left to
+a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
+
+**Rejected alternatives:**
+- One `<workspaces>/.runs` shared by a user's sandboxed placements (the
+  first shape of this card): rejected by security for the reasons above.
+- A new `<workspaces>/.runs/<placement-id>` per placement: the same
+  lifecycle as the scratch, plus a second directory to make, grant,
+  remove and collect. Its only gain is a socket path about 20 bytes
+  shorter.
+- The scripts' default under `~/.local/state/maity/`: that directory also
+  holds `MAITY_STATE_DIR` credentials of agents joined by hand, so it
+  cannot be opened to a sandbox.
+
 ## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
 
 **Id:** 0f216e9d-1661-4887-a035-094efa301dfa

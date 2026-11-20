@@ -1220,6 +1220,10 @@ class Supervisor:
             context = self._context(p, harness, place, target, rec.resume and not reset,
                                     view=view, scratch=scratch)  # fmt: skip
             launch = adapters.launch(context)
+            if scratch is not None and adapters.pg_dir(scratch) is None:
+                self.log(f"{p['id']}: no MAITY_PG_DIR: a PostgreSQL socket under "
+                         f"{scratch / adapters.PG} would not fit a Unix socket path; "
+                         "set a shorter workspaces root")  # fmt: skip
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
             target.backend.start(
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]

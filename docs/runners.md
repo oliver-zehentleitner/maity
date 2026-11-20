@@ -276,6 +276,16 @@ Nothing in a scratch counts as unsaved work. Once the hub reads the placement as
 
 Neither the sizes nor the removals go to the hub.
 
+## Test slots and the test database in the scratch
+
+A project's test scripts take a run slot for each heavy suite (`tools/run_slot.sh`) and keep a PostgreSQL test cluster (`hub/scripts/with_postgres.sh`). By default both live under `~/.local/state/maity/`, which no placement's sandbox may write. So the runner points both into the placement's scratch:
+
+- `MAITY_RUN_SLOTS_DIR=<scratch>/slots`: the slot locks and the slot log.
+- `MAITY_PG_DIR=<scratch>/pg`: the test cluster, with its socket inside it (`with_postgres.sh` keeps its locks beside it, in `pg.locks`). The runner sets it only when the socket path, `<scratch>/pg/.s.PGSQL.<port>`, fits a Unix socket path (107 bytes on Linux, 103 on macOS). Otherwise the session gets no `MAITY_PG_DIR` and the runner's log says so. Set a shorter `workspaces` root to fix that.
+- `MAITY_RUN_NAME=<handle>#<instance>`: who took a slot, as the log names it. It is the handle alone before the first join has named an instance.
+
+This opens no path beyond the scratch, which the sandbox may already write. Everything in it stays with the placement and goes when the scratch goes. No other placement can reach a placement's slots or cluster, which also means the slots bound only the runs of one placement. Bounding heavy runs across all the placements of a machine is a separate card (tsk-w7dx3h9mn8dp). A placement without a scratch (opencode) gets none of these variables, and its scripts use their defaults.
+
 ## Keeping Claude Code and Codex current
 
 The runner can install Claude Code and Codex and keep them current, per tool and only when you say so in its configuration:

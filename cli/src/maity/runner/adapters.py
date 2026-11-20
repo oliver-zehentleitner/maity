@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import sys
 from collections.abc import Sequence
@@ -229,6 +230,24 @@ class Context:
     tmp_scratch_parent: Path | None = None
 
 
+# MAITY_RUN_NAME as tools/run_slot.sh and with_postgres.sh log it: `<handle>#<instance>`, both as
+# the hub names them; anything else is left out rather than passed on.
+_RUN_NAME_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+
+def run_name(placement: dict[str, Any]) -> str | None:
+    """Who the placement's runs are logged as: `<handle>#<instance>`, the handle alone while the
+    hub has named no instance yet (before the first join), None without a usable handle."""
+    agent = placement.get("agent")
+    handle = agent.get("handle") if isinstance(agent, dict) else None
+    if not isinstance(handle, str) or not _RUN_NAME_PART.match(handle):
+        return None
+    instance = placement.get("instance")
+    if isinstance(instance, str) and _RUN_NAME_PART.match(instance):
+        return f"{handle}#{instance}"
+    return handle
+
+
 # A Unix socket's path holds at most 107 bytes on Linux (`sun_path` is 108, with its NUL) and
 # 103 on macOS and the BSDs (104). Tools put sockets under TMPDIR: Claude Code's sandbox binds
 # `claude-socks-<16 hex>.sock` there (34 bytes) and does not start when the path is longer. A
@@ -255,6 +274,38 @@ def scratch_tmpdir(scratch: Path | None) -> Path | None:
     if len(os.fsencode(tmp)) + 1 + SOCKET_NAME_ROOM > SOCKET_PATH_MAX:
         return None
     return tmp
+
+
+# The test scripts' directories inside the placement's scratch (tsk-w7qtcbzcshn9): the run slots
+# of tools/run_slot.sh and with_postgres.sh's cluster, whose defaults under `~/.local/state` no
+# sandbox writes. Per placement, so the slots bound one placement's runs only; bounding them
+# across placements is tsk-w7dx3h9mn8dp. The cluster's socket goes in its data directory
+# (`-k "$MAITY_PG_DIR"`), named like `.s.PGSQL.<port>`, room taken for a five-digit port.
+SLOTS, PG = "slots", "pg"
+PG_SOCKET_ROOM = len(".s.PGSQL.65535")
+
+
+def pg_dir(scratch: Path | None) -> Path | None:
+    """MAITY_PG_DIR inside the scratch, or None without a scratch or when the cluster's socket
+    would not fit a Unix socket path there: the session then gets no MAITY_PG_DIR, its script
+    falls back to its default, which the sandbox refuses, and the runner's log says so."""
+    if scratch is None:
+        return None
+    pg = scratch / PG
+    if len(os.fsencode(pg)) + 1 + PG_SOCKET_ROOM > SOCKET_PATH_MAX:
+        return None
+    return pg
+
+
+def run_env(scratch: Path | None) -> dict[str, str]:
+    """MAITY_RUN_SLOTS_DIR and MAITY_PG_DIR inside the placement's scratch, each where it can be."""
+    if scratch is None:
+        return {}
+    pg = pg_dir(scratch)
+    return {
+        "MAITY_RUN_SLOTS_DIR": str(scratch / SLOTS),
+        **({"MAITY_PG_DIR": str(pg)} if pg is not None else {}),
+    }
 
 
 @dataclass(frozen=True)
@@ -286,6 +337,9 @@ def launch(ctx: Context) -> Launch:
         # when the placement ends instead of piling up in the agents' home (§15.5).
         **({"MAITY_SCRATCH": str(ctx.scratch)} if ctx.scratch is not None else {}),
         **({"TMPDIR": str(tmp)} if (tmp := scratch_tmpdir(ctx.scratch)) is not None else {}),
+        # The test slots and test cluster in the scratch, and who takes them (tools/run_slot.sh).
+        **run_env(ctx.scratch),
+        **({"MAITY_RUN_NAME": name} if (name := run_name(ctx.placement)) is not None else {}),
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
     # session's variables are gone (clonecheck.placement_root), instead of trusting that.

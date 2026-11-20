@@ -215,6 +215,11 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
         # TMPDIR only where a socket fits under it (adapters.scratch_tmpdir): a deep test path
         # keeps the host's.
         **({"TMPDIR": str(t)} if (t := adapters.scratch_tmpdir(scratch)) is not None else {}),
+        # The test slots and cluster in the scratch (tsk-w7qtcbzcshn9), the cluster only where
+        # its socket fits; no instance yet, so the handle alone.
+        "MAITY_RUN_SLOTS_DIR": str(scratch / "slots"),
+        **({"MAITY_PG_DIR": str(pg)} if (pg := adapters.pg_dir(scratch)) is not None else {}),
+        "MAITY_RUN_NAME": "agent-3",
     }  # fmt: skip
     private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
     assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
@@ -3593,6 +3598,19 @@ def test_a_scratch_that_cannot_be_made_or_only_through_a_link_is_none(
     monkeypatch.setattr(scratch, "make", fails)  # a host whose maity has no scratchop yet
     assert sup._scratch(placement(), codex, target) is None
     assert any("no scratch on local: usage" in line for line in logs)
+
+
+def test_a_scratch_too_deep_for_a_pg_socket_is_said_in_the_log(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, _, _, logs = world
+    recorded(sup.cfg)
+    monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 20)  # no scratch path fits under it
+    sup.update([placement()])
+    settle(sup)
+    ((_, _, env),) = backend.started
+    assert "MAITY_PG_DIR" not in env and "MAITY_RUN_SLOTS_DIR" in env
+    assert sum("plc-0003: no MAITY_PG_DIR" in line for line in logs) == 1
 
 
 def test_the_clone_and_scratch_sizes_are_measured_for_the_status(world: Any) -> None:

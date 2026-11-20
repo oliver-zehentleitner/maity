@@ -1300,9 +1300,56 @@ def test_the_socket_limit_is_pinned_per_platform_and_counted_in_bytes() -> None:
     assert adapters.scratch_tmpdir(wide) is None
 
 
+def test_the_test_slots_and_cluster_go_in_the_placements_own_scratch(tmp_path: Path) -> None:
+    """tsk-w7qtcbzcshn9: the scripts' defaults under `~/.local/state` no sandbox writes, so the
+    slots and the cluster go in the scratch, per placement; no path is opened beyond it."""
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=room))
+    assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
+    assert launched.env["MAITY_PG_DIR"] == str(room / "pg")
+    claude = context(tmp_path / "c", sandbox=True, scratch=room)
+    assert adapters.claude_settings(claude)["sandbox"]["filesystem"]["allowWrite"] == [str(room)]
+    codex = context(tmp_path / "x", "codex", sandbox=True, scratch=room,
+                    workspaces=Path("/srv/ws"))  # fmt: skip
+    written = [line for line in adapters.codex_config(codex).splitlines()
+               if line.endswith('= "write"')]  # fmt: skip
+    assert written == [f'"{tmp_path / "x" / "ws" / "maity" / "agent-3"}" = "write"',
+                       f'"{tmp_path / "x" / "ws" / "maity" / "agent-3" / ".git"}" = "write"',
+                       f'"{room}" = "write"']  # fmt: skip
+
+
+def test_a_cluster_whose_socket_would_not_fit_gets_no_pg_dir(tmp_path: Path) -> None:
+    # with_postgres.sh binds `<MAITY_PG_DIR>/.s.PGSQL.<port>`; past the Unix socket limit the
+    # server cannot start, so the session gets no MAITY_PG_DIR (the slots still go there).
+    room = adapters.SOCKET_PATH_MAX - adapters.PG_SOCKET_ROOM - 1 - len("/pg")
+    fits = Path("/" + "s" * (room - 1))
+    assert len(str(fits / "pg")) + 1 + adapters.PG_SOCKET_ROOM == adapters.SOCKET_PATH_MAX
+    assert adapters.pg_dir(fits) == fits / "pg"  # exactly at the limit fits
+    deep = Path(str(fits) + "s")
+    assert adapters.pg_dir(deep) is None
+    launched = adapters.launch(context(tmp_path / "s", "stub", scratch=deep))
+    assert "MAITY_PG_DIR" not in launched.env
+    assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(deep / "slots")
+    assert adapters.pg_dir(None) is None and adapters.run_env(None) == {}
+
+
+def test_the_run_name_is_handle_and_instance(tmp_path: Path) -> None:
+    placement = {**PLACEMENT, "agent": {"id": "agt-b", "handle": "maity-coder-7"},
+                 "instance": "xpde"}  # fmt: skip
+    launched = adapters.launch(context(tmp_path / "s", "stub", placement=placement))
+    assert launched.env["MAITY_RUN_NAME"] == "maity-coder-7#xpde"
+    assert adapters.run_name({**placement, "instance": None}) == "maity-coder-7"  # before a join
+    for bad in ("a b", "a\tb", "#x", "", None, "x" * 65):
+        assert adapters.run_name({**placement, "agent": {"handle": bad}}) is None
+        assert adapters.run_name({**placement, "instance": bad}) == "maity-coder-7"
+    assert adapters.run_name({"id": "plc-0003"}) is None
+    assert adapters.run_name({"agent": "maity-coder-7"}) is None
+
+
 def test_without_a_scratch_nothing_names_one(tmp_path: Path) -> None:
     ctx = context(tmp_path, sandbox=True)
     assert "allowWrite" not in adapters.claude_settings(ctx)["sandbox"]["filesystem"]
     assert ".scratch" not in adapters.codex_config(context(tmp_path / "x", "codex", sandbox=True))
     launched = adapters.launch(context(tmp_path / "s", "stub"))
     assert "MAITY_SCRATCH" not in launched.env and "TMPDIR" not in launched.env
+    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR", "MAITY_RUN_NAME"} & set(launched.env)
