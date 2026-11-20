@@ -176,14 +176,14 @@ def valid(p: Any) -> bool:
     generation = p.get("generation")
     return (
         isinstance(p.get("id"), str)
-        and PLACEMENT_ID.match(p["id"]) is not None
+        and PLACEMENT_ID.fullmatch(p["id"]) is not None
         and isinstance(p.get("project"), str)
-        and workspace.FULL_NAME.match(p["project"]) is not None
+        and workspace.FULL_NAME.fullmatch(p["project"]) is not None
         and isinstance(p.get("project_id"), str)
-        and workspace.TOKEN.match(p["project_id"]) is not None
+        and workspace.TOKEN.fullmatch(p["project_id"]) is not None
         and isinstance(p.get("project_aliases", []), list)
         and all(
-            isinstance(a, str) and workspace.FULL_NAME.match(a) is not None
+            isinstance(a, str) and workspace.FULL_NAME.fullmatch(a) is not None
             for a in p.get("project_aliases", [])
         )
         and isinstance(generation, int)
@@ -192,9 +192,9 @@ def valid(p: Any) -> bool:
         and p.get("desired") in ("running", "stopped")
         and isinstance(space, dict)
         and isinstance(space.get("clone"), str)
-        and workspace.TOKEN.match(space["clone"]) is not None
+        and workspace.TOKEN.fullmatch(space["clone"]) is not None
         and isinstance(p.get("harness"), str)
-        and HARNESS_ID.match(p["harness"]) is not None
+        and HARNESS_ID.fullmatch(p["harness"]) is not None
         and _count(p.get("seq", 0))
         and _count(p.get("stop_grace_seconds", 0))
         and p.get("stop_grace_seconds", 0) <= 900
@@ -389,9 +389,9 @@ class Supervisor:
         good = [
             p for p in placements
             if isinstance(p, dict) and isinstance(p.get("id"), str)
-            and PLACEMENT_ID.match(p["id"]) is not None and p.get("active") is False
+            and PLACEMENT_ID.fullmatch(p["id"]) is not None and p.get("active") is False
             and isinstance(p.get("project_id"), str)
-            and workspace.TOKEN.match(p["project_id"]) is not None
+            and workspace.TOKEN.fullmatch(p["project_id"]) is not None
         ]  # fmt: skip
         with self.lock:
             self.closed_placements = good

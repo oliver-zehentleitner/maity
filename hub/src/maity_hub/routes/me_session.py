@@ -49,6 +49,7 @@ from maity_hub import (
     restricted,
     rules,
     setup_cards,
+    stars,
     start_tabs,
     subagents,
     ticker,
@@ -199,6 +200,7 @@ class MePatch(Strict):
     links_visible: str | None = None
     interface_language: str | None = None  # §6.2; null clears it
     start_tabs: list[str] | None = None  # §5.1 "Start tabs": the whole list; null resets it
+    starred: list[str] | None = None  # §5.1 "Stars": the whole list; null is `required`
     experiment_notice_understood: Any = None  # §5.1 "Experiment notice": only `true`
     avatar_motif: Any = None  # an agent's own motif or null (§6.10)
 
@@ -214,6 +216,7 @@ HUMAN_FIELDS = (
     *LINKS,
     "interface_language",
     "start_tabs",
+    "starred",
     "experiment_notice_understood",
 )
 
@@ -969,6 +972,9 @@ def patch_me(body: MePatch, request: Request, caller: AnyCaller) -> JSONResponse
             values["interface_language"] = chosen
         if "start_tabs" in given:
             values["start_tabs"] = start_tabs.checked(conn, caller.human_id, body.start_tabs)
+        if "starred" in given:  # private: no event, no notice (§5.1 "Stars")
+            bound = limits.starred(conn, settings_of(request))
+            values["starred"] = stars.checked(conn, caller.human_id, body.starred, bound)
         if "experiment_notice_understood" in given:
             # §5.1, "Experiment notice": only a confirmation, and the first one is kept.
             if body.experiment_notice_understood is not True:

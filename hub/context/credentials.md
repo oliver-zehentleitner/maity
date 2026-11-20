@@ -1,6 +1,7 @@
 # Credentials
 
-How the hub stores what verifies an agent's or a runner's credential.
+How the hub stores what verifies an agent's or a runner's credential, and which presented ids
+it looks up.
 
 ## Sealing a credential's verifier is opt-in behind MAITY_SEAL_VERIFIERS, default off; seal-verifiers seals older rows
 
@@ -109,3 +110,54 @@ older rows: it is explicit, runs again safely, and tsk-ebc2fhdxttm7 asked for th
   call; the `last_used_at` update already touches the row.
 - Counting revoked rows in the startup gate: they verify nothing either way, and an old
   revoked row would block the start for no protection.
+
+## A presented credential id is checked against `new_id`'s form before the hub looks it up
+
+**Id:** dcc12e31-541f-423a-95e7-0cd1b796bccf
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2fxk4frga487 (the follow-up the review of #2040 asked for, A1678) and its PR #2046, 2026-11-20; the rejected alternatives from the review of #2046 (A1691)
+**Revisit when:** `new_id` changes its form (prefix, length or alphabet), or a credential id comes from anything other than `ids.new_id`
+
+`caller._credential`, which the bearer path, the signed path and the large-body precheck
+share, refuses an id that `ids.new_id` could not have made before any query, with the
+`unauthenticated` of an unknown id (docs/api.md §1.3, §2.2): the same status, body and
+headers. `ids.has_shape` is the test: the entity's prefix (`crd`, or `rcrd` for a runner),
+`-`, and exactly `RANDOM_LENGTH` (12) characters of the lowercase Crockford alphabet
+(`CROCKFORD`).
+
+The evidence differs by part. The gate, its place in `_credential` and the answer of an
+unknown id are confirmed: the card asks for them. Of the rejected alternatives the card names
+only the bearer parser's check; why each lost is inferred from the code and the review.
+
+**Reason:** a signed request's `Maity-HMAC` id reached the database as the header sent it, and
+the bearer parser (`credentials.parse`) checks only the value's alphabet. Nothing the hub
+issued can fail the check, so it refuses only strings that name no credential:
+
+- Every credential id comes from `new_id`, in the only three inserts of a credential row:
+  `routes/joins.py:1186` (a join's exchange), `routes/runners.py:507` (a runner's pairing) and
+  `loadtest.py:178` (the load test's seed). No migration writes one.
+- `new_id`'s form has not changed since it was written: the alphabet, the length and the `crd`
+  prefix since `ids.py` came with the V1 data model (9b555ddc), `rcrd` since the first runner
+  slice (fa2ad803); the change that added the gate only named the length `RANDOM_LENGTH`.
+- Ids compare byte for byte on every engine, MariaDB included (binary collation,
+  persistence.md, ae5662be), so no other spelling of an id, a mixed-case one among them, ever
+  found its row. Real clients send the id exactly as the hub issued it.
+
+**Constraint:** a later change of `new_id`'s form must keep `has_shape` accepting every id made
+before it; otherwise every agent and runner holding an older credential is refused as unknown
+and has to join or pair again.
+
+**Rejected alternatives:**
+- Reusing the bearer pattern's alphabet check (`credentials.PATTERN`, `[A-Za-z0-9_-]+` of any
+  length) as the gate on both paths: a wrong prefix and an over-long id would still reach the
+  database, which the card asked to stop.
+- Tightening `credentials.PATTERN` for the bearer value only: the signed path, in the precheck
+  too, takes its id from the header without that parser.
+- A refusal of its own (a distinct code or message) for a malformed id: it adds an answer that
+  differs from an unknown id's, for no gain.
+- The same gate in `auth/leaks.revoke_leaked`: it revokes only a row whose secret verifies, and
+  a malformed id matches no row (byte-for-byte comparison, above); its lookup is one batched
+  query over the ids found, capped at `MAX_IDS`, not a step of authentication.

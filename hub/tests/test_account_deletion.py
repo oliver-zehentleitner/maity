@@ -377,6 +377,24 @@ def test_the_start_tabs_go_with_the_account(
     assert gone.start_tabs is None
 
 
+def test_the_stars_go_with_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """The stars are the person's own (§5.1 "Stars", §2.9): a deleted account keeps none, not
+    even an empty list."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    assert pat.patch("/me", {"starred": []}).status_code == 200
+    with migrated.connect() as conn:
+        kept = conn.execute(select(t.human.c.starred).where(t.human.c.id == pat.id)).scalar()
+    assert kept == []
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        gone = conn.execute(select(t.human.c.starred).where(t.human.c.id == pat.id)).one()
+    assert gone.starred is None
+
+
 def test_the_kept_sizes_of_the_picture_go_with_the_account(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:

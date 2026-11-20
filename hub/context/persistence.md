@@ -204,6 +204,32 @@ table, `membership_area`, `request_option`. It would let the database
 filter audiences and areas, at the cost of a join on every read and a
 multi-row write for every event, for a volume where the scan is cheap.
 
+**2026-11-18, a human's stars (card tsk-kqn8zhptf06k, §5.1 "Stars"):** `human.starred` is
+one nullable JSON list of project ids in the order starred, as `human.start_tabs` is: the
+hub reads and writes it whole (`PATCH /me` sends the whole list) and no server query asks
+"who starred this project" — stars are private, with no count, event or notice. A star
+whose project is not public now stays in the list, hidden: `stars.visible` leaves it out
+of `GET /me` and the export, and `stars.checked` puts it back into every `PATCH` after the
+visible entry it followed; when the body drops that entry, after the nearest earlier
+visible entry the body keeps, first when it keeps none (a gap of the contract, filled in
+§5.1). `/me` is polled every 60 s per tab, so whether the stars are public is asked for
+all of them at once (`public_projects.served_among`, at most five statements, the same
+rule as `served`), never per project; `test_stars.py` counts the statements for two stars
+and for six. The points the contract left open, as the lead ruled them: an id that names
+no project is `not_public`, so the answer does not say whether a private one exists; a
+member is an active membership as `access` reads it, so a removed member may star the
+project again; the hub deletes no project, so a project gone is only filtered out on the
+read; and fail closed (the lead, 2026-11-18): with `MAITY_PUBLIC_PAGES` off nothing is
+public for an outsider, so `public_projects.public_for_outsiders` answers none, a star is
+`not_public` and a stored one is hidden, the rule the outsider read will share. A
+membership drops its star where it is made (`invitations.admit`, which every
+accepted invitation goes through, and `org_projects.keep_owner`); a project's creation
+needs no hook, since a new project cannot
+be starred yet. The export leaves hidden entries out: its full name is the current one,
+and it would name a project that is private now. Rejected: a `star` table (human,
+project, position) — it would let the database count and filter stars, which no server
+query needs, at the cost of a multi-row rewrite on every `PATCH` and a join on every poll.
+
 ## Timestamps: aware UTC in Python, naive UTC with microseconds in the database
 
 **Id:** f6041871-9416-4565-b3dc-c5af45c4528b
@@ -1027,7 +1053,7 @@ reflection.
 **Type:** constraint
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-5cah3a82dv63 (found in the review of pull request #2020 on MariaDB 11.8; the lead's go for quoting over a rename, 2026-11-20); card tsk-07hb18s4j47f (the walk's further calls, from the review of #2022); the MariaDB KB "Reserved Words" (`VECTOR`, 11.7+); `hub/tests/test_reserved_words.py`
+**Source:** card tsk-5cah3a82dv63 (found in the review of pull request #2020 on MariaDB 11.8; the lead's go for quoting over a rename, 2026-11-20); card tsk-07hb18s4j47f (the walk's further calls, from the review of #2022); a check of the foreign-key forms on SQLAlchemy 2.0.36 and 2.1.6, 2026-11-20; the MariaDB KB "Reserved Words" (`VECTOR`, 11.7+); `hub/tests/test_reserved_words.py`
 **Revisit when:** SQLAlchemy's MySQL/MariaDB reserved lists gain `vector` (`test_sqlalchemy_still_lacks_vector` fails), or the hub starts writing raw SQL against `notification_position`
 
 MariaDB 11.7 made `vector` a reserved word, and `notification_position` has a column of that name.
@@ -1066,10 +1092,13 @@ judged: a name that is no string literal (a `Column` object included), the colum
 an index other than a foreign key's target (`ForeignKeyConstraint`'s `columns`, the positional
 columns of `PrimaryKeyConstraint`, `UniqueConstraint` and `Index`, `create_foreign_key`'s
 `local_cols`/`remote_cols`, `create_primary_key`'s columns), the schema part of a three-part
-foreign-key target, and raw SQL in `op.execute`. A string target `"t.vector"` has no quoted form at
-all: SQLAlchemy splits it at its periods and writes each part plain, `quoted_name` or not. A tuple of
-`quoted_name` parts keeps the flag on SQLAlchemy 2.1, the pinned runtime (checked on 2.1.6; the
-review of #2025 found 2.0.36, the floor in `pyproject.toml`, dropping it).
+foreign-key target, and raw SQL in `op.execute`. A foreign key's target carries no quote of its
+own: the reference takes the referenced column's flag (checked on SQLAlchemy 2.0.36 and 2.1.6,
+2026-11-20). A string target `"t.vector"` comes out quoted only when it resolves to a column with
+`quote=True`, `quoted_name` or not. A tuple of `quoted_name` parts aimed at a column without the flag
+comes out plain on 2.1.6, and 2.0.36, the floor in `pyproject.toml`, refuses the tuple with an
+`ArgumentError` (the review of #2025 had reported it written plain there). The `Column` object
+carries the flag on both versions, so `hub/README.md` names that one.
 
 ## On MariaDB a migration run commits per step, and a refusal stays where it refused
 
