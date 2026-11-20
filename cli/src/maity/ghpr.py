@@ -80,7 +80,10 @@ LEAD_COMMANDS = frozenset({("pr", "merge"), ("pr", "edit"), ("pr", "ready"),
                            ("run", "list"), ("run", "view")})  # fmt: skip
 LEAD_ROLE = "manager"
 SHA = re.compile(r"[0-9a-f]{40}")  # a full commit id: a merge names exactly the head it read
-NUMBER = re.compile(r"[1-9][0-9]{0,9}")  # a pull request, run or job of this repository
+NUMBER = re.compile(r"[1-9][0-9]{0,9}")  # a pull request of this repository
+# A CI run or job of this repository: ids are already 11 and 12 digits, and grow; 20 digits
+# hold any 64-bit id.
+RUN_ID = re.compile(r"[1-9][0-9]{0,19}")
 # What `run list` asks gh for: one run per line of the head's workflows, the ids `run view` takes.
 RUN_FIELDS = (
     "databaseId", "workflowName", "name", "event", "status", "conclusion", "headSha",
@@ -374,10 +377,10 @@ def _run_command(args: argparse.Namespace, argv: list[str]) -> list[str]:
             raise Refused(f"--commit {args.commit!r}: the commit's full sha")
         return [*argv, f"--commit={args.commit}", f"--json={','.join(RUN_FIELDS)}",
                 "--limit=50"]  # fmt: skip
-    if not NUMBER.fullmatch(args.selector):
+    if not RUN_ID.fullmatch(args.selector):
         raise Refused(f"{args.selector!r}: a run of this repository by its id (digits)")
     if args.job is not None:
-        if not NUMBER.fullmatch(args.job):
+        if not RUN_ID.fullmatch(args.job):
             raise Refused(f"--job {args.job!r}: a job by its id (digits)")
         argv.append(f"--job={args.job}")
     if args.log_failed:

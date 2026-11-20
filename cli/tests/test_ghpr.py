@@ -876,11 +876,21 @@ def test_run_list_and_view_read_the_heads_runs_and_jobs(lead: dict[str, Any]) ->
                             f"--json={','.join(ghpr.RUN_VIEW_FIELDS)}", "--",
                             "44802593768"]  # fmt: skip
     assert "jobs" in ghpr.RUN_VIEW_FIELDS
-    assert cli.main(["gh", "run", "view", "4", "--job", "5", "--log-failed"]) == 0
+    # Real ids: an 11-digit run and a 12-digit job (lotse#ajwe's run on #2054).
+    argv = ["gh", "run", "view", "44802593768", "--job", "136531499858", "--log-failed"]
+    assert cli.main(argv) == 0
     call = ran(lead)
     assert call is not None
-    assert call["argv"] == ["run", "view", f"--repo={REPOSITORY}", "--job=5", "--log-failed",
-                            "--", "4"]  # fmt: skip
+    assert call["argv"] == ["run", "view", f"--repo={REPOSITORY}", "--job=136531499858",
+                            "--log-failed", "--", "44802593768"]  # fmt: skip
+
+
+def test_run_and_job_ids_take_up_to_twenty_digits_and_pr_numbers_ten() -> None:
+    """Run and job ids already pass 10 digits; a pull request number keeps its cap."""
+    assert ghpr.RUN_ID.fullmatch("44802593768") and ghpr.RUN_ID.fullmatch("136531499858")
+    assert ghpr.RUN_ID.fullmatch("9" * 20) and not ghpr.RUN_ID.fullmatch("9" * 21)
+    assert not ghpr.RUN_ID.fullmatch("0123") and not ghpr.RUN_ID.fullmatch("12a")
+    assert ghpr.NUMBER.fullmatch("2054") and not ghpr.NUMBER.fullmatch("44802593768")
 
 
 @runs_gh
