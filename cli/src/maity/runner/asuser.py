@@ -273,6 +273,31 @@ class AsUser:
             raise OSError(f"scratch {op} {path}: no answer")
         return answer
 
+    def pg(self, op: str, under: Path, path: Path) -> dict[str, Any]:
+        """The test clusters' password holder or a placement's file in it, made (`make`) or
+        removed (`remove`) on the agents' side (scratchop.pg_make, pg_remove), opened from
+        `under` without following a link. scratchop.OnTheWay for a link or another user's
+        holder; OSError when it fails otherwise, a host whose `maity` predates the op included."""
+        if self.direct:
+            return (scratchop.pg_make if op == "make" else scratchop.pg_remove)(
+                str(under), str(path)
+            )
+        argv = [*self.runner_module("scratchop"), f"pg{op}", "--under", str(under), str(path)]
+        done = self.run(argv)
+        if done.returncode == scratchop.LINK:
+            raise scratchop.OnTheWay(f"{path}: a link or another user's directory; not used")
+        if done.returncode == 2:  # a host's `maity` that predates the op: it made none either
+            raise scratchop.Unsupported(f"host maity has no pg ops: {done.stderr.strip()[:200]}")
+        if done.returncode != 0:
+            raise OSError(f"pg {op} {path} failed: {done.stderr.strip()[:200]}")
+        try:
+            answer = json.loads(done.stdout)
+        except ValueError:
+            raise OSError(f"pg {op} {path}: no answer") from None
+        if not isinstance(answer, dict):
+            raise OSError(f"pg {op} {path}: no answer")
+        return answer
+
     def tmp_scratch(self, op: str, path: Path) -> dict[str, Any]:
         """A placement's `/tmp` scratch (agy) made, measured or removed on the agents' side,
         or (`op` "parent") the per-user parent created or adopted: the per-user parent (0700,
