@@ -788,11 +788,13 @@ def _remove_person(conn: Connection, human_id: str, secret_key: bytes | None) ->
             links_visible="private",  # the column's default: as if never chosen
             public_stats=False,
             public_agents="public_projects",
-            # The column defaults, as on a new account: what the person said of themselves
-            # (§5.2 "Meat proxy") and whether public pages name them online (§16.9).
+            # Every public switch of a deleted account ends off, whatever its default on a new
+            # account: what the person said of themselves (§5.2 "Meat proxy") and whether public
+            # pages name them online (§16.9). public_presence starts true on a new row; off here,
+            # so no later use of it can make a deleted person show anywhere.
             meat_proxy_lead=False,
             meat_proxy_hands=False,
-            public_presence=True,
+            public_presence=False,
             interface_language=None,
             start_tabs=None,  # project ids only, but the person's choice (§5.1)
             starred=None,  # the public projects the person kept (§5.1 "Stars", §2.9)
