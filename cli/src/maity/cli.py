@@ -497,7 +497,8 @@ def cmd_join(args: argparse.Namespace) -> int:
         directory = _identity_dir(url, target, outside)
         derived = True
     except state.StateError as exc:
-        # A runner's clone it cannot place: the state directory cannot be named, fails closed.
+        # A runner's clone it cannot place, or a clone git cannot read: the state directory
+        # cannot be named, fails closed.
         raise LocalRefusal(
             f"this clone's state directory cannot be named: {exc}. Nothing was sent; the join "
             "code still works"

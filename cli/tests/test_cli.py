@@ -5,6 +5,7 @@ import http.client
 import json
 import os
 import stat
+import subprocess
 import sys
 import threading
 import time
@@ -15,7 +16,7 @@ import fakehub
 import pytest
 from conftest import assert_private, fake_gh, fake_maity, git, posix
 
-from maity import cli, hub, pointer, state
+from maity import cli, hub, pointer, proc, state
 
 COMMANDS = ("join", "resume", "wait", "report", "ask", "api", "help")
 
@@ -842,6 +843,111 @@ def test_help_hub_outside_a_clone_fetches(
         state.resolve_state_dir()
     assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_OK, output(capsys)
     assert capsys.readouterr().out == "# Maity help\n"
+    assert [s.method for s in fake.seen] == ["GET"]
+
+
+def _git_rev_parse_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`git rev-parse --git-common-dir` exits 128, as for a clone git cannot read (a damaged
+    config, a directory it does not trust); every other git runs as it is."""
+    run = proc.run
+
+    def failing(cmd: list[str], cwd: Path, *args: Any, **kwargs: Any) -> Any:
+        if cmd[-2:] == ["rev-parse", "--git-common-dir"]:
+            return subprocess.CompletedProcess(cmd, 128, "", "fatal: cannot read\n")
+        return run(cmd, cwd, *args, **kwargs)
+
+    monkeypatch.setattr(proc, "run", failing)
+
+
+def _help_hub_and_join_are_refused(
+    fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(state.StateError) as raised:
+        state.resolve_state_dir()
+    assert not isinstance(raised.value, state.NotInClone)
+    assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_REFUSED
+    err = capsys.readouterr().err
+    assert "state cannot be read" in err and "Nothing was fetched" in err
+    assert cli.main(_join_line(fake)) == cli.EXIT_REFUSED
+    assert "state directory cannot be named" in capsys.readouterr().err
+    assert fake.seen == []  # nothing fetched or sent
+
+
+def test_a_clone_git_cannot_read_refuses_help_hub_and_join(
+    joined: Path,
+    fake: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A joined clone, its state naming a hub, where git fails: its `.git` says it is a clone,
+    so the failure is no "not inside a Git clone". `help --hub` and `join` are refused with
+    exit 4 and the state stays as it was."""
+    for name in ("MAITY_PLACEMENT", "GIT_DIR", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    before = _state_bytes(joined)
+    _git_rev_parse_fails(monkeypatch)
+    _help_hub_and_join_are_refused(fake, capsys)
+    assert _state_bytes(joined) == before
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "file",
+        pytest.param(
+            "link",
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="a link needs a privilege"),
+        ),
+    ],
+)
+def test_a_git_file_or_link_above_counts_as_a_clone(
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+) -> None:
+    """A worktree's `.git` file, or a `.git` link to nowhere, in a directory above the working
+    one: a clone, so a failing git is refused, not taken for outside a clone."""
+    for name in ("MAITY_PLACEMENT", "GIT_DIR", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    worktree = tmp_path / "worktree"
+    (worktree / "sub").mkdir(parents=True)
+    if kind == "file":
+        (worktree / ".git").write_text(f"gitdir: {tmp_path / 'gone'}\n")
+    else:
+        (worktree / ".git").symlink_to(tmp_path / "gone")
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    monkeypatch.chdir(worktree / "sub")
+    _git_rev_parse_fails(monkeypatch)
+    _help_hub_and_join_are_refused(fake, capsys)
+
+
+def test_a_git_above_the_ceiling_does_not_count(
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Looking for a `.git` stops before a `GIT_CEILING_DIRECTORIES` entry, as git does: one
+    above the ceiling is no clone of this directory, so a failing git is outside a clone and
+    `help --hub` fetches. Without the ceiling the same `.git` makes it a clone."""
+    for name in ("MAITY_PLACEMENT", "GIT_DIR", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / "above" / ".git").mkdir(parents=True)
+    inside = tmp_path / "above" / "ceiling" / "inside"
+    inside.mkdir(parents=True)
+    monkeypatch.chdir(inside)
+    _git_rev_parse_fails(monkeypatch)
+    monkeypatch.delenv("GIT_CEILING_DIRECTORIES", raising=False)
+    with pytest.raises(state.StateError) as raised:
+        state.resolve_state_dir()
+    assert not isinstance(raised.value, state.NotInClone)
+    ceiling = tmp_path / "above" / "ceiling"
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", f"relative{os.pathsep}{ceiling}")
+    with pytest.raises(state.NotInClone):
+        state.resolve_state_dir()
+    assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_OK, output(capsys)
     assert [s.method for s in fake.seen] == ["GET"]
 
 

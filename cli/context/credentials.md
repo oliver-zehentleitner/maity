@@ -496,7 +496,7 @@ empty leftover directory is harmless; removing someone else's is not.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** lead's card tsk-h1kcv3bd82gg, 2026-11-20; review of PR #2065, 2026-11-20
+**Source:** lead's card tsk-h1kcv3bd82gg, 2026-11-20; review of PR #2065, 2026-11-20; review of PR #2065 (round 2), 2026-11-20
 
 On a clone whose `state.json` already names a hub, `--hub` (on `maity resume` and on
 `maity help`) passes only for that hub's origin, and the stored URL stays as it is. Origin
@@ -508,8 +508,15 @@ its canonical spelling (`[2001:0DB8:0:0:0:0:0:1]` is `[2001:db8::1]`), checked b
 trailing dot is dropped, so `127.0.0.1.` stays a name and not that address; only the
 comparison uses that spelling, the stored URL is never rewritten. `help --hub` treats only
 "not inside a Git clone" as before a join: when the state directory cannot be named for any
-other reason (a runner's clone it cannot place, git missing) it fails closed with exit 4 and
-fetches nothing, since that clone may hold a state that names a hub. Another origin is
+other reason (a runner's clone it cannot place, git missing, git failing in a clone) it fails
+closed with exit 4 and fetches nothing, since that clone may hold a state that names a hub.
+Not inside a Git clone is decided by looking for a `.git` (a directory, a worktree's file or
+a link) in the working directory and above it, as git looks: not up into a
+`GIT_CEILING_DIRECTORIES` entry, up to the root at most. Only when git fails and none is
+found is the directory outside a clone; with one found, or with `GIT_DIR` or `GIT_COMMON_DIR`
+set, a failing git is a clone it cannot read (a damaged config, a directory it does not
+trust), which is refused. git's exit code alone does not tell the two apart, and its message
+is in the user's language, so neither decides. Another origin is
 refused with exit 4 before anything is written or sent, and the message names the stored
 hub's origin and the given one, each printed the same way (an IPv6 host in brackets, the port
 only when it is not the default), and says that a new join is the way to change it. A first
@@ -522,8 +529,8 @@ with the hub its exchange accepted. A placed session never joins: the runner's p
 exchange join a placement, so `maity join` with `MAITY_PLACEMENT` (even empty) or
 `MAITY_GIT_PRIVATE` set is refused with exit 4 before any call. Outside a placement it takes
 "not inside a Git clone" and git missing as the cases for a directory of the agent's own, as
-before; a runner's clone it cannot place is refused with exit 4 before the join page is
-fetched. Under a placement, a clone that holds a credential but no hub is told that the
+before; a runner's clone it cannot place, or a clone git cannot read, is refused with exit 4
+before the join page is fetched. Under a placement, a clone that holds a credential but no hub is told that the
 runner joins the placement again, not to use `resume --hub`.
 
 **Reason:** a clone is paired with one hub: its credential was issued by that hub, and the

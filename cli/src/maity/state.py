@@ -38,10 +38,10 @@ class StateError(Exception):
 
 
 class NotInClone(StateError):
-    """`resolve_state_dir` found no clone: git answered that the directory is in none. Every
-    other reason it cannot name the state directory (git missing, a runner's clone it cannot
-    place) stays a plain `StateError`, so a caller that acts only outside a clone catches
-    this one alone."""
+    """`resolve_state_dir` found no clone: git failed, and no `.git` lies in the directory or
+    above it up to a ceiling (`_inside_a_clone`). Every other reason it cannot name the state
+    directory (git missing, a runner's clone it cannot place, git failing in a clone) stays a
+    plain `StateError`, so a caller that acts only outside a clone catches this one alone."""
 
 
 class NoGit(StateError):
@@ -104,6 +104,11 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
     except proc.ToolError as exc:
         raise NoGit(f"{exc}; set {STATE_DIR_ENV} to a directory") from exc
     if result.returncode != 0:
+        if _inside_a_clone(base):  # git failed to read a clone: its state may name a hub
+            raise StateError(
+                f"git cannot read the clone {base} is in (git rev-parse exit "
+                f"{result.returncode}); set {STATE_DIR_ENV} to a directory"
+            )
         raise NotInClone(
             f"{base} is not inside a Git clone, and maity keeps an agent's credential in its "
             "clone. Run maity from the clone the agent works in; without one, give this agent "
@@ -115,6 +120,39 @@ def resolve_state_dir(cwd: Path | None = None) -> Path:
     if not common.is_absolute():
         common = base / common
     return common.resolve() / "maity"
+
+
+def _inside_a_clone(start: Path) -> bool:
+    """Whether `start` is in a clone, decided without git: after git failed there, its exit
+    code alone does not tell a directory outside every clone from a clone git cannot read,
+    and its message is in the user's language. `GIT_DIR` or `GIT_COMMON_DIR` set names a
+    repository wherever `start` is. Otherwise a `.git` entry of any kind (directory, a
+    worktree's file, a link, not followed) in `start` or a directory above it, looking as git
+    does: not up into a `GIT_CEILING_DIRECTORIES` entry that lies above `start`, and up to the
+    root at most. It looks across file systems, where git stops: a `.git` found there counts."""
+    if "GIT_DIR" in os.environ or "GIT_COMMON_DIR" in os.environ:
+        return True
+    current = os.path.realpath(start)
+    ceilings: set[str] = set()
+    resolve = True  # git: an empty entry means the entries after it are used unresolved
+    for entry in os.environ.get("GIT_CEILING_DIRECTORIES", "").split(os.pathsep):
+        if not entry:
+            resolve = False
+        elif os.path.isabs(entry):
+            path = os.path.realpath(entry) if resolve else os.path.normpath(entry)
+            ceilings.add(os.path.normcase(path))
+    while True:
+        try:
+            os.lstat(os.path.join(current, ".git"))
+            return True
+        except FileNotFoundError:
+            pass
+        except OSError:  # there but not readable, or a part of the path that is no directory
+            return True
+        parent = os.path.dirname(current)
+        if parent == current or os.path.normcase(parent) in ceilings:
+            return False
+        current = parent
 
 
 def state_dir_example(name: str) -> str:
