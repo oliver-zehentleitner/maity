@@ -130,12 +130,12 @@ def _present(as_user: AsUser, path: Path, kind: str = "-e") -> bool:
 
 
 def _claude_settings_files(
-    as_user: AsUser, platform: str | None, user_only: bool = False
+    as_user: AsUser, platform: str | None
 ) -> list[tuple[Path, bool, Path]] | str:
     """The Claude Code settings files the agents' Claude Code merges: the managed settings (the
-    file, and each `*.json` in `managed-settings.d/` beside it) unless `user_only`, then the
-    agents' user's own. Each with whether it is managed and the directory it is read from
-    (limitread). A string says why they cannot be listed."""
+    file, and each `*.json` in `managed-settings.d/` beside it), then the agents' user's own.
+    Each with whether it is managed and the directory it is read from (limitread). A string
+    says why they cannot be listed."""
     if as_user.here:
         platform = sys.platform if platform is None else platform
     else:
@@ -143,7 +143,7 @@ def _claude_settings_files(
     managed = next((p for key, p in CLAUDE_MANAGED.items() if platform.startswith(key)), None)
     files: list[tuple[Path, bool, Path]] = []
     try:
-        if managed is not None and not user_only:
+        if managed is not None:
             if _present(as_user, managed):
                 files.append((managed, True, managed.parent))
             drop_ins = managed.parent / "managed-settings.d"
@@ -195,8 +195,9 @@ def claude_hooks_off(as_user: AsUser = RUNNER, platform: str | None = None) -> s
 
 # The settings that decide which Unix sockets a sandboxed command may open. The placement's
 # settings file pins `allowAllUnixSockets` off (adapters.claude_settings); the agents' user's
-# own settings are merged in (`--setting-sources user`), so a start is refused while they carry
-# any of these, whatever the value (cli/context/runner.md).
+# own settings are merged in (`--setting-sources user`) and the managed settings win over the
+# placement's file, so a start is refused while either carries any of these, whatever the
+# value (cli/context/runner.md).
 SOCKET_SETTINGS = (
     ("sandbox", "network", "allowAllUnixSockets"),
     ("sandbox", "network", "allowUnixSockets"),
@@ -205,10 +206,10 @@ SOCKET_SETTINGS = (
 
 
 def claude_socket_settings(as_user: AsUser = RUNNER, platform: str | None = None) -> str | None:
-    """Why the agents' user's Claude Code settings could change the placement's socket
-    settings, or None: they carry a key of SOCKET_SETTINGS, or cannot be read as a JSON
-    object (unknown counts as set, as for the hook switches)."""
-    files = _claude_settings_files(as_user, platform, user_only=True)
+    """Why the managed or the agents' user's Claude Code settings could change the placement's
+    socket settings, or None: a file carries a key of SOCKET_SETTINGS, or cannot be listed or
+    read as a JSON object (unknown counts as set, as for the hook switches)."""
+    files = _claude_settings_files(as_user, platform)
     if isinstance(files, str):
         return files
     for path, _, under in files:
@@ -230,8 +231,8 @@ def claude_socket_settings(as_user: AsUser = RUNNER, platform: str | None = None
 def claude_socket_settings_line(why: str) -> str:
     """Why a sandboxed Claude Code agent is not started, for `check` and the log."""
     return (f"harness claude-code: {why}; the placement pins its Unix socket settings and"
-            " takes none from the user's settings, so its sandboxed agents are not started"
-            " until the setting is removed")  # fmt: skip
+            " takes none from the managed or the user's settings, so its sandboxed agents are"
+            " not started until the setting is removed")  # fmt: skip
 
 
 def claude_hooks_line(why: str) -> str:

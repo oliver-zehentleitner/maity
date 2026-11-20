@@ -12,7 +12,7 @@
   whose probe passed, and a start with another installed version logs a warning to run it
   (the start goes ahead). The placement pins its Unix socket settings
   (`sandbox.network.allowAllUnixSockets` off) and refuses user settings that would change
-  them: while the agents' user's `~/.claude/settings.json` carries
+  them: while the agents' user's `~/.claude/settings.json` or the managed settings carry
   `sandbox.network.allowAllUnixSockets`, `sandbox.network.allowUnixSockets` or
   `sandbox.seccompConfig`, or cannot be read, sandboxed Claude Code starts are refused and
   `check` reports an error. docs/runners.md, "Claude Code: Unix socket blocking".

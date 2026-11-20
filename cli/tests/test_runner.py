@@ -1153,6 +1153,31 @@ def test_check_reports_unix_socket_settings_in_the_agents_user_settings(
         assert why in said[0]
 
 
+def test_check_reports_a_unix_socket_setting_in_the_managed_settings(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The managed settings win over the placement's file, so a socket key there is an error
+    as well, naming the managed file."""
+    from maity.runner import capabilities
+
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    managed = capabilities.CLAUDE_MANAGED["linux"]
+    managed.parent.mkdir(parents=True, exist_ok=True)
+    managed.write_text('{"sandbox": {"network": {"allowUnixSockets": ["/x"]}}}')
+    monkeypatch.setattr(sys, "platform", "linux")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
+    said = marked(capsys, "Unix socket setting")
+    assert [s.split()[0] for s in said] == ["error"], said
+    assert str(managed) in said[0] and "sets sandbox.network.allowUnixSockets" in said[0]
+
+
 def test_check_keeps_the_passed_probe_version_and_warns_on_another(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

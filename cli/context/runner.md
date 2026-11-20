@@ -4991,7 +4991,9 @@ while that file carries `sandbox.network.allowAllUnixSockets`,
 `sandbox.network.allowUnixSockets` or `sandbox.seccompConfig`, whatever
 the value, or cannot be read as a JSON object
 (`capabilities.claude_socket_settings`, read as `claude_hooks_off` reads
-it, at every start).
+it, at every start). The managed settings win over the `--settings` file,
+so they are read for the same keys and refused the same way, an unreadable
+managed file included.
 
 After an `ok` preflight, `check` alone (never a start) runs the installed
 Claude Code once headless as the agents' user
@@ -5008,8 +5010,9 @@ the state directory (`capabilities.PROBE_FILE`, written with
 `state.save_state` like the runner's other state files) and forgets it
 when the probe does not pass. At each sandboxed Claude Code start on Linux
 the service reads it (`Supervisor._probe_warning`): an installed version
-that differs, or no record, is logged with a line to run `check`, and the
-start goes ahead. `check` shows the same warning when its probe does not
+that differs, or no record, is logged with a line to run `check`, once
+per target and installed version for the service's run
+(`Target.probe_warned`), and the start goes ahead. `check` shows the same warning when its probe does not
 pass or is not run. The runner installs Claude Code itself, so refusing
 every start after a version pin until someone runs `check` would be an
 outage.

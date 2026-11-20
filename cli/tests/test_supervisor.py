@@ -556,6 +556,38 @@ def test_a_sandboxed_start_is_refused_while_the_users_settings_carry_a_socket_se
 
 
 @pytest.mark.parametrize(
+    ("text", "why", "line"),
+    [('{"sandbox": {"network": {"allowAllUnixSockets": true}}}',
+      "sets sandbox.network.allowAllUnixSockets", "pins its Unix socket settings"),
+     ('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig",
+      "pins its Unix socket settings"),
+     # An unreadable managed file is already refused by the hook check, read first.
+     ("{not json", "cannot be read as JSON", "the runner's hook would not run")],
+)  # fmt: skip
+def test_a_sandboxed_start_is_refused_while_the_managed_settings_carry_a_socket_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, why: str, line: str
+) -> None:
+    """The managed settings win over the placement's file: a socket key there refuses the
+    start like one in the user's settings, and an unreadable file refuses it too."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    managed = capabilities.CLAUDE_MANAGED["linux"]
+    managed.parent.mkdir(parents=True)
+    managed.write_text(text)
+    assert sup._refusal(placement(harness="claude-code"), target) == ("harness_refused", None)
+    assert len(logged) == 1 and why in logged[0] and str(managed) in logged[0]
+    assert line in logged[0]
+
+
+@pytest.mark.parametrize(
     ("record", "installed", "warned"),
     [(None, "2.1.325", "has not passed on this target, installed 2.1.325"),
      ({"local": "2.1.324"}, "2.1.325", "last passed with 2.1.324, installed 2.1.325"),
@@ -594,6 +626,32 @@ def test_a_start_after_a_version_change_warns_to_run_check_and_still_starts(
     monkeypatch.setattr(sys, "platform", "darwin")
     sup._probe_warning(target, view, "s")
     assert logged == []  # unsandboxed, or Seatbelt: no probe to have passed
+
+
+def test_the_version_warning_is_logged_once_per_target_and_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two launches with the same installed version warn once; a new version warns again,
+    and so does the first version on another target."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    view = supervisor.GateView.of(target, "claude-code")
+    sup._probe_warning(target, view, "a")
+    sup._probe_warning(target, view, "b")
+    assert len(logged) == 1 and "installed 2.1.325" in logged[0]
+    newer = supervisor.GateView(capabilities.Probe("/usr/bin/claude", "2.1.330", None), True,
+                                False)  # fmt: skip
+    sup._probe_warning(target, newer, "c")
+    sup._probe_warning(target, newer, "d")
+    assert len(logged) == 2 and "installed 2.1.330" in logged[1]
+    other = replace(target, name="build-9", probe_warned=set())
+    sup._probe_warning(other, view, "e")
+    assert len(logged) == 3 and "build-9" in logged[2]
 
 
 SECCOMP_ANSWERS = {

@@ -48,6 +48,9 @@ class Target:
     # Claude Code's seccomp preflight on this target (capabilities.claude_seccomp), once it
     # answered `ok`: the machine and the kernel do not change under a running service.
     seccomp: capabilities.ClaudeSeccomp | None = None
+    # Installed Claude Code versions this service run has already warned about on this target
+    # (no `check` probe passed with them): the warning is logged once per version.
+    probe_warned: set[str | None] = field(default_factory=set)
     backend: Tmux | None = None
     reachable: bool = True
     unreachable_since: float | None = None

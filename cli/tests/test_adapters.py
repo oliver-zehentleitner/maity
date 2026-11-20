@@ -1257,13 +1257,35 @@ def test_the_agents_user_settings_may_carry_no_unix_socket_setting(
         assert str(user) in found
 
 
-def test_managed_settings_are_not_read_for_unix_socket_settings() -> None:
-    """Only the agents' user's settings are merged under the placement's file; the managed
-    ones are the operator's."""
+@pytest.mark.parametrize(
+    ("text", "why"),
+    [('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig"),
+     ('{"sandbox": {"network": {"allowAllUnixSockets": true}}}',
+      "sets sandbox.network.allowAllUnixSockets"),
+     ('{"sandbox": {"network": {"allowUnixSockets": []}}}',
+      "sets sandbox.network.allowUnixSockets"),
+     ('{"permissions": {}}', None), ("{not json", "cannot be read as JSON"),
+     ("[]", "is not a JSON object")],
+)  # fmt: skip
+def test_managed_settings_may_carry_no_unix_socket_setting_either(
+    text: str, why: str | None
+) -> None:
+    """The managed settings win over the placement's file: a key there, or a file that cannot
+    be read as a JSON object, counts as the user's would; a drop-in counts like the file."""
     from maity.runner import capabilities
 
-    _managed(capabilities).write_text('{"sandbox": {"seccompConfig": {}}}')
-    assert capabilities.claude_socket_settings(AsUser(), "linux") is None
+    managed = _managed(capabilities)
+    managed.write_text(text)
+    found = capabilities.claude_socket_settings(AsUser(), "linux")
+    assert (found is None) if why is None else (found is not None and why in found)
+    if found is not None:
+        assert str(managed) in found
+    managed.write_text('{"permissions": {}}')
+    drop_ins = managed.parent / "managed-settings.d"
+    drop_ins.mkdir()
+    (drop_ins / "20-net.json").write_text(text)
+    found = capabilities.claude_socket_settings(AsUser(), "linux")
+    assert (found is None) if why is None else (found is not None and "20-net.json" in found)
 
 
 @pytest.mark.parametrize(

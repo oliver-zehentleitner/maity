@@ -827,12 +827,16 @@ def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:
 
 
 def _check_claude_socket_settings(report: Report, as_user: AsUser, where: str) -> None:
-    """With the sandbox on, the agents' user's settings must carry no Unix socket setting
+    """With the sandbox on, the managed and the agents' user's settings must carry no Unix
+    socket setting
     (capabilities.SOCKET_SETTINGS): such settings refuse every start of a sandboxed agent
     (supervisor), so `check` says so as an error."""
     why = capabilities.claude_socket_settings(as_user)
     if why is None:
-        report.ok(f"{where}harness claude-code: the user's settings carry no Unix socket setting")
+        report.ok(
+            f"{where}harness claude-code: the managed and user settings carry no Unix socket "
+            "setting"
+        )
     else:
         report.error(f"{where}{capabilities.claude_socket_settings_line(why)}")
 

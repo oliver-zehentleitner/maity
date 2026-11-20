@@ -1115,13 +1115,17 @@ class Supervisor:
         """A sandboxed Claude Code start on Linux whose installed version is not the one
         whose `check` probe last passed on `target` is logged, never refused: the runner
         installs Claude Code itself, and refusing every start after a version pin until
-        `check` runs would be an outage (cli/context/runner.md)."""
+        `check` runs would be an outage (cli/context/runner.md). Logged once per target and
+        installed version for the service's run."""
         if not view.sandbox or not capabilities.claude_seccomp_applies(target.as_user):
             return
-        passed = capabilities.probe_passed(self.cfg.state_dir, target.name)
         installed = view.found.version if view.found is not None else None
+        if installed in target.probe_warned:
+            return
+        passed = capabilities.probe_passed(self.cfg.state_dir, target.name)
         stale = capabilities.probe_stale_line(passed, installed)
         if stale is not None:
+            target.probe_warned.add(installed)
             self.log(f"{name}: {target.name}: {stale}")
 
     def _seccomp(self, target: Target) -> ClaudeSeccomp:  # the field `capabilities` hides it
