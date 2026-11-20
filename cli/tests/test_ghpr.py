@@ -15,6 +15,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -287,6 +288,36 @@ def test_a_record_the_runner_does_not_write_is_refused(
     placed["record"].write_text(record.format(gh=placed["gh"]))
     refused(["gh", "pr", "view"], capsys)
     assert ran(placed) is None
+
+
+def refused_without_waiting(fifo: Path, argv: list[str], capsys: pytest.CaptureFixture[str]) -> str:
+    """`refused(argv)` where `fifo` stands in for a runner record: the call must refuse and
+    not wait on the FIFO. Should it wait (a record opened without O_NONBLOCK), the test opens
+    the FIFO's other end after a while, which releases the call, and fails instead of
+    hanging."""
+    out: list[str] = []
+    call = threading.Thread(target=lambda: out.append(refused(argv, capsys)), daemon=True)
+    call.start()
+    call.join(10)
+    waited = call.is_alive()
+    if waited:
+        os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+        call.join(10)
+    assert not waited, f"{fifo.name}: the call waited on a FIFO"
+    return out[0]
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_a_fifo_as_the_pull_requests_record_is_refused_without_waiting(
+    placed: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Security A1806 of #2054: the runner's records are opened without blocking, so a FIFO
+    planted in a record's place is refused by the regular-file check, never waited on."""
+    record = placed["record"]
+    record.unlink()
+    os.mkfifo(record, 0o600)
+    err = refused_without_waiting(record, ["gh", "pr", "view"], capsys)
+    assert "not readable" in err and ran(placed) is None
 
 
 def test_a_linked_record_is_refused(
@@ -708,24 +739,42 @@ def lead(placed: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         return "manager"
 
     monkeypatch.setattr(cli, "_hub_role", manager)
-    queue = tmp_path / "queue.json"
-    queue.write_text(json.dumps({"isMergeQueueEnabled": False, "isInMergeQueue": False}))
-    lead_gh(Path(placed["gh"]), placed["log"], queue)
-    return {**placed, "lead_record": record, "runner_dir": where, "queue": queue}
+    reads = tmp_path / "reads"
+    reads.mkdir()
+    (reads / "pr.json").write_text(json.dumps(PR_ANSWER))
+    (reads / "rules.json").write_text(json.dumps(RULES_ANSWER))
+    lead_gh(Path(placed["gh"]), placed["log"], reads)
+    return {**placed, "lead_record": record, "runner_dir": where, "reads": reads}
 
 
-QUEUE_VIEW = "--json=" + ",".join(ghpr.QUEUE_FIELDS)
+# The merge's two reads (ghpr.direct_merge_only) and their answers in the shapes the real gh
+# gives: `pr view --json=baseRefName,headRefOid` an object, the branch rules endpoint a list
+# of rules, each with its `type` and the ruleset it comes from (GitHub's REST reference,
+# "Get rules for a branch").
+PR_READ = f"pr view --repo={REPOSITORY} --json=baseRefName,headRefOid -- 2045"
+RULES_READ = "api --hostname=github.com --method=GET repos/oliver-zehentleitner/maity/rules/branches/{}?per_page=100"  # noqa: E501
+PR_ANSWER = {"baseRefName": "main", "headRefOid": SHA}
+RULE = {"ruleset_source_type": "Repository", "ruleset_source": "oliver-zehentleitner/maity",
+        "ruleset_id": 42}  # fmt: skip
+RULES_ANSWER = [{"type": "deletion", **RULE}, {"type": "non_fast_forward", **RULE}]
 
 
-def lead_gh(gh: Path, log: Path, queue: Path, out: str = "", err: str = "") -> None:
-    """A gh that answers the merge's queue read (`pr view --json=isMergeQueueEnabled,…`)
-    with `queue`'s text and counts it in `<queue>.calls`, and otherwise writes down how it ran
-    in `log` (argv, stdin, cwd) and prints `out` and `err`."""
+def lead_gh(gh: Path, log: Path, reads: Path, out: str = "", err: str = "") -> None:
+    """A gh that answers the merge's reads from `reads` (`pr.json` for the base and head,
+    `rules.json` for the branch's rules; a missing file fails the read) and writes each read
+    to `reads/calls`; any other call it writes down in `log` (argv, stdin, cwd) and prints
+    `out` and `err`."""
     gh.write_text(
         f"#!{sys.executable}\nimport json, os, sys\n"
-        f"if {QUEUE_VIEW!r} in sys.argv:\n"
-        f"    open({str(queue) + '.calls'!r}, 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"
-        f"    sys.stdout.write(open({str(queue)!r}).read())\n"
+        "read = 'pr.json' if '--json=baseRefName,headRefOid' in sys.argv else"
+        " 'rules.json' if sys.argv[1:2] == ['api'] else None\n"
+        "if read:\n"
+        f"    open(os.path.join({str(reads)!r}, 'calls'), 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"  # noqa: E501
+        f"    answer = os.path.join({str(reads)!r}, read)\n"
+        "    if not os.path.exists(answer):\n"
+        "        sys.stderr.write('HTTP 404: Not Found\\n')\n"
+        "        sys.exit(1)\n"
+        "    sys.stdout.write(open(answer).read())\n"
         "    sys.exit(0)\n"
         "json.dump({'argv': sys.argv[1:], 'stdin': sys.stdin.read(), 'cwd': os.getcwd()},"
         f" open({str(log)!r}, 'w'))\n"
@@ -734,29 +783,68 @@ def lead_gh(gh: Path, log: Path, queue: Path, out: str = "", err: str = "") -> N
     gh.chmod(0o755)
 
 
+def merge_reads(lead: dict[str, Any]) -> list[str]:
+    calls = lead["reads"] / "calls"
+    return calls.read_text().splitlines() if calls.exists() else []
+
+
 @runs_gh
 @pytest.mark.parametrize(
-    "answer",
+    ("pr", "rules", "reads"),
     [
-        {"isMergeQueueEnabled": True, "isInMergeQueue": False},  # the base branch queues merges
-        {"isMergeQueueEnabled": False, "isInMergeQueue": True},  # already in a queue
-        {"isInMergeQueue": False},  # an older gh, or an answer without the field
-        "not json",
+        # the base branch merges through a queue
+        (PR_ANSWER, [*RULES_ANSWER, {"type": "merge_queue", "parameters": {}, **RULE}], 2),
+        (None, RULES_ANSWER, 1),  # the pull request read fails
+        ("not json", RULES_ANSWER, 1),
+        ({"headRefOid": SHA}, RULES_ANSWER, 1),  # no base named
+        ({"baseRefName": "main..x:y", "headRefOid": SHA}, RULES_ANSWER, 1),  # no branch name
+        (PR_ANSWER, None, 2),  # the rules read fails
+        (PR_ANSWER, "not json", 2),
+        (PR_ANSWER, {"type": "merge_queue"}, 2),  # not a list
+        (PR_ANSWER, ["merge_queue"], 2),  # a rule that is no object
+        (PR_ANSWER, [{"type": "deletion", **RULE}] * 100, 2),  # a full page: more may follow
     ],
 )
 def test_a_merge_that_would_not_be_direct_is_refused_before_gh_merges(
-    lead: dict[str, Any], answer: Any, capsys: pytest.CaptureFixture[str]
+    lead: dict[str, Any], pr: Any, rules: Any, reads: int, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Review A1804 of #2054, the lead's ruling: on a base branch with a merge queue
-    `gh pr merge` hands the strategy to the queue, so `--squash` and the head named would no
-    longer be the outcome. maity reads the queue state first and merges only directly; any
-    answer but two `false`s refuses, and gh is never asked to merge."""
-    lead["queue"].write_text(answer if isinstance(answer, str) else json.dumps(answer))
+    `gh pr merge` hands the method and the moment to the queue, so `--squash` and the head
+    named would no longer be the outcome. maity reads the base branch, then its rules, and
+    refuses on a `merge_queue` rule or any answer it cannot read; gh never merges then."""
+    for name, answer in (("pr.json", pr), ("rules.json", rules)):
+        if answer is None:
+            (lead["reads"] / name).unlink()
+        else:
+            text = answer if isinstance(answer, str) else json.dumps(answer)
+            (lead["reads"] / name).write_text(text)
     err = refused(["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
                    "--body", "b"], capsys)  # fmt: skip
     assert "does not merge directly" in err and ran(lead) is None
-    calls = Path(str(lead["queue"]) + ".calls").read_text().splitlines()
-    assert calls == [f"pr view --repo={REPOSITORY} {QUEUE_VIEW} -- 2045"]
+    assert merge_reads(lead) == [PR_READ, RULES_READ.format("main")][:reads]
+
+
+@runs_gh
+def test_a_merge_whose_head_moved_is_refused_before_the_rules_read(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    (lead["reads"] / "pr.json").write_text(json.dumps({**PR_ANSWER, "headRefOid": "0" * 40}))
+    err = refused(["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
+                   "--body", "b"], capsys)  # fmt: skip
+    assert "read it again" in err and ran(lead) is None and merge_reads(lead) == [PR_READ]
+
+
+@runs_gh
+def test_the_rules_read_names_the_base_branch_quoted(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A base branch with a slash goes into the endpoint as one quoted segment."""
+    (lead["reads"] / "pr.json").write_text(json.dumps({**PR_ANSWER, "baseRefName": "rel/2.0"}))
+    argv = ["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
+            "--body", "b"]  # fmt: skip
+    assert cli.main(argv) == 0
+    assert merge_reads(lead) == [PR_READ, RULES_READ.format("rel%2F2.0")]
+    assert ran(lead) is not None
 
 
 @pytest.mark.parametrize("layout", ["another placement", "not the runner's layout"])
@@ -800,9 +888,8 @@ def test_merge_squashes_the_named_head_with_the_footer_left_out(
     assert call["stdin"] == "Card tsk-x.\n\nSays co-authored-by: in a sentence, which stays.\n"
     assert "left out 3 footer line(s)" in capsys.readouterr().err
     assert ROLE_READS == ["read"]
-    # The queue state was read first, and said the merge is direct (review A1804).
-    calls = Path(str(lead["queue"]) + ".calls").read_text().splitlines()
-    assert calls == [f"pr view --repo={REPOSITORY} {QUEUE_VIEW} -- 2045"]
+    # The base branch and its rules were read first, and no rule queues the merge (A1804).
+    assert merge_reads(lead) == [PR_READ, RULES_READ.format("main")]
 
 
 @pytest.mark.parametrize(
@@ -1043,6 +1130,19 @@ def test_without_the_runners_lead_record_the_lead_commands_are_refused(
 ) -> None:
     lead["lead_record"].write_bytes(content)
     refused(["gh", "pr", "ready", "2045"], capsys)
+    assert ran(lead) is None and ROLE_READS == []
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_a_fifo_as_the_lead_record_is_refused_without_waiting(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Security A1806 of #2054: as the pull_requests record, the lead record is opened
+    without blocking; a FIFO there refuses the lead command before any role read."""
+    record = lead["lead_record"]
+    record.unlink()
+    os.mkfifo(record, 0o600)
+    refused_without_waiting(record, ["gh", "pr", "ready", "2045"], capsys)
     assert ran(lead) is None and ROLE_READS == []
 
 
@@ -1436,6 +1536,35 @@ def test_the_runner_makes_a_layout_the_lead_commands_take_under_a_loose_umask(
     ghpr.owned_layout(where)
 
 
+class _ThroughRun(AsUser):
+    """An AsUser that takes its non-direct path (the `run` calls of sudo and ssh), here
+    running each argv locally as this user."""
+
+    @property
+    def direct(self) -> bool:
+        return False
+
+    def argv(self, argv: Any, env: Any = None) -> list[str]:
+        return list(argv)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX modes and links")
+@pytest.mark.parametrize("as_user", [AsUser(), _ThroughRun()], ids=["direct", "through run"])
+def test_the_runner_tightens_only_a_real_agents_directory(tmp_path: Path, as_user: AsUser) -> None:
+    """Security leg on #2054: chmod follows a link, so `agents/` as a link is refused before
+    the chmod and what it names keeps its mode; a real directory is made 0700."""
+    real = tmp_path / "real"
+    real.mkdir(mode=0o755)
+    real.chmod(0o755)
+    link = tmp_path / "agents"
+    link.symlink_to(real, target_is_directory=True)
+    with pytest.raises(OSError, match="not a directory"):
+        as_user.tighten(link)
+    assert stat.S_IMODE(os.stat(real).st_mode) == 0o755
+    as_user.tighten(real)
+    assert stat.S_IMODE(os.stat(real).st_mode) == 0o700
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX owners; the lead commands refuse on Windows")
 @pytest.mark.parametrize("step", ["agents", "placement", "git"])
 def test_a_runner_directory_of_another_user_is_refused(
@@ -1468,7 +1597,7 @@ def test_every_answer_of_gh_is_cleaned_on_both_streams(
     """Review A1721 of #2054: a confirmation can echo a title someone else wrote; neither
     stream reaches the terminal with an escape a terminal acts on."""
     out, err = "merged #2045 (\x1b]0;title\x07)\n", "✓ Squashed \x1b[2J and merged\n"
-    lead_gh(Path(lead["gh"]), lead["log"], lead["queue"], out=out, err=err)
+    lead_gh(Path(lead["gh"]), lead["log"], lead["reads"], out=out, err=err)
     argv = ["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
             "--body", "b"]  # fmt: skip
     assert cli.main(argv) == 0
