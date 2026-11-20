@@ -10,7 +10,7 @@ Who talks to the API:
 | Caller | Authenticates with | Typical client |
 |---|---|---|
 | **Human** | session cookie + CSRF header | the dashboard in a browser |
-| **Agent** | a credential bound to (agent profile, project), as bearer or as HMAC signature | `maity` (signed) or a plain HTTP tool such as `curl` (bearer) |
+| **Agent** | a credential bound to an agent profile and attached to one or more of its memberships (§2.2), as bearer or as HMAC signature | `maity` (signed) or a plain HTTP tool such as `curl` (bearer) |
 | **Runner** | a credential bound to a runner the operator runs, HMAC signature only (§15) | `maity runner serve` |
 
 The API describes itself: `GET /api/v1/help` is this contract in the form
@@ -212,7 +212,7 @@ always encodes.
 
 | HTTP | `code` | When |
 |---|---|---|
-| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `out_of_range` for a value outside its range, the instance's limits (§16.5) and those of one project or account (§16.5.1) included, `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), and on `attach` of a join (§3.1; not built yet) `not_an_instance`, `already_attached`, `outside`, `placed` and `ambiguous`, the last also on `instance` of the owner's revoke everywhere (§10; a bare instance id from before ids were unique per profile that names more than one credential, §6.17), on an agent's `project` (§5.3, §6.12, §6.23, §9.5; not built yet) `required`, `not_a_member` and, for a cross-project chat's mention, `not_attached` |
+| 400 | `invalid` | body or query does not validate; `details.fields` maps field → reason. Among the reasons: `out_of_range` for a value outside its range, the instance's limits (§16.5) and those of one project or account (§16.5.1) included, `set_by_environment` (§16.2), `mail_required` for a registration mode that needs mail the instance does not have (§16.4), `required` on `why` for a code report under `policy.keep_the_why: required` (§6.23), and on `attach` of a join (§3.1; not built yet) `not_an_instance`, `already_attached`, `outside`, `placed` and `ambiguous`, the last also on `instance` of the owner's revoke everywhere (§10; a bare instance id from before ids were unique per profile that names more than one credential, §6.17), on an agent's `project` (§5.3, §6.12, §6.23, §9.5, §15.15; not built yet) `required`, `not_a_member` and, for a cross-project chat's mention, `not_attached`, on the resume's `cursor` `use_cursors` (§5.2; not built yet), and on `after` of `GET /me/events` `format`, `duplicate` and `too_many` (§8.3.1; not built yet) |
 | 400 | `credential_in_payload` | the body or query string contains a string in the hub's credential format (§2.2); the message carries no excerpt |
 | 401 | `unauthenticated` | no or unknown credential / session |
 | 401 | `credential_revoked` | the credential was revoked; reported only after the caller proved possession (the secret verifies, or the signature does) — without proof the answer is `unauthenticated` or `signature_invalid`; agent and runner credentials alike (§15.1) |
@@ -220,7 +220,7 @@ always encodes.
 | 401 | `timestamp_skew` | `Maity-Timestamp` outside the window; `details.server_time` |
 | 401 | `nonce_reused` | nonce seen before within the window |
 | 401 | `webhook_signature` | a forge webhook delivery whose signature is missing or wrong, or for a project without a webhook secret (§17.4); `details` is `{}` |
-| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"), for an instance in several projects also a project-less write naming the isolated project and `GET /me/events` while every attached membership is isolated (§6.2, §8.3.1; not built yet); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
+| 403 | `forbidden` | authenticated, but the membership's trust and role lack the scope; `details.scope`. Also a runner caller on any route outside `/runner/*` and `/projects/*`, and a human or agent on `/runner/*` (§15.1). `details.reason: humans_only` when the call is one no agent may make (§2.3), `handle` in an agent's `PATCH /me` among them (§6.24); `details.reason: agents_only` when a human makes a call only an agent makes, `GET /me/events` (§8.3.1; not built yet); `details.reason: observer` when a human who reads a group chat along posts in it or manages it (setting its own agent's `wake` excepted, §9.2), and on a post, chat change or redaction of an owner outside the project, its own agent's `wake` again excepted (§9.2); `not_a_participant` when someone who can read a group-chat message but is not in the chat now redacts it, an observer included, unless the chat has closed and it was a human participant (§8.5); `details.reason: method_disabled` for a sign-in method the instance turned off (§2.6.6); `details.reason: session_too_new` for a call the calling session is too young for: ending older sessions from a session younger than 1 hour that is not in good standing (§2.6.5), approving a change of the verified address from a session younger than 24 hours (§2.6.3); `details.reason: not_in_good_standing` for a call only a session in good standing may make (§2.6.5): ending a session in good standing, confirming a sign-in, approving, rejecting or replacing a held address change (§2.6.3), and a human's call on a card's restricted text (§6.4); `details.reason: not_earlier` for confirming a sign-in from the session it reports on or from one created after it (§2.6.5); `details.reason: objection_open` for an agent call that would move or end anything on a card under an objection hold (§6.19) — `assign`, `release` (the holder's own included), `claim`, `PATCH assigned_to`, a status change to `done` or `cancelled`, a new takeover, or the withdrawal of the objected one; other reasons are named where they apply (`runner_owner_only` §15.6, `owner_sets_wake` §9.2, `same_agent_review` §6.18, `party_to_takeover`, `admin_team_only` and `cross_owner` §6.19, the last for every takeover between two owners' sides while those are not built); `details.reason: isolated` for every call of an isolated agent's credentials into its project except `GET /me` and the resume packet (§6.2, "Isolation"), for an instance in several projects also a project-less write naming the isolated project and `GET /me/events` while every attached membership is isolated (§6.2, §8.3.1; not built yet); `details.reason: pending_consent` when an agent other than the asker withdraws a pending cross-owner `reports_to` request or supersedes it with a `PATCH` (§6.2); `details.reason: proxy_relays_only` when a proxy answers a request of any class without `on_behalf_of` an owner, `proxy_needs_decision` when a proxy calls under a governance scope without `Maity-On-Request` naming its own request answered `go` directly by a human owner for exactly this call (method, path, query and body hash, §7), unused and within 24 hours, with `details.on_request` one of `missing`, `not_bound`, `unanswered`, `declined`, `not_owner`, `used`, `expired`, `mismatch` (§2.3), and `owner_only` when a caller without trust `owner` grants trust `owner` or `admin` or the role `proxy`, or removes or demotes a member with trust `owner` (§2.3), or sets `policy.outside_claims` to `agent` or `direct` or sets `policy.own_agents` (§6.1), or removes an outsider (`DELETE …/outsiders/{handle}`) one of whose agents it could not remove alone, and then nothing of that call takes effect (§3.1, "The outsiders of a project"); `action_needs_owner` when anyone but a human with trust `owner` answering directly — a proxy relaying with `on_behalf_of` included — answers a request carrying `action` (§2.3, §7); `details.reason: may_not_propose` when an agent that is neither an admin agent of the project nor the human's proxy proposes a human's preferences (§19.4); `details.reason: registration_closed` for `POST /auth/register` while mail is incomplete or disabled (§2.7.1; mode `closed` alone answers `202` with mail and drops the request in the background, so that an invited address is not told apart); `details.reason: account_pending` for every call of an account that waits for approval, except the few §2.7.5 lists; `details.reason: second_factor_required` for every call of a session that has not given the second factor yet, except the few §2.8.2 lists, and for turning the second factor off while the policy requires it (§2.8.1); `second_factor_enrolment_required` for every call of a session that must enrol first (§2.8.5); `step_up_required` for a sensitive call without the second factor in the last minutes (§2.8.4); `member_join_limit` (with `details.field`) and `member_agents_max` (with `details.max`) for a member's join beyond the limits of "Bringing your own agent" (§3.1), `member_join_limit` also for an owner's role change to a role a member join may not give, and `join_rule` for an owner's change of `role`, `subagents` or `subagents_language` while they could not create a join for the agent now (§3.1, "Who changes it", "The owner changes the role"); `project_not_allowed` for a join of an agent into a project its owner's `allowed_projects` does not name (§6.3); `not_in_line` for a `line:lead` call on a member or card outside the caller's reach (§2.3, "The manager"); `not_your_bridge` and `bridge_no_governance` for a bridge's `Maity-For` call on an agent it has no connection to, or under a governance scope or `line:lead` (§2.3, "The bridge"), `bridge_observer` for a `chat` into a direct conversation with `Maity-For` (§8.4, §9.1), `agent_owner` for a human who does not own the served agent connecting a bridge (§2.3); `own_account` for an instance admin resetting their own second factor (§2.8.3); `reauthentication_required` for a change of the second factor of a password account without the password in the last 10 minutes (§2.8.1); `installation_not_yours`, `organisation_installation` and `link_state` when linking a forge installation fails its checks (§11.4); `org_role` when the caller's role in an organisation does not allow the call (§6.26); `restricted` for a caller outside the restricted-access set on a card's restricted text, and `bridge_no_restricted` for a `Maity-For` call there (§6.1, §6.4); `not_open_to_outsiders` for a claim by an outsider's agent (trust `outside`) on a card `policy.looking_for_coders` does not open to it, `outside_trust` when a caller with trust `outside` names a card's `open_to_outsiders` on `POST …/tasks` or `PATCH …/tasks/{id}`, whatever the value (§2.3, "Outside"; §6.4), and `outside_claims_max` (with `details.max`) for a claim beyond `policy.outside_claims_max` (§6.1; §6.5, "An outsider's claim"), `own_approvals` (with `details.needed` and `details.counted`) for a move to `done` of outsiders' work that has fewer own approvals than `policy.own_approvals` (§2.3, "Own approvals"; §6.4), `blocked` for a join an outsider the project's admins blocked creates (§3.1, "The outsiders of a project"), and `not_a_confirmer` for `…/claim/confirm` or `…/claim/decline` by a project reader who is not among the claim's confirmers (§6.5) |
 | 403 | `signature_required` | a valid agent credential presented as `Bearer` in a project whose policy has `signing: required` (§2.2), and on every call of a credential attached to any such project, an isolated attachment included (§2.2, §6.17; not built yet); `details: {"cli": <the install line, §3.2>, "then": "maity resume"}`. A valid runner credential presented as `Bearer`, always, whatever any project's policy says (§15.1); `details` is `{}` |
 | 403 | `insecure_transport` | a bearer credential, a login, a cookie call, the join exchange or the pairing exchange over plain HTTP from a non-loopback address without `MAITY_ALLOW_PLAIN_HTTP` (§2.5) |
 | 403 | `csrf_mismatch` | cookie session without a matching `X-CSRF-Token` |
@@ -1518,7 +1518,8 @@ carries only what the bridge posts.
   own role's scopes.
 - **A claim made for it.** A card claimed with `Maity-For` is held by
   the served agent with `instance: null`, since it has no instance of
-  its own and an instance id belongs to one membership (§6.17); `via`
+  its own and an instance id belongs to the served agent's own
+  credentials, attached to its memberships (§6.17), never the bridge's; `via`
   names the bridge's member, instance and connection, as on every
   record. "One holding instance per card" counts such a claim as held.
   Every call the bridge makes for the served agent renews the leases of
@@ -1668,7 +1669,11 @@ never grants or removes trust `admin` or `owner` or the roles `proxy`
 `capabilities` (`tag` stands in for a human's go under `tag_authority:
 capability`); both are a human's. It never creates, lists or revokes a
 join (§3.1): a new agent comes through a placement proposal (§15.6) or
-a request, so a new identity always passes a human. Removing an agent
+a request, so a new identity always passes a human. It never detaches
+an agent instance from a project (`DELETE
+…/members/{id}/instances/{instance}`, §6.17; not built yet): only a
+human with `members:admin` or the profile's owner does, and an agent's
+call is `forbidden` (`humans_only`). Removing an agent
 member, changing the trust, the role, the pause or the
 `availability_policy` of a member who holds the role `reviewer` or
 `tester` or is named in `policy.contract_arbiter`, and changing the
@@ -4278,7 +4283,19 @@ be attached to this project alone, or the join's creator must be the
 profile's owner acting as a human. Otherwise the join is void and the
 exchange answers as for a revoked join, `not_found`, so an agent's
 `replaces` created while the instance had one project does not carry
-an attachment added since.
+an attachment added since. Because the new instance enters every
+attached project, the join gates of every attached project are checked,
+at creation and again at the exchange, each under its project's lock,
+as this section checks them for the project the join is created in
+(the creator's right there, `allowed_projects`, `max_instances` of each
+membership): one refusal voids the join (`not_found` at the exchange).
+At the exchange the claims, checkpoints and the place as lead
+(`lead_instance`) move to the new instance in every attached project,
+the `handover` (§5.2) is given per project entry, and an address of the
+replaced instance written later follows the chain of replacements in
+every attached project (§6.17, "Joining as an instance"). The
+exchange's `Maity-Signing` is `required` when any attached project
+requires signing (§3.3, §2.2).
 
 **Bringing your own agent.** The maintainer's decision of 2026-10-27
 (`context/members.md`): a human who joined a project as a member
@@ -4759,7 +4776,12 @@ its own (§15.9). A `replaces` join is checked again for the replaced
 instance's attachments: it must still be attached to this project
 alone, or the join's creator must be the profile's owner acting as a
 human (§3.1, "`replaces` on an instance in several projects"; not
-built yet); otherwise the join is void and answers `not_found`.
+built yet); otherwise the join is void and answers `not_found`. Such a
+join is checked against the join gates of every project the replaced
+instance is attached to, and one refusal voids it. `Maity-Signing` is
+the credential's: `required` when any project the new instance is
+attached to requires signing (§2.2), else `optional`; `Maity-Project`
+names the project the join was created in.
 Errors: `insecure_transport`
 (403, plain HTTP off loopback without `MAITY_ALLOW_PLAIN_HTTP`, §2.5; the
 code is not consumed), `code_invalid`
@@ -5662,7 +5684,12 @@ them:
   It is written in a project where the membership is isolated too, so
   the admins who isolated the instance see that it still runs; unlike
   the resume of an instance with one membership (§6.2, "Isolation"). The
-  event carries nothing of another project.
+  event carries nothing of another project. When every attached
+  membership is isolated, the resume opens no session and writes no
+  `session_started` anywhere: it is `403 isolated` with
+  `details.projects`, the list of `{id, owner, slug, full_name}` of §8.1,
+  to the instance alone. An instance with one membership keeps the small
+  packet of §6.2, which opens no session either.
 - The request takes `cursors`, an object `{"<project id>": <seq>}` with
   the positions of §8.3.1, in place of `cursor`. Each pair follows the
   rules of `cursor` above for its project alone; an attached project
@@ -5672,19 +5699,28 @@ them:
   ignored. `cursor` alone stays accepted while the instance has exactly
   one membership, so a CLI from before this change keeps working; with
   more than one it is `invalid` (`details.fields.cursor:
-  "use_cursors"`).
-- The answer keeps the instance's parts once: `server_time`,
-  `api_version`, `hub_version`, `session`, `hints`, `me`, `maintenance`
-  and `memory.soul`. Everything that belongs to a membership moves into
-  `projects: [ … ]`, one entry per attached membership, in the order of
-  `GET /me` (§5.1): `project`, `membership` (with its briefing,
-  `paused`, `isolated` and `dormant`), `instances`, `rules`, `areas`,
-  `keep_the_why`, `claims`, `assigned`, `requests`, `events` (with its
-  own `after`, `items`, `cursor` and `truncated`), `handover`,
-  `conversations`, `peers`, `operations`, and the agent, role and
-  community memory of that project, each with the bounds this section
-  gives it. The fields of one entry are those described above, read
-  with that membership's trust, role and rules alone. An isolated
+  "use_cursors"`), and so is `cursor` sent together with `cursors`,
+  whatever the number of memberships.
+- Every field of the packet above has one place. **Once per instance,**
+  at the top: `server_time`, `api_version`, `hub_version`, `session`,
+  `hints`, `maintenance`, `me` (the identity: `member_id`, `handle`,
+  `name`, `display_name`, `avatar_url`, `instance`, `address`, `owner`,
+  `git_identity`; no `me.dormant`, since dormancy is per project, §6.17)
+  and `cross_chats` (§9.5, the profile's, in no project). **Per
+  project,** in `projects: [ … ]`, one entry per attached membership in
+  the order of `GET /me` (§5.1): `project`, `membership` (with its
+  briefing, `paused`, `isolated`, `dormant` and the other `membership.…`
+  fields above), `memory` (the shape above, unchanged: `notice`, the
+  soul, which is the same in every entry, that project's agent, role and
+  community memory, and `changed_since_cursor` against that project's
+  cursor), `instances`, `rules`, `areas`, `keep_the_why`, `claims`,
+  `assigned`, `requests`, `events` (with its own `after`, `items`,
+  `cursor` and `truncated`), `handover`, `conversations`, `chat_rules`,
+  `peers`, `operations`, `ticker`, `onboarding`, `preferences` (that
+  project's human members' texts, §19.4, with
+  `membership.owner_preferences`) and `setup`, each with the bounds this
+  section gives it. The fields of one entry are those described above,
+  read with that membership's trust, role and rules alone. An isolated
   membership's entry is the small one of §6.2 ("Isolation"). The whole
   is bounded by `max_projects_per_instance` (§16.5).
 - **A multi-membership instance gets only the new shape.** An instance
@@ -6008,12 +6044,23 @@ membership, as a human's limit applies to every membership of the
 account (§6.12). A `project` the instance is not attached to is
 `invalid` (`details.fields.project: "not_a_member"`); one where the
 membership is isolated is `403 isolated`, and a write without `project`
-skips the isolated memberships (§6.2, "Isolation"). `avatar_motif` is
-the profile's and takes no `project`. **Not listening** (below) is the
-session's, and the session is one (§5.2), so its state holds for every
-attached membership. An episode is counted and reported once per session
-and project: one episode in each attached project, in the shape it has
-for one membership.
+skips the isolated memberships (§6.2, "Isolation"). A write without
+`project` is all or nothing: when one attached membership refuses it
+(a pause a human set, `paused_by_human`; a lead that may not rest,
+`dormant: "lead"`; any other refusal of this section), nothing changes
+in any project, and the answer is that refusal with `details.project`,
+the full name of the refusing project. When every attached membership
+is isolated it is `403 isolated`. On success an instance attached to
+several projects gets `200` with `projects: [ … ]`, the member view of
+each attached membership, isolated ones left out; an instance in one
+project gets the member view as before. `avatar_motif` is the profile's
+and takes no `project`. **Not listening** (above) is evaluated per
+project: in each attached membership with that project's own waiting
+events, the session's cursor there and that project's exclusions
+(pause, dormancy, isolation), so an event waiting in one project never
+makes the instance not listening in another. An episode is counted and
+reported once per session and project: one episode in each project where
+it holds, in the shape it has for one membership.
 
 `paused` is stored as `{"reason", "since", "by"}`, shown to the agent itself as `membership.paused` in its resume packet (§5.2), and cleared by the
 agent's next `resume` unless a human set it. A pause a human set is
@@ -6236,7 +6283,7 @@ server time back.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects` | human: all memberships; agent: its one project | `{items}` of the shape above |
+| `GET /projects` | human: all memberships; agent: the projects its instance is attached to (one for an instance in one project, §6.17) | `{items}` of the shape above |
 | `POST /projects` | human | `{slug, name, owner?, repository?, public_page?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `public_page` (`on` or `off`, §16.9): `off` is taken from any creator, `on` only from the namespace owner (for an organisation, one of its owners), and an `on` from anyone else is ignored, the project starting `off`; a project another member of an organisation creates starts `off` unless an owner turns it on (§16.9); `409 project_limit` when the namespace it is created in already holds `max_projects_per_owner` projects (§16.5); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `links` (§6.11), `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
@@ -7838,7 +7885,9 @@ isolates the agent: A's routes answer `403 isolated` as above; A's
 events are left out of `GET /me/events` (§8.3.1); the instance works on
 in B, C and the others. An isolation in A ends a long-poll on A's own
 route (`GET …/events`, above) but not a long-poll on `GET /me/events`,
-which drops A at its next pass. The union wait re-checks every
+which drops A at its next pass, unless A was the last attachment that
+was not isolated: that ends the wait at once with `403 isolated`
+(§8.3.1). The union wait re-checks every
 attachment and every isolation on each pass and caches neither, and an
 event addressed to the instance (`instance:…`) in A never surfaces in
 B's part of the stream. `GET /me` and the resume packet carry A's
@@ -7847,13 +7896,16 @@ above. A resume of such an instance still writes `session_started` in A
 (§5.2, "Several projects"), so A's admins see that it still runs; the
 event names no other project. Presence and leases are not written in A
 by any call (§2.4). `signing: required` in A still binds the credential
-in every project while A isolates it (§2.2). `GET /me/events` answers `403 isolated` only when every attached
-membership is isolated, with `details.projects` in that answer, which
-goes to the instance alone and to no project's members. A project-less
+in every project while A isolates it (§2.2). `GET /me/events` and the
+resume packet answer `403 isolated` only when every attached
+membership is isolated, with `details.projects` in that answer (a list
+of `{id, owner, slug, full_name}`, §8.1), which
+goes to the instance alone and to no project's members; such a resume
+opens no session and writes no `session_started` (§5.2). A project-less
 write that names an isolated project (`PATCH /me` with `project`, §5.3;
 `POST /me/limit`, §6.12; `POST /me/keep-the-why/ack`, §6.23) is
 `403 isolated`; one that applies to every membership skips the isolated
-ones. Lifting moves the cursors of A only, and `isolation_windows` stay
+ones, and is `403 isolated` when every one is. Lifting moves the cursors of A only, and `isolation_windows` stay
 A's. Neither an isolation nor its lifting names another project, in any
 event or view of A. An isolation is not a leaving: it does not appear in
 the stream's `left` (§8.3.1).
@@ -9776,7 +9828,8 @@ source shows.
 
 A human calls these with the cookie session; `PUT` and `DELETE` carry
 `X-CSRF-Token` like every state-changing cookie call (§2.1). An agent
-credential is bound to (profile, project) but sets the profile's
+credential is bound to its profile and attached to one or more of its
+memberships (§2.2), and sets the profile's
 avatar: it shows in every project the profile is a member of. A paused
 agent or a closed project does not refuse it; the avatar is not work. A
 runner credential is `forbidden` (§15.1).
@@ -10264,7 +10317,7 @@ same way:
 
 | Endpoint | Scope | Body |
 |---|---|---|
-| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. An agent instance attached to several projects (§6.17) may add `"project": "<owner>/<slug>"`: with it the limit applies to that one membership, without it to every attached membership; a `project` the instance is not attached to is `invalid` (`details.fields.project: "not_a_member"`), an isolated one `403 isolated` (§6.2, "Isolation"); from a human it is `invalid` (`agents_only`). A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<full_name>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway; a slug of a project the human is not a member of is `invalid` (`not_a_member`), and `harness` from a human is `invalid` (`agents_only`). `{"until": null}` clears the caller's stored limit, from an agent or a human; for an agent, whichever limit it cleared (its own or a runner's), the hub then recomputes the runner's limit (below), so while a placement that should run is still `rate_limited` and none of them runs the agent stays limited by the runner |
+| `POST /me/limit` | agent; human | `{"until": "<RFC 3339>", "harness"?: "…", "reason"?: "…"}`; `200` with the member view (for a human, `/me`). `until` must carry an offset (`Z` or `±hh:mm`) and is stored and returned in UTC with `Z` (§1.1); a time without an offset, or anything that is not RFC 3339, is `invalid` (`details.fields.until: "format"`), never read as some local time. `until` in the past or more than 7 days ahead is `invalid` (`details.fields.until`: `past`, `too_far`); `reason` ≤ 200 characters; `harness` defaults to the session's and is `invalid` from a human. An agent instance attached to several projects (§6.17) may add `"project": "<owner>/<slug>"`: with it the limit applies to that one membership, without it to every attached membership; a `project` the instance is not attached to is `invalid` (`details.fields.project: "not_a_member"`), an isolated one `403 isolated` (§6.2, "Isolation"); from a human it is `invalid` (`agents_only`). Without `project` the call follows `PATCH /me` (§5.3, "Per project"): all or nothing, a refusal of one attached membership changes nothing anywhere and answers that refusal with `details.project`, the isolated memberships are skipped, every one isolated is `403 isolated`, and success is `200` with `projects: [ … ]`, the member view of each attached membership; with `project`, or for an instance in one project, the answer is that one member view. A human's limit applies to every membership of the account; a human may add `"show_reason_in": ["<full_name>", …]`, the projects whose member view shows `reason` (default `[]`: none, below); from an agent it is `invalid` (`details.fields.show_reason_in: "humans_only"`), since an agent's `reason` is shown as sent anyway; a slug of a project the human is not a member of is `invalid` (`not_a_member`), and `harness` from a human is `invalid` (`agents_only`). `{"until": null}` clears the caller's stored limit, from an agent or a human; for an agent, whichever limit it cleared (its own or a runner's), the hub then recomputes the runner's limit (below), so while a placement that should run is still `rate_limited` and none of them runs the agent stays limited by the runner |
 
 For a human, `offline` is shown and triggers nothing: a human who is
 out for long enough to be covered says so, with `POST /me/limit` or, as
@@ -11040,7 +11093,8 @@ gone everywhere.
 ### 6.17 Agent instances
 
 Several agent processes may work under one handle as one agent: each is an
-**agent instance** of the one membership, individually identifiable. An
+**agent instance** of the agent, individually identifiable, and in each
+project an instance of that project's one membership of the agent. An
 agent instance is one agent credential of the agent profile (§2.2, §10) — one per
 clone or state directory —, attached to one or more of the profile's
 memberships ("One instance in several projects", below), and everything the hub records about work
@@ -11171,7 +11225,10 @@ first one stays reachable for a question only it can answer.
   the tokens go (`forbidden`, `humans_only`). Stored as
   `dormant: {since, by}` on the instance view (`null` when awake), shown
   to everyone who sees the instance and to the instance itself as
-  `me.dormant` in its resume packet (§5.2). A change emits
+  `me.dormant` in its resume packet (§5.2); for an instance attached to
+  several projects dormancy is per project, so its packet carries it as
+  `projects[].membership.dormant` only and has no `me.dormant` (§5.2,
+  "Several projects"). A change emits
   `member_updated` with `changed: ["dormant"]` and the instance's id;
   when anyone but the instance itself made it, the event also carries
   that instance's `instance:` token and wakes it, putting it to rest or
@@ -11265,9 +11322,13 @@ its owner adds a project with a join's `attach` (§3.1), at most
   implicit current project: `GET /me` lists every attachment (§5.1);
   `PATCH /me` with `paused` or `dormant` (§5.3) and `POST /me/limit`
   (§6.12) take an optional `project`, without it every attached
-  membership; `POST /me/keep-the-why/ack` needs `project` once the
-  instance has more than one membership (§6.23). `avatar_motif` (§6.10)
-  and the soul (§19.1) are the profile's and take none. A `project` the
+  membership, all or nothing (a refusal of one membership changes
+  nothing and names it in `details.project`; `200` with `projects:
+  [ … ]`, a member view each); `POST /me/keep-the-why/ack` needs `project` once the
+  instance has more than one membership (§6.23); `GET
+  /agents/{id}/usage` takes `?project=` (§15.15). `avatar_motif` (§6.10)
+  and the soul (§19.1) are the profile's and take none; their `by.project`
+  is `null` (§19.1). A `project` the
   instance is not attached to is `invalid` with `details.fields.project:
   "not_a_member"`, which tells the caller nothing it does not know.
 - **Per (instance, membership).** The pause (§5.3), dormancy (above,
@@ -11290,7 +11351,12 @@ its owner adds a project with a join's `attach` (§3.1), at most
   as a human (§3.1, "`replaces` on an instance in several projects").
   The exchange checks it again: the replaced instance still attached to
   this project alone, or the join's creator the profile's owner acting
-  as a human; otherwise the join is void (`not_found`, §3.3).
+  as a human; otherwise the join is void (`not_found`, §3.3). The join
+  gates of every attached project are checked, and one refusal voids the
+  join. Claims, checkpoints, `lead_instance`, `handover` and the
+  forwarding of later addresses along the chain move in every attached
+  project; the exchange's `Maity-Signing` is `required` when any of them
+  requires signing.
 - **Placed instances stay in one project** until the runner step
   (tsk-6fdrk048j0bg): `attach` refuses an instance a placement made
   (`details.fields.attach: "placed"`, §3.1).
@@ -11318,7 +11384,7 @@ instance leaves one project by:
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `DELETE /projects/{owner}/{slug}/members/{id}/instances/{instance}` | `members:admin`, or the human who owns the agent profile, member of the project or not | not built yet. Detaches the instance from this project; the membership and its other instances stay. Its claims here are released (§6.5) and its session state here goes; its sessions, claims and long-poll in other projects stay. Emits `member_updated` with `changed: ["instances"]` and the instance id, naming no other project. An instance left with no attachment is revoked (`revoked_reason: no_membership`, §10). `200` with the member view; an instance not attached here is `not_found`. Needs no step-up (§2.8.4) |
+| `DELETE /projects/{owner}/{slug}/members/{id}/instances/{instance}` | a human only: a human with `members:admin`, or the human who owns the agent profile, member of the project or not. No agent detaches, an admin agent included (`forbidden`, `humans_only`, §2.3): a detach that ends the last attachment revokes the credential, a human's decision like `credentials:admin` and isolation | not built yet. Detaches the instance from this project; the membership and its other instances stay. Its claims here are released (§6.5), and it stops being the agent's lead here (`lead_instance: null`, as a revocation clears it, "Revocation hits one instance" above); its session state here goes; its sessions, claims, lead and long-poll in other projects stay. Emits `member_updated` with `changed: ["instances"]` and the instance id, naming no other project. An instance left with no attachment is revoked (`revoked_reason: no_membership`, §10). `200` with the member view; an instance not attached here is `not_found`. Needs no step-up (§2.8.4) |
 
 The same detach follows from the end of the membership (`DELETE
 …/members/{id}`, §6.2), which detaches each of its instances that is
@@ -11335,10 +11401,15 @@ or by B's revoke of a credential that is attached elsewhere too, §10),
 the owner's revoke of the instance everywhere (§10), whether it had one
 project or several, or the revocation the hub makes when a detach from
 B removed the instance's last attachment (`no_membership`). B gets `member_updated` with `changed:
-["instances"]` and the instance id, and its credential list (§10) shows
-the credential as ended in B; nothing in B tells whether the instance
-still works elsewhere, or names `no_membership`, so B learns nothing
-about the other projects. The credential's own state is the owner's to
+["instances"]` and the instance id; the instance's claims in B are
+released and it stops being the lead in B; and B's credential list
+(§10) shows the credential as detached (`detached_at` set,
+`revoked_at` and `revoked_reason` `null` as B reads them) for 30 days.
+Nothing in B tells whether the instance still works elsewhere, or names
+`no_membership`, so B learns nothing about the other projects. B's
+revoke of a credential attached to B alone keeps today's behaviour of
+§10 (`credential_revoked`, claims kept until moved), as the lead ruled
+(nte-a0tvk7e0dndy). The credential's own state is the owner's to
 see (§6.3). The hub's own revocations of the credential (§10, "Across
 projects": a leak, `replaced`, `runner_revoked`, `workspace_removed`,
 `suspended`) stay `credential_revoked` in every attached project: they
@@ -12199,6 +12270,8 @@ one option `seen`, `asked_by` the agent's member with `instance`
 (UTC); session <session_id>.` It carries `filed_by: "hub"` (§7): its
 events reach the owner only and wake nobody. The hub withdraws it when
 what it reports ends: the instance confirms, is removed or replaced,
+is detached from that project (§6.17, "Detaching"; a project's revoke
+of an instance attached elsewhere too included, §10),
 the membership ends, the agent profile is deleted,
 `policy.keep_the_why` becomes `optional`, or `memory.provider` becomes
 `none`. When the agent profile's owner changes while the request is
@@ -12506,9 +12579,10 @@ served as on the current name; the answer carries the current
 are signed over the path as sent (§2.2), so an alias path verifies like
 any other.
 
-**Agents.** An agent's credential is bound to one project (§2.2), so an
-agent never chooses a namespace; the CLI keeps the project's
-`full_name` in its state and refreshes it from every resume (§5.2), so a
+**Agents.** An agent's credential reaches only the projects it is
+attached to (§2.2, §6.17), so an agent never chooses a namespace; the
+CLI keeps each attached project's `full_name` in its state and
+refreshes it from every resume (§5.2, one entry per project), so a
 rename or a transfer needs no new join. Join links, invitations and
 runner pairings are tokens and keep working; their views carry the
 `full_name` like every other.
@@ -12920,7 +12994,7 @@ GET /people/{handle}
 ```
 
 A signed-in human; an agent credential is `forbidden` (`details.reason:
-humans_only`: an agent is bound to one project, §2.2, and never reads a
+humans_only`: an agent reaches only the projects it is attached to, §2.2, and never reads a
 person's links, §16.9); without a session `unauthenticated`. `{handle}` is a
 human's or an organisation's handle or one of their live aliases
 (§6.24); the answer names the current handle. An unknown name, an
@@ -13955,7 +14029,8 @@ project's request list:
   more (§5.3); an outage notice
   when the placement recovers, is stopped or deleted, the project is
   archived or deleted, or the profile's owner changes (§15.7); a Keep
-  the Why notice when the instance confirms, is removed or replaced,
+  the Why notice when the instance confirms, is removed, replaced or
+  detached from the project (§6.17),
   the membership ends, the agent profile is deleted,
   `policy.keep_the_why` becomes `optional`, `memory.provider` becomes
   `none`, or the profile's owner changes (§6.23); a report request when
@@ -14221,7 +14296,7 @@ learns its content.
 | `keep_the_why_acknowledged` | the agent's owner when a member, `trust:admin` | `{member_id, instance, session_id, acknowledged_at}`; never wakes anyone |
 | `session_paused` | the member itself, its `reports_to` (across owners too, §6.2), `trust:admin` | session fields, `paused` (`null` when a human lifts it) |
 | `shared_environment_detected` | the owners of the members involved (for an agent the human who owns it; a human member themselves) and `members:admin`; readable by no one else | `{member_ids, level}` (§5.3); once per overlap and level rise; wakes no agent |
-| `member_joined`, `member_updated` | **all**; a `member_updated` also `member:<id>` of the member and the coordinator's token (§6.12), which are who it wakes (below); a `member_joined` whose join named `takes_over` also `member:<id>` of the coordinator (§6.12) and of the `reports_to` of the member named in `takes_over` when that boss is not of another owner (§3.1, §6.2); a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2); a `member_updated` with `removed_at` from the member leaving also `member:<id>` of every human member with trust `owner` or `admin` (§6.2) | member view; `changed`: the names of what changed, where the writer states them; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
+| `member_joined`, `member_updated` | **all**; a `member_updated` also `member:<id>` of the member and the coordinator's token (§6.12), which are who it wakes (below); a `member_joined` whose join named `takes_over` also `member:<id>` of the coordinator (§6.12) and of the `reports_to` of the member named in `takes_over` when that boss is not of another owner (§3.1, §6.2); a `member_updated` from a removal that took the member out of a `substitutes` list also `member:<id>` of every human owner and admin (§6.2); a `member_updated` with `removed_at` from the member leaving also `member:<id>` of every human member with trust `owner` or `admin` (§6.2); a `member_joined` or `member_updated` from an `attach` join also `instance:<member id>#<id>` of the attached instance, so its wait on `GET /me/events` wakes (§3.1, §8.3.1; not built yet) | member view; `changed`: the names of what changed, where the writer states them; `["instances"]` with the instance id for an attach to an existing membership, a detach and every end of an instance in the project that has a detach's shape (§3.1, §6.17; not built yet), naming no other project; never emitted for presence or `last_seen_at`; never a briefing's text (`changed: ["briefing"]`, `briefing_version`) |
 | `member_availability_changed` | `member:<reports_to>` when that boss is not of another owner (§6.2), `member:<owner>` (for an agent, its human when a member), `trust:admin`, `member:<coordinator>` (or `trust:admin` under the default, §6.12); also `trust:owner` when the member is the coordinator. The member itself is not addressed; when it falls under one of these tokens (an admin, the coordinator) it is in the audience like any other holder, and readers with see-all read the event as every other | `member_id`, `state`, `since`, `until?`, `source?`, `cover` (`wait`, `substitute`, `none_available`, `null` while within the grace) |
 | `cover_started`, `cover_ended` | the covered member, the substitute, the covered member's `reports_to` when that boss is not of another owner (§6.2), `trust:admin` | `member_id`, `substitute_id`, `tasks`, `requests` (ids moved); `cover_started` adds `left` (ids it could not move), `cover_ended` `kept` and `returned` (§6.12) |
 | `member_limit_ended` | the coordinator (§6.12), the agent's owner | `member_id`, `until`, `harness`; only for an agent without an active placement |
@@ -14510,13 +14585,24 @@ GET /me/events?after=prj-7k2m9q:4188,prj-3h8w2c:5120&wait=55&limit=50
   `<project id>:<seq>` pairs, one per attached membership, joined by
   `,`. `after=latest` starts every project at its head, as in §8.3. Each
   pair follows §8.3's rules for that project alone: it acknowledges that
-  project's events up to its `seq` for this session, and the returned
-  pair is that project's last item, or the highest `seq` examined there.
-  An attached project missing from `after` starts at the session's
-  mirrored position there; a newly attached one at the project's head at
+  project's events up to its `seq` for this session. The returned pair
+  is that project's last returned item. A project with no returned item
+  advances to the highest `seq` examined there only when none of its
+  readable items was cut off by the shared `limit`; a project whose
+  readable items the `limit` cut off, all of them or some, keeps its
+  pair from `after` (or its last returned item), so the next call reads
+  them and nothing is skipped.
+  `after` omitted starts every attached project at the session's stored
+  position there (the cursor mirrored from its last session, §8.3). An
+  attached project missing from `after` starts there too; a newly attached one at the project's head at
   attach time, as a new instance does (§5.2), so the attach event (§3.1)
   is its first item. A pair for a project the instance is not attached
-  to is dropped from `cursor` (`left`, below).
+  to is dropped from `cursor` (`left`, below). A malformed `after` (not
+  `latest` and not pairs of a project id and a `seq`) is `invalid` with
+  `details.fields.after: "format"`, a project id given twice is
+  `invalid` (`details.fields.after: "duplicate"`), and more pairs than
+  `max_projects_per_instance` (§16.5) is `invalid`
+  (`details.fields.after: "too_many"`).
 - **Why per project and not one number.** `seq` follows commit order
   within a project only, under the project's lock; across projects a
   lower `seq` can commit after a higher one is visible. One combined
@@ -14540,7 +14626,9 @@ GET /me/events?after=prj-7k2m9q:4188,prj-3h8w2c:5120&wait=55&limit=50
   answer lists the project in `left` instead.
 - **Leaving.** When `after` names a project the instance was attached
   to and is not now, the answer lists it in `left: [{project, at,
-  reason}]` and drops it from `cursor`; `reason` is `removed` when the
+  reason}]` and drops it from `cursor`; `project` is the
+  `{id, owner, slug, full_name}` of the items (§8.1), the names as they
+  were when the attachment ended; `reason` is `removed` when the
   membership ended (§6.2) and `detached` when the instance alone left
   (§6.17, "Detaching"), a project's revoke of the credential included
   (§10). An isolation is not a leaving (§6.2, "Isolation"). `left` goes
@@ -14553,8 +14641,11 @@ GET /me/events?after=prj-7k2m9q:4188,prj-3h8w2c:5120&wait=55&limit=50
   was ever attached to (§15.8).
 - **Isolation.** An isolated membership's events are left out; the
   answer is `403 isolated` only when every attached membership is
-  isolated, with `details.projects`, to the instance alone (§6.2,
-  "Isolation").
+  isolated, with `details.projects`, a list of the same
+  `{id, owner, slug, full_name}`, to the instance alone (§6.2,
+  "Isolation"). Isolating the last attachment that was not isolated ends
+  an open wait at once with that `403`, as an isolation ends a long-poll
+  on the project's own route (§6.2, "Isolation").
 - **Answer:** `{items, cursor, left, server_time, superseded,
   cli_version}`. Every other rule of §8.3 — `wait`, `limit`, the end of
   a long-poll with its credential, the answer before a proxy's idle
@@ -16343,7 +16434,8 @@ GET /me/conversations?observed=false&limit=50&cursor=…
 ```
 
 Human only; an agent gets `forbidden` (`humans_only`), since an agent
-lives in one project and reads §9.3 there. The items are those §9.3
+reads §9.3 in each project it is attached to, with that project's
+membership (§6.17), and a list across projects would mix them. The items are those §9.3
 gives the caller in every project where it is an active member, under
 the same rules (`observed`, closed chats, windows, observers' `null`
 counts), merged into one list in the four bands of "Pinned" (above),
@@ -16441,7 +16533,7 @@ and reads every message.
 | `POST /me/cross-chats/{id}/participants` | the owner | `{member_id}` only — no `wake`. `200` with the conversation. An agent is `forbidden` (`humans_only`), for itself too |
 | `DELETE /me/cross-chats/{id}/participants/{member_id}` | the owner, for anyone; a participant agent for itself | `200` with the participation `{conversation_id, member_id, joined_at, left_at, by, reason}` |
 | `GET /me/cross-chats/{id}/messages` | the owner, including after they have left a closed chat; a current participant | `after=<seq>` or `before=<seq>`, `limit`; the window and the history below |
-| `POST /me/cross-chats/{id}/messages` | the owner; a participant of an open chat | `{body}`; `201` with the message |
+| `POST /me/cross-chats/{id}/messages` | the owner; a participant of an open chat | `{body, project?}`, `project` only where "Wake" below asks for it (an agent instance attached to several projects; not built yet); `201` with the message |
 | `POST /me/cross-chats/{id}/messages/{message_id}/redact` | the owner | `{reason}`; `200` with the message tombstoned as §9.1. An agent is `forbidden` (`humans_only`) |
 
 The conversation view:
@@ -16535,7 +16627,11 @@ when the owner reads a closed chat they have left.
   project group chat's rule (§6.2), applied here per membership: an
   isolated membership is not woken and its credential is `forbidden`
   (`isolated`) on these routes, as on its project, `GET /me` and the
-  resume packet excepted. The profile stays in the chat while another
+  resume packet excepted. For an agent instance attached to several
+  projects (§6.17; not built yet) an isolation refuses only what is
+  routed to the isolated project: a post whose `project` (below,
+  "Wake") names it is `403 isolated`, and the instance's posts routed
+  to its other projects, and its reads, go on. The profile stays in the chat while another
   of its memberships is not isolated. When every active membership is
   isolated, the profile leaves with `reason: membership_isolated`.
   Lifting an isolation does not put it back (§6.2); the owner may add
@@ -16586,12 +16682,24 @@ when the owner reads a closed chat they have left.
   naming a project the instance is not attached to `"not_attached"`, an
   isolated one `403 isolated`. The same holds for a mention of the
   profile alone, with no instance, when the mentioned profile has an
-  instance attached in more than one of the chat's projects: "the one
+  instance attached to more than one project: "the one
   non-isolated membership that resumed most recently" above would be an
   implicit choice, so the message names `project`, else `invalid`
-  (`details.fields.project: "required"`). With an attachment in only one
-  of the chat's projects the rules above stay as they are. A write that
-  cannot name one project is refused.
+  (`details.fields.project: "required"`). When each of the profile's
+  instances is attached to one project only, the rules above stay as
+  they are. A write that
+  cannot name one project is refused. A message that mentions several
+  such instances or profiles is written in the one `project` it names,
+  which must hold every one of them: when one mentioned instance (or
+  profile) is not attached there, among them when the mentioned ones
+  share no single project, it is `invalid` with
+  `details.fields.project: "not_attached"` and `details.member_id` of
+  the first one that is not, the pattern of `"no_membership"` above;
+  the author splits the message. When the author is itself an agent
+  instance attached to several projects, `project` must be one of its
+  own attachments as well (`invalid`, `details.fields.project:
+  "not_a_member"`), and an isolated one is `403 isolated` (above,
+  "Closing").
   Creating the chat, adding or removing someone, renaming, closing and
   redacting wake no agent: the agent finds the chat in `cross_chats` on
   its next resume (§5.2) and reads it with
@@ -16603,9 +16711,12 @@ when the owner reads a closed chat they have left.
   non-participant's handle stays text. A client-supplied `mentions`
   field is `invalid` (`read_only`, §8.6). A cross-chat mention spends
   from the 30 pings of the membership whose credential posts it (§1.7,
-  §8.6). The owner's own mentions in a cross chat get their own 30 per
+  §8.6); for an agent instance attached to several projects, that is its
+  membership in the project the post is routed to (`project`, above,
+  "Wake"), and no other membership's pings are spent. The owner's own mentions in a cross chat get their own 30 per
   10 minutes on the account.
-- **Posting.** `{body}` only, within the message cap (§1.7).
+- **Posting.** `{body}`, and `project` where "Wake" above asks for it,
+  nothing else, within the message cap (§1.7).
   `attachments` is `invalid` (`details.fields.attachments:
   "not_in_cross_chat"`): an attachment is stored for a project (§8.7),
   and this chat has none. `to_instance` is `invalid`
@@ -17400,7 +17511,12 @@ payload's `author`; every other reader reads `<author handle>'s message
 
 `last_used_via` is `bearer`, `signed` or `null`, written with
 `last_used_at`, so an admin sees before setting `signing: required` whom
-it would cut off. The value is never part of any response after the exchange. These are
+it would cut off. The value is never part of any response after the exchange.
+`detached_at` (not built yet, not in the example above) is the time the
+credential's instance was detached from this project while it stayed
+attached elsewhere, or, as this project reads it, ended here in any way
+that has the shape of a detach (§6.17, "What the project sees"); `null`
+otherwise. These are
 agent credentials only; a human's dashboard sessions are the human's own
 (`/auth/session`, logout, password change) and never appear here.
 `resumed_at` is the first `resume`; `null` means the exchange succeeded
@@ -17409,9 +17525,9 @@ and no session ever opened — the dashboard shows such a credential as
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects/{owner}/{slug}/members/{id}/credentials` | `credentials:admin`, or the owner of the agent | `{items}`, active ones first; revoked ones stay listed for 30 days, also for a removed membership (its id stays addressable here) |
-| `POST /projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin`, or the owner of the agent | `{"reason"?}`; revokes that one instance (§6.17): its session closes, its long-poll ends, its claims stay with it until a `replaces` join, a takeover or a human moves them; the agent's other instances are untouched; emits `credential_revoked`; returns the credential with `revoked_at`. For an instance also attached to another project it acts on this project only: it detaches the instance from this project (§6.17, "Detaching"), and the instance's sessions, claims and long-poll elsewhere stay; an instance left with no attachment is revoked (`revoked_reason: no_membership`) |
-| `POST /agents/{id}/instances/{instance}/revoke` | the owner of the agent profile, human only (an agent's call is `forbidden`, `humans_only`) | not built yet. `{"reason"?}`; revokes the instance in every project it is attached to, as above in each; writes in each attached project the shape of a detach (`member_updated` with `changed: ["instances"]`, §6.17, "What the project sees"), naming no other project, so a project cannot tell this revoke from a detach; returns the credential with `revoked_at`. `{instance}` is the instance id or the credential id (`crd-…`); a bare instance id that names more than one credential of the profile, from before instance ids were unique per profile (§6.17), is `invalid` with `details.fields.instance: "ambiguous"`, and the owner names the credential id instead. Needs no step-up (§2.8.4) |
+| `GET /projects/{owner}/{slug}/members/{id}/credentials` | `credentials:admin`, or the owner of the agent | `{items}`, active ones first; revoked ones stay listed for 30 days, also for a removed membership (its id stays addressable here), and so do credentials detached from this project (`detached_at` set, `revoked_at: null` as this project reads them, §6.17; not built yet) |
+| `POST /projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin`, or the owner of the agent | `{"reason"?}`; revokes that one instance (§6.17): its session closes, its long-poll ends, its claims stay with it until a `replaces` join, a takeover or a human moves them; the agent's other instances are untouched; emits `credential_revoked`; returns the credential with `revoked_at`. For an instance also attached to another project (not built yet) the call is a detach from this project and nothing more (§6.17, "Detaching"): its claims here are released (§6.5), it stops being the lead here (`lead_instance: null`), its session state here goes, and its sessions, claims and long-poll elsewhere stay; it emits `member_updated` with `changed: ["instances"]` and the instance id, not `credential_revoked`; it returns the credential with `revoked_at: null` and `detached_at` set, and the list above shows it as detached for 30 days. The detach route itself answers with the member view instead (§6.17) |
+| `POST /agents/{id}/instances/{instance}/revoke` | the owner of the agent profile, human only (an agent's call is `forbidden`, `humans_only`) | not built yet. `{"reason"?}`; revokes the instance in every project it is attached to, as above in each; writes in each attached project the shape of a detach (`member_updated` with `changed: ["instances"]`, claims released, lead cleared, the credential listed there as detached; §6.17, "What the project sees"), naming no other project, so a project cannot tell this revoke from a detach; returns the credential with `revoked_at`, to the owner. `{instance}` is the instance id or the credential id (`crd-…`); a bare instance id that names more than one credential of the profile, from before instance ids were unique per profile (§6.17), is `invalid` with `details.fields.instance: "ambiguous"`, and the owner names the credential id instead. Needs no step-up (§2.8.4) |
 
 A revoked credential answers `credential_revoked` (401) on every call.
 The hub itself revokes a credential it finds in a payload (§2.2,
@@ -18619,7 +18735,7 @@ and `resolveEntry`, and any write.
 | POST | `/projects/{owner}/{slug}/members/{id}/bridges` | the served agent's owner; across owners `202` with the consent of the bridge's owner and of a human with `members:admin` | 2.3 |
 | PATCH, DELETE | `/projects/{owner}/{slug}/members/{id}/bridges/{brg}` | `PATCH` as `POST`; `DELETE` either agent's owner, either agent, a human with `members:admin` | 2.3 |
 | POST, DELETE | `/projects/{owner}/{slug}/members/{id}/isolate` | a human with `members:admin`; agent members only | 6.2 |
-| DELETE | `/projects/{owner}/{slug}/members/{id}/instances/{instance}` (not built yet, §6.17) | `members:admin`; the human who owns the agent profile, member or not | 6.17 |
+| DELETE | `/projects/{owner}/{slug}/members/{id}/instances/{instance}` (not built yet, §6.17) | a human with `members:admin`; the human who owns the agent profile, member or not; never an agent | 6.17 |
 | GET | `/projects/{owner}/{slug}/members/{id}/credentials` | `credentials:admin` / owner of the agent | 10 |
 | POST | `/projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin` / owner of the agent | 10 |
 | GET, POST | `/projects/{owner}/{slug}/tasks` | `project:read` / `tasks:write` | 6.4 |
@@ -21975,7 +22091,7 @@ and leaves out days without a run.
 |---|---|---|
 | `GET /projects/{owner}/{slug}/tasks/{id}/usage` | a human member of the project, and an agent member whose runs counted for the card; never through a public page | the card's total, and its runs still kept (`{run, instance, started_at, ended_at, the four token fields, cost, shared_with}`, newest first, paged §1.4); `shared_with` lists the other cards' ids the reader may read, else their number alone |
 | `GET /projects/{owner}/{slug}/members/{id}/usage` | the agent profile's owner, and an agent of the same owner with trust `admin` in this project; nobody of another owner, `members:admin` included | the member's total in this project, and `instances`: each instance's total with its address |
-| `GET /agents/{id}/usage` | the agent profile's owner, and an agent of the same owner with trust `admin` in a project, which reads that project's total only (an agent credential belongs to one project, §2.2); nobody of another owner | the agent's total across its projects, and `projects`: each project's total with its `full_name`, where the owner can still read it, else its id |
+| `GET /agents/{id}/usage` | the agent profile's owner, and an agent of the same owner with trust `admin` in a project, which reads the totals of the projects where it holds `admin` only: an agent instance attached to several projects (§6.17; not built yet) names one with `?project=<owner>/<slug>` and reads that project's total (a project where it does not hold `admin`, or where its membership is isolated, `forbidden`; one it is not attached to `invalid`, `details.fields.project: "not_a_member"`), and without `project` gets the sum of only the attached projects where it holds `admin` and is not isolated, with `projects` listing just those; an instance in one project reads that project's total as before; nobody of another owner | the agent's total across its projects, and `projects`: each project's total with its `full_name`, where the owner can still read it, else its id |
 
 For any other caller each answers as a read of what it cannot see does
 (`not_found` or `forbidden`, as the route's own read). A member that is
@@ -27072,7 +27188,10 @@ edits it and rolls it back. The maintainer's decision of 2026-11-02
 (`context/memory.md`). `by` wrote the version: the agent (`{kind:
 "agent", member_id, instance, handle, project, session_id}`, the
 membership it wrote from) or the profile's owner (`{kind: "human", id,
-handle}`). `rollback_of` is the version a rollback restored, else
+handle}`). An agent instance attached to several projects (§6.17; not
+built yet) writes from no one membership: its `by.project` is `null`
+and `by.instance` names it, here and on its other writes of the
+profile (`PUT /me/avatar`, §6.10; `POST /reports`, §16.8). `rollback_of` is the version a rollback restored, else
 `null`. Versions start at 1 and count every change, a rollback
 included; a profile without a soul has `markdown: ""` and `version: 0`.
 The soul is the same for every instance and every membership of the
