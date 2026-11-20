@@ -225,6 +225,7 @@ OWNER_CALLS = frozenset(
         # Its agent's briefings (§6.2), its agent's membership (§6.18, §19.4) and a connection
         # its agent serves as the bridge (§2.3).
         ("GET", f"{API_PROJECT}/members/{{member_id}}/briefings"),
+        ("GET", f"{API_PROJECT}/members/{{member_id}}/briefing"),  # the one view (§19.3.1)
         ("PATCH", f"{API_PROJECT}/members/{{member_id}}"),
         ("DELETE", f"{API_PROJECT}/members/{{member_id}}/bridges/{{bridge_id}}"),
         # The placements on its runner (§15.3, §15.6).
@@ -392,16 +393,21 @@ async def gate(request: Any, owner_call: bool = False) -> None:
     stranger to a private or unknown project needs no gate: the body is validated before the
     route's membership read for both alike, so `invalid` tells the one from the other no
     more than `not_found` does. It costs nothing while public pages are off, without a
-    session cookie, or with an `Authorization` or `Maity-For` header; otherwise the project's
+    session cookie, or with a non-empty `Authorization` header; otherwise the project's
     resolve, and only for a project whose page is on the session's and the membership's read,
     and only for a human without a membership there (the owner's reads on one of
-    `OWNER_CALLS`) and the public test."""
+    `OWNER_CALLS`) and the public test.
+
+    The caller is read as `caller.authenticate` reads it: a non-empty `Authorization` header
+    authenticates and the cookie alongside is ignored, so such a call is no cookie caller's;
+    an empty one authenticates nothing, and the cookie decides. `Maity-For` authenticates
+    nothing on its own: a bridge calls with its own `Authorization` (§2.3), and a cookie
+    caller with `Maity-For` is still that cookie's human, so it is gated as any outsider."""
     from maity_hub import public_pages
 
     if not public_pages.serving():
         return
-    headers = request.headers
-    if "authorization" in headers or "maity-for" in headers:
+    if request.headers.get("authorization"):  # as `caller.authenticate`: the header decides
         return
     cookie = request.cookies.get(SESSION_COOKIE)
     slug = (request.scope.get("path_params") or {}).get("slug")

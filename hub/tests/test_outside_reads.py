@@ -12,6 +12,7 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +43,13 @@ RESTRICTED = "RESTRICTED-SENTINEL-7f3a"  # a card's restricted text (§6.4)
 REASON = "REASON-SENTINEL-91c2"  # a redaction's reason (§8.5)
 PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 64
 NEVER_IN_PROJECT = {"repository", "memory", "setup", "policy", "attachments", "aliases"}
-NEVER_IN_MEMBER = set(member_routes.OUTSIDE_HIDDEN_MEMBER)
+MEMBER_KEYS = set(member_routes.OUTSIDE_MEMBER_KEYS)
+# Signs of presence or isolation, and what only an admin, the member or an owner reads.
+NEVER_IN_MEMBER = {
+    "isolation_windows", "isolated", "last_seen_at", "presence", "availability", "paused",
+    "session", "instances", "covered_by", "covering", "moderation", "briefing", "owner",
+    "credentials", "shared_environment", "owner_preferences", "harness", "model", "team",
+}  # fmt: skip
 
 
 @pytest.fixture
@@ -399,6 +406,84 @@ def test_an_agents_owner_outside_the_project_passes_the_gate_on_the_owner_calls_
             continue
         answer = _call(world.outsider.client, method, _fill(template, world.params), headers)
         assert (answer.status_code, answer.json()) == (404, NOT_FOUND), (method, template)
+
+
+def test_an_agents_owner_outside_the_project_reads_its_briefing_view_as_on_a_private_one(
+    world: World, migrated: Engine
+) -> None:
+    """`GET …/members/{id}/briefing` (§19.3.1) is one of the owner calls: an owner outside a
+    public project reads the same projection of its agent as outside a private one."""
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.agent_profile)
+            .where(t.agent_profile.c.id == world.agent.id)
+            .values(owner_id=world.outsider.id)
+        )
+    path = f"{P}/members/{world.agent.id}/briefing"
+
+    def shape() -> tuple[set[str], set[str]]:
+        answer = world.outsider.get(path)
+        assert answer.status_code == 200, answer.text
+        view = answer.json()
+        return set(view), set(view["membership"])
+
+    public = shape()
+    assert public[0] == {"generated_at", "me", "membership"}
+    _page(migrated, world.project_id, on=False)
+    assert shape() == public
+
+
+def _session_seen(engine: Engine, human_id: str, at: Any = None) -> Any:
+    """The human's sessions' `last_seen_at`, set to `at` first when given."""
+    s = t.human_session.c
+    with engine.begin() as conn:
+        if at is not None:
+            conn.execute(
+                update(t.human_session).where(s.human_id == human_id).values(last_seen_at=at)
+            )
+        return sorted(conn.execute(select(s.last_seen_at).where(s.human_id == human_id)).scalars())
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"Authorization": ""},
+        {"Maity-For": ""},
+        {"Maity-For": "agt-anyone"},
+        {"Authorization": "", "Maity-For": "agt-anyone"},
+    ],
+    ids=["empty_authorization", "empty_maity_for", "maity_for", "both"],
+)
+def test_a_cookie_call_with_an_empty_authorization_or_a_maity_for_is_gated_as_an_outsiders(
+    world: World, migrated: Engine, extra: dict[str, str]
+) -> None:
+    """The gate reads the caller as `caller.authenticate` does: only a non-empty
+    `Authorization` header authenticates instead of the cookie, and `Maity-For` authenticates
+    nothing, so these calls are the cookie's human, an outsider: `not_found` before the body
+    is read, and the session is not touched (no presence write, no cookie set)."""
+    stale = clock.now() - timedelta(minutes=10)
+    before = _session_seen(migrated, world.outsider.id, stale)
+    headers = {**_as(world.outsider), "Content-Type": "application/json", **extra}
+    refused = world.outsider.client.post(f"/api/v1{P}/tasks", json={"title": 5}, headers=headers)
+    assert (refused.status_code, refused.json()) == (404, NOT_FOUND), refused.text
+    assert "set-cookie" not in refused.headers
+    assert _session_seen(migrated, world.outsider.id) == before
+
+
+def test_a_bridges_call_on_a_public_project_is_answered_as_before(
+    world: World, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A bridge calls with its own `Authorization` and `Maity-For` (§2.3): the gate passes it,
+    and its write, a bad body included, is answered as on any project."""
+    from tests.test_bridge_calls import Calls, _pair
+
+    served, bridge, _ = _pair(migrated, world.owner)
+    calls = Calls(make_client(), bridge)
+    made = calls.post(f"{P}/tasks", {"title": "Carried"}, served.agent_id)
+    assert made.status_code == 201, made.text
+    assert made.json()["created_by"] == served.agent_id
+    bad = calls.post(f"{P}/tasks", {"title": 5}, served.agent_id)
+    assert (bad.status_code, bad.json()["error"]["code"]) == (400, "invalid"), bad.text
 
 
 # --- not-done security cards, as on the Board ---------------------------------------------------
@@ -761,23 +846,183 @@ def test_the_project_view_is_the_allow_list_of_its_keys(world: World) -> None:
     assert set(view) < set(member)
 
 
-def test_member_views_leave_out_windows_isolation_presence_and_the_gated_fields(
-    world: World,
-) -> None:
+def test_member_views_are_the_allow_list_of_their_keys(world: World, migrated: Engine) -> None:
+    """An outsider's member view holds exactly the keys of `OUTSIDE_MEMBER_KEYS` the member's
+    view has, at every level (`manages` its `OUTSIDE_COUNT_KEYS`), so a key the view gains
+    later stays hidden; no sign of presence or isolation, no gated field."""
     items = world.outsider.get(f"{P}/members").json()["items"]
     assert world.outsider.id not in {m["id"] for m in items}  # a reader is no member
     assert {world.owner.id, world.agent.id} <= {m["id"] for m in items}
     single = [world.outsider.get(f"{P}/members/{m['id']}").json() for m in items]
     for view in items + single:
+        whole = world.owner.get(f"{P}/members/{view['id']}").json()  # an admin's read
+        assert set(view) <= MEMBER_KEYS, set(view) - MEMBER_KEYS
+        links = {"website", "social"}  # as `links_visible` admits each reader (§16.9)
+        expected = (set(whole) & MEMBER_KEYS) - links
+        assert set(view) - links == expected, (set(view) - links) ^ expected
         assert not NEVER_IN_MEMBER & set(view), view
-        for instance in view.get("instances") or []:
-            assert not {"presence", "last_seen_at"} & set(instance), instance
-            assert "listening" not in (instance.get("session") or {}), instance
-        assert "listening" not in (view.get("session") or {}), view
+        assert set(view["manages"]) == {"direct", "total"}
+        for counts in view["manages"].values():
+            assert set(counts) == set(member_routes.OUTSIDE_COUNT_KEYS), counts
     # The counter-check: the owner, an admin, reads every one of them.
     agent = world.owner.get(f"{P}/members/{world.agent.id}").json()
     assert {"isolation_windows", "isolated", "last_seen_at", "presence", "owner"} <= set(agent)
+    assert {"session", "instances", "availability", "paused"} <= set(agent)
     assert world.outsider.get(f"{P}/members/{world.outsider.id}").status_code == 404
+    # A key the view gains later is not in the outsider's.
+    agent_row = _membership_row(migrated, world)
+    later = member_routes.outside_member_view({**agent, "added_later": 1}, agent_row, set())
+    assert "added_later" not in later
+
+
+def _membership_row(engine: Engine, world: World) -> Any:
+    """The world's agent's membership row, as the member routes read it."""
+    with engine.connect() as conn:
+        return conn.execute(
+            select(t.membership).where(
+                t.membership.c.project_id == world.project_id,
+                t.membership.c.agent_id == world.agent.id,
+            )
+        ).one()
+
+
+def test_isolated_and_held_members_are_not_in_an_outsiders_member_reads(
+    world: World, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """As the public page names them (§16.9, `public_project_views.members`): an isolated
+    agent and one under a moderation hold on its profile are in no member list an outsider
+    reads, `GET …/members/{id}` answers `not_found` for them, no edge names them and no
+    count counts them; a member reads them as before."""
+    owner_row = _membership_of(migrated, world.project_id, human_id=world.owner.id)
+    isolated = flow.agent(make_client, world.owner)
+    held = flow.agent(make_client, world.owner)
+    with migrated.begin() as conn:
+        m = t.membership.c
+        conn.execute(
+            update(t.membership)
+            .where(m.project_id == world.project_id, m.agent_id == isolated.id)
+            .values(isolated_since=clock.now())
+        )
+        conn.execute(
+            update(t.membership)
+            .where(m.project_id == world.project_id, m.agent_id.in_([isolated.id, held.id]))
+            .values(reports_to=owner_row)
+        )
+        held_row = conn.execute(
+            select(m.id).where(m.project_id == world.project_id, m.agent_id == held.id)
+        ).scalar_one()
+        conn.execute(
+            update(t.membership)
+            .where(m.project_id == world.project_id, m.agent_id == world.agent.id)
+            .values(reports_to=held_row)
+        )
+        report_id = "rpt-heldprofile1"
+        conn.execute(
+            insert(t.abuse_report).values(
+                id=report_id, reporter=world.owner.id, account_id=world.owner.id,
+                target_type="profile", target_id=held.id, reason="spam", status="resolved",
+                action="hide", created_at=clock.now(),
+            )
+        )  # fmt: skip
+        conn.execute(
+            insert(t.moderation_hold).values(
+                report_id=report_id,
+                target_type="profile",
+                target_id=held.id,
+                action="hide",
+                at=clock.now(),
+            )
+        )
+    hidden = {isolated.id, held.id}
+    items = world.outsider.get(f"{P}/members").json()["items"]
+    assert not hidden & {m["id"] for m in items}
+    assert {world.owner.id, world.agent.id} <= {m["id"] for m in items}
+    for agent_id in hidden:
+        refused = world.outsider.get(f"{P}/members/{agent_id}")
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), agent_id
+    agent = world.outsider.get(f"{P}/members/{world.agent.id}").json()
+    assert agent["reports_to"] is None  # its manager is one the outsider does not read
+    owner = world.outsider.get(f"{P}/members/{world.owner.id}").json()
+    assert owner["manages"]["direct"]["members"] == 0
+    assert not any(agent_id in str(items) for agent_id in hidden)
+    inside = {m["id"] for m in world.owner.get(f"{P}/members").json()["items"]}
+    assert hidden <= inside
+    assert world.owner.get(f"{P}/members/{world.agent.id}").json()["reports_to"] == held.id
+
+
+def test_member_views_leave_out_what_is_computed_from_presence(
+    world: World, migrated: Engine
+) -> None:
+    """`availability` (its state is `offline` or `available` by presence) and the `online`
+    and `dormant` counts of `manages` (counts of presence) leave an outsider's member views
+    with `presence`; how many members and instances stand behind a member stays."""
+    owner_row = _membership_of(migrated, world.project_id, human_id=world.owner.id)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.project_id == world.project_id)
+            .where(t.membership.c.agent_id == world.agent.id)
+            .values(reports_to=owner_row)
+        )
+    items = world.outsider.get(f"{P}/members").json()["items"]
+    single = world.outsider.get(f"{P}/members/{world.owner.id}").json()
+    for view in [*items, single]:
+        assert "availability" not in view, view
+        for part in ("direct", "total"):
+            counts = view["manages"][part]
+            assert not {"online", "dormant"} & set(counts), counts
+            assert {"members", "instances"} <= set(counts), counts
+    assert single["manages"]["direct"]["members"] == 1
+    inside = world.owner.get(f"{P}/members/{world.owner.id}").json()
+    assert "state" in inside["availability"]
+    assert {"members", "instances", "online", "dormant"} <= set(inside["manages"]["direct"])
+
+
+def test_a_release_names_no_hidden_card_to_an_outsider(world: World, migrated: Engine) -> None:
+    """`public_cards._release_without` from the outsider's read: a pull request only a hidden
+    card reported leaves, a group keeps its visible cards and goes below two, a `task_open`
+    blocker for a hidden card, a `group_incomplete` blocker left with fewer than two cards and
+    the blocker on a pull request left out go; `readiness.ready` stays as computed."""
+    writer = _membership_of(migrated, world.project_id, human_id=world.owner.id)
+    secret = factory.card(migrated, world.project_id, writer, title="Hole", label="security")
+    plain = factory.card(migrated, world.project_id, writer, title="Plain")
+    other = factory.card(migrated, world.project_id, writer, title="Other")
+    frozen = {
+        "pull_requests": [
+            {"number": 1, "task_id": secret, "title": "Fix the hole"},
+            {"number": 2, "task_id": plain, "title": "Plain work"},
+        ],
+        "groups": [[secret, plain], [plain, other, secret]],
+        "readiness": {
+            "ready": False,
+            "blocking": [
+                {"reason": "task_open", "task": secret},
+                {"reason": "group_incomplete", "tasks": [secret, plain]},
+                {"reason": "pr_open", "pr": 1},
+                {"reason": "task_open", "task": plain},
+            ],
+        },
+    }
+    release = factory.card(
+        migrated,
+        world.project_id,
+        writer,
+        kind="release",
+        title="Release 1.0.0",
+        release_data={"version": "1.0.0", "frozen": frozen},
+    )
+    card = world.outsider.get(f"{P}/tasks/{release}").json()
+    for view in (card, _listed(world.outsider, "")[release]):
+        shown = view["release"]
+        assert [pr["number"] for pr in shown["pull_requests"]] == [2]
+        assert shown["groups"] == [[plain, other]]
+        assert shown["readiness"]["blocking"] == [{"reason": "task_open", "task": plain}]
+        assert shown["readiness"]["ready"] is False
+        assert secret not in str(view)
+    inside = world.owner.get(f"{P}/tasks/{release}").json()["release"]
+    assert inside["pull_requests"] == frozen["pull_requests"]
+    assert inside["groups"] == frozen["groups"]
+    assert inside["readiness"] == frozen["readiness"]
 
 
 def test_notes_and_history_follow_redaction_and_the_readers_own_windows(

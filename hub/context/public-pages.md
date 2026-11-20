@@ -620,15 +620,20 @@ public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, 
   reads its body or query, so no `400` names a route's fields to them. Members, strangers to a private or unknown
   project, agents and callers without a session pass it unchanged. A human who owns an agent or a runner in the
   project passes it on `access.OWNER_CALLS` alone, the calls §1.3 lists for such an owner (the chats they read
-  along, a jour-fixe round, their agent's briefings, membership and bridge, the placements on their runner); on
-  any other route they are an outsider like any other (the lead's ruling, 2026-11-19). Strangers to a private or
-  unknown project need no gate: the body is validated before the route reads the membership, for both alike
-  (`errors.py`'s `invalid` before e.g. `create_card`'s `membership`), so a bad body tells them apart no more than
-  `not_found` does (checked, not changed, and tested). The gate names a route by the template the app serves,
-  `access.API` before the route's own path: FastAPI keeps an included router behind its own object
-  (hub/context/namespace.md), so a route's `path` is the router's, without the prefix, and comparing it alone
-  left every project route ungated (found in round 4, 2026-11-20). The tests walk the app with
-  `iter_route_contexts` and take each endpoint from the routers of `maity_hub.routes`.
+  along, a jour-fixe round, their agent's briefings and its briefing view, membership and bridge, the placements
+  on their runner); on any other route they are an outsider like any other (the lead's ruling, 2026-11-19).
+  Strangers to a private or unknown project need no gate: the body is validated before the route reads the
+  membership, for both alike (`errors.py`'s `invalid` before e.g. `create_card`'s `membership`), so a bad body
+  tells them apart no more than `not_found` does (checked, not changed, and tested). The gate names a route by
+  the template the app serves, `access.API` before the route's own path: FastAPI keeps an included router behind
+  its own object (hub/context/namespace.md), so a route's `path` is the router's, without the prefix. The tests
+  walk the app with `iter_route_contexts` and take each endpoint from the routers of `maity_hub.routes`.
+- The gate reads the caller as `caller.authenticate` does (2026-11-20, review A1788/A1789): a call is another
+  credential's, not the cookie's, only with a non-empty `Authorization` header, which authenticates and makes the
+  cookie alongside ignored; an empty one authenticates nothing. `Maity-For` authenticates nothing on its own (a
+  bridge calls with its own `Authorization`, §2.3), so a cookie call with it is still the cookie's human and is
+  gated as any outsider. Rejected: passing a call on a header's mere presence, a reading other than the one
+  that decides the caller.
 - A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
   (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
   notes; a member reads it as before. A card under a moderation hold likewise (`unheld_clause`, the
@@ -655,9 +660,17 @@ public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, 
 - An allow-list of the project view's keys (`OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from
   outside until it is named; never `repository`, `settings` beyond `language` (`role_rules`), `memory` or
   `setup`, and the links as the public page shows them.
-- The member views leave out `isolation_windows`, `isolated`, `last_seen_at` and presence (also each instance's)
-  besides the fields only an admin, the member or an agent's owner reads: the public page names no isolated agent
-  and shows no presence, so the outsider's read does not open more (fail closed). Notes and history show a
+- An allow-list of the member view's keys too (`members.OUTSIDE_MEMBER_KEYS`, `manages` with
+  `OUTSIDE_COUNT_KEYS`; 2026-11-20, review A1789, the lead's order): who the member is and where it stands, as the
+  public Team and Organisation pages show it, and nothing else, so no sign of presence or isolation reaches the
+  outsider through a derived field either (`availability`, `paused`, `session`, `instances`, the `online` and
+  `dormant` counts of `manages`, `covered_by`, `covering`, `moderation`), and a key the view gains later stays
+  hidden. The members are those the public page names (`outside_named`, `public_project_views.members`): an
+  isolated member, one under a moderation hold on its profile, and one whose account (or whose owner's) is not
+  served are in no outsider's list, `not_found` on `GET …/members/{id}` as a hidden card is, and neither named
+  in `reports_to` nor counted in `manages`. Rejected: a deny-list with neutral values for the derived fields (a
+  value the member does not have, and a field added later would still pass). The public page names no isolated
+  agent and shows no presence, so the outsider's read does not open more (fail closed). Notes and history show a
   redaction's tombstone without its reason; no read of a card carries a restricted text; the outsider has no
   hidden window of its own. Reading a public project never makes the outsider a colleague for `links_visible`.
   `GET /bootstrap` stays with members.
