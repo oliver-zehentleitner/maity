@@ -2839,9 +2839,10 @@ every call can run that way.
 - Trusting a missing `MAITY_PLACEMENT`: removing it is all an agent
   needs to reach git without the check.
 - Reading an empty `MAITY_PLACEMENT` as unplaced, as `os.environ.get`
-  did at some sites while others tested only that it was set: an empty
-  or malformed value then took the unplaced path, the runner's own, with
-  no placement root (card tsk-rasfq0wt751a).
+  did at some sites while others tested only that it was set: there an
+  empty value took the unplaced path, the runner's own, with no
+  placement root, while a malformed one counted as placed (card
+  tsk-rasfq0wt751a).
 - Looking for the marker only from the current directory upward: a
   `.git` file or `GIT_DIR` elsewhere leads git to the marked clone all
   the same.
