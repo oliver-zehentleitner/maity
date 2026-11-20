@@ -3273,9 +3273,12 @@ to the hub is unchanged: `join_failed` with the code (`join_detail`).
   `join_detail` keeps the code, so before this the dashboard showed only
   `pickup_not_allowed`, and the log showed nothing more than the state line.
 - Each value is printed only when it has the form of a code, otherwise
-  `-`. What the hub sends is data from outside the runner, and a code-shaped
-  value cannot carry a message, a URL or a token into the log. The join's URL
-  and code are not in a refusal and are never logged (as in `run_join`).
+  `-`. What the hub sends is data from outside the runner. The form keeps a
+  line break, a control character, a message or a token-shaped value out of
+  the log, but it says nothing about where a value came from. An unknown
+  code, such as a why the hub adds later, shows as itself, which is wanted.
+  The join's URL and code are not in a refusal and are never logged (as in
+  `run_join`).
 - The exchange runs in the child `maity join`, whose machine line carries the
   code alone (for `forbidden`, the reason in its place), and the exchange
   answers `not_found` without a why (§15.9). So that line names the code alone.

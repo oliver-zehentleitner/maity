@@ -670,14 +670,14 @@ def test_serve_logs_each_new_state_of_a_placement_once(
     sup.update([placement(agent=NEW)])
     settle(sup)
     settle(sup)
-    # The refusal's warning comes from the start thread, so its place among these is not fixed.
+    # The refusal's warning comes from the start thread, so its place against `starting` is
+    # not fixed; it always comes before `failed`, which is logged once the thread entered it.
     warning = "plc-0003: warning: join pickup refused: instance_quota (reason -, why -)"
+    failed = "plc-0003: failed join_failed instance_quota (generation 1)"
     assert logs.count(warning) == 1
+    assert logs.index(warning) < logs.index(failed)
     lines = [line for line in logs if line.startswith("plc-0003: ") and line != warning]
-    assert lines == [
-        "plc-0003: starting (generation 1)",
-        "plc-0003: failed join_failed instance_quota (generation 1)",
-    ]
+    assert lines == ["plc-0003: starting (generation 1)", failed]
     assert not any("AAAA-BBBB-CCCC" in line or "/j/tok" in line for line in logs)
 
 

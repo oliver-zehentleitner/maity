@@ -68,8 +68,9 @@ def join_detail(code: str | None, reason: Any = None) -> str | None:
 
 
 def _code_or_dash(value: Any) -> str:
-    """`value` when it has the form of a code, else `-`: what the hub sends in a refusal is
-    printed only in that form, so no message text (nor anything token-shaped) reaches the log."""
+    """`value` when it has the form of a code, else `-`: only values of code form reach the
+    log, so no line break, control character, message text or token-shaped value does. The
+    form says nothing about where a value came from: an unknown code shows as itself."""
     return value if isinstance(value, str) and DETAIL_CODE.fullmatch(value) else "-"
 
 
