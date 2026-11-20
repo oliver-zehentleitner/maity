@@ -3542,6 +3542,11 @@ def read_limit_round(run: Run, browser, work: Path, artifacts: Path) -> None:
                 assert burned["body"]["error"]["code"] == "rate_limited", burned
                 assert burned["retry"] and int(burned["retry"]) >= 1, burned
                 retry = int(burned["retry"])
+                print(
+                    f"   {what}: burn attempt {attempt} refused on read {burned['reads']}, "
+                    f"Retry-After {retry}",
+                    flush=True,
+                )
                 if retry >= REFUSED_FOR_AT_LEAST:
                     return page, burned
                 assert attempt == 1, (
@@ -3549,6 +3554,8 @@ def read_limit_round(run: Run, browser, work: Path, artifacts: Path) -> None:
                     f"under {REFUSED_FOR_AT_LEAST}"
                 )
                 page.wait_for_function(READS_AGAIN_JS, polling=250, timeout=TIMEOUT_MS)
+                # Closed here, so the finally below does not close it a second time.
+                contexts.remove(context)
                 context.close()
             raise AssertionError(f"{what}: no refused session")
 
