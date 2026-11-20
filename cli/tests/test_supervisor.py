@@ -3729,17 +3729,17 @@ def test_a_placement_naming_the_skill_starts_with_the_runners_copy(
     session is told where it lies, and nothing is reported missing."""
     sup, backend, _, _, logs = world
     recorded(sup.cfg)
-    asked: list[tuple[Path, str, str]] = []
+    asked: list[tuple[Path, Path, str, str]] = []
     copy: Path = sup.cfg.skills_dir / "keep-the-why" / KTW["commit"] / "plugin"
 
-    def ensure(skills_dir: Path, source: str, commit: str) -> Path:
-        asked.append((skills_dir, source, commit))
+    def ensure(skills_dir: Path, state_dir: Path, source: str, commit: str) -> Path:
+        asked.append((skills_dir, state_dir, source, commit))
         return copy
 
     monkeypatch.setattr(skills, "ensure", ensure)
     sup.update([placement(keep_the_why=KTW)])
     settle(sup)
-    assert asked == [(sup.cfg.skills_dir, KTW["source"], KTW["commit"])]
+    assert asked == [(sup.cfg.skills_dir, sup.cfg.state_dir, KTW["source"], KTW["commit"])]
     ((_, _, env),) = backend.started
     assert env["MAITY_KTW_SKILL_DIR"] == str(copy / "skills" / "keep-the-why")
     assert sup.records["plc-0003"].skill_missing is False

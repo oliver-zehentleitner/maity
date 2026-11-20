@@ -10,9 +10,11 @@ from pathlib import Path
 
 import fakehub
 import pytest
+from conftest import posix
 
 from maity import cli, state
 from maity.runner import adapters, commands, config
+from maity.runner.asuser import RUNNER
 
 MINIMAL = """\
 [hub]
@@ -1436,3 +1438,21 @@ def test_no_harness_lets_an_agent_run_maity_runner_from_its_shell(tmp_path: Path
     command list; the boundary stays runner_own_file, these keep the call from starting."""
     assert {"maity runner", "maity runner *"} <= set(adapters.MAITY_RUNNER_DENIED)
     assert "maity runner" in adapters.AGY_DENIED_COMMANDS
+
+
+@posix  # a link, which needs rights on Windows; the runner is POSIX anyway
+def test_check_names_a_hand_installed_keep_the_why_skill_and_refuses_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # tsk-172s8y208whg, the review of #2056: the operator's own copy is warned about, since a
+    # placed Claude Code session sees it beside the delivered one; never an error.
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    report = commands.Report()
+    commands._check_user_skill(report, RUNNER)
+    assert report.lines == []
+    skills_dir = tmp_path / ".claude" / "skills"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "keep-the-why").symlink_to(tmp_path / "elsewhere")  # a dangling link counts
+    commands._check_user_skill(report, RUNNER)
+    [(level, text)] = report.lines
+    assert level == "warn" and "keep-the-why:keep-the-why" in text and not report.failed

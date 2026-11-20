@@ -5057,7 +5057,12 @@ runner fetches it and hands it to the session read-only:
   `~/.local/share/maity-runner/skills/keep-the-why/<commit>-<source hash>/`
   (one copy per source and commit, so another path at the same commit is
   never handed out for it), with a SHA-256 manifest written last and
-  checked at every start, its source and commit included: every
+  checked at every start, its source and commit included, and the
+  manifest's own hash anchored in the runner's state directory
+  (`skills.json`), which no session reaches, since a manifest rewritten
+  beside its files would pass a check of the copy alone (the security
+  leg of the review of #2056; without a record the commit is fetched
+  again and compared): every
   directory, the manifest and every file checked for its type through no
   link, and the same bounds as at the fetch. Of the runner's environment
   the fetch keeps only the proxy and trust-root variables, never git
@@ -5106,4 +5111,6 @@ report tells the owner.
 **Not built yet:** the agent_user layout (the agents' user may not read
 the runner's directory) and ssh hosts start without the skill, with a log
 line and the report; Codex gets only the variable; `maity runner check`
-and `gc` do not handle the skill yet. That is the second part of the card.
+names a hand-installed copy for Claude Code (a warning, never a refusal:
+it is the operator's) but not yet the delivered one, and `gc` does not
+prune old copies yet. That is the second part of the card.

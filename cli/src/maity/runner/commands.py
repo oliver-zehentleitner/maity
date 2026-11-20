@@ -30,6 +30,7 @@ from . import (
     scratch,
     scratchop,
     serve,
+    skills,
     stub,
     supervisor,
     targets,
@@ -501,6 +502,7 @@ def _check_harness(
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
         _check_claude_code(report, harness, as_user, agent_path, found.version)
+        _check_user_skill(report, as_user)
     if harness.id == "antigravity":
         _check_antigravity(report, harness, as_user, agent_path)
     if harness.id == "opencode":
@@ -512,6 +514,21 @@ def _check_harness(
         login = Path(own or home / ".codex") / "auth.json"
         if not as_user.exists(login, "-f"):
             report.warn(f"harness codex: no login at {login}; agents would start without one")
+
+
+def _check_user_skill(report: Report, as_user: AsUser) -> None:
+    """A Keep the Why skill the agents' user installed for Claude Code by hand: a placed
+    session still sees it beside the one the runner delivers, as a plain `keep-the-why` that
+    may be another version and whose files the session cannot read (skills.py, the review of
+    #2056). The operator's content, so named, never refused or removed."""
+    home = config.home_of(as_user.user) if as_user.user else Path.home()
+    found = home / ".claude" / "skills" / skills.NAME
+    if as_user.exists(found) or as_user.exists(found, "-L"):
+        report.warn(
+            f"harness claude-code: {found} is installed for the agents' user; placed sessions "
+            f"also get the skill the runner delivers, as `keep-the-why:keep-the-why`, and see "
+            "this copy beside it under the plain name"
+        )
 
 
 def _check_opencode(

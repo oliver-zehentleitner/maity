@@ -1378,7 +1378,7 @@ def test_a_claude_code_session_gets_the_skill_as_a_plugin_it_reads_and_never_wri
     launched = adapters.launch(ctx)
     assert f"--plugin-dir={SKILL}" in launched.argv
     assert launched.argv.index(f"--plugin-dir={SKILL}") < len(launched.argv) - 1  # not the prompt
-    assert launched.env["MAITY_KTW_SKILL_DIR"] == f"{SKILL}/skills/keep-the-why"
+    assert launched.env["MAITY_KTW_SKILL_DIR"] == str(SKILL / "skills" / "keep-the-why")
     settings = adapters.claude_settings(ctx)
     allow, deny = settings["permissions"]["allow"], settings["permissions"]["deny"]
     assert f"Read(/{SKILL}/**)" in allow
@@ -1400,7 +1400,8 @@ def test_without_a_delivered_skill_nothing_of_it_is_set(tmp_path: Path) -> None:
 def test_every_harness_is_told_where_the_delivered_skill_lies(tmp_path: Path) -> None:
     # Codex has no plugin flag the runner uses yet: the variable, which the resume block names.
     codex = context(tmp_path, "codex", skill=SKILL)
-    assert adapters.skill_env(codex) == {"MAITY_KTW_SKILL_DIR": f"{SKILL}/skills/keep-the-why"}
+    expected = str(SKILL / "skills" / "keep-the-why")
+    assert adapters.skill_env(codex) == {"MAITY_KTW_SKILL_DIR": expected}
     assert adapters.skill_env(context(tmp_path / "n", "codex")) == {}
 
 

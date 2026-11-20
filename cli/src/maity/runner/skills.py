@@ -25,12 +25,13 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import threading
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
-from .. import proc
+from .. import proc, state
 
 NAME = "keep-the-why"
 COMMIT = re.compile(r"[0-9a-f]{40}")
@@ -88,6 +89,8 @@ def split_source(source: str) -> tuple[str, str]:
     parts = urlsplit(source)
     if parts.scheme != "https" or not parts.hostname or parts.query or parts.fragment:
         raise Unavailable("the skill's source is not a plain https URL")
+    if "@" in parts.netloc:  # no login in it, empty or not (the review of #2056)
+        raise Unavailable("the skill's source names a login; the runner fetches without one")
     repository, _, tree = source.partition("/tree/")
     _ref, _, path = tree.partition("/")
     repository = repository.removesuffix("/-")
@@ -97,13 +100,30 @@ def split_source(source: str) -> tuple[str, str]:
     return repository, str(inner)
 
 
-def ensure(skills_dir: Path, source: str, commit: str) -> Path:
-    """The plugin root for `commit`, fetched now when no checked copy is there. Unavailable when
-    it cannot be fetched or a copy does not match its manifest."""
-    final = skills_dir / NAME / key(source, commit)
+ANCHORS = "skills.json"  # in the runner's state directory: {key: the manifest's SHA-256}
+_anchors_lock = threading.Lock()
+
+
+def ensure(skills_dir: Path, state_dir: Path, source: str, commit: str) -> Path:
+    """The plugin root for `source` at `commit`, fetched now when no checked copy is there.
+
+    A copy is handed out only when its manifest's SHA-256 is the one the runner recorded in its
+    own state directory (ANCHORS) when it fetched it: the skills directory is beside the state
+    directory, and a manifest rewritten there together with the files it names would pass
+    `verify` alone (the review of #2056). Without a record (a state directory made anew), the
+    commit is fetched again and the copy kept only when the fresh manifest is the same. Unavailable
+    when it cannot be fetched, a copy does not match its manifest, or the manifest is not the
+    recorded one."""
+    name = key(source, commit)
+    final = skills_dir / NAME / name
+    recorded = _anchors(state_dir).get(name)
     if os.path.lexists(final / MANIFEST):
         verify(final, source, commit)
-        return final / PLUGIN
+        digest = _sha256(final / MANIFEST)
+        if digest == recorded:
+            return final / PLUGIN
+        if recorded is not None:
+            raise Unavailable(f"the skill's copy at {final} is not the one the runner fetched")
     repository, path = split_source(source)
     parent = skills_dir / NAME
     parent.mkdir(parents=True, exist_ok=True, mode=0o755)
@@ -112,6 +132,7 @@ def ensure(skills_dir: Path, source: str, commit: str) -> Path:
         _fetch(Path(work) / "git", repository, commit, path, staged)
         _write_plugin(staged, source, commit)
         _write_manifest(staged, source, commit)
+        fresh = _sha256(staged / MANIFEST)
         os.chmod(staged, 0o755)  # noqa: S103 - read by the session, written by nobody but us
         try:
             os.rename(staged, final)
@@ -119,7 +140,25 @@ def ensure(skills_dir: Path, source: str, commit: str) -> Path:
             if not os.path.lexists(final / MANIFEST):  # not another start's finished copy
                 raise Unavailable(f"cannot put the skill at {final}") from None
     verify(final, source, commit)
+    if _sha256(final / MANIFEST) != fresh:  # a copy that was there before: the same, or not ours
+        raise Unavailable(f"the skill's copy at {final} is not what commit {commit} holds")
+    _record(state_dir, name, fresh)
     return final / PLUGIN
+
+
+def _anchors(state_dir: Path) -> dict[str, str]:
+    try:
+        found = state.load_state(state_dir, name=ANCHORS)
+    except (OSError, ValueError, state.StateError):
+        return {}
+    return {k: v for k, v in found.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def _record(state_dir: Path, name: str, digest: str) -> None:
+    with _anchors_lock:
+        found = _anchors(state_dir)
+        found[name] = digest
+        state.save_state(state_dir, found, name=ANCHORS)
 
 
 MANIFEST_MAX = 64 * 1024

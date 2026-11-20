@@ -1478,7 +1478,7 @@ class Supervisor:
                      "on the runner's host so far")  # fmt: skip
             return None
         try:
-            return skills.ensure(self.cfg.skills_dir, *wanted)
+            return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
         except (skills.Unavailable, OSError) as exc:
             self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")
             return None

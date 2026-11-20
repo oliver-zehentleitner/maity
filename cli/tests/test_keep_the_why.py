@@ -9,6 +9,7 @@ from typing import Any
 
 import fakehub
 import pytest
+from conftest import posix
 from test_onboarding import packet
 
 from maity import cli, onboarding, state
@@ -78,6 +79,7 @@ def test_an_optional_project_is_told_how_to_load_the_skill() -> None:
     assert "maity ack keep-the-why" not in text
 
 
+@posix  # only the runner sets it, and the runner is POSIX: "/home/..." is no Windows path
 def test_a_skill_the_runner_delivered_is_the_one_way_to_load_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
