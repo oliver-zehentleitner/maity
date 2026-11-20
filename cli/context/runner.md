@@ -4042,7 +4042,10 @@ the hub does not answer, when `/me` does not list this project, for an
 isolated member, under `--for`, when `MAITY_STATE_DIR` is set under a
 placement, and when the runner's directory for the agent is not
 `…/agents/<this placement>/git` reached with no link and closed to group
-and others. The session that signs is read through the clone's checked
+and others: `git/` must be this user's, while `agents/` and
+`<placement>/` may be the runner's user's, since in the `agent_user`
+layout the runner makes them and only `git/` is the agents' user's (the
+lead accepted this on #2054). The session that signs is read through the clone's checked
 `.git` descriptor, `maity/`, `state.json` and the credential each opened
 from the one before without following a link (`state.read_placed`,
 `Session.through`), before any client exists; where that cannot be done
