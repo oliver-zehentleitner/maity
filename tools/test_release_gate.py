@@ -189,6 +189,31 @@ class MariaDb(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("hub-mariadb is cancelled", out)
 
+    def test_a_red_11_8_job_stops_a_green_11_4_suite(self):
+        for result in ("failure", "cancelled", "timed_out", "skipped"):
+            jobs = {5: {"hub-mariadb": "success", "hub-mariadb-11-8": result}}
+            code, out = gate(self.api([maria(5, TAG)], jobs))
+            self.assertEqual(code, 1, result)
+            self.assertIn("::error::hub-mariadb-11-8 is " + result + " on " + TAG, out)
+
+    def test_both_red_are_named(self):
+        jobs = {5: {"hub-mariadb": "failure", "hub-mariadb-11-8": "failure"}}
+        code, out = gate(self.api([maria(5, TAG)], jobs))
+        self.assertEqual(code, 1)
+        self.assertIn("hub-mariadb is failure, hub-mariadb-11-8 is failure on " + TAG, out)
+
+    def test_both_green_pass(self):
+        jobs = {5: {"decide": "success", "hub-mariadb": "success", "hub-mariadb-11-8": "success"}}
+        code, out = gate(self.api([maria(5, TAG)], jobs))
+        self.assertEqual(code, 0, out)
+        self.assertIn("hub-mariadb passed on " + TAG, out)
+        self.assertNotIn("predates", out)
+
+    def test_a_run_from_before_the_11_8_job_counts_on_11_4_alone(self):
+        code, out = gate(self.api([maria(5, TAG)], {5: {"hub-mariadb": "success"}}))
+        self.assertEqual(code, 0, out)
+        self.assertIn("a run without hub-mariadb-11-8: its workflow predates it", out)
+
     def test_hand_run_counts_by_the_sha_in_its_title(self):
         # Its head_sha is main's head (OTHER); the title names what it tested.
         runs = [maria(5, OTHER, "hub-mariadb hand " + TAG)]

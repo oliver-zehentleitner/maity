@@ -455,7 +455,9 @@ read-only token and lets the tag through only when:
 - for the hub and its image also: the newest hub-mariadb run that
   actually ran the suite on a commit of main with the same files the
   suite reads as the tag (the list `decide` compares; `git diff`) is
-  green. A run that skipped the suite counts for nothing. Only runs of
+  green: the 11.4 suite and, since 2026-11-20, the 11.8 subset beside it
+  (a run whose workflow file predates that job counts on 11.4 alone). A
+  run that skipped the suite counts for nothing. Only runs of
   main's own workflow file count: the run's ref is main and the commit
   it ran is on main, since a dispatch on another ref runs that ref's
   copy of `hub-mariadb.yml`, which could keep the title and the job's

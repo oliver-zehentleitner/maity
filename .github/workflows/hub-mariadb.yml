@@ -191,7 +191,7 @@ jobs:
   # automatic run closes it. A hand run for a deploy candidate never closes the issue of main.
   report:
     needs: [decide, hub-mariadb, hub-mariadb-11-8]
-    if: always() && needs.decide.outputs.run == 'true' && needs.hub-mariadb.result != 'skipped'
+    if: always() && needs.decide.outputs.run == 'true' && (needs.hub-mariadb.result != 'skipped' || needs.hub-mariadb-11-8.result != 'skipped')
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -209,7 +209,8 @@ jobs:
       - shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          # red when either MariaDB job is: a failure first, then a cancel, else the 11.4 suite's result
+          # red when either MariaDB job is: a failure first, then a cancel; else the 11.4 suite's result, so only
+          # a run of the full suite closes the issue (a skipped 11.4 beside a green 11.8 changes nothing)
           RESULT: ${{ (needs.hub-mariadb.result == 'failure' || needs.hub-mariadb-11-8.result == 'failure') && 'failure' || ((needs.hub-mariadb.result == 'cancelled' || needs.hub-mariadb-11-8.result == 'cancelled') && 'cancelled' || needs.hub-mariadb.result) }}
           HAND: ${{ github.event_name == 'workflow_dispatch' && !(inputs.trigger == 'ci' && github.ref == 'refs/heads/main') }}
           SHA: ${{ needs.decide.outputs.sha }}

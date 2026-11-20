@@ -10,7 +10,9 @@ writes:
 - with --mariadb (the hub): a hub-mariadb run whose `hub-mariadb` job ran on
   a commit of main with the same files the suite reads as the tagged commit
   (the list `decide` in hub-mariadb.yml compares, MARIADB_PATHS below). The
-  newest such run must have passed. A run that skipped the suite counts for
+  newest such run must have passed: its `hub-mariadb` job (MariaDB 11.4) and
+  its `hub-mariadb-11-8` job (the subset on 11.8). A run without the 11.8 job
+  ran a workflow file from before that job existed, and counts on 11.4 alone. A run that skipped the suite counts for
   nothing, and only main's own workflow file counts: the run's ref is main
   and the commit it ran is on main.
 
@@ -58,6 +60,10 @@ MARIADB_PATHS = (
 DONE = "completed"
 # A job that ran the suite and ended; skipped (nothing to test) is not one.
 RAN = {"success", "failure", "cancelled", "timed_out"}
+# The jobs of hub-mariadb.yml that must pass besides `hub-mariadb`, the 11.4 suite. A run whose
+# workflow file predates one (the job is not in its list at all) is judged without it; GitHub
+# lists a skipped job too, so a missing job is one the file did not have.
+MARIADB_EXTRA_JOBS = ("hub-mariadb-11-8",)
 HAND = re.compile(r"hub-mariadb hand (head|[0-9a-f]{40})")
 
 
@@ -232,18 +238,32 @@ def mariadb_state(api: Api, sha: str, git: Git) -> State:
                 f"hub-mariadb on {commit}, same hub files as {sha}, is {run['status']}:"
                 f" {run['html_url']}",
             )
-        suite = job(api, run, "hub-mariadb")
-        result = suite["conclusion"] if suite else None
+        jobs = {
+            j["name"]: j["conclusion"]
+            for j in api.get(f"actions/runs/{run['id']}/jobs", filter="latest", per_page=100)[
+                "jobs"
+            ]
+        }
+        result = jobs.get("hub-mariadb")
         if result not in RAN:
             continue
-        if result == "success":
+        red = [f"hub-mariadb is {result}"] if result != "success" else []
+        red += [
+            f"{name} is {jobs[name]}"
+            for name in MARIADB_EXTRA_JOBS
+            if name in jobs and jobs[name] != "success"
+        ]
+        if not red:
+            alone = [name for name in MARIADB_EXTRA_JOBS if name not in jobs]
+            note = f" (a run without {', '.join(alone)}: its workflow predates it)" if alone else ""
             return State(
                 "ok",
-                f"hub-mariadb passed on {commit}, same hub files as {sha}: {run['html_url']}",
+                f"hub-mariadb passed on {commit}, same hub files as {sha}{note}:"
+                f" {run['html_url']}",
             )
         return State(
             "fail",
-            f"hub-mariadb is {result} on {commit}, same hub files as {sha}"
+            f"{', '.join(red)} on {commit}, same hub files as {sha}"
             f" ({run['html_url']}): fix main and tag again, or if it was a flake start"
             f" hub-mariadb by hand from main (Actions, hub-mariadb, Run workflow, sha {sha})"
             " and re-run this job when it is green",
