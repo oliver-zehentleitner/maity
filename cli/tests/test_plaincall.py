@@ -341,7 +341,9 @@ def test_no_line_naming_maity_passes_after_comment_lines(comment: str) -> None:
     the line is judged whole, so a line that names `maity` is refused after them, whatever
     the line under them would get."""
     lines = [*ALLOWED, *REFUSED, *RUNNER, *NOT_DECIDED, *READ_TO_THE_END]
-    lines += [prefix + " maity status" for prefix in (*ASSIGNMENTS, *NOT_ALLOWED)]
+    lines += [
+        prefix + " maity status" for prefix in (*ASSIGNMENTS, *NOT_ALLOWED, *WAIT_TIMEOUT_PREFIXES)
+    ]
     for line in lines:
         if plaincall.names_maity(line):
             assert plaincall.refusal(bash(comment + line)) is not None, line
@@ -444,13 +446,20 @@ ASSIGNMENTS = [
     'TZ="x y"',
     "NO_COLOR=1 LANG=C LC_ALL=C TZ=UTC",
 ]
-# Assignments to any other name, `MAITY_WAIT_TIMEOUT` included (tsk-f5fy2zq26xcy), and
-# every `+=`.
-NOT_ALLOWED = [
+# Prefixes that assign `MAITY_WAIT_TIMEOUT` (tsk-f5fy2zq26xcy): refused outright like any
+# other name, with the reason that names `maity wait --timeout N`.
+WAIT_TIMEOUT_PREFIXES = [
     "MAITY_WAIT_TIMEOUT=5",
     "MAITY_WAIT_TIMEOUT=5 TZ=UTC",
     "TZ=UTC MAITY_WAIT_TIMEOUT=5",
     "NO_COLOR=1 LANG=C LC_ALL=C TZ=UTC MAITY_WAIT_TIMEOUT=5",
+    "MAITY_WAIT_TIMEOUT=5 MAITY_FOO=1",
+    "X=1 MAITY_WAIT_TIMEOUT=5",
+    "MAITY_WAIT_TIMEOUT+=5",
+    "MAITY_WAIT_TIMEOUT='5'",
+]
+# Assignments to any other name, and every `+=`.
+NOT_ALLOWED = [
     "PATH=.",
     "LD_PRELOAD=x.so",
     "DYLD_INSERT_LIBRARIES=x",
@@ -469,13 +478,11 @@ NOT_ALLOWED = [
     "MAITY_FOO=1",
     "MAITY_X_1=1",
     "MAITY_WAIT_TIMEOUTX=5",
-    "MAITY_WAIT_TIMEOUT=5 MAITY_FOO=1",
     "LANGUAGE=x",
     "TZ=UTC PATH=.",
     "A+=1",
     "_X=1 B+=2",
     "MAITY_X+=1",
-    "MAITY_WAIT_TIMEOUT+=5",
     "TZ+=x",
     "tz=UTC",
     "lc_all=C",
@@ -543,11 +550,42 @@ def test_maity_after_a_runner_trusted_name_is_refused_outright(name: str) -> Non
     assert plaincall.refusal(bash(f"{name}=1 maity status")) == plaincall.PREFIX_REFUSED
 
 
-def test_maity_wait_after_its_timeout_variable_is_refused_with_the_flag_as_the_way_out() -> None:
-    assert plaincall.prefixed("MAITY_WAIT_TIMEOUT=5 maity wait")
-    assert plaincall.refusal(bash("MAITY_WAIT_TIMEOUT=5 maity wait")) == plaincall.PREFIX_REFUSED
-    assert "`maity wait --timeout N`" in plaincall.PREFIX_REFUSED
+@pytest.mark.parametrize("prefix", WAIT_TIMEOUT_PREFIXES)
+@pytest.mark.parametrize("rest", ["wait", "wait --one", "status", "a > f"])
+def test_a_maity_wait_timeout_prefix_is_refused_with_the_flag_as_the_way_out(
+    prefix: str, rest: str
+) -> None:
+    command = prefix + " maity " + rest
+    assert plaincall.prefixed(command)
+    assert plaincall.refusal(bash(command)) == plaincall.WAIT_TIMEOUT_REFUSED
+    assert "`maity wait --timeout N`" in plaincall.WAIT_TIMEOUT_REFUSED
+    assert plaincall.WAIT_TIMEOUT_REFUSED.endswith(plaincall.PREFIX_REFUSED)
+
+
+# Other refused prefixes: the shared reason, which names no wait timeout and does not list
+# `MAITY_WAIT_TIMEOUT` among the allowed names.
+OTHER_PREFIXED = [
+    "X=1 maity status",
+    "nice maity status",
+    "X=1 maity wait",
+    "env maity wait",
+    "MAITY_WAIT_TIMEOUTX=5 maity wait",
+    "MAITY_FOO=1 maity wait",
+    "TZ=UTC X=1 maity wait --timeout 5",
+    "/usr/bin/maity wait",
+]
+
+
+@pytest.mark.parametrize("command", OTHER_PREFIXED)
+def test_another_refused_prefix_gets_the_shared_reason_without_the_timeout_hint(
+    command: str,
+) -> None:
+    assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
     assert "MAITY_WAIT_TIMEOUT" not in plaincall.PREFIX_REFUSED
+    assert "--timeout" not in plaincall.PREFIX_REFUSED
+
+
+def test_maity_wait_with_its_timeout_flag_passes() -> None:
     assert plaincall.refusal(bash("maity wait --timeout 5")) is None
     assert plaincall.refusal(bash("TZ=UTC maity wait --timeout 5")) is None
 

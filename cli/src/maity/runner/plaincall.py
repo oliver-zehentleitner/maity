@@ -97,11 +97,17 @@ FAILED = (
 )
 PREFIX_REFUSED = (
     "A line in which `maity` is a word runs only as one plain `maity …` call at the start of "
-    "the line, after nothing but assignments to NO_COLOR, LANG, LC_* or TZ: no other "
-    "assignment, command, keyword, `!`, redirection, subshell or group before it, and "
+    "the line, after nothing but assignments to NO_COLOR, LANG, LC_* or TZ: no "
+    "other assignment, command, keyword, `!`, redirection, subshell or group before it, and "
     "`maity` by its name, not by a path. Run "
-    "`maity …` at the start of the line; a wait's timeout goes in `maity wait --timeout N`; "
-    "text that mentions `maity` goes in a file in this clone, passed with `--body-file`."
+    "`maity …` at the start of the line; text that mentions `maity` goes in a file in this "
+    "clone, passed with `--body-file`."
+)
+# The reason for a refused line whose words before `maity` assign MAITY_WAIT_TIMEOUT
+# (`_assigns_wait_timeout`): the same rule, led by the way to set a wait's timeout here.
+WAIT_TIMEOUT_REFUSED = (
+    "MAITY_WAIT_TIMEOUT does not go before `maity` here: run `maity wait --timeout N` "
+    "instead. " + PREFIX_REFUSED
 )
 
 
@@ -113,6 +119,9 @@ PREFIX_REFUSED = (
 # would not get the credential in a placement, so a placed agent passes `maity wait --timeout N`
 # (cli/context/runner.md). `test_plaincall.py` fails when a `MAITY_` name is added here.
 ALLOWED_BEFORE_MAITY = ("NO_COLOR", "LANG", "LC_*", "TZ")
+# An assignment to MAITY_WAIT_TIMEOUT, unquoted, with `=` or `+=`: only for the reason a
+# refused line gets (`WAIT_TIMEOUT_REFUSED`), never to let a line through.
+_WAIT_ASSIGNMENT = re.compile(r"MAITY_WAIT_TIMEOUT\+?=")
 # An allowed name, unquoted, then `=`; `+=` is refused as well. The value is not judged here:
 # `plain` refuses one that expands.
 _ASSIGNMENT = re.compile(
@@ -166,6 +175,24 @@ def _placement(command: str) -> str | None:
     if any(_maity_in_text(text, 1) for text, _, _, _ in words):
         return "prefixed"
     return None
+
+
+def _assigns_wait_timeout(command: str) -> bool:
+    """Whether a word before the line's first word `maity` (`_is_maity`), read past its
+    leading comment lines and blank lines as `_placement` reads it, is an unquoted assignment
+    to MAITY_WAIT_TIMEOUT (`_WAIT_ASSIGNMENT`). It only picks the reason for a line that is
+    refused anyway."""
+    command = _past_comment_lines(command)
+    try:
+        words = _split(command)
+    except _Unreadable:
+        return False
+    for text, _, at, written in words:
+        if _is_maity(text, written):
+            return False
+        if _WAIT_ASSIGNMENT.match(command, at):
+            return True
+    return False
 
 
 def _maity_in_text(text: str, depth: int) -> bool:
@@ -1146,7 +1173,7 @@ def refusal(payload: object) -> str | None:
     if calls_runner(command) or (names_maity(command) and not read_whole(command)):
         return RUNNER_REFUSED
     if placement == "prefixed":
-        return PREFIX_REFUSED
+        return WAIT_TIMEOUT_REFUSED if _assigns_wait_timeout(command) else PREFIX_REFUSED
     return None
 
 
