@@ -271,6 +271,76 @@ class RunSlotTest(unittest.TestCase):
         self.assertTrue(marker.exists(), "the command never ran")
         self.assertEqual(result.stderr, "")
 
+    # A slot directory the run may not write (a sandboxed agent session): the command runs
+    # without a slot and without a log line, and says so.
+
+    def run_without_a_slot(self, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        marker = self.tmp / "ran"
+        result = subprocess.run(
+            [SCRIPT, "sh", "-c", f'touch {marker}; echo "slot=$MAITY_RUN_SLOT"; exit 3'],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertTrue(marker.exists(), "the command never ran")
+        self.assertEqual(result.stdout, "slot=none\n")
+        self.assertIn("running without a slot and without a log line", result.stderr)
+        self.assertIn("MAITY_RUN_SLOTS_DIR", result.stderr)
+        self.assertEqual(len(result.stderr.splitlines()), 1, result.stderr)
+        return result
+
+    @unittest.skipIf(os.geteuid() == 0, "root writes a read-only directory")
+    def test_a_slot_directory_that_cannot_be_created_runs_the_command_without_a_slot(
+        self,
+    ) -> None:
+        locked = self.tmp / "locked"
+        locked.mkdir()
+        locked.chmod(0o500)
+        self.addCleanup(locked.chmod, 0o700)
+        slots = locked / "slots"
+        result = self.run_without_a_slot({**self.env, "MAITY_RUN_SLOTS_DIR": str(slots)})
+        self.assertIn(str(slots), result.stderr)
+        self.assertFalse(slots.exists())
+
+    @unittest.skipIf(os.geteuid() == 0, "root writes a read-only directory")
+    def test_a_slot_directory_that_is_read_only_runs_the_command_without_a_slot(self) -> None:
+        slots = self.tmp / "slots"
+        slots.mkdir()
+        slots.chmod(0o500)  # mkdir -p succeeds, opening the slot file fails
+        self.addCleanup(slots.chmod, 0o700)
+        result = self.run_without_a_slot(self.env)
+        self.assertIn(str(slots / "slot0"), result.stderr)
+        self.assertEqual(list(slots.iterdir()), [])
+
+    def test_a_slot_file_that_cannot_be_opened_runs_the_command_without_a_slot(self) -> None:
+        slots = self.tmp / "slots"
+        slots.mkdir()
+        (slots / "slot0").mkdir()  # not a file: the open fails, whoever runs the test
+        env = {**self.env, "MAITY_RUN_SLOTS": "1"}
+        result = self.run_without_a_slot(env)
+        self.assertIn(str(slots / "slot0"), result.stderr)
+        self.assertEqual(sorted(p.name for p in slots.iterdir()), ["slot0"])
+
+    @unittest.skipIf(os.geteuid() == 0, "root writes a read-only directory")
+    def test_a_holder_name_that_cannot_be_written_does_not_stop_the_run(self) -> None:
+        slots = self.tmp / "slots"
+        slots.mkdir()
+        (slots / "slot0").touch()  # left from before; the directory then turned read-only
+        slots.chmod(0o500)
+        self.addCleanup(slots.chmod, 0o700)
+        result = subprocess.run(
+            [SCRIPT, "sh", "-c", 'echo "slot=$MAITY_RUN_SLOT"; exit 3'],
+            env={**self.env, "MAITY_RUN_SLOTS": "1"},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 3)
+        self.assertEqual(result.stdout, "slot=0\n")
+        self.assertEqual(result.stderr, "")
+
     def watcher_ids(self, pid: int) -> tuple[int, int]:
         """The process group and session of the watcher for the run `pid`, found in /proc."""
         deadline = time.monotonic() + 30

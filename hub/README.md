@@ -394,7 +394,8 @@ creates when missing. Runs can share the server. The last one to end stops it, a
 only if this script started it; a server that was already up keeps running.
 `--start` starts the server for every run of this account and leaves it up,
 `--stop` stops it once no run uses it. A run holds one of the account's run slots
-(`../tools/run_slot.sh`, two by default), and its database is
+(`../tools/run_slot.sh`, two by default; where the slot directory cannot be written, it
+warns and runs without one), and its database is
 `maity_test_<name>_<pid>` with `<name>` from `MAITY_RUN_NAME`; `CONTRIBUTING.md` has
 the rules for a shared machine. It needs `pg_ctl`, `initdb` and `psql`, on the path
 or in `MAITY_PG_BIN`. Without a system PostgreSQL, the PyPI package `pgserver`
