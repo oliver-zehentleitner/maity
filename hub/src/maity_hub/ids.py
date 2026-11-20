@@ -67,7 +67,7 @@ def new_id(entity: str) -> str:
 def has_shape(entity: str, value: str) -> bool:
     """Whether `value` is an id `new_id(entity)` could have made: the hub checks an id a
     request presents before it asks the database for it. A change of `new_id`'s form must
-    keep accepting the ids made before it."""
+    keep accepting the ids made before it (hub/context/credentials.md dcc12e31)."""
     prefix = f"{PREFIXES[entity]}-"
     random = value[len(prefix) :]
     return (
