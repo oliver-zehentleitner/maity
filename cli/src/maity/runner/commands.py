@@ -58,6 +58,31 @@ class Refused(Exception):
 # the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
 # runner's own, and an agent's call of it is refused (cli.main).
 IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
+# Of those, the ones that act on a file the call names: the loop's spec (what it runs) and the
+# pane's log (what it cuts). An agent's `maity` runs outside its sandbox, so under a placement
+# such a file must be one the runner wrote, never one the agent could write from inside it.
+IN_SESSION_FILE = {"loop": "spec", "logcap": "log"}
+# Directories a sandboxed agent writes besides its clone and scratch: the temporary ones.
+TEMP_ROOTS: tuple[str, ...] = ("/tmp", "/var/tmp", "/dev/shm")  # noqa: S108
+
+
+def agent_writable(given: str) -> bool:
+    """Whether `given` lies where a placed agent can write: inside a placed clone (one with
+    the runner's placement marker), inside a placement scratch (`.scratch`, or the agy
+    `maity-scratch-<uid>` parent), or under a temporary directory. Resolved first, so neither
+    a relative path (which starts at the clone) nor a link leads past the check. The
+    runner's own files (its state directory) are none of these."""
+    path = Path(os.path.realpath(given))
+    named = os.environ.get("TMPDIR")
+    temps = {os.path.realpath(t) for t in (*TEMP_ROOTS, *([named] if named else []))}
+    for parent in (path, *path.parents):
+        if str(parent) in temps:
+            return True
+        if parent.name == ".scratch" or parent.name.startswith("maity-scratch-"):
+            return True
+        if (parent / clonecheck.MARKER_PATH).exists():
+            return True
+    return False
 
 
 # --- pair ------------------------------------------------------------------------------------

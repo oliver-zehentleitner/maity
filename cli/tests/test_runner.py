@@ -11,7 +11,7 @@ from pathlib import Path
 import fakehub
 import pytest
 
-from maity import cli, state
+from maity import cli, clonecheck, state
 from maity.runner import commands, config
 
 MINIMAL = """\
@@ -1178,3 +1178,71 @@ def test_the_runner_calls_on_the_agents_side_carry_no_placement(
         assert not any("MAITY_PLACEMENT" in word for word in argv)
         assert env is None or "MAITY_PLACEMENT" not in env  # type: ignore[operator]
     assert seen[0][0][:4] == ["sudo", "-n", "-u", "agents"] and "env" not in seen[0][0][:6]
+
+
+# --- S201/S202: an in-session command's file must be the runner's ----------------------------
+
+
+def _placed_clone(root: Path) -> Path:
+    clone = root / "ws" / "maity" / "agent-3"
+    (clone / ".git" / "maity").mkdir(parents=True)
+    (clone / clonecheck.MARKER_PATH).write_text("plc-0003\n")
+    return clone
+
+
+@pytest.mark.parametrize("name", sorted(commands.IN_SESSION_FILE))
+@pytest.mark.parametrize("where", ["clone", "relative", "scratch", "agy", "temp", "link"])
+def test_a_placed_agent_cannot_hand_an_in_session_command_its_own_file(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    name: str,
+    where: str,
+) -> None:
+    """`maity` runs outside the agent's sandbox, so `loop --spec` (what it runs) and `logcap`
+    (what it cuts) refuse a file the agent could have written: in its clone, its scratch, a
+    temporary directory, or reached through a link; the handler is never called."""
+    from maity.runner import logcap, loop
+
+    monkeypatch.setattr(commands, "TEMP_ROOTS", (str(tmp_path / "tmp"),))
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "tmp"))
+    clone = _placed_clone(tmp_path)
+    runner_own = tmp_path / "state" / "agents" / "plc-0003" / "loop.json"
+    runner_own.parent.mkdir(parents=True)
+    runner_own.write_text("{}")
+    target = {
+        "clone": clone / "s.json",
+        "relative": Path("s.json"),
+        "scratch": tmp_path / "ws" / "maity" / ".scratch" / "plc-0003" / "s.json",
+        "agy": tmp_path / "maity-scratch-1000" / "x" / "s.json",
+        "temp": tmp_path / "tmp" / "s.json",
+        "link": tmp_path / "state" / "link.json",
+    }[where]
+    if where == "link":
+        (clone / "s.json").write_text("{}")
+        target.symlink_to(clone / "s.json")
+    monkeypatch.chdir(clone)
+    reached: list[str] = []
+    for module in (loop, logcap):
+        monkeypatch.setattr(module, "main", lambda argv, m=module: reached.append(m.__name__) or 0)
+    monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
+    argv = {"loop": ["loop", "--spec", str(target)], "logcap": ["logcap", str(target), "1"]}
+    assert cli.main(["runner", *argv[name]]) == cli.EXIT_REFUSED
+    assert "only the runner's own file" in capsys.readouterr().err
+    assert reached == []
+    # The runner's own file in its state directory still gets through.
+    own = {"loop": ["loop", "--spec", str(runner_own)], "logcap": ["logcap", str(runner_own), "1"]}
+    assert cli.main(["runner", *own[name]]) == 0 and reached == [f"maity.runner.{name}"]
+
+
+def test_outside_a_placement_the_file_is_not_checked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from maity.runner import loop
+
+    monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    clone = _placed_clone(tmp_path)
+    reached: list[str] = []
+    monkeypatch.setattr(loop, "main", lambda argv: reached.append("loop") or 0)
+    assert cli.main(["runner", "loop", "--spec", str(clone / "s.json")]) == 0
+    assert reached == ["loop"]

@@ -1901,7 +1901,12 @@ connection with strict host keys and no forwarding. The agents' files
 `~/.maity-runner/`. That home is learned on the first connection. What the
 agents run, the supervised loop and the `stub` included, starts through
 the host's own `maity`, on internal subcommands (`maity runner loop`,
-`maity runner stub`). The join runs the host's `maity` too, so the
+`maity runner stub`). Under a placement, `maity runner loop` and
+`maity runner logcap` take only a file the runner wrote in its own
+directory: a spec or log path inside a placed clone, a placement scratch
+or a temporary directory is refused (`commands.agent_writable`), since an
+agent's `maity` runs outside its sandbox (security round 5, S201/S202; the
+lasting answer is a runner command an agent cannot reach at all). The join runs the host's `maity` too, so the
 agent's credential is written on the host and never passes through the
 runner. Workspace records are keyed `<host>:<path>`. A sandbox's read
 denies are the host's: the remote user's home secrets, its
