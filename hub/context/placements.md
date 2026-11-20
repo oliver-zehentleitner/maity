@@ -842,7 +842,7 @@ placement and clone, where the owner wants the same clone and branches.
 
 ## A profile that is not a member yet is admitted by its placement
 
-**Id:** UUID-PENDING
+**Id:** 2f6d6292-c1df-4853-9405-e29be0140e15
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
