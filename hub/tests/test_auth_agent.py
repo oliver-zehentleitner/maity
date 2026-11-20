@@ -17,8 +17,9 @@ from maity_hub import avatar_generated, avatars, clock, images
 from maity_hub import tables as t
 from maity_hub.auth import credentials
 from maity_hub.auth.caller import RequestFacts, authenticate
+from maity_hub.ids import new_id
 from maity_hub.net import Origin
-from tests import factory
+from tests import factory, statements
 from tests.conftest import ClientFactory
 
 
@@ -580,10 +581,84 @@ def test_an_unknown_id_is_unauthenticated_on_both_paths(
     make_client: ClientFactory, agent: factory.Agent
 ) -> None:
     headers = signed(agent, "GET", "/api/v1/me")
-    headers["Authorization"] = "Maity-HMAC crd-nobody"
+    headers["Authorization"] = f"Maity-HMAC {new_id('credential')}"
     assert make_client().get("/api/v1/me", headers=headers).headers["Maity-Error"] == (
         "unauthenticated"
     )
+
+
+# Raw header values: Starlette decodes them as latin-1, so a UTF-8 `é` arrives as two
+# characters and a latin-1 one as one. Each is no id the hub could have issued (`ids.new_id`).
+MALFORMED_CREDENTIAL_IDS = [
+    b"crd-nobody",
+    b"crd-" + b"0" * 10 + b"\xc3\xa9",  # UTF-8, twelve characters as decoded
+    b"crd-" + b"0" * 11 + b"\xe9",  # latin-1
+    b"crd-" + b"0" * 13,
+    b"crd-" + b"0" * 4096,
+    b"agt-" + b"0" * 12,
+    b"CRD-" + b"0" * 12,
+    b"crd_" + b"0" * 12,
+    b"crd-" + b"u" * 12,  # no u in Crockford base32
+    b"crd-" + b"A" * 12,
+    b"crd-" + b"0" * 10 + b"-_",
+    b"rcrd-" + b"0" * 13,
+    b"rcrd-" + b"i" * 12,
+    b"rcrd-" + b"0" * 10 + b"\xc3\xa9",
+]
+
+
+def _presenting(
+    make_client: ClientFactory, engine: Engine, agent: factory.Agent, credential_id: bytes
+) -> tuple[Any, bool]:
+    """A signed `GET /me`, valid but for the credential id it presents; and whether a
+    credential row was asked for (`caller._credential`, `caller._runner_credential`)."""
+    sent: list[str] = []
+
+    def heard(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
+        sent.append(statement.lower())
+
+    headers: Any = signed(agent, "GET", "/api/v1/me")
+    headers["Authorization"] = b"Maity-HMAC " + credential_id
+    client = make_client()
+    with statements.listening(engine, heard):
+        response = client.get("/api/v1/me", headers=headers)
+    return response, any("credential.verifier" in s for s in sent)
+
+
+@pytest.mark.parametrize("malformed", MALFORMED_CREDENTIAL_IDS)
+def test_a_malformed_signed_credential_id_answers_as_an_unknown_one_without_a_query(
+    make_client: ClientFactory, migrated: Engine, agent: factory.Agent, malformed: bytes
+) -> None:
+    kind = "runner_credential" if malformed.startswith(b"rcrd-") else "credential"
+    unknown, looked_up = _presenting(make_client, migrated, agent, new_id(kind).encode())
+    assert unknown.status_code == 401 and looked_up  # well-formed: still looked up
+    assert unknown.headers["Maity-Error"] == "unauthenticated"
+    response, looked_up = _presenting(make_client, migrated, agent, malformed)
+    assert response.status_code == 401, response.text
+    assert response.headers["Maity-Error"] == "unauthenticated"
+    assert response.json() == unknown.json()
+    assert sorted(response.headers.keys()) == sorted(unknown.headers.keys())
+    assert not looked_up
+
+
+@pytest.mark.parametrize(
+    ("credential_id", "looked_up"),
+    [("agt-" + "0" * 12, False), ("crd-" + "0" * 13, False), (new_id("credential"), True)],
+)
+def test_a_bearer_credential_id_of_no_issued_form_is_not_looked_up(
+    make_client: ClientFactory, migrated: Engine, credential_id: str, looked_up: bool
+) -> None:
+    sent: list[str] = []
+
+    def heard(conn: Any, cursor: Any, statement: str, *_: Any) -> None:
+        sent.append(statement.lower())
+
+    client = make_client()
+    value = f"mty1.{credential_id}.{'C' * 43}"
+    with statements.listening(migrated, heard):
+        response = client.get("/api/v1/me", headers={"Authorization": f"Bearer {value}"})
+    assert response.headers["Maity-Error"] == "unauthenticated"
+    assert any("credential.verifier" in s for s in sent) is looked_up
 
 
 # --- nonces shared by every replica (PostgreSQL, hub/context/replicas.md 1c65bb74) -----------
