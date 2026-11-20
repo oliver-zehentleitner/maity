@@ -4136,7 +4136,9 @@ member_join_limit` and `details.field` naming the field when broken:
   `reports_to`, areas and capabilities stay as an admin set them — but
   a membership an admin raised beyond the limits (trust `admin`, role
   `ops`, `proxy` or a project role on `ops`) gets new instances only through `members:admin`
-  (`forbidden`, `member_join_limit`, `details.field: "agent"`);
+  (`forbidden`, `member_join_limit`, `details.field: "agent"`). A
+  placement's pickup that finds its profile already a member adds an
+  instance by this rule, not by the first-join one (§15.9);
 - the caller's agents in the project stay within
   `policy.member_agents_max` (default 3), else `forbidden` with
   `details.reason: member_agents_max` and `details.max`, and the quota
@@ -4163,14 +4165,19 @@ void and the exchange answers as for a revoked join, `not_found`; a
 creator who was raised to `admin` or `owner` meanwhile keeps the join,
 which `members:admin` would have allowed anyway. Turning
 `member_agents` `off` is the one change a pending join survives: it
-stops new member joins, not the ones already handed out.
+stops new member joins, not the ones already handed out. A member's
+placement of a profile that is not a member yet (§15.6) does not
+survive it, its pickup join included: the pickup and its exchange
+check the creator's authority against the policy as it is then
+(§15.9), since a placement acts on its creator's continuing authority,
+while a join already handed out does not.
 
 A human with trust `guest` never creates a join, and no agent does
 under this rule: an admin agent creates joins only through
 `members:admin` (§2.3 ᵃ). With `member_agents: off` a member's `POST`
 is `forbidden` (`details.scope: members:admin`), as before this rule;
 the member's own open joins stay usable until they expire or are
-revoked, as the exchange above says. The membership the exchange creates is an ordinary one: the
+revoked, the pickups of its placements not, as the exchange above says. The membership the exchange creates is an ordinary one: the
 project's admins see it in the member list and `member_joined` (§8.1)
 like any other, and change trust, role, areas or remove it as they
 would any agent's; the owner may change its role too ("The owner changes
@@ -19897,9 +19904,17 @@ POST /api/v1/runner/placements/plc-0003/join
   holds a membership by the time of the exchange — it joined by a line
   (§3.1) between the placement and the pickup, or the exchange of
   another such placement of it came first — the exchange adds an
-  instance as for a member placed by id: within `max_instances`,
+  instance by the rule of §3.1 for a new instance, against the
+  membership as it is then and not by the first-join check: the
+  membership's trust and role apply, within `max_instances`,
   `instance_quota` beyond it, not `not_found` (as tsk-yfpwawy3xk3a has
-  it for another instance of an existing agent). Of two such placements
+  it for another instance of an existing agent). The creator must then
+  also hold the authority §3.1 requires to add an instance to that
+  membership, what a `new_instance` join for it needs
+  (`creator_lacks_authority` below), since the placement was made under
+  the right to a first join, not to a further instance. While the
+  profile is still not a member, the first-join check applies as
+  below. Of two such placements
   of one profile, the first exchange creates the membership and the
   second adds an instance by this rule. The stored join fields then
   change nothing, as a placement never changes a membership. `ttl_seconds`
@@ -19923,10 +19938,16 @@ POST /api/v1/runner/placements/plc-0003/join
   create this first join (§3.1): no longer the profile's owner, no longer
   with `members:admin` or within "Bringing your own agent" for it (its
   limits included), or no longer trust `owner` for trust `admin` or the
-  role `proxy`, or `project_not_allowed` when the profile's
+  role `proxy`, and, once the profile is a member, when the creator may
+  not add an instance to that membership (above), or
+  `project_not_allowed` when the profile's
   `allowed_projects` no longer admits the project (§6.3), a rejoin
   included, so a member whose project its owner unticked keeps its
-  membership without a new instance.
+  membership without a new instance. The creator's authority is read
+  against the policy as it is at the pickup: with `policy.member_agents`
+  turned `off` since the placement, a placement made by a member under
+  "Bringing your own agent" is `creator_lacks_authority`, one made by a
+  human with `members:admin` is not affected (§3.1).
 - **The exchange checks the pickup again.** Under the project lock it
   requires the placement still active, approved, `desired: running`, at
   the join's generation and on the same runner, and that runner not
@@ -19937,7 +19958,9 @@ POST /api/v1/runner/placements/plc-0003/join
   yet, those made while it was not a member included (§6.2), so their
   pickup answers as for any closed placement. A new profile's pickup and that of a
   profile placed while not a member also require their creator's
-  authority as at the pickup (`creator_lacks_authority` above). Otherwise the exchange answers `not_found`
+  authority as at the pickup, checked again against the policy and the
+  membership as they are at the exchange (`creator_lacks_authority`
+  above). Otherwise the exchange answers `not_found`
   (§1.1). Stopping or closing the placement, revoking, re-pairing or
   removing the runner, and suspending its owner (§16.8) revoke its unused
   pickup joins: a pickup ends with the runner credential that fetched it.
