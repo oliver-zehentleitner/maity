@@ -296,7 +296,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const realGet = win.Maity.api.get;
   win.Maity.api.get = (p) => { gets.push(p); return realGet(p); };
   const realAll = win.Maity.api.getAll;
-  win.Maity.api.getAll = (p) => { gets.push(p); return realAll(p); };
+  // Its further arguments go through (the board's first-page callback, tsk-ywf14h6qd6kq).
+  win.Maity.api.getAll = (p, ...rest) => { gets.push(p); return realAll(p, ...rest); };
   docListeners.DOMContentLoaded(); await tick(); await tick();
   // The title without the count of what asks for the human (js/notify.js).
   const plainTitle = () => document.title.replace(/^\(\d+\) /, "");
