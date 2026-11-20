@@ -6473,7 +6473,7 @@ working against a hub from before #1656.
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** the card tsk-zf3wd9t5gjab (fix 1 of the umbrella tsk-a5pxwgkgr73e, the lead's go on its proposal); the measurements in notes nte-58398aanz1j9, nte-r4ykqgw8mwnk and nte-9m9144akc4zw (2026-11-20, cold loads from one host); web/js/app.js `drawing` (`bootHead`, `shared`, `mineAhead`), web/js/api.js `request` (`quiet`); web/tools/e2e.py `BootHeads`; the boot-order cases in web/tools/smoke.js
+**Source:** the card tsk-zf3wd9t5gjab (fix 1 of the umbrella tsk-a5pxwgkgr73e, the lead's go on its proposal); the measurements in notes nte-58398aanz1j9, nte-r4ykqgw8mwnk and nte-9m9144akc4zw (2026-11-20, cold loads from one host); web/js/app.js `drawing` (`bootHead`, `shared`, `mineAhead`), web/js/api.js `request` (`quiet`); web/tools/e2e.py `BootHeads`; the boot-order cases and the running-window case in web/tools/smoke.js; the first review of #2036 (at f2ab5ba2: the maintenance loop, the heads of the root and the sign-in, the shared reads across an account switch)
 **Revisit when:** a rerun on the measured host does not show the head overlapping `/bootstrap`, the head becomes a part of `/bootstrap` (a §5.4 change), or the dashboard can tell before any read whether it has a session
 **See:** views.md#the-boot-reads-one-get-bootstrap-and-answers-its-own-reads-from-the-parts-an-older-hubs-404-leaves-them-to-their-routes — 884b01fe-ffc5-4d39-843e-aa0d9c84ffde — as of 2026-11-20
 **See:** refresh.md#a-page-switch-draws-from-the-session-me-and-project-it-kept-and-reads-them-again-behind-the-view — f71932e2-191d-492b-aef9-02a274a8855c — as of 2026-11-20
@@ -6482,14 +6482,23 @@ A cold drawing asks `GET /me/notifications?limit=0` right after it asks `/bootst
 `Promise.all` beside the context, which it reached only once the session and `/me` had been
 answered. The head stays outside the bundle; §5.4 is unchanged. Since the session is not known yet,
 the read is quiet (`M.api.get(path, { quiet: true })`): its 401 or 403 does not end the session and
-does not redraw the setup. Where the drawing returns early (the sign-in, a visitor's page, the second
-factor's step, the setup, a pending account) the answer is dropped. Where it reaches the context,
-the session is known, and a quiet head that met a 401, a 403 or an ended session is asked once more
-through the usual handling. A real failure is then reported the way it always was.
+does not redraw the setup, and a running maintenance window's 503 (the window lets `/bootstrap`
+through and refuses the head) tells `M.onMaintenance` nothing. Where the drawing returns early (a
+visitor's page, the second factor's step, the setup, a pending account, a window's full page, a
+project's earlier address) the answer is dropped. A drawing that is known at its boot to lead on
+before the context asks no head at all: the root and the sign-in, the second factor's own address,
+and a public page's `?report` that leads a member to the Overview; the page it leads to asks its
+own. Where the drawing reaches the context, the session is known and no running window held the
+page, and a quiet head that met a 401, a 403, an ended session or a window's 503 is asked once more
+through the usual handling, but only by the drawing that stands (or the switch that took that head).
+A real failure is then reported the way it always was, and a window that started meanwhile is told
+then, its redraw stopping at the full page before any head.
 A drawing that follows at once (Settings leading a member without project:admin on to
 `settings/mine`) takes the same head while it is in flight or answered less than 2 s before, with no
-write of the tab and no new session since. Settings → Mine's own `…/me/settings` is started beside
-the context where the address draws that tab, and the view takes it once under the same rule.
+write of the tab, no new session since and the same session id and member id as the drawing that
+started it. Settings → Mine's own `…/me/settings` is started beside the context where the address
+draws that tab, and the view takes it once under the same rule; only a switch takes one started
+by an earlier drawing. A drawing for another session or member drops both.
 
 **Reason:** on prod the head took 100–150 ms alone after `/bootstrap` on every page, so the two
 boot reads ran one after the other where they could overlap. On settings a second head followed in
@@ -6499,17 +6508,37 @@ answer read before its session was known is quiet. Where the head starts, that a
 dropped, that the bundle stays as it is and that settings asks no second head are the card's scope,
 confirmed by the lead's go; the 2 s window, the re-ask and the harness rule are this
 implementation's reading of it, not yet confirmed by review.
+The maintenance handling and the identity key come from the first review of #2036 (at f2ab5ba2),
+whose findings this implementation answers; that answer is not yet reviewed: a quiet head still told `M.onMaintenance` of its 503; `M.maintenance.drawing()` had
+cleared the full page's mark, so the window redrew the page, whose next quiet head was refused
+again, without end (the smoke grew to 3.3 GB, CI's web job timed out). Quiet now covers the 503 as
+well: the drawing learns the window from `/maintenance`, `/bootstrap` and `/me` as it did before
+the head moved, and every signed-in drawing under a running window stops at the full page or the
+admin's window section before the head is waited for. The same review found that a `…/me/settings`
+read left untaken could be taken after an account switch keepFresh finds, which bumps no epoch.
 
 **Rejected alternatives:**
+- Under a window's 503, telling `M.onMaintenance` from the quiet head but without a redraw: the
+  window is already known by then from the drawing's own reads, so the notice adds nothing, and a
+  second "quiet" kind of maintenance notice would have to be kept apart in js/maintenance.js.
+- Not asking the head at the boot while a window is known: the window is read by the same boot (the
+  bundle's part), after the head is asked, so it is not known in time on a cold load.
+- Clearing the shared reads only on a bump of `M.sessionEpoch`: an account switched in another
+  tab, which keepFresh finds by the session and member ids, bumps none.
+- Carrying the head across the root's or the sign-in's redirect instead of asking none there: the
+  drawing led to is not a switch that keeps anything at a cold load, so it would need a rule of its
+  own; asking none costs nothing, the page led to asks its one.
+- Skipping the head for a project's earlier address too: that is known only after `movedTo` reads
+  the project, after the head is asked; such a load asks one head more.
 - The head as a part of `/bootstrap`: a contract change (§5.4), which the card left out.
 - Starting the head once the bundle's session part has answered: that is the round trip already
   paid after the bundle, so no gain.
 - Gating the early head on the readable `maity_csrf` cookie, as the early `/me` of 63c48583 once was:
   a session that owes the second factor has the cookie too, and its 403 would still come. Without the
   gate a visitor's page load asks one head more, which answers 401 and is dropped.
-- The e2e harness excusing every 401 or 403 of the head: that could hide a real failing head, which
-  is why the early `/me` was given up (63c48583). `BootHeads` excuses only a head asked while that
-  page's `/bootstrap` was still out; the re-ask and every later head are judged as before.
+- The e2e harness excusing every 401, 403 or 503 of the head: that could hide a real failing head,
+  which is why the early `/me` was given up (63c48583). `BootHeads` excuses only a head asked while
+  that page's `/bootstrap` was still out; the re-ask and every later head are judged as before.
 - No head on a switch at all: the counts then waited for the next 60-second round on every switch,
   not only on the one a view leads on to.
 
