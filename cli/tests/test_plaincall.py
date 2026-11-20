@@ -925,12 +925,56 @@ SUBSTITUTIONS_WITHOUT_MAITY = [
     'echo "${HOME}/x"',
     "echo $(( 1 + 2 ))",
     "diff <(sort a) <(sort b)",
+    "echo file-$(date).log",
+    'tar czf "backup-$(date +%F).tgz" src',
+    "echo $# $@ $1",
+    "echo $(basename $(pwd))",
+    "cp a.txt b-`date +%s`.txt",
+    'git commit -m"$(cat msg.txt)"',
+    "echo a$(date) t`date`",
+]
+# Positional parameters glued into the name: a tool call has none, so they make nothing.
+POSITIONAL_IN_THE_NAME = [
+    "mai$@ty status",
+    "mai$*ty status",
+    "ma${@}ity status",
+    "ma${*}ity status",
+    "mai$1ty status",
+    "ma${9}ity status",
+    'ma"$@"ity runner status',
+    "true && mai$@ty status",
+    "echo `mai$1ty status`",
+]
+# A word whose own letters, with a substitution glued in, are part of `maity`: the
+# substitution may supply the rest.
+GLUED_LETTERS = [
+    "ma$(echo i)ty status",
+    "m$(printf a)ity status",
+    "$(printf m)aity status",
+    "mait$(echo y) status",
     "echo ma$(true)ty",
+    '"ma$(echo i)ty" status',
+    "./ma$(echo i)ty status",
+    "/usr/bin/m$(echo a)ity status",
+    "ma`echo i`ty status",
+    "M$(echo A)ITY status",
+    "m\\a$(echo i)ty status",
+    "echo $(ma$(echo i)ty status)",
+    "ma<(true)ty",
+    "m$(echo aity) status",
+    "$(echo mait)y status",
 ]
 
 
 @pytest.mark.parametrize(
-    "command", [*GLUED_EXPANSIONS, *BRACES_IN_QUOTED_BACKTICKS, *EMPTY_SUBSTITUTIONS]
+    "command",
+    [
+        *GLUED_EXPANSIONS,
+        *BRACES_IN_QUOTED_BACKTICKS,
+        *EMPTY_SUBSTITUTIONS,
+        *POSITIONAL_IN_THE_NAME,
+        *GLUED_LETTERS,
+    ],
 )
 def test_maity_glued_braced_or_spliced_in_a_substitution_is_refused(command: str) -> None:
     assert plaincall.refusal(bash(command)) is not None
@@ -947,9 +991,22 @@ def test_the_substitutions_of_a_line_and_the_line_without_them() -> None:
     assert plaincall._substitutions(r"""a `b` "$(c "d)")" <(e) '$(g)'""") == (
         ["b", 'c "d)"', "e"],
         """a  "" /dev/fd/0 '$(g)'""",
+        [],
+    )
+    assert plaincall._substitutions(r"""M"a"$(x)\t y$1 f-$(d).log ${x}$# $@z /$(e)/i$(o)""") == (
+        ["x", "d", "e", "o"],
+        r"""M"a"\t y f-.log ${x}0 z //i""",
+        ["mat", "f-.log", "i"],
     )
     assert plaincall._substitutions(r"a \`b` c") is None  # an escaped backtick, then one open
     assert plaincall._substitutions("a $(b") is None
+
+
+def test_letters_glued_to_a_substitution_count_only_as_part_of_maity_in_order() -> None:
+    yes = ("m", "y", "ma", "maty", "aity", "mit", "maity")
+    no = ("", "a", "i", "t", "am", "maityx", "-m", "m-y", "f-.log")
+    assert all(plaincall._part_of_maity(w) for w in yes)
+    assert not any(plaincall._part_of_maity(w) for w in no)
 
 
 def test_a_wait_timeout_inside_a_substitution_gets_the_shared_reason() -> None:
@@ -2388,6 +2445,20 @@ def test_substitutions_run_maity_only_if_refused(tmp_path: Path) -> None:
 # A line that starts with a spelling of the name, glued to an expansion or with an empty
 # substitution in it, alone or after other words.
 GLUED_SHAPES = ["{c}", "NO_COLOR=1 {c}", "true && {c}", "env {c}", "echo `{c}`", "echo $({c})"]
+# Spellings made with positional parameters, which a tool call does not have, and with
+# substitutions whose output supplies letters of the name.
+JOINED_SPELLINGS = [
+    "mai$@ty",
+    "ma${1}ity",
+    'ma"$*"ity',
+    "ma$(echo i)ty",
+    "m$(printf a)ity",
+    "$(printf m)aity",
+    "mait$(echo y)",
+    "ma`echo i`ty",
+    "m$(echo aity)",
+    "$(echo mait)y",
+]
 
 
 @pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
@@ -2400,12 +2471,14 @@ def test_glued_spellings_and_the_reported_lines_run_maity_only_if_refused(
     lines = [
         shape.format(c=spelling + args)
         for shape in GLUED_SHAPES
-        for spelling in NAME_SPELLINGS[1:]
+        for spelling in [*NAME_SPELLINGS[1:], *JOINED_SPELLINGS]
         for args in (" status", " runner status", " run$()ner status")
     ]
     reported = [*GLUED_EXPANSIONS, *BRACES_IN_QUOTED_BACKTICKS[:6], *EMPTY_SUBSTITUTIONS]
+    reported += [*POSITIONAL_IN_THE_NAME, *GLUED_LETTERS[:4], *GLUED_LETTERS[5:7]]
+    reported += [GLUED_LETTERS[8], *GLUED_LETTERS[10:12], *GLUED_LETTERS[13:]]
     opened, ran, runner = bash_runs_maity(lines + reported, tmp_path)
     assert opened == [], BASH_NAME
     assert ran >= len(lines) + len(reported) - 10, ran
-    assert runner >= 90, runner  # `maity runner` does run from many of them
+    assert runner >= 200, runner  # `maity runner` does run from many of them
     assert bash_runs_maity(reported, tmp_path)[1] == len(reported)

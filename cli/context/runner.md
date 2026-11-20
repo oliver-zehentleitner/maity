@@ -3467,11 +3467,12 @@ substitution in any form (backticks included, also inside double
 quotes, or `$(…)`) that names `maity` is refused too, since the shell
 reads the substitution's text as a line of its own; so is a line that
 names `maity` once its command substitutions are taken out, as output
-that is empty leaves it, and a word in which an expansion is glued to
-`maity` counts as `maity`, since the expansion may make nothing
+that is empty leaves it and as positional parameters, which a tool call
+does not have, leave it; a word in which an expansion is glued to
+`maity` counts as `maity`, since the expansion may make nothing; and a
+word that substitutions may join into `maity` is refused as well
 (tsk-12zb1s0zgdjw and its first review round: a correction to the
-reading, with a Bash differential test, not a new decision). Names that
-only an expansion's value or a file makes stay unread, as below. A line in which
+reading, with a Bash differential test, not a new decision). A line in which
 `maity` is no word, only part of a longer one (`maity.md`, `maity/`, a
 clone directory named after a handle such as
 `/some/path/maity-coder-claude-004`), is left to the permission rules,

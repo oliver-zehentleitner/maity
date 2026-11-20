@@ -11,8 +11,9 @@ it; the line itself is still judged whole, so such a line is refused. Any other 
 which `maity` is a word (`prefixed`) is
 refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
 a subshell or a group before it, or `maity` by a path, and so is a line with `maity` in a
-command substitution, where the shell reads it as a line of its own, or that names `maity`
-once its command substitutions are taken out, as output that is empty leaves it
+command substitution, where the shell reads it as a line of its own, that names `maity`
+once its command substitutions and positional parameters are taken out, as output that is
+empty leaves it, or with a word that substitutions may join into `maity`
 (`_in_substitution`). A word counts as `maity`
 (and as `runner`) also once its backslashes and quotes are taken off (`_reads_as`), also as
 each part of it between backticks and before a `$` (`_substituted`), since an expansion
@@ -1243,21 +1244,82 @@ def _paren_end(text: str, i: int) -> int:
     return -1
 
 
-def _substitutions(line: str) -> tuple[list[str], str] | None:
-    """The text of each outermost command substitution on the line (a backtick pair,
-    `$(…)`, and `<(…)` or `>(…)` outside double quotes), outside single quotes, and the line
-    with each of them taken out, as one whose output is empty leaves it (a process
-    substitution leaves a path); None when one never closes. Quotes, escapes and nested
+# Positional parameters, which make nothing in a tool call (`bash -c` with no arguments),
+# and `$#`, which makes `0` there.
+_POSITIONAL = re.compile(r"\$(?:[@*1-9]|\{[@*1-9]\})")
+_COUNT = re.compile(r"\$(?:#|\{#\})")
+
+
+# What a substitution leaves in a word as `_Read` writes it: no character a line holds.
+_GLUE = "\x00"
+
+
+class _Read:
+    """What `_substitutions` reads of a line: the text of each outermost substitution, the
+    line with each of them taken out, and the literal text of each word a substitution is
+    glued into."""
+
+    def __init__(self) -> None:
+        self.bodies: list[str] = []
+        self.out: list[str] = []
+        self.glued: list[str] = []
+        self.chars: list[str] = []
+        self.written: list[str] = []
+        self.substituted = False
+
+    def text(self, chars: str, written: str | None = None) -> None:
+        """Literal text of the current word (`written` as the line holds it, quotes and
+        all): each character counts, and a `/` starts the word's last part again."""
+        self.written.append(chars if written is None else written)
+        for c in chars:
+            if c == "/":
+                self.chars, self.substituted = [], False
+            else:
+                self.chars.append(c.lower())
+
+    def glue(self) -> None:
+        """A substitution in the current word."""
+        self.substituted = True
+        self.written.append(_GLUE)
+
+    def end(self) -> None:
+        """The current word ends: its literal text after its last `/` is kept when a
+        substitution is glued into it. A word with a `{` is taken as each word its braces
+        make (`_brace_words`), a substitution standing for nothing in it, and counts as
+        `maity` when they are not read."""
+        written = "".join(self.written)
+        if _GLUE in written and "{" in written:
+            made = _brace_words(written)
+            if made is None:
+                self.glued.append("maity")
+            for word in made or []:
+                last = word.rsplit("/", 1)[-1]
+                if _GLUE in last and last.replace(_GLUE, ""):
+                    self.glued.append(last.replace(_GLUE, "").lower())
+        elif self.substituted and self.chars:
+            self.glued.append("".join(self.chars))
+        self.chars, self.written, self.substituted = [], [], False
+
+
+def _substitutions(line: str) -> tuple[list[str], str, list[str]] | None:
+    """What the hook reads of the line's command substitutions (a backtick pair, `$(…)`,
+    and `<(…)` or `>(…)` outside double quotes), outside single quotes: the text of each
+    outermost one; the line with each of them taken out, as one whose output is empty
+    leaves it (a process substitution leaves a path), and with each positional parameter
+    taken out and `$#` made `0`, as they are in a tool call; and the literal text of each
+    word a substitution is glued into, after the word's last `/`, quotes and backslashes
+    taken off, in lower case (`_Read`). None when one never closes. Quotes, escapes and nested
     parentheses in a substitution are passed over; a `case` or a heredoc in `$(…)` may be
     delimited otherwise than Bash delimits it, which only adds what `_in_substitution`
     reads, since the line itself is read as before."""
-    out: list[str] = []
-    bodies: list[str] = []
+    read = _Read()
+    out = read.out
     i, n, double = 0, len(line), False
     while i < n:
         c = line[i]
         if c == "\\":
             out.append(line[i : i + 2])
+            read.text(line[i + 1 : i + 2], line[i : i + 2])
             i += 2
             continue
         if c == "'" and not double:
@@ -1265,28 +1327,53 @@ def _substitutions(line: str) -> tuple[list[str], str] | None:
             if end < 0:
                 return None
             out.append(line[i : end + 1])
+            read.text(line[i + 1 : end], line[i : end + 1])
             i = end + 1
             continue
         if c == '"':
             double = not double
+            read.text("", c)
         elif c == "`":
             end = _backtick_end(line, i)
             if end < 0:
                 return None
-            bodies.append(line[i + 1 : end])
+            read.bodies.append(line[i + 1 : end])
+            read.glue()
             i = end + 1
             continue
         elif line[i + 1 : i + 2] == "(" and (c == "$" or (c in "<>" and not double)):
             end = _paren_end(line, i + 1)
             if end < 0:
                 return None
-            bodies.append(line[i + 2 : end])
+            read.bodies.append(line[i + 2 : end])
+            read.glue()
             out.append("" if c == "$" else "/dev/fd/0")
             i = end + 1
             continue
+        elif c == "$" and (m := _POSITIONAL.match(line, i) or _COUNT.match(line, i)):
+            made = "" if m.re is _POSITIONAL else "0"
+            out.append(made)
+            read.text(made)
+            i = m.end()
+            continue
+        elif not double and (c in " \t" or c in _SEPARATORS):
+            read.end()
+        else:
+            read.text(c)
         out.append(c)
         i += 1
-    return bodies, "".join(out)
+    read.end()
+    return read.bodies, "".join(out), read.glued
+
+
+def _part_of_maity(chars: str) -> bool:
+    """Whether a word's literal characters, in order, are part of `maity` with nothing
+    else: each one found in `maity` after the one before it (`ma`, `aity`, `maty`), two or
+    more of them, or `m` or `y` alone, the ends of the name. A substitution adds characters
+    to a word and takes none away, so a word with any other character never becomes
+    `maity`."""
+    rest = iter("maity")
+    return (len(chars) >= 2 or chars in ("m", "y")) and all(c in rest for c in chars)
 
 
 def _names_maity_as_line(text: str, depth: int) -> bool:
@@ -1299,8 +1386,10 @@ def _names_maity_as_line(text: str, depth: int) -> bool:
     found = _substitutions(text)
     if found is None:
         return names_maity(text)
-    bodies, without = found
-    if not bodies:
+    bodies, without, glued = found
+    if any(_part_of_maity(letters) for letters in glued):
+        return True
+    if not bodies and without == text:
         return False
     if depth >= _NESTING:
         return names_maity(text) or names_maity(without)
@@ -1312,17 +1401,21 @@ def _names_maity_as_line(text: str, depth: int) -> bool:
 def _in_substitution(command: str) -> str | None:
     """The reason to refuse a line by its command substitutions, or None: a substitution
     whose text, read as a line of its own, names `maity` (`_names_maity_as_line`) refuses it
-    outright; so does a line that names `maity` once its substitutions are taken out, as
-    output that is empty leaves it (`names_maity`, or as a word, braces expanded), with the
-    reason that line gets, or as not one plain call.
+    outright, and so does a word whose own text, with a substitution glued in, is part of
+    `maity` (`_part_of_maity`): substitutions may join it into the name. So does a line that
+    names `maity` once its substitutions and positional parameters are taken out, as output
+    that is empty leaves it (`names_maity`, or as a word, braces expanded), with the reason
+    that line gets, or as not one plain call.
     A line with a substitution that never closes counts when it names `maity` anywhere."""
     found = _substitutions(command)
     if found is None:
         return RUNNER_REFUSED if names_maity(command) else None
-    bodies, without = found
-    if not bodies:
+    bodies, without, glued = found
+    if not bodies and without == command:
         return None
-    if any(_names_maity_as_line(body, 1) for body in bodies):
+    if any(_part_of_maity(letters) for letters in glued) or any(
+        _names_maity_as_line(body, 1) for body in bodies
+    ):
         return PREFIX_REFUSED
     placement = _placement(without)
     if placement is not None or names_maity(without):

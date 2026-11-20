@@ -159,7 +159,8 @@ characters as text (`ma{ity,}` counts as `maity`); a word whose braces
 make more than 256 words refuses the line. A line that names `maity`
 inside a command substitution (`$(…)`, backticks) is refused outright
 as well, and so is a line that names `maity` once its command
-substitutions are taken out, or where an expansion is glued to `maity`. That covers
+substitutions are taken out, where an expansion is glued to `maity`, or
+with a word that substitutions may join into `maity`. That covers
 text too: `echo maity | cat` or `git commit -m 'fix maity'` is refused,
 and so is `maity` in a command substitution inside quoted text such as a
 commit message, so text that mentions `maity` goes in a file
