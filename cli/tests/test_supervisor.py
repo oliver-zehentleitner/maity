@@ -952,12 +952,94 @@ def test_serve_logs_each_new_state_of_a_placement_once(
     sup.update([placement(agent=NEW)])
     settle(sup)
     settle(sup)
-    lines = [line for line in logs if line.startswith("plc-0003: ")]
-    assert lines == [
-        "plc-0003: starting (generation 1)",
-        "plc-0003: failed join_failed instance_quota (generation 1)",
-    ]
+    # The refusal's warning comes from the start thread, so its place against `starting` is
+    # not fixed; it always comes before `failed`, which is logged once the thread entered it.
+    warning = "plc-0003: warning: join pickup refused: instance_quota (reason -, why -)"
+    failed = "plc-0003: failed join_failed instance_quota (generation 1)"
+    assert logs.count(warning) == 1
+    assert logs.index(warning) < logs.index(failed)
+    lines = [line for line in logs if line.startswith("plc-0003: ") and line != warning]
+    assert lines == ["plc-0003: starting (generation 1)", failed]
     assert not any("AAAA-BBBB-CCCC" in line or "/j/tok" in line for line in logs)
+
+
+def _not_allowed(why: str) -> hub.HubError:
+    err = hub.HubError("join: pickup_not_allowed: no", code="pickup_not_allowed", status=409)
+    err.details = {"why": why}
+    return err
+
+
+@pytest.mark.parametrize(
+    "why",
+    ["not_running", "stale_generation", "credential_issued", "project_not_allowed",
+     "handle_taken", "creator_lacks_authority"],
+)  # fmt: skip
+def test_a_refused_pickup_logs_one_warning_with_its_code_and_why(
+    world: Any, monkeypatch: pytest.MonkeyPatch, why: str
+) -> None:
+    """tsk-fveaj86ec6e2: each `pickup_not_allowed` cause of §15.9 is named in one warning
+    line, while the reported detail keeps the code alone."""
+    sup, _, _, _, logs = world
+    sup.client = pickups = Pickups(_not_allowed(why))
+    joining(monkeypatch)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    warnings = [line for line in logs if "warning:" in line]
+    assert warnings == [
+        f"plc-0003: warning: join pickup refused: pickup_not_allowed (reason -, why {why})"
+    ]
+    rec = sup.records["plc-0003"]  # the report keeps the code alone
+    assert (rec.state, rec.reason, rec.detail) == ("failed", "join_failed", "pickup_not_allowed")
+    # and that is what reached the hub: the Pickups client holds the reports on the wire
+    assert states(pickups)[-1] == ("failed", "join_failed", "pickup_not_allowed")
+
+
+@pytest.mark.parametrize(
+    ("pickup", "line"),
+    [
+        (_forbidden("member_agents_max"),
+         "join pickup refused: forbidden (reason member_agents_max, why -)"),
+        (hub.HubError("404 Not Found", code="not_found", status=404),
+         "join pickup refused: not_found (reason -, why -)"),
+        (_not_allowed("Some Text mty1.crd-x.y"),
+         "join pickup refused: pickup_not_allowed (reason -, why -)"),
+        (hub.HubError("odd", code="Some Text", status=409),
+         "join pickup refused: - (reason -, why -)"),
+    ],
+)  # fmt: skip
+def test_a_pickup_refusal_logs_only_values_in_code_form(
+    world: Any, monkeypatch: pytest.MonkeyPatch, pickup: hub.HubError, line: str
+) -> None:
+    sup, _, _, _, logs = world
+    sup.client = Pickups(pickup)
+    joining(monkeypatch)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert [x for x in logs if "warning:" in x] == [f"plc-0003: warning: {line}"]
+    assert not any("mty1." in x or "Some Text" in x for x in logs)
+
+
+@pytest.mark.parametrize(
+    ("joined", "line"),
+    [
+        ((False, "not_found"), "join exchange refused: not_found (reason -, why -)"),
+        ((False, "code_invalid"), "join exchange refused: code_invalid (reason -, why -)"),
+        ((False, None), "join exchange refused: - (reason -, why -)"),
+    ],
+)
+def test_a_refused_exchange_logs_one_warning_with_its_code(
+    world: Any, monkeypatch: pytest.MonkeyPatch, joined: tuple[bool, str | None], line: str
+) -> None:
+    sup, _, _, _, logs = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch, joined)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert [x for x in logs if "warning:" in x] == [f"plc-0003: warning: {line}"]
+    assert not any("AAAA-BBBB-CCCC" in x or "/j/tok" in x for x in logs)
 
 
 def test_a_failed_clone_logs_why_and_reports_only_the_code(
