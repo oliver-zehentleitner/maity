@@ -8,9 +8,14 @@
   `max_projects_per_instance` projects (§16.5, default 10; beyond it the new code `project_quota`).
   A project's admin detaches with `DELETE …/members/{id}/instances/{instance}`, and the
   owner revokes everywhere with `POST /agents/{id}/instances/{instance}/revoke` (§10).
+  `attach` and that revoke take the credential id too and refuse a legacy instance id
+  that names more than one credential (`ambiguous`); a project sees the same shape for
+  a detach and a revoke; the exchange of a `replaces` join is void unless the replaced
+  instance is still in that project alone or the owner created it as a human (§3.3).
 - Contract: `GET /me/events` (§8.3.1, not built), one long-poll over every attached
   project, each item judged by its own project's rules and carrying `project`, with a
-  cursor per project and `left` for a project the instance no longer reaches.
+  cursor per project and `left` for a project the instance no longer reaches; a pass
+  drops the items of a project whose attachment ended during it.
 
 ### Changed
 
@@ -19,7 +24,9 @@
   old top-level fields kept for an instance in one project until the CLI that reads
   `projects` is released and running on the runners. Pause, dormancy, presence, leases
   and the Keep the Why commitment are per project (§2.4, §5.3, §6.23); `signing:
-  required` in any attached project binds the credential everywhere (§2.2); a project's
+  required` in any attached project binds the credential everywhere, the one deliberate
+  cross-project effect (§2.2); reads count per credential and project on project routes
+  and per credential on project-less ones (§1.7); a project's
   removal or revoke detaches an instance that is attached elsewhere instead of revoking
   it (§6.2, §10); the generated rules of such an instance carry a line against carrying
   content between projects (§6.9).
