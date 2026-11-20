@@ -236,7 +236,10 @@ def _cookie_headers(facts: RequestFacts) -> None:
 def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = True) -> Caller:
     _cookie_headers(facts)
     now = clock.now()
-    id_hash = session_id_hash(facts.cookies[SESSION_COOKIE])
+    presented = facts.cookies[SESSION_COOKIE]
+    if not presented.isascii():  # names no session; `session_id_hash` encodes ASCII only
+        raise unauthenticated("the session has ended or expired")
+    id_hash = session_id_hash(presented)
     # The session is checked before anything is written (§2.4): an ended or expired session,
     # or one of a deleted account, sends no presence write at all, and neither does a read
     # past the limit per credential (§1.7), counted once the session is known to be live.

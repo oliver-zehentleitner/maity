@@ -416,6 +416,25 @@ def test_existing_session_requires_csrf_but_expired_cookie_can_sign_in(
     assert client.post("/api/v1/auth/email-code", json={"code": code}).status_code == 200
 
 
+@pytest.mark.parametrize("session", [b"s\xc3\xa9", b"s\xe9"])  # read as latin-1: both non-ASCII
+def test_a_non_ascii_session_cookie_names_no_session_and_can_sign_in(
+    make_client: ClientFactory, migrated: Engine, session: bytes
+) -> None:
+    client, _ = setup(make_client, migrated)
+    # Raw bytes, since the client encodes a str header as ASCII; a Cookie header given here
+    # replaces the client's cookies, so the pending one is sent in it too.
+    asked: Any = {"Cookie": b"maity_session=" + session}
+    response = client.post(
+        "/api/v1/auth/email-link", json={"address": "ada@example.com"}, headers=asked
+    )
+    assert response.status_code == 202, response.text
+    _, code = mail(migrated)
+    pending = client.cookies["maity_pending"].encode()
+    redeemed: Any = {"Cookie": b"maity_pending=" + pending + b"; maity_session=" + session}
+    answer = client.post("/api/v1/auth/email-code", json={"code": code}, headers=redeemed)
+    assert answer.status_code == 200, answer.text
+
+
 def test_request_expiry_is_not_extended_by_delayed_background_job(
     make_client: ClientFactory, migrated: Engine
 ) -> None:

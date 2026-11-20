@@ -212,7 +212,7 @@ def end_presented(conn: Connection, presented: str | None) -> None:
     change of an account without its session takes it (`write_guard.share`). A deletion of
     that account then runs before or after this, never across it; after it, the session is
     ended already and nothing is written."""
-    if not presented:
+    if not presented or not presented.isascii():  # a non-ASCII value names no session
         return
     which = t.human_session.c.id_hash == session_id_hash(presented)
     owner = conn.execute(

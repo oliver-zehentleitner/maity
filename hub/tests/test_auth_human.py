@@ -264,6 +264,34 @@ def test_logout_ends_the_session(make_client: ClientFactory, owner: str) -> None
     assert stolen.get("/api/v1/me").headers["Maity-Error"] == "unauthenticated"
 
 
+# Raw bytes, since the client encodes a str header as ASCII. Starlette reads the cookie header as
+# latin-1, so both arrive as a non-ASCII `maity_session`: UTF-8 "é" as "Ã©", latin-1 "é" as "é".
+NON_ASCII_SESSIONS = [b"maity_session=s\xc3\xa9", b"maity_session=s\xe9"]
+
+
+@pytest.mark.parametrize("cookie", NON_ASCII_SESSIONS)
+@pytest.mark.parametrize(
+    ("method", "path"), [("GET", "/api/v1/me"), ("POST", "/api/v1/auth/logout")]
+)
+def test_a_non_ascii_session_cookie_is_unauthenticated(
+    make_client: ClientFactory, owner: str, cookie: bytes, method: str, path: str
+) -> None:
+    headers: Any = {"Cookie": cookie}
+    response = make_client().request(method, path, headers=headers)
+    assert response.status_code == 401, response.text
+    assert response.headers["Maity-Error"] == "unauthenticated"
+    assert response.json()["error"]["code"] == "unauthenticated"
+
+
+@pytest.mark.parametrize("cookie", NON_ASCII_SESSIONS)
+def test_a_non_ascii_session_cookie_does_not_stop_a_login(
+    make_client: ClientFactory, owner: str, cookie: bytes
+) -> None:
+    headers: Any = {"Cookie": cookie}  # the presented session a login ends first (§2.6.5)
+    response = factory.login_handle(make_client(), "maintainer", headers=headers)
+    assert response.status_code == 200, response.text
+
+
 def test_a_session_expires_after_14_idle_days(make_client: ClientFactory, owner: str) -> None:
     client = make_client()
     _login(client)
