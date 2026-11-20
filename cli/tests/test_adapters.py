@@ -134,28 +134,30 @@ def test_no_harness_gets_a_granted_rule_with_something_in_front(tmp_path: Path) 
     assert [r for r in opencode if r not in opencode_base] == ["make test", "make test *"]
 
 
-def test_an_os_uuid_v4_source_is_allowed_for_the_allowlist_harnesses(tmp_path: Path) -> None:
-    """Keep-the-Why gives every entry an Id made by an OS command (AGENTS.md); under a
-    deny-by-default command allowlist `uuidgen`, `node` and `od` on `/dev/urandom` are all
-    refused, so the runner allows the kernel's generator. Claude Code and opencode gate
-    commands this way; Codex and agy run an unlisted command in their sandbox instead."""
-    assert adapters.UUID_COMMAND == "cat /proc/sys/kernel/random/uuid"
-    rule = f"Bash({adapters.UUID_COMMAND})"
-    # Present with and without the harness's own sandbox, and independent of the grant.
+def test_no_os_uuid_command_is_allowed_maity_uuid_makes_the_ids(tmp_path: Path) -> None:
+    """Keep-the-Why Ids come from `maity uuid`, which runs wherever `maity` does. The exact
+    `cat /proc/sys/kernel/random/uuid` allow is gone: placed Claude Code sessions refused it
+    all the same (a read outside the working directories), and opencode's
+    `external_directory: deny` gates that path too (cli/context/runner.md). With and without
+    the sandbox, and with an empty grant, neither harness's list names a UUID source."""
     plain = dataclasses.replace(context(tmp_path), grant=config.RepositoryGrant())
-    assert rule in adapters.claude_settings(plain)["permissions"]["allow"]
-    assert (
-        rule
-        in adapters.claude_settings(context(tmp_path / "s", sandbox=True))["permissions"]["allow"]
+    sandboxed = dataclasses.replace(
+        context(tmp_path / "s", sandbox=True), grant=config.RepositoryGrant()
     )
-    # opencode resolves a command by the LAST rule in the map whose glob matches (§6.1), so
-    # check the whole map in order, not only the dict value: the bare command is allowed, and
-    # the exact rule is not reached around by a line that chains it with another command — only
-    # the catch-all `*` deny matches that, so it stays denied.
-    bash = adapters.opencode_config(context(tmp_path / "o", harness_id="opencode"))["permission"][
-        "bash"
+    opencode = dataclasses.replace(
+        context(tmp_path / "o", harness_id="opencode"), grant=config.RepositoryGrant()
+    )
+    claude_rules = [
+        *adapters.claude_settings(plain)["permissions"]["allow"],
+        *adapters.claude_settings(sandboxed)["permissions"]["allow"],
     ]
+    bash = adapters.opencode_config(opencode)["permission"]["bash"]
+    # Not a bare "uuid": tmp_path carries this test's name, and so do the file tools' rules.
+    for rule in (*claude_rules, *bash):
+        assert "kernel/random" not in rule and "uuidgen" not in rule, rule
+    assert not hasattr(adapters, "UUID_COMMAND")
 
+    # `maity uuid` is what replaces it: one plain `maity` call, allowed in both lists.
     def resolve(command: str) -> str:
         verdict = "deny"
         for pattern, value in bash.items():
@@ -163,10 +165,9 @@ def test_an_os_uuid_v4_source_is_allowed_for_the_allowlist_harnesses(tmp_path: P
                 verdict = value
         return verdict
 
-    assert bash[adapters.UUID_COMMAND] == "allow"
-    assert resolve(adapters.UUID_COMMAND) == "allow"
-    assert resolve(f"{adapters.UUID_COMMAND} && id") == "deny"
-    assert resolve(f"{adapters.UUID_COMMAND}; rm -rf /") == "deny"
+    assert "Bash(maity *)" in claude_rules
+    assert resolve("maity uuid") == "allow"
+    assert resolve("cat /proc/sys/kernel/random/uuid") == "deny"
 
 
 def test_claude_code_grant(tmp_path: Path) -> None:

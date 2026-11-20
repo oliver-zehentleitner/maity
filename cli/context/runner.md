@@ -456,7 +456,8 @@ agents outlive it.
 
 **Id:** 0a639f39-f76c-4a77-ac43-ae8ce1d42434
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 4f960c44-8b9f-459e-978f-dff9237271a6
 **Evidence:** inferred
 **Source:** card tsk-bj6fs628q6pd (a placed runner agent's field report that the sandbox refuses every OS UUID v4 source); the Keep the Why skill 0.20.3 (`SKILL.md`, the `Id` rule) and `AGENTS.md` (every entry's Id is made by an OS command, never from memory)
 **Verification:** contradicted — the allowlist mechanism still reads from `adapters.py` and `docs/runners.md` as described, but the inferred live-session efficacy is contradicted: observed in a Claude Code runner placement (CLI 0.1.0a17), 2026-11-20, a plain `cat /proc/sys/kernel/random/uuid` and `uuidgen` were both refused by the harness (denied, "don't ask" mode); card tsk-1rejhywcw3qh reports the `/proc` read refused for three further placed sessions the same day
@@ -471,11 +472,13 @@ rule in `permissions.allow`, with `defaultMode: dontAsk`) and opencode
 (a `bash` rule, the catch-all being `deny`). It is the one source
 (`adapters.UUID_COMMAND`); the rule is unconditional, not from a grant.
 The allowlist mechanism and that these two harnesses refuse unlisted
-commands are **confirmed** from the code and `docs/runners.md`; that a
-live Claude Code or opencode session now makes its UUID with the
-allowed command, and that Codex and agy run it inside their own
-sandbox, is **inferred** and not yet observed in a placed session —
-the weaker grade is why this entry's Evidence is `inferred`.
+commands are **confirmed** from the code and `docs/runners.md`. That a
+live Claude Code session makes its UUID with the allowed command is
+**contradicted**: placed Claude Code sessions refused it on 2026-11-20
+(the Verification line). For opencode it was never observed either
+way, and that Codex and agy run the command inside their own sandbox
+stays **inferred**. The weakest grade decides, which is why this
+entry's Evidence is `inferred`.
 
 **Reason:** every Keep the Why entry an agent writes needs an `Id` made
 by an OS command — never composed from memory — so a session that
@@ -507,6 +510,51 @@ with free arguments.
   an unlisted `cat /proc/sys/kernel/random/uuid` already runs inside
   their own sandbox (Codex's `:workspace` profile, agy's
   `proceed-in-sandbox`).
+
+## The runner allows no UUID command; `maity uuid` makes the Ids
+
+**Id:** 4f960c44-8b9f-459e-978f-dff9237271a6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-jjxxspts3t40 and the lead's go on it, 2026-11-20; probes in a placed Claude Code session (CLI 0.1.0a17), 2026-11-20; `cli/src/maity/runner/adapters.py` (`opencode_config`, `external_directory`)
+**See:** runner.md#the-allowlist-harnesses-allow-one-os-uuid-v4-source-the-kernels-generator — 0a639f39-f76c-4a77-ac43-ae8ce1d42434 — as of 2026-11-20
+**See:** commands.md#maity-uuid-makes-keep-the-why-ids-where-uuidgen-is-refused — 2b2be9a9-25d6-4396-b35d-5a2c242a4997 — as of 2026-11-20
+**Revisit when:** a harness applies an exact `Bash(...)` allow before its path check, or `maity` stops being allowed in some harness a placement runs
+
+The runner no longer allows `cat /proc/sys/kernel/random/uuid` (the
+former `adapters.UUID_COMMAND`) in Claude Code or opencode placements.
+An agent makes its Keep the Why Ids with `maity uuid`, which runs
+wherever `maity` is allowed, on every harness.
+
+**Reason:** the exact allow never took effect in a placed Claude Code
+session. Claude Code checks a read command that names a path outside
+the working directories before it applies the allow rules, so the
+exact rule does not win. The probes in one placed session showed this:
+`cat` of a file inside the clone runs with no rule for it, while
+`ls /proc/sys/kernel/random` and the allow-listed
+`cat /proc/sys/kernel/random/uuid` are both refused, and exact rules
+for commands without a path (`git status`) do match. The probes are
+**confirmed**. That the path check is the cause is **inferred**, since
+the harness's own source and the session's settings file were not read
+from inside the placement. opencode's config sets
+`external_directory: deny`, which gates the same path; never observed
+in an opencode session, so also **inferred**. A rule that cannot work
+reads as a UUID source that is not there.
+
+**Rejected alternatives:**
+- Adding a `Read(//proc/sys/kernel/random/uuid)` allow so that the path
+  check passes: not verifiable from inside a placement, since the
+  settings are fixed at launch and a test needs a restarted placement.
+  It would also be a second, harness-specific rule beside `maity uuid`,
+  which already covers every harness.
+- Keeping the rule for opencode only: unobserved there, and the same
+  `external_directory` deny likely refuses it; one source for every
+  harness is simpler to explain.
+
+A CLI older than the release that ships `maity uuid` (0.1.0a17
+included) has no UUID source in a placement at all. Dropping the rule
+takes nothing away there, since it never ran.
 
 ## The command allowlists are not a boundary until agents run as their own user
 
