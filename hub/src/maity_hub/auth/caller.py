@@ -61,6 +61,10 @@ class RequestFacts:
     # The credentials this request's read was counted for (§1.7 "Reads per credential"): one
     # per request like `request`, so a run again of its transaction is not counted again.
     reads_paid: set[str] = field(default_factory=set, compare=False)
+    # The (credential, nonce) pairs this request spent (§2.2), kept across its transaction's
+    # runs like `reads_paid`, so that `keep_nonces_spent` can spend them again once a refusal
+    # has rolled the transaction back.
+    nonces_spent: set[tuple[str, str]] = field(default_factory=set, compare=False)
     # MAITY_MAX_READS_PER_MINUTE as the environment set it (None: the admin's or the default),
     # and the route's pattern for the read limit's log line (§1.7 "Reads per credential").
     max_reads_env: int | str | None = None
@@ -411,6 +415,11 @@ def _signed_headers(conn: Connection, facts: RequestFacts) -> tuple[str, str, st
     signature = facts.headers.get("maity-signature", "")
     if not (_timestamp_shape(timestamp) and _nonce_shape(nonce) and _hex64(signature)):
         raise ApiError(401, "signature_invalid", "the signature headers are malformed")
+    on_request = facts.headers.get("maity-on-request")
+    if on_request is not None and not ids.has_shape("request", on_request):
+        # Before the canonical string is built: its line is the bare value, and only a request
+        # id's shape keeps it apart from the `for:` line of `Maity-For` (§2.2).
+        raise ApiError(401, "signature_invalid", "Maity-On-Request is not a request id")
     now = clock.now()
     stamp = int(timestamp)
     # A request signed before the nonces were known could be replayed now, so it is refused as
@@ -452,6 +461,7 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
     )
     if not spent_first:
         raise ApiError(401, "nonce_reused", "this nonce was used within the window")
+    facts.nonces_spent.add((credential_id, nonce))
     if is_runner_credential(row.id):
         return _runner(conn, row, facts)
     caller = _agent(conn, row, "signed", renew, facts)
@@ -460,6 +470,18 @@ def _signed(conn: Connection, facts: RequestFacts, credential_id: str, renew: bo
 
 NONCES = credentials.NonceWindow()
 PROCESS_STARTED = int(time.time())
+
+
+def keep_nonces_spent(conn: Connection, facts: RequestFacts) -> None:
+    """Spend again, in `conn`'s own transaction, the nonces this request spent before a
+    refusal rolled its authentication back (§2.2): a refused request keeps its nonce spent,
+    so the same request sent again is `nonce_reused` once the refusal's condition ends, as
+    it already is where the process keeps the nonces (hub/context/auth.md fbc8c3e0). An insert
+    that finds the nonce spent meanwhile leaves it spent."""
+    if not nonces.shared(conn):
+        return  # the process's window is outside the transaction and kept them
+    for credential_id, nonce in sorted(facts.nonces_spent):
+        nonces.first_use(conn, credential_id, nonce)
 
 
 def _timestamp_shape(timestamp: str) -> bool:

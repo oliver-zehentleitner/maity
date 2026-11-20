@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from maity_hub import events, namespace, request_stats, runner_revoke, write_guard
 from maity_hub import tables as t
 from maity_hub.auth import second_factor, sessions
-from maity_hub.auth.caller import Caller, RequestFacts, authenticate
+from maity_hub.auth.caller import Caller, RequestFacts, authenticate, keep_nonces_spent
 from maity_hub.auth.permitted import Calls
 from maity_hub.config import Settings
 from maity_hub.db import retrying_async
@@ -135,6 +135,12 @@ async def authenticated(
         async with engine.begin() as conn:
             await conn.run_sync(_end_session, ended)
         raise unauthenticated("the sign-in has to start again") from None
+    except Exception:
+        # A refusal after the nonce was spent rolled the spend back with the rest; it is
+        # spent again, committed on its own, before the refusal is answered (§2.2).
+        if facts.nonces_spent:
+            await retrying_async(lambda: _keep_nonces_spent(engine, facts))
+        raise
     request.state.caller = caller
     if caller.kind == "human" and caller.human_id is not None:
         write_guard.bind(caller.human_id)  # its writes commit only while it exists (§2.9)
@@ -142,6 +148,11 @@ async def authenticated(
         # A bridge's writes for an agent commit only while the connection lives (§2.3).
         write_guard.bind_bridge(caller.project_id, caller.bridge.bridge_id)
     return caller
+
+
+async def _keep_nonces_spent(engine: AsyncEngine, facts: RequestFacts) -> None:
+    async with engine.begin() as conn:
+        await conn.run_sync(keep_nonces_spent, facts)
 
 
 def _end_session(conn: Connection, ended: second_factor.SessionEnded) -> None:

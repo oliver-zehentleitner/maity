@@ -520,6 +520,46 @@ the window holds nothing of the request.
   engines that run one replica, for what one comparison solves.
 
 
+## A refused request keeps its nonce spent: the nonce is claimed again after the rollback
+
+**Id:** fbc8c3e0-d945-4237-89dc-0a4cc8e1282d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-thjx5bdqnq9f; checked on 2026-11-20 on SQLite and PostgreSQL with `tests/test_refused_nonce.py`
+**See:** auth.md#a-request-run-again-after-a-deadlock-is-still-the-first-user-of-its-nonce — 05c462cb-0a99-41e7-98d3-c226c085a697 — as of 2026-11-20
+**Revisit when:** the nonce claim moves out of the authentication transaction, or the process's nonce window goes away
+
+A signed request spends its nonce inside the authentication transaction, and several refusals
+come after that in the same transaction: an isolated agent, a read past the limit, another
+project, a bridge's `Maity-For` refusal, a runner outside `/runner/*`. Their rollback undid the
+spend on PostgreSQL, where the nonce is a row; in the process's window (SQLite, MariaDB) it
+stayed spent. Now `RequestFacts.nonces_spent` keeps what the request spent across its runs, and
+`deps.authenticated` claims those nonces again in a committed transaction of their own whenever
+the authentication ends in an exception, before the refusal is answered
+(`caller.keep_nonces_spent`; a no-op where the process keeps the nonces).
+
+**Reason:** a refused request sent again unchanged inside the timestamp window was accepted on
+PostgreSQL once the refusal's condition had ended, while SQLite and MariaDB answered
+`nonce_reused`: the engines disagreed, and a refusal is no reason to hand a nonce back (05c462cb
+already rejects giving one back). Claiming again on the error path changes nothing on the
+accepted path, the one every signed request takes: no extra commit, no second connection. It
+lives in the one function every authentication runs through, beside the two other writes that
+commit on their own after a refusal (a due runner revocation, an ended second-factor session),
+and it leaves 05c462cb intact: a deadlock's retry still rolls the claim back and is the first
+user again. Between the rollback and the new claim, a copy of the request sent at that very
+moment could claim the nonce first; it meets the same state, and so the same refusal, unless
+the condition ends in that instant.
+
+**Rejected alternative:** claiming the nonce in its own committed transaction before the rest
+of the authentication. It closes that instant too, but costs every signed request one more
+transaction; claiming it from inside the authentication transaction would hold two pooled
+connections per request (a pool exhausted by requests each waiting for their second), and
+claiming it before the transaction would mean verifying the signature in a transaction of its
+own first. A committed claim would also make a deadlock's retry find its own nonce spent on
+PostgreSQL, which needs the request identity 05c462cb gives only the process's window.
+
+
 ## A sign-in's confirmation is stored on its session, carried over from the read marks once
 
 **Id:** f5611a2e-9219-4e5e-a816-5700da32a47c
