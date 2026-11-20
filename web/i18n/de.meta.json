@@ -13811,6 +13811,10 @@
     "en": "dd654fb06bc5b641",
     "text": "b418f62b56afed18"
   },
+  "placements.fresh_session": {
+    "en": "f065e95239af2c89",
+    "text": "50d587eeb7972af4"
+  },
   "placements.generation": {
     "en": "9b9df9a3ed351ac2",
     "text": "3b00347c1427faca"
@@ -13995,6 +13999,10 @@
     "en": "5d15ffc78d58b477",
     "text": "0b93eb61af7a3053"
   },
+  "placements.not_reset": {
+    "en": "57a8f3dae5cc9ab1",
+    "text": "53596567af9f89c5"
+  },
   "placements.not_restarted": {
     "en": "e8f1c3c51f9bfa2d",
     "text": "aa94a3e668c6e966"
@@ -14130,6 +14138,26 @@
   "placements.reported": {
     "en": "2dd87877229aaceb",
     "text": "648ea314b8998ecd"
+  },
+  "placements.reset": {
+    "en": "bf91b71a9aa76e94",
+    "text": "128d0107274e02eb"
+  },
+  "placements.reset.ask": {
+    "en": "2c5e3228c6406cf9",
+    "text": "56740f73f8c43be1"
+  },
+  "placements.reset.label": {
+    "en": "e45934b0576e8f32",
+    "text": "4b67a5f2a0683d80"
+  },
+  "placements.reset.yes": {
+    "en": "a1b557a9d90f21c5",
+    "text": "50ad37462a37171c"
+  },
+  "placements.resetting": {
+    "en": "39030c5d54ee83ba",
+    "text": "441e7ae82f68f025"
   },
   "placements.restart": {
     "en": "61ecb75a10705708",

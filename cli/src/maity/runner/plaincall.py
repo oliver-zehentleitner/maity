@@ -5,7 +5,9 @@ first word is `maity`, or whose words before a word `maity` are only assignments
 in `ALLOWED_BEFORE_MAITY` (`held`), through only when it is one plain call: words of letters,
 digits and `_-./:=@%+,~^#`, quoted text without expansions, and nothing else. A pipe, a chain, a
 redirect, a background `&`, a substitution, a heredoc, a newline or an unescaped `$` outside
-single quotes is refused before the command runs (cli/context/runner.md). Any other line in
+single quotes is refused before the command runs (cli/context/runner.md). Where the line's
+command starts is read past its leading comment lines and blank lines, as Claude Code reads
+it; the line itself is still judged whole, so such a line is refused. Any other line in
 which `maity` is a word (`prefixed`) is
 refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
 a subshell or a group before it, or `maity` by a path. A word counts as `maity` (and as
@@ -123,14 +125,30 @@ _ASSIGNMENT = re.compile(
 )
 
 
+def _past_comment_lines(command: str) -> str:
+    """The line without its leading comment lines and blank lines: lines whose first
+    character after spaces and tabs is a `#`, or that hold only spaces and tabs. Claude Code
+    reads the command of a call after them, and so does `_placement` when it decides where
+    the line's command starts. Only that decision reads what is left: `plain` and
+    `read_whole` still read the whole line, so a line that holds a comment line and names
+    `maity` is refused all the same (cli/context/runner.md)."""
+    lines = command.split("\n")
+    k = 0
+    while k < len(lines) and lines[k].lstrip(" \t")[:1] in ("", "#"):
+        k += 1
+    return "\n".join(lines[k:])
+
+
 def _placement(command: str) -> str | None:
-    """Where `maity` stands on the line: "held" when the line's first word is `maity`
-    (`_MAITY`), when every word before its first word `maity` (`_is_maity`) is an assignment
-    `_ASSIGNMENT` allows and that word is `maity` alone (in any case, not by a path),
-    or when a quote never closes on a line that names `maity`; "prefixed" when `maity` is a
-    word after anything else, by a path, or a word of quoted text that holds spaces or
-    operators, read again as a line (`_maity_in_text`); None when `maity` is no word of the
-    line."""
+    """Where `maity` stands on the line, read past its leading comment lines and blank lines
+    (`_past_comment_lines`) and its leading assignments: "held" when the line's first word
+    is `maity` (`_MAITY`), when every word before its first word `maity` (`_is_maity`) is an
+    assignment `_ASSIGNMENT` allows and that word is `maity` alone (in any case, not by a
+    path), or when a quote never closes on a line that names `maity`; "prefixed" when
+    `maity` is a word after anything else (an assignment to another name included), by a
+    path, or a word of quoted text that holds spaces or operators, read again as a line
+    (`_maity_in_text`); None when `maity` is no word of the line."""
+    command = _past_comment_lines(command)
     if _MAITY.match(command) is not None:
         return "held"
     try:

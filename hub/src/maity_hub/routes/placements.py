@@ -95,6 +95,7 @@ class PlacementPatch(Strict):
 
 class RestartIn(Strict):
     rejoin: bool = False
+    fresh_session: bool = False  # a reset: the start drops the harness's last session
 
 
 class Empty(Strict):
@@ -784,6 +785,7 @@ def restart_placement(
     slug: str, placement_id: str, request: Request, caller: AnyCaller, body: RestartIn | None = None
 ) -> JSONResponse:
     rejoin = body.rejoin if body else False
+    fresh = body.fresh_session if body else False
 
     def action(conn: Connection) -> idempotency.Outcome:
         mine = membership(conn, caller, slug)
@@ -811,7 +813,9 @@ def restart_placement(
             placement = _settle_by_right(conn, placement, actor, mine.principal_id, approve=True)
         _require_open(project)
         _require_live(conn, runner)
-        placement = pl.restart(conn, placement, rejoin, actor, mine.principal_id)
+        placement = pl.restart(
+            conn, placement, rejoin, actor, mine.principal_id, fresh_session=fresh
+        )
         return idempotency.Outcome(200, "placement", placement.id, _view(conn, mine, placement))
 
     return idempotency.run(engine_of(request), request, caller, action)

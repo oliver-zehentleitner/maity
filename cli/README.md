@@ -1183,7 +1183,10 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   last conversation (`--continue`). `crash_cap` such ends in a row,
   with no `maity wait` seen in between, hold the placement as
   `failed`/`hung`. The minutes are
-  30 and 10 until the hub sends the owner's health settings. Attaching
+  30 and 10 until the hub sends the owner's health settings. A reset
+  from the hub (a restart with `fresh_session`, docs/api.md §15.6)
+  starts the next generation on a fresh session instead, whatever the
+  harness, and the runner's log says so (`reset: a fresh session`). Attaching
   to the session pauses the check, so the runner never types while you
   are there. Needs `ps` where the agents run.
 - **Adoption and orphans.** After a runner restart, a live session of a
@@ -1404,16 +1407,21 @@ needs it.
 | `ssh` | the remote user's files on that host, minus that user's home secrets, its `~/.maity-runner` and the other clones' credentials listed on the host; never the runner host | run git as the remote user in an agent's clone |
 
 **Claude Code's sandbox and injected text.** maity runs outside Claude
-Code's sandbox, as a plain `maity …` call. Checked with Claude Code
-2.1.318: a command, a variable or a PATH placed in front of that call
-does not run outside the sandbox (the runner's permission rules refuse
-it, and past them it runs inside). This is the harness's behaviour, not
-a contract: with another Claude Code version the runner still starts the
-agent, and `maity runner check` and the runner's log say that the
-version was not checked. A repository's grant may only add plain
+Code's sandbox, as a plain `maity …` call. The runner's hook keeps a
+placed session to that one plain call: a line with a command, a wrapper
+or a path in front of `maity` is refused before it runs, and only
+assignments to `MAITY_WAIT_TIMEOUT`, `NO_COLOR`, `LANG`, `LC_*` or `TZ`
+may stand before it, the line then held to one plain call. The runner
+does not rely on how Claude Code's sandbox exclusion treats a call with
+something in front of `maity`. The hook needs Claude Code 2.1.295 or
+later; the version whose sandbox was last checked is recorded, and with
+another Claude Code version the runner still starts the agent, and
+`maity runner check` and the runner's log say that the version was not
+checked. A repository's grant may only add plain
 commands (below, under the configuration); a rule with a variable or
 `env` in front, or that names `maity`, is refused when the configuration
-is read. Not covered: Codex. Where it does not hold, a prefixed call would run as the
+is read. Not covered: Codex. Where the hook does not hold, such a call
+could run as the
 operator's account in the `single` layout, as the agents' user's account
 in `agent_user`. Run agents that read untrusted text (issues, pull
 requests, web pages) in the `agent_user` layout, which keeps your own

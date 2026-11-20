@@ -5396,6 +5396,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   btn(plRow("plc-0002"), "Restart with a new join").click(); await tick();
   btn(plRow("plc-0002"), "Yes, restart with a new join").click(); for (let k = 0; k < 6; k++) await tick();
   expect(plPosts.length === 2 && JSON.stringify(plPosts[1][1]) === JSON.stringify({ rejoin: true }), "placements: a new join is a restart with rejoin");
+  expect(btn(plRow("plc-0001"), "Reset") && btn(plRow("plc-0001"), "Reset").getAttribute("aria-label") === "Reset Agent B"
+    && (() => { const bs = plRow("plc-0001").querySelectorAll("button").map((b) => b.textContent); return bs.indexOf("Reset") === bs.indexOf("Restart") + 1; })()
+    && !plFacts("plc-0001").includes("a fresh session"),
+    "placements: Reset stands next to Restart; a plain restart's generation is no fresh one");
+  btn(plRow("plc-0001"), "Reset").click(); await tick();
+  expect(plPosts.length === 2 && text(plRow("plc-0001")).includes("Reset Agent B? Its running conversation is dropped and it starts with a fresh session. The clone and its branches stay.")
+    && btn(plRow("plc-0001"), "Yes, reset") && btn(plRow("plc-0001"), "Cancel"),
+    "placements: Reset asks once more first: the conversation goes, the clone and its branches stay");
+  btn(plRow("plc-0001"), "Cancel").click(); await tick();
+  expect(plPosts.length === 2 && btn(plRow("plc-0001"), "Reset"), "placements: a cancelled reset sends nothing");
+  btn(plRow("plc-0001"), "Reset").click(); await tick();
+  btn(plRow("plc-0001"), "Yes, reset").click(); for (let k = 0; k < 6; k++) await tick();
+  expect(plPosts.length === 3 && plPosts[2][0] === "/projects/maintainer/maity/placements/plc-0001/restart" && JSON.stringify(plPosts[2][1]) === JSON.stringify({ fresh_session: true })
+    && plFacts("plc-0001").includes("Waiting for the runner to act on generation 6") && plFacts("plc-0001").includes("generation 6 · a fresh session"),
+    "placements: a confirmed reset is one restart with fresh_session; the row says its generation starts fresh");
   win.Maity.api.patch = (p, b) => (p.includes("/placements/") ? Promise.reject(new win.Maity.api.ApiError("the project is closed", 409, p, "project_closed")) : plPatch(p, b));
   btn(plRow("plc-0001"), "Stop").click(); for (let k = 0; k < 4; k++) await tick();
   expect(text(plBox().querySelector(".send-status")) === "Not stopped: the project is closed (project_closed)", "placements: a refusal is the hub's message and code");

@@ -291,7 +291,7 @@ def project_view(
         "public_about": project.public_about,
         "state_changed_at": ts(project.state_changed_at),
         "repository": repository(project, settings, owner_handle, confirmed_by),
-        # The project's own links (§6.11), all four keys, null where none is set.
+        # The project's own links (§6.11), all five keys, null where none is set.
         "links": project_links.view(project.links),
         "logo": shown.get("logo", NO_IMAGE),
         "banner": shown.get("banner", NO_IMAGE),

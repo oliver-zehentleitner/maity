@@ -1628,7 +1628,7 @@ runner that refuses the harness by configuration.
 
 **Id:** ea36c196-f8e6-43ae-bc47-49c8d5379a65
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** the coordinator's post-merge re-verification of #125 and #147 (both holes reproduced) and approval of the plan, 2026-10-22; the independent review of #184 (the submodule route, opencode's pattern-keyed search permissions), 2026-10-22; verified on the runner VM with codex-cli 0.156.1 and git 2.47.3 (`codex sandbox`, no model run); Claude Code 2.1.308's settings strings for `allowRead`; Claude Code 2.1.318 with git 2.47.3 on the maintainer's laptop, 2026-11-04 (a call with a command, a variable or a PATH in front of `maity`, no hub; and the harness's own start-up warning that it does not check `Write(…)` deny rules); the coordinator's approval of the adapter hardening plan, refusal of prefixed grant rules included, 2026-11-04; the first sandboxed placements on a runner, whose `git fetch` failed on a read-only `.git/FETCH_HEAD`, and the lead's card for the narrower list, 2026-11-10; Claude Code 2.1.321 with bubblewrap, 2026-11-10 (`claude -p` in a scratch clone of a local bare repository with the runner's settings shape, the model running only `touch`, `git fetch`, `git commit` and `cat` probes, no hub): with the blanket deny, `fetch` and `commit` failed on a read-only `.git`; with the list below both worked, and every listed path and `.git/maity` stayed refused; a reviewer's reproduction of a `commondir` written from inside the sandbox, and the maintainer's choice of option (c), the start check with its detail code, req-2adhtsb3ct75, 2026-11-10; the maintainer's choice of the docs over a start refusal of a rebase or sequencer state, with a section on the runner page, req-ynqaa1dkt1pe, 2026-11-10
 **See:** runner.md — c2acd907-0f26-4850-8272-063390f1d6a7 — as of 2026-10-22
@@ -1699,9 +1699,10 @@ same paths as sandbox write denies, plus `.git/maity`. The rest of `.git`
 stays writable, because Claude Code's sandbox turns an `Edit(…)` deny
 into a write deny for every command, and commit, fetch and push need
 refs, the index, objects, logs and `FETCH_HEAD` between them (a commit
-writes the index, a fetch `FETCH_HEAD`, both refs, objects and logs). That a call with something in front of
-`maity` stays inside Claude Code's sandbox was checked with Claude Code 2.1.318
-and, by a static read, again at 2.1.325 (`capabilities.CHECKED`); with
+writes the index, a fetch `FETCH_HEAD`, both refs, objects and logs). A call with something in front of
+`maity` is held by the runner's hook (63492c65), not by how Claude
+Code's sandbox exclusion matches it (corrected in S200, 2fa61a18); the
+Claude Code version last checked is `capabilities.CHECKED`, and with
 another version the runner still
 starts the agent, and `runner check` and the supervisor log say that it
 was not checked for it.
@@ -1782,32 +1783,41 @@ one version, not a contract.
 
 **Id:** 2fa61a18-c8c9-4d9c-9c15-b1d5cbf1fcc6
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
-**Source:** card tsk-zjv2xyhyggnm (the owner/lead's approval of the bump); a static read of Claude Code 2.1.325's command matching, with no runtime session with the harness; the security detail of the read held to DM to the lead and the security lead
+**Source:** card tsk-zjv2xyhyggnm (the owner/lead's approval of the bump); a static read of Claude Code 2.1.325's command matching, with no runtime session with the harness; the security detail of the read held to DM to the lead and the security lead; the runtime re-check on 2.1.325 and 2.1.329 of security round 5, S200, 2026-11-20 (996b6f48), its details with the lead; the order to correct this entry's claim and the README's, relayed by the lead from the author of the security record, 2026-11-20
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-16
-**Revisit when:** a full runtime confirmation is still open — a few downstream normalizers were not exhaustively traced statically, their observed behaviour is harmless and a downstream guard catches the relevant case, so a session able to run the harness should confirm it; or a later Claude Code version changes how it matches commands for the sandbox, which calls for a re-check and another bump
+**See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-20
+**Verification:** corroborated — the corrected claim below: in the runtime re-check (S200) the runner's hook refused before it ran each tested line with something in front of `maity` but the allowed assignments, and held those to one plain call; the claim it replaces, that the sandbox itself keeps such a call inside, was not confirmed without the hook
+**Revisit when:** a later Claude Code version changes how it matches commands for the sandbox, which calls for a re-check before another bump; the runner's hook stops holding a placed session to one plain `maity` call; the re-check of 996b6f48 decides on `capabilities.CHECKED`
 
 `capabilities.CHECKED` for `claude-code` is raised from 2.1.318 to 2.1.325,
 so `maity runner check` no longer warns that the installed harness is a
-version whose sandbox behaviour was not checked. The property the runner
-relies on — a command with something in front of `maity` (a leading
-assignment or wrapper) stays inside the sandbox, as it did at the
-previously-checked 2.1.318 — was confirmed for 2.1.325.
+version whose sandbox behaviour was not checked. What holds for a call
+with something in front of `maity` is the runner's hook (63492c65): it
+refuses such a line before it runs, but for assignments to the allowed
+names, after which the line is held to one plain call. The runner does
+not rely on Claude Code's sandbox exclusion for such a call.
+
+Corrected in security round 5 (S200): this entry first said that such a
+call stays inside the sandbox, as at 2.1.318, confirmed for 2.1.325 by a
+static read. The runtime re-check on 2.1.325 and 2.1.329 (996b6f48) did
+not confirm that without the hook. The bump itself is not undone; whether
+`CHECKED` stays, moves or means something else is left to the re-check
+of 996b6f48, which is why this entry stays `needs-review`.
 
 **Reason:** the installed runner moved to Claude Code 2.1.325, and the
-version check warned that this version was not checked. A static read of how
-2.1.325 matches the command for the sandbox confirmed it still reads past a
-leading assignment or wrapper on a `maity` line, so the placement stays
-sandboxed as before. The decision to record the bump was approved by the
-lead and the security lead; the particulars of the read are held to DM and
-kept out of the repository, so this entry stays general.
+version check warned that this version was not checked. The decision to
+record the bump was approved by the lead and the security lead on a
+static read of how 2.1.325 matches the command for the sandbox; the
+particulars of that read are held to DM and kept out of the repository,
+so this entry stays general.
 
 **Rejected alternative:** a runtime confirmation with the harness before
 bumping. No session able to run the harness was available, and the static
 read together with a downstream guard that catches the relevant case was
-judged enough to raise the recorded version now, with the full runtime
-confirmation left open under **Revisit when**.
+judged enough to raise the recorded version then. The runtime check came
+later (S200) and is why the claim above was corrected.
 
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 
@@ -2631,7 +2641,7 @@ message says are no boundary.
 
 **Id:** b4a8030d-3b24-4b76-81cc-a84b0ca84c11
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13); card tsk-estwtzbae972 (an empty `.git/config.lock` the sandbox holds to keep `.git/config` unwritable, which refused a placement's own `maity report`/`checkpoint`; the lock's mechanism confirmed by `test_adapters.py` and `test_session_identity.py`, which leave an empty `config.lock`), 2026-11-18; PR #1954 review, 2026-11-18, correcting the reason: git never reads, adopts or commits a pre-existing `config.lock` (it writes `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL` and renames only that one into place), so refusing a non-empty lock is a fail-safe default — accept only the known-inert placeholder shape — not a guard against git applying the lock
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
@@ -3330,11 +3340,12 @@ listed: it is real, untracked work that `git status` must keep showing.
 **Id:** 996b6f48-a8d7-4b81-b977-33cef46bc4cc
 **Type:** constraint
 **Type:** incident
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
-**Source:** card tsk-3qb19f0r56zf (the runner test of 2026-11-11: after its first `maity resume`, a placed agent ran `maity` in pipes and chains, read "this clone has not joined a project", took the hub for broken and stopped without `maity wait`; its session transcript)
+**Source:** card tsk-3qb19f0r56zf (the runner test of 2026-11-11: after its first `maity resume`, a placed agent ran `maity` in pipes and chains, read "this clone has not joined a project", took the hub for broken and stopped without `maity wait`; its session transcript); Claude Code 2.1.329's sandboxing documentation and settings reference (code.claude.com/docs/en/sandboxing, settings-reference `sandbox.excludedCommands`), read 2026-11-20: a call leaves the sandbox only when the entries cover every command in it, the trigger of this entry's **Revisit when**; a re-check on Claude Code 2.1.329 and 2.1.325 in a container with bubblewrap, no hub and a marker credential, 2026-11-20 (security round 5, S200): the sandbox probe of card tsk-nnmgvz773z5n (`claude_sandbox_probe.py`, from its branch, not merged) and 26 added lines, run without and, on 2.1.329, with the runner's hook
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-11
 **See:** runner.md#a-placed-claude-code-agents-maity-line-is-one-plain-call-held-to-that-by-a-hook — 63492c65-e6bf-4fd8-9a73-5a599f11707e — as of 2026-11-13
+**Verification:** contradicted — a runtime re-check on 2.1.325 and 2.1.329 (S200) did not confirm the exclusion matching this entry and 2fa61a18 record without the runner's hook; with the hook in place every tested line that is more than one plain call was refused before it ran, and a line with a command other than `maity` kept its `maity` inside the sandbox, without the credential. The details are with the lead
 **Revisit when:** Claude Code matches `excludedCommands` per part of a compound command, or the credential becomes readable inside the sandbox
 
 Claude Code's sandbox hides `.git/maity`, and only a command that matches
@@ -3345,6 +3356,26 @@ than the call is refused before it runs (63492c65). The start prompt of
 a Claude Code placement says to run every `maity` command alone. When `MAITY_PLACEMENT`
 is set and no credential is readable, `maity` says that instead of "has not
 joined a project".
+
+Needs review since security round 5 (S200): Claude Code 2.1.329's
+documentation says `excludedCommands` is matched per command of a
+compound call, which is this entry's revisit condition. The runtime
+re-check on 2.1.325 and 2.1.329 (Source) found that Claude Code's
+exclusion matching differs from what this entry and 2fa61a18 record; the
+details are with the lead. A chain or pipe with a command other than
+`maity` stays inside the sandbox, as above. With the runner's hook in
+place, every tested line that is more than one plain call was refused
+before it ran, and the plain forms the hook passes ran outside with the
+credential, but for one: `MAITY_WAIT_TIMEOUT=5 maity wait`, which the
+hook passes, stayed inside, so its `maity` finds no credential. Not run:
+the probe's managed-settings and user-settings steps (they change the
+files the container's own Claude Code reads), and its step for another
+clone's credential twice ended without the one call it asks for (the
+call that ran found the file hidden). `capabilities.CHECKED` stays at
+2.1.325 until a person re-checks this entry. The claim of 2fa61a18 and
+the README's sentence on the checked behaviour were corrected on order
+(S200): the hook, not the exclusion, holds a call with something in
+front of `maity`.
 
 **Reason:** the old message sent the agent to `maity join`, which it cannot
 do, and hid that the cause was the shape of its own command.
@@ -3361,7 +3392,7 @@ do, and hid that the cause was the shape of its own command.
 
 **Id:** 63492c65-e6bf-4fd8-9a73-5a599f11707e
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** inferred
 **Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13; card tsk-54492gk4xp69 part 1 (the lead's order to refuse `maity runner` from a placed session's tool call), 2026-11-17; the fifth review round of #1942 (the order to refuse a line that names `maity` and holds a comment, a heredoc or more than one line, and to count quoted words in line order), 2026-11-18; the `excludedCommands` matcher of Claude Code 2.1.327 (native binary, sha256 `343c744baa14bfd38286a7cb90871051f04379956da6c5b803a9e66019a76ac9`), read statically only in the sixth review round of #1942, 2026-11-18: the readings differ, and nothing was checked live; the sixth review round of #1942 (the order to hold a `maity` line after variable assignments or a wrapper command to the same rules, whichever way the exclusion matches), 2026-11-18; the seventh review round of #1942 (the decision to replace the wrapper list by one rule: only variable assignments may stand before `maity`, anything else is refused outright), 2026-11-18; a review leg of the seventh round (the confirmation that a word whose path ends in `/maity` counts as `maity` in every position, and the order to name that rule and test it), 2026-11-18; the eighth review round of #1942 (review A1269 and its order: a word counts as `maity` or `runner` also with the backslashes and quotes left in it taken off, the line starts with `maity` only when its first word is `maity` alone, and the sentence that assignments cannot run another program goes; review A1271 on the same start of the line), 2026-11-18; review A1270 of the seventh round, relayed in message 162483 (a quoted or escaped first word skipped before `maity`, `$"…"` locale quoting, quoted text read again one level less than `calls_runner` reads it, mutants that survived), 2026-11-18; the decision of the eighth round (message 162185) to allow only assignments to a list of names before `maity`, and every `+=` refused, 2026-11-18; review A1269 and the decision of the eighth round that amends 162185 (message 162361, relayed in 162371 and 162378): no `MAITY_*` wildcard, only `MAITY_` names documented for agents, every runner-trusted name refused and a guard test for the list, 2026-11-18; the inventory of the `MAITY_` names in `cli/src/maity` at d6474bb5 for that decision, 2026-11-18; the ninth review round of #1942 (review A1309 and the order in message 163399: a word that holds literal brace alternatives counts by each alternative; lowercase and bare `LC_` names before `maity` stay refused), 2026-11-18; the tenth review round of #1942 (review A1337, and the lead's order in message 164326 after the decision in message 164294 to do it in one round: a word's brace expansion, joined with the text around it, counts by each word it makes, capped at 256 words, a word over the cap refuses the line, and the reason the ninth round gave for leaving such names unread was wrong), 2026-11-18; the eleventh review round of #1942 (review A1371, and the lead's decision in message 165140: a letter range's step may carry a sign, and a word that holds an unquoted `{` and also a quoted or escaped `{`, `}` or `,` is not read and refuses the line, fail-closed, quote-aware expansion left for a later card), 2026-11-18; Bash 5.2.21 on the author's machine, 2026-11-18: `{a..e..+2}` and `{a..e..-2}` make `a c e`, `{e..a..+2}` makes `e c a`, `{a..e..0}` and `{a..e..+0}` make `a b c d e`, `{a..e..++2}` stays as it is; review A1372 of the tenth round, relayed in the twelfth review round of #1942 (Bash's rule for when a `}` closes a brace group, and the quote removal after a range of mixed letters), 2026-11-18; Bash 5.2.21 on the author's machine, 2026-11-18: the closing rule, ranges of mixed letters, number ranges and their zero padding, compared word by word with the hook's expansion; review notes of the eleventh round's head, relayed in the twelfth review round of #1942 (message 165755: other fail-open forms of the mixed-word refusal, a crash on a long step, false refusals of quoted programs), and the decision of the twelfth round (message 165756, relayed in 165786): quote-aware brace expansion replaces the mixed-word refusal, a fuzz test against Bash in CI, the step bounded as Bash bounds it, a failing hook refuses, 2026-11-18; the CI run of #1942 at b6d523e6 on Ubuntu 26.04 (job 135108287127), whose Bash expanded a word otherwise than the hook's 5.2 rules, and Bash 5.3's `braces.c` (Ubuntu's 5.3 source), read 2026-11-18; reviews A1406 and A1407 of the twelfth round's head, relayed in the thirteenth review round of #1942 (messages 166319 and 166393), and lotse's ruling for that round (message 166401, relayed in 166408): a line with a construct the hook does not model exactly is refused, 2026-11-18. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
@@ -3380,8 +3411,9 @@ single-quoted text, and double-quoted text without `$`, a backtick or
 `$`) is refused before it runs, with the way out: the text in a file in
 the clone, passed with `--body-file`. So `maity say … - <<'EOF'` does not
 run for a placed Claude Code agent. Before looking for `maity`, leading
-spaces and characters a plain call may not hold are skipped, so a line
-counts however the harness trims it; a character a plain call may hold
+comment lines and blank lines are skipped, as Claude Code skips them when
+it reads a call (S200, below), and so are leading spaces and characters a
+plain call may not hold, so a line counts however the harness trims it; a character a plain call may hold
 (`/`, `.`, `:` and the like, a quote, a backslash) is not skipped, so a
 quoted or escaped first word (`"[" maity`, `"" maity`) is a word of its
 own before `maity`, and the line starts
@@ -3656,6 +3688,21 @@ rules hold for every line shape is not verified. Without a sandbox those
 rules are not a boundary either, so an opencode agent is treated as able
 to run any command as the agents' OS user (req-kezp8rppfhn5).
 
+Where a line's command starts is read past its leading comment lines and
+blank lines (`_past_comment_lines`, security round 5, S200), the way
+Claude Code reads a call: a comment line and a `maity` call under it
+count as a `maity` line. That moves only the decision
+where the command starts; `plain` and `read_whole` still read the whole
+line, so such a line is refused as more than one plain call. Leading
+assignments were already read past the same way: to the allowed names
+the line is held to one plain call, to any other name refused outright,
+and an assignment word that itself counts as `maity` (a value whose path
+ends in `/maity`) is not read past. Reading past a comment line can make
+no line pass that names `maity`: the whole line then starts with a `#`
+or holds a newline, and `read_whole` refuses it (a test runs every
+listed line under comment lines). The live re-check of S200 is in
+996b6f48.
+
 **Reason:** only `maity` itself needs to run outside the sandbox. A line
 that holds more than maity's call is held to the rules every other
 command is, and the check does not rely on the shell to tell the parts
@@ -3698,6 +3745,14 @@ spelling nobody listed (`${X@P}`, `$'…'`) falls outside it.
   required or not: without the sandbox there is no exclusion and nothing
   for the hook to hold; a runner without `require_sandbox` already runs
   such sessions where the sandbox's tools are missing.
+- Letting a comment line before a plain `maity` call pass, which a
+  literal reading of S200's note ("skip comment lines") allows: it would
+  undo the fifth review round's refusal of a line that names `maity` and
+  holds a comment, a decision a person made, and the hook would have to
+  read the comment exactly; the note was read as deciding where the
+  command starts, which fails closed. Letting an assignment to any name
+  stand before `maity` was rejected the same way: an assignment can
+  choose the program or load code into it (the eighth round, above).
 
 ## A sandboxed Claude Code start needs the hook to run; an old or unknown version is refused where the sandbox could run
 
@@ -4155,6 +4210,44 @@ looks at each interactive session once a minute.
 - Rejected: asking the hub whether the instance listens. The runner's
   credential reads no members, and the processes are on the runner's side
   anyway.
+
+## A reset starts the generation's first session fresh, and `sessions` goes only to a hub that knows it
+
+**Id:** a5205d13-c553-4d3b-aedf-f0f134c3011c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r4apvj4kbf3a (the runner honours a reset for every harness it supports and reports it); docs/api.md §15.6, §15.7, §15.14
+**See:** https://github.com/oliver-zehentleitner/maity — 37b4b9a1-a0f0-4f6f-bb26-b607590ffa18 — as of 2026-11-20
+**Revisit when:** the runner keeps the harness's session id and resumes on every start (§15.14), or the hub's report model stops refusing unknown fields
+
+A placement whose `fresh_session` is true starts the generation's first
+session fresh: the start prompt, no `--continue` (Claude Code) or `-c`
+(Antigravity), whatever resume the record holds. Codex and opencode resume
+nothing at an interactive start, and a supervised loop starts with its
+`first` command, so they are fresh already. A later resume in that
+generation, after a `hung` end, continues the new session. The runner logs
+`reset: a fresh session, the last one not resumed` and counts fresh starts
+in the record's `sessions` (a start whose `Launch.resumed` is false),
+reset by a new generation. It is not part of the report's key: it moves
+at a start, and the `running` report after it carries the new count. It sends
+`sessions` only when the placement it read carries a `fresh_session` key.
+
+**Reason:** today a new generation already clears the resume flag, so a
+reset changes no argv yet; the explicit check keeps a reset fresh once a
+restart resumes the session, as §15.14 wants, and covers a record that
+holds a resume from a state file. The hub's report model is strict: an
+older hub answers `invalid` to a report with `sessions`, every tick, so
+the field waits for the hub that carries `fresh_session`, which takes it.
+
+**Rejected alternatives:** sending `sessions` always: a runner newer than
+its hub would have every report refused. A field of the runner's own for
+"reset done": `sessions` is already in the contract and says the same. A
+fresh start for the supervised loop's retries after a failed first run:
+the loop's `again` continues the clone's latest conversation, which after
+a first run that failed before writing one is the conversation before the
+reset; left as it is, since the loop's handling sits beside a change in
+flight there (#2016) and the same holds for every restart today.
 
 ## A stopped agent's clone stays for its retention time, then the runner removes it
 
