@@ -171,7 +171,8 @@ def membership(conn: Connection, caller: Caller, slug: str) -> Membership:
 
 # --- the outsider of a public project (§2.3) ------------------------------------------------
 
-API_PROJECT = "/api/v1/projects/{owner}/{slug}"
+API = "/api/v1"  # the prefix every `ProjectRoute` router of the API is included with
+API_PROJECT = f"{API}/projects/{{owner}}/{{slug}}"
 
 # The project routes an outsider reads, as (method, path template) the app lists them: every one
 # a GET (§2.3). Each endpoint calls `reader` and carries `@outside_read`; `test_outside_reads`

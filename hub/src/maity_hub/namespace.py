@@ -46,10 +46,17 @@ class ProjectRoute(APIRoute):
         inner = super().get_route_handler()
         from maity_hub import access  # access resolves projects through this module
 
-        below = self.path.startswith(access.API_PROJECT + "/")
-        project_route = self.path == access.API_PROJECT or below
-        readable = frozenset(m for m, p in access.OUTSIDE_READS if p == self.path)
-        owned = frozenset(m for m, p in access.OWNER_CALLS if p == self.path)
+        # The route's template as the app serves it. FastAPI keeps an included router behind
+        # its own object (hub/context/namespace.md), so `self.path` is the router's own path,
+        # below the prefix `access.API` the API's routers are included with; a FastAPI that
+        # copied the route on inclusion gave it the prefix. Both name one template here, so
+        # the gate holds on either: reading `self.path` alone left every project route
+        # ungated under FastAPI 0.159.
+        path = self.path if self.path.startswith(access.API + "/") else access.API + self.path
+        below = path.startswith(access.API_PROJECT + "/")
+        project_route = path == access.API_PROJECT or below
+        readable = frozenset(m for m, p in access.OUTSIDE_READS if p == path)
+        owned = frozenset(m for m, p in access.OWNER_CALLS if p == path)
 
         async def handler(request: Request) -> Response:
             params = request.scope.get("path_params") or {}

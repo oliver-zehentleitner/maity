@@ -5,7 +5,9 @@ other project route answers them `not_found`, a write before its body is read (ย
 
 from __future__ import annotations
 
+import importlib
 import inspect
+import pkgutil
 import re
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -14,11 +16,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fastapi.routing import APIRoute
+from fastapi import APIRouter
+from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, Engine, func, insert, select, update
 
 from maity_hub import access, clock, public_pages
+from maity_hub import routes as route_package
 from maity_hub import tables as t
 from maity_hub import views as card_views
 from maity_hub.config import Settings
@@ -160,15 +164,42 @@ def world(make_client: ClientFactory, migrated: Engine) -> World:
     )
 
 
+def _app_routes(app: Any) -> set[tuple[str, str]]:
+    """(method, path template) of every route the app serves, its included routers walked
+    with their prefixes: FastAPI keeps an included router behind its own object, so
+    `app.routes` lists no route of it (hub/context/namespace.md)."""
+    return {
+        (method, route.path_format)
+        for route in iter_route_contexts(list(app.routes))
+        if route.path_format is not None
+        for method in route.methods or ()
+    }
+
+
 def _project_routes(app: Any) -> list[tuple[str, str]]:
     """(method, path template) of every route under `/api/v1/projects/{owner}/{slug}`."""
-    found: list[tuple[str, str]] = []
-    for route in app.routes:
-        if not isinstance(route, APIRoute):
+    return sorted(
+        (method, path)
+        for method, path in _app_routes(app)
+        if path == API or path.startswith(API + "/")
+    )
+
+
+def _api_endpoints() -> dict[tuple[str, str], APIRoute]:
+    """Each API route the routers of `maity_hub.routes` declare, by (method, template as the
+    app serves it): a router's own routes are `APIRoute`s with the path below `access.API`,
+    whichever way FastAPI keeps them once included."""
+    found: dict[tuple[str, str], APIRoute] = {}
+    for info in pkgutil.iter_modules(route_package.__path__):
+        module = importlib.import_module(f"{route_package.__name__}.{info.name}")
+        router = getattr(module, "router", None)
+        if not isinstance(router, APIRouter):
             continue
-        if route.path == API or route.path.startswith(API + "/"):
-            found += [(method, route.path) for method in sorted(route.methods)]
-    return sorted(found)
+        for route in router.routes:
+            if isinstance(route, APIRoute):
+                for method in route.methods or ():
+                    found[(method, access.API + route.path)] = route
+    return found
 
 
 def _fill(template: str, params: dict[str, str], project: str = "maity") -> str:
@@ -214,20 +245,19 @@ def _page(engine: Engine, project_id: str, on: bool) -> None:
 def test_the_allow_list_the_marker_and_the_reader_agree(make_client: ClientFactory) -> None:
     """Every endpoint that reads through `access.reader` carries `@outside_read` and is in
     `OUTSIDE_READS`, and the other way round; every entry is a GET the app routes."""
-    app = make_client().app
-    routes = {
-        (method, route.path): route
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        for method in route.methods
-    }
+    served = _project_routes(make_client().app)
+    endpoints = _api_endpoints()
+    # Every project route the app serves is one the routers declare, so none escapes below.
+    assert served, "the walk found no project route"
+    assert set(endpoints) >= set(served), sorted(set(served) - set(endpoints))
+    routes = {key: endpoints[key] for key in served}
     for method, path in access.OUTSIDE_READS:
         assert method == "GET", path
         assert (method, path) in routes, (method, path)
     # The owner calls of ยง1.3 are routes the app has, and none is an outsider's read.
-    assert access.OWNER_CALLS <= set(routes)
+    assert set(routes) >= access.OWNER_CALLS
     assert not access.OWNER_CALLS & access.OUTSIDE_READS
-    for (method, path), route in routes.items():
+    for (method, path), route in endpoints.items():  # every API route, a project's or not
         source = inspect.getsource(route.endpoint)
         reads = "access.reader(" in source
         marked = getattr(route.endpoint, access.OUTSIDE_READ_MARK, False) is True
@@ -381,9 +411,7 @@ def test_a_not_done_security_card_is_hidden_from_an_outsider_as_on_the_public_bo
     `security` (any case) is left out of every list an outsider reads, and its card, history
     and notes answer `not_found`, until it is `done`; a member reads it as before."""
     writer = _membership_of(migrated, world.project_id, human_id=world.owner.id)
-    secret = factory.card(
-        migrated, world.project_id, writer, title="Secret hole", label="Security"
-    )
+    secret = factory.card(migrated, world.project_id, writer, title="Secret hole", label="Security")
     fixed = factory.card(
         migrated,
         world.project_id,

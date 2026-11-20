@@ -624,7 +624,11 @@ public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, 
   any other route they are an outsider like any other (the lead's ruling, 2026-11-19). Strangers to a private or
   unknown project need no gate: the body is validated before the route reads the membership, for both alike
   (`errors.py`'s `invalid` before e.g. `create_card`'s `membership`), so a bad body tells them apart no more than
-  `not_found` does (checked, not changed, and tested).
+  `not_found` does (checked, not changed, and tested). The gate names a route by the template the app serves,
+  `access.API` before the route's own path: FastAPI keeps an included router behind its own object
+  (hub/context/namespace.md), so a route's `path` is the router's, without the prefix, and comparing it alone
+  left every project route ungated (found in round 4, 2026-11-20). The tests walk the app with
+  `iter_route_contexts` and take each endpoint from the routers of `maity_hub.routes`.
 - A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
   (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
   notes; a member reads it as before. A card under a moderation hold likewise (`unheld_clause`, the
