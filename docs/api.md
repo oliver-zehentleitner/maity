@@ -6681,7 +6681,7 @@ stay; `state_changed` is not emitted for the mapping.
 |---|---|---|
 | `preset` | `hierarchical`, `solo`, `pool`, `decentral`, `hybrid` | fills the fields below; `pool`, `decentral`, `hybrid` are named shells with the `hierarchical` filling until an experiment defines them |
 | `claim_policy` | `self-claim`, `assign-only` | may a member claim an open card itself |
-| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it, never a release card (§6.7) nor outsiders' work without its own approvals (§2.3, "Own approvals"), and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
+| `merged_closes` | `notify` (default), `auto` | what the hub does when it observes a card's reported pull request merged (§6.6): `notify` emits `task_merged` to the done authority; `auto` also moves the card to `done` under `done_authority` `holder` or `admin` when nothing else holds it and the pull request is the card's own (§6.6: its head branch is the reported one in the project's own repository, it names the card, it was merged after the report, and no other card names it or was closed by it, so one pull request closes at most one card), never a release card (§6.7) nor outsiders' work without its own approvals (§2.3, "Own approvals"), and acts as `notify` under the others. Set by a human with `project:admin`; a later preset change keeps it |
 | `done_authority` | `holder`, `reviewer`, `tester`, `reviewer_and_tester`, `admin` | who moves a card from `review` to `done`: `reviewer` a holder of `tasks:review`; `tester` a holder of `tasks:test` — the project requires a test instead of a review; `reviewer_and_tester` both, as two signatures on the card (`approvals`, §6.4) — the project requires a review and a test. A later preset change keeps `tester` and `reviewer_and_tester` |
 | `contract_arbiter` | member id or `trust:admin` | the single owner of a contract card's final shape; a guest is `invalid` (`details.fields["policy.contract_arbiter"]: "guest"`, §2.3) |
 | `tag_authority` | `human`, `capability` | who tags a release: a human's go, or any membership with the `tag` capability (not enforced) |
@@ -8893,7 +8893,10 @@ the card's `approvals` stay. Every replacement clears `approvals`
   branch the forge no longer has (deleted, as after a merge) is not a
   mismatch: `observed.branch_head_sha` is null and only the PR head is
   compared. A pull request the forge does not have is: `observed.pr_state`
-  is null and `mismatch` is true. A
+  is null and `mismatch` is true. This is about `mismatch` only: whether a
+  merge closes a card on its own is decided by the pull request's own head
+  branch and the other conditions of "A merge closes the loop" below,
+  never by whether a branch of the reported name exists. A
   probe that fails leaves `observed: null`; the next probe run fills it.
   Without a probe `observed` stays `null` and the report is shown as
   unverified.
@@ -8918,8 +8921,24 @@ the card's `approvals` stay. Every replacement clears `approvals`
   without its own approvals on the reported head (§2.3, "Own
   approvals"), a card a new head sent back from `done` included. It
   closes only when no dependency or child is open (an open child counts as `dependencies`, as for
-  `dependencies_open`, §6.4), no objection hold is on it (§6.19) and the
-  card is not a release. A release card is never closed by a merge, ready
+  `dependencies_open`, §6.4), no objection hold is on it (§6.19), the
+  card is not a release, and the pull request is the card's own. It is
+  the card's own when all of these hold, read from the pull request as
+  the forge reports it (§11): its head branch (`head_ref`) is the branch
+  the report names on the remote, which is `upstream` without the
+  remote's name (`origin/agent-x/y` → `agent-x/y`), or `branch` when the
+  report has no `upstream`, and its head is in the project's own
+  repository (`head_repo`; a pull request from a fork is never a card's
+  own), never inferred from whether a branch of that name exists; its
+  title or body names the card's id (`card_ids`); it was merged after
+  the report that names it was stored (`merged_at` later than the
+  report's `reported_at`); and no other card of the project, in any
+  status, `cancelled` included, names the same pull request in its
+  current report, and the pull request has not closed another card
+  before. So one merged pull request closes at most one card. What the
+  hub cannot tell counts as not holding: an observation stored before
+  the hub kept these fields closes nothing. Otherwise `auto` acts as
+  `notify` for this card, and the done authority closes it (§6.4). A release card is never closed by a merge, ready
   or not: it closes through its readiness gate (§6.7), which the releaser
   passes with `PATCH {status: "done"}` after the checklist, so
   `task_merged` only tells the done authority.
@@ -8941,7 +8960,13 @@ the card's `approvals` stay. Every replacement clears `approvals`
   like the case below and told when the answer returns it to `review`.
   When a condition fails the card stays where it is and `task_merged`
   says `closed: false` with `blocked_by` (`dependencies`,
-  `objection`, `release`). A merge first observed while the card is neither
+  `objection`, `release`; and where the pull request is not the card's
+  own: `head_ref` when its head branch is not the reported one, is in
+  another repository or is not known, `pull_request_unnamed` when its
+  title and body do not name the card, `merged_before_report` when it
+  was merged before the report was stored or the time is not known,
+  `pull_request_shared` when another card names it or was closed by
+  it). A merge first observed while the card is neither
   (`in_progress` after a rework, or `blocked` from there, or `blocked`
   from `review` under `reviewer_and_tester`) is remembered with the
   report it was observed on; when the card returns to `review` the hub
@@ -13783,7 +13808,7 @@ learns its content.
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat but a waiting agent (§9.6), in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
 | `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time, changes only its `name` or is cleared to `null` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
-| `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6); wakes the done authority only, and nobody when `closed` is true |
+| `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6), `blocked_by` of `dependencies`, `objection`, `release`, `head_ref`, `pull_request_unnamed`, `merged_before_report`, `pull_request_shared`; wakes the done authority only, and nobody when `closed` is true |
 | `placement_created`, `placement_updated` | `runner:<id>` of the placement's runner once the placement is approved (a pending proposal never names the runner), the creator, the owner of the agent profile | `placement_id`, `generation`, `desired`, `harness`, `target`, `approval.status`, `closed_reason`; never `briefing`, `session_hint` or `logs_hint` (§15.10) |
 | `placement_reported` | the creator, the owner of the agent profile | `placement_id`, `state`, `reason`, `detail`, `exit_code`, `observed_generation`, `restarts`, `retry_at` |
 | `agent_stop_requested` | `member:<the placement's agent>` | `placement_id`, `grace_seconds`, `by` |
@@ -16920,7 +16945,8 @@ GitLab are not this section.
   "observed_at": "2026-10-21T13:35:00Z",
   "fresh": true,
   "pr": { "number": 3, "found": true, "url": "…", "title": "hub: skeleton", "state": "open", "draft": false,
-          "head_sha": "…", "base": "main", "mergeable": "conflicting",
+          "head_sha": "…", "head_ref": "agent-b/probe", "head_repo": "oliver-zehentleitner/maity",
+          "card_ids": ["tsk-0005"], "base": "main", "mergeable": "conflicting",
           "checks": "pending", "checks_detail": [ { "name": "ci / sqlite", "status": "success" } ],
           "required_check": { "name": "ci-ok", "status": "pending" },
           "merged_at": null, "merge_sha": null },
@@ -16934,7 +16960,12 @@ GitLab are not this section.
 `pending`, `none` (no runs — the "conflicting, so no CI" case is
 `mergeable: conflicting` with `checks: none`), `unknown`. A pull request
 the forge does not have is `{number, found: false}` and nothing else; it
-is an answer, not an error. For `branch`:
+is an answer, not an error. `head_ref` is the pull request's head branch
+as the forge names it and `head_repo` the repository that branch is in
+(`owner/name`), each `null` when the forge does not say; `card_ids` are
+the card ids (`tsk-…`, `rel-…`, `ctr-…`) its title and body name, lowercased, each once,
+at most 50, from the same read. They tie a merge to the card it belongs
+to (§6.6, "A merge closes the loop"). For `branch`:
 `{name, head_sha, found}`, `head_sha` null when not found, as before:
 a branch read reads no checks, neither here nor where it feeds
 `report.observed` or a commit link's `branch_head_sha`, since every

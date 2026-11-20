@@ -1026,6 +1026,7 @@ class Forge:
             mergeable = "conflicting"
         head_sha = pr["head"]["sha"]
         summary, detail = self.checks(repository, head_sha)
+        head_repo = pr["head"].get("repo")
         return {
             "number": number,
             "found": True,
@@ -1034,6 +1035,13 @@ class Forge:
             "state": "merged" if merged else pr.get("state"),
             "draft": bool(pr.get("draft")),
             "head_sha": head_sha,
+            # The head branch and its repository as the forge names them, and the card ids
+            # the title and body name: what ties a merge to the one card it belongs to (§6.6).
+            "head_ref": _text_or_none(pr["head"].get("ref")),
+            "head_repo": (
+                _text_or_none(head_repo.get("full_name")) if isinstance(head_repo, dict) else None
+            ),
+            "card_ids": card_ids(pr.get("title"), pr.get("body")),
             "base": pr["base"]["ref"],
             "mergeable": None if merged else mergeable,
             "checks": summary,
@@ -1363,6 +1371,37 @@ def _moment(value: Any) -> datetime | None:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def moment(value: Any) -> datetime | None:
+    """`_moment` for the readers of a stored observation (`merged`)."""
+    return _moment(value)
+
+
+# A card id as a pull request's title or body may name it (`tsk-…`, `rel-…`, `ctr-…`, the
+# card prefixes of ids.PREFIXES), and how many a pull request keeps: past the cap a card
+# counts as not named (§6.6).
+_CARD_ID = re.compile(r"(?<![0-9a-z-])(?:tsk|rel|ctr)-[0-9a-z]{1,64}(?![0-9a-z-])", re.IGNORECASE)
+CARD_IDS_MAX = 50
+
+
+def card_ids(*texts: Any) -> list[str]:
+    """The card ids the texts name, lowercased, each once, in order, at most CARD_IDS_MAX."""
+    found: list[str] = []
+    for text in texts:
+        if not isinstance(text, str):
+            continue
+        for match in _CARD_ID.finditer(text):
+            value = match.group(0).lower()
+            if value not in found:
+                found.append(value)
+                if len(found) == CARD_IDS_MAX:
+                    return found
+    return found
+
+
+def _text_or_none(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def _decoded(found: Any, cap: int) -> bytes | None:
