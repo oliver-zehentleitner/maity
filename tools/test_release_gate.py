@@ -85,7 +85,51 @@ WRAPPED_FORMS = {
     "a flow map": "      NOTE: {a: 1,\nb: 2}\n",
     "a flow sequence": "      NOTE: [a,\nb]\n",
 }
+J = "  hub-mariadb-11-8:\n    runs-on: u\n"
+H = "jobs:\n  hub-mariadb:\n"
+BOTH = {"hub-mariadb", "hub-mariadb-11-8"}
+# The reviews' reproducers (#2025 round 1) and what PyYAML reads from each: None where it reads
+# no jobs: key or refuses the file.
+REPRODUCERS = {
+    "an open single-quoted value ending in ''": (H + "    x: 'first''\nenv: second'\n" + J, BOTH),
+    "an escaped quote in an open flow value": (H + '    x: ["a\\" ]",\nenv: 1]\n' + J, BOTH),
+    "a comment in an open flow value": (H + "    x: [a, # ]\nenv: 1]\n" + J, BOTH),
+    "an apostrophe before a quoted flow item": (
+        H + "    x: [it's, 'still open ]',\nenv: 1]\n" + J,
+        BOTH,
+    ),
+    "a sequence item, double-quoted": (H + '    needs:\n      - "first\nenv: second"\n' + J, BOTH),
+    "a sequence item, flow": (H + "    needs:\n      - [first,\nenv: second]\n" + J, BOTH),
+    "jobs: inside a sequence item under on:": (
+        'on:\n- "hello\njobs:\n  hub-mariadb:\n    runs-on: u\nenv: x"\n',
+        None,
+    ),
+    "a value on the next line, quoted": (
+        H + '    env:\n      NOTE:\n        "first\nenv: second"\n' + J,
+        BOTH,
+    ),
+    "a value on the next line, flow": (H + "    needs:\n      [decide,\nenv: x]\n" + J, BOTH),
+    "a dotted key": (H + '    env:\n      a.b: "first\nenv: second"\n' + J, BOTH),
+    "a quoted key with a space": (H + '    env:\n      "a b": "first\nenv: second"\n' + J, BOTH),
+    "an anchored quoted value": (H + '    x: &a "first\nenv: second"\n' + J, BOTH),
+    "a tagged quoted value": (H + '    x: !!str "first\nenv: second"\n' + J, BOTH),
+    "an anchored flow value": (H + "    x: &a [first,\nenv: second]\n" + J, BOTH),
+    "an open 'it''s": (H + "    x: 'it''s\nenv: x'\n" + J, BOTH),
+    "an open flow value with an escape": (H + '    x: ["a\\"]\nenv: x"]\n' + J, BOTH),
+    "a plain value wrapped to column 0": (H + "    x: first\nenv: second\n" + J, None),
+}
+# One-line values the reader must read, as PyYAML does (round 1 read the first two as None).
+READ_AS_YAML = {
+    "an escaped quote in a closed flow value": H + '    x: ["a\\"b"]\n' + J,
+    "an apostrophe in a plain flow word": H + "    x: [don't]\n" + J,
+    "a sequence-item block scalar": H + '    steps:\n      - |\n        note: "open\n' + J,
+    "a comment after a closed quote": H + "    x: \"a\" # \"\n    y: 'b'  # '\n" + J,
+    "a closed flow value with a comment": H + "    x: [a, {b: c}]  # ]\n" + J,
+    "a closed doubled quote": H + "    x: 'it''s'\n" + J,
+}
+OPEN_QUOTE = "5" * 40  # a review's reproducer: 'first'' left open, then `env: second'` at column 0
 WORKFLOW_TEXTS = {
+    OPEN_QUOTE: REPRODUCERS["an open single-quoted value ending in ''"][0],
     WRAPPED: wrapped_workflow(WRAPPED_FORMS["a double-quoted string"]),
     WRAPPED_KEY: wrapped_workflow('      NOTE: "first\nenv: second"\n'),
 }
@@ -297,12 +341,17 @@ class MariaDb(unittest.TestCase):
 
     def test_a_value_wrapped_to_column_0_does_not_let_a_red_11_8_pass(self):
         # The reader read {decide, hub-mariadb} here before: 11.8 "predated" the file, exit 0.
-        for sha in (WRAPPED, WRAPPED_KEY):
+        for sha in (WRAPPED, WRAPPED_KEY, OPEN_QUOTE):
             stop = "::error::cannot read .github/workflows/hub-mariadb.yml at " + sha
-            for result in ("failure", "success"):
+            for result in ("failure", "success", None):
                 with self.subTest(sha=sha, result=result):
-                    jobs = {5: {"hub-mariadb": "success", "hub-mariadb-11-8": result}}
-                    code, out = gate(self.api([maria(5, sha, "hub-mariadb hand " + TAG)], jobs))
+                    # None: the run's list omits 11.8, so only the reader can stop the gate.
+                    listed = {} if result is None else {"hub-mariadb-11-8": result}
+                    jobs = {5: {"hub-mariadb": "success", **listed}}
+                    runs = [maria(5, sha, "hub-mariadb hand " + TAG)]
+                    code, out = gate(
+                        FakeApi(ci=GREEN_CI["ci"], maria=runs, jobs={**GREEN_CI["jobs"], **jobs})
+                    )
                     self.assertEqual(code, 1, out)
                     self.assertIn(stop, out)
                     self.assertNotIn("predates", out)
@@ -565,7 +614,7 @@ class Workflows(unittest.TestCase):
         self.assertNotRegex(text, r"(?m)^    name:")
 
     def test_job_ids_are_read_from_the_jobs_block_only(self):
-        text = "on:\n  push:\njobs:\n  a:\n    steps: []\n  b-1:  # note\n    x: 1\nenv:\n  c: 1\n"
+        text = "on:\n  push:\nenv:\n  c: 1\njobs:\n  a:\n    steps: []\n  b-1:  # note\n    x: 1\n"
         self.assertEqual(g.workflow_job_ids(text), {"a", "b-1"})
 
     def test_job_ids_in_other_block_layouts_are_read(self):
@@ -578,7 +627,7 @@ class Workflows(unittest.TestCase):
                 "jobs:\n# top\n\n  a:\n      # deep\n    x: 1\n    # under a\n  b:\n"
             ),
             "a block scalar in a job": "jobs:\n  a:\n    run: |\n      b:\n      c: 1\n  b:\n",
-            "jobs: not last": "jobs:\n  a:\n  b:\non: push\n",
+            "comment lines at column 0 in jobs:": "jobs:\n# a\n  a:\n# b\n    x: 1\n  b:\n# end\n",
         }
         for layout, text in layouts.items():
             with self.subTest(layout):
@@ -663,6 +712,31 @@ class Workflows(unittest.TestCase):
         for layout, text in layouts.items():
             with self.subTest(layout):
                 self.assertIsNone(g.workflow_job_ids(text))
+
+    def test_the_reviews_reproducers_read_as_yaml_reads_them_or_none(self):
+        # Each from the reviews of #2025 round 1 (A1611, A1612), checked against PyYAML 6.0.3:
+        # what it reads, or None where it reads no jobs or refuses the file. The reader may
+        # answer None for any of them; it must never answer a set YAML does not read.
+        both = {"hub-mariadb", "hub-mariadb-11-8"}
+        for case, (text, yaml_jobs) in REPRODUCERS.items():
+            with self.subTest(case):
+                self.assertIn(g.workflow_job_ids(text), (None, yaml_jobs))
+        for case, text in READ_AS_YAML.items():
+            with self.subTest(case):
+                self.assertEqual(g.workflow_job_ids(text), both)  # no false None
+
+    def test_an_indented_continuation_never_hides_a_job(self):
+        # A line deeper than the job keys is never read as a key, one at their indent always
+        # is: a value continued on indented lines can add an id (a stricter gate), never drop
+        # hub-mariadb-11-8.
+        for pad in range(1, 8):
+            for value in ("first", '"first', "[first,", "'first"):
+                head = f"jobs:\n  hub-mariadb:\n    x: {value}\n{' ' * pad}"
+                text = head + "hub-mariadb-zz: second\n  hub-mariadb-11-8:\n    runs-on: u\n"
+                with self.subTest(pad=pad, value=value):
+                    ids = g.workflow_job_ids(text)
+                    if ids is not None:
+                        self.assertTrue({"hub-mariadb", "hub-mariadb-11-8"} <= ids, ids)
 
     def test_a_workflow_whose_jobs_cannot_be_read_is_none_not_empty(self):
         # Empty would read hub-mariadb-11-8 as "predates it" and let 11.4 count alone.

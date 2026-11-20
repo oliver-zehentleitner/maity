@@ -439,11 +439,12 @@ pinned uv instead of a second tool.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); card tsk-07hb18s4j47f (the job reader that stops the gate, from the review of #2022); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
+**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); card tsk-5cah3a82dv63 (the 11.8 job beside the 11.4 suite, #2022); card tsk-07hb18s4j47f (the job reader that stops the gate, from the reviews of #2022 and #2025); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
 **Revisit when:** ci stops running on every push to main, hub-mariadb comes back into the pull request gate, or GitHub's run list starts carrying a dispatch's inputs
 **See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-09
 **See:** process.md#mariadb-checks-main-after-every-ci-run-and-every-hour-not-every-pull-request-postgresql-and-sqlite-stay-in-the-gate — 75a2382c-6a3d-450d-873e-8aade80d6e3b — as of 2026-11-09
 **See:** https://github.com/oliver-zehentleitner/maity — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-09
+**See:** https://github.com/oliver-zehentleitner/maity — e70b5933-72f5-4951-b024-b92fe22dc521 — as of 2026-11-20
 
 The first job of `release-hub.yml` and `release-cli.yml` (`check`), and of
 `publish-image.yml` on a tag (`gate`), no longer runs tests. It runs
@@ -461,16 +462,22 @@ read-only token and lets the tag through only when:
   misread, below): a file that defines it
   and a run where it is missing, skipped or red stops the gate, and only a
   file from before the job lets 11.4 count alone. The gate reads the
-  file's `jobs:` block without a YAML parser, in the block layout only,
-  and stops on what it can tell it does not read (another layout, a
-  value of a job wrapped to column 0 or left open on its line, a
-  document marker), on a file in which it reads no
-  `hub-mariadb` job, and on a run whose own job list names a
-  `hub-mariadb*` job it did not read from the file: an empty or short
-  read would let the run count as one from before the job. A reader
-  without a parser cannot tell every wrapped value from a top-level key,
-  so the run's job list is the check that does not depend on it. A run
-  that skipped the suite counts for nothing, unless a job beside it went red. Only runs of
+  file's `jobs:` block without a YAML parser, in one layout only, and
+  `jobs:` must be the file's last top-level key: once it is read, any
+  later line at column 0 other than a comment stops the gate, since that
+  is where a value of a job wrapped to column 0 would stand, and the
+  reader cannot tell one from a key. It also stops on another layout, an
+  anchor or a tag on a value in the block, a quoted or flow value left
+  open on its line, a file in which it reads no `hub-mariadb` job, and a
+  run whose own job list names a `hub-mariadb*` job not read from the
+  file: an empty or short read would let the run count as one from
+  before the job. A value continued on indented lines can only add an
+  id, never hide one, so it makes the gate stricter at most. The jobs API
+  lists a job by its name, and the name is its key only because no job of
+  `hub-mariadb.yml` sets `name:` (`test_release_gate.py` holds it so); a
+  job that set one would read as missing, which stops the gate. A run
+  that skipped the suite counts for nothing, unless a job beside it went
+  red. Only runs of
   main's own workflow file count: the run's ref is main and the commit
   it ran is on main, since a dispatch on another ref runs that ref's
   copy of `hub-mariadb.yml`, which could keep the title and the job's
@@ -522,9 +529,15 @@ the tag lacks.
   same.
 - Reading an unknown layout as no jobs (the first version of the 11.8
   rule): `jobs:  # comment`, a quoted key or another indent made the
-  11.8 job read as one the file predates; found in review. So did a value
-  of a job wrapped to column 0 in the second version, which ended the
-  block early; found in review, hence the job-list check.
+  11.8 job read as one the file predates; found in review.
+- Telling a wrapped value from a top-level key after `jobs:` (the second
+  and third versions): each round of review found another form that
+  ended the block early (quoted, flow, sequence items, values on the next
+  line, anchored or tagged values); requiring `jobs:` last closes them
+  all at once, and every `hub-mariadb.yml` on main has it last.
+- The run's job list alone: it is blind to a job the run does not list
+  (a partial re-run, a job that never started), so the file decides and
+  the list only backs it up.
 
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 

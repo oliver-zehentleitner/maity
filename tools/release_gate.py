@@ -14,7 +14,8 @@ writes:
   its `hub-mariadb-11-8` job (the subset on 11.8), when hub-mariadb.yml at
   the run's commit defines it (missing, skipped or red, it stops the gate);
   a run whose file predates that job counts on 11.4 alone. A file whose
-  jobs cannot be read, or in which no `hub-mariadb` job is read, stops the
+  jobs cannot be read (`jobs:` must be its last top-level key, in the
+  block layout), or in which no `hub-mariadb` job is read, stops the
   gate instead of reading as one that predates the job, and so does a run
   that lists a `hub-mariadb*` job not read from its file. A run that
   skipped the suite counts for nothing unless a job beside it went red, and
@@ -160,56 +161,85 @@ MARIADB_WORKFLOW = ".github/workflows/hub-mariadb.yml"
 
 # A block-mapping key on one line: bare or quoted, `:`, then nothing or a value or comment.
 KEY = re.compile(r"""(["']?)([A-Za-z_][A-Za-z0-9_-]*)\1[ \t]*:(?:[ \t]+(.*))?$""")
-# The top-level keys of a workflow file. A line at column 0 that is none of them is no key the
-# reader knows: in `jobs:` the continuation of a job's value wrapped there (a quoted string, a
-# flow collection, a plain scalar), elsewhere a document marker or a root that is no mapping.
+# The top-level keys of a workflow file, the only lines at column 0 before `jobs:`.
 WORKFLOW_KEYS = {"name", "run-name", "on", "permissions", "env", "defaults", "concurrency", "jobs"}
 # YAML breaks lines at LF, CR and CRLF only; str.splitlines also breaks at U+2028, U+0085 and
 # others, which may stand inside a comment or a quoted value.
 LINE_BREAK = re.compile(r"\r\n?|\n")
-# A quoted value closed on its own line (YAML's escapes: \x in double quotes, '' in single).
-CLOSED = {'"': re.compile(r'"(?:[^"\\]|\\.)*"'), "'": re.compile(r"'(?:[^']|'')*'")}
+# Any block-mapping key, for the value after it: quoted, or plain up to `: ` (dots, spaces).
+ANY_KEY = re.compile(
+    r"""(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s#'"\[{&!|>*?-][^#]*?)[ \t]*:(?:[ \t]+(.*))?$"""
+)
+# What may follow a value that ended: nothing, or a comment after a space.
+REST = r"(?:[ \t]+#.*|[ \t]*)$"
+# A quoted value that closes on its line and is all of it (YAML's escapes: \x in double quotes,
+# '' in single quotes), so `'it''s` reads open and does not match its first three characters.
+CLOSED = {
+    '"': re.compile(r'"(?:[^"\\]|\\.)*"' + REST),
+    "'": re.compile(r"'(?:[^']|'')*'" + REST),
+}
+
+
+def _flow_closes(value: str) -> bool:
+    """Whether a flow collection (`[…]`, `{…}`) closes on its line, with nothing but a comment
+    after it. A quote opens only where a flow token starts (after `[`, `{`, `,`, `:` or at the
+    start), so the apostrophe in `[don't]` is part of a plain word."""
+    depth, i, token_start = 0, 0, True
+    while i < len(value):
+        char = value[i]
+        if char in "\"'" and token_start:
+            closed = CLOSED[char].pattern[: -len(REST)]  # the quoted part alone
+            found = re.compile(closed).match(value, i)
+            if found is None:
+                return False
+            i, token_start = found.end(), False
+            continue
+        if char == "#" and (i == 0 or value[i - 1] in " \t"):
+            return False  # a comment while the collection is still open
+        if char in "[{":
+            depth += 1
+        elif char in "]}":
+            depth -= 1
+            if depth == 0:
+                return re.match(REST, value[i + 1 :]) is not None
+        if char in "[{,:":
+            token_start = True
+        elif char not in " \t":
+            token_start = False
+        i += 1
+    return False
 
 
 def _one_line(value: str) -> bool:
-    """Whether a key's value ends on its line: no quoted string or flow collection left open."""
+    """Whether a value ends on its line: no quoted string or flow collection left open."""
     if value[:1] in CLOSED:
         return CLOSED[value[0]].match(value) is not None
-    if value[:1] not in ("{", "["):
-        return True
-    depth, quote = 0, ""
-    for char in value:
-        if quote:
-            quote = "" if char == quote else quote
-        elif char in "\"'":
-            quote = char
-        elif char in "{[":
-            depth += 1
-        elif char in "}]":
-            depth -= 1
-            if depth == 0:
-                return True
-    return False
+    if value[:1] in ("[", "{"):
+        return _flow_closes(value)
+    return True
 
 
 def workflow_job_ids(text: str) -> set[str] | None:
     """The keys under a workflow's top-level `jobs:`, read from its text; None when unsure.
 
-    No YAML parser: the gate runs on the bare interpreter. It reads the block layout only:
-    top-level workflow keys at column 0 (a `---` before the first), one `jobs:` among them
-    with nothing but a comment after it, its keys bare or quoted at one indent, comment lines
-    anywhere. None for what it can tell it does not read: no `jobs:` line or a second one, a
-    value on it (flow style, an anchor), no key under it, a tab in the indent, a line at the
-    keys' indent or shallower that is no key, a line at column 0 that is no workflow key (a
-    value wrapped there, a document marker, a root that is no mapping), and a quoted value or
-    flow collection that does not close on its line. An empty or short set would read a job
-    as one the file predates; None stops the gate. The run's own job list backs this up
-    (mariadb_state), for a wrapped value this reading cannot tell from a key.
+    No YAML parser: the gate runs on the bare interpreter. It reads one layout: top-level
+    workflow keys at column 0 (a `---` before the first), `jobs:` the last of them with nothing
+    but a comment after it, its keys bare or quoted at one indent, comment lines anywhere. Once
+    `jobs:` is read, any later line at column 0 other than a comment is None: that is where a
+    value of a job wrapped to column 0, a document marker or another top-level key would stand,
+    and this reader cannot tell them apart. Also None: no `jobs:` line, a value on it (flow
+    style, an anchor), no key under it, a tab in the indent, a line between column 0 and the
+    keys' indent, a line at the keys' indent that is no key, a value in the block with an
+    anchor or a tag (`&`, `!`), and a quoted value or flow collection that does not close on
+    its line (block scalars aside). A line deeper than the keys is never read as a key, and
+    one at the keys' indent always is, so a value continued on indented lines can only add an
+    id, never hide one. An empty or short set would read a job as one the file predates; None
+    stops the gate. The run's own job list backs this up (mariadb_state).
     """
     ids: set[str] = set()
     seen = inside = started = False
     indent = 0
-    block = -1  # the depth of the key whose block scalar (`|`, `>`) runs below it
+    block = -1  # the depth of the line whose block scalar (`|`, `>`) runs below it
     for line in LINE_BREAK.split(text):
         stripped = line.lstrip(" ")
         if not stripped.strip(" \t") or stripped.startswith("#"):
@@ -218,13 +248,19 @@ def workflow_job_ids(text: str) -> set[str] | None:
         if block >= 0 and depth > block:
             continue
         block = -1
+        if seen and depth == 0:
+            return None  # jobs: is the last top-level key
         if stripped.startswith("\t") and (depth == 0 or (inside and depth <= (indent or depth))):
             return None
         entry = stripped
-        while re.match(r"-(?:[ \t]|$)", entry):  # `- key: value` in a sequence
+        while re.match(r"-(?:[ \t]|$)", entry):  # `- key: value` or `- value` in a sequence
             entry = entry[1:].lstrip(" \t")
         found = KEY.match(entry)
-        value = ((found.group(3) or "") if found else "").strip()
+        other = None if found else ANY_KEY.match(entry)
+        value = (found.group(3) if found else other.group(1) if other else entry) or ""
+        value = value.strip(" \t")
+        if inside and value[:1] in ("&", "!"):
+            return None
         if value[:1] in ("|", ">"):
             block = depth
         elif not _one_line(value):
@@ -234,17 +270,14 @@ def workflow_job_ids(text: str) -> set[str] | None:
                 started = True
                 continue
             started = True
-            if entry is not stripped and not inside:
+            if entry is not stripped:
                 continue  # a sequence entry at column 0 under a key before `jobs:`
-            if not (found and entry is stripped and found.group(2) in WORKFLOW_KEYS):
+            if not (found and found.group(2) in WORKFLOW_KEYS):
                 return None
-            if inside and not ids:
-                return None
-            inside = found.group(2) == "jobs"
-            if inside:
-                if seen or (value and not value.startswith("#")):
+            if found.group(2) == "jobs":
+                if value and not value.startswith("#"):
                     return None
-                seen = True
+                seen = inside = True
             continue
         if not inside:
             continue
