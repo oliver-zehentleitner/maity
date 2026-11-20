@@ -6371,11 +6371,14 @@ window.Maity = window.Maity || {};
   // route ends at the path, whatever query follows.
   const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
-  // Every page of a list, following next_cursor (docs/api.md §1.4).
-  async function getAll(path) {
+  // Every page of a list, following next_cursor (docs/api.md §1.4). first, where given, is called
+  // with the first page's items as soon as it is in, before the next is asked (the board draws
+  // from its open columns' first pages, tsk-qw08c8ds214g); the pages asked stay the same.
+  async function getAll(path, first) {
     const sep = path.includes("?") ? "&" : "?";
     let page = await request("GET", path + sep + "limit=200");
     const items = page.items.slice();
+    if (first) first(items.slice());
     while (page.next_cursor) {
       page = await request("GET", path + sep + "limit=200&cursor=" + encodeURIComponent(page.next_cursor));
       items.push(...page.items);

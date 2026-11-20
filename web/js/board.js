@@ -735,18 +735,31 @@ window.Maity = window.Maity || {};
     // A closed column is one page now (tsk-d4anfsk1e94j): CLOSED_PAGE cards, or for a reload as many
     // as the column held (limits, at most PAGE_MAX), so that a write does not fold back what Show more
     // loaded. Resolves with the cards and each closed column's next cursor.
+    // The first draw takes each open group's first page (tsk-qw08c8ds214g): the open column's second
+    // page came about 95 ms after its first, on the way to that draw. The later pages come with the
+    // whole read, which draws again as the closed columns do; one that fails after the first draw
+    // is said as such (openMore), with the board left as drawn.
     const readList = async (shown, limits) => {
       const began = M.api.now() - RECONCILE_MARGIN_MS;
-      const groups = listPaths.map((path) => M.api.getAll(path))
-        .concat(CLOSED_GROUPS.map((s) => M.api.get(closedPath(s, (limits && limits[s]) || CLOSED_PAGE))));
+      const firsts = [];
+      const groups = listPaths.map((path) => {
+        let firstPage = null;
+        firsts.push(new Promise((resolve) => { firstPage = resolve; }));
+        return M.api.getAll(path, shown ? firstPage : undefined);
+      }).concat(CLOSED_GROUPS.map((s) => M.api.get(closedPath(s, (limits && limits[s]) || CLOSED_PAGE))));
       // A closed column failing while the open ones are awaited is handled by Promise.all below.
       groups.forEach((read) => read.catch(() => {}));
       if (shown) {
         const open = new Map();
-        (await Promise.all(groups.slice(0, LIST_GROUPS.length))).forEach((r) => r.items.forEach((t) => { if (!open.has(t.id)) open.set(t.id, t); }));
+        // A group's first page, or the whole group where that comes first; a group failing before
+        // its first page fails the read here, before any draw, as before.
+        const pages = await Promise.all(firsts.map((first, i) => Promise.race([first, groups[i].then((r) => r.items)])));
+        pages.forEach((items) => items.forEach((t) => { if (!open.has(t.id)) open.set(t.id, t); }));
         shown([...open.values()]);
       }
-      const parts = await Promise.all(groups);
+      const parts = await Promise.all(groups.map((read, i) => (shown && i < LIST_GROUPS.length
+        ? read.catch((err) => { throw Object.assign(err instanceof Error ? err : new Error(String(err)), { openMore: true }); })
+        : read)));
       const cards = new Map();
       parts.forEach((r) => r.items.forEach((t) => { if (!cards.has(t.id)) cards.set(t.id, t); }));
       const next = {};
@@ -1152,10 +1165,14 @@ window.Maity = window.Maity || {};
 
     // A closed column while the closed group is still read, or failed: a hub search lists its own cards.
     const closedWaiting = (s) => (closedPending || !!closedError) && !hubResults && (s === "done" || s === "cancelled");
+    // A later page of an open column failing after the first draw (openMore) fails the whole read
+    // too: it is said as what it is, the open columns staying as drawn.
     const closedWords = () => (closedError
       ? (closedError.recheck
         ? M.t("board.closed.recheck_failed", { reason: closedError.message || String(closedError) })
-        : M.t("board.closed.failed", { reason: closedError.message || String(closedError) }))
+        : closedError.openMore
+          ? M.t("board.open.more_failed", { reason: closedError.message || String(closedError) })
+          : M.t("board.closed.failed", { reason: closedError.message || String(closedError) }))
       : M.t("board.closed.loading"));
     // What the closed read is doing, said once for a screen reader: the columns are drawn anew, so
     // the live region stands outside them and keeps its place from pending to done or failed.

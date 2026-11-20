@@ -493,6 +493,7 @@ window.MAITY_I18N["ko"] = {
   "board.new_subtask": "새 하위 작업",
   "board.no_match": "필터와 일치하는 카드가 없어요.",
   "board.not_saved": "저장하지 못했어요: {reason}",
+  "board.open.more_failed": "닫히지 않은 열의 나머지 카드를 읽지 못했어요: {reason}",
   "board.place.above": "{id}: 이제 {other} 위에 있어요.",
   "board.place.below": "{id}: 이제 {other} 아래에 있어요.",
   "board.place.bottom": "{id}: 이제 맨 아래에 있어요.",

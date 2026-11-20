@@ -486,6 +486,7 @@
   "board.new_subtask": "新建子任务",
   "board.no_match": "没有卡片符合筛选条件。",
   "board.not_saved": "未保存： {reason}",
+  "board.open.more_failed": "无法读取未关闭列中的其余卡片： {reason}",
   "board.place.above": "{id} 现在位于 {other} 之上。",
   "board.place.below": "{id} 现在位于 {other} 之下。",
   "board.place.bottom": "{id} 现在位于最下方。",

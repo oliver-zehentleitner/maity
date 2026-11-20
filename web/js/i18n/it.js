@@ -516,6 +516,7 @@ window.MAITY_I18N["it"] = {
   "board.new_subtask": "Nuova sottoattività",
   "board.no_match": "Nessuna scheda corrisponde al filtro.",
   "board.not_saved": "Non salvato: {reason}",
+  "board.open.more_failed": "Impossibile leggere le altre schede delle colonne aperte: {reason}",
   "board.place.above": "{id} ora è sopra {other}.",
   "board.place.below": "{id} ora è sotto {other}.",
   "board.place.bottom": "{id} ora è in fondo.",

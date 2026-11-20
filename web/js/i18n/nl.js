@@ -516,6 +516,7 @@ window.MAITY_I18N["nl"] = {
   "board.new_subtask": "Nieuwe deeltaak",
   "board.no_match": "Geen kaart komt overeen met het filter.",
   "board.not_saved": "Niet opgeslagen: {reason}",
+  "board.open.more_failed": "Verdere kaarten van de open kolommen konden niet worden gelezen: {reason}",
   "board.place.above": "{id} staat nu boven {other}.",
   "board.place.below": "{id} staat nu onder {other}.",
   "board.place.bottom": "{id} staat nu onderaan.",

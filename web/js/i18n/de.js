@@ -516,6 +516,7 @@ window.MAITY_I18N["de"] = {
   "board.new_subtask": "Neue Teilaufgabe",
   "board.no_match": "Keine Karte passt zum Filter.",
   "board.not_saved": "Nicht gespeichert: {reason}",
+  "board.open.more_failed": "Weitere Karten der offenen Spalten konnten nicht gelesen werden: {reason}",
   "board.place.above": "{id} steht jetzt über {other}.",
   "board.place.below": "{id} steht jetzt unter {other}.",
   "board.place.bottom": "{id} steht jetzt ganz unten.",
