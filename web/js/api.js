@@ -3419,7 +3419,9 @@ window.Maity = window.Maity || {};
     // agent profile's owner).
     ["GET", /^\/projects\/([^/]+)\/placements$/, (m, body, path) => {
       project(m[1], path);
-      return { items: placementsOf(m[1]).filter((p) => p.active), next_cursor: null };
+      // §15.6: active ones; `closed=true` adds the closed ones (the fixture keeps no age).
+      const closed = new URLSearchParams(path.split("?")[1] || "").get("closed") === "true";
+      return { items: placementsOf(m[1]).filter((p) => closed || p.active), next_cursor: null };
     }],
     // A human with members:admin places an agent on a runner of their own attached here: one of
     // their agents by id, or a new profile (§15.6). Some of the hub's checks, in its order: the

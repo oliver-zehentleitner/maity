@@ -2188,6 +2188,39 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     && byId("placement-new-clone").getAttribute("placeholder") === "agent-c-2",
     "placements: an agent with room starts another instance, with the count, its runners and the next clone "
     + JSON.stringify([srAnother, byId("placement-new-clone").getAttribute("placeholder")]));
+  // Review A1746 of #2058: the form counts and picks clones as the hub does. Two active placements
+  // of Agent C whose credentials made instances that are no longer live (revoked, waiting to
+  // rejoin) each hold one of its 3 (instances_held), and a closed placement of another member
+  // whose clone the runner kept still holds that clone (the hub's clone default), while one
+  // reported removed does not.
+  srCancel().click(); await tick();
+  const iiAll = win.Maity.api.getAll;
+  const iiPlacement = (id, agent, clone, extra) => Object.assign({ id, agent: { id: agent, handle: agent, display_name: agent },
+    runner: { id: "rnr-0002", name: "home-laptop" }, workspace: { clone }, active: true, credential_id: null, instance: null }, extra);
+  const iiExtra = [
+    iiPlacement("plc-ii1", "agt-c", "agent-c-5", { credential_id: "crd-c-old1", instance: "gone1" }),
+    iiPlacement("plc-ii2", "agt-c", "agent-c-6", { credential_id: "crd-c-old2", instance: "gone2" }),
+  ];
+  win.Maity.api.getAll = (p, ...rest) => (p === "/projects/maintainer/maity/placements?closed=true"
+    ? iiAll(p, ...rest).then((a) => Object.assign({}, a, { items: [...a.items, ...iiExtra] }))
+    : iiAll(p, ...rest));
+  await srOpen();
+  byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+  const iiFull = text(srPanel().querySelector(".join-runner-why"));
+  expect(iiFull === "Agent C has 3 of 3 instances, its limit. Its owner raises the limit in the agent's rulebook before another one starts.",
+    "placements: an active placement whose instance is no longer live counts toward the limit, as the hub counts it " + iiFull);
+  srCancel().click(); await tick();
+  iiExtra.length = 0;
+  iiExtra.push(iiPlacement("plc-ii3", "agt-b", "agent-c-2", { active: false, workspace_outcome: { state: "kept" } }),
+    iiPlacement("plc-ii4", "agt-b", "agent-c-3", { active: false, workspace_outcome: { state: "removed" } }));
+  await srOpen();
+  byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+  const iiClone = byId("placement-new-clone").getAttribute("placeholder");
+  expect(iiClone === "agent-c-3",
+    "placements: a closed placement of another member that still holds its clone takes that clone, a removed one does not " + iiClone);
+  win.Maity.api.getAll = iiAll;
+  srCancel().click(); await tick();
+  await srOpen();
   // §15.6: by id only an active member of the project; a profile of one's own not in it yet joins by a line first.
   byId("join-agent").value = "agt-s1"; byId("join-agent").dispatch("change");
   const srOutsideWhy = text(srPanel().querySelector(".join-runner-why"));

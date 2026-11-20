@@ -544,10 +544,12 @@ window.Maity = window.Maity || {};
       let runners;
       let placements;
       try {
-        const [attached, listed] = await Promise.all([M.api.getAll(ctx.base + "/runners"), M.api.getAll(ctx.base + "/placements")]);
+        // With the closed ones too (§15.6 closed=true): a clone a closed placement still holds on a
+        // runner is one the hub will not give a start of another member (cloneFor).
+        const [attached, listed] = await Promise.all([M.api.getAll(ctx.base + "/runners"), M.api.getAll(ctx.base + "/placements?closed=true")]);
         if (mine !== round) return;
         runners = attached.items.filter((a) => a.runner.owner_id === ctx.me.id && a.runner.credential_state === "active" && !a.runner.removed_at);
-        placements = listed.items.filter((p) => p.active);
+        placements = listed.items;
       } catch (err) {
         say(h("p", { class: "send-status failed" }, M.t("placements.new.runners_failed", { reason: err.message })));
         return;
@@ -582,10 +584,14 @@ window.Maity = window.Maity || {};
     // How many instances a member holds as the hub counts them for a new placement (§15.5): its
     // active instances, plus its active placements that hold no instance yet (no credential
     // before the first pickup), against its `max_instances` (1 when its view names none, §6.18).
+    // A placement holds no instance yet when it has no credential, or when the instance its
+    // credential made is not among the member's live ones (a revoked credential, waiting to
+    // rejoin): the hub counts both (`instances_held`, review A1746 of #2058).
     function instancesOf(member) {
-      const live = (member.instances || []).filter((i) => !i.revoked_at).length;
-      const mine = current.filter((p) => p.agent && p.agent.id === member.id);
-      const waiting = mine.filter((p) => !p.credential_id).length;
+      const liveIds = new Set((member.instances || []).filter((i) => !i.revoked_at).map((i) => i.id));
+      const mine = current.filter((p) => p.active && p.agent && p.agent.id === member.id);
+      const waiting = mine.filter((p) => !p.credential_id || (p.instance && !liveIds.has(p.instance))).length;
+      const live = liveIds.size;
       const max = member.team && Number.isInteger(member.team.max_instances) ? member.team.max_instances : 1;
       const where = [...new Set(mine.map((p) => p.runner && p.runner.name).filter(Boolean))];
       return { count: live + waiting, max, where };
@@ -608,10 +614,14 @@ window.Maity = window.Maity || {};
       return M.t("placements.new.instance_room", { name: chosen.member.display_name || chosen.member.handle, active: String(n.count), max: String(n.max), where });
     }
     // The clone a start without one gets, as the hub picks it (§15.5 `workspace`): the handle,
-    // else the first `<handle>-N` no active placement on the chosen runner names.
+    // else the first `<handle>-N` that on the chosen runner no active placement names, nor a
+    // closed one of another member whose clone the runner has not reported removed (the member's
+    // own closed clone is taken up again; review A1746 of #2058).
     function cloneFor(handle) {
       if (!fields || !handle) return handle;
-      const taken = new Set(current.filter((p) => p.runner && p.runner.id === fields.runner.value)
+      const holds = (p) => p.active || ((!p.agent || p.agent.id !== chosen.id)
+        && !(p.workspace_outcome && p.workspace_outcome.state === "removed"));
+      const taken = new Set(current.filter((p) => p.runner && p.runner.id === fields.runner.value && holds(p))
         .map((p) => p.workspace && p.workspace.clone).filter(Boolean));
       if (!taken.has(handle)) return handle;
       let n = 2;
