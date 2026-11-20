@@ -540,6 +540,8 @@ def run(args: argparse.Namespace, role_of: RoleOf | None = None) -> int:
         raise Refused(str(exc)) from None
     text, log = as_text(args), as_log(args)
     with tempfile.TemporaryDirectory(prefix="maity-gh-") as empty:
+        if args.gh_group == "pr" and args.gh_command == "merge":
+            direct_merge_only(gh, repository, args.selector, empty)
         done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built above
             argv,
             input=stdin,
@@ -558,6 +560,33 @@ def run(args: argparse.Namespace, role_of: RoleOf | None = None) -> int:
         sys.stderr.write(_clean(done.stderr))
         sys.stderr.flush()
     return done.returncode
+
+
+# What the merge reads first: whether the pull request's base branch merges through a queue.
+QUEUE_FIELDS = ("isMergeQueueEnabled", "isInMergeQueue")
+
+
+def direct_merge_only(gh: str, repository: str, number: str, cwd: str) -> None:
+    """Refused unless the pull request merges directly (review A1804 of #2054). On a base
+    branch with a merge queue, `gh pr merge` hands the strategy to the queue and can defer
+    the merge, so `--squash` and the expected head would no longer be the outcome. The answer
+    must say, as booleans, that no queue is required and the pull request is in none; any
+    other answer, an older gh that does not know the fields, or a failed read refuses
+    (fail closed)."""
+    argv = [gh, "pr", "view", f"--repo={repository}", f"--json={','.join(QUEUE_FIELDS)}",
+            "--", number]  # fmt: skip
+    done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built here
+        argv, cwd=cwd, env=gh_env(os.environ, gh), check=False, capture_output=True
+    )
+    try:
+        answer = json.loads(done.stdout) if done.returncode == 0 else None
+    except ValueError:
+        answer = None
+    if not isinstance(answer, dict) or any(answer.get(f) is not False for f in QUEUE_FIELDS):
+        raise Refused(
+            f"pull request {number} does not merge directly (a merge queue, or gh could not "
+            "say): maity gh merges only by a direct squash of the head named"
+        )
 
 
 def _clean(answer: bytes) -> str:
