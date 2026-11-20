@@ -1324,6 +1324,17 @@ def test_the_test_slots_and_cluster_go_in_the_placements_own_scratch(tmp_path: P
                        f'"{room}" = "write"']  # fmt: skip
 
 
+def test_an_agy_placement_gets_no_test_slots_or_cluster(tmp_path: Path) -> None:
+    """agy's scratch under `/tmp` is read-only to it but for `tmp` (the review of #2032), so a
+    slot directory or cluster there could not be written: it keeps the scripts' defaults."""
+    room = Path("/tmp/maity-scratch-1000/" + "a" * 32)  # noqa: S108 - a path, nothing written
+    folder = tmp_path / "g" / "ws"
+    ctx = context(tmp_path / "g", "antigravity", scratch=room, pg_pass=room / "pg.pass")
+    env = adapters.launch(dataclasses.replace(ctx, folder=folder)).env
+    assert env["MAITY_SCRATCH"] == str(room)
+    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR", "MAITY_PG_PASSFILE"} & set(env)
+
+
 def test_a_cluster_whose_socket_would_not_fit_gets_no_pg_dir(tmp_path: Path) -> None:
     # with_postgres.sh binds `<MAITY_PG_DIR>/.s.PGSQL.<port>`; past the Unix socket limit the
     # server cannot start, so the session gets no MAITY_PG_DIR (the slots still go there).
@@ -1346,7 +1357,7 @@ def test_the_run_name_is_handle_and_instance(tmp_path: Path) -> None:
     launched = adapters.launch(context(tmp_path / "s", "stub", placement=placement))
     assert launched.env["MAITY_RUN_NAME"] == "maity-coder-7#xpde"
     assert adapters.run_name({**placement, "instance": None}) == "maity-coder-7"  # before a join
-    for bad in ("a b", "a\tb", "#x", "", None, "x" * 65):
+    for bad in ("a b", "a\tb", "#x", "", None, "x" * 65, "agent\n", "a\nb"):
         assert adapters.run_name({**placement, "agent": {"handle": bad}}) is None
         assert adapters.run_name({**placement, "instance": bad}) == "maity-coder-7"
     assert adapters.run_name({"id": "plc-0003"}) is None

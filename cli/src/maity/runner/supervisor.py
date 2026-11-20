@@ -558,6 +558,7 @@ class Supervisor:
             if done:
                 with self.lock:
                     self.scratch_cleared.add(p["id"])
+                    self.pg_passes.discard(p["id"])  # its password file went with the scratch
                     had_name = self.scratch_names.pop(p["id"], None) is not None
                 if had_name:  # its recorded leaf is gone with it
                     self._save_scratch_names()
@@ -1223,7 +1224,8 @@ class Supervisor:
             context = self._context(p, harness, place, target, rec.resume and not reset,
                                     view=view, scratch=scratch)  # fmt: skip
             launch = adapters.launch(context)
-            if scratch is not None and adapters.pg_dir(scratch) is None:
+            if (scratch is not None and not workspace.scratch_in_tmp(harness.id)
+                    and adapters.pg_dir(scratch) is None):  # fmt: skip
                 self.log(f"{p['id']}: no MAITY_PG_DIR: a PostgreSQL socket under "
                          f"{scratch / adapters.PG} would not fit a Unix socket path; "
                          "set a shorter workspaces root")  # fmt: skip
@@ -1863,9 +1865,10 @@ def other_scratches(
 ) -> list[Path]:
     """The scratch of every other placement under `workspaces` as it stands now
     (`<root>/<project>/.scratch/<placement id>`, workspace.scratch_of), so the sandbox hides
-    them as it hides the other clones' credentials: a session reaches its own scratch only
-    (tsk-w7qtcbzcshn9, the security review of #2032; a scratch made later is covered from the
-    next start). Named as scratch_of names them: below the root resolved here, as given on an
+    them as it hides the other clones' credentials (tsk-w7qtcbzcshn9, the security review of
+    #2032). The list covers the scratches there at the start (tsk-rbys2j9q0m48 tracks the rest,
+    as for the other clones' credentials). Named as scratch_of
+    names them: below the root resolved here, as given on an
     ssh host. A listing that cannot be completed refuses the start (`workspace.Refused`): an
     unreadable `.scratch` could hide one, and the sandbox would start without its deny."""
     root = workspaces if host else workspaces.resolve()

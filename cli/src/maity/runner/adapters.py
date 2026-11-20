@@ -28,6 +28,7 @@ from typing import Any
 from .. import __version__, clonecheck, ghpr, proc
 from . import config, scratch, stub, trust
 from .asuser import AsUser
+from .workspace import TMP_SCRATCH_HARNESSES
 
 START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
@@ -235,7 +236,7 @@ class Context:
 
 # MAITY_RUN_NAME as tools/run_slot.sh and with_postgres.sh log it: `<handle>#<instance>`, both as
 # the hub names them; anything else is left out rather than passed on.
-_RUN_NAME_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+_RUN_NAME_PART = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")  # fullmatch: no `$`, no "\n"
 
 
 def run_name(placement: dict[str, Any]) -> str | None:
@@ -243,10 +244,10 @@ def run_name(placement: dict[str, Any]) -> str | None:
     hub has named no instance yet (before the first join), None without a usable handle."""
     agent = placement.get("agent")
     handle = agent.get("handle") if isinstance(agent, dict) else None
-    if not isinstance(handle, str) or not _RUN_NAME_PART.match(handle):
+    if not isinstance(handle, str) or not _RUN_NAME_PART.fullmatch(handle):
         return None
     instance = placement.get("instance")
-    if isinstance(instance, str) and _RUN_NAME_PART.match(instance):
+    if isinstance(instance, str) and _RUN_NAME_PART.fullmatch(instance):
         return f"{handle}#{instance}"
     return handle
 
@@ -324,6 +325,9 @@ class Launch:
 
 
 def launch(ctx: Context) -> Launch:
+    # The test slots and cluster go in a scratch beside the clone only: agy's `/tmp` scratch is
+    # read-only to it but for `tmp` (the review of #2032), so agy keeps the scripts' defaults.
+    beside = ctx.harness.id not in TMP_SCRATCH_HARNESSES
     # Every git in the session, the harness's own unsandboxed calls included, reads the
     # clone's real .git: a `.git/commondir` the agent writes from the sandbox redirects
     # nothing. The agent can unset it for its own commands, which stay in the sandbox.
@@ -344,7 +348,7 @@ def launch(ctx: Context) -> Launch:
         **({"MAITY_SCRATCH": str(ctx.scratch)} if ctx.scratch is not None else {}),
         **({"TMPDIR": str(tmp)} if (tmp := scratch_tmpdir(ctx.scratch)) is not None else {}),
         # The test slots and test cluster in the scratch, and who takes them (tools/run_slot.sh).
-        **run_env(ctx.scratch, ctx.pg_pass),
+        **run_env(ctx.scratch if beside else None, ctx.pg_pass),
         **({"MAITY_RUN_NAME": name} if (name := run_name(ctx.placement)) is not None else {}),
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the

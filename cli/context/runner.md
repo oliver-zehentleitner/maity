@@ -4799,7 +4799,10 @@ Two hardening steps keep the scratch the placement's own:
   the other clones' credentials do. Claude Code denies them (`denyRead`,
   `denyWrite`). In Codex they stay inside the hidden workspaces root, so
   `outermost` leaves them out of the profile. A listing that cannot be
-  completed refuses the start.
+  completed refuses the start. The list covers the scratches that exist at
+  the start. One made while a Claude Code session runs is a known residual,
+  tracked as tsk-rbys2j9q0m48. agy and opencode are not kept out by these
+  rules.
 - **Password-protected cluster.** The cluster takes a password: scratchop
   `make` draws one per placement into `<scratch>/pg.pass`, 0600, created
   exclusively without following a link and never overwritten, so a restart

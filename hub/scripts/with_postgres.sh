@@ -14,7 +14,8 @@
 #
 # MAITY_PG_PASSFILE, when set, names a file whose first line is the password of the role
 # `postgres`: the cluster is then made with scram-sha-256 instead of trust, and the run reaches it
-# with that password (MAITY_TEST_DATABASE_URL carries it). The runner sets it for a placed session,
+# with that password (PGPASSWORD, which libpq reads; the URL stays without it). The runner sets it
+# for a placed session,
 # a file of its own in the placement's scratch, so that a process of the same OS user that can
 # reach the socket but not the session's files cannot use the cluster. The file must be a regular
 # file of this user with mode 600, or nothing starts; a cluster made with trust is not used with it.
@@ -114,7 +115,7 @@ if ! pg_ctl -D "$dir" status >/dev/null 2>&1; then
 fi
 if [ "$mode" = start ]; then
   rm -f "$started" # a server started with --start outlives the runs, also one a run started
-  echo "PostgreSQL is up: postgresql://postgres${password:+:<the password in MAITY_PG_PASSFILE>}@/<database>?host=$dir"
+  echo "PostgreSQL is up: postgresql://postgres@/<database>?host=$dir${password:+ (password: PGPASSWORD from MAITY_PG_PASSFILE)}"
   exit 0
 fi
 flock -s 9
@@ -147,7 +148,9 @@ finish() {
 trap finish EXIT
 
 sql "create database \"$database\""
-export MAITY_TEST_DATABASE_URL="postgresql://postgres${password:+:$password}@/$database?host=$dir"
+# No password in the URL, which tests and their failures print: libpq (psycopg) reads the
+# exported PGPASSWORD, as psql does above.
+export MAITY_TEST_DATABASE_URL="postgresql://postgres@/$database?host=$dir"
 status=0
 # At a terminal the command stays in the foreground, so that it can read (--pdb, breakpoint())
 # and Ctrl-C reaches it directly. A TERM or HUP sent to this script alone then waits for the

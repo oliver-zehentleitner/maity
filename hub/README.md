@@ -399,7 +399,7 @@ only if this script started it; a server that was already up keeps running.
 the rules for a shared machine. The server lets the account in on its socket without a
 password (`trust`, in a 0700 data directory) unless `MAITY_PG_PASSFILE` names a file
 whose first line is a password: then the cluster is made with `scram-sha-256` and the
-run's URL carries the password. The file must be a regular file of the account with
+run gets the password as `PGPASSWORD`, which libpq reads (the URL stays without it). The file must be a regular file of the account with
 mode 600, and a cluster made with `trust` is refused with it. A runner sets it for
 placed agents (`docs/runners.md`). It needs `pg_ctl`, `initdb` and `psql`, on the path
 or in `MAITY_PG_BIN`. Without a system PostgreSQL, the PyPI package `pgserver`

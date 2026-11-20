@@ -285,8 +285,8 @@ def test_with_a_password_file_the_cluster_takes_scram_and_the_url_the_password(
         env=run, check=True, capture_output=True, text=True,
     ).stdout  # fmt: skip
     url, password = out.strip().split("|")
-    assert url.startswith(f"postgresql://postgres:{'ab' * 32}@/maity_test_c_x_")
-    assert password == "ab" * 32
+    assert url.startswith("postgresql://postgres@/maity_test_c_x_")  # never in the URL
+    assert password == "ab" * 32  # libpq reads it from PGPASSWORD
     (initdb,) = [line for line in Path(run["FAKE_LOG"]).read_text().splitlines()
                  if line.startswith("initdb")]  # fmt: skip
     assert "-A scram-sha-256" in initdb and f"--pwfile={passfile}" in initdb
@@ -334,7 +334,7 @@ def test_a_cluster_made_with_trust_is_not_used_with_a_password(run: dict[str, st
         capture_output=True, text=True,
     )  # fmt: skip
     assert refused.returncode == 2 and "made with trust" in refused.stderr
-    assert calls(run, "start") == []
+    assert not Path(run["FAKE_LOG"]).exists()  # refused before any tool ran
     (data / "pg_hba.conf").write_text("# trust: not here\nlocal all all scram-sha-256\n")
     subprocess.run([SCRIPT, "true"], env={**run, "MAITY_PG_PASSFILE": str(_passfile(run))},
                    check=True)  # fmt: skip

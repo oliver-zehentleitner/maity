@@ -58,7 +58,7 @@ SCRATCH = ".scratch"
 SCRATCH_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")  # a placement id, as the supervisor takes it
 # The test cluster's password (hub/scripts/with_postgres.sh, MAITY_PG_PASSFILE): drawn once per
 # placement when its scratch is made, beside the cluster's data directory `pg`, never inside it.
-PG_PASS = "pg.pass"
+PG_PASS = "pg.pass"  # noqa: S105 - the file's name, not a password
 LINK = 4  # the exit code for a link (or no directory) on the way: nothing was done
 _FOLDER = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
 # A path descriptor opens a directory without needing read or search on it (O_PATH, Linux), so
@@ -170,7 +170,7 @@ def _pg_pass(dir_fd: int) -> bool:
         fd = os.open(PG_PASS, flags, 0o600, dir_fd=dir_fd)
     except FileExistsError:
         found = os.stat(PG_PASS, dir_fd=dir_fd, follow_symlinks=False)
-        return (stat.S_ISREG(found.st_mode) and found.st_uid == os.getuid()
+        return (stat.S_ISREG(found.st_mode) and found.st_uid == _uid(None)
                 and stat.S_IMODE(found.st_mode) == 0o600)  # fmt: skip
     with os.fdopen(fd, "w") as handle:
         os.fchmod(handle.fileno(), 0o600)  # the mode asked for is subject to the umask
