@@ -641,9 +641,12 @@ def test_a_malformed_signed_credential_id_answers_as_an_unknown_one_without_a_qu
     assert not looked_up
 
 
+# Fixed values, not `new_id`: every pytest-xdist worker must collect the same test ids.
+# `crd-zzzzzzzzzzzz` has the issued form (`ids.has_shape`) but no row in a fresh database.
 @pytest.mark.parametrize(
     ("credential_id", "looked_up"),
-    [("agt-" + "0" * 12, False), ("crd-" + "0" * 13, False), (new_id("credential"), True)],
+    [("agt-" + "0" * 12, False), ("crd-" + "0" * 13, False), ("crd-" + "z" * 12, True)],
+    ids=["agent-prefix", "thirteen-characters", "well-formed-unknown"],
 )
 def test_a_bearer_credential_id_of_no_issued_form_is_not_looked_up(
     make_client: ClientFactory, migrated: Engine, credential_id: str, looked_up: bool
