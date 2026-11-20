@@ -4156,6 +4156,43 @@ looks at each interactive session once a minute.
   credential reads no members, and the processes are on the runner's side
   anyway.
 
+## A reset starts the generation's first session fresh, and `sessions` goes only to a hub that knows it
+
+**Id:** a5205d13-c553-4d3b-aedf-f0f134c3011c
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-r4apvj4kbf3a (the runner honours a reset for every harness it supports and reports it); docs/api.md §15.6, §15.7, §15.14
+**See:** https://github.com/oliver-zehentleitner/maity — 37b4b9a1-a0f0-4f6f-bb26-b607590ffa18 — as of 2026-11-20
+**Revisit when:** the runner keeps the harness's session id and resumes on every start (§15.14), or the hub's report model stops refusing unknown fields
+
+A placement whose `fresh_session` is true starts the generation's first
+session fresh: the start prompt, no `--continue` (Claude Code) or `-c`
+(Antigravity), whatever resume the record holds. Codex and opencode resume
+nothing at an interactive start, and a supervised loop starts with its
+`first` command, so they are fresh already. A later resume in that
+generation, after a `hung` end, continues the new session. The runner logs
+`reset: a fresh session, the last one not resumed` and counts fresh starts
+in the record's `sessions` (a start whose `Launch.resumed` is false),
+reset by a new generation and part of the report's key. It sends
+`sessions` only when the placement it read carries a `fresh_session` key.
+
+**Reason:** today a new generation already clears the resume flag, so a
+reset changes no argv yet; the explicit check keeps a reset fresh once a
+restart resumes the session, as §15.14 wants, and covers a record that
+holds a resume from a state file. The hub's report model is strict: an
+older hub answers `invalid` to a report with `sessions`, every tick, so
+the field waits for the hub that carries `fresh_session`, which takes it.
+
+**Rejected alternatives:** sending `sessions` always: a runner newer than
+its hub would have every report refused. A field of the runner's own for
+"reset done": `sessions` is already in the contract and says the same. A
+fresh start for the supervised loop's retries after a failed first run:
+the loop's `again` continues the clone's latest conversation, which after
+a first run that failed before writing one is the conversation before the
+reset; left as it is, since the loop's handling sits beside a change in
+flight there (#2016) and the same holds for every restart today.
+
 ## A stopped agent's clone stays for its retention time, then the runner removes it
 
 **Id:** 161d5507-5b44-45d6-8bec-cacd58de58a2
