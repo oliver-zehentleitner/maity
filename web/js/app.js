@@ -2406,13 +2406,29 @@ window.Maity = window.Maity || {};
       watch(b);
     });
   }
-  function renderBanner(ctx) {
+  // The two banners' reads, started before the page's view runs (tsk-qw08c8ds214g): they do not
+  // depend on the page, and after the view they waited on all of its reads (the board's 1.2 s).
+  // The banners are still drawn after the view. The sessions' read carries the sessions_rev it
+  // began under: a sign-in or an end meanwhile reads them again (renderBanner).
+  function startBannerReads(ctx) {
+    if (!ctx.me || ctx.me.kind !== "human") return null;
+    if (M.factorBanner) M.factorBanner.warm(factorSession, /^\/account\/security(?:\/|$)/.test(M.route.current().path));
+    if (!M.sessions) return null;
+    const rev = sessionsRev();
+    const reading = M.sessions.bannerSessions();
+    reading.catch(() => {});
+    return { rev, reading };
+  }
+  // early: what startBannerReads() began for this render; without it, or with sessions_rev moved
+  // since, the sessions are read now.
+  function renderBanner(ctx, early) {
     if (!M.sessions || !ctx.me || ctx.me.kind !== "human") return; // a human's sessions only
     const main = document.getElementById("main");
     const seq = ++bannerSeq;
     bannerFor = sessionsRev();
+    const reading = early && early.rev === bannerFor ? early.reading : null;
     const drop = () => { const old = main.querySelector(".signin-banner"); if (old) main.removeChild(old); };
-    M.sessions.banner(ctx, () => render()).then((b) => {
+    M.sessions.banner(ctx, () => render(), reading).then((b) => {
       if (seq !== bannerSeq) return;
       drop();
       bannerShown = !!b;
@@ -2709,6 +2725,7 @@ window.Maity = window.Maity || {};
     // The account's tabs (Organisations among them) and a project's Settings (Project and Mine)
     // are forms: one reading column (web/context/views.md).
     const root = h("section", { class: "view view-" + viewName + (["account", "orgs", "settings"].includes(viewName) ? " form-column" : "") });
+    const bannerReads = startBannerReads(ctx);
     try {
       if (empty) {
         // A personal request (§7) reaches its human without a membership:
@@ -2768,7 +2785,7 @@ window.Maity = window.Maity || {};
     // A view's own tab rows that scroll sideways (the account's, js/account.js), set up now that
     // they are in the page and have a width: the current tab in sight, the fade on the side with more.
     root.querySelectorAll("nav.account-tabs").forEach((nav) => { showCurrent(nav); scrollCue(nav); });
-    renderBanner(ctx);
+    renderBanner(ctx, bannerReads);
     renderFactorBanner(ctx);
     // Any answer that moves `sessions_rev` builds the banner again, the long-poll's too where
     // it runs (the Notifications page), not only the count round (§2.6.5 "shows at once").

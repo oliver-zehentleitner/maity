@@ -397,6 +397,11 @@ window.Maity = window.Maity || {};
       return (agents || []).map((id) => named(item, id)).join(", ");
     }
 
+    // The side's agents in the lists' words: all, none or those named.
+    const theirAgents = (item, theirs) => (theirs === "all" ? M.t("chat_access.their_all")
+      : theirs === "none" ? M.t("chat_access.their_none")
+        : M.t("chat_access.their_named", { agents: agentsOf(item, theirs) }));
+
     // The entry as it was, in the lists' words, its people by the item's names.
     function asItWas(item, e) {
       if (!e) return null;
@@ -412,10 +417,7 @@ window.Maity = window.Maity || {};
       else if (item.list === "deny" && e.human_id) whomText = M.t("chat_access.deny.person", { handle });
       else if (item.list === "deny") whomText = M.t("chat_access.deny.side", { handle });
       else {
-        const theirs = e.their_agents === "all" ? M.t("chat_access.their_all")
-          : e.their_agents === "none" ? M.t("chat_access.their_none")
-            : M.t("chat_access.their_named", { agents: agentsOf(item, e.their_agents) });
-        whomText = [M.t("chat_access.side", { handle }), " · ", theirs, " · ",
+        whomText = [M.t("chat_access.side", { handle }), " · ", theirAgents(item, e.their_agents), " · ",
           e.their_human ? M.t("chat_access.human_yes", { handle }) : M.t("chat_access.human_no", { handle })].join("");
       }
       // The time as the lists say it, its end included, so a renewal differs from what it was.
@@ -467,7 +469,9 @@ window.Maity = window.Maity || {};
           h("p", { class: "chat-access-whom" }, at, h("strong", null, said)),
           item.withdrawn ? h("p", { class: "muted" }, M.t("chat_access.history.withdrawn")) : null,
           h("p", { class: "muted" }, M.t("chat_access.history.ticked", { agents: agentsOf(item, item.agents) || M.t("chat_access.history.none") }),
-            String(item.reply_id).startsWith("allow_") ? [" · ", item.their_human ? M.t("chat_access.history.person_ticked") : M.t("chat_access.history.person_not_ticked")] : null),
+            String(item.reply_id).startsWith("allow_") ? [" · ", item.their_human ? M.t("chat_access.history.person_ticked") : M.t("chat_access.history.person_not_ticked")] : null,
+            // Their agents only where the answer sent them (`null` otherwise, §9.6).
+            item.their_agents != null ? [" · ", theirAgents(item, item.their_agents)] : null),
           item.allowed ? h("p", null, M.t("chat_access.allowed_said"), " ", h("q", null, item.allowed)) : null,
           item.denied ? h("p", null, M.t("chat_access.denied_said"), " ", h("q", null, item.denied)) : null,
           h("p", { class: "muted" }, M.t("chat_access.history.entries", { count: (item.entries || []).length })),
@@ -493,8 +497,10 @@ window.Maity = window.Maity || {};
     }
 
     // Each read counts; an answer to a read that a newer one replaced (a Show more still on its
-    // way when a write draws page one again) is dropped. A failed Show more keeps its button.
+    // way when a write draws page one again) is dropped. A failed Show more keeps its button, and so
+    // does a failed read of page one for the rows an earlier read left on screen (`shownCursor`).
     let historyRead = 0;
+    let shownCursor = null;
     const moreButton = (cursor) => h("button", { type: "button", class: "chat-access-history-more", onclick: () => loadHistory(cursor) },
       M.t("chat_access.history.more"));
 
@@ -508,12 +514,14 @@ window.Maity = window.Maity || {};
         historyStatus.done();
         if (!cursor) clear(historyList);
         append(historyList, page.items.map(historyRow));
+        shownCursor = page.next_cursor || null;
         if (!historyList.childNodes.length) append(historyMore, h("p", { class: "muted" }, M.t("chat_access.history.empty")));
         if (page.next_cursor) append(historyMore, moreButton(page.next_cursor));
       } catch (err) {
         if (mine !== historyRead) return;
         historyStatus.fail(M.t("chat_access.history.read_failed"), err);
-        if (cursor) append(historyMore, moreButton(cursor));
+        const again = cursor || (historyList.childNodes.length ? shownCursor : null);
+        if (again) append(historyMore, moreButton(again));
       }
     }
 

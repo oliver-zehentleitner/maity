@@ -1996,12 +1996,14 @@ window.Maity = window.Maity || {};
       entry: { id: "cha-0000", agents: "all", human_id: "hum-gone", handle: null, by: me().member.id, since: "2026-11-01T09:00:00Z" },
       before: null, fields: [], names: historyNames(["hum-gone"]) },
   ]);
-  function chatAccessRecord(change, list, entry, before) {
-    const ids = [].concat(Array.isArray(entry.agents) ? entry.agents : [], Array.isArray(entry.their_agents) ? entry.their_agents : [],
-      [entry.owner_id, entry.human_id, entry.agent_id].filter(Boolean));
+  // `names` covers the entry and the entry before, as the hub's `_named`; `denyId` names the deny
+  // entry that removed or narrowed an allow (§9.6: its cause stays the deny's, `list` here).
+  function chatAccessRecord(change, list, entry, before, denyId) {
+    const ids = [entry, before].filter(Boolean).flatMap((e) => [].concat(Array.isArray(e.agents) ? e.agents : [],
+      Array.isArray(e.their_agents) ? e.their_agents : [], [e.owner_id, e.human_id, e.agent_id].filter(Boolean)));
     const fields = before ? Object.keys(entry).filter((k) => JSON.stringify(entry[k]) !== JSON.stringify(before[k])).sort() : [];
     chatAccessHistory().unshift({ id: localId("chh"), seq: ++chatAccessSeq, at: nowIso(), kind: "entry", change, list, entry_id: entry.id,
-      entry_exists: change !== "deleted", by: me().member.id, cause: "list", request_id: null, deny_id: null, conversation: null,
+      entry_exists: change !== "deleted", by: me().member.id, cause: "list", request_id: null, deny_id: denyId || null, conversation: null,
       entry: JSON.parse(JSON.stringify(entry)), before: before ? JSON.parse(JSON.stringify(before)) : null, fields, names: historyNames(ids) });
     if (change === "deleted") chatAccessHistory().forEach((i) => { if (i.entry_id === entry.id) i.entry_exists = false; });
   }
@@ -3278,19 +3280,26 @@ window.Maity = window.Maity || {};
       const lists = chatAccess();
       if (lists.allow.length + lists.deny.length >= 1000) fail(400, "invalid", "too many entries", path, { reason: "too_many_entries" });
       // A deny removes the allows for the same agents and subject; an allow for all agents stays
-      // when the deny names some of them (a deny wins over it anyway).
+      // when the deny names some of them (a deny wins over it anyway). Each allow it removes or
+      // narrows gets its item after the deny's own, in the order of the ids, as the hub writes them.
+      const narrowed = [];
       if (!allow && (k === "owner_id" || k === "project")) {
         const same = (a) => (k === "owner_id" ? a.owner_id === entry.owner_id : a.project && JSON.stringify(a.project) === JSON.stringify(entry.project));
         lists.allow = lists.allow.flatMap((a) => {
           if (!same(a)) return [a];
-          if (entry.agents === "all") return [];
+          if (entry.agents === "all") { narrowed.push(["deleted", a, null]); return []; }
           if (a.agents === "all") return [a];
           const left = a.agents.filter((x) => !entry.agents.includes(x));
-          return left.length ? [Object.assign(a, { agents: left })] : [];
+          if (left.length === a.agents.length) return [a];
+          if (!left.length) { narrowed.push(["deleted", a, null]); return []; }
+          const was = JSON.parse(JSON.stringify(a));
+          narrowed.push(["changed", Object.assign(a, { agents: left }), was]);
+          return [a];
         });
       }
       lists[m[1]].unshift(entry);
       chatAccessRecord("created", m[1], entry, null);
+      narrowed.sort((x, y) => (x[1].id < y[1].id ? -1 : 1)).forEach(([change, a, was]) => chatAccessRecord(change, "allow", a, was, entry.id));
       return JSON.parse(JSON.stringify(entry));
     }],
     ["PATCH", /^\/me\/chat-access\/allow\/([^/]+)$/, (m, body, path) => {

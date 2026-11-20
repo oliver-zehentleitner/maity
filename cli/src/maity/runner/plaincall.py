@@ -10,8 +10,14 @@ command starts is read past its leading comment lines and blank lines, as Claude
 it; the line itself is still judged whole, so such a line is refused. Any other line in
 which `maity` is a word (`prefixed`) is
 refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
-a subshell or a group before it, or `maity` by a path. A word counts as `maity` (and as
-`runner`) also once its backslashes and quotes are taken off (`_reads_as`), and a word that
+a subshell or a group before it, or `maity` by a path, and so is a line with `maity` in a
+command substitution, whose text the shell reads as a line of its own (`_in_substitution`).
+On a line that names `maity`, substitutions the hook does not read to the end (a `case`
+statement, nesting past `_NESTING`) refuse it, and so does the line read again with its
+substitutions taken out. A word counts as `maity`
+(and as `runner`) also once its backslashes and quotes are taken off (`_reads_as`), also as
+each part of it between backticks and before a `$` (`_substituted`), since an expansion
+glued to a name may make nothing, and a word that
 holds a `{` also as each part of it between `{`, `,` and `}` and as each word its brace
 expansion makes, as Bash makes them from the word as written, quotes and all, and from its
 text read again, up to `BRACE_LIMIT` words; a word that makes more, or whose braces the hook
@@ -25,7 +31,10 @@ text is nested too deep: the hook does not read such lines to the end. Nor does 
 line that holds a construct it does not model exactly (`_unmodelled`): such a line is
 refused as well. A command the shell
 builds from values the hook cannot know, such as globs against files and expansions of
-variables or of input, is not read. Any other tool call is left to the
+variables or of input, is not read. What the hook holds is that a line Claude Code may take
+out of the sandbox, `maity` after only the allowed assignments, runs only as one plain
+call; a name the shell assembles from expansions is left to the sandbox and to the CLI's own
+guard (cli/context/runner.md). Any other tool call is left to the
 permission rules: the hook prints nothing and exits 0.
 
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
@@ -51,10 +60,11 @@ NOT_IN_DOUBLE_QUOTES = frozenset("$`!\n")
 # what was skipped. A character a plain call may hold (`/`, `.`, `:` and the rest of
 # `UNQUOTED`, a quote, a backslash) is not skipped: before `maity` it makes a path, another
 # command or a quoted or escaped word of its own (`"[" maity`, `\! maity`, `"" maity`),
-# which the word split reads. After `maity` only a space, a tab, an operator or the line's
-# end may follow: anything else makes it part of a longer word, which the word split reads
-# (`_placement`).
-_MAITY = re.compile(r"[^0-9A-Za-z_\-./:=@%+,~^#'\"\\]*maity(?=[ \t();<>|&\n]|\Z)", re.IGNORECASE)
+# which the word split reads. After `maity` only a space, a tab, an operator, an expansion
+# (`$`, a backtick) or the line's end may follow: anything else makes it part of a longer
+# word, which the word split reads (`_placement`). An expansion right after it may make
+# nothing, so the line counts as a maity call, and `plain` refuses the expansion.
+_MAITY = re.compile(r"[^0-9A-Za-z_\-./:=@%+,~^#'\"\\]*maity(?=[ \t();<>|&\n$`]|\Z)", re.IGNORECASE)
 
 # Unquoted characters that end a word, besides spaces and tabs: the shell's operators.
 _SEPARATORS = frozenset("();<>|&\n")
@@ -103,8 +113,9 @@ PREFIX_REFUSED = (
     "`maity …` at the start of the line; text that mentions `maity` goes in a file in this "
     "clone, passed with `--body-file`."
 )
-# The reason for a refused line whose words before `maity` assign MAITY_WAIT_TIMEOUT
-# (`_assigns_wait_timeout`): the same rule, led by the way to set a wait's timeout here.
+# The reason for a refused line with a word before `maity` that reads as an assignment to
+# MAITY_WAIT_TIMEOUT (`_assigns_wait_timeout`): the same rule, led by the way to set a wait's
+# timeout here.
 WAIT_TIMEOUT_REFUSED = (
     "MAITY_WAIT_TIMEOUT does not go before `maity` here: run `maity wait --timeout N` "
     "instead. " + PREFIX_REFUSED
@@ -119,8 +130,9 @@ WAIT_TIMEOUT_REFUSED = (
 # would not get the credential in a placement, so a placed agent passes `maity wait --timeout N`
 # (cli/context/runner.md). `test_plaincall.py` fails when a `MAITY_` name is added here.
 ALLOWED_BEFORE_MAITY = ("NO_COLOR", "LANG", "LC_*", "TZ")
-# An assignment to MAITY_WAIT_TIMEOUT, unquoted, with `=` or `+=`: only for the reason a
-# refused line gets (`WAIT_TIMEOUT_REFUSED`), never to let a line through.
+# A word that reads as an assignment to MAITY_WAIT_TIMEOUT, unquoted, with `=` or `+=`,
+# wherever it stands before `maity`: only for the reason a refused line gets
+# (`WAIT_TIMEOUT_REFUSED`), never to let a line through.
 _WAIT_ASSIGNMENT = re.compile(r"MAITY_WAIT_TIMEOUT\+?=")
 # An allowed name, unquoted, then `=`; `+=` is refused as well. The value is not judged here:
 # `plain` refuses one that expands.
@@ -155,8 +167,9 @@ def _placement(command: str) -> str | None:
     assignment `_ASSIGNMENT` allows and that word is `maity` alone (in any case, not by a
     path), or when a quote never closes on a line that names `maity`; "prefixed" when
     `maity` is a word after anything else (an assignment to another name included), by a
-    path, or a word of quoted text that holds spaces or operators, read again as a line
-    (`_maity_in_text`); None when `maity` is no word of the line."""
+    path, between backticks (`_substituted`), or a word of quoted text that holds spaces or
+    operators, read again as a line (`_maity_in_text`); None when `maity` is no word of the
+    line."""
     command = _past_comment_lines(command)
     if _MAITY.match(command) is not None:
         return "held"
@@ -178,10 +191,14 @@ def _placement(command: str) -> str | None:
 
 
 def _assigns_wait_timeout(command: str) -> bool:
-    """Whether a word before the line's first word `maity` (`_is_maity`), read past its
-    leading comment lines and blank lines as `_placement` reads it, is an unquoted assignment
-    to MAITY_WAIT_TIMEOUT (`_WAIT_ASSIGNMENT`). It only picks the reason for a line that is
-    refused anyway."""
+    """Whether any word before the line's first word `maity` (`_is_maity`), read past its
+    leading comment lines and blank lines as `_placement` reads it, is an unquoted word that
+    reads as an assignment to MAITY_WAIT_TIMEOUT (`_WAIT_ASSIGNMENT`), whether or not the
+    shell takes it as one: the first word or any later one, after a command such as `env`,
+    as an argument or after an operator alike. It reads the words as `_split` splits them:
+    an unquoted `$(` splits at its parentheses, so an assignment in one counts, while one in
+    backticks or in quoted text does not and gets the shared reason. It only picks the
+    reason for a line that is refused anyway."""
     command = _past_comment_lines(command)
     try:
         words = _split(command)
@@ -264,20 +281,30 @@ def plain(command: str) -> bool:
 
 def _is_maity(word: str, written: str) -> bool:
     """Whether a word names `maity`: by any path, in any case, however its start is trimmed,
-    also as `_names` takes it (`written` as `_split` gives it). A word in which `$'` is
-    followed by a backslash counts whatever it holds."""
+    also as `_names` takes it (`written` as `_split` gives it), and also as any part of it
+    between backticks (`_substituted`). A word in which `$'` is followed by a backslash counts
+    whatever it holds."""
     if re.search(r"\$'.*\\", word, re.DOTALL):
         return True
     return any(
-        re.sub(r"^[^0-9A-Za-z]+", "", name.rsplit("/", 1)[-1]).lower() == "maity"
-        for name in _names(word, written)
+        re.sub(r"^[^0-9A-Za-z]+", "", part.rsplit("/", 1)[-1]).lower() == "maity"
+        for part in _substituted(_names(word, written))
     )
 
 
 def _is_runner(word: str, written: str) -> bool:
     """Whether a word is `runner`, in any case, also as `_names` takes it (`written` as
-    `_split` gives it)."""
-    return any(name.lower() == "runner" for name in _names(word, written))
+    `_split` gives it), and also as any part of it between backticks (`_substituted`)."""
+    return any(part.lower() == "runner" for part in _substituted(_names(word, written)))
+
+
+def _substituted(names: Sequence[str]) -> list[str]:
+    """Each name, and each part of it between backticks and `$`. `_split` keeps a backtick
+    in the word as text, but the shell ends the word of the command a backtick opens or
+    closes there and reads what stands between as a line of its own, in which `maity` is a
+    word however the word around it goes on; and an expansion glued to a name may make
+    nothing, so the text before it may be the whole word (cli/context/runner.md)."""
+    return [part for name in names for part in (name, *re.split(r"[`$]", name))]
 
 
 def _names(word: str, written: str) -> tuple[str, ...]:
@@ -1159,6 +1186,121 @@ def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> boo
     return False
 
 
+def _substitutions(line: str) -> tuple[list[str], str] | None:
+    """The text of each outermost command substitution on the line (a backtick pair,
+    `$(…)`, and `<(…)` or `>(…)` outside double quotes), and the line with each of them taken
+    out, as one whose output is empty leaves it (a process substitution leaves a path); None
+    when the hook does not read them. The line is read as `_unmodelled` and `_unsure_quoting`
+    read it: heredoc bodies taken out first (`_without_heredocs`), single-quoted text and
+    comments passed over, a backtick closed by the next backtick, and a `$(` closed where
+    `_substitution_end` closes it."""
+    stripped = _without_heredocs(line)
+    if stripped is None:
+        return None
+    text = stripped[0]
+    out: list[str] = []
+    bodies: list[str] = []
+    i, n, double = 0, len(text), False
+    while i < n:
+        c = text[i]
+        if not double and c == "'":
+            close = text.find("'", i + 1)
+            if close < 0:
+                return None
+            out.append(text[i : close + 1])
+            i = close + 1
+            continue
+        if not double and c == "#" and (i == 0 or text[i - 1] in " \t\n;&|()"):
+            close = text.find("\n", i)
+            close = n if close < 0 else close
+            out.append(text[i:close])
+            i = close
+            continue
+        if c == "\\":
+            out.append(text[i : i + 2])
+            i += 2
+            continue
+        if c == '"':
+            double = not double
+        elif c == "`":
+            close = text.find("`", i + 1)
+            if close < 0:
+                return None
+            bodies.append(text[i + 1 : close])
+            i = close + 1
+            continue
+        elif text[i + 1 : i + 2] == "(" and (c == "$" or (c in "<>" and not double)):
+            try:
+                close = _substitution_end(text, i, [])
+            except ValueError:
+                return None
+            bodies.append(text[i + 2 : close])
+            out.append("" if c == "$" else "/dev/fd/0")
+            i = close + 1
+            continue
+        out.append(c)
+        i += 1
+    return None if double else (bodies, "".join(out))
+
+
+# A `case` statement, whose pattern ends with a `)` that a substitution's reading takes for
+# its own end.
+_CASE = re.compile(r"(?<![\w.-])case(?![\w.-])")
+
+
+def _unread_substitution(bodies: list[str], depth: int) -> bool:
+    """Whether the hook does not read one of these substitutions to the end: one whose own
+    substitutions it does not read (`_substitutions`), or nested `_NESTING` levels deep or
+    more."""
+    for body in bodies:
+        found = _substitutions(body)
+        if found is None:
+            return True
+        if found[0] and (depth >= _NESTING or _unread_substitution(found[0], depth + 1)):
+            return True
+    return False
+
+
+def _names_maity_as_line(text: str, depth: int) -> bool:
+    """Whether a substitution's text, read as a line of its own, names `maity` as a word
+    (`_placement`), or the text of a substitution in it does, up to `_NESTING` levels deep;
+    text nested deeper, or with substitutions the hook does not read, counts when it names
+    `maity` anywhere (`names_maity`)."""
+    if _placement(text) is not None:
+        return True
+    found = _substitutions(text)
+    if found is None or depth >= _NESTING:
+        return names_maity(text)
+    return any(_names_maity_as_line(body, depth + 1) for body in found[0])
+
+
+def _in_substitution(command: str) -> str | None:
+    """The reason to refuse a line by its command substitutions, or None. A substitution
+    whose text, read as a line of its own, names `maity` (`_names_maity_as_line`) refuses
+    the line outright. On a line that names `maity` (`names_maity`), substitutions the hook
+    does not read to the end refuse it (a `case` statement in the line, nesting past
+    `_NESTING`, one that never closes), and so does the line with its substitutions taken
+    out, when it gets a reason or holds `maity` as a word."""
+    named = names_maity(command)
+    found = _substitutions(command)
+    if found is None:
+        return RUNNER_REFUSED if named else None
+    bodies, without = found
+    if not bodies:
+        return None
+    if named and (_CASE.search(command) is not None or _unread_substitution(bodies, 1)):
+        return RUNNER_REFUSED
+    if any(_names_maity_as_line(body, 1) for body in bodies):
+        return PREFIX_REFUSED
+    if named:
+        reason = _decide(without)
+        if reason is not None:
+            return reason
+        if _placement(without) is not None:
+            return REFUSED
+    return None
+
+
 def refusal(payload: object) -> str | None:
     """The reason to refuse the tool call in Claude Code's PreToolUse input, or None."""
     if not isinstance(payload, dict):
@@ -1167,6 +1309,12 @@ def refusal(payload: object) -> str | None:
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     if not isinstance(command, str):
         return None
+    reason = _decide(command)
+    return reason if reason is not None else _in_substitution(command)
+
+
+def _decide(command: str) -> str | None:
+    """The reason to refuse a command line by its own words, or None (`refusal`)."""
     placement = _placement(command)
     if placement == "held" and not plain(command):
         return REFUSED  # refused either way; this reason names the way out
@@ -1178,19 +1326,24 @@ def refusal(payload: object) -> str | None:
 
 
 def main(args: Sequence[str] | None = None) -> int:
-    """Exit 0 to leave the call to the permission rules, 2 to refuse it."""
+    """Exit 0 to leave the call to the permission rules, 2 to refuse it. Anything raised
+    while it reads the input or decides refuses the call, whatever it is, and so does a
+    reason it cannot print."""
     del args  # takes none
     try:
-        payload = json.loads(sys.stdin.buffer.read())
-    except (ValueError, OSError, RecursionError):
-        payload = None
-    try:
+        try:
+            payload = json.loads(sys.stdin.buffer.read())
+        except (ValueError, OSError, RecursionError):
+            payload = None
         reason = refusal(payload)
-    except Exception:  # noqa: BLE001 - a line the hook fails on is refused, not let through
+    except BaseException:  # noqa: BLE001 - a call the hook fails on is refused, not let through
         reason = FAILED
     if reason is None:
         return 0
-    print(reason, file=sys.stderr)
+    try:
+        print(reason, file=sys.stderr)
+    except BaseException:  # noqa: BLE001, S110 - the exit code refuses it all the same
+        pass
     return 2
 
 

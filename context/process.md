@@ -1890,7 +1890,7 @@ because every version of an image stays in the history.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf; card tsk-deaaanqsq5e2 (the slot log, the lead's go, 2026-11-17)
+**Source:** the maintainer's decisions at the jour fixe of 2026-11-03 (a PostgreSQL run before review for every hub change with a migration or raw SQL; one shared server and a cap on parallel runs), card tsk-7f9064s936kf; card tsk-deaaanqsq5e2 (the slot log, the lead's go, 2026-11-17; running without a slot when the slot directory cannot be written, the lead's go, 2026-11-20)
 **Revisit when:** contributors no longer share one machine and account, the shared machine gets enough memory for more parallel runs (two runs at once no longer bring a reap near), or CI checks a pull request's merge with the current main on PostgreSQL before review
 
 A hub change that adds or changes an Alembic migration or raw SQL runs the tests it affects on
@@ -1913,6 +1913,13 @@ promise an end line for every run: once a run is over, a start line without a ma
 cannot be written is ignored. `who` is `MAITY_RUN_NAME`, which each run sets to
 `handle#instance`. Its purpose is measuring which run holds a slot how long and for whom (card
 tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
+
+Since 2026-11-20 a run that cannot write the slot directory or a slot file in it does not fail:
+the script warns once on stderr and runs the command without a slot and without a log line, as
+it does without `flock`. `MAITY_RUN_SLOTS_DIR` points it to a directory the run may write.
+`make smoke SLOT=` is only for a machine where nothing else runs tests. The slot file is opened
+with `command exec`, so a failed open never ends the script, even in bash's POSIX mode; a holder
+whose `.who` is empty or missing shows as `unknown` in the waiting message.
 
 **Reason:**
 - SQLite does not show PostgreSQL's errors, and CI as the first PostgreSQL run finds them only
@@ -1956,6 +1963,14 @@ tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
   and for measuring which kind of run holds a slot, `pytest -n` or `make smoke` says enough. The
   slot's `.who` file names the run the same way. 0640 rather than group-writable: every run that
   writes the log is the account's own, so only reading it needs the group.
+- Running without a slot when the directory cannot be written (card tsk-deaaanqsq5e2, the lead's
+  go, 2026-11-20): a Claude Code or Codex session the runner places may write only its clone, its
+  temporary directory and its scratch, not `~/.local/state/maity`. Under `set -e` the `mkdir` or
+  the slot file's open ended the script before the command ran, so such agents skipped the slot
+  with `make smoke SLOT=` or a set `MAITY_RUN_SLOT`, and their runs were not logged either. A
+  run without a slot is no worse than that, and the warning says what was lost and how to get it
+  back. A writable shared slot directory for placements is the runner's to give, on a card of
+  its own.
 
 **Rejected alternatives:**
 - A server per contributor: what was done before, and what used the memory.
@@ -1973,6 +1988,10 @@ tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
   but the `exec` goes, and with it the pid and the signals the command gets today.
 - For the slot log, the whole command line cut at 200 characters (the first version): more than
   the measurement needs, kept in a file that is not cleaned up.
+- For a slot directory the run cannot write, failing as before: it does not get the run a slot,
+  it only teaches agents to skip the slot by hand, without a warning and without a log line.
+- For the same case, running without a slot silently: the run would not show in the log, and no
+  one would learn why or that `MAITY_RUN_SLOTS_DIR` fixes it.
 
 ## An opt-in pre-push hook runs CI's lint and types for the packages a push touches, with the lock's tool versions
 

@@ -80,6 +80,23 @@ def is_loopback(host: str) -> bool:
         return False
 
 
+def tls_refused(tls: object, host: object) -> bool:
+    """`tls: none` with a host that is not loopback (§16.2); a missing host refuses nothing.
+    The one test for the environment, the admin's `PATCH` and the settings in effect."""
+    return tls == "none" and host is not None and not is_loopback(str(host))
+
+
+def ascii_secret(value: object, maximum: int) -> bool:
+    """Printable ASCII of at most `maximum` characters: SMTP `AUTH` takes the username and
+    the password as ASCII only. A refusal never says where the value went wrong."""
+    return headers.printable(value, maximum) and isinstance(value, str) and value.isascii()
+
+
+def sender_ok(addr: object, name: object) -> bool:
+    """One address and, when given, a display name a header can carry (`from`, §16.2)."""
+    return address.valid(addr) and (name is None or headers.valid_name(name))
+
+
 def valid_host(value: object) -> bool:
     """A host name or an IP address, nothing else: no port, no scheme, no space."""
     if not isinstance(value, str) or not value or len(value) > MAX_HOST or not value.isascii():
@@ -100,7 +117,7 @@ def parse_sender(value: str) -> Sender | None:
     if value.endswith(">") and "<" in value:
         name, _, value = value[:-1].rpartition("<")
         name = name.strip() or None
-    if not address.valid(value) or (name is not None and not headers.valid_name(name)):
+    if not sender_ok(value, name):
         return None
     return Sender(value, name)
 
@@ -115,15 +132,13 @@ def parse(env: dict[str, str]) -> MailEnvironment:
     tls = get("MAITY_SMTP_TLS") or None
     if tls is not None and tls not in TLS_MODES:
         raise MailConfigError("MAITY_SMTP_TLS must be starttls, implicit or none")
-    if tls == "none" and host is not None and not is_loopback(host):
+    if tls_refused(tls, host):
         raise MailConfigError(
             "MAITY_SMTP_TLS=none is only allowed for a loopback MAITY_SMTP_HOST "
             "(localhost or a loopback address)"
         )
     username = get("MAITY_SMTP_USERNAME") or None
-    if username is not None and not (
-        headers.printable(username, MAX_USERNAME) and username.isascii()
-    ):
+    if username is not None and not ascii_secret(username, MAX_USERNAME):
         raise MailConfigError("MAITY_SMTP_USERNAME must be printable ASCII, at most 254 characters")
     sender = None
     if get("MAITY_SMTP_FROM"):
@@ -201,8 +216,8 @@ def _password(env: dict[str, str]) -> str | None:
             raise MailConfigError("MAITY_SMTP_PASSWORD_FILE cannot be read as UTF-8") from None
     if not inline:
         return None
-    if not (headers.printable(inline, MAX_PASSWORD) and inline.isascii()):
-        # Never the value, nor where it went wrong. SMTP AUTH takes ASCII only.
+    if not ascii_secret(inline, MAX_PASSWORD):
+        # Never the value, nor where it went wrong.
         raise MailConfigError("the SMTP password must be printable ASCII, at most 1024 characters")
     return inline
 

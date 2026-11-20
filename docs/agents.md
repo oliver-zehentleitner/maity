@@ -86,6 +86,10 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    its reasoning, or `--no-why "<reason>"`. The resume asks each instance
    once to confirm with `maity ack keep-the-why`
    ([`docs/api.md` §6.23](api.md#623-the-keep-the-why-commitment)).
+   Make a Keep the Why entry's Id with **`maity uuid`**: it prints a
+   lowercase UUID v4 from the operating system's randomness, calls no hub
+   and needs no join, so it works in a harness sandbox that refuses
+   `uuidgen` or `/proc/sys/kernel/random/uuid`. Never type an Id by hand.
 6. **`maity ask "<question>" --to human --class <class>`** when a decision
    is not yours. **`maity answer <request> --reply <id>`** when a request
    is addressed to you. A question about the project's contract, its
@@ -156,9 +160,17 @@ also once the backslashes and quotes in it are taken off, and a word
 with a brace also as each of its alternatives and as each word its
 brace expansion makes, as Bash expands its braces, quoted and escaped
 characters as text (`ma{ity,}` counts as `maity`); a word whose braces
-make more than 256 words refuses the line. That covers
+make more than 256 words refuses the line. A line that names `maity`
+inside a command substitution (`$(…)`, backticks) is refused outright
+as well, and so is `maity` with an expansion glued right after it. What
+the hook guarantees is that a line Claude Code may take out of the
+sandbox, `maity` after only the allowed assignments, runs only as one
+plain call; names assembled from expansions are left to the sandbox and
+to the CLI's own guard. The refusals cover
 text too: `echo maity | cat` or `git commit -m 'fix maity'` is refused,
-so text that mentions `maity` goes in a file (`--body-file`).
+and so is `maity` in a command substitution inside quoted text such as a
+commit message, so text that mentions `maity` goes in a file
+(`--body-file`).
 `maity runner` is the runner's own command: in a placed Claude Code
 session, a line in which a word `runner` follows a word `maity` is refused,
 also when `runner` is only text, quoted or not, so such text goes in a file
@@ -203,6 +215,15 @@ allows by itself); without that, review the head with `git show` and
 `git diff` in your clone. An OpenCode session has no scratch yet, and so
 has an agy session on an ssh host: keep such files in the clone, out of
 what you commit.
+
+In Maity's own repository, heavy test runs take a run slot through
+`tools/run_slot.sh`, whose slot files and log are under `~/.local/state/maity`
+by default. A placed session's sandbox may not write there. The script then
+warns and runs the command without a slot, and so without a line in the slot
+log. To keep the slot, point `MAITY_RUN_SLOTS_DIR` at a shared directory the
+session may write. `make smoke SLOT=` skips the slot on purpose and is only for
+a machine where nothing else runs tests (`CONTRIBUTING.md`, "PostgreSQL runs
+and a shared machine").
 
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a

@@ -19,6 +19,7 @@ import tempfile
 import time
 import unicodedata
 import urllib.parse
+import uuid
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -4813,6 +4814,28 @@ def cmd_help(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+UUID_MAX = 1000
+
+
+def _uuid_count(value: str) -> int:
+    """N for `maity uuid -n`: a whole number from 1 to UUID_MAX."""
+    try:
+        count = int(value, 10)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a whole number") from None
+    if not 1 <= count <= UUID_MAX:
+        raise argparse.ArgumentTypeError(f"must be 1 to {UUID_MAX}, not {count}")
+    return count
+
+
+def cmd_uuid(args: argparse.Namespace) -> int:
+    """UUIDs v4 from the OS's randomness (`uuid.uuid4` reads os.urandom), lowercase, one per
+    line: no hub, no state, no join, so it runs in any sandbox that lets `maity` run, where
+    `uuidgen` often does not (cli/context/commands.md)."""
+    print("\n".join(str(uuid.uuid4()) for _ in range(args.count)))
+    return EXIT_OK
+
+
 def _session_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--harness", help="the agent harness, e.g. 'Claude Code'; remembered")
     p.add_argument("--harness-version", dest="harness_version", help="its version; remembered")
@@ -6051,6 +6074,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--hub", help="hub URL, for use before joining")
     p.set_defaults(handler=cmd_help)
+
+    p = add(
+        "uuid",
+        "print a random UUID v4, e.g. a Keep the Why entry's Id",
+        "Print a UUID version 4 from the operating system's randomness, lowercase, one per "
+        "line. It calls no hub and needs no join, credential or state: use it for a Keep the "
+        "Why entry's Id where uuidgen is not available or not allowed.",
+    )
+    p.add_argument(
+        "-n",
+        dest="count",
+        type=_uuid_count,
+        default=1,
+        metavar="N",
+        help=f"print N UUIDs, 1 to {UUID_MAX} (default 1)",
+    )
+    p.set_defaults(handler=cmd_uuid)
     return parser
 
 
