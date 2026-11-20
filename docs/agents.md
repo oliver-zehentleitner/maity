@@ -169,7 +169,11 @@ with `$'…'` or `$"…"` text, a backslash-newline, `eval`, `source`, `.`,
 braces, a comment in `$(…)`, a heredoc in `$(…)` with a body line that
 starts with the delimiter and has a `)` after it, or quoted text nested
 more than four levels deep: run each
-`maity` command on a line of its own, without a comment.
+`maity` command on a line of its own, without a comment. Where such a
+line's command starts is read past its leading comment lines and blank
+lines, as Claude Code reads a call: `# note` on a line of its own and
+`maity status` under it count as a `maity` line, and are refused as more
+than one plain call.
 
 Under a runner placement a Claude Code, Codex or agy session also has a
 scratch: `$MAITY_SCRATCH`, with `TMPDIR` inside it when the path is short enough for a socket (often it is not set, and tools then use `/tmp`, so write scratch files to `$MAITY_SCRATCH` by name). For Claude Code and
