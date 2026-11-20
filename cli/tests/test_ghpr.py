@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from maity import cli, clonecheck, ghpr
+from maity import cli, clonecheck, ghpr, hub
 
 REPOSITORY = "github.com/oliver-zehentleitner/maity"
 BRANCH = "agent-g/the-change"
@@ -965,6 +965,80 @@ def test_the_role_is_never_read_for_an_agent_served_with_for(
 ) -> None:
     monkeypatch.setattr(cli.Session, "for_target", "agt-other")
     with pytest.raises(ghpr.Refused, match="--for"):
+        cli._hub_role()
+
+
+class _Client:
+    """A hub that answers `GET /me` for the credential that signed it, and records every call."""
+
+    def __init__(self, me: Any) -> None:
+        self.me = me
+        self.calls: list[tuple[str, str]] = []
+
+    def call(self, method: str, path: str, **_: Any) -> Any:
+        self.calls.append((method, path))
+        if isinstance(self.me, Exception):
+            raise self.me
+        return self.me
+
+
+def _session(
+    monkeypatch: pytest.MonkeyPatch, me: Any, local_member: str = "agt-manager"
+) -> _Client:
+    """A Session whose local state names `local_member` (a manager's id, say) while the hub
+    authenticates the credential as whoever `me` describes."""
+    client = _Client(me)
+
+    class FakeSession:
+        project = "oliver-zehentleitner/maity"
+
+        def __init__(self) -> None:
+            self.client = client
+            self.data = {"member_id": local_member}
+
+        @property
+        def me(self) -> str:
+            return local_member
+
+    monkeypatch.setattr(cli, "Session", FakeSession)
+    monkeypatch.setattr(FakeSession, "for_target", None, raising=False)
+    return client
+
+
+def test_the_role_is_the_authenticated_callers_not_the_local_member_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review A1720 of #2054: the local state may name a manager's id, but the hub answers
+    `/me` for the credential that signed the call; that answer's role decides, and no
+    member read by id is made."""
+    me = {"member": {"id": "agt-coder"},
+          "projects": [{"full_name": "oliver-zehentleitner/other", "role": "manager"},
+                       {"full_name": "oliver-zehentleitner/maity", "role": "coder"}]}  # fmt: skip
+    client = _session(monkeypatch, me, local_member="agt-manager")
+    assert cli._hub_role() == "coder"
+    assert client.calls == [("GET", "/me")]
+
+
+@pytest.mark.parametrize(
+    "me",
+    [
+        {"member": {"id": "agt-x"}, "projects": []},  # not a member of this project
+        {"member": {"id": "agt-x"}, "projects": [{"full_name": "o/elsewhere", "role": "manager"}]},
+        {"member": {"id": "agt-x"}},  # no list at all
+        "not json",
+    ],
+)
+def test_a_me_that_does_not_list_this_project_refuses(
+    monkeypatch: pytest.MonkeyPatch, me: Any
+) -> None:
+    _session(monkeypatch, me)
+    with pytest.raises(ghpr.Refused, match="no membership"):
+        cli._hub_role()
+
+
+def test_a_hub_error_on_me_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
+    _session(monkeypatch, hub.HubError("unreachable"))
+    with pytest.raises(ghpr.Refused, match="did not say"):
         cli._hub_role()
 
 

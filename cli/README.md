@@ -1167,12 +1167,16 @@ A placed member whose role the hub names `manager` then also runs:
   name, as gh's JSON, so a required job such as `ci-ok` is read from the
   head's own run. With `--log-failed`: the failed steps' log, cleaned of
   control characters and cut to its last 400 lines. maity says when it cut
-  the log, and how many lines it had.
+  the log, and how many lines it had. With `--job`, gh reads the run that
+  job belongs to and does not use the run id given, so the job id alone
+  decides which run is shown. Run and job ids are digits, up to 20.
 
-At each of these calls maity reads the member's role from the hub with
-the session's credential (`GET …/members/{id}`), never from the resume
-packet or other local state. It refuses unless the role is `manager`,
-and when the hub does not answer. These commands are refused under
+At each of these calls maity reads the caller's role from the hub with
+the session's credential (`GET /me`, the projects of the identity the
+hub authenticated, matched to this project), never from the resume
+packet or a member id in local state. It refuses unless the role is
+`manager`, when the hub does not answer, and when `/me` does not list
+this project. These commands are refused under
 `--for`. Without `lead = true` they are refused, as they are without
 `pull_requests`, which `maity runner check` warns about. The repository,
 the environment and the empty directory are those of `pr create`. A

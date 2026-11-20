@@ -4033,9 +4033,10 @@ the repository from the runner's record, gh in an empty directory with
 the same environment. Two gates come on top, both checked before a body
 is read or gh starts. The runner writes a `gh_lead` record only for a
 grant with `lead = true` beside `pull_requests = true`, and never for
-Codex. maity reads the member's role from the hub at each call, with the
-session's credential, and refuses unless it is `manager`. It also
-refuses when the hub does not answer, and under `--for`.
+Codex. maity reads the caller's role from the hub at each call, from
+`GET /me` with the session's credential, and refuses unless it is
+`manager`. It also refuses when the hub does not answer, when `/me` does
+not list this project, and under `--for`.
 
 **Reason:** a lead merges, fixes pull request bodies, readies drafts and
 reads CI every day. As a placement it had only `pr create` and `pr view`,
@@ -4064,6 +4065,11 @@ its end, and a whole log would flood the lead's context.
   run's jobs by name instead.
 - The role from the resume packet or the clone's state: a demoted lead
   could go on merging until its next resume.
+- The role of the member id the clone's state names
+  (`GET …/members/{id}`), this PR's first version: that read answers for
+  whichever id is asked, so the id would come from local state, not from
+  the identity the hub authenticated (review A1720 of #2054). `GET /me`
+  answers for the credential that signed the call.
 - Allowing `--admin`, `--auto`, another merge method or
   `--delete-branch`: none of them is needed for the daily work, and each
   widens what a placed lead can do past the review and CI gate.

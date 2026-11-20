@@ -1627,20 +1627,26 @@ def cmd_gh(args: argparse.Namespace) -> int:
 
 
 def _hub_role() -> str | None:
-    """This clone's member's role as the hub answers it now (`GET …/members/{id}`), for the
-    lead commands of `maity gh`: never from the resume packet or other local state, never for
-    an agent served with `--for`. A hub that does not answer refuses (ghpr.check_role)."""
+    """The role the hub gives the caller in this project now, for the lead commands of
+    `maity gh`: read from `GET /me`, which answers for the credential that signed the call,
+    so no member id from local state names whose role it is (review A1720 of #2054). Never
+    from the resume packet, never for an agent served with `--for`. A hub that does not
+    answer, or a `/me` that does not list this project, refuses (ghpr.check_role)."""
     if Session.for_target is not None:
         raise ghpr.Refused("the lead commands act as this clone's own member, not with --for")
     try:
         session = Session()
-        member = session.me
-        if not isinstance(member, str):
-            raise ghpr.Refused("this clone's member is not known; run `maity resume`")
-        answer = session.client.call("GET", session.project_path("members", member))
+        project = session.project
+        answer = session.client.call("GET", "/me")
     except (state.StateError, hub.HubError) as exc:
         raise ghpr.Refused(f"the hub did not say this member's role: {exc}") from None
-    role = _field(answer, "role")
+    listed = [
+        p for p in (_field(answer, "projects") or [])
+        if isinstance(p, dict) and p.get("full_name") == project
+    ]  # fmt: skip
+    if len(listed) != 1:
+        raise ghpr.Refused(f"the hub lists no membership of yours in {project}")
+    role = listed[0].get("role")
     return role if isinstance(role, str) else None
 
 

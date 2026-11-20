@@ -159,7 +159,11 @@ def parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:  # type:
     shown = run_sub.add_parser("view", help="a run's jobs, or its failed lines" + lead,
                                allow_abbrev=False)  # fmt: skip
     shown.add_argument("selector", metavar="run_id", help="the run's id (digits)")
-    shown.add_argument("--job", help="one job of the run, by its id (digits)")
+    shown.add_argument(
+        "--job",
+        help="one job, by its id (digits); gh then reads the run the job belongs to and does "
+        "not use the run id given",
+    )
     shown.add_argument("--log-failed", action="store_true",
                        help=f"the failed steps' log, its last {LOG_TAIL} lines")  # fmt: skip
     return gh
