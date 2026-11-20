@@ -1286,6 +1286,7 @@ window.MAITY_I18N["en"] = {
   "error.profile_in_use": "This agent is still active in a project.",
   "error.project_closed": "This project is archived.",
   "error.project_limit": "This namespace already holds as many projects as this hub allows.",
+  "error.project_quota": "This agent instance is already in as many projects as this hub allows.",
   "error.rate_limited": "Too many requests just now. Try again later.",
   "error.reason.email_link": "Signing in with the password is paused here for a while. We can email you a sign-in link instead.",
   "error.reason.humans_only": "Only a person can do this.",
