@@ -15362,6 +15362,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const sesBanner = () => main.querySelector(".signin-banner");
   expect(sesBanner() && text(sesBanner()).includes("New sign-in by mail: Firefox on Linux, 192.0.2.80") && btn(sesBanner(), "End this session") && btn(sesBanner(), "This was me"),
     "sessions: a mail sign-in is a banner on every page, with End this session and This was me");
+  // What the banner stands on: the active sessions alone, without the ended ones (tsk-g776fdyg6ekc),
+  // read beside the page's own reads, not after them (tsk-qw08c8ds214g; the board's closed columns
+  // are read by M.api.get when the board begins).
+  {
+    const orderGet = win.Maity.api.get;
+    const order = [];
+    win.Maity.api.get = (p, ...r) => { order.push(p); return orderGet(p, ...r); };
+    await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+    win.Maity.api.get = orderGet;
+    const firstTasks = order.findIndex((p) => p.includes("/tasks?"));
+    expect(sesBanner() && order.includes("/auth/sessions") && !order.includes("/auth/sessions?ended=true")
+      && firstTasks >= 0 && order.indexOf("/auth/sessions") < firstTasks,
+      "sessions: the banner reads the active sessions only, before the board's reads " + JSON.stringify(order));
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
+  }
   const sesDel = win.Maity.api.del;
   const sesDels = [];
   win.Maity.api.del = (p) => { sesDels.push(p); return Promise.resolve({ ended: true }); };
@@ -15370,9 +15385,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.del = sesDel;
   // From a session that is not confirmed and under an hour old: what it may not do is said, not tried (§2.6.5).
   const sesGet = win.Maity.api.get;
+  // A stub of the sessions with the ended ones (`?ended=true`) answers the active list too, as the
+  // hub does: the same sessions without the ended ones. The banner reads that list first, and the
+  // ended ones only for an approval it cannot trace among them (tsk-g776fdyg6ekc).
+  const sesStub = (ended, rest) => (p) => (p === "/auth/sessions?ended=true" ? ended(p)
+    : p === "/auth/sessions" ? ended("/auth/sessions?ended=true").then((r) => Object.assign({}, r, { items: r.items.filter((x) => !x.ended_at) }))
+    : rest(p));
   const weak = { id: "hss-new", current: true, method: "email_code", created_at: new Date(Date.now() - 10 * 60000).toISOString(), last_seen_at: new Date().toISOString(),
     browser: "Chrome", os: "Android", ip: "192.0.2.99", approved_by: null, good_standing: false, created: { record: "acr-9", ip: "192.0.2.99", browser: "Chrome", os: "Android" }, ended_at: null, ended_by: null };
-  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGet(p).then((r) => ({ items: [weak].concat(r.items.map((x) => Object.assign({}, x, { current: false }))) })) : sesGet(p));
+  win.Maity.api.get = sesStub((p) => sesGet(p).then((r) => ({ items: [weak].concat(r.items.map((x) => Object.assign({}, x, { current: false }))) })), sesGet);
   await go("#/account/security/sessions"); for (let k = 0; k < 6; k++) await tick();
   expect(btn(sesRow("hss-41c0"), "End").attrs.disabled !== undefined && text(sesRow("hss-41c0")).includes("Confirm this session's sign-in from another session first.")
     && btn(sesRow("hss-41d2"), "End").attrs.disabled !== undefined && text(sesRow("hss-41d2")).includes("This session is too new to end older ones.")
@@ -15388,10 +15409,15 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The banner stays while a session the mail sign-in approved is active, though the sign-in itself ended (§2.6.5).
   const approved = { id: "hss-41e0", method: "device_code", created_at: "2026-10-22T13:30:00Z", last_seen_at: "2026-10-22T13:31:00Z", browser: "Edge", os: "Windows",
     ip: "192.0.2.81", approved_by: "hss-41d2", good_standing: false, created: { record: "acr-8", ip: "192.0.2.81", browser: "Edge", os: "Windows" }, ended_at: null, ended_by: null };
-  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGet(p).then((r) => ({ items: [approved].concat(r.items.map((x) => (x.id === "hss-41d2"
-    ? Object.assign({}, x, { ended_at: "2026-10-22T13:40:00Z", ended_by: "logout" }) : x))) })) : sesGet(p));
+  const sesApprovedReads = [];
+  const sesApprovedGet = sesStub((p) => sesGet(p).then((r) => ({ items: [approved].concat(r.items.map((x) => (x.id === "hss-41d2"
+    ? Object.assign({}, x, { ended_at: "2026-10-22T13:40:00Z", ended_by: "logout" }) : x))) })), sesGet);
+  win.Maity.api.get = (p) => { if (p.startsWith("/auth/sessions")) sesApprovedReads.push(p); return sesApprovedGet(p); };
   await go("#/maintainer/maity/board"); await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
   expect(sesBanner() && text(sesBanner()).includes("It has ended, but a session it approved is still active: Edge on Windows"), "sessions: the banner stays while a session it approved is active");
+  // The active list alone cannot show who approved Edge (its approver ended): only then are the ended ones read.
+  expect(sesApprovedReads.includes("/auth/sessions") && sesApprovedReads.includes("/auth/sessions?ended=true"),
+    "sessions: an approval whose session ended is traced through the ended ones " + JSON.stringify(sesApprovedReads));
   sesDels.length = 0;
   win.Maity.api.del = (p) => { sesDels.push(p); return Promise.resolve({ ended: true }); };
   btn(sesBanner(), "End this session").click(); for (let k = 0; k < 4; k++) await tick();
@@ -15410,7 +15436,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   win.Maity.api.get = (p) => (p === "/me/notifications?limit=0" ? sesGet(p).then((r) => Object.assign({}, r, { counts: Object.assign({}, r.counts, { security: 0 }), pinned: [] })) : sesGet(p));
   await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
   expect(sesBanner(), "sessions: marking the alert read leaves the banner of a sign-in not confirmed");
-  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGet(p).then((r) => ({ items: r.items.map((x) => (x.id === "hss-41d2" ? Object.assign({}, x, { good_standing: true }) : x)) })) : sesGet(p));
+  win.Maity.api.get = sesStub((p) => sesGet(p).then((r) => ({ items: r.items.map((x) => (x.id === "hss-41d2" ? Object.assign({}, x, { good_standing: true }) : x)) })), sesGet);
   await fireIntervals(); for (let k = 0; k < 6; k++) await tick();
   expect(!sesBanner(), "sessions: the sign-in in good standing, the banner goes at once");
   win.Maity.api.get = sesGet;
@@ -15466,7 +15492,7 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // A confirm the hub refuses is said in words, never called confirmed (§2.6.5).
   const mailR = { id: "hss-41f4", method: "email_code", created_at: "2026-10-22T15:20:00Z", last_seen_at: "2026-10-22T15:21:00Z", browser: "Opera", os: "Linux",
     ip: "192.0.2.92", approved_by: null, good_standing: false, created: { record: "acr-11", ip: "192.0.2.92", browser: "Opera", os: "Linux" }, ended_at: null, ended_by: null };
-  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGet(p).then((r) => ({ items: [mailR].concat(r.items) })) : sesGet(p));
+  win.Maity.api.get = sesStub((p) => sesGet(p).then((r) => ({ items: [mailR].concat(r.items) })), sesGet);
   const sesPostR = win.Maity.api.post;
   const sesConfirms = [];
   win.Maity.api.post = (p, b) => (p.endsWith("/confirm")
@@ -15483,12 +15509,13 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const alertX = { id: "ntf-acr-9", record: "acr-9", kind: "security", at: "2026-10-22T15:00:00Z", project: null, actor: null, title: "New sign-in: Opera on macOS (email_code)",
     target: { type: "session", id: "hss-41f3" }, read: false, redacted: false };
   let mailEnded = false;
-  win.Maity.api.get = (p) => {
+  const mailGet = (p) => {
     if (p === "/auth/sessions?ended=true") return sesGet(p).then((r) => ({ items: [Object.assign({}, mailX, mailEnded ? { ended_at: "2026-10-22T15:10:00Z", ended_by: "revoked" } : {})].concat(r.items) }));
     if (p.startsWith("/me/notifications?kind=security")) return Promise.resolve({ items: [alertX], next_cursor: null });
     if (p === "/me/notifications?limit=0") return sesGet(p).then((r) => Object.assign({}, r, { counts: Object.assign({}, r.counts, { security: 1 }) }));
     return sesGet(p);
   };
+  win.Maity.api.get = sesStub(mailGet, mailGet);
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 6; k++) await tick();
   expect(sesBanner() && text(sesBanner()).includes("Opera on macOS"), "sessions: a banner for the new mail sign-in");
   mailEnded = true;
@@ -15496,11 +15523,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   expect(!sesBanner(), "sessions: its session ended elsewhere, the count unchanged: the banner goes with the next round");
   win.Maity.api.get = sesGet;
   // Crossing the hour while the section is open: what was too new is offered after the minute's check.
-  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGet(p).then((r) => ({ items: [weak].concat(r.items.map((x) => Object.assign({}, x, { current: false })).filter((x) => !x.good_standing || x.id === "hss-41c0")) })) : sesGet(p));
+  win.Maity.api.get = sesStub((p) => sesGet(p).then((r) => ({ items: [weak].concat(r.items.map((x) => Object.assign({}, x, { current: false })).filter((x) => !x.good_standing || x.id === "hss-41c0")) })), sesGet);
   const unconfirmedOld = { id: "hss-41aa", method: "email_link", created_at: new Date(Date.now() - 30 * 60000).toISOString(), last_seen_at: new Date().toISOString(), browser: "Vivaldi", os: "Linux",
     ip: "192.0.2.91", approved_by: null, good_standing: false, created: { record: "acr-10", ip: "192.0.2.91", browser: "Vivaldi", os: "Linux" }, ended_at: null, ended_by: null };
   const sesGetW = win.Maity.api.get;
-  win.Maity.api.get = (p) => (p === "/auth/sessions?ended=true" ? sesGetW(p).then((r) => ({ items: r.items.concat([unconfirmedOld]) })) : sesGetW(p));
+  win.Maity.api.get = sesStub((p) => sesGetW(p).then((r) => ({ items: r.items.concat([unconfirmedOld]) })), sesGetW);
   await go("#/account/security/sessions"); for (let k = 0; k < 6; k++) await tick();
   expect(btn(sesRow("hss-41aa"), "End").attrs.disabled !== undefined, "sessions: an older unconfirmed one is not ended from a session under an hour old");
   const sesNow = win.Maity.api.now;
@@ -16951,6 +16978,8 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const csRev = win.Maity.notify.state.sessionsRev;
   win.Maity.notify.state.sessionsRev = "acr-999";
   win.Maity.notify.changed(); for (let k = 0; k < 4; k++) await tick();
+  // One read: this section's. notify.changed() runs the section's watcher, not the banner's
+  // (that one follows a sessions_rev moved by the bell's own reads, the case further below).
   expect(csGets.length === 1 && csRows().length === 6 && text(csRows()[0]).includes("Oct 26") && text(csRows()[1]).includes("not confirmed") && !text(csRows()[0]).includes("not confirmed")
     && text(csRows()[5]).includes("and 2 more"),
     "notifications: a moved sessions_rev reads them again; newest first, five shown, the rest counted, the unconfirmed marked " + text(csBox()));
@@ -16966,15 +16995,18 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "notifications: after a failed read the bell's next change reads the sessions again, sessions_rev unmoved " + text(csBox()));
   // The mail sign-in banner follows a moved sessions_rev at once, from any answer the bell reads
   // (here its counts read outside the 60-second round), not only in that round.
+  // Counted at the banner itself: this page's section reads the same active sessions.
   const bnGets = [];
-  win.Maity.api.get = (p) => (p === "/me/notifications?limit=0" ? csGet(p).then((a) => Object.assign({}, a, { sessions_rev: "acr-1001" }))
-    : (p === "/auth/sessions?ended=true" && bnGets.push(p), csGet(p)));
+  const bnBanner = win.Maity.sessions.banner;
+  win.Maity.sessions.banner = (...a) => { bnGets.push(a.length); return bnBanner(...a); };
+  win.Maity.api.get = (p) => (p === "/me/notifications?limit=0" ? csGet(p).then((a) => Object.assign({}, a, { sessions_rev: "acr-1001" })) : csGet(p));
   await win.Maity.notify.read(); for (let k = 0; k < 4; k++) await tick();
   expect(bnGets.length >= 1 && win.Maity.notify.state.sessionsRev === "acr-1001",
     "banner: a sessions_rev moved outside the counts round builds the banner again " + bnGets.length);
   bnGets.length = 0;
   await win.Maity.notify.read(); for (let k = 0; k < 4; k++) await tick();
   expect(!bnGets.length, "banner: the same sessions_rev again builds nothing " + bnGets.length);
+  win.Maity.sessions.banner = bnBanner;
   win.Maity.api.get = csGet;
   win.Maity.notify.state.sessionsRev = csRev;
   // All notifications (/notifications): unread in bold with a dot, as on the bell, and Mark all read up to the first page's head.
