@@ -167,7 +167,7 @@ def test_the_settings_profile(tmp_path: Path) -> None:
                 *(f"{tool}({path})" for path in hidden for tool in ("read_file", "write_file")),
                 *(f"write_file({git_dir / name})" for name in adapters.GIT_PROTECTED),
                 "command(git -c)", "command(git --config-env)", "command(git --exec-path)",
-                "command(gh)",
+                "command(gh)", "command(maity runner)",  # S201/S202: not from an agent's shell
             ],
         },
     }  # fmt: skip
