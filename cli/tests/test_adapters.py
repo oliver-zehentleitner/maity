@@ -1284,6 +1284,18 @@ def test_a_scratch_too_deep_for_a_socket_keeps_the_hosts_tmpdir(tmp_path: Path) 
     assert adapters.scratch_tmpdir(None) is None
 
 
+def test_the_socket_limit_is_pinned_per_platform_and_counted_in_bytes() -> None:
+    assert adapters.socket_path_max("linux") == 107
+    assert adapters.socket_path_max("darwin") == 103
+    assert adapters.socket_path_max("freebsd14") == 103
+    # Bytes, not characters: a non-ASCII name takes more room than its length says.
+    room = adapters.SOCKET_PATH_MAX - adapters.SOCKET_NAME_ROOM - 1 - len("/tmp")  # noqa: S108
+    ascii_fits = Path("/" + "a" * (room - 1))
+    assert adapters.scratch_tmpdir(ascii_fits) == ascii_fits / "tmp"
+    wide = Path("/" + "ä" * (room - 1))  # same number of characters, twice the bytes
+    assert adapters.scratch_tmpdir(wide) is None
+
+
 def test_without_a_scratch_nothing_names_one(tmp_path: Path) -> None:
     ctx = context(tmp_path, sandbox=True)
     assert "allowWrite" not in adapters.claude_settings(ctx)["sandbox"]["filesystem"]

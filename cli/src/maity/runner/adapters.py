@@ -229,7 +229,12 @@ class Context:
 # `claude-socks-<16 hex>.sock` there (34 bytes) and does not start when the path is longer. A
 # scratch deep in a workspaces root made that path 117 bytes, so every Claude Code placement lost
 # its sandbox (cli 0.1.0a16).
-SOCKET_PATH_MAX = 107 if sys.platform.startswith("linux") else 103
+def socket_path_max(platform: str = sys.platform) -> int:
+    """The longest Unix socket path, in bytes, on `platform` (`sys.platform`'s form)."""
+    return 107 if platform.startswith("linux") else 103
+
+
+SOCKET_PATH_MAX = socket_path_max()
 SOCKET_NAME_ROOM = len("claude-socks-0123456789abcdef.sock")
 
 
