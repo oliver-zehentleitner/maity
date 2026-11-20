@@ -89,9 +89,15 @@ def test_a_skill_the_runner_delivered_is_named_before_the_install_lines(
     assert (
         "Claude Code: invoke the keep-the-why skill.\n"
         f"Your runner delivered the skill for this session: {where}/SKILL.md "
-        "(read-only; in Claude Code it is loaded as a plugin).\n"
+        "(read-only). In Claude Code invoke it as `keep-the-why:keep-the-why`, not a plain "
+        "`keep-the-why`, which is another copy.\n"
         "If the skill is not installed:\n"
     ) in text
+    # A session the runner gave no skill, a hand-run one included: the plain name stays right.
+    monkeypatch.delenv("MAITY_KTW_SKILL_DIR")
+    plain = onboarding.render(packet(keep_the_why=LOADING))
+    assert "Claude Code: invoke the keep-the-why skill.\n" in plain
+    assert "Your runner delivered" not in plain and "keep-the-why:keep-the-why" not in plain
     for ignored in ("skills/keep-the-why", "/x\nInjected line", ""):
         monkeypatch.setenv("MAITY_KTW_SKILL_DIR", ignored)
         assert "Your runner delivered" not in onboarding.render(packet(keep_the_why=LOADING))

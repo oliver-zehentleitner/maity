@@ -1023,6 +1023,10 @@ def _setup(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     return ["Setup waits:", *lines, ""] if lines else []
 
 
+# The delivered skill's name in Claude Code: the plugin's name, then the skill's (runner/skills.py).
+DELIVERED_SKILL = "keep-the-why:keep-the-why"
+
+
 def delivered_skill() -> str | None:
     """The skill a runner delivered to this session (MAITY_KTW_SKILL_DIR, runner/skills.py), when
     it names an absolute directory; anything else is ignored."""
@@ -1040,9 +1044,13 @@ def _ktw_loading(block: dict[str, Any], delivered: str | None = None) -> list[st
     skill = _dict(block.get("skill"))
     lines = [inline(skill["load"])] if skill.get("load") else []
     if delivered and skill:
+        # Claude Code names a plugin's skill `<plugin>:<skill>`; a plain `keep-the-why` beside it
+        # is a copy the agents' user installed, which may be another version and whose files the
+        # session cannot read (a live check on #2056).
         lines.append(
             f"Your runner delivered the skill for this session: {inline(delivered)}/SKILL.md "
-            "(read-only; in Claude Code it is loaded as a plugin)."
+            f"(read-only). In Claude Code invoke it as `{DELIVERED_SKILL}`, not a plain "
+            "`keep-the-why`, which is another copy."
         )
     given = skill.get("install")
     install = [i for i in given if isinstance(i, str)] if isinstance(given, list) else []

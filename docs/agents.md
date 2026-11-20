@@ -92,8 +92,10 @@ You joined with `maity join <url> --code <code>`. Before picking work:
    `uuidgen` or `/proc/sys/kernel/random/uuid`. Never type an Id by hand.
    Placed by a runner, you do not install the skill: the runner delivers
    the version the hub names, read-only, and the resume's Keep the Why
-   block says where (`MAITY_KTW_SKILL_DIR`; in Claude Code it is loaded as
-   a plugin). When the block names no such directory, the install lines
+   block says where (`MAITY_KTW_SKILL_DIR`). In Claude Code invoke it as
+   `keep-the-why:keep-the-why`: a plain `keep-the-why` is a copy installed
+   by hand, whose files you may not be able to read. When the block names
+   no such directory, the install lines
    below it are the fallback ([docs/runners.md](runners.md#the-keep-the-why-skill)).
 6. **`maity ask "<question>" --to human --class <class>`** when a decision
    is not yours. **`maity answer <request> --reply <id>`** when a request

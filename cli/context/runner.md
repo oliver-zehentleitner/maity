@@ -4994,8 +4994,8 @@ separate item of the incident card.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-172s8y208whg (and the older tsk-98y28q20nm9c it replaces); the design and the lead's answers to its three questions, 2026-11-20; contract request req-b3q6ttwgrp1v (approved as written, the source-without-commit refusal included); `claude --help` on vm-aigents02, 2026-11-20 (`--plugin-dir`: "Load a plugin from a directory or .zip for this session only"); a Read of `~/.claude/skills/keep-the-why/references/help.md` refused in a placed session the same day; `cli/src/maity/runner/skills.py`, `adapters.py`, `supervisor.py`
-**Revisit when:** a live placement shows that a `--plugin-dir` skill does not load under `--setting-sources user` and `dontAsk`, or loads under a name the hub's load text does not fit; Keep the Why publishes a signed or hashed release; the agent_user layout, ssh hosts or Codex get the delivery
+**Source:** card tsk-172s8y208whg (and the older tsk-98y28q20nm9c it replaces); the design and the lead's answers to its three questions, 2026-11-20; contract request req-b3q6ttwgrp1v (approved as written, the source-without-commit refusal included); `claude --help` on vm-aigents02, 2026-11-20 (`--plugin-dir`: "Load a plugin from a directory or .zip for this session only"); a Read of `~/.claude/skills/keep-the-why/references/help.md` refused in a placed session the same day; the live check by ops on oliver-pc01-l, 2026-11-20 (Claude Code 2.1.329 with the runner's flags: the plugin's skill loads as `keep-the-why:keep-the-why`, and a hand-installed `keep-the-why` shows beside it and wins a request for the plain name); `cli/src/maity/runner/skills.py`, `adapters.py`, `supervisor.py`
+**Revisit when:** Claude Code changes how it names a plugin's skill (`<plugin>:<skill>`) or stops loading the user's skills under `--setting-sources user`; Keep the Why publishes a signed or hashed release; the agent_user layout, ssh hosts or Codex get the delivery
 **See:** https://github.com/oliver-zehentleitner/maity — 4859417a-15f0-44c1-821e-cc80f888e34d — as of 2026-11-20
 
 A placed session could not get the skill: its sandbox does not write the
@@ -5013,7 +5013,12 @@ runner fetches it and hands it to the session read-only:
   its `references/` and a Read outside the clone and the scratch is
   refused otherwise, even for a skill installed by hand. An `Edit` deny
   and the sandbox's `denyWrite` keep the copy unwritable from the session.
-- Every harness gets `MAITY_KTW_SKILL_DIR`, which `maity resume` names.
+- Every harness gets `MAITY_KTW_SKILL_DIR`, which `maity resume` names,
+  and for Claude Code the plugin's skill name, `keep-the-why:keep-the-why`:
+  the session still loads the user's own skills, so a hand-installed
+  `keep-the-why` shows beside it, may be another version, and is what a
+  request for the plain name gets (the live check), while its references
+  stay unreadable to the session.
 - A fetch that fails starts the session anyway and reports
   `keep_the_why_unavailable` (§15.7), `sandbox_unavailable` first when
   both hold. The resume packet's install text stays the fallback.
@@ -5045,5 +5050,3 @@ report tells the owner.
 the runner's directory) and ssh hosts start without the skill, with a log
 line and the report; Codex gets only the variable; `maity runner check`
 and `gc` do not handle the skill yet. That is the second part of the card.
-Whether the plugin's skill loads, and under which name, is to be seen in a
-live placement.
