@@ -3780,8 +3780,10 @@ Since card tsk-wc9ayykt4hdg (2026-11-20), a line that names `maity`,
 also once such characters are taken out, and holds a control character
 other than a tab or a newline (C0, DEL, C1) or a space other than the
 ASCII one (each character Python counts as a space, U+0085 and the
-Unicode spaces among them, and U+180E, U+200B and U+FEFF) is refused
-(`odd_spacing`). The check runs after the other rules, so a line they
+Unicode spaces among them) or a format character (Unicode category Cf:
+U+180E, U+200B, U+FEFF, the zero-width joiners, the word joiner, the
+soft hyphen and the bidi controls, all invisible, counted since the
+review of #2070) is refused (`odd_spacing`). The check runs after the other rules, so a line they
 refuse keeps its reason. The shell splits words only at a space, a tab
 and a newline: `maity` followed by a carriage return, a vertical tab, a
 form feed or a no-break space was part of a longer word to it, and no

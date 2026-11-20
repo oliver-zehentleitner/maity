@@ -435,7 +435,8 @@ def test_other_command_lines_are_left_to_the_permission_rules(command: str) -> N
 
 
 # Characters at which the shell does not split words, but another reader of the line may:
-# control characters other than a tab and a newline, and spaces other than the ASCII one.
+# control characters other than a tab and a newline, spaces other than the ASCII one, and
+# invisible format characters (Unicode category Cf).
 ODD = [
     "\r",
     "\v",
@@ -451,6 +452,12 @@ ODD = [
     "\N{ZERO WIDTH SPACE}",
     "\N{ZERO WIDTH NO-BREAK SPACE}",
     "\N{MONGOLIAN VOWEL SEPARATOR}",
+    "\N{ZERO WIDTH JOINER}",
+    "\N{ZERO WIDTH NON-JOINER}",
+    "\N{WORD JOINER}",
+    "\N{RIGHT-TO-LEFT OVERRIDE}",
+    "\N{LEFT-TO-RIGHT ISOLATE}",
+    "\N{SOFT HYPHEN}",
 ]
 # Lines where such a character stands where a space would make `maity` a word, or between
 # the letters of `maity`: to the shell `maity` is no word of any of them, so the other rules

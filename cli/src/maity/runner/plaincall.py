@@ -49,6 +49,7 @@ import itertools
 import json
 import re
 import sys
+import unicodedata
 from collections.abc import Sequence
 from typing import TypeAlias
 
@@ -118,7 +119,7 @@ PREFIX_REFUSED = (
 SPACING_REFUSED = (
     "A line that names `maity` holds no control character and no space other than an ASCII "
     "space and a tab: no carriage return, vertical tab, form feed, no-break or other Unicode "
-    "space, and no zero-width space. Run `maity …` with plain spaces; text that holds such "
+    "space, and no zero-width space or other invisible format character. Run `maity …` with plain spaces; text that holds such "
     "characters goes in a file in this clone, passed with `--body-file`."
 )
 # The reason for a refused line with a word before `maity` that reads as an assignment to
@@ -1006,23 +1007,18 @@ def _split(line: str) -> list[tuple[str, bool, int, str]]:
     return words
 
 
-# Characters that are no space to the shell but may be one to whatever else reads the line:
-# U+180E counted as a space before Unicode 6.3, U+200B is named one, U+FEFF is one to
-# JavaScript's `\s`. The control characters and the rest of the spaces are found by their
-# class (`_odd`).
-_ZERO_WIDTH = frozenset(
-    ("\N{MONGOLIAN VOWEL SEPARATOR}", "\N{ZERO WIDTH SPACE}", "\N{ZERO WIDTH NO-BREAK SPACE}")
-)
-
-
 def _odd(c: str) -> bool:
     """Whether a character is one a line that names `maity` may not hold (`odd_spacing`): a
     control character (C0, DEL or C1) other than a tab and a newline, any other character
     Python counts as a space (no-break, em, ideographic and the other Unicode spaces, the
-    line and paragraph separators, U+0085), or one of `_ZERO_WIDTH`."""
+    line and paragraph separators, U+0085), or a format character (Unicode category Cf).
+    Format characters are invisible: the zero-width space U+200B, U+180E (a space before
+    Unicode 6.3) and U+FEFF (a space to JavaScript's regular expressions) are among them,
+    and so are the zero-width joiner and non-joiner, the word joiner, the soft hyphen and
+    the bidi controls, which can hide or reorder what a reader sees of the line."""
     if c in " \t\n":
         return False
-    return ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F or c.isspace() or c in _ZERO_WIDTH
+    return ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F or c.isspace() or unicodedata.category(c) == "Cf"
 
 
 def odd_spacing(command: str) -> bool:
