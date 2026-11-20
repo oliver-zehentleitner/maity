@@ -58,6 +58,76 @@ class Refused(Exception):
 # the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
 # runner's own, and an agent's call of it is refused (cli.main).
 IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
+# Of those, the ones that act on a file the call names: the loop's spec (what it runs) and the
+# pane's log (what it cuts). An agent's `maity` runs outside its sandbox, so such a file must
+# be the one the runner wrote for it, never one an agent chose (runner_own_file).
+IN_SESSION_FILE = {"loop": "spec", "logcap": "log"}
+
+
+def _own_home() -> Path | None:
+    """This OS user's home from the user database, not from `HOME`, which a caller sets."""
+    try:
+        import pwd  # noqa: PLC0415 - POSIX only; the runner's agents' side is POSIX
+    except ImportError:
+        return None
+    try:
+        return Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except KeyError:
+        return None
+
+
+def runner_own_file(command: str, given: str) -> bool:
+    """Whether `given` is the file the runner hands `maity runner <command>`. The runner calls
+    these through `maity` only on an ssh host, where its files lie in the agents' user's
+    `~/.maity-runner` (targets.AGENT_FILES): the loop's spec at `agents/<placement>/loop.json`,
+    the pane's log at `logs/<placement>.log`. An allow list, checked on every call, with or
+    without `MAITY_PLACEMENT`. The path must be written as exactly that one (absolute, the home
+    from the user database, not from `HOME`; no `..`, no doubled or trailing slash), and no
+    step from `~/.maity-runner` down may be a link: each directory is this user's and others
+    may not write it, and the file is an existing regular file of this user with one link
+    that neither group nor others may write. Under a placement it must be that placement's own file.
+    """
+    home = _own_home()
+    if home is None or "\0" in given or not os.path.isabs(given):
+        return False
+    if os.path.normpath(given) != given or given.startswith("//"):
+        return False
+    root = home / targets.AGENT_FILES
+    try:
+        rel = Path(given).relative_to(root).parts
+    except ValueError:
+        return False
+    if command == "loop":
+        shaped = len(rel) == 3 and rel[0] == "agents" and rel[2] == "loop.json"
+        placement = rel[1] if shaped else ""
+    elif command == "logcap":
+        shaped = len(rel) == 2 and rel[0] == targets.LOGS and rel[1].endswith(".log")
+        placement = rel[1].removesuffix(".log") if shaped else ""
+    else:
+        return False
+    if not shaped or not supervisor.PLACEMENT_ID.fullmatch(placement):
+        return False
+    placed = os.environ.get(clonecheck.PLACEMENT_ENV)
+    if placed and placed != placement:
+        return False
+    uid = os.getuid()
+    step = root
+    for part in ("", *rel):
+        step = step / part if part else step
+        try:
+            info = os.lstat(step)
+        except OSError:
+            return False
+        last = step == root.joinpath(*rel)
+        kind = stat.S_ISREG(info.st_mode) if last else stat.S_ISDIR(info.st_mode)
+        # The file is written 0600; its directories may carry the user's group-write bit (an
+        # umask of 002 makes the parents), never the others'.
+        barred = stat.S_IWGRP | stat.S_IWOTH if last else stat.S_IWOTH
+        if not kind or info.st_uid != uid or info.st_mode & barred:
+            return False
+        if last and info.st_nlink != 1:  # not a hard link to another file of this user
+            return False
+    return True
 
 
 # --- pair ------------------------------------------------------------------------------------

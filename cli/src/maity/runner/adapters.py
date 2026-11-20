@@ -94,6 +94,11 @@ PULL_REQUEST_PROMPT = (
     "does not run here."
 )
 
+# `maity runner` is the operator's and the runner's; no agent runs it from its shell. Its
+# in-session commands (the loop, the pane's log, the hook) are started by the runner or by the
+# harness itself, never through an agent's command tool (runner_own_file is the boundary).
+MAITY_RUNNER_DENIED = ("maity runner", "maity runner *")
+
 
 # What in a clone's .git redirects git's configuration, hooks or object sources: never
 # written by the agent. Not everything that can make git run something: a rebase state
@@ -390,7 +395,7 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
     deny = [f"Edit(/{git}/{name}{'/**' if name in ('hooks', 'info') else ''})"
             for name in GIT_PROTECTED]  # fmt: skip
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
-    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED)]
+    deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
         # stays in the model's context; the bare name takes it out of the model's context
@@ -420,8 +425,11 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             # placement that is not its owner cannot reach another placement's scratch there.
             "filesystem": {"denyRead": [f"{git}/maity", *(str(p) for p in ctx.private),
                                         *_shared_tmp(ctx)],
+                           # The private paths are not writable either: the runner's files
+                           # (~/.maity-runner on an ssh host) are what `maity runner` takes.
                            "denyWrite": [f"{git}/maity",
                                          *(f"{git}/{name}" for name in GIT_PROTECTED),
+                                         *(str(p) for p in ctx.private),
                                          *_shared_tmp(ctx)],
                            # Commands write the placement's scratch besides the clone (§15.5).
                            **({"allowWrite": [str(ctx.scratch)]}
@@ -759,7 +767,7 @@ def opencode_config(ctx: Context) -> dict[str, Any]:
     # After the allows: the last match wins. The rules are meant to allow `maity` only as one
     # plain call, as the Claude Code hook has it (plaincall). Without a sandbox these rules are
     # not a boundary, see cli/context/runner.md.
-    bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED)})
+    bash.update({rule: "deny" for rule in (*GIT_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)})
     bash.update({f"maity *{char}*": "deny" for char in MAITY_NOT_PLAIN})
     secret = f"{ctx.clone}/.git/maity/*"
     # The clone's credential is neither readable nor writable; nothing under .git is edited
@@ -830,7 +838,7 @@ AGY_MAITY_PROMPT = (
 # rest of `~/.gemini` stays readable to agy's own sandbox, which keeps its scratch there.
 AGY_LOGIN = Path(".gemini") / "antigravity-cli" / "antigravity-oauth-token"
 # What agy's command rules match by prefix: GIT_DENIED without its globs, and gh.
-AGY_DENIED_COMMANDS = ("git -c", "git --config-env", "git --exec-path", "gh")
+AGY_DENIED_COMMANDS = ("git -c", "git --config-env", "git --exec-path", "gh", "maity runner")
 
 
 # Why a command grant is not given to agy as a rule. agy does not match a `command(...)` rule
