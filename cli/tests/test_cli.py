@@ -619,6 +619,21 @@ def test_a_credential_in_a_body_is_refused_locally(
     assert not fake.seen
 
 
+@pytest.mark.parametrize("after", ["é", "ß", "日", "."])
+def test_a_credential_before_a_non_ascii_letter_is_refused_locally(
+    joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str], after: str
+) -> None:
+    # The hub's `\b` is ASCII and refuses this query (and revokes a real credential); the
+    # pre-send check must refuse it first. No `-` or `_` in the secret, see
+    # test_credential_guard.PLAIN.
+    leak = "mty1.crd-x-0001.abcdefABCDEF0123456789"
+    args = ["api", "GET", "/projects/oliver/maity/tasks", "--query", f"q={leak}{after}"]
+    assert cli.main(args) == cli.EXIT_ERROR
+    out = output(capsys)
+    assert "credential format" in out and leak not in out
+    assert not fake.seen
+
+
 def test_api_passthrough_is_signed_and_idempotent(
     joined: Path, fake: fakehub.FakeHub, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
