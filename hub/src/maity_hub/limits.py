@@ -1,6 +1,7 @@
 """The caps of the admin section Limits (docs/api.md §16.5): agent profiles and organisations
 owned by a human, projects in one namespace (a human's or an organisation's), the aliases of
-one id (`max_aliases`, 1–8, never `unlimited`), the attachment storage of each project
+one id (`max_aliases`, 1–8, never `unlimited`), the starred projects of one human
+(`max_starred_per_human`, 1–1000, never `unlimited`), the attachment storage of each project
 and of the whole instance, and the reads one credential may make per minute
 (`max_reads_per_minute`, 60–100000, read through `read_limits`' cache), each from the
 environment, else from the instance admin, else its
@@ -26,6 +27,7 @@ UNLIMITED = "unlimited"
 STORAGE = "max_attachment_storage"
 PROJECT_STORAGE = "max_attachment_storage_per_project"
 ALIASES = "max_aliases"
+STARRED = "max_starred_per_human"
 READS = "max_reads_per_minute"
 # The default of `max_reads_per_minute` (§1.7, §16.5): about 3.6 times the highest sum of all
 # clients' reads per minute measured on the hosted instance, 279 (hub/context/serving.md
@@ -36,10 +38,14 @@ DEFAULTS: dict[str, object] = {
     "max_orgs_per_human": 5,
     "max_projects_per_owner": 10,
     ALIASES: 3,
+    STARRED: 100,
     PROJECT_STORAGE: 1024**3,
     READS: READS_PER_MINUTE_DEFAULT,
     STORAGE: UNLIMITED,
 }
+# The caps that have no `unlimited` (`out_of_range`): the aliases, whose 8 other bounds rest on
+# (§6.25), and the stars, at most 1000 by the lead's decision of 2026-11-14 (§16.5).
+BOUNDED = (ALIASES, STARRED)
 NAMES = tuple(DEFAULTS)
 READ_ONLY = (
     "humans_at_limit",
@@ -52,6 +58,7 @@ RANGES = {name: (1, 10000) for name in NAMES} | {
     PROJECT_STORAGE: (1024**2, 1024**5),
     STORAGE: (1024**3, 1024**5),
     ALIASES: (1, 8),
+    STARRED: (1, 1000),
     READS: (60, 100000),
 }
 
@@ -62,7 +69,7 @@ def _checker(name: str) -> Any:
     def check(value: object) -> object | None:
         """The value to store, or None when it is no cap."""
         if value == UNLIMITED:
-            return None if name == ALIASES else value
+            return None if name in BOUNDED else value
         if isinstance(value, int) and not isinstance(value, bool) and low <= value <= high:
             return value
         return None
@@ -90,6 +97,13 @@ def aliases(conn: Connection, hub: Settings | None) -> int:
     itself) the environment is not known here, so the admin's value or the default applies."""
     env = None if hub is None else hub.max_aliases
     return int(store.effective(f"limits.{ALIASES}", env, store.stored(conn, "limits"))[0])
+
+
+def starred(conn: Connection, hub: Settings) -> int:
+    """`max_starred_per_human` in force (§16.5, §5.1 "Stars"): never `unlimited`. No account
+    override yet (§16.5.1)."""
+    env = hub.max_starred_per_human
+    return int(store.effective(f"limits.{STARRED}", env, store.stored(conn, "limits"))[0])
 
 
 def for_account(
@@ -195,6 +209,8 @@ def view(conn: Connection, hub: Settings) -> dict[str, Any]:
         ),
         ALIASES: _answer(values[ALIASES]),
         "names_at_alias_limit": _names_at(conn, aliases(conn, hub)),
+        # No count beside it: the stars are private, nobody counts them (§5.1, §16.5).
+        STARRED: _answer(values[STARRED]),
         PROJECT_STORAGE: _answer(values[PROJECT_STORAGE]),
         READS: _answer(values[READS]),
         STORAGE: _answer(values[STORAGE]),
