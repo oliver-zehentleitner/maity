@@ -1885,12 +1885,28 @@ def other_scratches(
         except OSError as exc:
             raise refused from exc
     elif as_user.exists(root, "-d"):
-        listed = as_user.run(["find", str(root), "-mindepth", "3", "-maxdepth", "3",
-                              "-path", f"*/{workspace.SCRATCH}/*", "-print0"])  # fmt: skip
-        if listed.returncode != 0:  # some directory could not be read: the list may be short
+        # The root with a trailing slash, so a root that is a link is listed through it; only the
+        # projects' own `.scratch` (never a clone's content, which may be unreadable) is read.
+        listed = as_user.run(["sh", "-c", _SCRATCHES, "sh", f"{root}/"])
+        if listed.returncode != 0:  # some `.scratch` could not be read: the list may be short
             raise refused
-        found = [root / Path(p).relative_to(root) for p in listed.stdout.split("\0") if p]
+        for entry in listed.stdout.split("\0"):
+            names = Path(entry).parts[-3:] if entry else ()
+            if len(names) == 3 and names[1] == workspace.SCRATCH:
+                found.append(root / names[0] / workspace.SCRATCH / names[2])
     return sorted(set(found) - ({own} if own is not None else set()))
+
+
+# Every entry of every project's `.scratch` under the root given (with a trailing slash), one
+# NUL after each: the projects are the root's own entries (a project's name never starts with a
+# dot, workspace.TOKEN), a project or a `.scratch` that is a link is skipped, as on the direct
+# side. A `.scratch` that cannot be listed ends with 3.
+_SCRATCHES = r"""for p in "$1"*; do
+  [ -d "$p" ] && ! [ -L "$p" ] || continue
+  h=$p/.scratch
+  [ -d "$h" ] && ! [ -L "$h" ] || continue
+  find "$h" -mindepth 1 -maxdepth 1 -print0 || exit 3
+done"""
 
 
 # For each clone entry given: its two places for a credential, looked at through a link as

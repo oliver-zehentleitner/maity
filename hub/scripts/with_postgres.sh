@@ -48,10 +48,17 @@ done
 passfile="${MAITY_PG_PASSFILE:-}"
 password=""
 if [ -n "$passfile" ]; then
-  # find without -L does not follow a link: a link, a directory, another user's file or a wider
-  # mode prints nothing.
-  if [ -z "$(find "$passfile" -maxdepth 0 -type f -user "$(id -u)" -perm 600 2>/dev/null)" ]; then
-    echo "$0: MAITY_PG_PASSFILE ($passfile) is not a regular file of this user with mode 600" >&2
+  case "$passfile" in
+    /*) ;; # absolute, so find never takes it for an option
+    *)
+      echo "$0: MAITY_PG_PASSFILE must be an absolute path" >&2
+      exit 2
+      ;;
+  esac
+  # find without -L does not follow a link: a link, a directory, another user's file, a wider
+  # mode or a second hard link prints nothing.
+  if [ -z "$(find "$passfile" -maxdepth 0 -type f -user "$(id -u)" -perm 600 -links 1 2>/dev/null)" ]; then
+    echo "$0: MAITY_PG_PASSFILE ($passfile) is not a regular file of this user with mode 600 and one link" >&2
     exit 2
   fi
   IFS= read -r password <"$passfile" || true
@@ -70,6 +77,26 @@ if [ "$mode" = stop ] && [ ! -f "$dir/PG_VERSION" ]; then
   echo "$0: no PostgreSQL in $dir; nothing stopped (MAITY_PG_DIR)" >&2
   exit 0
 fi
+# Whether every rule of the pg_hba.conf named lets in only with scram-sha-256 (or rejects): an
+# allowlist, so trust, peer, ident, md5 and anything else fail, as do an include directive and a
+# file that cannot be read. The method is the 4th field of a `local` rule and the 5th of a host
+# rule, the 6th when the address is given with a separate mask.
+scram_only() {
+  [ -f "$1" ] && [ -r "$1" ] || return 1
+  awk '
+    { sub(/#.*/, "") }
+    NF == 0 { next }
+    $1 ~ /^include/ { bad = 1; exit }
+    {
+      if ($1 == "local") method = $4
+      else if ($5 ~ /^[0-9.]+$/ || $5 ~ /^[0-9a-fA-F]*:[0-9a-fA-F:]*$/) method = $6
+      else method = $5
+      if (method != "scram-sha-256" && method != "reject") { bad = 1; exit }
+    }
+    END { exit bad }
+  ' "$1"
+}
+
 locks="$dir.locks"
 mkdir -p "$locks"
 started="$locks/started-by-script" # the process id of a server this script started
@@ -102,9 +129,9 @@ if [ ! -f "$dir/PG_VERSION" ]; then
   else
     initdb -D "$dir" -U postgres -A trust >/dev/null 7>&- 8>&- 9>&-
   fi
-elif [ -n "$password" ] && grep -Eq '^[[:space:]]*[^#[:space:]].*[[:space:]]trust([[:space:]]|$)' "$dir/pg_hba.conf" 2>/dev/null; then
-  # A cluster made before the password was set still lets anyone on its socket in.
-  echo "$0: $dir was made with trust; stop it (--stop without MAITY_PG_PASSFILE) and remove it" >&2
+elif [ -n "$password" ] && ! scram_only "$dir/pg_hba.conf"; then
+  # A cluster made before the password was set (or changed since) may let a caller in without it.
+  echo "$0: $dir does not take scram-sha-256 on every line of pg_hba.conf; stop it (--stop without MAITY_PG_PASSFILE) and remove it" >&2
   exit 2
 fi
 if ! pg_ctl -D "$dir" status >/dev/null 2>&1; then

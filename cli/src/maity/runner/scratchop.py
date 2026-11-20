@@ -156,6 +156,9 @@ def make(under: str, path: str) -> dict[str, object]:
     with _opened(under, [*names, "tmp"], make=True):
         pass
     with _opened(under, names, make=False) as scratch:
+        # The scratch itself private too, not only its `tmp`: mkdir left it to the umask.
+        if stat.S_IMODE(os.fstat(scratch).st_mode) != 0o700:
+            os.fchmod(scratch, 0o700)
         return {"result": "made", "pg_pass": _pg_pass(scratch)}
 
 
@@ -171,7 +174,7 @@ def _pg_pass(dir_fd: int) -> bool:
     except FileExistsError:
         found = os.stat(PG_PASS, dir_fd=dir_fd, follow_symlinks=False)
         return (stat.S_ISREG(found.st_mode) and found.st_uid == _uid(None)
-                and stat.S_IMODE(found.st_mode) == 0o600)  # fmt: skip
+                and stat.S_IMODE(found.st_mode) == 0o600 and found.st_nlink == 1)  # fmt: skip
     with os.fdopen(fd, "w") as handle:
         os.fchmod(handle.fileno(), 0o600)  # the mode asked for is subject to the umask
         handle.write(secrets.token_hex(32) + "\n")

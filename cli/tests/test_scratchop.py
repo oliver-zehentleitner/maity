@@ -74,6 +74,7 @@ def test_the_pg_password_is_drawn_once_and_kept(tmp_path: Path) -> None:
     first = passfile.read_text()
     assert len(first) == 65 and first.endswith("\n") and int(first, 16) >= 0
     assert stat.S_IMODE(passfile.stat().st_mode) == 0o600
+    assert stat.S_IMODE(room.stat().st_mode) == 0o700  # the scratch itself, not only its tmp
     assert scratchop.make(str(root), str(room))["pg_pass"] is True
     assert passfile.read_text() == first  # kept across a restart
     other = _room(tmp_path / "other")
@@ -82,7 +83,7 @@ def test_the_pg_password_is_drawn_once_and_kept(tmp_path: Path) -> None:
     assert (other / scratchop.PG_PASS).read_text() != first  # one per placement
 
 
-@pytest.mark.parametrize("planted", ["link", "dangling", "wide", "directory"])
+@pytest.mark.parametrize("planted", ["link", "dangling", "wide", "directory", "hardlink"])
 def test_a_planted_pg_password_is_never_written_through_or_vouched_for(
     tmp_path: Path, planted: str
 ) -> None:
@@ -101,6 +102,9 @@ def test_a_planted_pg_password_is_never_written_through_or_vouched_for(
     elif planted == "wide":
         passfile.write_text("a" * 64 + "\n")
         passfile.chmod(0o644)
+    elif planted == "hardlink":  # a 0600 file of this user, but another name holds it too
+        victim.chmod(0o600)
+        os.link(victim, passfile)
     else:
         passfile.mkdir()
     assert scratchop.make(str(root), str(room))["pg_pass"] is False

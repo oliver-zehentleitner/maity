@@ -300,7 +300,9 @@ def test_without_a_password_file_nothing_changes(run: dict[str, str]) -> None:
     assert "-A trust" in initdb
 
 
-@pytest.mark.parametrize("planted", ["wide", "link", "missing", "empty", "odd"])
+@pytest.mark.parametrize(
+    "planted", ["wide", "link", "missing", "empty", "odd", "relative", "hardlink"]
+)
 def test_a_password_file_that_is_not_the_runners_starts_nothing(
     run: dict[str, str], tmp_path: Path, planted: str
 ) -> None:
@@ -314,6 +316,12 @@ def test_a_password_file_that_is_not_the_runners_starts_nothing(
         passfile = tmp_path / "none.pass"
     elif planted == "empty":
         passfile = _passfile(run, text="\n")
+    elif planted == "relative":
+        _passfile(run)
+        passfile = Path("pg.pass")  # also how a name starting with "-" would be refused
+    elif planted == "hardlink":
+        passfile = _passfile(run)
+        os.link(passfile, tmp_path / "second-name")
     else:
         passfile = _passfile(run, text="a'b\n")
     refused = subprocess.run(
@@ -325,17 +333,42 @@ def test_a_password_file_that_is_not_the_runners_starts_nothing(
     assert "initdb" not in log and "pg_ctl" not in log
 
 
-def test_a_cluster_made_with_trust_is_not_used_with_a_password(run: dict[str, str]) -> None:
+@pytest.mark.parametrize(
+    "hba",
+    [
+        "local   all   all   trust\n",
+        "local all all trust#no space before the comment\n",
+        "local all all peer\n",
+        "local all all scram-sha-256\nhost all all 127.0.0.1/32 md5\n",
+        "host all all 127.0.0.1 255.255.255.255 ident\n",
+        "local all all scram-sha-256\ninclude other.conf\n",
+        "local scram-sha-256 all trust\n",  # the method is the 4th field, not any field
+        None,  # no pg_hba.conf at all
+    ],
+)
+def test_a_cluster_not_on_scram_alone_is_not_used_with_a_password(
+    run: dict[str, str], hba: str | None
+) -> None:
     data = Path(run["MAITY_PG_DIR"])
     (data / "PG_VERSION").touch()
-    (data / "pg_hba.conf").write_text("# a trust comment\nlocal   all   all   trust\n")
+    if hba is not None:
+        (data / "pg_hba.conf").write_text("# a comment with trust in it\n" + hba)
     refused = subprocess.run(
         [SCRIPT, "true"], env={**run, "MAITY_PG_PASSFILE": str(_passfile(run))},
         capture_output=True, text=True,
     )  # fmt: skip
-    assert refused.returncode == 2 and "made with trust" in refused.stderr
+    assert refused.returncode == 2 and "scram-sha-256 on every line" in refused.stderr
     assert not Path(run["FAKE_LOG"]).exists()  # refused before any tool ran
-    (data / "pg_hba.conf").write_text("# trust: not here\nlocal all all scram-sha-256\n")
+
+
+def test_a_cluster_on_scram_alone_is_used_with_a_password(run: dict[str, str]) -> None:
+    data = Path(run["MAITY_PG_DIR"])
+    (data / "PG_VERSION").touch()
+    (data / "pg_hba.conf").write_text(
+        "# trust: not here\nlocal all all scram-sha-256\n"
+        "host all all 127.0.0.1/32 scram-sha-256\nhost all all ::1/128 scram-sha-256\n"
+        "host all all 127.0.0.1 255.255.255.255 scram-sha-256\nlocal replication all reject\n"
+    )
     subprocess.run([SCRIPT, "true"], env={**run, "MAITY_PG_PASSFILE": str(_passfile(run))},
                    check=True)  # fmt: skip
     assert len(calls(run, "start")) == 1

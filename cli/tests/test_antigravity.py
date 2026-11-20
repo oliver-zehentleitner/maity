@@ -923,6 +923,30 @@ def test_every_other_placements_scratch_is_listed(tmp_path: Path, side: str) -> 
     assert supervisor.other_scratches(tmp_path / "none", own, as_user, host) == []
 
 
+@pytest.mark.parametrize("side", sorted(SIDES))
+def test_the_scratch_listing_reads_only_the_projects_scratch(tmp_path: Path, side: str) -> None:
+    """A clone's content is never read (an unreadable directory in a clone refuses nothing), a
+    workspaces root reached through a link is listed through it, and a `.scratch` higher up in
+    the root's own path matches nothing extra."""
+    real = tmp_path / ".scratch" / "real-ws"  # `.scratch` on the way to the root itself
+    as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    other = real / "maity" / ".scratch" / "plc-0004"
+    other.mkdir(parents=True)
+    locked = real / "maity" / "agent-3" / "deep"
+    locked.mkdir(parents=True)
+    (locked / "x").mkdir()
+    linked = tmp_path / "ws"
+    linked.symlink_to(real)
+    root = linked if host else linked.resolve()
+    locked.chmod(0o000)
+    try:
+        found = supervisor.other_scratches(linked, None, as_user, host)
+    finally:
+        locked.chmod(0o700)
+    assert found == [root / "maity" / ".scratch" / "plc-0004"]
+
+
 def test_a_scratch_listing_that_cannot_be_completed_refuses_the_start(tmp_path: Path) -> None:
     ws = tmp_path / "ws"
     holder = ws / "maity" / ".scratch"
