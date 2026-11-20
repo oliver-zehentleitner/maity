@@ -216,6 +216,15 @@ UNQUOTED_FORMS = {
         "table",
     ),
     "an index over the column": ('op.create_index("ix", "t", ["vector"])', "column"),
+    "a column added on one line": (
+        'op.add_column("notification_read", sa.Column("vector", sa.JSON(), nullable=True))',
+        "column",
+    ),
+    "a column added in a batch": ('batch_op.add_column(sa.Column("vector", X))', "column"),
+    "a single-quoted name": ("sa.Column('vector', JSON_VALUE)", "column"),
+    "a lightweight table of the word": ('sa.table("vector", sa.column("id"))', "table"),
+    "a lightweight column of the word": ('sa.table("t", sa.column("vector", X))', "column"),
+    "an index in a batch": ('batch_op.create_index("ix", ["vector"])', "column"),
     "a quote=True on the call that renames": (
         'op.alter_column("t", "v", new_column_name="vector", quote=True)',
         "column",

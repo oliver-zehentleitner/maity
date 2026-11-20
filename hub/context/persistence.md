@@ -1057,9 +1057,13 @@ little in a hub whose rule is `op.*` and Core only.
 **Known limit:** a table read with `autoload_with` gets plain names without the flag, so a revision
 that reflects `notification_position` and writes `vector` names that column itself, as with the JSON
 type above. The list in the test is kept by hand from the vendors' reserved-word pages. The revisions
-are checked by an `ast` walk over the calls that name tables and columns (`Column`, `create_table`,
-`alter_column`, `rename_table`, `drop_column`, `add_column`'s table, index columns); a name that is no
-string literal, and raw SQL in `op.execute`, are not judged. A line-based pattern came first and was
+are checked by an `ast` walk over the calls that name tables and columns: `Column`/`column` (also
+inside `add_column`, on one line or several), `Table`/`table`/`create_table`/`drop_table`,
+`rename_table`, `alter_column` (the column and `new_column_name`), `drop_column`, `add_column`'s table
+and the columns of `create_index`/`create_unique_constraint`. Those operations have no `quote=True`, so
+there a reserved name is written `sa.sql.quoted_name("vector", True)`; Alembic writes a plain string
+unquoted on MariaDB (`MODIFY vector`, `DROP COLUMN vector`). Not judged: a name that is no string
+literal, the columns of a foreign or primary key, and raw SQL in `op.execute`. A line-based pattern came first and was
 replaced after review: it misread calls over several lines and missed renames.
 
 ## On MariaDB a migration run commits per step, and a refusal stays where it refused
