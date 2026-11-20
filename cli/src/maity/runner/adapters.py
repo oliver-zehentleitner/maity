@@ -319,11 +319,14 @@ def pg_launch(ctx: Context, launched: Launch, beside: bool = True) -> Launch:
     review of #2032): never on a command line, in `launched.env` (which tmux keeps in its
     session environment) or in the loop's spec."""
     pg = pg_dir(ctx.scratch) if beside else None
-    if ctx.pg_pass is None or pg is None:
+    if ctx.pg_pass is None or pg is None or not ctx.as_user.here:
         return launched
     root = ctx.pg_pass.parent.parent
-    argv = [*ctx.as_user.runner_module("pgenv"), str(root), str(ctx.pg_pass), str(pg), "--",
-            *launched.argv]  # fmt: skip
+    # This interpreter's module, never `maity runner …`: an agent's `maity` runs outside its
+    # sandbox, so pgenv is no `maity` subcommand (the review of #2032). An ssh host, whose
+    # interpreter the runner does not know, gets no test cluster (above).
+    argv = [sys.executable, "-I", "-m", "maity.runner.pgenv", str(root), str(ctx.pg_pass),
+            str(pg), "--", *launched.argv]  # fmt: skip
     return Launch(argv, launched.env, launched.resumed)
 
 

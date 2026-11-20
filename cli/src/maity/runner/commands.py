@@ -26,7 +26,6 @@ from . import (
     logcap,
     loop,
     operate,
-    pgenv,
     plaincall,
     scratch,
     scratchop,
@@ -58,8 +57,9 @@ class Refused(Exception):
 # runner's own launch (the loop on an ssh host, the stub, Claude Code's hook, the pane's log):
 # the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
 # runner's own, and an agent's call of it is refused (cli.main).
-# `pgenv` hands out only the password of the placement its MAITY_PLACEMENT names (pgenv.main).
-IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap", "pgenv"})
+# Not `pgenv`: it reads a placement's password and starts any command outside the sandbox, so it
+# is no `maity runner` subcommand at all; the runner starts it as a module (adapters.pg_launch).
+IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
 # Of those, the ones that act on a file the call names: the loop's spec (what it runs) and the
 # pane's log (what it cuts). An agent's `maity` runs outside its sandbox, so such a file must
 # be the one the runner wrote for it, never one an agent chose (runner_own_file).
@@ -1179,18 +1179,6 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     r.add_argument("--repo", help=argparse.SUPPRESS)  # supervisor only: the clone to prune
     r.set_defaults(handler=cmd_worktree_prune)
 
-    # Internal too: the session's command started with its own test cluster password in the
-    # environment, on an ssh host (pgenv); the local runner starts the module directly.
-    r = rsub.add_parser("pgenv")
-    r.add_argument("under")
-    r.add_argument("password_file")
-    r.add_argument("cluster")
-    r.add_argument("command", nargs=argparse.REMAINDER)
-    # argparse keeps or drops the `--` before REMAINDER depending on its version: pgenv gets one.
-    r.set_defaults(handler=lambda a: pgenv.main([
-        a.under, a.password_file, a.cluster, "--",
-        *(a.command[1:] if a.command[:1] == ["--"] else a.command),
-    ]))  # fmt: skip
     # Internal too: what a pane's output goes through on an ssh host, holding its log to
     # limits.log_keep_bytes (logcap).
     r = rsub.add_parser("logcap")

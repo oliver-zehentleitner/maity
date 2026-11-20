@@ -1,7 +1,9 @@
 """Hands a placement's test cluster and its password to its session (hub/scripts/with_postgres.sh).
 
-`python -I -m maity.runner.pgenv <workspaces root> <password file> <cluster dir> -- <command> …`,
-or on an ssh host `maity runner pgenv …`: the runner starts the session's command through it.
+`python -I -m maity.runner.pgenv <workspaces root> <password file> <cluster dir> -- <command> …`:
+the runner starts the session's command through it, with its own interpreter. It is no `maity`
+subcommand: an agent's `maity` runs outside its sandbox, and this starts any command and reads a
+password (the review of #2032). An ssh host's sessions therefore get no test cluster yet.
 It runs outside the session's sandbox, as the agents' user, reads the placement's password file
 from the holder every sandbox is denied (scratchop.PG_HOLDER), sets MAITY_PG_DIR and
 MAITY_PG_PASSWORD in its own process environment, and replaces itself with the command, which

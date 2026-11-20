@@ -4815,7 +4815,11 @@ Two hardening steps keep the scratch the placement's own:
   outside the sandbox and sets it, with `MAITY_PG_DIR`, in the session's
   process environment, never on a command line or in tmux's environment
   (`launch.env` reaches tmux as `-e`). Both are set or neither, so a
-  cluster with `trust` is never made in a scratch.
+  cluster with `trust` is never made in a scratch. `pgenv` is a module the
+  runner starts with its own interpreter, never a `maity runner`
+  subcommand: an agent's `maity` runs outside its sandbox, and `pgenv`
+  starts any command it is given. So placements on an ssh host, whose
+  interpreter the runner does not know, get no test cluster yet.
 
 The password keeps out a same-user process that can reach the socket path
 but not the session's files or process environment. A fully unsandboxed

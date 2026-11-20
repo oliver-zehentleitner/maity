@@ -1121,7 +1121,6 @@ IN_SESSION_ARGV = {
     "stub": ["stub", "--exit-code", "0", "--run-seconds", "0"],
     "plaincall": ["plaincall"],
     "logcap": ["logcap", "/nowhere/log", "1"],
-    "pgenv": ["pgenv", "/nowhere", "/nowhere/.maity-pg/plc-0003", "/nowhere/pg", "--", "true"],
     "trust": ["trust", "/nowhere/home", "/nowhere/clone"],
 }
 
@@ -1135,7 +1134,7 @@ def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
 ) -> None:
     """With valid arguments and handlers that do nothing: the commands the runner starts in
     the session reach their handler under a placement, any other one (`trust`) does not."""
-    from maity.runner import logcap, loop, pgenv, plaincall, stub, trust
+    from maity.runner import logcap, loop, plaincall, stub, trust
 
     reached: list[str] = []
 
@@ -1146,7 +1145,7 @@ def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
 
         return run
 
-    for module in (loop, stub, plaincall, logcap, pgenv, trust):
+    for module in (loop, stub, plaincall, logcap, trust):
         monkeypatch.setattr(module, "main", handler(module.__name__))
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     own = _runner_home(monkeypatch, tmp_path)  # loop and logcap take only the runner's file
@@ -1157,6 +1156,28 @@ def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
     else:
         assert code == cli.EXIT_REFUSED and reached == []
         assert "for a placed agent" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("placed", ["plc-0003", "plc-0004", None])
+def test_pgenv_is_no_maity_command(
+    monkeypatch: pytest.MonkeyPatch, placed: str | None
+) -> None:
+    """The review of #2032: pgenv reads a placement's password and starts any command, and an
+    agent's `maity` runs outside its sandbox, so `maity runner pgenv` does not exist, under a
+    placement (its own or another's MAITY_PLACEMENT) or without one; nothing is started."""
+    from maity.runner import pgenv
+
+    reached: list[object] = []
+    monkeypatch.setattr(pgenv, "main", lambda argv=None: reached.append(argv) or 0)
+    if placed is None:
+        monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    else:
+        monkeypatch.setenv("MAITY_PLACEMENT", placed)
+    argv = ["runner", "pgenv", "/w", "/w/.maity-pg/plc-0003", "/w/pg", "--", "sh", "-c", "true"]
+    with pytest.raises(SystemExit) as usage:
+        cli.main(argv)
+    assert usage.value.code == 2 and reached == []
+    assert "pgenv" not in commands.IN_SESSION
 
 
 def test_the_runner_calls_on_the_agents_side_carry_no_placement(

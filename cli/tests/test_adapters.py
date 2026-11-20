@@ -1327,6 +1327,23 @@ def test_the_test_slots_and_cluster_go_in_the_placements_own_scratch(tmp_path: P
                        f'"{room}" = "write"']  # fmt: skip
 
 
+def test_an_ssh_hosts_session_gets_no_test_cluster(tmp_path: Path) -> None:
+    """pgenv is a module of the runner's own interpreter, never a `maity` subcommand (an agent's
+    `maity` runs outside its sandbox): a host whose interpreter the runner does not know gets
+    no cluster, and nothing is started through `maity runner`."""
+
+    class Elsewhere(AsUser):
+        @property
+        def here(self) -> bool:
+            return False
+
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    ctx = context(tmp_path / "r", "stub", scratch=room, as_user=Elsewhere(),
+                  pg_pass=Path("/srv/ws/.maity-pg/plc-0003"))  # fmt: skip
+    launched = adapters.pg_launch(ctx, adapters.Launch(["stub"], {}))
+    assert launched.argv == ["stub"]
+
+
 def test_an_agy_placement_gets_no_test_slots_or_cluster(tmp_path: Path) -> None:
     """agy's scratch under `/tmp` is read-only to it but for `tmp` (the review of #2032), so a
     slot directory or cluster there could not be written: it keeps the scripts' defaults."""

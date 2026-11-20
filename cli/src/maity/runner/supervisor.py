@@ -1399,8 +1399,9 @@ class Supervisor:
         if holder is not None:
             private = (*private, holder)
         pg_pass = None
+        # Not on an ssh host: pgenv runs as this interpreter's module (adapters.pg_launch).
         if (holder is not None and scratch is not None and not workspace.scratch_in_tmp(harness.id)
-                and adapters.pg_dir(scratch) is not None):  # fmt: skip
+                and target.as_user.here and adapters.pg_dir(scratch) is not None):  # fmt: skip
             pg_pass = self._pg_pass(p, holder, target)
         tmp_parent = self._tmp_scratch_parent(target, harness)
         if tmp_parent is not None:
