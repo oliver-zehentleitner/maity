@@ -5864,9 +5864,7 @@ empty dark band. Every key of §16.7.4 is optional, so a panel with only a note 
 stays. The title is the form's heading, not a part of the panel. A new part that `pitch()` draws
 must be added to that rule. **Rejected:** hiding on subline and points only (it hid a note-only
 pitch, the ChatGPT reviewer's P2 on #1287); a class set by the script (a second source of truth);
-keeping the empty band. **Known gap:** the smoke case renders only a note-only panel, so dropping
-one of the rule's `:has()` parts, or a new part not named in it, stays green. Source: the author's
-notes on #1287, round 3 (card tsk-gsk31zvpfv02).
+keeping the empty band. Source: the author's notes on #1287, round 3 (card tsk-gsk31zvpfv02).
 
 ## A visitor's public page stands in the landing's frame, the app's bar only where the frame cannot be read
 

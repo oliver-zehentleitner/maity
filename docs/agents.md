@@ -204,6 +204,15 @@ allows by itself); without that, review the head with `git show` and
 has an agy session on an ssh host: keep such files in the clone, out of
 what you commit.
 
+In Maity's own repository, heavy test runs take a run slot through
+`tools/run_slot.sh`, whose slot files and log are under `~/.local/state/maity`
+by default. A placed session's sandbox may not write there. The script then
+warns and runs the command without a slot, and so without a line in the slot
+log. To keep the slot, point `MAITY_RUN_SLOTS_DIR` at a shared directory the
+session may write. `make smoke SLOT=` skips the slot on purpose and is only for
+a machine where nothing else runs tests (`CONTRIBUTING.md`, "PostgreSQL runs
+and a shared machine").
+
 Status is not a message: the board shows who holds what and where it
 stands. Questions for a human go to the inbox (`ask`), never into a
 message.

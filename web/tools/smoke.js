@@ -19201,12 +19201,36 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "chat access history: 50 items a page, the next ones under Show more " + chFirst + " " + chRows().length);
     for (const id of chMade) await win.Maity.api.del("/me/chat-access/allow/" + id);
 
+    // The fixture hub writes its items as the hub does (review of #1989, A1439 P3-5): a deny logs
+    // each allow it narrows or removes after its own item, with `deny_id`, and `names` covers the
+    // entry before the write too, so the narrowed allow's former agent is named, not "deleted".
+    const chTwo = await win.Maity.api.post("/me/chat-access/allow", { agents: ["agt-b", "agt-c"], owner_id: "hum-anna" });
+    const chOne = await win.Maity.api.post("/me/chat-access/allow", { agents: ["agt-b"], owner_id: "hum-anna" });
+    const chDeny = await win.Maity.api.post("/me/chat-access/deny", { agents: ["agt-b"], owner_id: "hum-anna" });
+    const chLog = (await win.Maity.api.get("/me/chat-access/history?limit=20")).items;
+    const chOf = (id) => chLog.find((i) => i.entry_id === id);
+    const chNarrow = chOf(chTwo.id), chDropped = chOf(chOne.id), chDenied = chOf(chDeny.id);
+    expect(chNarrow && chNarrow.change === "changed" && chNarrow.deny_id === chDeny.id && chNarrow.cause === "list"
+      && JSON.stringify(chNarrow.before.agents) === JSON.stringify(["agt-b", "agt-c"]) && JSON.stringify(chNarrow.entry.agents) === JSON.stringify(["agt-c"])
+      && JSON.stringify(chNarrow.fields) === JSON.stringify(["agents"])
+      && chDropped && chDropped.change === "deleted" && chDropped.deny_id === chDeny.id && JSON.stringify(chDropped.entry.agents) === JSON.stringify(["agt-b"])
+      && chDenied && chDenied.change === "created" && chDenied.deny_id === null && chDenied.seq < chNarrow.seq && chDenied.seq < chDropped.seq,
+      "chat access history: the fixture's deny logs the allows it narrows and removes, after its own item (A1439 P3-5) " + JSON.stringify(chLog.slice(0, 3).map((i) => [i.entry_id, i.change, i.deny_id])));
+    expect(chNarrow && chNarrow.names["agt-b"] && chNarrow.names["agt-b"].handle === "agent-b" && chNarrow.names["agt-c"].handle === "agent-c",
+      "chat access history: the fixture names the agents of the entry before a change too (A1439 P3-5) " + JSON.stringify(chNarrow && chNarrow.names));
+    await go("#/agents/chat-access"); await mtSettle();
+    const chNarrowRow = chRows().find((li) => li.attrs["data-history"] === (chNarrow && chNarrow.id));
+    expect(chNarrowRow && text(chNarrowRow).includes("for @agent-b, @agent-c") && !text(chNarrowRow).includes("deleted"),
+      "chat access history: the narrowed allow shows the agents it covered before, by their handles " + (chNarrowRow ? text(chNarrowRow) : "no row"));
+    await win.Maity.api.del("/me/chat-access/deny/" + chDeny.id);
+    await win.Maity.api.del("/me/chat-access/allow/" + chTwo.id);
+
     // Items the fixture hub does not make (review of #1989, A1438 and A1439): a deleted side on
     // an answer, a deleted agent of a deny, a change of the rules and the end, an unknown cause,
     // field and kind, a chat add without its chat; then a failed and a stale Show more.
     const chGet = win.Maity.api.get;
     const chNames = { "agt-a": { handle: "agent-a", deleted: false }, "hum-anna": { handle: "anna", deleted: false },
-      "hum-gone": { handle: null, deleted: true }, "agt-gone": { handle: null, deleted: true } };
+      "hum-gone": { handle: null, deleted: true }, "agt-gone": { handle: null, deleted: true }, "agt-anna1": { handle: "anna-bot", deleted: false } };
     const chAllow = { id: "cha-0009", agents: ["agt-a"], owner_id: "hum-anna", handle: null, their_agents: "all", their_human: false, project: null,
       duration: "week", until: "2026-11-25T10:00:00Z", allowed: "only the web", denied: "nothing about releases", by: "hum-maintainer", since: "2026-11-11T16:00:00Z" };
     const chOdd = [
@@ -19222,11 +19246,16 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       { id: "chh-9004", seq: 9004, at: "2026-11-18T10:00:00Z", kind: "entry", change: "created", list: "allow", entry_id: "cha-0009", entry_exists: false,
         by: "hum-maintainer", cause: "chat_add", request_id: null, deny_id: null, conversation: null, entry: chAllow, before: null, fields: [], names: chNames },
       { id: "chh-9005", seq: 9005, at: "2026-11-18T10:00:00Z", kind: "verdict", names: {} },
+      { id: "chh-9006", seq: 9006, at: "2026-11-18T10:00:00Z", kind: "answer", by: "hum-maintainer", request_id: "req-0anna00002", side: "hum-anna",
+        reply_id: "allow_day", withdrawn: false, agents: ["agt-a"], their_human: true, their_agents: ["agt-anna1"], allowed: null, denied: null,
+        entries: ["cha-0010"], names: chNames },
     ];
-    let chMoreGate = null, chMoreFail = false;
+    let chMoreGate = null, chMoreFail = false, chOneFail = false, chAsked = "";
     win.Maity.api.get = (p) => {
       if (!p.startsWith("/me/chat-access/history")) return chGet(p);
-      if (!p.includes("cursor=")) return Promise.resolve({ items: chOdd, next_cursor: "9000" });
+      chAsked = p;
+      if (!p.includes("cursor=")) return chOneFail ? Promise.reject(Object.assign(new Error("hub unreachable"), { code: "network" }))
+        : Promise.resolve({ items: chOdd, next_cursor: "9000" });
       if (chMoreFail) return Promise.reject(Object.assign(new Error("hub unreachable"), { code: "network" }));
       return new Promise((resolve) => { chMoreGate = () => resolve({ items: [chOdd[0]], next_cursor: null }); });
     };
@@ -19236,14 +19265,23 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "chat access history: an answer to a deleted account's request names no handle, no @ (A1438 P2-1) " + text(chRow("chh-9001")));
     expect(text(chRow("chh-9002")).includes("a deleted agent · for all your agents") && !text(chRow("chh-9002")).includes("the agent a deleted"),
       "chat access history: a deny of a deleted agent says so once (A1439 P2-1) " + text(chRow("chh-9002")));
+    // One case per part, so each can be counter-checked on its own (review of #1989's fix round).
     const chChanged = text(chRow("chh-9003"));
-    expect(chChanged.includes("in a way this page does not know (brand_new).") && !chChanged.includes("by you")
-      && chChanged.includes("What changed: what they may talk about, the end, shiny")
-      && chChanged.includes("only the web") && chChanged.includes("the shop") && chChanged.includes("nothing about releases")
+    expect(chChanged.includes("in a way this page does not know (brand_new).") && !chChanged.includes("by you"),
+      "chat access history: an unknown cause is said as sent, never as by you (A1439 P2-3) " + chChanged);
+    expect(chChanged.includes("What changed: what they may talk about, the end, shiny"),
+      "chat access history: an unknown field is named as sent beside the known ones (A1439 P2-3) " + chChanged);
+    expect(chChanged.includes("only the web") && chChanged.includes("the shop") && chChanged.includes("nothing about releases")
       && (chChanged.match(/until /g) || []).length === 2,
-      "chat access history: a change of the rules and the end shows both, an unknown cause and field are said as sent (A1439 P2-2, P2-3) " + chChanged);
-    expect(text(chRow("chh-9004")).includes("by you adding your agent to a group chat.") && text(chRow("chh-9005")).includes("An item this page does not know (verdict)"),
-      "chat access history: a chat add without its chat and an unknown kind are drawn, not a crash (A1439 P2-3) " + text(chRow("chh-9004")) + " | " + text(chRow("chh-9005")));
+      "chat access history: a change of the rules and the end shows both, the end before and after (A1439 P2-2) " + chChanged);
+    expect(text(chRow("chh-9004")).includes("by you adding your agent to a group chat."),
+      "chat access history: a chat add without its chat is said without a project, not a crash (A1439 P2-3) " + text(chRow("chh-9004")));
+    expect(text(chRow("chh-9005")).includes("An item this page does not know (verdict)"),
+      "chat access history: an unknown kind is drawn, not a crash (A1439 P2-3) " + text(chRow("chh-9005")));
+    // An answer shows the side's agents it sent; one that sent none says nothing of them (A1439 P3-6).
+    expect(text(chRow("chh-9006")).includes("Your agents: @agent-a · the person ticked · their agents @anna-bot")
+      && !text(chRow("chh-9001")).includes("their agents") && !text(chRow("chh-9001")).includes("none of their agents"),
+      "chat access history: an answer shows their agents where it sent them (A1439 P3-6) " + text(chRow("chh-9006")));
     // A failed Show more keeps its button; pressed again, it reads again.
     chMoreFail = true;
     chBox().querySelector("button.chat-access-history-more").dispatch("click"); await mtSettle();
@@ -19263,6 +19301,20 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await mtSettle();
     expect(chRemove && chBefore === chOdd.length && chRows().length === chOdd.length,
       "chat access history: an older Show more answering after page one was read again is dropped (A1439 P2-4) " + chBefore + " " + chRows().length);
+    // A failed read of page one, after a write, leaves the rows an earlier read drew and their Show
+    // more, which reads on from those rows (A1438 P3-2).
+    chOneFail = true;
+    const chRemove2 = caPageNow().querySelectorAll("ul.chat-access-list li button").find((b) => text(b) === "Remove");
+    if (chRemove2) chRemove2.dispatch("click");
+    await mtSettle();
+    const chKept = chBox().querySelector("button.chat-access-history-more");
+    const chKeptRows = chRows().length, chKeptSaid = text(chBox()).includes("The history could not be read");
+    if (chKept) chKept.dispatch("click");
+    await mtSettle();
+    expect(chRemove2 && chKeptRows === chOdd.length && chKeptSaid && chKept && chAsked.includes("cursor=9000"),
+      "chat access history: a failed page one keeps the earlier rows and their Show more (A1438 P3-2) " + chKeptRows + " " + chAsked);
+    if (chMoreGate) chMoreGate();
+    await mtSettle();
     win.Maity.api.get = chGet;
   }
 

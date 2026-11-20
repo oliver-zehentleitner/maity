@@ -244,6 +244,12 @@ directory and the slot files are that account's own; another account gets its ow
   running can hold the slot longer. Not every run gets an end line: once a run is over, a start
   line without a matching end line (same slot and pid) means the run was aborted (killed together
   with the watcher that writes the end line, or the machine rebooted).
+- **A slot directory the run may not write:** a sandboxed agent session may write only its
+  clone and a few other places, not `~/.local/state/maity`. There `tools/run_slot.sh` warns
+  and runs the command without a slot, and so without a log line. Point
+  `MAITY_RUN_SLOTS_DIR` at a shared directory the session may write to keep the slot.
+  `make smoke SLOT=` skips the slot on purpose; use it only on a machine where nothing else
+  runs tests.
 - **Two workers per run:** `pytest -n 2` at most; in a slot, `-n auto`
   starts two.
 - **No full hub suite on the agents' machine** (since 2026-10-29, after the
