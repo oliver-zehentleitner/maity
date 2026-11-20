@@ -736,30 +736,59 @@ window.Maity = window.Maity || {};
     // as the column held (limits, at most PAGE_MAX), so that a write does not fold back what Show more
     // loaded. Resolves with the cards and each closed column's next cursor.
     // The first draw takes each open group's first page (tsk-qw08c8ds214g): the open column's second
-    // page came about 95 ms after its first, on the way to that draw. The later pages come with the
-    // whole read, which draws again as the closed columns do; one that fails after the first draw
-    // is said as such (openMore), with the board left as drawn.
+    // page came about 95 ms after its first, on the way to that draw. shown(cards, partial) names the
+    // columns whose later pages are still read: they keep their count back until the whole read is
+    // in, as the closed columns do (tsk-ywf14h6qd6kq). A later page that fails after the first draw
+    // fails that group alone: its column keeps its first page and says so, every other column takes
+    // what it read (openFailed in the answer). A read failing otherwise after the first draw (a
+    // closed column, the recheck) carries the open groups' cards with it (err.open).
     const readList = async (shown, limits) => {
       const began = M.api.now() - RECONCILE_MARGIN_MS;
       const firsts = [];
       const groups = listPaths.map((path) => {
         let firstPage = null;
         firsts.push(new Promise((resolve) => { firstPage = resolve; }));
-        return M.api.getAll(path, shown ? firstPage : undefined);
+        return M.api.getAll(path, shown ? (items, more) => firstPage({ items, more }) : undefined);
       }).concat(CLOSED_GROUPS.map((s) => M.api.get(closedPath(s, (limits && limits[s]) || CLOSED_PAGE))));
       // A closed column failing while the open ones are awaited is handled by Promise.all below.
       groups.forEach((read) => read.catch(() => {}));
+      let pages = null;
       if (shown) {
         const open = new Map();
         // A group's first page, or the whole group where that comes first; a group failing before
         // its first page fails the read here, before any draw, as before.
-        const pages = await Promise.all(firsts.map((first, i) => Promise.race([first, groups[i].then((r) => r.items)])));
-        pages.forEach((items) => items.forEach((t) => { if (!open.has(t.id)) open.set(t.id, t); }));
-        shown([...open.values()]);
+        pages = await Promise.all(firsts.map((first, i) => Promise.race([first, groups[i].then((r) => ({ items: r.items, more: false }))])));
+        pages.forEach((page) => page.items.forEach((t) => { if (!open.has(t.id)) open.set(t.id, t); }));
+        const partial = new Set();
+        pages.forEach((page, i) => { if (page.more) LIST_GROUPS[i].split(",").forEach((s) => partial.add(s)); });
+        shown([...open.values()], partial);
       }
-      const parts = await Promise.all(groups.map((read, i) => (shown && i < LIST_GROUPS.length
-        ? read.catch((err) => { throw Object.assign(err instanceof Error ? err : new Error(String(err)), { openMore: true }); })
-        : read)));
+      let openFailed = null;
+      const openParts = groups.slice(0, LIST_GROUPS.length).map((read, i) => (pages
+        ? read.catch((err) => {
+          if (!openFailed) openFailed = { statuses: new Set(), err };
+          LIST_GROUPS[i].split(",").forEach((s) => openFailed.statuses.add(s));
+          return { items: pages[i].items, next_cursor: null };
+        })
+        : read));
+      const asError = (err) => (err instanceof Error ? err : new Error(String(err)));
+      // A read that failed after the first draw still hands over the open groups' cards it read
+      // (open: their cards and openFailed), so that no open column is left at its first page with
+      // a count; the closed columns say the failure, as before (tsk-ywf14h6qd6kq).
+      const withOpen = async (err, extra) => {
+        const e = Object.assign(asError(err), extra);
+        if (!pages) return e;
+        const open = new Map();
+        (await Promise.all(openParts)).forEach((r) => r.items.forEach((t) => { if (!open.has(t.id)) open.set(t.id, t); }));
+        e.open = { cards: [...open.values()], openFailed };
+        return e;
+      };
+      let parts;
+      try {
+        parts = await Promise.all(openParts.concat(groups.slice(LIST_GROUPS.length)));
+      } catch (err) {
+        throw await withOpen(err, {});
+      }
       const cards = new Map();
       parts.forEach((r) => r.items.forEach((t) => { if (!cards.has(t.id)) cards.set(t.id, t); }));
       const next = {};
@@ -770,13 +799,14 @@ window.Maity = window.Maity || {};
         let from = began;
         for (let pass = 0; pass < RECONCILE_PASSES; pass++) {
           const { paged, newest } = await recentPass(cards, from);
-          if (!paged) return { cards: [...cards.values()], next };
+          if (!paged) return { cards: [...cards.values()], next, openFailed };
           from = newest;
         }
-        // The one list of the whole window holds every closed card in it: no page is left to read.
-        return { cards: (await M.api.getAll(windowPath)).items, next: {} };
+        // The one list of the whole window holds every closed card in it: no page is left to read,
+        // nor an open page that failed before.
+        return { cards: (await M.api.getAll(windowPath)).items, next: {}, openFailed: null };
       } catch (err) {
-        throw Object.assign(err instanceof Error ? err : new Error(String(err)), { recheck: true });
+        throw await withOpen(err, { recheck: true });
       }
     };
     // The first draw takes the open groups' cards; the closed columns say they are being read until
@@ -785,12 +815,17 @@ window.Maity = window.Maity || {};
     // never replaces a reload's cards, and a failed reload leaves the first read to fill the columns.
     let closedPending = true;
     let closedError = null;
+    // The open columns whose later pages are still read, their count kept back as a closed column's
+    // is; and those whose later page failed, their first page kept and the failure said in the
+    // status line and in the column (tsk-ywf14h6qd6kq).
+    let openPartial = new Set();
+    let openFailed = null;
     let reads = 1;
     let applied = 0;
     const apply = (read) => { if (read < applied) return false; applied = read; return true; };
     let openShown;
     const openRead = new Promise((resolve) => { openShown = resolve; });
-    const firstRead = readList((open) => openShown(open));
+    const firstRead = readList((open, partial) => { openPartial = partial || new Set(); openShown(open); });
     firstRead.catch(() => {});
     let items = await Promise.race([openRead, firstRead.then((r) => r.cards)]);
     let boardItems = items;
@@ -851,6 +886,8 @@ window.Maity = window.Maity || {};
       closedNext = fresh.next;
       closedPending = false;
       closedError = null;
+      openPartial = new Set();
+      openFailed = null;
       sayClosed();
       items = boardItems;
       hubResults = false;
@@ -1019,12 +1056,15 @@ window.Maity = window.Maity || {};
           }
         },
       },
-      h("h3", { class: "column-head" }, label, closedWaiting(s) ? null : h("span", { class: "count" }, String(cards.length))),
+      h("h3", { class: "column-head" }, label, closedWaiting(s) || openWaiting(s) ? null : h("span", { class: "count" }, String(cards.length))),
       closedWaiting(s) && !cards.length
         ? h("p", { class: closedError ? "send-status failed closed-read" : "muted closed-read" }, closedWords())
         : cards.length ? shownOf(s, cards).drawn.map((c) => card(ctx, c, byId, manage)) : h("p", { class: "muted" }, "—"),
+      openIncomplete(s)
+        ? h("p", { class: "send-status failed open-read" }, M.t("board.open.more_failed", { reason: openFailed.err.message || String(openFailed.err) }))
+        : null,
       moreButton(s, cards));
-      if (closedWaiting(s) && !closedError) col.setAttribute("aria-busy", "true");
+      if ((closedWaiting(s) && !closedError) || (openWaiting(s) && !openIncomplete(s))) col.setAttribute("aria-busy", "true");
       return col;
     }
 
@@ -1165,14 +1205,15 @@ window.Maity = window.Maity || {};
 
     // A closed column while the closed group is still read, or failed: a hub search lists its own cards.
     const closedWaiting = (s) => (closedPending || !!closedError) && !hubResults && (s === "done" || s === "cancelled");
-    // A later page of an open column failing after the first draw (openMore) fails the whole read
-    // too: it is said as what it is, the open columns staying as drawn.
+    // An open column whose later pages are still read, or failed: no count, as for a closed column
+    // still read; a failed one keeps its first page and says so (tsk-ywf14h6qd6kq). A hub search
+    // lists its own cards.
+    const openIncomplete = (s) => !hubResults && !!openFailed && openFailed.statuses.has(s);
+    const openWaiting = (s) => !hubResults && (openPartial.has(s) || openIncomplete(s));
     const closedWords = () => (closedError
       ? (closedError.recheck
         ? M.t("board.closed.recheck_failed", { reason: closedError.message || String(closedError) })
-        : closedError.openMore
-          ? M.t("board.open.more_failed", { reason: closedError.message || String(closedError) })
-          : M.t("board.closed.failed", { reason: closedError.message || String(closedError) }))
+        : M.t("board.closed.failed", { reason: closedError.message || String(closedError) }))
       : M.t("board.closed.loading"));
     // What the closed read is doing, said once for a screen reader: the columns are drawn anew, so
     // the live region stands outside them and keeps its place from pending to done or failed.
@@ -1527,7 +1568,11 @@ window.Maity = window.Maity || {};
       boardItems = all.cards;
       closedNext = all.next;
       closedPending = false;
+      openPartial = new Set();
+      openFailed = all.openFailed || null;
       sayClosed();
+      // Said where every filter shows it: the status line above the columns.
+      if (openFailed) status.fail(M.t("board.open.more_failed"), openFailed.err);
       if (!hubResults) items = boardItems;
       else {
         // A hub search drawn meanwhile: a card it found that the board has now loaded is in the window.
@@ -1548,6 +1593,15 @@ window.Maity = window.Maity || {};
       const menuBack = openMenuSpot();
       closedPending = false;
       closedError = err;
+      openPartial = new Set();
+      // The open groups' cards it read, every page or a failed group's first: the closed columns
+      // say the failure and stay empty, as before.
+      if (err && err.open) {
+        openFailed = err.open.openFailed || null;
+        boardItems = err.open.cards;
+        if (!hubResults) items = boardItems;
+        if (openFailed) status.fail(M.t("board.open.more_failed"), openFailed.err);
+      }
       sayClosed();
       draw(true);
       if (back) back();

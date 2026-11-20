@@ -4828,6 +4828,14 @@ window.Maity = window.Maity || {};
         const page = rest.slice(0, limit);
         return { items: page, next_cursor: rest.length > limit ? btoa(JSON.stringify(at(page[page.length - 1]))) : null };
       }
+      // A test pages the open lists, window.MAITY_FIXTURE_TASK_PAGE cards a page, the cursor their
+      // offset (smoke: getAll's own cursor loop under the board, tsk-ywf14h6qd6kq); unset, a list
+      // comes whole as before.
+      const size = Number(window.MAITY_FIXTURE_TASK_PAGE) || 0;
+      if (size > 0 && q === null && !query.get("order") && !wanted.some((s) => s === "all" || s === "done" || s === "cancelled")) {
+        const from = Number(query.get("cursor") || 0);
+        return { items: items.slice(from, from + size), next_cursor: from + size < items.length ? String(from + size) : null };
+      }
       return { items, next_cursor: null };
     }],
     // One card (§6), its notes (§6.16, fixtures/<slug>/task-notes.json) and
@@ -6102,9 +6110,9 @@ window.Maity = window.Maity || {};
     const q = fullPath.indexOf("?");
     const asked = q < 0 ? fullPath : fullPath.slice(0, q);
     const query = new URLSearchParams(q < 0 ? "" : fullPath.slice(q + 1));
-    // A test holds an answer back, or refuses it, with window.MAITY_FIXTURE_HOLD(method, path) (smoke);
-    // unset, nothing waits for it.
-    const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked);
+    // A test holds an answer back, or refuses it, with window.MAITY_FIXTURE_HOLD(method, path,
+    // path with its query) (smoke); unset, nothing waits for it.
+    const held = window.MAITY_FIXTURE_HOLD && window.MAITY_FIXTURE_HOLD(method, asked, fullPath);
     return (held ? Promise.all([loadFixtures(), held]) : loadFixtures()).then(() => {
       // §5.4: the bundle is each single route's own answer for this caller, errors included; the
       // route itself needs no session and stays open in a window. MAITY_FIXTURE_NO_BOOTSTRAP plays
@@ -6372,13 +6380,15 @@ window.Maity = window.Maity || {};
   const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
   // Every page of a list, following next_cursor (docs/api.md §1.4). first, where given, is called
-  // with the first page's items as soon as it is in, before the next is asked (the board draws
-  // from its open columns' first pages, tsk-qw08c8ds214g); the pages asked stay the same.
+  // with the first page's items as soon as it is in, before the next is asked, and whether more
+  // pages follow (the board draws from its open columns' first pages, tsk-qw08c8ds214g, and keeps
+  // a column's count back while its later pages are read, tsk-ywf14h6qd6kq); the pages asked stay
+  // the same.
   async function getAll(path, first) {
     const sep = path.includes("?") ? "&" : "?";
     let page = await request("GET", path + sep + "limit=200");
     const items = page.items.slice();
-    if (first) first(items.slice());
+    if (first) first(items.slice(), !!page.next_cursor);
     while (page.next_cursor) {
       page = await request("GET", path + sep + "limit=200&cursor=" + encodeURIComponent(page.next_cursor));
       items.push(...page.items);

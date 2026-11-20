@@ -5692,35 +5692,89 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "board: answered in reverse, each column holds the cards of one status=all read, in the board's order " + JSON.stringify([bgGot, bgWant]));
   }
 
-  // The board draws from each open group's first page (tsk-qw08c8ds214g): the open column's later pages
-  // come with the whole read, which draws again; one that fails after the first draw is said in the
-  // closed-read line, and the board stays as drawn.
+  // The board draws from each open group's first page (tsk-qw08c8ds214g) through api.js's own cursor
+  // loop: the fixture hub pages the open lists a card a page (MAITY_FIXTURE_TASK_PAGE) and holds or
+  // refuses the open column's pages (MAITY_FIXTURE_HOLD). An open column keeps its count back while its
+  // later pages are read; one that fails keeps its first page and says so, in the column and in the status
+  // line, and every other column keeps what it read (tsk-ywf14h6qd6kq).
   {
     const fpAll = win.Maity.api.getAll;
     const fpColumn = (st) => main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === st);
     const fpCards = (st) => (fpColumn(st) ? fpColumn(st).querySelectorAll("article.card").length : -1);
-    const fpLive = () => main.querySelectorAll("p.visually-hidden").find((x) => x.getAttribute("role") === "status");
-    let fpRest = null;
-    // The open column in two pages: its first card at once, the rest held until released.
-    win.Maity.api.getAll = (p, first) => {
-      if (!/^\/projects\/maintainer\/maity\/tasks\?status=open$/.test(p)) return fpAll(p, first);
-      return fpAll(p).then((r) => {
-        if (first) first(r.items.slice(0, 1));
-        return new Promise((res, rej) => { fpRest = { go: () => res(r), fail: () => rej(new Error("hub unreachable")) }; });
-      });
+    const fpCount = (st) => { const c = fpColumn(st) && fpColumn(st).querySelector(".column-head .count"); return c ? text(c) : null; };
+    const fpBusy = (st) => !!fpColumn(st) && fpColumn(st).getAttribute("aria-busy") === "true";
+    const fpOpenLine = (st) => { const l = fpColumn(st) && fpColumn(st).querySelector(".open-read"); return l ? text(l) : null; };
+    const fpStatus = () => main.querySelectorAll("p.send-status").find((x) => x.getAttribute("role") === "status" && x.getAttribute("tabindex") === "-1");
+    const fpSaid = "More cards of the open columns could not be read: hub unreachable";
+    const fpRefused = (p) => Promise.reject(new win.Maity.api.ApiError("hub unreachable", 0, p));
+    // The open column's later pages (status=open with a cursor) held until released; "closed" refuses
+    // the closed columns' pages at once, "first" the open column's first page.
+    let fpWait = [], fpFree = false, fpRefuse = null;
+    const fpRelease = (how) => { if (how === "go") fpFree = true; fpWait.splice(0).forEach((x) => x[how]()); };
+    win.MAITY_FIXTURE_TASK_PAGE = 1;
+    win.MAITY_FIXTURE_HOLD = (m, p, full) => {
+      if (m !== "GET" || p !== "/projects/maintainer/maity/tasks") return null;
+      if (fpRefuse === "closed" && /[?&]status=(done|cancelled)&closed_after=/.test(full)) return fpRefused(full);
+      if (!/[?&]status=open&/.test(full)) return null;
+      if (!/[?&]cursor=/.test(full)) return fpRefuse === "first" ? fpRefused(full) : null;
+      if (fpFree) return null;
+      return new Promise((res, rej) => { fpWait.push({ go: res, fail: () => rej(new win.Maity.api.ApiError("hub unreachable", 0, full)) }); });
     };
-    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
-    const fpEarly = fpCards("open");
-    fpRest.go(); for (let k = 0; k < 8; k++) await tick();
-    const fpLate = fpCards("open");
-    expect(fpEarly === 1 && fpLate > 1,
-      "board: drawn from the open column's first page, its later page drawn when the whole read is in " + JSON.stringify([fpEarly, fpLate]));
-    await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
-    fpRest.fail(); for (let k = 0; k < 8; k++) await tick();
-    expect(fpCards("open") === 1 && fpLive() && text(fpLive()) === "More cards of the open columns could not be read: hub unreachable"
+    // The in_progress group answers without calling first, as a getAll that hands over no first page.
+    win.Maity.api.getAll = (p, first) => (/[?&]status=in_progress$/.test(p) ? fpAll(p) : fpAll(p, first));
+    const fpBoard = async () => {
+      fpWait = []; fpFree = false;
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 16; k++) await tick();
+    };
+
+    await fpBoard();
+    const fpEarly = { open: fpCards("open"), count: fpCount("open"), busy: fpBusy("open"), held: fpWait.length,
+      inProgress: fpCards("in_progress"), inProgressCount: fpCount("in_progress") };
+    fpRelease("go"); for (let k = 0; k < 16; k++) await tick();
+    const fpLate = { open: fpCards("open"), count: fpCount("open"), busy: fpBusy("open") };
+    expect(fpEarly.open === 1 && fpEarly.count === null && fpEarly.busy && fpEarly.held === 1
+      && fpEarly.inProgress > 1 && fpEarly.inProgressCount === String(fpEarly.inProgress),
+      "board: drawn from the open column's first page without a count, busy; a group that answers without first drawn whole, counted " + JSON.stringify(fpEarly));
+    expect(fpLate.open > 1 && fpLate.count === String(fpLate.open) && !fpLate.busy,
+      "board: the open column's later pages drawn when the whole read is in, its count with them " + JSON.stringify(fpLate));
+
+    await fpBoard();
+    fpRelease("fail"); for (let k = 0; k < 16; k++) await tick();
+    const fpFailed = { open: fpCards("open"), count: fpCount("open"), busy: fpBusy("open"), line: fpOpenLine("open"),
+      done: fpCards("done"), doneCount: fpCount("done"), cancelled: fpCards("cancelled"), closedRead: !!main.querySelector(".closed-read"),
+      inProgressLine: fpOpenLine("in_progress"), inProgressCount: fpCount("in_progress"), status: fpStatus() && text(fpStatus()) };
+    expect(fpFailed.open === 1 && fpFailed.count === null && !fpFailed.busy && fpFailed.line === fpSaid
+      && fpFailed.done > 0 && fpFailed.doneCount === String(fpFailed.done) && fpFailed.cancelled > 0 && !fpFailed.closedRead
+      && fpFailed.inProgressLine === null && fpFailed.inProgressCount !== null && fpFailed.status === fpSaid
       && !main.querySelector(".columns .error"),
-      "board: a later open page failing after the first draw is said as such, the board kept " + JSON.stringify([fpCards("open"), fpLive() && text(fpLive())]));
-    win.Maity.api.getAll = fpAll;
+      "board: a later open page failing keeps the closed columns' cards and marks the open column alone, said in the status line " + JSON.stringify(fpFailed));
+    // Under a filter that shows another column, the status line still says it.
+    byId("board-column").value = "proposed"; byId("board-column").dispatch("change"); await tick();
+    const fpFiltered = { columns: main.querySelectorAll("section.column").length, status: fpStatus() && text(fpStatus()) };
+    byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
+    expect(fpFiltered.columns === 1 && fpFiltered.status === fpSaid,
+      "board: the open column's failure is said under a filter that hides that column " + JSON.stringify(fpFiltered));
+
+    // A closed read failing while the open column's later pages are read: the open column takes every
+    // card it read, with its count, and the closed columns say the failure.
+    fpRefuse = "closed";
+    await fpBoard();
+    const fpClosedEarly = { open: fpCards("open"), count: fpCount("open") };
+    fpRelease("go"); for (let k = 0; k < 16; k++) await tick();
+    const fpClosed = { open: fpCards("open"), count: fpCount("open"), busy: fpBusy("open"), line: fpOpenLine("open"), done: text(fpColumn("done")) };
+    expect(fpClosedEarly.open === 1 && fpClosedEarly.count === null
+      && fpClosed.open > 1 && fpClosed.count === String(fpClosed.open) && !fpClosed.busy && fpClosed.line === null
+      && fpClosed.done.includes("The closed cards could not be read: hub unreachable"),
+      "board: a failed closed read hands over the open column's later pages, counted " + JSON.stringify([fpClosedEarly, fpClosed]));
+
+    // The open column's first page refused: the read fails before any draw, the view's error.
+    fpRefuse = "first";
+    await fpBoard();
+    const fpError = main.querySelector(".error");
+    expect(fpError && text(fpError).includes("hub unreachable") && !main.querySelector("section.column"),
+      "board: an open group failing before its first page fails the view before any draw " + JSON.stringify(fpError && text(fpError)));
+
+    win.MAITY_FIXTURE_HOLD = null; win.MAITY_FIXTURE_TASK_PAGE = null; win.Maity.api.getAll = fpAll;
     await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   }
 
