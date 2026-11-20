@@ -490,3 +490,37 @@ empty leftover directory is harmless; removing someone else's is not.
   window still removes another process's directory (#1478 delta, 399x).
 - Removing only the leaf, never the parents: smaller exposure, the same open window.
 
+## A clone's hub is fixed once its state names one; it changes only by a new join
+
+**Id:** 8b6d4164-646f-484f-bb22-02ff7218e908
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** lead's card tsk-h1kcv3bd82gg, 2026-11-20
+
+On a clone whose `state.json` already names a hub, `--hub` (on `maity resume` and on
+`maity help`) passes only for that hub's origin, and the stored URL stays as it is. Origin
+means scheme, host and port, compared after the normalisation `hub_base` and the host
+comparison of the exchange already use (lowercase, IDNA, one trailing dot dropped) with the
+scheme's default port filled in, so `https://Hub.example:443/` and `https://hub.example` are
+one origin; the path is not compared, as `hub_base` drops it. Another origin is refused with
+exit 4 before anything is written or sent, and the message names the stored hub's origin and
+says that a new join is the way to change it. A first `resume --hub` after the page-driven
+join, where the credential exists but no state names a hub yet, stores the hub as before.
+`maity join` is unchanged: it refuses while the clone holds a credential, and a new join
+writes a new state with the hub its exchange accepted.
+
+**Reason:** a clone is paired with one hub: its credential was issued by that hub, and the
+state, the event cursor and the environment ids are that hub's (8c5f8d73). Keeping the hub
+fixed per clone keeps that pairing consistent; a hub that changes beside the credential leaves
+a state whose parts belong to different hubs. The join is where a hub and its credential are
+set together, so it is the one place the hub changes.
+
+**Rejected alternatives:**
+- Accepting `--hub` on a joined clone and rewriting the stored hub, the behaviour until now:
+  the hub then changed without the credential and the rest of the state changing with it.
+- Warning and proceeding: the state is still rewritten, and a warning in a session's output
+  is easily missed.
+- Binding the hub's origin into the request signature: a change to the signing contract
+  between hub and CLI, a separate decision and not this one.
+
