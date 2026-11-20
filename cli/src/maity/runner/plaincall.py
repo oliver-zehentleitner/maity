@@ -11,9 +11,12 @@ it; the line itself is still judged whole, so such a line is refused. Any other 
 which `maity` is a word (`prefixed`) is
 refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
 a subshell or a group before it, or `maity` by a path, and so is a line with `maity` in a
-command substitution, where the shell reads it as a line of its own. A word counts as `maity`
+command substitution, where the shell reads it as a line of its own, or that names `maity`
+once its command substitutions are taken out, as output that is empty leaves it
+(`_in_substitution`). A word counts as `maity`
 (and as `runner`) also once its backslashes and quotes are taken off (`_reads_as`), also as
-each part of it between backticks (`_substituted`), and a word that
+each part of it between backticks and before a `$` (`_substituted`), since an expansion
+glued to a name may make nothing, and a word that
 holds a `{` also as each part of it between `{`, `,` and `}` and as each word its brace
 expansion makes, as Bash makes them from the word as written, quotes and all, and from its
 text read again, up to `BRACE_LIMIT` words; a word that makes more, or whose braces the hook
@@ -53,10 +56,11 @@ NOT_IN_DOUBLE_QUOTES = frozenset("$`!\n")
 # what was skipped. A character a plain call may hold (`/`, `.`, `:` and the rest of
 # `UNQUOTED`, a quote, a backslash) is not skipped: before `maity` it makes a path, another
 # command or a quoted or escaped word of its own (`"[" maity`, `\! maity`, `"" maity`),
-# which the word split reads. After `maity` only a space, a tab, an operator or the line's
-# end may follow: anything else makes it part of a longer word, which the word split reads
-# (`_placement`).
-_MAITY = re.compile(r"[^0-9A-Za-z_\-./:=@%+,~^#'\"\\]*maity(?=[ \t();<>|&\n]|\Z)", re.IGNORECASE)
+# which the word split reads. After `maity` only a space, a tab, an operator, an expansion
+# (`$`, a backtick) or the line's end may follow: anything else makes it part of a longer
+# word, which the word split reads (`_placement`). An expansion right after it may make
+# nothing, so the line counts as a maity call, and `plain` refuses the expansion.
+_MAITY = re.compile(r"[^0-9A-Za-z_\-./:=@%+,~^#'\"\\]*maity(?=[ \t();<>|&\n$`]|\Z)", re.IGNORECASE)
 
 # Unquoted characters that end a word, besides spaces and tabs: the shell's operators.
 _SEPARATORS = frozenset("();<>|&\n")
@@ -187,8 +191,9 @@ def _assigns_wait_timeout(command: str) -> bool:
     leading comment lines and blank lines as `_placement` reads it, is an unquoted word that
     reads as an assignment to MAITY_WAIT_TIMEOUT (`_WAIT_ASSIGNMENT`), whether or not the
     shell takes it as one: the first word or any later one, after a command such as `env`,
-    as an argument or after an operator alike. It only picks the reason for a line that is
-    refused anyway."""
+    as an argument or after an operator alike. It reads the line's own words, not the text
+    of a substitution, so a line that assigns it inside one gets the shared reason. It only
+    picks the reason for a line that is refused anyway."""
     command = _past_comment_lines(command)
     try:
         words = _split(command)
@@ -289,11 +294,12 @@ def _is_runner(word: str, written: str) -> bool:
 
 
 def _substituted(names: Sequence[str]) -> list[str]:
-    """Each name, and each part of it between backticks. `_split` keeps a backtick in the
-    word as text, but the shell ends the word of the command a backtick opens or closes
-    there and reads what stands between as a line of its own, in which `maity` is a word
-    however the word around it goes on (cli/context/runner.md)."""
-    return [part for name in names for part in (name, *name.split("`"))]
+    """Each name, and each part of it between backticks and `$`. `_split` keeps a backtick
+    in the word as text, but the shell ends the word of the command a backtick opens or
+    closes there and reads what stands between as a line of its own, in which `maity` is a
+    word however the word around it goes on; and an expansion glued to a name may make
+    nothing, so the text before it may be the whole word (cli/context/runner.md)."""
+    return [part for name in names for part in (name, *re.split(r"[`$]", name))]
 
 
 def _names(word: str, written: str) -> tuple[str, ...]:
@@ -1175,6 +1181,159 @@ def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> boo
     return False
 
 
+def _backtick_end(text: str, i: int) -> int:
+    """The index of the backtick that closes the one at `i`, a backslash escaping the
+    character after it; -1 when none does."""
+    j = i + 1
+    while j < len(text):
+        if text[j] == "\\":
+            j += 2
+        elif text[j] == "`":
+            return j
+        else:
+            j += 1
+    return -1
+
+
+def _quote_end(text: str, i: int) -> int:
+    """The index of the double quote that closes the one at `i`, substitutions in it passed
+    over (`_paren_end`, `_backtick_end`); -1 when none does."""
+    j = i + 1
+    while j < len(text):
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == '"':
+            return j
+        if c == "`":
+            j = _backtick_end(text, j)
+        elif c == "$" and text[j + 1 : j + 2] == "(":
+            j = _paren_end(text, j + 1)
+        if j < 0:
+            return -1
+        j += 1
+    return -1
+
+
+def _paren_end(text: str, i: int) -> int:
+    """The index of the `)` that closes the `(` at `i`, quotes, escapes, backticks and
+    nested parentheses passed over; -1 when none does."""
+    depth, j = 0, i
+    while j < len(text):
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == "'":
+            j = text.find("'", j + 1)
+        elif c == '"':
+            j = _quote_end(text, j)
+        elif c == "`":
+            j = _backtick_end(text, j)
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+        if j < 0:
+            return -1
+        j += 1
+    return -1
+
+
+def _substitutions(line: str) -> tuple[list[str], str] | None:
+    """The text of each outermost command substitution on the line (a backtick pair,
+    `$(…)`, and `<(…)` or `>(…)` outside double quotes), outside single quotes, and the line
+    with each of them taken out, as one whose output is empty leaves it (a process
+    substitution leaves a path); None when one never closes. Quotes, escapes and nested
+    parentheses in a substitution are passed over; a `case` or a heredoc in `$(…)` may be
+    delimited otherwise than Bash delimits it, which only adds what `_in_substitution`
+    reads, since the line itself is read as before."""
+    out: list[str] = []
+    bodies: list[str] = []
+    i, n, double = 0, len(line), False
+    while i < n:
+        c = line[i]
+        if c == "\\":
+            out.append(line[i : i + 2])
+            i += 2
+            continue
+        if c == "'" and not double:
+            end = line.find("'", i + 1)
+            if end < 0:
+                return None
+            out.append(line[i : end + 1])
+            i = end + 1
+            continue
+        if c == '"':
+            double = not double
+        elif c == "`":
+            end = _backtick_end(line, i)
+            if end < 0:
+                return None
+            bodies.append(line[i + 1 : end])
+            i = end + 1
+            continue
+        elif line[i + 1 : i + 2] == "(" and (c == "$" or (c in "<>" and not double)):
+            end = _paren_end(line, i + 1)
+            if end < 0:
+                return None
+            bodies.append(line[i + 2 : end])
+            out.append("" if c == "$" else "/dev/fd/0")
+            i = end + 1
+            continue
+        out.append(c)
+        i += 1
+    return bodies, "".join(out)
+
+
+def _names_maity_as_line(text: str, depth: int) -> bool:
+    """Whether a substitution's text, read as a line of its own, names `maity` as a word
+    (`_placement`), also once the substitutions in it are taken out or read the same way,
+    up to `_NESTING` levels deep; text nested deeper, or with a substitution that never
+    closes, counts when it names `maity` anywhere (`names_maity`)."""
+    if _placement(text) is not None:
+        return True
+    found = _substitutions(text)
+    if found is None:
+        return names_maity(text)
+    bodies, without = found
+    if not bodies:
+        return False
+    if depth >= _NESTING:
+        return names_maity(text) or names_maity(without)
+    return _placement(without) is not None or any(
+        _names_maity_as_line(body, depth + 1) for body in bodies
+    )
+
+
+def _in_substitution(command: str) -> str | None:
+    """The reason to refuse a line by its command substitutions, or None: a substitution
+    whose text, read as a line of its own, names `maity` (`_names_maity_as_line`) refuses it
+    outright; so does a line that names `maity` once its substitutions are taken out, as
+    output that is empty leaves it (`names_maity`, or as a word, braces expanded), with the
+    reason that line gets, or as not one plain call.
+    A line with a substitution that never closes counts when it names `maity` anywhere."""
+    found = _substitutions(command)
+    if found is None:
+        return RUNNER_REFUSED if names_maity(command) else None
+    bodies, without = found
+    if not bodies:
+        return None
+    if any(_names_maity_as_line(body, 1) for body in bodies):
+        return PREFIX_REFUSED
+    placement = _placement(without)
+    if placement is not None or names_maity(without):
+        reason = _decide(without)
+        if reason is not None:
+            return reason
+        if placement is not None:
+            return REFUSED
+    return None
+
+
 def refusal(payload: object) -> str | None:
     """The reason to refuse the tool call in Claude Code's PreToolUse input, or None."""
     if not isinstance(payload, dict):
@@ -1183,6 +1342,12 @@ def refusal(payload: object) -> str | None:
     command = tool_input.get("command") if isinstance(tool_input, dict) else None
     if not isinstance(command, str):
         return None
+    reason = _decide(command)
+    return reason if reason is not None else _in_substitution(command)
+
+
+def _decide(command: str) -> str | None:
+    """The reason to refuse a command line by its own words, or None (`refusal`)."""
     placement = _placement(command)
     if placement == "held" and not plain(command):
         return REFUSED  # refused either way; this reason names the way out

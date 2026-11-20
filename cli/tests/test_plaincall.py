@@ -854,8 +854,8 @@ NOT_IN_BACKTICKS = [
 
 @pytest.mark.parametrize("command", IN_BACKTICKS)
 def test_maity_in_a_backtick_substitution_is_refused_outright(command: str) -> None:
-    assert plaincall.prefixed(command)
-    assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
+    assert plaincall._placement(command) is not None
+    assert plaincall.refusal(bash(command)) in (plaincall.PREFIX_REFUSED, plaincall.REFUSED)
 
 
 @pytest.mark.parametrize("command", SUBSTITUTED_ELSEWHERE)
@@ -875,6 +875,85 @@ def test_a_word_names_maity_or_runner_between_its_backticks() -> None:
     assert plaincall._is_maity("x=`/usr/bin/MAITY`y", "x=`/usr/bin/MAITY`y")
     assert not plaincall._is_maity("`maityx`", "`maityx`")
     assert plaincall._is_runner("`runner`", "`runner`")
+
+
+# `maity` glued to an expansion right after it, which may make nothing (round 1 of #2026).
+GLUED_EXPANSIONS = [
+    "maity$(true) status",
+    "maity$( ) status",
+    'maity"$(true)" status',
+    "maity$x status",
+    "maity${x} status",
+    "maity${x:-} status",
+    "maity$@ status",
+    "maity${IFS}status",
+    "NO_COLOR=1 maity$(true) status",
+    "true && maity$(true) status",
+    "echo `maity$x`",
+    "echo $(maity$x)",
+]
+# A backtick substitution in double quotes whose words name `maity` once their braces expand.
+BRACES_IN_QUOTED_BACKTICKS = [
+    'echo "`{maity,} status`"',
+    '"`{maity,} status`"',
+    'echo "`ma{ity,} status`"',
+    'echo "`ma{i..i}ty status`"',
+    'echo "`./{maity,} status`"',
+    'echo "`true``{maity,} status`"',
+    'echo "`' + "{a,b}" * 9 + ' status`"',
+    'echo "`{Z..a} status`"',
+    'echo "`ma{i..i}ty' + "{a..a}" * 257 + ' status`"',
+]
+# Empty substitutions glued into the name: the line names `maity` once they are taken out.
+EMPTY_SUBSTITUTIONS = [
+    "maity$() run$()ner",
+    "ma``ity run``ner",
+    "ma``ity status",
+    "ma$()ity status",
+    "ma$(true)ity status",
+    "echo $(ma$()ity status)",
+    "echo `maity$() status`",
+    'echo "`ma$()ity status`"',
+    "true && mait{,}$( )y status",
+]
+# Substitutions and expansions in lines that do not name `maity`: left as before.
+SUBSTITUTIONS_WITHOUT_MAITY = [
+    'echo "$(date)"',
+    "x=$(git rev-parse HEAD)",
+    "echo `date`",
+    "echo $HOME",
+    'echo "${HOME}/x"',
+    "echo $(( 1 + 2 ))",
+    "diff <(sort a) <(sort b)",
+    "echo ma$(true)ty",
+]
+
+
+@pytest.mark.parametrize(
+    "command", [*GLUED_EXPANSIONS, *BRACES_IN_QUOTED_BACKTICKS, *EMPTY_SUBSTITUTIONS]
+)
+def test_maity_glued_braced_or_spliced_in_a_substitution_is_refused(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is not None
+
+
+@pytest.mark.parametrize("command", SUBSTITUTIONS_WITHOUT_MAITY)
+def test_substitutions_in_lines_without_maity_are_left_to_the_permission_rules(
+    command: str,
+) -> None:
+    assert plaincall.refusal(bash(command)) is None
+
+
+def test_the_substitutions_of_a_line_and_the_line_without_them() -> None:
+    assert plaincall._substitutions(r"""a `b` "$(c "d)")" <(e) '$(g)'""") == (
+        ["b", 'c "d)"', "e"],
+        """a  "" /dev/fd/0 '$(g)'""",
+    )
+    assert plaincall._substitutions(r"a \`b` c") is None  # an escaped backtick, then one open
+    assert plaincall._substitutions("a $(b") is None
+
+
+def test_a_wait_timeout_inside_a_substitution_gets_the_shared_reason() -> None:
+    assert plaincall.refusal(bash("`MAITY_WAIT_TIMEOUT=5 maity`")) == plaincall.PREFIX_REFUSED
 
 
 # A `!`, a subshell or a group right before `maity`: the line counts as starting with `maity`
@@ -2235,34 +2314,98 @@ SUBSTITUTED_COMMANDS = [
 ]
 
 
-@pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
-def test_substitutions_run_maity_only_if_refused(tmp_path: Path) -> None:
-    """Each shape with each command, with and without arguments, in Bash, with `maity` a
-    program on the path and in the working directory that records each run: Bash runs
-    `maity` from no line the hook lets through."""
+# The name `maity` as the shell may make it: glued to an expansion that makes nothing, with
+# an empty substitution inside, or from braces (round 1 of #2026).
+NAME_SPELLINGS = [
+    "maity",
+    "maity$(true)",
+    "maity$x",
+    "maity${x}",
+    "maity$()",
+    "ma``ity",
+    "ma$()ity",
+    "{maity,}",
+    "ma{ity,}",
+    "ma{i..i}ty",
+    "mait{,}$( )y",
+]
+_MAITY_WORD = re.compile(r"(?<![\w-])maity(?![\w-])")
+
+
+def bash_runs_maity(lines: list[str], tmp_path: Path) -> tuple[list[str], int, int]:
+    """Each line in its own Bash, with `maity` a program on the path and in the working
+    directory that records its arguments: the lines Bash runs `maity` from that the hook
+    lets through, how many lines run `maity`, and how many run `maity runner`."""
     print(BASH_NAME)  # noqa: T201 - recorded in the test log
+    assert BASH is not None
     bin_dir, mark = tmp_path / "bin", tmp_path / "ran"
-    bin_dir.mkdir()
-    program = f'#!{BASH}\necho ran >> "$MARK"\n'
+    bin_dir.mkdir(exist_ok=True)
+    program = f'#!{BASH}\necho "ran $*" >> "$MARK"\n'
     for where in (bin_dir / "maity", tmp_path / "maity"):
         where.write_text(program)
         where.chmod(0o755)
-    path = ":".join([str(bin_dir), "/usr/bin", "/bin"])
-    opened, ran = [], 0
+    env = {"PATH": ":".join([str(bin_dir), "/usr/bin", "/bin"]), "MARK": str(mark),
+           "HOME": str(tmp_path), "LC_ALL": "C"}  # fmt: skip
+    found = subprocess.run(
+        [BASH, "--norc", "--noprofile", "-c", "command -v maity"], capture_output=True,
+        text=True, timeout=30, check=False, env=env,
+    )  # fmt: skip
+    assert found.stdout.strip() == str(bin_dir / "maity")
+    opened, ran, runner = [], 0, 0
+    for line in lines:
+        mark.unlink(missing_ok=True)
+        subprocess.run(
+            [BASH, "--norc", "--noprofile", "-c", line], cwd=tmp_path, capture_output=True,
+            timeout=30, check=False, stdin=subprocess.DEVNULL, env=env,
+        )  # fmt: skip
+        if mark.exists():
+            ran += 1
+            runner += "ran runner" in mark.read_text()
+            if plaincall.refusal(bash(line)) is None:
+                opened.append(line)
+    return opened, ran, runner
+
+
+@pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
+def test_substitutions_run_maity_only_if_refused(tmp_path: Path) -> None:
+    """Each shape with each command, with and without arguments, and with each spelling of
+    the name: Bash runs `maity` from no line the hook lets through."""
+    bin_dir = tmp_path / "bin"
+    lines = []
     for shape in SUBSTITUTION_SHAPES:
         for command in SUBSTITUTED_COMMANDS:
             for args in ("", " status", " -h"):
-                line = shape.format(c=command.format(bin=bin_dir) + args)
-                assert BASH is not None
-                mark.unlink(missing_ok=True)
-                subprocess.run(
-                    [BASH, "--norc", "--noprofile", "-c", line], cwd=tmp_path,
-                    capture_output=True, timeout=30, check=False, stdin=subprocess.DEVNULL,
-                    env={"PATH": path, "MARK": str(mark), "HOME": str(tmp_path), "LC_ALL": "C"},
-                )  # fmt: skip
-                if mark.exists():
-                    ran += 1
-                    if plaincall.refusal(bash(line)) is None:
-                        opened.append(line)
+                lines.append(shape.format(c=command.format(bin=bin_dir) + args))
+            for spelling in NAME_SPELLINGS[1:]:
+                for args in ("", " status"):
+                    made = command.format(bin=bin_dir) + args
+                    lines.append(shape.format(c=_MAITY_WORD.sub(spelling, made)))
+    opened, ran, _ = bash_runs_maity(lines, tmp_path)
     assert opened == [], BASH_NAME
-    assert ran >= 800, ran  # most of the lines do run `maity` in Bash
+    assert ran >= 6000, ran  # most of the lines do run `maity` in Bash
+
+
+# A line that starts with a spelling of the name, glued to an expansion or with an empty
+# substitution in it, alone or after other words.
+GLUED_SHAPES = ["{c}", "NO_COLOR=1 {c}", "true && {c}", "env {c}", "echo `{c}`", "echo $({c})"]
+
+
+@pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
+def test_glued_spellings_and_the_reported_lines_run_maity_only_if_refused(
+    tmp_path: Path,
+) -> None:
+    """The spellings in shapes that put the name at the start of a line, with `status` and
+    with `runner` after it, and every line of round 1 of #2026: Bash runs `maity` from each
+    of the reported lines, and from none that the hook lets through."""
+    lines = [
+        shape.format(c=spelling + args)
+        for shape in GLUED_SHAPES
+        for spelling in NAME_SPELLINGS[1:]
+        for args in (" status", " runner status", " run$()ner status")
+    ]
+    reported = [*GLUED_EXPANSIONS, *BRACES_IN_QUOTED_BACKTICKS[:6], *EMPTY_SUBSTITUTIONS]
+    opened, ran, runner = bash_runs_maity(lines + reported, tmp_path)
+    assert opened == [], BASH_NAME
+    assert ran >= len(lines) + len(reported) - 10, ran
+    assert runner >= 90, runner  # `maity runner` does run from many of them
+    assert bash_runs_maity(reported, tmp_path)[1] == len(reported)
