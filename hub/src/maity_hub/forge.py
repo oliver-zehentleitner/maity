@@ -1374,8 +1374,10 @@ def _moment(value: Any) -> datetime | None:
 
 
 def moment(value: Any) -> datetime | None:
-    """`_moment` for the readers of a stored observation (`merged`)."""
-    return _moment(value)
+    """`_moment` for the readers of a stored observation (`merged`), None also for a time
+    without a zone: it cannot be compared with an aware one, so it counts as unknown."""
+    found = _moment(value)
+    return found if found is not None and found.utcoffset() is not None else None
 
 
 # A card id as a pull request's title or body may name it (`tsk-…`, `rel-…`, `ctr-…`, the

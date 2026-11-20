@@ -639,6 +639,29 @@ def test_a_pull_request_merged_before_the_report_closes_nothing(
 
 
 @pytest.mark.usefixtures("admin_auto")
+def test_a_merge_time_without_a_zone_counts_as_unknown(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    """Later than the report, but without a zone it cannot be compared: not a fault, and
+    not a close."""
+    github.pull(7, merged=True, merged_at="2099-01-01T00:00:00")
+    _, card_id = _reported(github, owner, make_client)
+    probe.observe_report(migrated, READER, card_id)
+    assert _closed_or_why(migrated, card_id) == (False, ["merged_before_report"])
+    assert _card(owner, card_id)["status"] == "review"
+
+
+@pytest.mark.usefixtures("admin_auto")
+def test_an_upstream_without_a_remote_s_name_names_no_branch(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
+) -> None:
+    github.pull(7, merged=True)
+    _, card_id = _reported(github, owner, make_client, upstream="/agent-b/probe")
+    probe.observe_report(migrated, READER, card_id)
+    assert _closed_or_why(migrated, card_id) == (False, ["head_ref"])
+
+
+@pytest.mark.usefixtures("admin_auto")
 def test_a_second_card_naming_the_same_pull_request_does_not_close(
     owner: flow.Human, make_client: ClientFactory, migrated: Engine, github: FakeGitHub
 ) -> None:

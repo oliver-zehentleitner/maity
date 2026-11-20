@@ -125,15 +125,16 @@ def _merge_sha(conn: Connection, card: Any) -> str | None:
 def _reported_branch(report: dict[str, Any]) -> str | None:
     """The branch the report names on the remote: `upstream` without the remote's name
     (`origin/agent-x/y` → `agent-x/y`), or `branch` when the report has no `upstream`.
-    An `upstream` without a remote's name names no branch."""
+    An `upstream` without both a remote's name and a branch (`/agent-x/y`, `origin/`,
+    `origin`) names no branch."""
     upstream = report.get("upstream")
     if upstream is None:
         branch = report.get("branch")
         return branch if isinstance(branch, str) and branch else None
     if not isinstance(upstream, str):
         return None
-    _, slash, rest = upstream.partition("/")
-    return rest if slash and rest else None
+    remote, _, rest = upstream.partition("/")
+    return rest if remote and rest else None
 
 
 def _own_repository(project: Any) -> str | None:

@@ -8927,7 +8927,8 @@ the card's `approvals` stay. Every replacement clears `approvals`
   the forge reports it (§11): its head branch (`head_ref`) is the branch
   the report names on the remote, which is `upstream` without the
   remote's name (`origin/agent-x/y` → `agent-x/y`), or `branch` when the
-  report has no `upstream`, and its head is in the project's own
+  report has no `upstream` (an `upstream` without both a remote's name
+  and a branch, such as `/agent-x/y` or `origin/`, names none), and its head is in the project's own
   repository (`head_repo`; a pull request from a fork is never a card's
   own), never inferred from whether a branch of that name exists; its
   title or body names the card's id (`card_ids`); it was merged after
@@ -8937,7 +8938,8 @@ the card's `approvals` stay. Every replacement clears `approvals`
   current report, and the pull request has not closed another card
   before. So one merged pull request closes at most one card. What the
   hub cannot tell counts as not holding: an observation stored before
-  the hub kept these fields closes nothing. Otherwise `auto` acts as
+  the hub kept these fields closes nothing, nor does a `merged_at` without
+  a time zone. Otherwise `auto` acts as
   `notify` for this card, and the done authority closes it (§6.4). A release card is never closed by a merge, ready
   or not: it closes through its readiness gate (§6.7), which the releaser
   passes with `PATCH {status: "done"}` after the checklist, so
