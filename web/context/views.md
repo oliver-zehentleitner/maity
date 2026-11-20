@@ -5246,15 +5246,17 @@ beside the project's state instead (review of #884). Project settings have five 
 the links that changed; an empty field clears its link, and each refusal
 of the hub is said at its field.
 
-**Reason:** with up to six buttons in the row, the forge's name as the
-label took room the four new ones need, and the mark already shows the
-forge. The hub merges links by key (§6.11), so a form that sent all four
-would overwrite another admin's change to a link it did not touch.
+**Reason:** when the row gained the project's own links (four then, up
+to six buttons with the repository and the dashboard), the forge's name
+as the label took room they needed, and the mark already shows the
+forge; the row has grown since (Pull Requests, Actions, Docs). The hub
+merges links by key (§6.11), so a form that sent every link would
+overwrite another admin's change to a link it did not touch.
 
 **Rejected alternatives:**
 - The forge's name as the label, as before (the old header): wider, and
   it said twice what the mark says.
-- Sending all four links on every save (#846): it loses another admin's
+- Sending every link on every save (#846, four links then): it loses another admin's
   change made meanwhile.
 
 
