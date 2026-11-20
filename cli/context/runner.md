@@ -5072,3 +5072,42 @@ listening and restart it (incident candidate 2). Deferred — the runner
 already restarts a session that goes quiet, and keeping the `maity wait`
 alive is the narrower fix; the detection-and-restart path is tracked as a
 separate item of the incident card.
+
+## `maity runner` is taken only as the first argument
+
+**Id:** 3e25f276-cde1-47cc-bcdc-05812f499803
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2cprkm334fqf, 2026-11-20; `cli/src/maity/cli.py` (`_main`). The shape and the rejected alternative are the author's and the lead's, not yet reviewed
+**See:** runner.md — 63492c65-e6bf-4fd8-9a73-5a599f11707e — as of 2026-11-20
+**Revisit when:** `maity` gains another command group that only the runner or its operator may run; the CLI parses its arguments with something other than argparse
+
+`maity` refuses the `runner` command group unless `runner` is its first
+argument. Anything before it, such as a global option (`--for`, also
+abbreviated) or `--`, is a usage error (exit 2) before anything runs. Every
+other command keeps its global options.
+
+**Reason:** the runner's commands are for the runner and its operator. The
+harness rules that keep them away from placed agents look for `runner` right
+after `maity`, but argparse also takes the group after `--` or a global
+option. One check where the CLI reads its arguments makes the rules' shape
+the CLI's own, on every harness at once.
+
+The check runs right after argparse has parsed the arguments, on what it
+took as the command. Some Python versions refuse a `--` before the command
+themselves ("invalid choice"), and every version refuses `-- --`. Either way
+it is a usage error (exit 2) and nothing runs, so the tests of these
+spellings accept argparse's refusal, but only for words with a `--` before
+`runner`.
+
+**Rejected alternatives:**
+- Widening each harness's rules to every spelling argparse accepts. They
+  differ by harness, argparse also accepts abbreviated options, and a missed
+  spelling would leave a gap that the CLI's check closes for all of them.
+- A check on the raw words before parsing ("`runner` among the words, but
+  not first"). It would refuse legitimate commands: `placement start
+  --runner <name>` with a runner named `runner`, and any message text with
+  the word. A raw check that avoids that would have to re-implement
+  argparse's reading of global options, abbreviations and `--`, which is
+  more fragile than taking argparse's own result.
