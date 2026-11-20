@@ -889,6 +889,148 @@ def test_a_url_with_an_empty_userinfo_is_refused(url: str) -> None:
         hub.hub_base(url)
 
 
+# --- under a placement, --hub names only the clone's hub -------------------------------------
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_placed_hub_flag_with_another_origin_is_refused(
+    placed: Path,
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    command: list[str],
+) -> None:
+    before = _state_bytes(joined)
+    assert cli.main([*command, "--hub", "https://elsewhere.example"]) == cli.EXIT_REFUSED
+    assert "changes only by a new join" in capsys.readouterr().err
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_placed_hub_flag_without_a_stored_hub_is_refused(
+    placed: Path,
+    joined: Path,
+    fake: fakehub.FakeHub,
+    capsys: pytest.CaptureFixture[str],
+    command: list[str],
+) -> None:
+    """The runner's join stores the hub with the credential; under a placement a state that
+    names no hub takes none from --hub, not even the hub the runner joined."""
+    data = state.load_state(joined)
+    del data["hub"]
+    state.save_state(joined, data)
+    before = _state_bytes(joined)
+    assert cli.main([*command, "--hub", fake.url]) == cli.EXIT_REFUSED
+    assert "--hub names only the clone's hub" in capsys.readouterr().err
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("case", ["placement unset", "placement invalid"])
+def test_placed_clone_whose_placement_cannot_be_read_refuses_help_hub(
+    placed: Path,
+    joined: Path,
+    fake: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    """The runner's clone, its marker in place, with MAITY_PLACEMENT removed or not an id:
+    `help --hub` is refused and nothing is fetched; `resume --hub` fails before any call."""
+    (placed / ".git" / "maity" / "placement").write_text("plc-0003\n")
+    if case == "placement unset":
+        monkeypatch.delenv("MAITY_PLACEMENT")
+    else:
+        monkeypatch.setenv("MAITY_PLACEMENT", "not a placement id")
+    before = _state_bytes(joined)
+    assert cli.main(["help", "--hub", fake.url]) == cli.EXIT_REFUSED
+    assert "state cannot be read" in capsys.readouterr().err
+    assert cli.main(["resume", "--hub", fake.url]) != cli.EXIT_OK
+    capsys.readouterr()
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("command", [["resume"], ["help"]])
+def test_placed_hub_flag_without_git_is_refused(
+    placed: Path,
+    joined: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    command: list[str],
+) -> None:
+    """Under a placement the state directory is found without git, so with git missing from
+    PATH the clone's hub still decides: another origin is refused and nothing is sent."""
+    (tmp_path / "no-git").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
+    before = _state_bytes(joined)
+    assert cli.main([*command, "--hub", "https://elsewhere.example"]) == cli.EXIT_REFUSED
+    assert "changes only by a new join" in capsys.readouterr().err
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+# --- a placed session never joins --------------------------------------------------------------
+
+
+def _join_line(fake: fakehub.FakeHub) -> list[str]:
+    return ["join", f"{fake.url}/join/{fakehub.TOKEN}", "--code", fakehub.CODE]
+
+
+def test_a_placed_session_never_joins(
+    placed: Path, joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
+) -> None:
+    before = _state_bytes(joined)
+    assert cli.main(_join_line(fake)) == cli.EXIT_REFUSED
+    assert "a placed session never joins" in capsys.readouterr().err
+    assert _state_bytes(joined) == before
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("variable", ["MAITY_PLACEMENT", "MAITY_GIT_PRIVATE"])
+def test_a_join_with_a_placement_variable_set_is_refused(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    variable: str,
+) -> None:
+    """MAITY_PLACEMENT set even empty, or the runner's MAITY_GIT_PRIVATE set: a placed
+    session, refused before the state lookup; the fresh clone stays unjoined."""
+    monkeypatch.setenv(variable, "")
+    assert cli.main(_join_line(fake)) == cli.EXIT_REFUSED
+    assert "a placed session never joins" in capsys.readouterr().err
+    assert not (clone / ".git" / "maity").exists()
+    assert fake.seen == []  # nothing sent
+
+
+@pytest.mark.parametrize("case", ["marked, placement unset", "no git"])
+def test_a_join_where_the_state_directory_cannot_be_named_is_refused(
+    clone: Path,
+    fake: fakehub.FakeHub,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    """Unplaced, only "not inside a Git clone" leads to a directory of the agent's own; a
+    runner's clone without its placement, or git missing, is refused before the join page is
+    fetched."""
+    if case == "marked, placement unset":  # clonecheck.Refused
+        (clone / ".git" / "maity").mkdir(mode=0o700)
+        (clone / ".git" / "maity" / "placement").write_text("plc-0003\n")
+    else:  # proc.ToolError
+        (tmp_path / "no-git").mkdir()
+        monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
+    assert cli.main(_join_line(fake)) == cli.EXIT_REFUSED
+    assert "state directory cannot be named" in capsys.readouterr().err
+    assert not (clone / ".git" / "maity" / "credential").exists()
+    assert fake.seen == []  # nothing sent
+
+
 def test_a_redirect_is_refused_not_followed(
     joined: Path, fake: fakehub.FakeHub, capsys: pytest.CaptureFixture[str]
 ) -> None:

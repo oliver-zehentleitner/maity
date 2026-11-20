@@ -186,6 +186,15 @@ SANDBOXED_CALL = (
 )
 
 
+# `--hub` under a placement whose clone's state names no hub: the runner's join stores the hub
+# with the credential, and under a placement --hub names only the clone's hub, so there is
+# nothing it can name (cli/context/credentials.md).
+PLACED_NO_HUB = (
+    "under a placement, --hub names only the clone's hub, and this clone's state names none: "
+    "the runner's join stores it. Nothing was changed or fetched"
+)
+
+
 def _keep_hub(stored: str, given: str) -> None:
     """`--hub` on a clone whose state names a hub: only that hub's origin passes (scheme, host
     and port, `hub.origin`), anything else is refused before anything is written or sent. A
@@ -224,6 +233,8 @@ class Session:
             if isinstance(self.data.get("hub"), str):
                 # The clone's hub is fixed: the same origin passes and the stored URL stays.
                 _keep_hub(self.data["hub"], hub_url)
+            elif clonecheck.placed():
+                raise LocalRefusal(PLACED_NO_HUB)
             else:  # a credential from the page-driven join has no state.json yet
                 self.data["hub"] = hub.hub_base(hub_url)
         stored = self.data.get("hub")
@@ -465,12 +476,25 @@ def cmd_join(args: argparse.Namespace) -> int:
     target = hub.join_target(url)
     if not code.strip():
         raise UsageError("the join code is empty")
+    if clonecheck.placed() or clonecheck.GIT_PRIVATE_ENV in os.environ:
+        # Before the state lookup and any call: the runner's pickup and exchange join a
+        # placement, so a placed session never joins (cli/context/credentials.md).
+        raise LocalRefusal(
+            "a placed session never joins: the runner's pickup and exchange join a "
+            "placement. Nothing was sent; the join code still works"
+        )
     derived = False
     try:
         directory = state.resolve_state_dir()
-    except state.StateError as outside:
+    except state.NotInClone as outside:  # before a join, outside a clone: a directory of its own
         directory = _identity_dir(url, target, outside)
         derived = True
+    except state.StateError as exc:
+        # Not "outside a clone": a clone whose state directory cannot be named fails closed.
+        raise LocalRefusal(
+            f"this clone's state directory cannot be named: {exc}. Nothing was sent; the join "
+            "code still works"
+        ) from None
     # A derived directory that holds a credential belongs to another instance of this agent
     # (§6.17): this one gets `<handle>#<instance>` beside it, once the exchange names it.
     sibling = derived and state.has_credential(directory)
@@ -4836,6 +4860,8 @@ def cmd_help(args: argparse.Namespace) -> int:
         if isinstance(stored, str):
             _keep_hub(stored, args.hub)
             base = hub.hub_base(stored)
+        elif clonecheck.placed():
+            raise LocalRefusal(PLACED_NO_HUB)
     else:
         stored = state.load_state(state.resolve_state_dir()).get("hub")
         if not isinstance(stored, str):

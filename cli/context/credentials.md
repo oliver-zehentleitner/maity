@@ -514,9 +514,16 @@ refused with exit 4 before anything is written or sent, and the message names th
 hub's origin and the given one, each printed the same way (an IPv6 host in brackets, the port
 only when it is not the default), and says that a new join is the way to change it. A first
 `resume --hub` after the page-driven join, where the credential exists but no state names a
-hub yet, stores the hub as before.
-`maity join` is unchanged: it refuses while the clone holds a credential, and a new join
-writes a new state with the hub its exchange accepted.
+hub yet, stores the hub as before; under a placement, --hub names only the clone's hub, so
+with no stored hub `help --hub` and `resume --hub` are refused with exit 4 and nothing is
+sent, as the runner's join stores the hub with the credential.
+`maity join` refuses while the clone holds a credential, and a new join writes a new state
+with the hub its exchange accepted. A placed session never joins: the runner's pickup and
+exchange join a placement, so `maity join` with `MAITY_PLACEMENT` (even empty) or
+`MAITY_GIT_PRIVATE` set is refused with exit 4 before any call. Like `help --hub`, it treats
+only "not inside a Git clone" as the case for a directory of the agent's own; a clone whose
+state directory cannot be named otherwise is refused with exit 4 before the join page is
+fetched.
 
 **Reason:** a clone is paired with one hub: its credential was issued by that hub, and the
 state, the event cursor and the environment ids are that hub's (8c5f8d73). Keeping the hub
