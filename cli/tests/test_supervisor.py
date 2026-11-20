@@ -3500,6 +3500,36 @@ def test_only_the_harnesses_the_runner_opens_it_for_get_a_scratch(
     assert _stat.S_IMODE(room.parent.stat().st_mode) == 0o700  # the parent is 0700, owned
 
 
+def test_a_placement_without_room_under_its_scratch_gets_a_short_tmpdir_of_its_own(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-0zb9mgzmbwn4: a Claude Code or Codex placement whose scratch's `tmp` leaves no room
+    for a socket gets `tmp` in a fresh 0700 leaf under the per-user `/tmp` parent, recorded,
+    and removed when the placement closes; none where the scratch's own `tmp` fits, or where
+    the leaf would not fit either. (The test's root is long, so the socket limit is raised to
+    stand in for the short `/tmp`; the conftest keeps it out of the host's /tmp.)"""
+    sup, *_ = world
+    target = sup.targets["local"]
+    p = placement(harness="codex")
+    deep = Path("/") / ("w" * 500) / "maity" / ".scratch" / "plc-0003"
+    assert adapters.scratch_tmpdir(deep) is None  # no room under the scratch itself
+    assert sup._tmpdir(p, deep, target) is None  # nor under this test's long root, as it is
+    # 400 bytes: room under the test's root (well below that), still none under `deep`.
+    monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)
+    assert adapters.scratch_tmpdir(deep) is None
+    assert sup._tmpdir(p, Path("/srv/ws/maity/.scratch/plc-0003"), target) is None  # it fits
+    tmpdir = sup._tmpdir(p, deep, target)
+    assert tmpdir is not None and tmpdir.name == "tmp" and tmpdir.is_dir()
+    leaf = tmpdir.parent
+    parent = workspace.TMP_SCRATCH_ROOT.resolve() / f"maity-scratch-{target.as_user.uid()}"
+    assert leaf.parent == parent and leaf.name == sup.scratch_names["plc-0003"]
+    assert stat.S_IMODE(leaf.stat().st_mode) == 0o700
+    assert sup._remove_tmpdir(p, target) and not leaf.exists()
+    # agy's leaf is its scratch, removed with it, not here.
+    agy = placement(harness="antigravity")
+    assert sup._remove_tmpdir(agy, target)
+
+
 def test_the_agy_scratch_is_made_fresh_at_each_start_and_removed_when_closed(
     world: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -528,6 +528,8 @@ class Supervisor:
                 if target.name not in seen or (target.remote and target.agent_files is None):
                     done = False  # its sessions are unknown: unknown means kept
                     continue
+                if not self._remove_tmpdir(p, target):
+                    done = False
                 try:
                     located = self._scratch_location(p, target)
                     if located is None:
@@ -560,6 +562,36 @@ class Supervisor:
                     had_name = self.scratch_names.pop(p["id"], None) is not None
                 if had_name:  # its recorded leaf is gone with it
                     self._save_scratch_names()
+
+    def _remove_tmpdir(self, p: dict[str, Any], target: Target) -> bool:
+        """Remove the leaf of a closed placement's own TMPDIR (`_tmpdir`) under the per-user
+        `/tmp` parent, when it had one: a placement whose scratch is beside its clone records
+        a leaf name only for that. agy's leaf is its scratch and goes with it
+        (`_scratch_location`). False when the removal should be tried again; a link or a
+        directory another user holds is logged and left, as for a scratch."""
+        if workspace.scratch_in_tmp(p.get("harness") or ""):
+            return True
+        with self.lock:
+            leaf = self.scratch_names.get(p["id"])
+        if leaf is None or not target.as_user.here:
+            return True
+        try:
+            path = workspace.tmp_scratch_of(target.as_user.uid(), leaf)
+            removed = scratch.tmp_remove(path, target.as_user)
+        except workspace.Refused:
+            return True
+        except scratchop.OnTheWay as exc:
+            self.log(f"{p['id']}: TMPDIR left on {target.name}: "
+                     f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+            return True
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.log(f"{p['id']}: TMPDIR not removed on {target.name}: {exc}")
+            return False
+        if removed is not None:
+            scratch.log_removal(self.cfg.state_dir, p["id"], path, removed, "closed")
+            self.log(f"{p['id']}: TMPDIR removed on {target.name} ({removed} bytes): "
+                     "the placement is closed")  # fmt: skip
+        return True
 
     def _remove_pg_pass(self, p: dict[str, Any], target: Target) -> bool:
         """The closed placement's test cluster password file removed from the holder on
@@ -1411,6 +1443,7 @@ class Supervisor:
         tmp_parent = self._tmp_scratch_parent(target, harness)
         if tmp_parent is not None:
             self._make_tmp_parent(tmp_parent, target)
+        tmpdir = self._tmpdir(p, scratch, target) if tmp_parent is not None else None
         return adapters.Context(
             placement=p,
             harness=harness,
@@ -1437,8 +1470,31 @@ class Supervisor:
             git=self.cfg.git,
             scratch=scratch,
             tmp_scratch_parent=tmp_parent,
+            tmpdir=tmpdir,
             pg_pass=pg_pass,
         )
+
+    def _tmpdir(self, p: dict[str, Any], scratch: Path | None, target: Target) -> Path | None:
+        """A short TMPDIR of the placement's own where its scratch's `tmp` leaves no room for a
+        Unix socket (adapters.scratch_tmpdir), as under the default `~/maity-workspaces`:
+        `tmp` in a fresh leaf under the per-user `/tmp` parent this placement's sandbox hides
+        (workspace.tmp_scratch_of, made as agy's scratch is, `_tmp_scratch`), opened again for
+        this placement alone (adapters) and removed with it (`_clear_scratch`). Called only for
+        a placement that is given that parent (`_tmp_scratch_parent`: Claude Code or Codex, on
+        this machine). None where the scratch's own `tmp` fits, where a leaf would not fit
+        either (a long uid on macOS), or where it cannot be made: the session then starts with
+        no TMPDIR, as before (tsk-0zb9mgzmbwn4)."""
+        if scratch is not None and adapters.scratch_tmpdir(scratch) is not None:
+            return None
+        try:
+            uid = target.as_user.uid()
+            longest = workspace.tmp_scratch_of(uid, "0" * 32) / "tmp"
+        except (OSError, workspace.Refused):
+            return None
+        if not adapters.fits_socket(longest):
+            return None
+        leaf = self._tmp_scratch(p, target)
+        return None if leaf is None else leaf / "tmp"
 
     def _make_tmp_parent(self, parent: Path, target: Target) -> None:
         """Create the per-user `/tmp` scratch parent (0700, owned by the agents' user) before a

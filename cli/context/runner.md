@@ -5035,3 +5035,45 @@ listening and restart it (incident candidate 2). Deferred — the runner
 already restarts a session that goes quiet, and keeping the `maity wait`
 alive is the narrower fix; the detection-and-restart path is tracked as a
 separate item of the incident card.
+
+## A placement without room under its scratch gets a short TMPDIR of its own in `/tmp`
+
+**Id:** 893d9dfd-6d56-4a8f-b46a-5f43c9e26737
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-0zb9mgzmbwn4, 2026-11-20 (the lead's go for this shape, with a live check before the merge); `cli/src/maity/runner/supervisor.py` (`_tmpdir`, `_remove_tmpdir`), `adapters.py` (`session_tmpdir`, the sandbox rules). The shape and the rejected alternatives are the author's, not yet reviewed, and Claude Code's handling of the re-opened leaf is not yet checked live
+**See:** runner.md#agys-scratch-lives-under-the-hosts-shared-temp-directory-not-beside-the-clone — 8ec06e26-42b6-47b7-9f23-2bad37da3dfa — as of 2026-11-20
+**See:** runner.md#a-placements-scratch-lives-beside-its-clone-one-per-placement-and-is-never-kept — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-20
+**Revisit when:** the live check shows that Claude Code's sandbox does not let a placement write a leaf it re-opens inside a denied parent; Claude Code moves its sandbox socket out of TMPDIR; placements get an OS user each
+
+Where a Claude Code or Codex placement's scratch leaves no room for a Unix
+socket under its `tmp`, as under the default `~/maity-workspaces`, the runner
+makes `tmp` in a fresh 0700 leaf with a random name under the per-user
+`/tmp/maity-scratch-<uid>` parent, the one agy's scratch uses, and sets it
+as the session's TMPDIR. The placement's sandbox already hides that parent;
+it opens this one leaf again for the placement alone: Claude Code through
+`allowWrite` and `allowRead`, Codex through `write` within `none`. A
+sibling leaf stays hidden. The leaf is recorded like agy's (the scratch
+names file), made fresh at every start, and removed when the placement
+closes. Where the scratch's own `tmp` fits, it stays the TMPDIR. Where the
+leaf would not fit either (macOS with a uid longer than four digits), and
+on an ssh host, the session gets no TMPDIR, as before.
+
+**Reason:** without a TMPDIR the temporary files of the session's tools and
+of Claude Code itself went to the shared `/tmp`. Every placement of the same
+OS user could see them, possibly another owner's. Before the socket rule
+(#2014) they stayed in the scratch. A leaf under the parent that the
+sandboxes already hide gives the same separation as the scratch, with a
+path short enough for the socket, and reuses the make, record and removal
+code agy's scratch already has.
+
+**Rejected alternatives:**
+- `CLAUDE_CODE_TMPDIR` in the scratch, independent of the socket rule: it
+  covers only Claude Code's own temporary files, and the tools a session
+  runs (test runners, package installers, compilers) still use TMPDIR. It
+  stays the fallback for Claude Code if the live check shows its sandbox
+  does not honour the re-opened leaf.
+- A separate per-user parent that no sandbox hides, with random leaves:
+  same-user sandboxed placements could list it and reach each other's
+  temporary files, which is weaker than the scratch.
