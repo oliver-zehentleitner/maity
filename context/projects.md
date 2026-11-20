@@ -839,7 +839,7 @@ rule.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer's wish in chat, 2026-11-19, recorded on card tsk-qeftb8bg0yt6 ("Add Docs, set in the project settings in the Links section", in the order Repository, Actions, Pull Requests, Issues, Discussions, Chat, Why); contract `docs/api.md` §6.11 "The project's own links"
+**Source:** the maintainer's wish in chat, 2026-11-19, recorded on card tsk-qeftb8bg0yt6 ("Add Docs, set in the project settings in the Links section", beside a header that showed Repository, Actions, Pull Requests, Issues, Discussions, Chat, Why; with Docs and a Wiki where set the order is Repository, Actions, Pull Requests, Issues, Wiki, Discussions, Docs, Chat, Why); contract `docs/api.md` §6.11 "The project's own links"
 **See:** projects.md#a-project-links-its-issues-wiki-discussions-and-chat-as-four-fixed-fields-on-any-host — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-11-20
 **Revisit when:** projects ask for a sixth kind of link, or the header row has no room for its buttons on a phone
 
