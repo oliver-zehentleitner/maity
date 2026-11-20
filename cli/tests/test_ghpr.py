@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from maity import cli, clonecheck, ghpr, hub
+from maity import cli, clonecheck, ghpr, hub, state
 
 REPOSITORY = "github.com/oliver-zehentleitner/maity"
 BRANCH = "agent-g/the-change"
@@ -683,7 +683,9 @@ def lead(placed: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     where = runner_layout(tmp_path, placed, "plc-0003")
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(where))
     record = where / ghpr.LEAD
-    record.write_text("lead\n")
+    # Written as the runner writes it (adapters.launch: AsUser.write, state.write_file, a text
+    # file), so its line end is this system's (`\r\n` on Windows).
+    state.write_file(record, "lead\n")
     ROLE_READS.clear()
 
     def manager() -> str:
@@ -706,7 +708,7 @@ def test_the_lead_record_counts_only_in_this_placements_directory(
         where = runner_layout(tmp_path / "other", lead, "plc-0009")
     else:
         where = lead["record"].parent  # placed's own `agent/git`, which the runner never makes
-    (where / ghpr.LEAD).write_text("lead\n")
+    state.write_file(where / ghpr.LEAD, "lead\n")
     monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(where))
     err = refused(["gh", "pr", "ready", "2045"], capsys)
     assert "this placement's directory" in err and ran(lead) is None and ROLE_READS == []
@@ -964,13 +966,24 @@ def test_a_hub_that_does_not_answer_refuses(
     assert "unreachable" in err and ran(lead) is None
 
 
-@pytest.mark.parametrize("content", ["", "yes\n", "lead", "lead\nlead\n"])
+# The other system's line end: what the runner never writes here.
+FOREIGN_LEAD = b"lead\n" if os.linesep == "\r\n" else b"lead\r\n"
+
+
+@pytest.mark.parametrize("content", [b"", b"yes\n", b"lead", b"lead\nlead\n", FOREIGN_LEAD])
 def test_without_the_runners_lead_record_the_lead_commands_are_refused(
-    lead: dict[str, Any], content: str, capsys: pytest.CaptureFixture[str]
+    lead: dict[str, Any], content: bytes, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    lead["lead_record"].write_text(content)
+    lead["lead_record"].write_bytes(content)
     refused(["gh", "pr", "ready", "2045"], capsys)
     assert ran(lead) is None and ROLE_READS == []
+
+
+def test_the_lead_record_is_the_runners_text_write_on_this_system() -> None:
+    """lotse#ajwe's run of #2054 on Windows: the runner writes its records as text, so the
+    record ends in `\\r\\n` there; maity takes exactly that, not a `\\n` the runner never
+    writes on Windows (FOREIGN_LEAD above)."""
+    assert ghpr.LEAD_RECORD == ("lead" + os.linesep).encode("ascii")
 
 
 def test_a_missing_lead_record_names_the_grant_and_reads_no_role(

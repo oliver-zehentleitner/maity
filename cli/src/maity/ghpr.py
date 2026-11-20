@@ -79,6 +79,8 @@ LEAD = "gh_lead"
 LEAD_COMMANDS = frozenset({("pr", "merge"), ("pr", "edit"), ("pr", "ready"),
                            ("run", "list"), ("run", "view")})  # fmt: skip
 LEAD_ROLE = "manager"
+# The LEAD record's bytes as the runner's text write leaves them on this system.
+LEAD_RECORD = ("lead" + os.linesep).encode("ascii")
 SHA = re.compile(r"[0-9a-f]{40}")  # a full commit id: a merge names exactly the head it read
 NUMBER = re.compile(r"[1-9][0-9]{0,9}")  # a pull request of this repository
 # A CI run or job of this repository: ids are already 11 and 12 digits, and grow; 19 digits
@@ -240,7 +242,9 @@ def lead_granted(root: Path, dot_git: int | None = None) -> None:
             "this clone's repository grants no lead commands: the runner's operator sets "
             "lead = true (with pull_requests = true) in its repositories table"
         )
-    if content != b"lead\n":
+    # Exactly what the runner writes (`adapters.lead_record` through `state.write_file`, a text
+    # file, so its line end is this system's: `\r\n` on Windows, lotse#ajwe's run of #2054).
+    if content != LEAD_RECORD:
         raise Refused(f"the runner's record {LEAD} is not one it writes")
 
 
