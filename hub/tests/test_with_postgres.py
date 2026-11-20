@@ -327,6 +327,12 @@ def test_a_password_that_is_not_the_runners_shape_starts_nothing(
         "host all all 127.0.0.1 255.255.255.255 ident\n",
         "local all all scram-sha-256\ninclude other.conf\n",
         "local scram-sha-256 all trust\n",  # the method is the 4th field, not any field
+        "local all postgres, scram-sha-256 trust\n",  # a comma list PostgreSQL reads as one
+        'local "a b" scram-sha-256 trust\n',  # a quoted field with a space
+        'local all "u scram-sha-256#x" trust\n',  # `#` inside quotes is no comment
+        "local all all scram\\-sha-256\n",  # a backslash
+        "localx all all scram-sha-256\n",  # no connection type PostgreSQL knows
+        "include_dir conf.d\n",
         None,  # no pg_hba.conf at all
     ],
 )
@@ -345,13 +351,30 @@ def test_a_cluster_not_on_scram_alone_is_not_used_with_a_password(
     assert not Path(run["FAKE_LOG"]).exists()  # refused before any tool ran
 
 
+def test_a_pg_hba_conf_that_is_a_link_is_not_used_with_a_password(
+    run: dict[str, str], tmp_path: Path
+) -> None:
+    data = Path(run["MAITY_PG_DIR"])
+    (data / "PG_VERSION").touch()
+    real = tmp_path / "elsewhere.conf"
+    real.write_text("local all all scram-sha-256\n")
+    (data / "pg_hba.conf").symlink_to(real)
+    refused = subprocess.run(
+        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD},
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert refused.returncode == 2 and "scram-sha-256 on every line" in refused.stderr
+
+
 def test_a_cluster_on_scram_alone_is_used_with_a_password(run: dict[str, str]) -> None:
     data = Path(run["MAITY_PG_DIR"])
     (data / "PG_VERSION").touch()
     (data / "pg_hba.conf").write_text(
-        "# trust: not here\nlocal all all scram-sha-256\n"
+        "# trust: not here, \"quoted\", a, comma\n   # indented comment\n\n"
+        "local all all scram-sha-256\r\n"  # a CRLF line is read as its rule
         "host all all 127.0.0.1/32 scram-sha-256\nhost all all ::1/128 scram-sha-256\n"
         "host all all 127.0.0.1 255.255.255.255 scram-sha-256\nlocal replication all reject\n"
+        "hostssl all all 10.0.0.0/8 scram-sha-256 # trailing comment\n"
     )
     subprocess.run([SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD}, check=True)
     assert len(calls(run, "start")) == 1

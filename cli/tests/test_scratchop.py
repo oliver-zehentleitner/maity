@@ -124,6 +124,15 @@ def test_a_planted_pg_password_is_never_written_through_read_or_vouched_for(
     assert victim.read_text() == "keepme" and not (tmp_path / "nowhere").exists()
 
 
+def test_a_fifo_planted_as_a_password_file_neither_blocks_nor_is_read(tmp_path: Path) -> None:
+    root = tmp_path / "ws"
+    root.mkdir()
+    holder = root / scratchop.PG_HOLDER
+    scratchop.pg_make(str(root), str(holder))
+    os.mkfifo(holder / "plc-0003", 0o600)
+    assert scratchop.pg_read(str(root), str(holder / "plc-0003")) is None  # returns at once
+
+
 @pytest.mark.parametrize("planted", ["link", "file", "wide"])
 def test_a_planted_holder_is_never_used(tmp_path: Path, planted: str) -> None:
     root = tmp_path / "ws"

@@ -63,15 +63,21 @@ if [ "$mode" = stop ] && [ ! -f "$dir/PG_VERSION" ]; then
   exit 0
 fi
 # Whether every rule of the pg_hba.conf named lets in only with scram-sha-256 (or rejects): an
-# allowlist, so trust, peer, ident, md5 and anything else fail, as do an include directive and a
-# file that cannot be read. The method is the 4th field of a `local` rule and the 5th of a host
-# rule, the 6th when the address is given with a separate mask.
+# allowlist, so trust, peer, ident, md5 and anything else fail, as do an include directive, an
+# unknown connection type, a link and a file that cannot be read. PostgreSQL's own tokenizer
+# knows quoted fields (with spaces or `#` in them) and comma lists; this one does not, so a rule
+# with a quote, a backslash or a comma fails too rather than being read wrongly. The method is the
+# 4th field of a `local` rule and the 5th of a host rule, the 6th with a separate mask.
 scram_only() {
-  [ -f "$1" ] && [ -r "$1" ] || return 1
+  [ -f "$1" ] && [ ! -L "$1" ] && [ -r "$1" ] || return 1
   awk '
+    { sub(/\r$/, "") }
+    /^[[:space:]]*(#|$)/ { next }
+    /["\047\\]/ { bad = 1; exit }
     { sub(/#.*/, "") }
     NF == 0 { next }
-    $1 ~ /^include/ { bad = 1; exit }
+    /,/ { bad = 1; exit }
+    $1 !~ /^(local|host|hostssl|hostnossl|hostgssenc|hostnogssenc)$/ { bad = 1; exit }
     {
       if ($1 == "local") method = $4
       else if ($5 ~ /^[0-9.]+$/ || $5 ~ /^[0-9a-fA-F]*:[0-9a-fA-F:]*$/) method = $6

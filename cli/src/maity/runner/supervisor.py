@@ -1393,8 +1393,9 @@ class Supervisor:
         target.as_user.mkdir(agent_dir)
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         found = view.found
-        # The password holder first, so every sandbox of this start is denied a path that exists.
-        holder = self._pg_holder(target)
+        # The password holder first, so every sandbox of this start is denied a path that exists;
+        # only here: an ssh host's sessions get no test cluster (adapters.pg_launch).
+        holder = self._pg_holder(target) if target.as_user.here else None
         private = self._private(target, place, scratch)
         if holder is not None:
             private = (*private, holder)
@@ -1947,11 +1948,15 @@ def other_scratches(
 # Every entry of every project's `.scratch` under the root given (with a trailing slash), one
 # NUL after each: the projects are the root's own entries (a project's name never starts with a
 # dot, workspace.TOKEN), a project or a `.scratch` that is a link is skipped, as on the direct
-# side. A `.scratch` that cannot be listed ends with 3.
-_SCRATCHES = r"""for p in "$1"*; do
+# side. A root, a project or a `.scratch` that cannot be read and searched ends with 3, as a
+# PermissionError does on the direct side: it could hide a scratch (the review of #2032).
+_SCRATCHES = r"""[ -r "$1" ] && [ -x "$1" ] || exit 3
+for p in "$1"*; do
   [ -d "$p" ] && ! [ -L "$p" ] || continue
+  [ -r "$p" ] && [ -x "$p" ] || exit 3
   h=$p/.scratch
   [ -d "$h" ] && ! [ -L "$h" ] || continue
+  [ -r "$h" ] && [ -x "$h" ] || exit 3
   find "$h" -mindepth 1 -maxdepth 1 -print0 || exit 3
 done"""
 

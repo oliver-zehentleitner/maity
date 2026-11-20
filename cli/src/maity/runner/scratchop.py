@@ -259,11 +259,17 @@ def pg_read(under: str, path: str) -> str | None:
         if len(names) != 2:
             return None
         with _pg_holder(under, make=False) as holder:
-            if not _pg_vouched(holder, names[1]):
-                return None
-            fd = os.open(names[1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=holder)
-            with os.fdopen(fd, "r", encoding="ascii", errors="replace") as handle:
-                first = handle.read(512).split("\n", 1)[0]
+            # Opened first, then checked on the descriptor itself: nothing swapped in between a
+            # check and the open is read, and a FIFO planted at the name does not block.
+            flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(names[1], flags | getattr(os, "O_CLOEXEC", 0), dir_fd=holder)
+            with os.fdopen(fd, "rb") as handle:
+                found = os.fstat(handle.fileno())
+                if not (stat.S_ISREG(found.st_mode) and found.st_uid == _uid(None)
+                        and stat.S_IMODE(found.st_mode) == 0o600
+                        and found.st_nlink == 1):  # fmt: skip
+                    return None
+                first = handle.read(512).decode("ascii", "replace").split("\n", 1)[0]
     except OSError:
         return None
     return first if PG_PASSWORD.fullmatch(first) else None

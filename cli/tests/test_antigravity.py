@@ -947,18 +947,26 @@ def test_the_scratch_listing_reads_only_the_projects_scratch(tmp_path: Path, sid
     assert found == [root / "maity" / ".scratch" / "plc-0004"]
 
 
-def test_a_scratch_listing_that_cannot_be_completed_refuses_the_start(tmp_path: Path) -> None:
+@pytest.mark.parametrize("side", sorted(SIDES))
+@pytest.mark.parametrize("locked", ["root", "project", "holder"])
+def test_a_scratch_listing_that_cannot_be_completed_refuses_the_start(
+    tmp_path: Path, side: str, locked: str
+) -> None:
+    """An unreadable root, project or `.scratch` could hide a scratch: every side refuses the
+    start, none returns a short list (the review of #2032)."""
     ws = tmp_path / "ws"
     holder = ws / "maity" / ".scratch"
     (holder / "plc-0004").mkdir(parents=True)
-    holder.chmod(0o000)  # unreadable: it could hide a scratch
+    at = {"root": ws, "project": ws / "maity", "holder": holder}[locked]
+    as_user = SIDES[side]()
+    at.chmod(0o000)
     try:
-        if os.access(holder, os.R_OK):  # root reads it anyway: nothing to prove here
+        if os.access(at, os.R_OK):  # root reads it anyway: nothing to prove here
             pytest.skip("running as a user that reads a 0000 directory")
         with pytest.raises(workspace.Refused):
-            supervisor.other_scratches(ws, None, AsUser())
+            supervisor.other_scratches(ws, None, as_user, "" if as_user.here else "host")
     finally:
-        holder.chmod(0o700)
+        at.chmod(0o700)
 
 
 @pytest.mark.parametrize("side", sorted(SIDES))
