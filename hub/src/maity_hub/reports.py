@@ -111,15 +111,26 @@ def _page(conn: Connection, pages: bool, path: str, view: str) -> Any:
     ).first()
 
 
+# What one IN list of paths carries at most, as `export.CHUNK` (which cannot be imported here:
+# `export` imports this module): far below every engine's limit on bound parameters, and above
+# the paths of a normal page, so a list still reads its pages in one statement.
+PATHS_PER_QUERY = 500
+
+
 def _pages_at(conn: Connection, pages: bool, paths: Iterable[str]) -> dict[str, Any]:
-    """path → stored page (`view`, `target_id`, `data`) for each of `paths` that has one, in
-    one query, while the instance serves pages (`_page` for a list: a path is the key)."""
-    wanted = set(paths)
+    """path → stored page (`view`, `target_id`, `data`) for each of `paths` that has one, while
+    the instance serves pages (`_page` for a list: a path is the key). One query for every
+    `PATHS_PER_QUERY` paths: an agent's projects add a path each, however short the page."""
+    wanted = sorted(set(paths))
     if not pages or not wanted:
         return {}
     p = t.public_page.c
-    rows = conn.execute(select(p.path, p.view, p.target_id, p.data).where(p.path.in_(wanted)))
-    return {row.path: row for row in rows}
+    found: dict[str, Any] = {}
+    for start in range(0, len(wanted), PATHS_PER_QUERY):
+        chunk = wanted[start : start + PATHS_PER_QUERY]
+        rows = conn.execute(select(p.path, p.view, p.target_id, p.data).where(p.path.in_(chunk)))
+        found.update({row.path: row for row in rows})
+    return found
 
 
 def _served(found: dict[str, Any], path: str, view: str) -> Any:
@@ -136,12 +147,16 @@ def _lists(page: Any, path: str) -> bool:
 
 def _agent_shown(conn: Connection, pages: bool, agent: Any, owner: str) -> bool:
     """Whether a page served now shows the agent: its own page, its owner's page, or the page
-    of a project it is named on (§16.8)."""
+    of a project it is named on (§16.8). The first two are looked at first; the agent's
+    projects are read only when neither shows it (the list reads all at once instead)."""
     if not pages:
         return False
+    direct = _pages_at(conn, pages, _agent_paths(agent.handle, owner, []))
+    if _shown_directly(direct, agent.handle, owner):
+        return True
     projects = _agent_projects(conn, [agent.id]).get(agent.id, [])
-    found = _pages_at(conn, pages, _agent_paths(agent.handle, owner, projects))
-    return _shows_agent(found, agent.handle, owner, projects)
+    found = _pages_at(conn, pages, (f"/{full}" for full in projects))
+    return _named_on_projects(found, agent.handle, owner, projects)
 
 
 def _agent_projects(conn: Connection, agent_ids: Iterable[str]) -> dict[str, list[str]]:
@@ -170,17 +185,27 @@ def _agent_paths(handle: str, owner: str, projects: list[str]) -> list[str]:
 
 def _shows_agent(found: dict[str, Any], handle: str, owner: str, projects: list[str]) -> bool:
     """`_agent_shown` on the pages `_pages_at` read for `_agent_paths`."""
-    path = f"/{owner}/agents/{handle}"
-    if _served(found, path, "agent") is not None:
+    return _shown_directly(found, handle, owner) or _named_on_projects(
+        found, handle, owner, projects
+    )
+
+
+def _shown_directly(found: dict[str, Any], handle: str, owner: str) -> bool:
+    """Whether the agent's own page or its owner's page, among `found`, shows it."""
+    if _served(found, f"/{owner}/agents/{handle}", "agent") is not None:
         return True
     # The owner's page lists an agent with or without a page of its own (`page` null):
     # handles are unique per owner, so its handle there names it (§16.8).
     listing = _served(found, f"/{owner}", public_people.KIND)
-    if listing is not None and any(
+    return listing is not None and any(
         isinstance(a, dict) and a.get("handle") == handle
         for a in (listing.data or {}).get("agents") or []
-    ):
-        return True
+    )
+
+
+def _named_on_projects(found: dict[str, Any], handle: str, owner: str, projects: list[str]) -> bool:
+    """Whether the page of one of `projects` (full names), among `found`, names the agent."""
+    path = f"/{owner}/agents/{handle}"
     return any(_lists(_served(found, f"/{full}", "project"), path) for full in projects)
 
 
