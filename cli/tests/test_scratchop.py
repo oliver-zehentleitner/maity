@@ -224,8 +224,8 @@ def test_only_a_placements_scratch_is_made_measured_or_removed(tmp_path: Path, n
 
 
 def test_the_module_imports_only_the_standard_library_and_maity() -> None:
-    """It runs with `-I` on the agents' side: the placement id pattern it takes from
-    clonecheck brings no module from outside the standard library and maity."""
+    """It runs with `-I` on the agents' side and imports only the standard library and maity
+    modules that do the same: followed through, no module from anywhere else is loaded."""
     probe = (
         "import sys; before = set(sys.modules); import maity.runner.scratchop; "
         "print('\\n'.join(sorted(m for m in set(sys.modules) - before "

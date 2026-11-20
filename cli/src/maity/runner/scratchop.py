@@ -15,9 +15,8 @@ when the agents are its own user; through sudo or on an ssh host it starts this 
 there (`python -I -m maity.runner.scratchop`, `maity runner scratchop`), which prints its
 answer as one JSON line.
 
-Only the standard library, and `maity.clonecheck` for the placement id pattern, which with the
-maity modules it imports uses only the standard library: the module runs with `-I` on the
-agents' side.
+Imports only the standard library and maity modules that do the same (today `maity.clonecheck`,
+for the placement id pattern): the module runs with `-I` on the agents' side.
 """
 
 from __future__ import annotations
