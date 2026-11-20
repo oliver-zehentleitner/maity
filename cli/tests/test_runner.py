@@ -1405,10 +1405,58 @@ def test_a_placed_session_owns_only_its_own_placements_file(
     assert reached == ([f"maity.runner.{name}"] if allowed else [])
 
 
-def test_runner_is_refused_with_for(capsys: pytest.CaptureFixture[str]) -> None:
-    """`--for` sits before the command, past the harnesses' `maity runner` deny rules."""
-    assert cli.main(["--for", "x", "runner", "loop", "--spec", "/x"]) == cli.EXIT_USAGE
-    assert "`maity runner` is the operator's" in capsys.readouterr().err
+FIRST_ONLY = "`maity runner` is taken only as the first argument"
+
+
+@pytest.mark.parametrize(
+    "words",
+    [
+        ["--for", "x", "runner", "loop", "--spec", "/x"],
+        ["--for=x", "runner", "status"],
+        ["--fo", "x", "runner", "status"],  # argparse takes an abbreviated option too
+        ["--", "runner", "loop", "--spec", "/x"],
+        ["--", "--", "runner", "status"],
+        ["--for", "x", "--", "runner", "status"],
+    ],
+)
+def test_runner_is_refused_anywhere_but_first(
+    words: list[str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """argparse takes the `runner` group after `--` or a global option too, past the
+    harnesses' rules for `maity runner`: refused before anything runs. Where argparse itself
+    refuses a spelling first (some Python versions refuse a `--` before the command, and every
+    version refuses `-- --`), that refusal stands, but only for words with a `--` before
+    `runner`; either way it is a usage error and nothing runs."""
+    reached = _reaching(monkeypatch)
+    code: int | str | None
+    try:
+        code = cli.main(words)
+    except SystemExit as exc:  # argparse's own usage error, before the first-argument check
+        code = exc.code
+        assert "--" in words[: words.index("runner")]  # only a `--` spelling may end here
+        assert "invalid choice" in capsys.readouterr().err
+    else:
+        assert FIRST_ONLY in capsys.readouterr().err
+    assert code == cli.EXIT_USAGE
+    assert reached == []
+
+
+def test_runner_as_the_first_argument_still_parses(capsys: pytest.CaptureFixture[str]) -> None:
+    """`maity runner …` is unchanged: the first-argument rule lets it through to its own
+    checks (here argparse's, for a missing required option)."""
+    with pytest.raises(SystemExit):
+        cli.main(["runner", "loop"])
+    assert FIRST_ONLY not in capsys.readouterr().err
+
+
+def test_another_command_after_a_global_option_is_not_taken_for_runner(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Only the `runner` group is held to the first argument; `--for` before another
+    command keeps its own handling (tests/test_bridge_for.py covers those commands)."""
+    assert cli.main(["--for", "x", "join", "https://x/j/t", "--code", "c"]) == cli.EXIT_USAGE
+    err = capsys.readouterr().err
+    assert FIRST_ONLY not in err and "--for applies to project commands" in err
 
 
 def test_without_a_home_in_the_user_database_nothing_gets_through(
