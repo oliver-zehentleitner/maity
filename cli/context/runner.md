@@ -3264,6 +3264,43 @@ the hub is unchanged: `clone_failed`, the exit code, no detail.
 - Rejected: logging nothing, as before. `clone_failed` without an exit code
   covers several unrelated causes, so nobody could tell which one it was.
 
+## A refused join says its code, reason and why in the runner's log, in code form only
+
+**Id:** 1b6e0e38-6392-4180-ae47-597064b9023b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-fveaj86ec6e2 (the owner's report on a new agent profile: "joining failed · pickup_not_allowed" and an empty runner log; the code pointers in note nte-f4jnqm2ymvve), 2026-11-20; `cli/src/maity/runner/supervisor.py`. The format and the rejected alternatives are the author's, not yet reviewed
+**See:** runner.md#a-failed-clone-says-why-in-the-runners-log-not-in-the-report — e814c00b-fde7-4c0a-a3ca-f7b3510900df — as of 2026-11-20
+**Revisit when:** §15.7 gets detail codes for the causes of `pickup_not_allowed`; the runner's log gets levels; the exchange answers with a why
+
+Every refused join step writes one line to the runner's log.
+A refused pickup writes `<placement>: warning: join pickup refused: <code>
+(reason <reason>, why <why>)`, and a refused exchange writes `<placement>:
+warning: join exchange refused: <code> (reason -, why -)`. The report
+to the hub is unchanged: `join_failed` with the code (`join_detail`).
+- `pickup_not_allowed` names its cause only in `details.why`
+  (`credential_issued`, `handle_taken`, `creator_lacks_authority`, …, §15.9).
+  `join_detail` keeps the code, so before this the dashboard showed only
+  `pickup_not_allowed`, and the log showed nothing more than the state line.
+- Each value is printed only when it has the form of a code, otherwise
+  `-`. What the hub sends is data from outside the runner. The form keeps a
+  line break, a control character, a message or a token-shaped value out of
+  the log, but it says nothing about where a value came from. An unknown
+  code, such as a why the hub adds later, shows as itself, which is wanted.
+  The join's URL and code are not in a refusal and are never logged (as in
+  `run_join`).
+- The exchange runs in the child `maity join`, whose machine line carries the
+  code alone (for `forbidden`, the reason in its place), and the exchange
+  answers `not_found` without a why (§15.9). So that line names the code alone.
+- "warning:" is a word in the line, not a level: the runner's log is plain
+  lines on standard error (`serve.log`).
+- Rejected: putting the why into `detail`. §15.7 makes `detail` the code of
+  the refusal, and the hub stores and shows it.
+- Rejected: printing the hub's values as they come, through a redactor (as
+  the clone's reason in e814c00b). Those values are codes by contract, so
+  the code form loses nothing, and it holds even if a proxy answers in text.
+
 ## Only a supervised placement tells the hub it is supervised
 
 **Id:** 497f16bd-9dc7-4aca-b4d2-b3055c782410
@@ -5145,3 +5182,42 @@ listening and restart it (incident candidate 2). Deferred — the runner
 already restarts a session that goes quiet, and keeping the `maity wait`
 alive is the narrower fix; the detection-and-restart path is tracked as a
 separate item of the incident card.
+
+## `maity runner` is taken only as the first argument
+
+**Id:** 3e25f276-cde1-47cc-bcdc-05812f499803
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-2cprkm334fqf, 2026-11-20; `cli/src/maity/cli.py` (`_main`). The shape and the rejected alternative are the author's and the lead's, not yet reviewed
+**See:** runner.md — 63492c65-e6bf-4fd8-9a73-5a599f11707e — as of 2026-11-20
+**Revisit when:** `maity` gains another command group that only the runner or its operator may run; the CLI parses its arguments with something other than argparse
+
+`maity` refuses the `runner` command group unless `runner` is its first
+argument. Anything before it, such as a global option (`--for`, also
+abbreviated) or `--`, is a usage error (exit 2) before anything runs. Every
+other command keeps its global options.
+
+**Reason:** the runner's commands are for the runner and its operator. The
+harness rules that keep them away from placed agents look for `runner` right
+after `maity`, but argparse also takes the group after `--` or a global
+option. One check where the CLI reads its arguments makes the rules' shape
+the CLI's own, on every harness at once.
+
+The check runs right after argparse has parsed the arguments, on what it
+took as the command. Some Python versions refuse a `--` before the command
+themselves ("invalid choice"), and every version refuses `-- --`. Either way
+it is a usage error (exit 2) and nothing runs, so the tests of these
+spellings accept argparse's refusal, but only for words with a `--` before
+`runner`.
+
+**Rejected alternatives:**
+- Widening each harness's rules to every spelling argparse accepts. They
+  differ by harness, argparse also accepts abbreviated options, and a missed
+  spelling would leave a gap that the CLI's check closes for all of them.
+- A check on the raw words before parsing ("`runner` among the words, but
+  not first"). It would refuse legitimate commands: `placement start
+  --runner <name>` with a runner named `runner`, and any message text with
+  the word. A raw check that avoids that would have to re-implement
+  argparse's reading of global options, abbreviations and `--`, which is
+  more fragile than taking argparse's own result.

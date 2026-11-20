@@ -28,8 +28,9 @@ ON_REQUEST_RE = re.compile(r"[A-Za-z0-9_-]{1,64}", re.ASCII)
 CREDENTIAL_RE = re.compile(r"^mty1\.([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$")
 # The pattern the hub refuses in any body or query, and revokes a real credential for: with
 # no boundary in front, so a credential counts whatever stands right before it, the `n` of a
-# JSON `\n` included.
-CREDENTIAL_IN_TEXT_RE = re.compile(r"mty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b")
+# JSON `\n` included. ASCII, as the hub's bytes pattern: its `\b` ends a credential before a
+# non-ASCII letter (`é`, `ß`, `日`), where a Unicode `\b` would not and the hub would refuse.
+CREDENTIAL_IN_TEXT_RE = re.compile(r"mty1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b", re.ASCII)
 
 
 class CredentialFormatError(Exception):
