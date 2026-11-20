@@ -4983,6 +4983,45 @@ passes; `check` reports it as an error.
   the reading task, not the kernel, and are 0 on a host that supports
   filters.
 
+## agy and opencode are no boundary between placements of one OS user, and no deny of other scratches is written for agy
+
+**Id:** dcd10585-3918-4bec-ae2e-6a9030597093
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032 (items for agy and opencode, with the opencode wording), 2026-11-20; the agy settings the runner writes (`adapters.antigravity_settings`) and the agy settings entry of this file (a read deny seen to hide `.git/maity` in a test, a write deny's reach unknown)
+**See:** runner.md#a-sandboxed-claude-code-placement-starts-only-where-the-host-gives-its-seccomp-step-what-it-needs-and-runner-check-probes-that-the-step-applies — c774c132-1f84-4b61-bb01-13a6ee7ca7e3 — as of 2026-11-20
+**Revisit when:** agy documents or is shown to apply its deny rules to sandboxed commands at the OS level, writes included; opencode gets an OS sandbox (tsk-nynpvag9zvhh); each placement runs as its own OS user (req-ynkndnybr9z3)
+
+docs/runners.md states that an agy placement's scratch under
+`/tmp/maity-scratch-<uid>/` can be read and written by every other agy
+placement of the same agents' user on the host, and that opencode, which
+has no OS sandbox, reaches everything that user can, other placements'
+scratch directories and sockets included. Neither harness is described as
+a boundary between placements. The runner writes no deny of the other agy
+leaves into agy's settings; nothing in the code changed for either.
+
+**Reason:** every placement of a host runs as one OS user, so the 0700
+parent and the random leaf keep out other users only; privacy between
+placements can come only from the harness's own sandbox. agy's
+`permissions` rules are file-tool rules. One test saw a read deny hide a
+directory from agy's sandboxed commands too, but whether agy keeps its
+commands out of a denied path in general, writes included, is not shown,
+and agy has no documented OS-level path deny for commands. The runner's
+`unshare` probe (`AGY_NAMESPACES`) only shows that the namespaces agy needs
+can start, not what agy mounts in them. opencode's `external_directory`
+binds only its file tools.
+
+**Rejected alternatives:**
+- A read and write deny of the other agy leaves (their names are in the
+  runner's records) in agy's settings: it would read as a boundary that is
+  not shown to hold for commands, and leaves made later would be missing
+  from it, as with Claude Code's list.
+- Moving agy's scratch back beside the clone, where Claude Code and Codex
+  are kept out of it: agy's sandbox cannot write there (the agy scratch
+  entry of this file).
+
 ## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
 
 **Id:** 0f216e9d-1661-4887-a035-094efa301dfa

@@ -10,3 +10,7 @@
   (one small prompt on the agents' login) to see that the step is applied; anything else is
   an error. Run `check` after every Claude Code version change. docs/runners.md, "Claude
   Code: Unix socket blocking".
+- docs: docs/runners.md states that an agy placement's scratch can be read and written by
+  every other agy placement of the same agents' user on the host, and that opencode, which
+  has no OS sandbox, reaches other placements' scratch directories and sockets: neither is a
+  boundary between placements on one host.
