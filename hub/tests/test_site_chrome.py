@@ -274,7 +274,7 @@ def test_a_door_forms_field_edge_has_3_to_1_on_the_light_frame() -> None:
     registration link page and the join page) has 3:1 on the light `--surface` and
     `--bg`. landing.css defines no light `--field`, so the edge there is the fallback in
     public-pages.css: the dashboard's light `--field` since #1492, not the older #8a939d
-    (2.89:1 on white, nte-j9ae0tjdqykf)."""
+    (3.12:1 on white but 2.90:1 on `--bg`, nte-j9ae0tjdqykf)."""
     import re
 
     from maity_hub import landing_files

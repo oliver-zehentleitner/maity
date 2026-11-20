@@ -7,4 +7,4 @@
 - hub: the input edges on the hub's own door pages (such as the registration
   link page and the join page) have 3:1 contrast in the light theme:
   the fallback edge colour is the dashboard's light `--field` (#7d8691) instead
-  of #8a939d (2.89:1 on white).
+  of #8a939d (2.90:1 on the light page background).
