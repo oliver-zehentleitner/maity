@@ -698,7 +698,7 @@ def test_a_refused_pickup_logs_one_warning_with_its_code_and_why(
     """tsk-fveaj86ec6e2: each `pickup_not_allowed` cause of §15.9 is named in one warning
     line, while the reported detail keeps the code alone."""
     sup, _, _, _, logs = world
-    sup.client = Pickups(_not_allowed(why))
+    sup.client = pickups = Pickups(_not_allowed(why))
     joining(monkeypatch)
     new_clone(sup.cfg)
     sup.update([placement(agent=NEW)])
@@ -709,6 +709,8 @@ def test_a_refused_pickup_logs_one_warning_with_its_code_and_why(
     ]
     rec = sup.records["plc-0003"]  # the report keeps the code alone
     assert (rec.state, rec.reason, rec.detail) == ("failed", "join_failed", "pickup_not_allowed")
+    # and that is what reached the hub: the Pickups client holds the reports on the wire
+    assert states(pickups)[-1] == ("failed", "join_failed", "pickup_not_allowed")
 
 
 @pytest.mark.parametrize(
