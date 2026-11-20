@@ -439,7 +439,7 @@ pinned uv instead of a second tool.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
+**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); card tsk-07hb18s4j47f (the job reader that stops the gate, from the review of #2022); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
 **Revisit when:** ci stops running on every push to main, hub-mariadb comes back into the pull request gate, or GitHub's run list starts carrying a dispatch's inputs
 **See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-09
 **See:** process.md#mariadb-checks-main-after-every-ci-run-and-every-hour-not-every-pull-request-postgresql-and-sqlite-stay-in-the-gate — 75a2382c-6a3d-450d-873e-8aade80d6e3b — as of 2026-11-09
@@ -459,7 +459,11 @@ read-only token and lets the tag through only when:
   Whether a run had the 11.8 job is read from `hub-mariadb.yml` at the
   run's commit, not from the jobs the run lists: a file that defines it
   and a run where it is missing, skipped or red stops the gate, and only a
-  file from before the job lets 11.4 count alone. A run that skipped the
+  file from before the job lets 11.4 count alone. The gate reads the
+  file's `jobs:` block without a YAML parser, in the block layout only; a
+  file it cannot read that way, or in which it reads no `hub-mariadb`
+  job, stops the gate, since an empty read would let every run count as
+  one from before the job. A run that skipped the
   suite counts for nothing, unless a job beside it went red. Only runs of
   main's own workflow file count: the run's ref is main and the commit
   it ran is on main, since a dispatch on another ref runs that ref's
@@ -506,6 +510,12 @@ the tag lacks.
 - Skipping a run whose commit cannot be compared, or one still running
   (the first version): an older green run then decides although a newer
   one may be red; found in review.
+- Reading the jobs with PyYAML: the gate runs on the release job's bare
+  interpreter, standard library only, and a reader that stops the gate on
+  any layout it does not know guards the same.
+- Reading an unknown layout as no jobs (the first version of the 11.8
+  rule): `jobs:  # comment`, a quoted key or another indent made the
+  11.8 job read as one the file predates; found in review.
 
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 

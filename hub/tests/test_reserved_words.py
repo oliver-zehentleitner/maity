@@ -108,8 +108,9 @@ def _literal(node: ast.expr | None) -> tuple[str, bool] | None:
             return None
         flag = _arg(node, 1, "quote")
         return inner[0], isinstance(flag, ast.Constant) and flag.value is True
-    if isinstance(node, ast.Call) and _callee(node) == "f" and len(node.args) == 1:
-        return _literal(node.args[0])  # op.f("…"): the name as written, quoted by the dialect
+    if isinstance(node, ast.Call) and _callee(node) in ("f", "conv") and len(node.args) == 1:
+        # op.f("…"), sa.schema.conv("…"): the name as written, quoted by the dialect
+        return _literal(node.args[0])
     return None
 
 
@@ -163,13 +164,34 @@ def _names(call: ast.Call) -> list[tuple[str, ast.expr | None]]:
         found.append((NAMED_BY_FIRST[callee], first))
     elif callee in CONSTRAINTS:
         found.append(("constraint", _keyword(call, "name")))
-    if callee in ("create_index", "create_unique_constraint"):
+    if callee == "ForeignKey":
+        found += _target(_arg(call, 0, "column"))
+    if callee == "create_foreign_key":
+        # op.create_foreign_key(name, source, referent, …); in a batch the source is the batch's.
         if table is not None:
-            found.append(("table", _arg(call, 1, "table_name")))
+            found.append(("table", _arg(call, 1, "source_table")))
+        found.append(("table", _arg(call, 1 + shift, "referent_table")))
+    elif callee in NAMED_BY_FIRST and table is not None:
+        found.append(("table", _arg(call, 1, "table_name")))
+    if callee in ("create_index", "create_unique_constraint"):
         columns = _arg(call, 1 + shift, "columns")
         if isinstance(columns, (ast.List, ast.Tuple)):
             found += [("column", c) for c in columns.elts]
     return found
+
+
+def _target(node: ast.expr | None) -> list[tuple[str, ast.expr | None]]:
+    """The table and column of a ForeignKey's "table.column" (or "schema.table.column") string.
+
+    SQLAlchemy splits the string at its periods and writes each part plain, quoted_name or not,
+    so a reserved part has no quoted form here: the key is then named by its Column object."""
+    spelled = _literal(node)
+    if spelled is None:
+        return []
+    parts = spelled[0].split(".")
+    if len(parts) < 2:
+        return []
+    return [("table", ast.Constant(parts[-2])), ("column", ast.Constant(parts[-1]))]
 
 
 def unquoted_names(source: str) -> list[str]:
@@ -234,6 +256,24 @@ op.create_table(
     "quoted_name by keywords": 'sa.Column(quoted_name(value="vector", quote=True), X)',
     "a batch on a quoted table": 'op.batch_alter_table(quoted_name("vector", True))',
     "an ordinary op.f name": 'sa.PrimaryKeyConstraint("id", name=op.f("pk_notification_position"))',
+    "a foreign key from a quoted table": (
+        'op.create_foreign_key("fk", quoted_name("vector", True), "u", ["a"], ["b"])'
+    ),
+    "a foreign key to a quoted table, by keyword": (
+        'op.create_foreign_key("fk", "t", referent_table=quoted_name("vector", True),'
+        ' local_cols=["a"], remote_cols=["b"])'
+    ),
+    "an index dropped on a quoted table": (
+        'op.drop_index("ix", table_name=quoted_name("vector", True))'
+    ),
+    "a primary key on a quoted table": (
+        'op.create_primary_key("pk", quoted_name("vector", True), ["a"])'
+    ),
+    "an ordinary ForeignKey target": 'sa.ForeignKey("human.id", ondelete="CASCADE")',
+    "a ForeignKey on a Column object": "sa.ForeignKey(position.c.vector)",
+    "a conv name quoted": (
+        'op.create_index(sa.schema.conv(quoted_name("vector", True)), "t", ["v"])'
+    ),
 }
 
 UNQUOTED_FORMS = {
@@ -293,6 +333,54 @@ UNQUOTED_FORMS = {
         "constraint",
     ),
     "an index in a batch": ('batch_op.create_index("ix", ["vector"])', "column"),
+    "a foreign key from a table of the word": (
+        'op.create_foreign_key("fk", "vector", "u", ["a"], ["b"])',
+        "table",
+    ),
+    "a foreign key to a table of the word": (
+        'op.create_foreign_key("fk", "t", "vector", ["a"], ["b"])',
+        "table",
+    ),
+    "a foreign key to a table of the word, by keyword": (
+        'op.create_foreign_key(constraint_name="fk", source_table="t", referent_table="vector",'
+        ' local_cols=["a"], remote_cols=["b"])',
+        "table",
+    ),
+    "a foreign key in a batch to a table of the word": (
+        'batch_op.create_foreign_key("fk", "vector", ["a"], ["b"])',
+        "table",
+    ),
+    "an index dropped on a table of the word": (
+        'op.drop_index("ix", table_name="vector")',
+        "table",
+    ),
+    "an index dropped on a table of the word, positional": (
+        'op.drop_index("ix", "vector")',
+        "table",
+    ),
+    "a constraint dropped on a table of the word": (
+        'op.drop_constraint("c", "vector", type_="unique")',
+        "table",
+    ),
+    "a check constraint on a table of the word": (
+        'op.create_check_constraint("ck", "vector", "a > 1")',
+        "table",
+    ),
+    "a primary key on a table of the word": (
+        'op.create_primary_key("pk", "vector", ["a"])',
+        "table",
+    ),
+    "a ForeignKey to a table of the word": ('sa.ForeignKey("vector.id")', "table"),
+    "a ForeignKey to a column of the word": ('sa.ForeignKey("t.vector")', "column"),
+    "a ForeignKey with a schema, by keyword": ('sa.ForeignKey(column="s.t.vector")', "column"),
+    "a ForeignKey through quoted_name, which it splits plain": (
+        'sa.ForeignKey(quoted_name("t.vector", True))',
+        "column",
+    ),
+    "an index named through conv": (
+        'op.create_index(sa.schema.conv("vector"), "t", ["v"])',
+        "index",
+    ),
     "a quote=True on the call that renames": (
         'op.alter_column("t", "v", new_column_name="vector", quote=True)',
         "column",

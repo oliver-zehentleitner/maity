@@ -65,6 +65,7 @@ UNKNOWN = "e" * 40  # a commit the checkout cannot get
 
 OLD = "f" * 40  # a commit of main whose hub-mariadb.yml predates hub-mariadb-11-8
 UNREADABLE = "9" * 40  # a commit of main whose workflow file cannot be read
+NO_SUITE = "8" * 40  # a commit of main whose workflow file reads without a hub-mariadb job
 ALL_JOBS = {"decide", "hub-mariadb", "hub-mariadb-11-8", "report"}
 
 
@@ -74,6 +75,8 @@ class FakeGit:
     def workflow_jobs(self, sha):
         if sha in (UNKNOWN, UNREADABLE):
             return None
+        if sha == NO_SUITE:
+            return {"decide", "report"}
         return ALL_JOBS - {"hub-mariadb-11-8"} if sha == OLD else ALL_JOBS
 
     def on_main(self, sha):
@@ -256,6 +259,16 @@ class MariaDb(unittest.TestCase):
         self.assertIn(
             "::error::cannot read .github/workflows/hub-mariadb.yml at " + UNREADABLE, out
         )
+
+    def test_a_workflow_file_without_a_hub_mariadb_job_stops_instead_of_predating(self):
+        # The reader missed the block (or the suite's job is gone): 11.4 must not count alone.
+        runs = [maria(5, NO_SUITE, "hub-mariadb hand " + TAG)]
+        code, out = gate(self.api(runs, {5: {"hub-mariadb": "success"}}))
+        self.assertEqual(code, 1, out)
+        self.assertIn(
+            "::error::no hub-mariadb job read from .github/workflows/hub-mariadb.yml", out
+        )
+        self.assertNotIn("predates", out)
 
     def test_a_red_11_8_beside_a_skipped_suite_stops_instead_of_an_older_green_run(self):
         runs = [maria(6, TAG), maria(5, TAG)]
@@ -508,6 +521,42 @@ class Workflows(unittest.TestCase):
     def test_job_ids_are_read_from_the_jobs_block_only(self):
         text = "on:\n  push:\njobs:\n  a:\n    steps: []\n  b-1:  # note\n    x: 1\nenv:\n  c: 1\n"
         self.assertEqual(g.workflow_job_ids(text), {"a", "b-1"})
+
+    def test_job_ids_in_other_block_layouts_are_read(self):
+        layouts = {
+            "a comment after jobs:": "on: push\njobs:  # the suites\n  a:\n    x: 1\n  b:\n",
+            "quoted keys": 'on: push\n"jobs":\n  "a":\n    x: 1\n  \'b\' :\n    x: 2\n',
+            "four spaces": "on: push\njobs:\n    a:\n        x: 1\n    b:\n        x: 2\n",
+            "one space": "on: push\njobs:\n a:\n  x: 1\n b: {x: 2}\n",
+            "comments and blank lines between": (
+                "jobs:\n# top\n\n  a:\n      # deep\n    x: 1\n    # under a\n  b:\n"
+            ),
+            "a block scalar in a job": "jobs:\n  a:\n    run: |\n      b:\n      c: 1\n  b:\n",
+            "jobs: not last": "jobs:\n  a:\n  b:\non: push\n",
+        }
+        for layout, text in layouts.items():
+            with self.subTest(layout):
+                self.assertEqual(g.workflow_job_ids(text), {"a", "b"})
+
+    def test_a_workflow_whose_jobs_cannot_be_read_is_none_not_empty(self):
+        # Empty would read hub-mariadb-11-8 as "predates it" and let 11.4 count alone.
+        layouts = {
+            "no jobs: at all": "on: push\nenv:\n  a: 1\n",
+            "flow style jobs": "on: push\njobs: {hub-mariadb: {runs-on: x}}\n",
+            "a flow style file": "{on: push, jobs: {hub-mariadb: {runs-on: x}}}\n",
+            "an anchor on jobs:": "jobs: &all\n  hub-mariadb:\n    x: 1\n",
+            "no colon space": "jobs:# x\n  hub-mariadb:\n",
+            "an empty jobs:": "jobs:\non: push\n",
+            "jobs: twice": "jobs:\n  a:\njobs:\n  b:\n",
+            "a line shallower than the keys": "jobs:\n    a:\n      x: 1\n  b:\n",
+            "a non-key at the keys' indent": "jobs:\n  - a\n  - b\n",
+            "an explicit key": "jobs:\n  ? a\n  : x\n",
+            "a tab in the indent": "jobs:\n\ta:\n\t\tx: 1\n",
+            "a key that is no job id": "jobs:\n  a b:\n    x: 1\n",
+        }
+        for layout, text in layouts.items():
+            with self.subTest(layout):
+                self.assertIsNone(g.workflow_job_ids(text))
 
     def test_paths_match_decide_in_hub_mariadb(self):
         text = (ROOT / ".github/workflows/hub-mariadb.yml").read_text(encoding="utf-8")

@@ -13,7 +13,9 @@ writes:
   newest such run must have passed: its `hub-mariadb` job (MariaDB 11.4) and
   its `hub-mariadb-11-8` job (the subset on 11.8), when hub-mariadb.yml at
   the run's commit defines it (missing, skipped or red, it stops the gate);
-  a run whose file predates that job counts on 11.4 alone. A run that
+  a run whose file predates that job counts on 11.4 alone. A file whose
+  jobs cannot be read, or in which no `hub-mariadb` job is read, stops the
+  gate instead of reading as one that predates the job. A run that
   skipped the suite counts for nothing unless a job beside it went red, and
   only main's own workflow file counts: the run's ref is main and the commit
   it ran is on main.
@@ -155,18 +157,51 @@ def tested(run: dict) -> str | None:
 MARIADB_WORKFLOW = ".github/workflows/hub-mariadb.yml"
 
 
-def workflow_job_ids(text: str) -> set[str]:
-    """The keys under a workflow's top-level `jobs:`, read from its text (no YAML parser)."""
+# A block-mapping key on one line: bare or quoted, `:`, then nothing or a value or comment.
+KEY = re.compile(r"""(["']?)([A-Za-z_][A-Za-z0-9_-]*)\1[ \t]*:(?:[ \t]+(.*))?$""")
+
+
+def workflow_job_ids(text: str) -> set[str] | None:
+    """The keys under a workflow's top-level `jobs:`, read from its text; None when unsure.
+
+    No YAML parser: the gate runs on the bare interpreter. It reads the block layout only:
+    one top-level `jobs:` with nothing but a comment after it, its keys bare or quoted at one
+    indent, comment lines anywhere. Anything else is None: no `jobs:` line or a second one, a
+    value on it (flow style, an anchor), no key under it, a tab in the indent, or a line at
+    the keys' indent or shallower that is no key. An empty set would read every job as one
+    the file predates; None stops the gate.
+    """
     ids: set[str] = set()
-    inside = False
+    seen = inside = False
+    indent = 0
     for line in text.splitlines():
-        if re.match(r"\S", line):
-            inside = line.rstrip() == "jobs:"
+        stripped = line.lstrip(" ")
+        if not stripped.strip() or stripped.startswith("#"):
             continue
-        found = re.match(r"  ([A-Za-z0-9_-]+):\s*(#.*)?$", line)
-        if inside and found:
-            ids.add(found.group(1))
-    return ids
+        depth = len(line) - len(stripped)
+        if stripped.startswith("\t") and (depth == 0 or (inside and depth <= (indent or depth))):
+            return None
+        if depth == 0:
+            if inside and not ids:
+                return None
+            found = KEY.match(line)
+            inside = bool(found and found.group(2) == "jobs")
+            if inside and found:
+                rest = (found.group(3) or "").strip()
+                if seen or (rest and not rest.startswith("#")):
+                    return None
+                seen = True
+            continue
+        if not inside:
+            continue
+        indent = indent or depth
+        if depth > indent:
+            continue
+        key = KEY.match(stripped)
+        if depth < indent or not key:
+            return None
+        ids.add(key.group(2))
+    return ids or None
 
 
 class Git:
@@ -203,7 +238,7 @@ class Git:
         return None
 
     def workflow_jobs(self, sha: str) -> set[str] | None:
-        """The job ids hub-mariadb.yml defines at sha; None when the file cannot be read.
+        """The job ids hub-mariadb.yml defines at sha; None when the file or its jobs can't be read.
 
         A job of that file has no `name:` (Workflows in test_release_gate.py holds it so), so
         its id is the name the jobs API lists."""
@@ -277,7 +312,17 @@ def mariadb_state(api: Api, sha: str, git: Git) -> State:
             return State(
                 "fail",
                 f"cannot read {MARIADB_WORKFLOW} at {run['head_sha']} ({run['html_url']}):"
-                " re-run this job",
+                " re-run this job; if its jobs: block is in a layout the gate does not read,"
+                " write it in the plain block layout on main and start hub-mariadb by hand",
+            )
+        if "hub-mariadb" not in defined:
+            # The suite's own job always exists: without it the reader missed the block, and
+            # every extra job would read as one the file predates.
+            return State(
+                "fail",
+                f"no hub-mariadb job read from {MARIADB_WORKFLOW} at {run['head_sha']}"
+                f" ({run['html_url']}): write its jobs: block in the plain block layout on main"
+                f" and start hub-mariadb by hand from main (sha {sha})",
             )
         jobs = {
             j["name"]: j["conclusion"]
