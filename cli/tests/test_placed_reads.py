@@ -229,6 +229,40 @@ def test_a_file_in_the_recorded_scratch_is_read_and_sent(
 
 @posix
 @walks
+@pytest.mark.parametrize("layout", ["runner-dir", "codex"])
+def test_a_body_file_in_a_scratch_subdirectory_beside_tmpdir_is_read(
+    placed: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, layout: str
+) -> None:
+    """tsk-x6wvgna4w95x: a file in `<scratch>/sub/`, a sibling of the session's TMPDIR
+    (`<scratch>/tmp`), is read for `--body-file`, `--review-file` and `--attach` like one under
+    TMPDIR: the whole recorded scratch counts, not TMPDIR alone. Also with the record where a
+    Codex placement keeps it, the clone's `.git/maity` (IN_CLONE)."""
+    room = tmp_path / "ws" / "maity" / ".scratch" / "plc-0003"
+    (room / "tmp").mkdir(parents=True)
+    (room / "sub").mkdir()
+    monkeypatch.setenv("TMPDIR", str(room / "tmp"))
+    if layout == "codex":
+        monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, clonecheck.IN_CLONE)
+        private = placed / ".git" / "maity"
+        private.mkdir(exist_ok=True)
+    else:
+        private = Path(os.environ[clonecheck.GIT_PRIVATE_ENV])
+    (private / clonecheck.SCRATCH_RECORD).write_text(f"{room}\n")
+    (room / "sub" / "body.md").write_bytes(b"from a scratch subdirectory\n")
+    (room / "tmp" / "body.md").write_bytes(b"from TMPDIR\n")
+    for flag in ("--body-file", "--review-file"):
+        assert cli._read_text_file(str(room / "sub" / "body.md"), flag) == (
+            "from a scratch subdirectory\n"
+        )
+        assert cli._read_text_file(str(room / "tmp" / "body.md"), flag) == "from TMPDIR\n"
+    assert cli._read_upload(str(room / "sub" / "body.md")) == b"from a scratch subdirectory\n"
+    # Relative to a working directory inside the scratch, as `cd $MAITY_SCRATCH` leaves it.
+    monkeypatch.chdir(room / "sub")
+    assert cli._read_text_file("body.md", "--body-file") == "from a scratch subdirectory\n"
+
+
+@posix
+@walks
 @pytest.mark.parametrize("way", ["beside", "link", "linked-scratch", "linked-holder",
                                  "linked-project", "linked-workspaces", "no-record",
                                  "empty-record", "record-in-clone"])  # fmt: skip
