@@ -11,13 +11,13 @@ writes:
   a commit of main with the same files the suite reads as the tagged commit
   (the list `decide` in hub-mariadb.yml compares, MARIADB_PATHS below). The
   newest such run must have passed: its `hub-mariadb` job (MariaDB 11.4) and
-  its `hub-mariadb-11-8` job (the subset on 11.8), when hub-mariadb.yml at
-  the run's commit defines it (missing, skipped or red, it stops the gate);
-  a run whose file predates that job counts on 11.4 alone. A file whose
-  jobs cannot be read (`jobs:` must be its last top-level key, in the
-  block layout), or in which no `hub-mariadb` job is read, stops the
-  gate instead of reading as one that predates the job, and so does a run
-  that lists a `hub-mariadb*` job not read from its file. A run that
+  its `hub-mariadb-11-8` job (the subset on 11.8), when the run's commit
+  comes after the one that added it (missing, skipped or red, it stops the gate);
+  a run whose commit predates that job (git ancestry against the commit
+  that added it, MARIADB_EXTRA_JOBS) counts on 11.4 alone. A history git
+  cannot answer from (a shallow checkout, a missing commit) stops the
+  gate, and so does a run that lists a `hub-mariadb*` job the table does
+  not know. A run that
   skipped the suite counts for nothing unless a job beside it went red, and
   only main's own workflow file counts: the run's ref is main and the commit
   it ran is on main.
@@ -66,11 +66,15 @@ MARIADB_PATHS = (
 DONE = "completed"
 # A job that ran the suite and ended; skipped (nothing to test) is not one.
 RAN = {"success", "failure", "cancelled", "timed_out"}
-# The jobs of hub-mariadb.yml that must pass besides `hub-mariadb`, the 11.4 suite. Whether a
-# run had to run one is read from the workflow file at the run's commit: a file that does not
-# define it predates it, and the run is judged without it; a defined job that is missing from
-# the run, skipped or red stops the gate.
-MARIADB_EXTRA_JOBS = ("hub-mariadb-11-8",)
+# The jobs of hub-mariadb.yml that must pass besides `hub-mariadb`, the 11.4 suite, each with
+# the commit of main that added it. A run whose workflow commit (head_sha) has that commit in
+# its history had the job: missing from the run, skipped or red, it stops the gate. A run from
+# before it is judged without it. Whether a commit is in the history is git's answer
+# (`merge-base --is-ancestor` in a full checkout), never a reading of the workflow file.
+# A new hub-mariadb* job gets its line here in the pull request that adds it.
+MARIADB_EXTRA_JOBS = {
+    "hub-mariadb-11-8": "4fafdf1f80dedf7c50016d133984b013d8719588",  # #2022
+}
 HAND = re.compile(r"hub-mariadb hand (head|[0-9a-f]{40})")
 
 
@@ -156,140 +160,6 @@ def tested(run: dict) -> str | None:
     return None
 
 
-MARIADB_WORKFLOW = ".github/workflows/hub-mariadb.yml"
-
-
-# A block-mapping key on one line: bare or quoted, `:`, then nothing or a value or comment.
-KEY = re.compile(r"""(["']?)([A-Za-z_][A-Za-z0-9_-]*)\1[ \t]*:(?:[ \t]+(.*))?$""")
-# The top-level keys of a workflow file, the only lines at column 0 before `jobs:`.
-WORKFLOW_KEYS = {"name", "run-name", "on", "permissions", "env", "defaults", "concurrency", "jobs"}
-# YAML breaks lines at LF, CR and CRLF only; str.splitlines also breaks at U+2028, U+0085 and
-# others, which may stand inside a comment or a quoted value.
-LINE_BREAK = re.compile(r"\r\n?|\n")
-# Any block-mapping key, for the value after it: quoted, or plain up to `: ` (dots, spaces).
-ANY_KEY = re.compile(
-    r"""(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s#'"\[{&!|>*?-][^#]*?)[ \t]*:(?:[ \t]+(.*))?$"""
-)
-# What may follow a value that ended: nothing, or a comment after a space.
-REST = r"(?:[ \t]+#.*|[ \t]*)$"
-# A quoted value that closes on its line and is all of it (YAML's escapes: \x in double quotes,
-# '' in single quotes), so `'it''s` reads open and does not match its first three characters.
-CLOSED = {
-    '"': re.compile(r'"(?:[^"\\]|\\.)*"' + REST),
-    "'": re.compile(r"'(?:[^']|'')*'" + REST),
-}
-
-
-def _flow_closes(value: str) -> bool:
-    """Whether a flow collection (`[…]`, `{…}`) closes on its line, with nothing but a comment
-    after it. A quote opens only where a flow token starts (after `[`, `{`, `,`, `:` or at the
-    start), so the apostrophe in `[don't]` is part of a plain word."""
-    depth, i, token_start = 0, 0, True
-    while i < len(value):
-        char = value[i]
-        if char in "\"'" and token_start:
-            closed = CLOSED[char].pattern[: -len(REST)]  # the quoted part alone
-            found = re.compile(closed).match(value, i)
-            if found is None:
-                return False
-            i, token_start = found.end(), False
-            continue
-        if char == "#" and (i == 0 or value[i - 1] in " \t"):
-            return False  # a comment while the collection is still open
-        if char in "[{":
-            depth += 1
-        elif char in "]}":
-            depth -= 1
-            if depth == 0:
-                return re.match(REST, value[i + 1 :]) is not None
-        if char in "[{,:":
-            token_start = True
-        elif char not in " \t":
-            token_start = False
-        i += 1
-    return False
-
-
-def _one_line(value: str) -> bool:
-    """Whether a value ends on its line: no quoted string or flow collection left open."""
-    if value[:1] in CLOSED:
-        return CLOSED[value[0]].match(value) is not None
-    if value[:1] in ("[", "{"):
-        return _flow_closes(value)
-    return True
-
-
-def workflow_job_ids(text: str) -> set[str] | None:
-    """The keys under a workflow's top-level `jobs:`, read from its text; None when unsure.
-
-    No YAML parser: the gate runs on the bare interpreter. It reads one layout: top-level
-    workflow keys at column 0 (a `---` before the first), `jobs:` the last of them with nothing
-    but a comment after it, its keys bare or quoted at one indent, comment lines anywhere. Once
-    `jobs:` is read, any later line at column 0 other than a comment is None: that is where a
-    value of a job wrapped to column 0, a document marker or another top-level key would stand,
-    and this reader cannot tell them apart. Also None: no `jobs:` line, a value on it (flow
-    style, an anchor), no key under it, a tab in the indent, a line between column 0 and the
-    keys' indent, a line at the keys' indent that is no key, a value in the block with an
-    anchor or a tag (`&`, `!`), and a quoted value or flow collection that does not close on
-    its line (block scalars aside). A line deeper than the keys is never read as a key, and
-    one at the keys' indent always is, so a value continued on indented lines can only add an
-    id, never hide one. An empty or short set would read a job as one the file predates; None
-    stops the gate. The run's own job list backs this up (mariadb_state).
-    """
-    ids: set[str] = set()
-    seen = inside = started = False
-    indent = 0
-    block = -1  # the depth of the line whose block scalar (`|`, `>`) runs below it
-    for line in LINE_BREAK.split(text):
-        stripped = line.lstrip(" ")
-        if not stripped.strip(" \t") or stripped.startswith("#"):
-            continue
-        depth = len(line) - len(stripped)
-        if block >= 0 and depth > block:
-            continue
-        block = -1
-        if seen and depth == 0:
-            return None  # jobs: is the last top-level key
-        if stripped.startswith("\t") and (depth == 0 or (inside and depth <= (indent or depth))):
-            return None
-        entry = stripped
-        while re.match(r"-(?:[ \t]|$)", entry):  # `- key: value` or `- value` in a sequence
-            entry = entry[1:].lstrip(" \t")
-        found = KEY.match(entry)
-        other = None if found else ANY_KEY.match(entry)
-        value = (found.group(3) if found else other.group(1) if other else entry) or ""
-        value = value.strip(" \t")
-        if inside and value[:1] in ("&", "!"):
-            return None
-        if value[:1] in ("|", ">"):
-            block = depth
-        elif not _one_line(value):
-            return None
-        if depth == 0:
-            if stripped.rstrip() == "---" and not started:
-                started = True
-                continue
-            started = True
-            if entry is not stripped:
-                continue  # a sequence entry at column 0 under a key before `jobs:`
-            if not (found and found.group(2) in WORKFLOW_KEYS):
-                return None
-            if found.group(2) == "jobs":
-                if value and not value.startswith("#"):
-                    return None
-                seen = inside = True
-            continue
-        if not inside:
-            continue
-        indent = indent or depth
-        if depth > indent:
-            continue
-        if depth < indent or not found or entry is not stripped:
-            return None
-        ids.add(found.group(2))
-    return ids or None
-
-
 class Git:
     """The checkout's history; a commit it lacks is fetched before it is judged."""
 
@@ -323,19 +193,25 @@ class Git:
             return False
         return None
 
-    def workflow_jobs(self, sha: str) -> set[str] | None:
-        """The job ids hub-mariadb.yml defines at sha; None when the file or its jobs can't be read.
+    def contains(self, ancestor: str, sha: str) -> bool | None:
+        """Whether ancestor is in sha's history; None when that cannot be told.
 
-        A job of that file has no `name:` (Workflows in test_release_gate.py holds it so), so
-        its id is the name the jobs API lists."""
-        if not self._have(sha):
-            return None
-        shown = subprocess.run(
-            ["git", "show", f"{sha}:{MARIADB_WORKFLOW}"], capture_output=True, check=False
+        A shallow checkout cannot tell: a cut history reads "not an ancestor", which would let
+        a run count without a job it had. So it is None there, as for a commit the checkout
+        cannot get and any other git error."""
+        shallow = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"], capture_output=True, check=False
         )
-        if shown.returncode != 0:
+        if shallow.returncode != 0 or shallow.stdout.strip() != b"false":
             return None
-        return workflow_job_ids(shown.stdout.decode("utf-8", "replace"))
+        if not (self._have(ancestor) and self._have(sha)):
+            return None
+        code = self._run("merge-base", "--is-ancestor", ancestor, sha)
+        if code == 0:
+            return True
+        if code == 1:
+            return False
+        return None
 
     def same(self, a: str, b: str) -> bool | None:
         """Whether a and b hold the same MARIADB_PATHS; None when that cannot be told."""
@@ -393,43 +269,38 @@ def mariadb_state(api: Api, sha: str, git: Git) -> State:
                 f"hub-mariadb on {commit}, same hub files as {sha}, is {run['status']}:"
                 f" {run['html_url']}",
             )
-        defined = git.workflow_jobs(run["head_sha"])
-        if defined is None:
-            return State(
-                "fail",
-                f"cannot read {MARIADB_WORKFLOW} at {run['head_sha']} ({run['html_url']}):"
-                " re-run this job; if its jobs: block is in a layout the gate does not read,"
-                " write it in the plain block layout on main and start hub-mariadb by hand",
-            )
-        if "hub-mariadb" not in defined:
-            # The suite's own job always exists: without it the reader missed the block, and
-            # every extra job would read as one the file predates.
-            return State(
-                "fail",
-                f"no hub-mariadb job read from {MARIADB_WORKFLOW} at {run['head_sha']}"
-                f" ({run['html_url']}): write its jobs: block in the plain block layout on main"
-                f" and start hub-mariadb by hand from main (sha {sha})",
-            )
         jobs = {
             j["name"]: j["conclusion"]
             for j in api.get(f"actions/runs/{run['id']}/jobs", filter="latest", per_page=100)[
                 "jobs"
             ]
         }
-        unread = sorted(n for n in jobs if n.startswith("hub-mariadb") and n not in defined)
-        if unread:
-            # The run has a job the reader did not find in its file: the reader missed part of
-            # the jobs: block, and what it did read cannot tell which jobs had to pass.
+        unknown = sorted(
+            n
+            for n in jobs
+            if n.startswith("hub-mariadb") and n != "hub-mariadb" and n not in MARIADB_EXTRA_JOBS
+        )
+        if unknown:
+            # A job the table does not know: whether it had to pass cannot be told.
             return State(
                 "fail",
-                f"the run lists {', '.join(unread)}, which the gate did not read from"
-                f" {MARIADB_WORKFLOW} at {run['head_sha']} ({run['html_url']}): write its jobs:"
-                f" block in the plain block layout on main and start hub-mariadb by hand from"
-                f" main (sha {sha})",
+                f"the run lists {', '.join(unknown)}, which tools/release_gate.py does not know"
+                f" ({run['html_url']}): add it to MARIADB_EXTRA_JOBS with the commit that added"
+                " it, and re-run this job",
             )
-        # A job the run's workflow file defines must have passed: missing or skipped is red.
-        # Only a job the file does not define is left out, for runs from before it existed.
-        required = [name for name in MARIADB_EXTRA_JOBS if name in defined]
+        had: dict[str, bool | None] = {}
+        for name, added in MARIADB_EXTRA_JOBS.items():
+            had[name] = git.contains(added, run["head_sha"])
+            if had[name] is None:
+                return State(
+                    "fail",
+                    f"cannot tell whether {run['head_sha']} ({run['html_url']}) has {added},"
+                    f" the commit that added {name} (a shallow checkout, a commit the"
+                    " checkout cannot get): check out with full history and re-run this job",
+                )
+        # A job the run's commit had must have passed: missing or skipped is red. One it lists
+        # counts too, had or not. Only a job from after the run's commit is left out.
+        required = [name for name in MARIADB_EXTRA_JOBS if had[name] or name in jobs]
         extra_red = [
             f"{name} is {jobs.get(name) or 'missing'}"
             for name in required
@@ -450,10 +321,8 @@ def mariadb_state(api: Api, sha: str, git: Git) -> State:
             continue
         red = ([f"hub-mariadb is {result}"] if result != "success" else []) + extra_red
         if not red:
-            alone = [name for name in MARIADB_EXTRA_JOBS if name not in defined]
-            note = (
-                f" (its workflow file has no {', '.join(alone)}: it predates it)" if alone else ""
-            )
+            alone = [name for name in MARIADB_EXTRA_JOBS if name not in required]
+            note = f" (its commit predates {', '.join(alone)})" if alone else ""
             return State(
                 "ok",
                 f"hub-mariadb passed on {commit}, same hub files as {sha}{note}:"
