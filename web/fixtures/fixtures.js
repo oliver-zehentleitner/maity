@@ -4169,6 +4169,7 @@ window.MAITY_FIXTURES = {
     "links": {
       "chat": "https://discord.gg/maity",
       "discussions": null,
+      "docs": "https://maity.dev/",
       "issues": "https://github.com/oliver-zehentleitner/maity/issues",
       "wiki": null
     },

@@ -1,10 +1,11 @@
 """A project's own links (docs/api.md §6.11, §16.9): where its people talk and write.
 
-`project.links` holds four keys, `issues`, `wiki`, `discussions` and `chat`, each an https URL
-or absent. A value is checked as a person's `website` is (`person_links.website_problem`), with
-500 characters instead of 200; the two rules are one function so they cannot drift apart. A
-PATCH merges as a person's `social` does. The public page shows a link into the repository's
-own path only while the repository is public, every other link as the admin set it.
+`project.links` holds five keys, `issues`, `wiki`, `discussions`, `docs` and `chat`, each an
+https URL or absent. A value is checked as a person's `website` is
+(`person_links.website_problem`), with 500 characters instead of 200; the two rules are one
+function so they cannot drift apart. A PATCH merges as a person's `social` does. The public page
+shows a link into the repository's own path only while the repository is public, every other
+link as the admin set it.
 """
 
 from __future__ import annotations
@@ -16,19 +17,19 @@ from urllib.parse import unquote, urlsplit
 from maity_hub.errors import invalid
 from maity_hub.person_links import website_problem
 
-KEYS = ("issues", "wiki", "discussions", "chat")
+KEYS = ("issues", "wiki", "discussions", "docs", "chat")
 LINK_MAX = 500
 
 
 def view(stored: dict[str, Any] | None) -> dict[str, str | None]:
-    """All four keys, `null` where none is set: what the project view carries."""
+    """All five keys, `null` where none is set: what the project view carries."""
     links = stored or {}
     return {key: links.get(key) for key in KEYS}
 
 
 def checked(given: Any, stored: dict[str, Any] | None) -> dict[str, str]:
     """The links to store after a PATCH, or `invalid` naming each field that fails. A key
-    given sets or (null, "") clears that link, a key left out stays, `null` clears all four."""
+    given sets or (null, "") clears that link, a key left out stays, `null` clears all five."""
     if given is None:
         return {}
     if not isinstance(given, dict):
