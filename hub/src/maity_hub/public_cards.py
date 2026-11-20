@@ -11,8 +11,8 @@ text; a redacted note shows as removed, without its reason. Whatever
 changes a card or its notes calls `public_pages.touch` for the kind `card`.
 
 A public project's outsider reading the member routes (§2.3) reads the cards by the same rule
-(`outside_clause`, `outside_shown`), and no hidden card's id in another card's view
-(`outside_views`).
+(`outside_clause`, `outside_card`), and no hidden card's id in another card's view
+(`outside_views`), each decided in the statement that reads the rows it returns.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import hashlib
 from collections.abc import Collection
 from typing import Any
 
-from sqlalchemy import Connection, and_, func, or_, select
+from sqlalchemy import Connection, and_, case, func, or_, select
 
 from maity_hub import clock, moderation, namespace, public_design, public_pages, render
 from maity_hub import tables as t
@@ -39,52 +39,39 @@ def shown(card: Any) -> bool:
     return (card.label or "").lower() != "security" or card.status == "done"
 
 
-def shown_clause() -> Any:
-    """`shown` as a condition on `card`, for a query of cards: what the Board's columns leave
-    out (`public_project_views.board_rows`), and what a public project's outsider does not
-    read through the member routes either (§2.3)."""
-    c = t.card.c
+def shown_clause(card: Any = t.card) -> Any:
+    """`shown` as a condition on `card` (the table or an alias of it), for a query of cards:
+    what the Board's columns leave out (`public_project_views.board_rows`), and what a public
+    project's outsider does not read through the member routes either (§2.3)."""
+    c = card.c
     return or_(c.status == "done", c.label.is_(None), func.lower(c.label) != "security")
 
 
-def unheld_clause() -> Any:
+def unheld_clause(card: Any = t.card) -> Any:
     """No moderation hold on the card, as a condition on `card`: the hold `render_card` and
     `board_rows` read (`moderation.hold`, any hold row of the card), so a card under one is
     on no board, has no page, and is in no list an outsider reads (§2.3, §16.8)."""
     h = t.moderation_hold.c
-    held = select(h.report_id).where(h.target_type == "card", h.target_id == t.card.c.id)
+    held = select(h.report_id).where(h.target_type == "card", h.target_id == card.c.id)
     return ~held.exists()
 
 
-def outside_clause() -> Any:
+def outside_clause(card: Any = t.card) -> Any:
     """The cards a public project's outsider reads through the member routes (§2.3): those the
-    public Board shows, `shown_clause` without a hold (`unheld_clause`)."""
-    return and_(shown_clause(), unheld_clause())
+    public Board shows, `shown_clause` without a hold (`unheld_clause`).
+
+    Decided in the statement that reads the rows it returns, never in one before: on the
+    server engines each statement reads its own snapshot (READ COMMITTED), so a card that
+    became `security` or held after an earlier statement read it would otherwise reach the
+    outsider (hub/context/public-pages.md, as #2005 decides a request on its full rows)."""
+    return and_(shown_clause(card), unheld_clause(card))
 
 
-def outside_shown(conn: Connection, card: Any) -> bool:
-    """`outside_clause` for one card read already: `shown` and no hold, as `render_card`."""
-    return shown(card) and moderation.hold(conn, "card", card.id) is None
-
-
-def _hidden_rows(conn: Connection, referenced: set[str], parents: set[str]) -> list[Any]:
-    """The cards an outsider does not read (not `outside_clause`) among `referenced`, and among
-    the children of `parents`: one query for a page of cards."""
-    c = t.card.c
-    if not referenced and not parents:
-        return []
-    return list(
-        conn.execute(
-            select(c.id, c.parent, c.status).where(
-                or_(c.id.in_(referenced), c.parent.in_(parents)), ~outside_clause()
-            )
-        )
-    )
-
-
-def hidden_among(conn: Connection, ids: set[str]) -> set[str]:
-    """The cards among `ids` an outsider does not read (not `outside_clause`)."""
-    return {row.id for row in _hidden_rows(conn, ids, set())}
+def outside_card(card_id: Any) -> Any:
+    """`outside_clause` for the card `card_id` (a column) names, as a condition on a query of
+    what belongs to one card (its history, its notes): the statement that reads them reads
+    nothing while the card is one the outsider does not read."""
+    return select(t.card.c.id).where(t.card.c.id == card_id, outside_clause()).exists()
 
 
 EDGE_FIELDS = ("depends_on", "ships_with", "related")
@@ -135,8 +122,17 @@ def outside_views(conn: Connection, views: list[dict[str, Any]]) -> list[dict[st
     """Card views as a public project's outsider reads them (§2.3): no trace of a card it does
     not read (a not-done `security` card, a card under a hold), neither in `depends_on`,
     `ships_with`, `related`, `parent`, the `children` counts nor a release's pull requests,
-    groups and blockers. The hidden cards among those the views name are found in one query,
-    whatever the number of views."""
+    groups and blockers.
+
+    One statement, read after every other read of the views, decides it all on the rows it
+    returns (`outside_clause`): the views' own cards, the cards they name and their children.
+    A view whose card the outsider no longer reads by then is dropped, the `children` counts
+    are counted again from the children it reads, and a named card hidden by then is left
+    out, so no card that became `security` or held after the statement that listed it, or
+    after the edges were read, reaches the outsider (READ COMMITTED)."""
+    if not views:
+        return views
+    own = {view["id"] for view in views}
     referenced: set[str] = set()
     for view in views:
         for name in EDGE_FIELDS:
@@ -145,28 +141,30 @@ def outside_views(conn: Connection, views: list[dict[str, Any]]) -> list[dict[st
             referenced.add(view["parent"])
         if view["release"]:
             referenced |= _release_ids(view["release"])
-    rows = _hidden_rows(conn, referenced, {view["id"] for view in views})
-    hidden = {row.id for row in rows if row.id in referenced}
-    unseen: dict[str, list[Any]] = {}
+    c = t.card.c
+    seen = case((outside_clause(), 1), else_=0).label("seen")
+    rows = conn.execute(
+        select(c.id, c.parent, c.status, seen).where(
+            or_(c.id.in_(referenced | own), c.parent.in_(own))
+        )
+    ).all()
+    kept = {row.id for row in rows if row.seen}
+    hidden = {row.id for row in rows if not row.seen and row.id in referenced}
+    children = {card: {"open": 0, "total": 0} for card in own}
     for row in rows:
-        if row.parent is not None:
-            unseen.setdefault(row.parent, []).append(row)
-    if not hidden and not unseen:
-        return views
+        if row.seen and row.parent in children:
+            children[row.parent]["total"] += 1
+            children[row.parent]["open"] += row.status not in CLOSED
     shaped = []
     for view in views:
+        if view["id"] not in kept:
+            continue
         view = dict(view)
         for name in EDGE_FIELDS:
             view[name] = [card for card in view[name] if card not in hidden]
         if view["parent"] in hidden:
             view["parent"] = None
-        children = unseen.get(view["id"], [])
-        if children:
-            view["children"] = {
-                "open": view["children"]["open"]
-                - sum(child.status not in CLOSED for child in children),
-                "total": view["children"]["total"] - len(children),
-            }
+        view["children"] = children[view["id"]]
         if view["release"]:
             view["release"] = _release_without(view["release"], hidden)
         shaped.append(view)

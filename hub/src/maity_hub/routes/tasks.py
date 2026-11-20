@@ -267,18 +267,29 @@ def _card(conn: Connection, card_id: str) -> Any:
 
 
 def _project_card(conn: Connection, mine: Membership | access.OutsideReader, card_id: str) -> Any:
-    row = conn.execute(
-        select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
-    ).first()
-    if row is None:
-        raise not_found()
+    query = select(t.card).where(t.card.c.id == card_id, t.card.c.project_id == mine.project.id)
     if isinstance(mine, access.OutsideReader):
         from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
-        # A not-done `security` card or one under a hold, as on the Board (§2.3).
-        if not public_cards.outside_shown(conn, row):
-            raise not_found()
+        # A not-done `security` card or one under a hold, as on the Board (§2.3), decided in
+        # the statement that reads the row (`public_cards.outside_clause`).
+        query = query.where(public_cards.outside_clause())
+    row = conn.execute(query).first()
+    if row is None:
+        raise not_found()
     return row
+
+
+def of_read_card(query: Any, mine: Membership | access.OutsideReader, card_id: Any) -> Any:
+    """`query`, of what belongs to the card the column `card_id` names (its history, its
+    notes), for `mine`: for an outsider it reads nothing once the card is one the outsider
+    does not read, decided in that statement (`public_cards.outside_card`), not only when
+    `_project_card` read the card before it (READ COMMITTED)."""
+    if not isinstance(mine, access.OutsideReader):
+        return query
+    from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+    return query.where(public_cards.outside_card(card_id))
 
 
 def _member(row: Any) -> list[str]:
@@ -683,10 +694,16 @@ def list_tasks(
             from maity_hub import public_cards  # the public pages' modules, as `access` reads them
 
             # A not-done `security` card or one under a hold is in no list an outsider reads,
-            # as on the Board (§2.3), nor are the children filtered by such a card's id.
+            # as on the Board (§2.3), nor are the children filtered by such a card's id: both
+            # decided in the statement that reads the rows (`public_cards.outside_clause`).
             query = query.where(public_cards.outside_clause())
-            if parent is not None and public_cards.hidden_among(conn, {parent}):
-                query = query.where(false())
+            if parent is not None:
+                above = t.card.alias("above")
+                query = query.where(
+                    select(above.c.id)
+                    .where(above.c.id == parent, public_cards.outside_clause(above))
+                    .exists()
+                )
         wanted: list[str] = []
         if status != "all":
             wanted = [s for s in status.split(",") if s]
@@ -888,7 +905,10 @@ def get_task(slug: str, card_id: str, request: Request, caller: AnyCaller) -> JS
     with read_transaction(engine_of(request)) as conn:
         mine = access.reader(conn, caller, slug)
         mine.require("project:read")
-        return JSONResponse(task_view(conn, _project_card(conn, mine, card_id), fg, mine))
+        views = task_views(conn, [_project_card(conn, mine, card_id)], fg, mine)
+        if not views:  # an outsider's card hidden since it was read (`outside_views`)
+            raise not_found()
+        return JSONResponse(views[0])
 
 
 # A card's fields as its creation records them (§6.15).

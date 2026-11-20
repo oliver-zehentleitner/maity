@@ -37,7 +37,14 @@ from maity_hub.ids import new_id
 from maity_hub.models import Strict, Written, markdown
 from maity_hub.namespace import ProjectRoute
 from maity_hub.policy import CLOSED_STATES
-from maity_hub.routes.tasks import TaskCreate, _locked, _project_card, audience, create_card
+from maity_hub.routes.tasks import (
+    TaskCreate,
+    _locked,
+    _project_card,
+    audience,
+    create_card,
+    of_read_card,
+)
 from maity_hub.views import shape_deleted
 
 router = APIRouter(route_class=ProjectRoute)
@@ -284,7 +291,7 @@ def get_history(
         mine.require("project:read")
         card = _card(conn, mine, card_id)
         c = t.card_history.c
-        query = select(t.card_history).where(c.card_id == card.id)
+        query = of_read_card(select(t.card_history).where(c.card_id == card.id), mine, c.card_id)
         # The entries of an isolation's hidden window, by their time (§6.2, §6.15).
         visible = events.outside_window_times(conn, mine.project.id, mine.row, c.at)
         if visible is not None:
@@ -448,7 +455,7 @@ def list_notes(
         mine.require("project:read")
         card = _card(conn, mine, card_id)
         c = t.card_note.c
-        query = select(t.card_note).where(c.card_id == card.id)
+        query = of_read_card(select(t.card_note).where(c.card_id == card.id), mine, c.card_id)
         # A note written in one of the reader's hidden windows, as its history's entries
         # (§6.2, §6.16).
         visible = events.outside_window_times(conn, mine.project.id, mine.row, c.created_at)

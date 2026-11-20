@@ -16,4 +16,5 @@
   on the public Board: out of the card lists, `not_found` on the card, its
   history and its notes. So does a card under a moderation hold, and neither
   card's id shows in another card's dependencies, related cards, parent,
-  subtask counts or release.
+  subtask counts or release, also when the card turns hidden while a read is
+  under way.

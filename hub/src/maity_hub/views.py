@@ -1103,7 +1103,8 @@ def _release(
 
 
 def task_view(conn: Connection, row: Any, fg: forge.Forge, viewer: Any = None) -> dict[str, Any]:
-    """The card as §6.4 shows it (the tasks slice adds its endpoints)."""
+    """The card as §6.4 shows it (the tasks slice adds its endpoints). Not for an outsider,
+    whose view may drop (`task_views`)."""
     return task_views(conn, [row], fg, viewer)[0]
 
 
@@ -1120,11 +1121,14 @@ def task_views(
     views = _task_views(conn, rows, fg)
     from maity_hub import access, public_cards  # they read views; imported here, not at the top
 
-    if isinstance(viewer, access.OutsideReader):
+    outside = isinstance(viewer, access.OutsideReader)
+    if outside:
+        # Decided on the rows its last statement returns: a view may drop (READ COMMITTED).
         views = public_cards.outside_views(conn, views)
     from maity_hub import moderation  # moderation reads views; imported here, not at the top
 
-    held = moderation.holds_of(conn, "card", [r.id for r in rows])
+    # An outsider reads no held card, so no hold: none read after `outside_views` decided.
+    held = {} if outside else moderation.holds_of(conn, "card", [r.id for r in rows])
     for view in views:
         if view["id"] in held:  # only while a hold stands (§16.8)
             view["moderation"] = held[view["id"]]

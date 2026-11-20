@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import inspect
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -14,13 +16,17 @@ from typing import Any
 import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, func, insert, select, update
+from sqlalchemy import Connection, Engine, func, insert, select, update
 
 from maity_hub import access, clock, public_pages
 from maity_hub import tables as t
+from maity_hub import views as card_views
 from maity_hub.config import Settings
+from maity_hub.ids import new_id
+from maity_hub.routes import board as board_routes
 from maity_hub.routes import members as member_routes
 from maity_hub.routes import projects as project_routes
+from maity_hub.routes import tasks as task_routes
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.test_tasks import task
@@ -411,24 +417,29 @@ def test_a_not_done_security_card_is_hidden_from_an_outsider_as_on_the_public_bo
 
 def _hold(engine: Engine, reporter: str, card_id: str, action: str = "hide") -> None:
     """A moderation hold on the card, as `moderation.apply` leaves one (§16.8)."""
-    report_id = f"rpt-{card_id[-12:]}"
     with engine.begin() as conn:
-        conn.execute(
-            insert(t.abuse_report).values(
-                id=report_id, reporter=reporter, account_id=reporter, target_type="card",
-                target_id=card_id, reason="spam", status="resolved", action=action,
-                created_at=clock.now(),
-            )
-        )  # fmt: skip
-        conn.execute(
-            insert(t.moderation_hold).values(
-                report_id=report_id,
-                target_type="card",
-                target_id=card_id,
-                action=action,
-                at=clock.now(),
-            )
+        _hold_on(conn, reporter, card_id, action)
+
+
+def _hold_on(conn: Connection, reporter: str, card_id: str, action: str = "hide") -> None:
+    """`_hold`, written on `conn`."""
+    report_id = f"rpt-{card_id[-12:]}"
+    conn.execute(
+        insert(t.abuse_report).values(
+            id=report_id, reporter=reporter, account_id=reporter, target_type="card",
+            target_id=card_id, reason="spam", status="resolved", action=action,
+            created_at=clock.now(),
         )
+    )  # fmt: skip
+    conn.execute(
+        insert(t.moderation_hold).values(
+            report_id=report_id,
+            target_type="card",
+            target_id=card_id,
+            action=action,
+            at=clock.now(),
+        )
+    )
 
 
 def _listed(who: flow.Human, query: str) -> dict[str, Any]:
@@ -510,6 +521,134 @@ def test_no_hidden_cards_id_is_in_any_card_an_outsider_reads(
     assert inside["parent"] == secret
     assert inside["children"] == {"open": 3, "total": 3}
     assert card in set(_listed(world.owner, f"?parent={secret}"))
+
+
+# --- a card hidden between two statements of one read (READ COMMITTED, as #2005) ----------------
+
+
+@contextmanager
+def _writable(engine: Engine) -> Iterator[Connection]:
+    """A route's read transaction a test may write in, rolled back at its end: a write on it
+    between two of the route's statements is seen by the later ones on every database, as a
+    write committed meanwhile is on PostgreSQL (READ COMMITTED)."""
+    with engine.connect() as conn:
+        conn.begin()
+        try:
+            yield conn
+        finally:
+            conn.rollback()
+
+
+def _hide(conn: Connection, change: str, card_id: str, reporter: str) -> None:
+    if change == "security":
+        conn.execute(update(t.card).where(t.card.c.id == card_id).values(label="security"))
+    else:
+        _hold_on(conn, reporter, card_id)
+
+
+# A read, and the function after which the card is hidden: after the statement that read the
+# card (the list's own, or `_project_card`, and the views' edges and counts after it) and
+# before the statements that read what the outsider gets (`outside_views`, the entries).
+BETWEEN = {
+    "board": ("", card_views, "_task_views"),
+    "updated": ("?order=updated", card_views, "_task_views"),
+    "card": ("/{card}", card_views, "_task_views"),
+    "history": ("/{card}/history", board_routes, "_project_card"),
+    "notes": ("/{card}/notes", board_routes, "_project_card"),
+}
+
+
+@pytest.mark.parametrize("own_connection", [True, False], ids=["same_connection", "committed"])
+@pytest.mark.parametrize("change", ["security", "held"])
+@pytest.mark.parametrize("read", list(BETWEEN))
+def test_a_card_hidden_between_the_statements_of_a_read_does_not_reach_an_outsider(
+    world: World,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    read: str,
+    change: str,
+    own_connection: bool,
+) -> None:
+    """The outsider's card rule is decided on the rows a read returns, not only on a statement
+    before them: a card that becomes a not-done `security` card or gets a hold after the
+    statement that read it is not in the list, its card answers `not_found`, and its history
+    and notes read nothing. `same_connection` writes on the route's own transaction, which
+    every later statement sees on every database; `committed` writes from another connection
+    and commits: PostgreSQL's next statement sees it, while SQLite reads one snapshot per read
+    transaction, so there the read answers as before the change."""
+    card = task(world.owner, body="a card that turns secret")["id"]
+    renamed = world.owner.patch(f"{P}/tasks/{card}", {"title": "Turns secret"})
+    assert renamed.status_code == 200, renamed.text
+    noted = world.owner.post(f"{P}/tasks/{card}/notes", {"body": "NOTE-SENTINEL-4b1e"})
+    assert noted.status_code == 201, noted.text
+    tail, module, name = BETWEEN[read]
+    if own_connection:
+        monkeypatch.setattr(task_routes, "read_transaction", _writable)
+        monkeypatch.setattr(board_routes, "read_transaction", _writable)
+    original = getattr(module, name)
+    fired: list[bool] = []
+
+    def hooked(conn: Connection, *args: Any) -> Any:
+        result = original(conn, *args)
+        if not fired:
+            fired.append(True)
+            if own_connection:
+                _hide(conn, change, card, world.owner.id)
+            else:
+                with migrated.begin() as other:
+                    _hide(other, change, card, world.owner.id)
+        return result
+
+    monkeypatch.setattr(module, name, hooked)
+    answer = world.outsider.get(f"{P}/tasks" + tail.format(card=card))
+    monkeypatch.setattr(module, name, original)
+    assert fired, read
+    hidden = own_connection or migrated.dialect.name != "sqlite"
+    if read == "card":
+        if hidden:
+            assert (answer.status_code, answer.json()) == (404, NOT_FOUND), answer.text
+        else:
+            assert answer.status_code == 200, answer.text
+        return
+    assert answer.status_code == 200, answer.text
+    items = answer.json()["items"]
+    if read in ("board", "updated"):
+        assert (card not in {item["id"] for item in items}) is hidden, items
+        if hidden:
+            assert "moderation" not in answer.text
+        return
+    assert (items == []) is hidden, items
+    if hidden:
+        assert "NOTE-SENTINEL-4b1e" not in answer.text
+
+
+def test_a_hidden_child_added_between_the_statements_is_not_counted_off(
+    world: World, migrated: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `children` counts an outsider reads are counted from the children the deciding
+    statement reads, not by subtracting from an earlier count: a not-done `security` child
+    added between the two statements neither shows nor makes a count negative."""
+    writer = _membership_of(migrated, world.project_id, human_id=world.owner.id)
+    parent = factory.card(migrated, world.project_id, writer, title="No children yet")
+    monkeypatch.setattr(task_routes, "read_transaction", _writable)
+    original = card_views._task_views
+
+    def hooked(conn: Connection, *args: Any) -> Any:
+        result = original(conn, *args)
+        conn.execute(
+            insert(t.card).values(
+                id=new_id("task"), project_id=world.project_id, kind="task",
+                title="Secret child", status="open", label="security", parent=parent,
+                created_by=writer, created_at=clock.now(), updated_at=clock.now(),
+            )
+        )  # fmt: skip
+        return result
+
+    monkeypatch.setattr(card_views, "_task_views", hooked)
+    answer = world.outsider.get(f"{P}/tasks/{parent}")
+    monkeypatch.setattr(card_views, "_task_views", original)
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["children"] == {"open": 0, "total": 0}
 
 
 # --- a stranger's bad body: a private project answers as an unknown one -------------------------
