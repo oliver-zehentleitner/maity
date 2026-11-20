@@ -86,6 +86,14 @@ window.Maity = window.Maity || {};
     try { window.localStorage.setItem(LATER, sessionId); } catch (err) { /* this browser keeps nothing */ }
   }
 
+  // The reads started before the page's view runs (tsk-qw08c8ds214g), so that the banner drawn
+  // after it finds them under way or done. Nothing is started where banner() would read nothing
+  // (Later holds for this session) or read afresh anyway (fresh, on Security).
+  function warm(sessionId, fresh) {
+    if (fresh || (sessionId && laterFor() === sessionId)) return;
+    read().catch(() => {});
+  }
+
   // The banner for this session, or null. sessionId: GET /auth/session's `session_id`;
   // fresh: read again whatever is kept (Security).
   async function banner(sessionId, fresh, onHide) {
@@ -108,5 +116,5 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  M.factorBanner = { banner, forget, wrote, keep };
+  M.factorBanner = { banner, forget, wrote, keep, warm };
 })(window.Maity);

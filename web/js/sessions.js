@@ -257,15 +257,28 @@ window.Maity = window.Maity || {};
       why ? h("p", { class: "hint" }, why) : null);
   }
 
+  // What the banner stands on, read on every page (tsk-g776fdyg6ekc): the active sessions. The
+  // ended ones (16–18 kB more) are read only when an active session was approved by one that is
+  // not among them: an ended mail sign-in keeps its banner up through what it approved, and that
+  // chain may run through ended sessions. Any other ended session shows nothing in the banner.
+  async function bannerSessions() {
+    const live = (await M.api.get("/auth/sessions")).items;
+    const ids = new Set(live.map((s) => s.id));
+    if (!live.some((s) => s.approved_by && !ids.has(s.approved_by))) return live;
+    return (await M.api.get("/auth/sessions?ended=true")).items;
+  }
+
   // The mail sign-in banner (§2.6.5): in every other session, while the
   // session it reports is not confirmed and it, or one it approved, is still
   // active, whether its alert is read or not, so that tidying the bell never
   // removes it. End this session ends those that are, asking nothing more,
   // and follows the same rules as the list; This was me only where allowed.
-  async function banner(ctx, onChange) {
+  // reading: the sessions read already (bannerSessions(), started before the view, tsk-qw08c8ds214g);
+  // without it they are read now.
+  async function banner(ctx, onChange, reading) {
     let sessions;
     try {
-      sessions = (await M.api.get("/auth/sessions?ended=true")).items;
+      sessions = await (reading || bannerSessions());
     } catch (err) {
       return null;
     }
@@ -302,5 +315,5 @@ window.Maity = window.Maity || {};
     return box;
   }
 
-  M.sessions = { section, banner, said, mayConfirm, mayConfirmSession, mayMark, confirm, device, methodOf };
+  M.sessions = { section, banner, bannerSessions, said, mayConfirm, mayConfirmSession, mayMark, confirm, device, methodOf };
 })(window.Maity);
