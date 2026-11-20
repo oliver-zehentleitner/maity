@@ -360,9 +360,6 @@ class Supervisor:
     scratch_cleared: set[str] = field(default_factory=set)
     # placement id -> the random leaf name of its agy `/tmp` scratch (TMP_NAMES_FILE).
     scratch_names: dict[str, str] = field(default_factory=dict)
-    # Placements whose last scratch make vouched for its test cluster's password file
-    # (scratchop.PG_PASS): only they are given MAITY_PG_DIR and MAITY_PG_PASSFILE.
-    pg_passes: set[str] = field(default_factory=set)
     # Serialises the TMP_NAMES_FILE write: `_save_scratch_names` holds it across snapshot + write,
     # so two start threads (or a start and a tick) never race a stale snapshot over a fresh one.
     scratch_names_lock: threading.Lock = field(default_factory=threading.Lock)
@@ -555,13 +552,35 @@ class Supervisor:
                     scratch.log_removal(self.cfg.state_dir, p["id"], path, removed, "closed")
                     self.log(f"{p['id']}: scratch removed on {target.name} ({removed} bytes): "
                              "the placement is closed")  # fmt: skip
+                if not self._remove_pg_pass(p, target):
+                    done = False
             if done:
                 with self.lock:
                     self.scratch_cleared.add(p["id"])
-                    self.pg_passes.discard(p["id"])  # its password file went with the scratch
                     had_name = self.scratch_names.pop(p["id"], None) is not None
                 if had_name:  # its recorded leaf is gone with it
                     self._save_scratch_names()
+
+    def _remove_pg_pass(self, p: dict[str, Any], target: Target) -> bool:
+        """The closed placement's test cluster password file removed from the holder on
+        `target` (its name only, never through a link); False when it could not be, so the
+        sweep tries again. The password itself is never logged."""
+        if not workspace.SCRATCH_ID.fullmatch(p["id"]):
+            return True
+        root = target.workspaces if target.host else target.workspaces.resolve()
+        leaf = root / scratchop.PG_HOLDER / p["id"]
+        try:
+            target.as_user.pg("remove", root, leaf)
+        except scratchop.Unsupported:  # a host whose maity has no holder made none to remove
+            return True
+        except scratchop.OnTheWay as exc:  # a holder that is a link or another user's: left
+            self.log(f"{p['id']}: password file left on {target.name}: "
+                     f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.log(f"{p['id']}: password file not removed on {target.name}: "
+                     f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+            return False
+        return True
 
     def _measure(self, desired: list[dict[str, Any]], now: float) -> None:
         """The sizes of each placement's clone and scratch on its target, at most every
@@ -1374,9 +1393,15 @@ class Supervisor:
         target.as_user.mkdir(agent_dir)
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         found = view.found
+        # The password holder first, so every sandbox of this start is denied a path that exists.
+        holder = self._pg_holder(target)
         private = self._private(target, place, scratch)
-        with self.lock:
-            pg_ok = p["id"] in self.pg_passes
+        if holder is not None:
+            private = (*private, holder)
+        pg_pass = None
+        if (holder is not None and scratch is not None and not workspace.scratch_in_tmp(harness.id)
+                and adapters.pg_dir(scratch) is not None):  # fmt: skip
+            pg_pass = self._pg_pass(p, holder, target)
         tmp_parent = self._tmp_scratch_parent(target, harness)
         if tmp_parent is not None:
             self._make_tmp_parent(tmp_parent, target)
@@ -1406,7 +1431,7 @@ class Supervisor:
             git=self.cfg.git,
             scratch=scratch,
             tmp_scratch_parent=tmp_parent,
-            pg_pass=scratch / scratchop.PG_PASS if scratch is not None and pg_ok else None,
+            pg_pass=pg_pass,
         )
 
     def _make_tmp_parent(self, parent: Path, target: Target) -> None:
@@ -1453,24 +1478,45 @@ class Supervisor:
         if workspace.scratch_in_tmp(harness.id):
             return self._tmp_scratch(p, target)
         path = workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host)
-        with self.lock:
-            self.pg_passes.discard(p["id"])
         try:
-            vouched = scratch.make(path, target.as_user)
+            scratch.make(path, target.as_user)
         except scratchop.OnTheWay:
             self.log(f"{p['id']}: no scratch: a directory on the way to {path} is a link")
             return None
         except (OSError, subprocess.SubprocessError) as exc:  # a host's maity without it, too
             self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
-        if vouched:
-            with self.lock:
-                self.pg_passes.add(p["id"])
-        else:  # the session then gets no test cluster: with trust it would be open on its socket
-            self.log(f"{p['id']}: no MAITY_PG_DIR: {path / scratchop.PG_PASS} is not a password "
-                     "file the runner made (a link or something else at the name, or a host "
-                     "whose maity predates it)")  # fmt: skip
         return path
+
+    def _pg_holder(self, target: Target) -> Path | None:
+        """The test clusters' password holder (scratchop.PG_HOLDER) under `target`'s workspaces
+        root, made 0700 before any settings of this start are written, so its path exists when
+        a sandbox is told to deny it; None when it cannot be made (the log says why), and then
+        no session of this start gets a test cluster."""
+        root = target.workspaces if target.host else target.workspaces.resolve()
+        holder = root / scratchop.PG_HOLDER
+        try:
+            target.as_user.pg("make", root, holder)
+        except (scratchop.OnTheWay, OSError, subprocess.SubprocessError) as exc:
+            self.log(f"no test cluster password holder on {target.name}: "
+                     f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+            return None
+        return holder
+
+    def _pg_pass(self, p: dict[str, Any], holder: Path, target: Target) -> Path | None:
+        """The placement's password file in `holder`, drawn once and kept across restarts; None
+        when it is not one the runner vouches for (the log says why), and then the session gets
+        no test cluster: without the password it would be made with trust."""
+        leaf = holder / p["id"]
+        try:
+            made = target.as_user.pg("make", holder.parent, leaf)
+        except (scratchop.OnTheWay, OSError, subprocess.SubprocessError) as exc:
+            self.log(f"{p['id']}: no MAITY_PG_DIR: {onboarding.inline(str(exc))[:200]}")
+            return None
+        if made.get("pg_pass") is not True:
+            self.log(f"{p['id']}: no MAITY_PG_DIR: its password file is not one the runner made")
+            return None
+        return leaf
 
     def _tmp_scratch(self, p: dict[str, Any], target: Target) -> Path | None:
         """agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of),

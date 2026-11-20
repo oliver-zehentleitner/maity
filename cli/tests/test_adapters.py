@@ -1304,15 +1304,18 @@ def test_the_test_slots_and_cluster_go_in_the_placements_own_scratch(tmp_path: P
     """tsk-w7qtcbzcshn9: the scripts' defaults under `~/.local/state` no sandbox writes, so the
     slots and the cluster go in the scratch, per placement; no path is opened beyond it."""
     room = Path("/srv/ws/maity/.scratch/plc-0003")
-    passfile = room / "pg.pass"
+    passfile = Path("/srv/ws/.maity-pg/plc-0003")
+    bare = adapters.launch(context(tmp_path / "b", "stub", scratch=room))
     launched = adapters.launch(context(tmp_path / "s", "stub", scratch=room, pg_pass=passfile))
     assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
-    assert launched.env["MAITY_PG_DIR"] == str(room / "pg")
-    assert launched.env["MAITY_PG_PASSFILE"] == str(passfile)
+    # The cluster and its password come from `pgenv`, outside the sandbox, never in the launch's
+    # env (tmux keeps that in its session environment) or the loop's spec (the review of #2032).
+    assert not {"MAITY_PG_DIR", "MAITY_PG_PASSWORD"} & set(launched.env)
+    pgenv = [*AsUser().runner_module("pgenv"), "/srv/ws", str(passfile), str(room / "pg"), "--"]
+    assert launched.argv == [*pgenv, *bare.argv]
     # Without a password file the runner vouched for, no cluster: it would be made with trust.
-    bare = adapters.launch(context(tmp_path / "b", "stub", scratch=room))
     assert bare.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
-    assert "MAITY_PG_DIR" not in bare.env and "MAITY_PG_PASSFILE" not in bare.env
+    assert "MAITY_PG_DIR" not in bare.env and "maity.runner.pgenv" not in bare.argv
     claude = context(tmp_path / "c", sandbox=True, scratch=room)
     assert adapters.claude_settings(claude)["sandbox"]["filesystem"]["allowWrite"] == [str(room)]
     codex = context(tmp_path / "x", "codex", sandbox=True, scratch=room,
@@ -1329,10 +1332,12 @@ def test_an_agy_placement_gets_no_test_slots_or_cluster(tmp_path: Path) -> None:
     slot directory or cluster there could not be written: it keeps the scripts' defaults."""
     room = Path("/tmp/maity-scratch-1000/" + "a" * 32)  # noqa: S108 - a path, nothing written
     folder = tmp_path / "g" / "ws"
-    ctx = context(tmp_path / "g", "antigravity", scratch=room, pg_pass=room / "pg.pass")
-    env = adapters.launch(dataclasses.replace(ctx, folder=folder)).env
-    assert env["MAITY_SCRATCH"] == str(room)
-    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR", "MAITY_PG_PASSFILE"} & set(env)
+    ctx = context(tmp_path / "g", "antigravity", scratch=room,
+                  pg_pass=Path("/srv/ws/.maity-pg/plc-0003"))  # fmt: skip
+    launched = adapters.launch(dataclasses.replace(ctx, folder=folder))
+    assert launched.env["MAITY_SCRATCH"] == str(room)
+    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR"} & set(launched.env)
+    assert "maity.runner.pgenv" not in launched.argv
 
 
 def test_a_cluster_whose_socket_would_not_fit_gets_no_pg_dir(tmp_path: Path) -> None:
@@ -1345,8 +1350,8 @@ def test_a_cluster_whose_socket_would_not_fit_gets_no_pg_dir(tmp_path: Path) -> 
     deep = Path(str(fits) + "s")
     assert adapters.pg_dir(deep) is None
     launched = adapters.launch(context(tmp_path / "s", "stub", scratch=deep,
-                                      pg_pass=deep / "pg.pass"))  # fmt: skip
-    assert "MAITY_PG_DIR" not in launched.env and "MAITY_PG_PASSFILE" not in launched.env
+                                      pg_pass=Path("/w/.maity-pg/plc-0003")))  # fmt: skip
+    assert "MAITY_PG_DIR" not in launched.env and "maity.runner.pgenv" not in launched.argv
     assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(deep / "slots")
     assert adapters.pg_dir(None) is None and adapters.run_env(None) == {}
 
@@ -1370,5 +1375,5 @@ def test_without_a_scratch_nothing_names_one(tmp_path: Path) -> None:
     assert ".scratch" not in adapters.codex_config(context(tmp_path / "x", "codex", sandbox=True))
     launched = adapters.launch(context(tmp_path / "s", "stub"))
     assert "MAITY_SCRATCH" not in launched.env and "TMPDIR" not in launched.env
-    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR", "MAITY_PG_PASSFILE",
+    assert not {"MAITY_RUN_SLOTS_DIR", "MAITY_PG_DIR", "MAITY_PG_PASSWORD",
                 "MAITY_RUN_NAME"} & set(launched.env)  # fmt: skip

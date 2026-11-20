@@ -216,17 +216,22 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
         # TMPDIR only where a socket fits under it (adapters.scratch_tmpdir): a deep test path
         # keeps the host's.
         **({"TMPDIR": str(t)} if (t := adapters.scratch_tmpdir(scratch)) is not None else {}),
-        # The test slots and cluster in the scratch (tsk-w7qtcbzcshn9), the cluster only where
-        # its socket fits; no instance yet, so the handle alone.
+        # The test slots in the scratch (tsk-w7qtcbzcshn9); no instance yet, so the handle alone.
+        # The cluster's MAITY_PG_DIR and password are never here: pgenv sets them (below).
         "MAITY_RUN_SLOTS_DIR": str(scratch / "slots"),
-        **({"MAITY_PG_DIR": str(pg), "MAITY_PG_PASSFILE": str(scratch / "pg.pass")}
-           if (pg := adapters.pg_dir(scratch)) is not None else {}),
         "MAITY_RUN_NAME": "agent-3",
     }  # fmt: skip
-    # The cluster's password, drawn once for the placement in its scratch, 0600.
-    passfile = scratch / "pg.pass"
+    # The cluster's password, drawn once for the placement in the holder outside every scratch.
+    root = sup.cfg.local.workspaces.resolve()
+    passfile = root / ".maity-pg" / "plc-0003"
     assert stat.S_IMODE(passfile.stat().st_mode) == 0o600
+    assert stat.S_IMODE(passfile.parent.stat().st_mode) == 0o700
     assert re.fullmatch(r"[0-9a-f]{64}\n", passfile.read_text())
+    assert passfile.read_text().strip() not in " ".join(argv)  # never on a command line
+    if (pg := adapters.pg_dir(scratch)) is not None:  # started through pgenv, where it fits
+        assert argv[1:4] == ["-I", "-m", "maity.runner.pgenv"]
+        assert argv[4:9] == [str(root), str(passfile), str(pg), "--", argv[9]]
+        argv = argv[9:]
     private = Path(env[clonecheck.GIT_PRIVATE_ENV])  # the runner's directory for the agent
     assert private.parts[-3:] == ("agents", "plc-0003", "git") and private.is_dir()
     assert clone not in private.parents
@@ -3614,8 +3619,9 @@ def test_a_scratch_too_deep_for_a_pg_socket_is_said_in_the_log(
     monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 20)  # no scratch path fits under it
     sup.update([placement()])
     settle(sup)
-    ((_, _, env),) = backend.started
+    ((_, argv, env),) = backend.started
     assert "MAITY_PG_DIR" not in env and "MAITY_RUN_SLOTS_DIR" in env
+    assert "maity.runner.pgenv" not in argv  # no cluster for it: started without pgenv
     assert sum("plc-0003: no MAITY_PG_DIR" in line for line in logs) == 1
 
 
@@ -3633,7 +3639,40 @@ def test_a_start_hides_every_other_placements_scratch_but_not_its_own(world: Any
     place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
     private = sup._private(target, place, own)
     assert other in private and own not in private
-    assert {"plc-0003", "plc-0004"} <= sup.pg_passes  # both scratches vouched for their file
+    # The test clusters' password holder: made before the settings, and private to every
+    # session from its start, its own placement's included (the session never reads it).
+    stub = config.Harness("stub", ("supervised",), "supervised")
+    ctx = sup._context(placement(), stub, place, target, scratch=own)
+    holder = sup.cfg.local.workspaces.resolve() / ".maity-pg"
+    assert holder in ctx.private and other in ctx.private and own not in ctx.private
+    assert _stat_mode(holder) == 0o700
+    if adapters.pg_dir(own) is not None:
+        assert ctx.pg_pass == holder / "plc-0003"
+    claude = replace(ctx, sandbox=True, harness=config.Harness("claude-code", ("supervised",),
+                                                               "supervised"))  # fmt: skip
+    filesystem = adapters.claude_settings(claude)["sandbox"]["filesystem"]
+    assert str(holder) in filesystem["denyRead"] and str(holder) in filesystem["denyWrite"]
+    toml = adapters.codex_config(replace(ctx, harness=codex, sandbox=True))
+    assert ".maity-pg" not in toml  # under the hidden root, never opened again
+
+
+def _stat_mode(path: Path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def test_a_closed_placements_password_file_goes_with_it(world: Any) -> None:
+    sup, backend, _, _, _ = world
+    recorded(sup.cfg)
+    sup.update([placement()])
+    settle(sup)
+    holder = sup.cfg.local.workspaces.resolve() / ".maity-pg"
+    assert (holder / "plc-0003").is_file()
+    backend.kill("maity_maity_agent-3")
+    sup.update([])
+    sup.closed([CLOSED])
+    sup.tick()
+    sup.tick()
+    assert not (holder / "plc-0003").exists() and holder.is_dir()
 
 
 def test_the_clone_and_scratch_sizes_are_measured_for_the_status(world: Any) -> None:

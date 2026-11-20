@@ -1121,6 +1121,7 @@ IN_SESSION_ARGV = {
     "stub": ["stub", "--exit-code", "0", "--run-seconds", "0"],
     "plaincall": ["plaincall"],
     "logcap": ["logcap", "/nowhere/log", "1"],
+    "pgenv": ["pgenv", "/nowhere", "/nowhere/.maity-pg/plc-0003", "/nowhere/pg", "--", "true"],
     "trust": ["trust", "/nowhere/home", "/nowhere/clone"],
 }
 
@@ -1134,7 +1135,7 @@ def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
 ) -> None:
     """With valid arguments and handlers that do nothing: the commands the runner starts in
     the session reach their handler under a placement, any other one (`trust`) does not."""
-    from maity.runner import logcap, loop, plaincall, stub, trust
+    from maity.runner import logcap, loop, pgenv, plaincall, stub, trust
 
     reached: list[str] = []
 
@@ -1145,7 +1146,7 @@ def test_only_what_runs_in_a_placed_session_gets_past_the_refusal(
 
         return run
 
-    for module in (loop, stub, plaincall, logcap, trust):
+    for module in (loop, stub, plaincall, logcap, pgenv, trust):
         monkeypatch.setattr(module, "main", handler(module.__name__))
     monkeypatch.setenv("MAITY_PLACEMENT", "plc-0003")
     own = _runner_home(monkeypatch, tmp_path)  # loop and logcap take only the runner's file

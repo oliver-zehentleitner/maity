@@ -229,8 +229,9 @@ class Context:
     # owns that parent, for one that hides nothing, and where there is no local `/tmp` scratch (an
     # ssh host, no uid).
     tmp_scratch_parent: Path | None = None
-    # The test cluster's password file in the scratch (scratchop.PG_PASS), when the runner's
-    # scratch make vouched for it; without one the session gets no test cluster (run_env).
+    # The placement's test cluster password file in the holder every sandbox is denied
+    # (scratchop.PG_HOLDER), when the runner vouched for it; without one the session gets no
+    # test cluster (run_env). The session never reads it: `pgenv` does, before the session runs.
     pg_pass: Path | None = None
 
 
@@ -301,18 +302,29 @@ def pg_dir(scratch: Path | None) -> Path | None:
     return pg
 
 
-def run_env(scratch: Path | None, pg_pass: Path | None = None) -> dict[str, str]:
-    """MAITY_RUN_SLOTS_DIR inside the placement's scratch, and MAITY_PG_DIR with
-    MAITY_PG_PASSFILE where the cluster's socket fits and its password file is there: a cluster
-    is made with scram-sha-256 only (the security review of #2032), never with trust."""
+def run_env(scratch: Path | None) -> dict[str, str]:
+    """MAITY_RUN_SLOTS_DIR inside the placement's scratch. The test cluster's MAITY_PG_DIR is
+    not here: `pgenv` sets it together with its password (pg_launch), so a session never has
+    one without the other and with_postgres.sh never makes a cluster with trust in the scratch."""
     if scratch is None:
         return {}
-    pg = pg_dir(scratch) if pg_pass is not None else None
-    return {
-        "MAITY_RUN_SLOTS_DIR": str(scratch / SLOTS),
-        **({"MAITY_PG_DIR": str(pg), "MAITY_PG_PASSFILE": str(pg_pass)}
-           if pg is not None and pg_pass is not None else {}),
-    }  # fmt: skip
+    return {"MAITY_RUN_SLOTS_DIR": str(scratch / SLOTS)}
+
+
+def pg_launch(ctx: Context, launched: Launch, beside: bool = True) -> Launch:
+    """`launched` started through `pgenv` where the session gets a test cluster: a scratch
+    beside the clone whose cluster socket fits (pg_dir), and a password file the runner vouched
+    for. The launcher reads the password from the holder outside the sandbox and sets
+    MAITY_PG_DIR and MAITY_PG_PASSWORD in its own process environment for the session (the
+    review of #2032): never on a command line, in `launched.env` (which tmux keeps in its
+    session environment) or in the loop's spec."""
+    pg = pg_dir(ctx.scratch) if beside else None
+    if ctx.pg_pass is None or pg is None:
+        return launched
+    root = ctx.pg_pass.parent.parent
+    argv = [*ctx.as_user.runner_module("pgenv"), str(root), str(ctx.pg_pass), str(pg), "--",
+            *launched.argv]  # fmt: skip
+    return Launch(argv, launched.env, launched.resumed)
 
 
 @dataclass(frozen=True)
@@ -348,7 +360,7 @@ def launch(ctx: Context) -> Launch:
         **({"MAITY_SCRATCH": str(ctx.scratch)} if ctx.scratch is not None else {}),
         **({"TMPDIR": str(tmp)} if (tmp := scratch_tmpdir(ctx.scratch)) is not None else {}),
         # The test slots and test cluster in the scratch, and who takes them (tools/run_slot.sh).
-        **run_env(ctx.scratch if beside else None, ctx.pg_pass),
+        **run_env(ctx.scratch if beside else None),
         **({"MAITY_RUN_NAME": name} if (name := run_name(ctx.placement)) is not None else {}),
     }
     # The mark that this clone runs under the runner: maity refuses its git here when the
@@ -380,6 +392,10 @@ def launch(ctx: Context) -> Launch:
     # Where maity also reads a file the agent names (inclone): its scratch, or nowhere.
     scratch_record = f"{ctx.scratch}\n" if ctx.scratch is not None else ""
     ctx.as_user.write(records / clonecheck.SCRATCH_RECORD, scratch_record)
+    return pg_launch(ctx, _harness_launch(ctx, env), beside)
+
+
+def _harness_launch(ctx: Context, env: dict[str, str]) -> Launch:
     harness = ctx.harness
     if harness.id == "stub":
         return Launch(stub.argv(harness.stub_exit_code, harness.stub_run_seconds, ctx.as_user), env)

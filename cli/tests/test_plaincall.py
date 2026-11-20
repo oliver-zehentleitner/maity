@@ -504,11 +504,12 @@ RUNNER_TRUSTED = (
     "MAITY_RUNNER_CONFIG",
     "MAITY_ERROR_LINE",
     "MAITY_SCRATCH",
-    # The test slots, the test cluster and its password file in the scratch, and who takes a
-    # slot (tsk-w7qtcbzcshn9): read by the repository's test scripts, not by maity.
+    # The test slots and the test cluster in the scratch, the cluster's password (set by the
+    # runner's pgenv launcher) and who takes a slot (tsk-w7qtcbzcshn9): read by the repository's
+    # test scripts, not by maity.
     "MAITY_RUN_SLOTS_DIR",
     "MAITY_PG_DIR",
-    "MAITY_PG_PASSFILE",
+    "MAITY_PG_PASSWORD",
     "MAITY_RUN_NAME",
 )
 # The `MAITY_` names documented for agents in docs/agents.md and read by maity. None may stand

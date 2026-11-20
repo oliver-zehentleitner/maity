@@ -266,69 +266,53 @@ def test_the_database_is_named_after_who_runs_it(run: dict[str, str]) -> None:
     assert out.startswith("postgresql://postgres@/maity_test_coder_7_ab12_")
 
 
-def _passfile(run: dict[str, str], text: str = "ab" * 32 + "\n", mode: int = 0o600) -> Path:
-    passfile = Path(run["MAITY_PG_DIR"]).parent / "pg.pass"
-    passfile.write_text(text)
-    passfile.chmod(mode)
-    return passfile
+PASSWORD = "ab" * 32
 
 
-def test_with_a_password_file_the_cluster_takes_scram_and_the_url_the_password(
-    run: dict[str, str],
+def test_with_a_password_the_cluster_takes_scram_and_never_sees_it_on_a_command_line(
+    run: dict[str, str], tmp_path: Path
 ) -> None:
     """tsk-w7qtcbzcshn9 (security review of #2032): a placed session's cluster is made with
-    scram-sha-256 from the runner's password file, never with trust."""
-    passfile = _passfile(run)
-    run = {**run, "MAITY_PG_PASSFILE": str(passfile), "MAITY_RUN_NAME": "c#x"}
+    scram-sha-256 and the runner's password, never with trust; initdb reads the password from a
+    pipe, so it is in no argv, and the URL does not carry it."""
+    got = tmp_path / "pwfile-content"
+    initdb = Path(run["MAITY_PG_BIN"]) / "initdb"
+    initdb.write_text(
+        '#!/bin/sh\necho "initdb $*" >> "$FAKE_LOG"\n'
+        'for a; do case "$a" in --pwfile=*) cat "${a#--pwfile=}" > "$FAKE_PW" ;; esac; done\n'
+        'touch "$2/PG_VERSION"\n'
+    )
+    run = {**run, "MAITY_PG_PASSWORD": PASSWORD, "MAITY_RUN_NAME": "c#x", "FAKE_PW": str(got)}
     out = subprocess.run(
         [SCRIPT, "sh", "-c", 'echo "$MAITY_TEST_DATABASE_URL|$PGPASSWORD"'],
         env=run, check=True, capture_output=True, text=True,
     ).stdout  # fmt: skip
     url, password = out.strip().split("|")
     assert url.startswith("postgresql://postgres@/maity_test_c_x_")  # never in the URL
-    assert password == "ab" * 32  # libpq reads it from PGPASSWORD
-    (initdb,) = [line for line in Path(run["FAKE_LOG"]).read_text().splitlines()
-                 if line.startswith("initdb")]  # fmt: skip
-    assert "-A scram-sha-256" in initdb and f"--pwfile={passfile}" in initdb
-    assert "trust" not in initdb
+    assert password == PASSWORD  # libpq reads it from PGPASSWORD
+    assert got.read_text() == PASSWORD + "\n"  # what initdb read through --pwfile
+    log = Path(run["FAKE_LOG"]).read_text()
+    assert PASSWORD not in log  # no tool got it as an argument
+    (line,) = [entry for entry in log.splitlines() if entry.startswith("initdb")]
+    assert "-A scram-sha-256" in line and "--pwfile=/dev/fd/" in line and "trust" not in line
 
 
-def test_without_a_password_file_nothing_changes(run: dict[str, str]) -> None:
+def test_without_a_password_nothing_changes(run: dict[str, str]) -> None:
     subprocess.run([SCRIPT, "true"], env=run, check=True)
     (initdb,) = [line for line in Path(run["FAKE_LOG"]).read_text().splitlines()
                  if line.startswith("initdb")]  # fmt: skip
     assert "-A trust" in initdb
 
 
-@pytest.mark.parametrize(
-    "planted", ["wide", "link", "missing", "empty", "odd", "relative", "hardlink"]
-)
-def test_a_password_file_that_is_not_the_runners_starts_nothing(
-    run: dict[str, str], tmp_path: Path, planted: str
+@pytest.mark.parametrize("password", ["", "a'b", "a b", "x;rm", "a\nb", "$(id)"])
+def test_a_password_that_is_not_the_runners_shape_starts_nothing(
+    run: dict[str, str], password: str
 ) -> None:
-    if planted == "wide":
-        passfile = _passfile(run, mode=0o644)
-    elif planted == "link":
-        real = _passfile(run)
-        passfile = tmp_path / "linked.pass"
-        passfile.symlink_to(real)
-    elif planted == "missing":
-        passfile = tmp_path / "none.pass"
-    elif planted == "empty":
-        passfile = _passfile(run, text="\n")
-    elif planted == "relative":
-        _passfile(run)
-        passfile = Path("pg.pass")  # also how a name starting with "-" would be refused
-    elif planted == "hardlink":
-        passfile = _passfile(run)
-        os.link(passfile, tmp_path / "second-name")
-    else:
-        passfile = _passfile(run, text="a'b\n")
     refused = subprocess.run(
-        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSFILE": str(passfile)},
+        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": password},
         capture_output=True, text=True,
     )  # fmt: skip
-    assert refused.returncode == 2 and "MAITY_PG_PASSFILE" in refused.stderr
+    assert refused.returncode == 2 and "MAITY_PG_PASSWORD" in refused.stderr
     log = Path(run["FAKE_LOG"]).read_text() if Path(run["FAKE_LOG"]).exists() else ""
     assert "initdb" not in log and "pg_ctl" not in log
 
@@ -354,7 +338,7 @@ def test_a_cluster_not_on_scram_alone_is_not_used_with_a_password(
     if hba is not None:
         (data / "pg_hba.conf").write_text("# a comment with trust in it\n" + hba)
     refused = subprocess.run(
-        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSFILE": str(_passfile(run))},
+        [SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD},
         capture_output=True, text=True,
     )  # fmt: skip
     assert refused.returncode == 2 and "scram-sha-256 on every line" in refused.stderr
@@ -369,8 +353,7 @@ def test_a_cluster_on_scram_alone_is_used_with_a_password(run: dict[str, str]) -
         "host all all 127.0.0.1/32 scram-sha-256\nhost all all ::1/128 scram-sha-256\n"
         "host all all 127.0.0.1 255.255.255.255 scram-sha-256\nlocal replication all reject\n"
     )
-    subprocess.run([SCRIPT, "true"], env={**run, "MAITY_PG_PASSFILE": str(_passfile(run))},
-                   check=True)  # fmt: skip
+    subprocess.run([SCRIPT, "true"], env={**run, "MAITY_PG_PASSWORD": PASSWORD}, check=True)
     assert len(calls(run, "start")) == 1
 
 

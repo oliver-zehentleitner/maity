@@ -4778,20 +4778,20 @@ placement ends without asking what in it matters.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-w7qtcbzcshn9, filed by the lead from tsk-deaaanqsq5e2 (placed sessions bypassed `tools/run_slot.sh`'s slots), 2026-11-20; security's rejection of a directory shared by a user's placements and the lead's choice of the scratch, 2026-11-20; the security review of #2032 (other placements' scratch denied, scram with a per-placement password file), 2026-11-20
+**Source:** card tsk-w7qtcbzcshn9, filed by the lead from tsk-deaaanqsq5e2 (placed sessions bypassed `tools/run_slot.sh`'s slots), 2026-11-20; security's rejection of a directory shared by a user's placements and the lead's choice of the scratch, 2026-11-20; the security review of #2032 (other placements' scratch denied, scram with a per-placement password kept outside every sandbox), 2026-11-20
 **See:** runner.md — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-20
 **Revisit when:** a runner-mediated slot lock bounds heavy runs across placements (tsk-w7dx3h9mn8dp); each placement runs as its own OS user; `with_postgres.sh` moves its socket out of the data directory
 
-The runner sets `MAITY_RUN_SLOTS_DIR=<scratch>/slots` and
-`MAITY_PG_DIR=<scratch>/pg` for every placement that has a scratch, and
-`MAITY_RUN_NAME=<handle>#<instance>` (the handle alone before the hub has
-named an instance; a value of any other shape is left out).
-`MAITY_PG_DIR` is set only when `<scratch>/pg/.s.PGSQL.<port>` fits a Unix
-socket path (`adapters.pg_dir`, room for a five-digit port), as `TMPDIR`
-is (the entry under See). Otherwise the runner logs that it left it out.
-No path is opened in any sandbox beyond the scratch, which the sandbox
-already writes and which goes when the placement closes. Within a
-placement, `with_postgres.sh` keeps reusing its own cluster across runs.
+The runner sets `MAITY_RUN_SLOTS_DIR=<scratch>/slots` for every placement
+with a scratch beside its clone, and `MAITY_RUN_NAME=<handle>#<instance>`
+(the handle alone before the hub has named an instance; a value of any
+other shape is left out). The session gets `MAITY_PG_DIR=<scratch>/pg` and
+its password only where `<scratch>/pg/.s.PGSQL.<port>` fits a Unix socket
+path (`adapters.pg_dir`, room for a five-digit port), as `TMPDIR` does (the
+entry under See). Otherwise the runner logs that it left them out. No path
+is opened in any sandbox beyond the scratch, which the sandbox already
+writes and which goes when the placement closes. Within a placement,
+`with_postgres.sh` keeps reusing its own cluster across runs.
 
 Two hardening steps keep the scratch the placement's own:
 - **Other scratches denied.** Every other placement's scratch is listed at
@@ -4803,20 +4803,24 @@ Two hardening steps keep the scratch the placement's own:
   the start. One made while a Claude Code session runs is a known residual,
   tracked as tsk-rbys2j9q0m48. agy and opencode are not kept out by these
   rules.
-- **Password-protected cluster.** The cluster takes a password: scratchop
-  `make` draws one per placement into `<scratch>/pg.pass`, 0600, created
-  exclusively without following a link and never overwritten, so a restart
-  keeps it. `MAITY_PG_PASSFILE` names it, and `with_postgres.sh` then makes
-  the cluster with `scram-sha-256`. The runner sets `MAITY_PG_DIR` only
-  beside a password file it vouched for. A cluster with `trust` is never
-  offered to a session.
+- **Password-protected cluster.** The cluster takes a password, which
+  `with_postgres.sh` gets as `MAITY_PG_PASSWORD` and uses to make the
+  cluster with `scram-sha-256`. The runner draws it once per placement into
+  `<workspaces>/.maity-pg/<placement id>` (scratchop `pg_make`: 0600,
+  created exclusively without following a link, never overwritten, removed
+  at the close). That holder is 0700, outside every scratch and clone, and
+  at a fixed path, so every sandbox is denied it from its first start; a
+  placement made later adds no path to deny. The session never reads the
+  file. The runner starts it through `pgenv`, which reads the password
+  outside the sandbox and sets it, with `MAITY_PG_DIR`, in the session's
+  process environment, never on a command line or in tmux's environment
+  (`launch.env` reaches tmux as `-e`). Both are set or neither, so a
+  cluster with `trust` is never made in a scratch.
 
-The password is defence in depth, for when the deny does not hold: a
-same-user process that reaches the socket path but not the session's files
-or environment (a harness without a per-path deny, such as opencode, or a
-configuration slip). A fully unsandboxed process of the same user can read
-the password (`/proc/<pid>/environ`, the file), and the password does not
-claim to stop it.
+The password keeps out a same-user process that can reach the socket path
+but not the session's files or process environment. A fully unsandboxed
+process of the same user can read the session's environment, and the
+password does not claim to stop it.
 
 **Reason:** the scripts' default, `~/.local/state/maity/`, is outside what
 either sandbox writes, so placed sessions ran their heavy suites without a
@@ -4843,10 +4847,17 @@ a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
 - The scripts' default under `~/.local/state/maity/`: that directory also
   holds `MAITY_STATE_DIR` credentials of agents joined by hand, so it
   cannot be opened to a sandbox.
-- A new password at each session start, passed in the environment: the
-  cluster outlives a restart, so each start would have to reset the role's
-  password (`postgres --single` with the server stopped) and could break a
-  run still using it. One password per placement in a file needs neither.
+- A new password at each session start: the cluster outlives a restart,
+  so each start would have to reset the role's password (`postgres
+  --single` with the server stopped) and could break a run still using it.
+  One password per placement needs neither.
+- The password file in the placement's own scratch, read by the session:
+  the scratch is not denied to a session that started before it existed.
+- Denying the whole workspaces root and re-allowing the own clone and
+  scratch: it rests on an allow inside a deny that is not shown to work in
+  this sandbox, and the own credential's deny would sit inside it.
+- A non-superuser cluster role: the hub's own tests run as a superuser
+  (`hub/tests/test_db_role.py`).
 
 ## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
 
