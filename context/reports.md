@@ -157,7 +157,7 @@ waits behind; the merge is the result review asked for.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-yfv9rnxpcwjd (a security finding on `merged_closes: auto`); the lead's rulings of 2026-11-20 on its plan (the card named in the pull request and the merge after the report both required, `upstream`'s remote branch compared, forks never, a cancelled card still counting, the four `blocked_by` names); contract `docs/api.md` §6.1 `merged_closes`, §6.6 "A merge closes the loop", §8.2 `task_merged`, §11; it narrows hub/context/probe.md f89f3f4d (where the close happens) and qualifies cli/context/report.md f720dd3c (a deleted branch is still no mismatch, but no longer enough to close)
+**Source:** card tsk-yfv9rnxpcwjd; the lead's rulings of 2026-11-20 on its plan (the card named in the pull request and the merge after the report both required, `upstream`'s remote branch compared, forks never, a cancelled card still counting, the four `blocked_by` names); contract `docs/api.md` §6.1 `merged_closes`, §6.6 "A merge closes the loop", §8.2 `task_merged`, §11; it narrows hub/context/probe.md f89f3f4d (where the close happens) and qualifies cli/context/report.md f720dd3c (a deleted branch is still no mismatch, but no longer enough to close)
 **See:** reports.md#a-merged-pull-request-wakes-the-done-authority-and-may-close-the-card — ee81b817-86bb-4185-80c6-e0598132d5bd — as of 2026-11-20
 **Revisit when:** a card's work spans more than one pull request on purpose, the forge tool can link a pull request to its card by something better than its text, or a forge other than GitHub is read
 
@@ -174,16 +174,13 @@ kept) counts as not holding. In every other case `auto` acts as
 `head_ref`, `pull_request_unnamed`, `merged_before_report`,
 `pull_request_shared`.
 
-**Reason:** the match only compared the pull request's head commit, and
-a branch the forge did not have read as deleted after the merge, so it
-was never compared at all. With `done_authority: admin` a member could
-report any merged pull request with its head commit and an unknown
-branch name, and the hub closed the card without the admin; one pull
-request closed any number of cards that way. The head branch alone is
-not enough: it is as readable as the head commit. What only the card's
-own work has is that its pull request names the card and is merged
-after the card reported it, and the hub only has to keep a pull request
-from closing a second card. The check runs only where the hub would
+**Reason:** a merge should close only the work it belongs to. The match
+compared only the pull request's head commit, which does not tie a pull
+request to one card. The head branch alone is not enough: it is as
+readable as the head commit. What only the card's own work has is that
+its pull request names the card and is merged after the card reported
+it, and the hub only has to keep a pull request from closing a second
+card. The check runs only where the hub would
 close, under the project's lock, so it reads the other cards' reports
 and the earlier `task_merged` events then, and no new column is needed.
 
