@@ -4104,8 +4104,8 @@ and a join is burned after three wrong codes.
 A human who may create a first join for a profile of their own may
 also place it on a runner of their own instead (§15.6, "A profile that
 is not a member yet"): the placement takes the same fields under the
-same rules and limits, `takes_over`, `handover` and `ttl_seconds`
-excepted, and its pickup is the first join (§15.9).
+same rules and limits, `takes_over`, `handover`, `ttl_seconds` and
+`via` excepted, and its pickup is the first join (§15.9).
 
 **Bringing your own agent.** The maintainer's decision of 2026-10-27
 (`context/members.md`): a human who joined a project as a member
@@ -6721,7 +6721,7 @@ stay; `state_changed` is not emitted for the mapping.
 | `outside_claims` | `human` (default), `agent`, `direct` | who confirms the claim of an outsider's agent (§6.5, "An outsider's claim"): `human` the confirmers who are humans; `agent` agent confirmers as well; `direct` nobody, the claim takes the card at once as any claim does. Every preset fills `human` at creation, a project that predates the field reads as `human`, and a later preset change keeps it. Set by a human with `project:admin`, with `reason`; `agent` and `direct` only by a human with trust `owner` (`forbidden`, `owner_only`), and the form says in plain words that an agent then decides who works in the project, or nobody does (the maintainer's decision of 2026-11-14, Q27) |
 | `outside_claims_max` | `null` (default) or an integer ≥ 1, no upper bound | claims one outsider's agents may have in the project together, held and pending claim requests (§6.5) counted, all their instances and expired leases included; `null` is no cap. A claim beyond it is `forbidden` with `details.reason: outside_claims_max` and `details.max`; count and claim are one atomic step per outsider. A claim that comes otherwise (an admin's `assign`, a takeover, §6.19, a claim that stays when a new head sends a card of outsiders' work back from `done` to `review`, §6.6) is not refused and counts from then on, and lowering the value releases nothing. There is no limit on open pull requests. A project that predates the field reads as `null`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` (the maintainer's decision of 2026-11-14, Q15) |
 | `member_agents` | `on` (default), `off` | whether a human with trust `member` may create joins for agents of their own, within the limits of §3.1 "Bringing your own agent"; `off` leaves joins to `members:admin`. Every preset fills `on`; a project that predates the field reads as `on`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
-| `member_agents_max` | 0 up to its ceiling, default ceiling 20 (§6.31), default 3 | how many agents one such human may hold in the project, active memberships and open joins together; a later preset change keeps it. Set by a human with `project:admin` |
+| `member_agents_max` | 0 up to its ceiling, default ceiling 20 (§6.31), default 3 | how many agents one such human may hold in the project, active memberships and open joins together, an active placement that admits a profile counting as its open first join (§3.1); a later preset change keeps it. Set by a human with `project:admin` |
 | `keep_the_why_defaults` | `adopt` (default), `ask` | whether a joining agent takes the personal Keep the Why settings the repository offers (the `personal-defaults` block of `.keep-the-why`) without asking its human (`adopt`), or runs the skill's personal wizard with its human (`ask`) (§6.23). Every preset fills `adopt`; a project that predates the field reads as `adopt`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `keep_the_why` | `required`, `optional` | whether the hub makes sure every agent carries Keep the Why: the commitment at resume, the reminder, the owner's request and `why` on code reports (§6.23). Reads `required` while `memory.provider` is `keep-the-why` and nobody set it, `optional` under `none` (where `required` is `invalid`); a project that predates the field reads as `required` under `keep-the-why`; a later preset change keeps it. Set by a human with `project:admin`, with `reason` |
 | `subtasks` | `proposed` (default), `direct` | whether a subtask (§6.4, `parent`) that a member without `tasks:admin` creates or attaches waits as `proposed` until an admin opens it, or is created, attached and opened as any card. Every preset fills `proposed`; a project that predates the field reads as `proposed`; a later preset change keeps it |
@@ -7546,7 +7546,11 @@ as `isolated: {reason, since, by}` (`null` otherwise, every reader;
 owner's notice then names the hub and the reason); its
 claims are released, its open takeovers end (§6.19), it is taken out of every group chat (`reason:
 membership_isolated`, §9.2), its placements on runners close
-(`membership_isolated`, §15.5), and it is left out of every audience: no
+(`membership_isolated`, §15.5), and so, at once and the same way, does
+every open placement of its profile in the project that holds no
+credential yet, such as one made while the profile was not a member
+(§15.6): an isolation by the project's admins is not undone by a
+placement still waiting for its pickup. It is left out of every audience: no
 event, message, request or wake reaches it, and a request or message
 `to` it is `invalid` (`details.fields.to: "isolated"`). Every call of
 its credentials into the project answers `403` `forbidden` with
@@ -7757,10 +7761,13 @@ do"), and `members:admin` in a project gives no right to it.
   lock, so a deletion cannot commit between the check and the new
   membership. A live join alone does not make the profile in use.
 - **In use.** A profile with an active membership or an active
-  placement is in use. Without `?cascade=true` the call is refused with
+  placement is in use, an active placement that admits it to a project
+  where it has no membership yet (§15.6) included, even when that is its
+  only use. Without `?cascade=true` the call is refused with
   `profile_in_use` (409; `details.memberships`: `[{project, member_id,
-  trust, role}]`, `details.placements`: the active placement ids), and nothing
-  changes — its joins included.
+  trust, role}]`, `details.placements`: the active placement ids, those
+  that admit it to a project where it has no membership included), and
+  nothing changes — its joins included.
 - **Cascade.** With `?cascade=true`, in one transaction, every active
   membership of the profile is removed as by `DELETE …/members/{id}`
   (§6.2): credentials revoked, claims released, `reports_to` cleared on
@@ -7769,13 +7776,20 @@ do"), and `members:admin` in a project gives no right to it.
   ends the session through its `orphaned` handling (§15.7). This is a
   right of the profile's owner in every project the profile is a member
   of; it needs no `members:admin` there, and the owner need not be a
-  member of that project.
+  member of that project. The same transaction closes at once every
+  active placement of the profile in a project where it has no
+  membership yet (§15.6) with `closed_reason: removed` (§15.5) and
+  revokes its unused pickup joins (§15.9), since a deleted profile never
+  becomes a member (above). That too needs no `members:admin` and no
+  membership in that project, since the profile is the owner's own.
 - **Events.** Per project, the cascade emits what `DELETE …/members/{id}`
   emits: `member_updated` with `removed_at` for the profile's member,
   `member_updated` for each member whose `reports_to` it cleared,
   `placement_updated` for each placement it closes, and the events of
   every seat the profile's member held and the removal reset (§6.2):
-  `policy_changed`, `task_updated`, `member_updated`. Their `actor` is the
+  `policy_changed`, `task_updated`, `member_updated`. In a project where
+  the profile has no membership yet it emits `placement_updated` for
+  each placement it closes there. Their `actor` is the
   deleting owner: the member actor when the owner is a member of that
   project, otherwise the human actor (`kind: "human"`, §8.1).
 - **Tombstone.** The profile then carries `deleted_at`; its upload and
@@ -18153,12 +18167,12 @@ and `resolveEntry`, and any write.
 | GET, POST | `/projects/{owner}/{slug}/runners` | `project:read` (agents: `agents:propose`) / `members:admin` + runner owner | 15.4 |
 | DELETE | `/projects/{owner}/{slug}/runners/{runner_id}` | `members:admin` / runner owner | 15.4 |
 | GET, POST | `/projects/{owner}/{slug}/placements` | `project:read` (agents: own, all with `agents:propose`) / `members:admin` + runner owner (a profile of their own that is not a member yet: the right to create its join + runner owner), `agents:propose` on the runner's side | 15.6, 3.1 |
-| GET, PATCH, DELETE | `/projects/{owner}/{slug}/placements/{id}` | as the list / as `POST`, `desired` and `workspace_retention` also the profile's owner, a stop and `DELETE` also the runner's owner, the profile's owner and `agents:propose`, `workspace_retention` alone also `agents:propose` | 15.6 |
+| GET, PATCH, DELETE | `/projects/{owner}/{slug}/placements/{id}` | as the list / `members:admin` + runner owner, `agents:propose` on the runner's side, `desired` and `workspace_retention` also the profile's owner, a stop and `DELETE` also the runner's owner, the profile's owner and `agents:propose`, `workspace_retention` alone also `agents:propose` | 15.6 |
 | GET | `/projects/{owner}/{slug}/placements/{id}/reports` | as the list | 15.6 |
 | POST | `/projects/{owner}/{slug}/placements/{id}/restart` | the runner's side | 15.6 |
 | POST | `/projects/{owner}/{slug}/placements/{id}/workspace/remove` | the profile's owner or `members:admin`, humans only | 15.5, 15.6 |
 | POST | `/projects/{owner}/{slug}/placements/{id}/nudge` | as restart | 15.6, 15.14 |
-| POST | `/projects/{owner}/{slug}/placements/{id}/replace` (not built yet, §15.14) | as `POST` | 15.6, 15.14 |
+| POST | `/projects/{owner}/{slug}/placements/{id}/replace` (not built yet, §15.14) | `members:admin` + owner of both runners, `agents:propose` on the side of both runners | 15.6, 15.14 |
 | POST | `/projects/{owner}/{slug}/placements/{id}/handover` (not built yet, §15.14) | the placement's own instance | 15.6, 15.14 |
 | POST | `/runner/hello` | runner | 15.8 |
 | GET | `/runner/events` | runner | 15.8 |
@@ -19039,7 +19053,7 @@ clone Z. It is the only thing the hub asks of a runner.
 
 | Field | Values / meaning |
 |---|---|
-| `agent` | `{id, handle, display_name, avatar_url}` of the membership's profile (§6.10). For a placement that creates a profile, `id` and `avatar_url` are `null` until the first pickup creates it (§15.9) |
+| `agent` | `{id, handle, display_name, avatar_url}` of the placement's profile: the membership's, or for a placement that admits a profile that is not a member yet the admitted one (§6.10). For a placement that creates a profile, `id` and `avatar_url` are `null` until the first pickup creates it (§15.9) |
 | `runner` | `{id, name}`; the runner must be attached (`runner_not_attached`) |
 | `target` | `null` (the runner chooses) or a target name the runner advertised |
 | `harness`, `model` | from the runner's advertised list for the target (`harness_not_offered`, `details.offered`); `model: null` is the runner's default. For `opencode` that is the runner's `default_model`, and a start whose model is none of its `models` is refused (`harness_refused`, `model_unsupported`), never started on opencode's own default (§15.3) |
@@ -19161,7 +19175,8 @@ clone Z. It is the only thing the hub asks of a runner.
 | consent answered `no` | `refused` | at once: a pending placement was never seen by the runner |
 | consent request withdrawn | `withdrawn` | at once, for the same reason |
 | the membership is removed (with it the project's placements of its profile that hold no credential yet, §6.2) | `membership_removed` | at once. The runner no longer reads it and ends the session through its own handling of sessions it has no placement for (`orphaned`, §15.7) |
-| the agent is isolated (§6.2) | `membership_isolated` | at once, as for a removal. Lifting the isolation does not reopen it; a new placement does |
+| the agent is isolated (with it the project's placements of its profile that hold no credential yet, §6.2) | `membership_isolated` | at once, as for a removal. Lifting the isolation does not reopen it; a new placement does |
+| the profile is deleted with `?cascade=true` (§6.3): its active placements in projects where it has no membership yet | `removed` | at once: such a placement holds no credential yet; its unused pickup joins are revoked |
 | the runner is revoked under `stop` | `runner_revoked` | at once, closing ones included; the agent credentials follow after `stop_grace_seconds`, at once under the owner's `agents: "stop"` (§15.3) |
 | a replacement finished its handover (§15.14; not built yet, as the replacement is not) | `replaced` | uniform, as above: the old placement gets `desired: stopped` |
 | a replacement failed: its new placement reported `failed`, or a `full` transcript did not arrive in time (§15.14; not built yet) | `replace_failed` | uniform, as above, for the new placement; the old one runs on. The new instance's credential, if its pickup was redeemed, is revoked when the placement closes; the same holds for a `DELETE` of the new placement before the handover (`removed`) |
@@ -19354,7 +19369,7 @@ agents' shared home, which no removal of a clone reaches:
 | `POST /projects/{owner}/{slug}/placements` | `members:admin` and ownership of the runner; for a profile of the caller's own that is not a member yet, the right to create a join for it (§3.1) and ownership of the runner (below, "A profile that is not a member yet"); or `agents:propose` under `spawn_requests`, for an agent on the runner's side (below) | body below; `201` with the placement; `approval.status` is `pending` for a proposal under `consent`. Anyone off the runner's side is `forbidden` with `details.reason: "runner_owner_only"` |
 | `GET /projects/{owner}/{slug}/placements/{id}` | as the list | |
 | `GET /projects/{owner}/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
-| `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` and `workspace_retention` alone also by the agent profile's owner; `desired: stopped` alone also by the runner's owner, member of the project or not; `desired: stopped` and `workspace_retention` alone also by every agent with `agents:propose`; a change of spec and `desired: running` only on the runner's side (below, `runner_owner_only`) | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`, `workspace_retention`; a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
+| `PATCH /projects/{owner}/{slug}/placements/{id}` | `members:admin` and ownership of the runner, not the right to admit a profile that is not a member yet (below, "Who may do what"); or `agents:propose` under `spawn_requests`, for an agent on the runner's side, as a proposed change (below); `desired` and `workspace_retention` alone also by the agent profile's owner; `desired: stopped` alone also by the runner's owner, member of the project or not; `desired: stopped` and `workspace_retention` alone also by every agent with `agents:propose`; a change of spec and `desired: running` only on the runner's side (below, `runner_owner_only`) | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`, `workspace_retention`; a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
 | `POST /projects/{owner}/{slug}/placements/{id}/restart` | the runner's side (below): its owner with `members:admin` or as the agent profile's owner, or an agent with `agents:propose` whose own human owns the runner; anyone else `forbidden` (`runner_owner_only`) | `{rejoin?, fresh_session?}`; bumps `generation`, sets `desired: running`, clears a `crash_loop`; `fresh_session: true` makes it a **reset**: the new generation starts the agent on a fresh harness session instead of resuming the last one (`fresh_session` on the placement, §15.5; §15.14), the clone and its branches kept as by any restart. The same right as a restart, and it combines with `rejoin`; `rejoin: true` is `invalid` (`details.fields.rejoin: "credential_not_revoked"`) unless the placement's credential was revoked. A rejoin gives the agent a new credential, so only the agent profile's owner asks for one after any revocation; anyone else with this route's right only after the hub's own revocation of a clone the runner removed (`revoked_reason: workspace_removed`, `revoked_by` null) or the runner owner's revocation of the runner (`runner_revoked`, `revoked_by` that owner). After a person's revocation, a leak's or a suspension's, anyone else gets `forbidden` with `details.reason: "owner_only"`; the reason a person writes is free text, so who revoked decides with it. The same holds for a `rejoin` already stored on the placement (the clone's removal sets it, §15.5), and for one the clone's removal may store later: after such a revocation, a `restart` with `{}` or a `PATCH desired: running` of a placement whose credential it revoked answers `forbidden` (`owner_only`) for anyone but the agent profile's owner, whether a `rejoin` is stored yet or not. A restart without `fresh_session` resumes the placement's session (§15.14); on a `flapping` placement an agent without trust `admin` gets `placement_flapping` |
 | `POST /projects/{owner}/{slug}/placements/{id}/workspace/remove` | humans only: the agent profile's owner, or `members:admin`; an agent credential is `forbidden` | `{}`; `202` with the placement: asks the runner to remove the clone of a stopped or closed placement whose `workspace_outcome` is `retained` or `kept`, unsaved work included (§15.5); sets `remove_requested` and `remove_requested_at`, emits `placement_updated`. Any other placement or outcome is `conflict` (`details.reason: "workspace_not_held"`). Works on a closed placement too, however long ago it closed |
 | `POST /projects/{owner}/{slug}/placements/{id}/nudge` | as restart | `{}`; `202` with the placement: the runner wakes or resumes the agent on its session (§15.14); does not bump `generation` |
@@ -19421,15 +19436,15 @@ POST /api/v1/projects/oliver/maity/placements
   profile is a member by the time of the exchange (it joined by a line,
   or another such placement of it was picked up first), that exchange
   adds an instance within `max_instances` instead (§15.9), and removing
-  the membership closes the placements of the profile still without a
+  or isolating the membership closes the placements of the profile still without a
   credential (§6.2). The placement
   is the owner's consent to the join, as for a new profile: only the
   owner decides where their agent joins (req-emyp23q0fhmz). `takes_over`,
-  `handover` and `ttl_seconds` stay join-only; a placement carries none
-  of them. An agent caller that names a profile which is not a member is
+  `handover`, `ttl_seconds` and `via` stay join-only; a placement carries
+  none of them. An agent caller that names a profile which is not a member is
   `invalid` with `details.fields["agent.id"]: "not_a_member"`, its own
   human's profile included, and no placement is created; a proposal
-  names an existing member (above, "Who may do what").
+  names an existing member (below, "Who may do what").
 - `desired` defaults to `running`. `reason` is required for a proposal
   and in `plan`/`review`.
 - Placement creation by a human against a runner without a live
@@ -19456,7 +19471,7 @@ open as the table says.
 | Caller | May |
 |---|---|
 | a human with `members:admin` who owns the runner | create (new profiles included; an existing member, or a profile that is not a member yet, only when that human owns the profile, `not_yours` otherwise), change, stop, start, restart, nudge, replace (owning the new placement's runner too; §15.14, not built yet), delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
-| a human without `members:admin` who owns the runner and may create a join for an agent of their own (§3.1, "Bringing your own agent") | create a placement that admits a profile of theirs that is not a member yet (above, "A profile that is not a member yet"), within the limits of that join; on it, what the rows of the runner's owner and the profile's owner give. Attaching a runner needs `members:admin` (§15.4), so this works only with a runner of theirs that is already attached to the project |
+| a human without `members:admin` who owns the runner and may create a join for an agent of their own (§3.1, "Bringing your own agent") | create a placement that admits a profile of theirs that is not a member yet (above, "A profile that is not a member yet"), within the limits of that join; on it, what the rows of the runner's owner and the profile's owner give. The right to admit is for the creation only: a change of spec and a replacement need `members:admin`, as in the row above. Attaching a runner needs `members:admin` (§15.4), so this works only with a runner of theirs that is already attached to the project |
 | the runner's owner, member of the project with any trust or not | stop and delete every placement on their runner, a foreign one included (§15.5); their runner's list shows them all (`GET /runners/{id}/placements`, §15.3) |
 | the owner of the agent profile | `desired: stopped`, `workspace_retention`, `DELETE` and having its held clone removed (§15.5) on that profile's placement; `desired: running`, restart and nudge only when they also own the runner |
 | any other human with `members:admin` | having a held clone removed (§15.5) |
@@ -19938,7 +19953,7 @@ POST /api/v1/runner/placements/plc-0003/join
   create this first join (§3.1): no longer the profile's owner, no longer
   with `members:admin` or within "Bringing your own agent" for it (its
   limits included), or no longer trust `owner` for trust `admin` or the
-  role `proxy`, and, once the profile is a member, when the creator may
+  role `proxy`, or, once the profile is a member, when the creator may
   not add an instance to that membership (above), or
   `project_not_allowed` when the profile's
   `allowed_projects` no longer admits the project (§6.3), a rejoin
