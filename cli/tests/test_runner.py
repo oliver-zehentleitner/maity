@@ -1422,13 +1422,16 @@ def test_runner_is_refused_anywhere_but_first(
 ) -> None:
     """argparse takes the `runner` group after `--` or a global option too, past the
     harnesses' rules for `maity runner`: refused before anything runs. Where argparse itself
-    refuses a spelling (Python before 3.13 reads a second `--` as the command), that refusal
-    stands; either way it is a usage error and nothing runs."""
+    refuses a spelling first (some Python versions refuse a `--` before the command, and every
+    version refuses `-- --`), that refusal stands, but only for words with a `--` before
+    `runner`; either way it is a usage error and nothing runs."""
     reached = _reaching(monkeypatch)
+    code: int | str | None
     try:
         code = cli.main(words)
     except SystemExit as exc:  # argparse's own usage error, before the first-argument check
         code = exc.code
+        assert "--" in words[: words.index("runner")]  # only a `--` spelling may end here
         assert "invalid choice" in capsys.readouterr().err
     else:
         assert FIRST_ONLY in capsys.readouterr().err

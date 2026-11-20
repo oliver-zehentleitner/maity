@@ -5058,10 +5058,11 @@ option. One check where the CLI reads its arguments makes the rules' shape
 the CLI's own, on every harness at once.
 
 The check runs right after argparse has parsed the arguments, on what it
-took as the command. Where argparse itself refuses a spelling first (before
-Python 3.13 it reads a second `--` as the command, "invalid choice"), that
-refusal stands. The message differs then, but it is still a usage error
-(exit 2) and nothing runs.
+took as the command. Some Python versions refuse a `--` before the command
+themselves ("invalid choice"), and every version refuses `-- --`. Either way
+it is a usage error (exit 2) and nothing runs, so the tests of these
+spellings accept argparse's refusal, but only for words with a `--` before
+`runner`.
 
 **Rejected alternatives:**
 - Widening each harness's rules to every spelling argparse accepts. They
