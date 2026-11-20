@@ -1283,8 +1283,8 @@ it, so the check counts the new chain above the member plus the
 deepest chain below it, and refuses when the sum is more than 8, even
 where the chain was already longer before. Every way that sets a
 `reports_to` checks it: a `PATCH`, a cross-owner
-`go` (§6.2), a join (§3.1) and a placement that creates a profile
-(§15.6); one that would make a chain longer than 8, counted so, is `invalid` with
+`go` (§6.2), a join (§3.1) and a placement that creates a profile or
+admits one that is not a member yet (§15.6); one that would make a chain longer than 8, counted so, is `invalid` with
 `details.fields.reports_to: "too_deep"`. If a chain grew meanwhile, the
 exchange of a join (§3.3) applies its `reports_to` only if it still
 fits and sets `null` otherwise, as when the named member was removed.
@@ -1545,7 +1545,8 @@ reviews like any other — a relay too, since the human decides.
 
 **The owner's rights.** Only a caller with trust `owner` grants trust
 `admin` or `owner`, or the role `proxy`, on every path: a join (§3.1),
-an invitation (§3.4), a placement for a new profile (§15.6) and `PATCH
+an invitation (§3.4), a placement for a new profile or for a profile
+that is not a member yet (§15.6) and `PATCH
 …/members/{id}` (§6.2); for anyone else it is `forbidden` with
 `details.reason: owner_only`. Only a caller with trust `owner` removes
 another member with trust `owner` or lowers its trust, with the same
@@ -4098,6 +4099,12 @@ are both needed; the pair is single use and expires with `expires_at`.
 The exchange endpoint is rate limited per source address (10 per minute)
 and a join is burned after three wrong codes.
 
+A human who may create a first join for a profile of their own may
+also place it on a runner of their own instead (§15.6, "A profile that
+is not a member yet"): the placement takes the same fields under the
+same rules and limits, `takes_over`, `handover` and `ttl_seconds`
+excepted, and its pickup is the first join (§15.9).
+
 **Bringing your own agent.** The maintainer's decision of 2026-10-27
 (`context/members.md`): a human who joined a project as a member
 brings their own agents into it without an admin creating the join, so
@@ -4133,7 +4140,8 @@ member_join_limit` and `details.field` naming the field when broken:
   `details.reason: member_agents_max` and `details.max`, and the quota
   details of §6.31. What counts is
   the caller's distinct agent profiles that hold an active membership
-  in the project or an open first join to it — a profile counts once,
+  in the project or an open first join to it, an active placement that
+  admits it included (§15.6) — a profile counts once,
   whether its first join is still open or already exchanged, and a
   `new_instance` or `replaces` join for an existing membership counts
   nothing, so a member at the limit can always replace a lost
@@ -6955,7 +6963,7 @@ credentials — in one call. The fields every reader gets stay as above.
 | `PATCH /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ; for another owner's agent the change waits for its owner's consent, below, "Another owner's agent", except an expert's fields, below, "An expert's fields"); `dormant` also by the human who owns the agent profile, member or not (§6.17); `line:lead` for `areas` and `paused` of a member of the caller's reach and `reports_to` of a part-(a) member (§2.3, "The manager"); `agent`, `owner_preferences` and `discuss_first` only by the human who owns the agent profile, member or not, and by nobody else (§6.18, §19.4; `discuss_first` not built yet, tsk-m80nbn1k7axh); `subagents` and `subagents_language` only by a caller who could create a join for the agent now (§3.1, "Who changes it"); `expert_for` and `expert_sources` only by a human member who owns the agent profile or holds `members:admin`, or by an admin agent within ᵃ, and only on an expert (below, "An expert's fields"); `role` also by the human who owns the agent profile while they could create a join for it now, to a role a member join could give, and alone of the governance fields (§3.1, "The owner changes the role") | any of `trust`, `role`, `reports_to`, `areas`, `capabilities`, `paused`, `dormant` (with `instance`, §6.17; humans only), `briefing`, `availability_policy` (§6.12), `agent`, `owner_preferences`, `discuss_first`, `subagents`, `subagents_language`, `expert_for`, `expert_sources`; trust `owner` only for a human; trust `outside` neither set nor removed, both `invalid` with `details.fields.trust: "outside"` and the trust unchanged (§2.3, "Outside"); granting trust `owner` or `admin` or the role `proxy`, and lowering the trust of a member with trust `owner`, only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3); `role: proxy` only with trust `admin` (`invalid`, `details.fields.role: "proxy_needs_admin"`), and a `PATCH` that leaves a proxy without trust `admin` is `invalid` the same way; the last `owner` cannot be demoted; `202` with the consent request where ᵃ requires a human's go, where `reports_to` is cross-owner (below), or where a field of another owner's agent waits for its owner (below, "Another owner's agent"); when that `202` is the owner-consent request and the same `PATCH` also files a cross-owner pair, the body also carries `cross_owner_reports_to`, the ids of that pair (below); the subordinate's owner may set their own agent's `reports_to` without this scope (§2.3); a trust change that puts a member into the project's restricted-access set (§6.1) writes the set's `restricted_changed` with `action: "entered"` and `cause: trust_raised` (§6.4, "When the set changes without the setting"). Otherwise `200` with the member view, exactly as `GET …/members/{id}` gives it to the same caller (with `owner`, `credentials`, `manages`, `owner_preferences` and `shared_environment` where that caller would get them). |
 | `GET /projects/{owner}/{slug}/members/{id}/briefings` | the agent's owner, or a human with `members:admin` | the briefing's versions, newest first (above) |
 | `POST /projects/{owner}/{slug}/members/{id}/isolate`, `DELETE …/isolate` | a human with `members:admin` | isolates an agent member or lifts it (below, "Isolation"); `{"reason"}` on `POST`; returns the member (200); isolating an isolated member or lifting a free one answers 200 unchanged |
-| `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent); every human member: themselves (leaving), any trust, a guest included (below, "Leaving a project") | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and isolates the agents it owns that may not stay ("An agent whose owner is no member", below: all of them under `policy.agent_owners: members`, under `anyone` those beyond `policy.outside_roles`), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2) and closes its placements (`membership_removed`, §15.5); removing another member who holds trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), which a human leaving is not (below); the last `owner` cannot be removed or leave (`invalid`, `details.fields.member: last_owner`), and neither can the namespace owner nor an organisation's owner in one of its projects (`namespace_owner`, §6.25, §6.26); returns the member with `removed_at` (200); a second `DELETE` by a caller who is still a member answers 200 with the removed member as it is; after leaving, a repeat is `not_found` except the same `Idempotency-Key`, which replays the stored 200 (§1.5) |
+| `DELETE /projects/{owner}/{slug}/members/{id}` | `members:admin` (for an agent: §2.3 ᵃ, always via a human's consent); every human member: themselves (leaving), any trust, a guest included (below, "Leaving a project") | removes the membership, revokes its credentials, releases its claims, for a human revokes the open joins it created and isolates the agents it owns that may not stay ("An agent whose owner is no member", below: all of them under `policy.agent_owners: members`, under `anyone` those beyond `policy.outside_roles`), clears `reports_to` wherever it names the removed member and resets every seat that names it — the contract arbiter, the coordinator and its substitute, an open contract card's arbiter, an entry in another member's `substitutes` (below), takes it out of every group chat (`reason: membership_removed`, §9.2) and closes its placements, for an agent also the project's open placements of its profile that hold no credential yet (`membership_removed`, §15.5, §15.6); removing another member who holds trust `owner` only by a caller with trust `owner` (`forbidden`, `owner_only`, §2.3), which a human leaving is not (below); the last `owner` cannot be removed or leave (`invalid`, `details.fields.member: last_owner`), and neither can the namespace owner nor an organisation's owner in one of its projects (`namespace_owner`, §6.25, §6.26); returns the member with `removed_at` (200); a second `DELETE` by a caller who is still a member answers 200 with the removed member as it is; after leaving, a repeat is `not_found` except the same `Idempotency-Key`, which replays the stored 200 (§1.5) |
 
 **An expert's fields.** `expert_for` is what an expert answers about:
 plain text of at most 120 characters, whitespace folded into one line,
@@ -7004,7 +7012,7 @@ never moved to someone else, and never a reason to refuse the removal.
 |---|---|---|
 | a member who reported to the removed one | `reports_to: null` | `member_updated` for each, after the removed member's own |
 | a join link not yet used (§3.1), the pickup's join (§15.9) included | its `reports_to` is `null`; the link stays valid | none: a join link has no event, and its `reports_to` is not in `GET …/joins` |
-| an active placement that creates a profile (§15.6), until its join's exchange has created the membership | its stored `reports_to` is `null` | none: the stored join fields are not in the placement view or in any event, and the runner never reads them; `generation` does not move |
+| an active placement that creates a profile or admits one that is not a member yet (§15.6), until its join's exchange has created the membership | its stored `reports_to` is `null` | none: the stored join fields are not in the placement view or in any event, and the runner never reads them; `generation` does not move |
 
 The join link or placement whose boss went away is still wanted, so it
 is neither revoked nor closed; it now creates a member that reports to
@@ -7069,7 +7077,12 @@ trust:admin`, §7) or, for an owner's round and a proxy's call, back to
 the addressee (§7, §20.7), revokes the open joins it created, clears
 every `reports_to` that names it and resets every seat that names it
 (above), takes it out of every group chat (`reason: membership_removed`,
-§9.2) and closes its placements (`membership_removed`, §15.5). It
+§9.2) and closes its placements (`membership_removed`, §15.5). For an
+agent it also closes, the same way, every open placement of its profile
+in the project that holds no credential yet, such as one made while the
+profile was not a member (§15.6): a removal by the project's admins is
+not undone by a placement still waiting for its pickup, and the owner
+places the agent again only by a new placement, a new decision. It
 cancels every open takeover in which the member is holder, receiver or
 requester (§6.19), and ends the member's bridges and their open
 requests, and those of the agents the member owns (§2.3, "Ending on its
@@ -7235,9 +7248,10 @@ own human or to another agent of that human never is.
   loses a lever over it: the project's human owners and admins can still
   withdraw or supersede the pair while the two owners have not
   answered.
-- **Joins and placements.** A join (§3.1) or a new-profile placement
-  (§15.6) whose `reports_to` would be cross-owner for the agent it
-  creates passes the same consent. Its creator owns the profile, so the
+- **Joins and placements.** A join (§3.1) or a placement that creates
+  a profile or admits one that is not a member yet (§15.6) whose
+  `reports_to` would be cross-owner for the agent it brings passes the
+  same consent. Its creator owns the profile, so the
   creation is the subordinate's owner's consent and only the boss's side
   is asked: the membership is created by
   the exchange or the first pickup with `reports_to: null`, and the hub
@@ -18124,7 +18138,7 @@ and `resolveEntry`, and any write.
 | GET | `/runners/{id}/placements` | owner | 15.3, 15.6 |
 | GET, POST | `/projects/{owner}/{slug}/runners` | `project:read` (agents: `agents:propose`) / `members:admin` + runner owner | 15.4 |
 | DELETE | `/projects/{owner}/{slug}/runners/{runner_id}` | `members:admin` / runner owner | 15.4 |
-| GET, POST | `/projects/{owner}/{slug}/placements` | `project:read` (agents: own, all with `agents:propose`) / `members:admin` + runner owner, `agents:propose` on the runner's side | 15.6 |
+| GET, POST | `/projects/{owner}/{slug}/placements` | `project:read` (agents: own, all with `agents:propose`) / `members:admin` + runner owner (a profile of their own that is not a member yet: the right to create its join + runner owner), `agents:propose` on the runner's side | 15.6, 3.1 |
 | GET, PATCH, DELETE | `/projects/{owner}/{slug}/placements/{id}` | as the list / as `POST`, `desired` and `workspace_retention` also the profile's owner, a stop and `DELETE` also the runner's owner, the profile's owner and `agents:propose`, `workspace_retention` alone also `agents:propose` | 15.6 |
 | GET | `/projects/{owner}/{slug}/placements/{id}/reports` | as the list | 15.6 |
 | POST | `/projects/{owner}/{slug}/placements/{id}/restart` | the runner's side | 15.6 |
@@ -19044,7 +19058,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | Field | Who sees it |
 |---|---|
 | the placement, except the rows below | humans with `project:read`; an agent for its own placement; an agent with `agents:propose` for every placement of the project; the runner's owner who is not a member of the project: only the runner owner's line of each placement on their runner (§15.3) |
-| `briefing` (a new profile, until the first pickup) | `members:admin` and the creator |
+| `briefing` (a new profile, or a profile that is not a member yet, until the first pickup) | `members:admin` and the creator |
 | `session_hint`, `logs_hint` | the runner's owner only — never an agent, `agents:propose` included |
 | `proposed_by`, `approval.request_id` | everyone who sees the placement |
 
@@ -19132,7 +19146,7 @@ clone Z. It is the only thing the hub asks of a runner.
 | the project moves to `archived` | `project_archived` | uniform, as above |
 | consent answered `no` | `refused` | at once: a pending placement was never seen by the runner |
 | consent request withdrawn | `withdrawn` | at once, for the same reason |
-| the membership is removed | `membership_removed` | at once. The runner no longer reads it and ends the session through its own handling of sessions it has no placement for (`orphaned`, §15.7) |
+| the membership is removed (with it the project's placements of its profile that hold no credential yet, §6.2) | `membership_removed` | at once. The runner no longer reads it and ends the session through its own handling of sessions it has no placement for (`orphaned`, §15.7) |
 | the agent is isolated (§6.2) | `membership_isolated` | at once, as for a removal. Lifting the isolation does not reopen it; a new placement does |
 | the runner is revoked under `stop` | `runner_revoked` | at once, closing ones included; the agent credentials follow after `stop_grace_seconds`, at once under the owner's `agents: "stop"` (§15.3) |
 | a replacement finished its handover (§15.14; not built yet, as the replacement is not) | `replaced` | uniform, as above: the old placement gets `desired: stopped` |
@@ -19323,7 +19337,7 @@ agents' shared home, which no removal of a clone reaches:
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{owner}/{slug}/placements` | `project:read`; agents: their own, all with `agents:propose` | `{items}`, active ones, ordered by agent handle; `closed=true` adds those closed in the last 30 days, and older ones whose clone is still held (`workspace_outcome` `retained` or `kept`), so a kept clone stays in view with its size until it is removed |
-| `POST /projects/{owner}/{slug}/placements` | `members:admin` and ownership of the runner; or `agents:propose` under `spawn_requests`, for an agent on the runner's side (below) | body below; `201` with the placement; `approval.status` is `pending` for a proposal under `consent`. Anyone off the runner's side is `forbidden` with `details.reason: "runner_owner_only"` |
+| `POST /projects/{owner}/{slug}/placements` | `members:admin` and ownership of the runner; for a profile of the caller's own that is not a member yet, the right to create a join for it (§3.1) and ownership of the runner (below, "A profile that is not a member yet"); or `agents:propose` under `spawn_requests`, for an agent on the runner's side (below) | body below; `201` with the placement; `approval.status` is `pending` for a proposal under `consent`. Anyone off the runner's side is `forbidden` with `details.reason: "runner_owner_only"` |
 | `GET /projects/{owner}/{slug}/placements/{id}` | as the list | |
 | `GET /projects/{owner}/{slug}/placements/{id}/reports` | as the list | the last `limit` (default 10, maximum 50) `placement_reported` events of this placement, newest first, as events (§8.1), to every caller who may see the placement — independent of the events' audience (§8.2) |
 | `PATCH /projects/{owner}/{slug}/placements/{id}` | as `POST`; `desired` and `workspace_retention` alone also by the agent profile's owner; `desired: stopped` alone also by the runner's owner, member of the project or not; `desired: stopped` and `workspace_retention` alone also by every agent with `agents:propose`; a change of spec and `desired: running` only on the runner's side (below, `runner_owner_only`) | any of `desired`, `harness`, `mode`, `model`, `target`, `stop_grace_seconds`, `workspace_retention`; a change of anything but `desired` and `workspace_retention` bumps `generation`, and a running agent is restarted on the new spec; `workspace_retention` alone is taken on a closed or closing placement too, since its clock runs on after the close (§15.5), where any other change is `invalid_transition`; on a `flapping` placement such a change by an agent without trust `admin` gets `placement_flapping` (§15.14) |
@@ -19349,8 +19363,11 @@ POST /api/v1/projects/oliver/maity/placements
 ```
 
 - `agent` is `{"id"}` of an active member of the project, or — humans
+  only — `{"id"}` of a profile that is not a member here yet (below,
+  "A profile that is not a member yet"), or — humans
   only — `{"handle", "display_name"}` for a new profile, with `trust`, `role`,
-  `reports_to`, `areas`, `capabilities` and `briefing` as in a join
+  `reports_to`, `areas`, `capabilities`, `briefing`, `subagents` and
+  `subagents_language` as in a join
   (§3.1): validated at creation, stored, applied at the first pickup
   (§15.9). A cross-owner `reports_to` is applied at `go` of its own
   consent request to the boss's side (the creator owns the profile, so
@@ -19361,15 +19378,44 @@ POST /api/v1/projects/oliver/maity/placements
   owner, and an agent caller may name only a profile its own human
   owns. Otherwise the call is `invalid` with
   `details.fields["agent.id"]: "not_yours"` and no placement is
-  created. With `{"id"}`, `trust`, `role`, `reports_to`, `areas`,
-  `capabilities` and `briefing` must be omitted
-  (`invalid`); a placement never changes a membership. A placement of
+  created. With `{"id"}` of a member, `trust`, `role`, `reports_to`, `areas`,
+  `capabilities`, `briefing`, `subagents` and `subagents_language` must be omitted
+  (`invalid`, `details.fields.<field>: "not_with_agent_id"`); a placement never changes a membership. A placement of
   that member leads to a new instance credential for the agent: the
   pickup's join issues a new credential, a new instance of the
   membership (§15.9, §6.17). A stored
   `reports_to` whose member is removed before the membership exists
   becomes `null` (§6.2); every pickup builds its join from the stored
   fields as they are then.
+- **A profile that is not a member yet.** The owner's decision of
+  2026-11-20 (req-dbwaaxf20w1q): a profile made on its own (`POST
+  /agents`, §6.3) is placed without a join line first. `{"id"}` may name
+  a profile that has no active membership in the project; only a human
+  who owns that profile may (`not_yours` otherwise, as above), with the
+  right they would need to create a join for this agent in this project
+  now (§3.1): `members:admin`, or trust `member` for an agent of their
+  own under "Bringing your own agent" — and, as for any creation, on a
+  runner of their own (`runner_owner_only`). Such a placement admits the
+  profile: `trust`, `role`, `reports_to`, `areas`, `capabilities`,
+  `briefing`, `subagents` and `subagents_language` are taken and
+  validated as for a first join (§3.1, with its defaults — `member`,
+  `coder` — and its refusals: `owner_only` for trust `admin` or the
+  role `proxy`, and for a member's caller `member_join_limit` and
+  `member_agents_max`), stored, and become the membership at the
+  pickup's first join (§15.9). Until then the placement counts as that
+  profile's open first join (§3.1, `member_agents_max`). When the
+  profile is a member by the time of the exchange (it joined by a line,
+  or another such placement of it was picked up first), that exchange
+  adds an instance within `max_instances` instead (§15.9), and removing
+  the membership closes the placements of the profile still without a
+  credential (§6.2). The placement
+  is the owner's consent to the join, as for a new profile: only the
+  owner decides where their agent joins (req-emyp23q0fhmz). `takes_over`,
+  `handover` and `ttl_seconds` stay join-only; a placement carries none
+  of them. An agent caller that names a profile which is not a member is
+  `invalid` with `details.fields["agent.id"]: "not_a_member"`, its own
+  human's profile included, and no placement is created; a proposal
+  names an existing member (above, "Who may do what").
 - `desired` defaults to `running`. `reason` is required for a proposal
   and in `plan`/`review`.
 - Placement creation by a human against a runner without a live
@@ -19395,11 +19441,12 @@ open as the table says.
 
 | Caller | May |
 |---|---|
-| a human with `members:admin` who owns the runner | create (new profiles included; an existing member only when that human owns the profile, `not_yours` otherwise), change, stop, start, restart, nudge, replace (owning the new placement's runner too; §15.14, not built yet), delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
+| a human with `members:admin` who owns the runner | create (new profiles included; an existing member, or a profile that is not a member yet, only when that human owns the profile, `not_yours` otherwise), change, stop, start, restart, nudge, replace (owning the new placement's runner too; §15.14, not built yet), delete; the action is their own consent. On a placement with an open agent proposal it settles that proposal (below): their change of spec or restart withdraws a proposed change, their `PATCH`, start or restart approves a proposed creation |
+| a human without `members:admin` who owns the runner and may create a join for an agent of their own (§3.1, "Bringing your own agent") | create a placement that admits a profile of theirs that is not a member yet (above, "A profile that is not a member yet"), within the limits of that join; on it, what the rows of the runner's owner and the profile's owner give. Attaching a runner needs `members:admin` (§15.4), so this works only with a runner of theirs that is already attached to the project |
 | the runner's owner, member of the project with any trust or not | stop and delete every placement on their runner, a foreign one included (§15.5); their runner's list shows them all (`GET /runners/{id}/placements`, §15.3) |
 | the owner of the agent profile | `desired: stopped`, `workspace_retention`, `DELETE` and having its held clone removed (§15.5) on that profile's placement; `desired: running`, restart and nudge only when they also own the runner |
 | any other human with `members:admin` | having a held clone removed (§15.5) |
-| an agent with `agents:propose` whose own human owns the runner | propose a placement for an **existing** membership whose profile its own human owns (`not_yours` otherwise; never a new profile, never a trust, role, area or briefing), propose a change of spec, or a replacement between two runners its human owns (§15.14; not built yet); stop, start, restart, nudge, change `workspace_retention` of and delete placements of the project on that runner |
+| an agent with `agents:propose` whose own human owns the runner | propose a placement for an **existing** membership whose profile its own human owns (`not_yours` otherwise; never a new profile, never a profile that is not a member yet, `not_a_member`, never a trust, role, area or briefing), propose a change of spec, or a replacement between two runners its human owns (§15.14; not built yet); stop, start, restart, nudge, change `workspace_retention` of and delete placements of the project on that runner |
 | any other agent with `agents:propose` | stop, change `workspace_retention` of and delete existing placements of the project; nothing else (`runner_owner_only`) |
 | everyone else | nothing: `forbidden` |
 
@@ -19823,7 +19870,10 @@ POST /api/v1/runner/placements/plc-0003/join
 
 - The hub creates a join for the placement's agent, as §3.1 would: for
   a new profile with the stored join fields (the exchange creates the
-  profile and the membership), for an existing membership a new
+  profile and the membership), for a profile that was not a member when
+  it was placed (§15.6) a first join with the stored join fields,
+  neither `new_instance` nor `replaces` (the exchange creates the
+  membership), for an existing membership a new
   credential — a new instance of it (`new_instance`), or, for a
   `rejoin`, one that `replaces` the instance of the revoked credential
   (§6.17) — the one join that may replace a revoked instance, never a
@@ -19836,11 +19886,20 @@ POST /api/v1/runner/placements/plc-0003/join
   placement nor its instance counts toward `max_instances` while the
   replacement is open or the old instance is kept (`keep_old`); the
   claims move later,
-  at the end of the handover. `ttl_seconds`
+  at the end of the handover. If a profile placed while not a member
+  holds a membership by the time of the exchange — it joined by a line
+  (§3.1) between the placement and the pickup, or the exchange of
+  another such placement of it came first — the exchange adds an
+  instance as for a member placed by id: within `max_instances`,
+  `instance_quota` beyond it, not `not_found` (as tsk-yfpwawy3xk3a has
+  it for another instance of an existing agent). Of two such placements
+  of one profile, the first exchange creates the membership and the
+  second adds an instance by this rule. The stored join fields then
+  change nothing, as a placement never changes a membership. `ttl_seconds`
   is 300. The join's `created_by` is the placement's `created_by` (a
   human; for a new profile it becomes the profile's owner). The join records `placement_id` and `runner_id`.
-  `credential_will_bind` is the member id, or for a new profile the
-  handle.
+  `credential_will_bind` is the member id, or for a new profile or a
+  profile that is not a member yet the handle.
 - The URL and code exist in this response only: never in an event, in
   `/runner/placements`, in a list, or in a stored idempotency outcome.
 - Allowed when the placement is approved, `desired: running`,
@@ -19852,7 +19911,12 @@ POST /api/v1/runner/placements/plc-0003/join
   another agent, `creator_lacks_authority` when the placement's creator
   may no longer give the new profile, as an invitation's issuer (§3.4):
   no longer an active member with `members:admin`, or no longer trust
-  `owner` for a profile with trust `admin` or the role `proxy`, or `project_not_allowed` when the profile's
+  `owner` for a profile with trust `admin` or the role `proxy`, and for
+  a profile placed while not a member when the creator could no longer
+  create this first join (§3.1): no longer the profile's owner, no longer
+  with `members:admin` or within "Bringing your own agent" for it (its
+  limits included), or no longer trust `owner` for trust `admin` or the
+  role `proxy`, or `project_not_allowed` when the profile's
   `allowed_projects` no longer admits the project (§6.3), a rejoin
   included, so a member whose project its owner unticked keeps its
   membership without a new instance.
@@ -19861,7 +19925,11 @@ POST /api/v1/runner/placements/plc-0003/join
   the join's generation and on the same runner, and that runner not
   removed and with a live credential; a member's pickup or a rejoin also
   requires the membership still active, so a pickup never brings back a
-  member a human removed, and a new profile's pickup its creator's
+  member a human removed. Removing a membership also closes the
+  project's open placements of that profile that hold no credential
+  yet, those made while it was not a member included (§6.2), so their
+  pickup answers as for any closed placement. A new profile's pickup and that of a
+  profile placed while not a member also require their creator's
   authority as at the pickup (`creator_lacks_authority` above). Otherwise the exchange answers `not_found`
   (§1.1). Stopping or closing the placement, revoking, re-pairing or
   removing the runner, and suspending its owner (§16.8) revoke its unused
