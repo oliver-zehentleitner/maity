@@ -396,10 +396,16 @@ DEVICE_COOKIE = "maity_device"
 DEVICE_LIFETIME = timedelta(days=400)
 # One value per human who signed in on this browser; the oldest drop out past this.
 DEVICE_VALUES = 4
+# One value as `remember_device` makes it (`secrets.token_urlsafe`). Anything else in the
+# presented cookie is dropped: Starlette unquotes a quoted cookie (octal escapes become control
+# characters), and such a value joined into the new cookie fails `set_cookie` or comes back
+# escaped.
+_DEVICE_VALUE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 def _device_values(cookie: str | None) -> list[str]:
-    return [v for v in (cookie or "").split(".") if 0 < len(v) <= 64][-DEVICE_VALUES:]
+    values = (cookie or "").split(".")
+    return [v for v in values if _DEVICE_VALUE.fullmatch(v)][-DEVICE_VALUES:]
 
 
 def knows_device(conn: Connection, human_id: str, cookie: str | None) -> bool:

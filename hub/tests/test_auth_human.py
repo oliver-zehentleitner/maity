@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import timedelta
 from typing import Any
@@ -292,6 +293,34 @@ def test_a_non_ascii_session_cookie_does_not_stop_a_login(
     assert response.status_code == 200, response.text
 
 
+# A device cookie value as `sessions.remember_device` makes it (`secrets.token_urlsafe`).
+DEVICE_VALUE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+KEPT_DEVICE = "Kept-device_1"
+# Raw bytes, as above. Starlette unquotes a quoted cookie: `\000` becomes NUL, `\012` LF.
+MALFORMED_DEVICES = [
+    b'maity_device="' + KEPT_DEVICE.encode() + b'.a\\000b"',
+    b'maity_device="' + KEPT_DEVICE.encode() + b'.a\\012b"',
+    b"maity_device=" + KEPT_DEVICE.encode() + b".a\tb",
+    b"maity_device=" + KEPT_DEVICE.encode() + b".d\xc3\xa9",
+    b'maity_device="' + KEPT_DEVICE.encode() + b'"',
+]
+
+
+@pytest.mark.parametrize("cookie", MALFORMED_DEVICES)
+def test_a_malformed_device_cookie_keeps_only_token_values(
+    make_client: ClientFactory, owner: str, cookie: bytes
+) -> None:
+    headers: Any = {"Cookie": cookie}
+    response = factory.login_handle(make_client(), "maintainer", headers=headers)
+    assert response.status_code == 200, response.text
+    device = next(
+        c for c in response.headers.get_list("set-cookie") if c.startswith("maity_device=")
+    )
+    values = device.split(";")[0].removeprefix("maity_device=").split(".")
+    assert all(DEVICE_VALUE.fullmatch(v) for v in values), device
+    assert values[0] == KEPT_DEVICE and len(values) == 2  # the bad one dropped, a new one added
+
+
 def test_a_session_expires_after_14_idle_days(make_client: ClientFactory, owner: str) -> None:
     client = make_client()
     _login(client)
@@ -371,7 +400,9 @@ def test_the_live_session_clause_reads_as_session_alive(
         )
         row = conn.execute(select(t.human_session).where(session.human_id == owner)).one()
         clause = caller_module.live_session_clause(now)
-        found = conn.execute(select(session.id_hash).where(session.human_id == owner, clause)).first()
+        found = conn.execute(
+            select(session.id_hash).where(session.human_id == owner, clause)
+        ).first()
     assert (row.ended_at is None and caller_module.session_alive(row, now)) is alive
     assert (found is not None) is alive
 
