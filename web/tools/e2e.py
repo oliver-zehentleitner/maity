@@ -7261,7 +7261,7 @@ def registration_admin_step(run: Run, page: Page) -> None:
 def project_links_step(run: Run, page: Page) -> None:
     """The project's own links (docs/api.md §6.11): set in Project settings against the real
     hub, shown beside the state in the header, refused at the field where the hub refuses them."""
-    run.step("links: an issues link set in Project settings, shown in the header; a port refused at its field")
+    run.step("links: an issues and a docs link set in Project settings, shown in the header; a port refused at its field")
     page.goto(f"{run.base}/owner/e2e-alpha/settings")
     form = page.locator("form.links-form")
     expect(form).to_be_visible()
@@ -7272,11 +7272,15 @@ def project_links_step(run: Run, page: Page) -> None:
     run.problems = [p for p in run.problems if p != refused]
     page.locator("#link-wiki").fill("")
     page.locator("#link-issues").fill("https://issues.example.org/e2e")
+    page.locator("#link-docs").fill("https://docs.example.org/e2e")
     form.get_by_role("button", name="Save the links", exact=True).click()
     expect(page.locator("main")).to_contain_text("Links saved.")
     issues = page.locator("header .project-state a.header-link", has_text="Issues")
     expect(issues).to_have_attribute("href", "https://issues.example.org/e2e")
     expect(issues).to_have_attribute("rel", "noopener noreferrer")
+    docs = page.locator("header .project-state a.header-link", has_text="Docs")
+    expect(docs).to_have_attribute("href", "https://docs.example.org/e2e")
+    expect(docs).to_have_attribute("aria-label", "Docs (opens in a new tab)")
     # On a phone the links are one row that scrolls sideways; the state stays in sight beside it,
     # scrolled to either end (the maintainer, tsk-m9ew7v609fq0).
     page.set_viewport_size({"width": 360, "height": 780})
@@ -7309,7 +7313,8 @@ def project_links_step(run: Run, page: Page) -> None:
                 expect(actions).to_have_attribute("aria-label", "Actions on GitHub (opens in a new tab)")
                 row = page.evaluate("""() => Array.from(document.querySelectorAll('header .project-links > a'))
                   .map((a) => [a.textContent.trim(), Math.round(a.getBoundingClientRect().top)])""")
-                assert [t for t, _ in row][:4] == ["Repository", "Actions", "Pull Requests", "Issues"], f"the links' order at {width} px {scheme}: {row}"
+                # Docs after the issues link, before Chat and Why (tsk-qeftb8bg0yt6), on the row at phone width.
+                assert [t for t, _ in row][:5] == ["Repository", "Actions", "Pull Requests", "Issues", "Docs"], f"the links' order at {width} px {scheme}: {row}"
                 assert len({top for _, top in row}) == 1, f"the project's links wrap at {width} px {scheme}: {row}"
                 width_now = page.evaluate("[document.documentElement.scrollWidth, window.innerWidth]")
                 assert width_now[0] <= width_now[1], f"the page scrolls sideways at {width} px {scheme}: {width_now}"
