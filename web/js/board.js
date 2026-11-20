@@ -194,7 +194,10 @@ window.Maity = window.Maity || {};
   function familyEditor(ctx, c, byId, manage) {
     if (!manage || !manage.reload) return null;
     const closed = (t) => t.status === "done" || t.status === "cancelled";
-    const others = Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
+    // The board's cards as they are now: byId is filled in place at every draw, and the late draw
+    // may keep this part (draw, showPanelPart), so New subtask reads them when it is opened.
+    const othersNow = () => Object.values(byId).filter((t) => t.id !== c.id && !t._searchClosed);
+    const others = othersNow();
     const parts = [];
     if (M.boardEdit.editable(ctx, c)) {
       const path = ctx.base + "/tasks/" + encodeURIComponent(c.id);
@@ -249,7 +252,7 @@ window.Maity = window.Maity || {};
       const start = h("button", { type: "button", class: "small", "aria-expanded": "false", "data-focus": "subtask:" + c.id,
         onclick: () => {
           if (start.getAttribute("aria-expanded") === "true") { clear(box); start.setAttribute("aria-expanded", "false"); return; }
-          const f = M.boardEdit.newCardForm(ctx, others, async (body) => {
+          const f = M.boardEdit.newCardForm(ctx, othersNow(), async (body) => {
             try {
               await M.api.post(ctx.base + "/tasks", body);
             } catch (err) {
@@ -601,7 +604,7 @@ window.Maity = window.Maity || {};
     };
     const E = M.boardEdit;
     const controls = manage ? actions(E.moveControl(ctx, c, manage.move), E.assignControl(ctx, c, manage.assign),
-      E.orderControl(ctx, c, manage.columnOf(c), manage.place)) : null;
+      E.orderControl(ctx, c, manage.columnOf, manage.place)) : null;
     // Movable to another column, or within its own by tasks:admin.
     const movable = manage && (E.targets(ctx, c).length > 0 || E.orderable(ctx, c));
     const draggable = movable && !inPanel;

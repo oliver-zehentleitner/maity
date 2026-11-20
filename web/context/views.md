@@ -6783,7 +6783,13 @@ brought. A draw the reader starts (a filter, a search, a move) draws every
 column anew, as before. An open column whose later pages came in or failed
 differs (its count, its busy mark, its line) and is drawn anew; the open
 failure's own line above the columns stands outside them and is only said
-again (`sayOpen()`), never compared or moved.
+again (`sayOpen()`), never compared or moved. Since review A1760
+(2026-11-20) whatever a kept column or part acts on is read when the reader
+acts, not taken when it was drawn: the cards New subtask offers (from `byId`)
+and the neighbours a Place arrow names (from the board's columns). A kept
+part draws the same, but the board around it may have changed: a card that
+came with the late read is in neither its tree nor a list taken at its first
+draw.
 
 **Reason:** on the maintainer's project the closed window was 783 cards,
 the largest group by far, and its pages follow each other through a

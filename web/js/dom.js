@@ -133,8 +133,12 @@ window.Maity = window.Maity || {};
   // only the caller knows whether the older tree's listeners still act on the right data. loose(name,
   // a, b), where given, says that two different values of an attribute count as the same (an id
   // made up anew for every draw). A view keeps the older tree where it would draw the same, and the
-  // browser has nothing to lay out or style again (tsk-3b2t7hwc352s).
+  // browser has nothing to lay out or style again (tsk-3b2t7hwc352s). A missing tree (null or
+  // undefined) is never the same as any, another missing one included: there is nothing to keep.
+  // Nodes of different kinds (an element, text, a comment) are never the same, whatever their text.
   function sameTree(a, b, loose) {
+    if (a == null || b == null) return false;
+    if (a.nodeType !== b.nodeType) return false;
     const element = typeof a.getAttribute === "function";
     if (element !== (typeof b.getAttribute === "function")) return false;
     if (!element) return a.textContent === b.textContent;

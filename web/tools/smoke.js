@@ -63,9 +63,10 @@ function nodeList(items) {
     },
   });
 }
-class Text_ extends Node_ { constructor(t) { super(); this.t = t; } get textContent() { return this.t; } }
+class Text_ extends Node_ { constructor(t) { super(); this.t = t; } get textContent() { return this.t; } get nodeType() { return 3; } }
 class El extends Node_ {
   constructor(tag) { super(); this.tagName = tag.toUpperCase(); this.attrs = {}; this.listeners = {}; this.className = ""; this.value = ""; this.disabled = false; this.style = { setProperty(k, v) { this[k] = v; } }; }
+  get nodeType() { return 1; }
   setAttribute(k, v) { this.attrs[k] = v; if (k === "id") this.id = v; }
   getAttribute(k) { return k === "class" ? this.className : this.attrs[k]; }
   // class is kept on className, as a browser's class attribute is.
@@ -6195,6 +6196,54 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
       "board: the late draw keeps the open columns' nodes while the closed columns fill, the focus on a kept title and an open menu with them "
         + JSON.stringify([dkHeld, dkKept, dkFilled, dkFocus, dkPlaced, dkMenu, dkKept2]));
     }
+
+    // What a kept part acts on is read when it acts, not when it was drawn (tsk-3b2t7hwc352s, A1760). A viewer
+    // who may not edit tsk-0006 (M.boardEdit.editable answering false here) has only New subtask in its family
+    // part, so the late draw keeps the panel's part, while the read again of the changed cards brings an open
+    // card the first draw did not have. New subtask, opened in the kept part after that, offers the new card in
+    // its Depends on and Ships with pickers.
+    {
+      const nsT6 = await clGetReal("/projects/maintainer/maity/tasks/tsk-0006");
+      const nsNew = Object.assign({}, nsT6, { id: "tsk-ns01", title: "Arrived with the late read", status: nsT6.status === "open" ? "proposed" : "open",
+        kind: "task", parent: null, depends_on: [], ships_with: [], related: [], children: null, closed_at: null,
+        updated_at: new Date(Date.now() + 60000).toISOString() });
+      const nsWait = [];
+      win.Maity.api.get = (p) => {
+        if (/[?&]order=updated/.test(p)) return Promise.resolve({ items: [nsNew], next_cursor: null });
+        if (/^\/projects\/maintainer\/maity\/tasks\?status=(done|cancelled)&closed_after=/.test(p)) {
+          return new Promise((res) => { nsWait.push(() => res({ items: [], next_cursor: null })); });
+        }
+        return clGetReal(p);
+      };
+      const nsEditable = win.Maity.boardEdit.editable;
+      win.Maity.boardEdit.editable = () => false;
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/tasks/tsk-0006"); for (let k = 0; k < 8; k++) await tick();
+      const nsStart = () => clPanel().querySelectorAll("button").find((b) => b.getAttribute("data-focus") === "subtask:tsk-0006");
+      const nsPart = clPanel().querySelector(".card-panel-card").childNodes[0];
+      const nsBefore = nsStart();
+      const nsHeld = nsWait.length === 2 && !main.querySelector(".columns").querySelectorAll("article.card").some((a) => a.attrs["data-card"] === "tsk-ns01");
+      const nsNoParent = !clPanel().querySelectorAll("select").some((x) => (x.getAttribute("id") || "").startsWith("card-parent-"));
+      nsWait.splice(0).forEach((f) => f()); for (let k = 0; k < 8; k++) await tick();
+      const nsOnBoard = main.querySelector(".columns").querySelectorAll("article.card").some((a) => a.attrs["data-card"] === "tsk-ns01");
+      const nsKept = !!nsBefore && nsStart() === nsBefore && clPanel().querySelector(".card-panel-card").childNodes[0] === nsPart;
+      nsStart().click(); for (let k = 0; k < 2; k++) await tick();
+      const nsOffered = (id) => !!byId(id) && byId(id).querySelectorAll("option").some((o) => o.getAttribute("value") === "tsk-ns01");
+      const nsCase = [nsHeld, nsNoParent, nsOnBoard, nsKept, nsOffered("new-subtask-depends"), nsOffered("new-subtask-ships")];
+      win.Maity.boardEdit.editable = nsEditable;
+      win.Maity.api.get = clGetReal;
+      expect(nsCase.every(Boolean),
+        "board: New subtask in a panel part the late draw kept offers a card that arrived only with the late read " + JSON.stringify(nsCase));
+    }
+    // M.dom.sameTree (A1760): a missing tree is the same as none, another missing one included, and nodes of
+    // two kinds are never the same, whatever their text (the shim has no comment node: a stand-in with nodeType 8).
+    {
+      const st = win.Maity.dom.sameTree;
+      const comment = { nodeType: 8, textContent: "x", childNodes: [] };
+      const stCase = [st(null, null), st(null, new El("p")), st(new El("p"), undefined), st(new Text_("x"), comment), st(comment, new Text_("x")),
+        st(new Text_("x"), new Text_("x")), st(new El("p"), new El("p"))];
+      expect(JSON.stringify(stCase) === "[false,false,false,false,false,true,true]",
+        "dom: sameTree is false for a missing tree and for text against a comment, true for the same text or element " + JSON.stringify(stCase));
+    }
   }
 
   // A closed column reads one page of 50 at board load and the next page only on Show more (tsk-d4anfsk1e94j,
@@ -6617,6 +6666,44 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     await asked.i18n.ready;
     expect(asked.i18n.language === "de" && asked.i18n.explicit() === "de" && !("maity.language" in asked.kept),
       "language: ?lang= is the visitor's choice, and nothing is stored for it");
+  }
+  // A time formatted again makes no formatter again (tsk-3b2t7hwc352s, A1760): the browser's zone is
+  // read once, a caller's own timeZone reads no zone, and a formatter is kept per language, zone and
+  // options. js/i18n.js afresh over an Intl that counts each DateTimeFormat made, with or without new.
+  {
+    let made = 0;
+    const counting = Object.create(Intl);
+    counting.DateTimeFormat = function (...args) { made += 1; return new Intl.DateTimeFormat(...args); };
+    const page = {
+      MAITY_I18N: { en: {} }, MAITY_I18N_LANGUAGES: ["en"],
+      location: { search: "" }, navigator: { languages: ["en-US"] },
+      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      document: { documentElement: { lang: "" }, baseURI: "https://hub.example/", currentScript: null },
+      URLSearchParams, URL, Intl: counting, Promise, Object, console,
+    };
+    page.window = page;
+    vm.runInContext(fs.readFileSync(path.join(WEB, "js/i18n.js"), "utf8"), vm.createContext(page), { filename: "js/i18n.js" });
+    await page.Maity.i18n.ready;
+    const fmt = page.Maity.fmt;
+    const at = "2026-11-08T20:30:00Z";
+    made = 0;
+    const first = fmt.dateTime(at);
+    for (let k = 0; k < 200; k++) fmt.dateTime(at);
+    const afterDateTime = made;
+    for (let k = 0; k < 200; k++) fmt.date(at);
+    expect(page.Maity.i18n.accountZone() === null && first.includes("Nov 8, 2026") && first.includes("08:30") && afterDateTime <= 2 && made <= afterDateTime + 1,
+      "i18n: with no account zone, 200 times formatted make the zone's and the formatter's DateTimeFormat once, not each time " + afterDateTime + "/" + made);
+    page.Maity.i18n.setZone("Asia/Tokyo");
+    made = 0;
+    for (let k = 0; k < 200; k++) fmt.dateTime(at);
+    const tokyo = fmt.dateTime(at);
+    expect(made === 1 && tokyo.includes("Nov 9, 2026") && tokyo.includes("05:30"),
+      "i18n: an account zone makes its formatter once and formats in it " + made);
+    made = 0;
+    const own = { timeZone: "UTC", hour: "2-digit", minute: "2-digit" };
+    for (let k = 0; k < 200; k++) fmt.when(at, own);
+    expect(made === 1 && fmt.when(at, own).includes("08:30"),
+      "i18n: a caller's own timeZone wins and makes its formatter once " + made);
   }
   // A file a script loads later is asked for under the version the hub lists in the shell's
   // `#maity-assets` block (js/assets.js, docs/api.md §16.11, tsk-0pp41wxp6f75); without the block

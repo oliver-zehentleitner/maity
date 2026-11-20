@@ -248,7 +248,13 @@ window.Maity = window.Maity || {};
   // `timezone` from GET /me, or the browser's while the account has none. A name this browser
   // does not know counts as none. Relative times ("5 min ago") do not use it.
   let accountZone = null;
-  const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (err) { return "UTC"; } };
+  // Read once: the browser's zone is the page's for its whole life, and reading it makes a
+  // formatter, which `when` would otherwise do for every time it formats (tsk-3b2t7hwc352s).
+  let ownZone = null;
+  const browserZone = () => {
+    if (ownZone === null) { try { ownZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (err) { ownZone = "UTC"; } }
+    return ownZone;
+  };
   const knownZone = (name) => {
     try { new Intl.DateTimeFormat("en", { timeZone: name }); return true; } catch (err) { return false; }
   };
@@ -274,7 +280,7 @@ window.Maity = window.Maity || {};
   function when(value, options) {
     const d = asDate(value);
     if (Number.isNaN(d.getTime())) return String(value);
-    return formatterFor(Object.assign({ timeZone: zone() }, options)).format(d);
+    return formatterFor(options && Object.hasOwn(options, "timeZone") ? options : Object.assign({ timeZone: zone() }, options)).format(d);
   }
   // The wall clock of a moment in the zone, as numbers; null for an unreadable value.
   function wall(value) {
