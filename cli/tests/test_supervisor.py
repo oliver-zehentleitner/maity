@@ -3660,6 +3660,33 @@ def test_a_start_hides_every_other_placements_scratch_but_not_its_own(world: Any
     assert ".maity-pg" not in toml  # under the hidden root, never opened again
 
 
+def test_a_claude_code_placement_gets_no_password_file(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Claude Code's sandbox refuses the cluster's Unix socket (a probe on #2032): the runner
+    draws no password file for it and logs no socket-length line, while the holder is still
+    made and denied to it as to every session. Codex keeps its file where the socket fits."""
+    sup, _, _, _, logs = world
+    recorded(sup.cfg)
+    target = sup.targets["local"]
+    sup.cfg.local.workspaces.mkdir(parents=True, exist_ok=True)
+    claude = config.Harness("claude-code", ("supervised",), "supervised")
+    codex = config.Harness("codex", ("supervised",), "supervised")
+    own = sup._scratch(placement(), claude, target)
+    assert own is not None
+    monkeypatch.setattr(adapters, "pg_dir", lambda scratch: own / "pg")  # the socket fits
+    place = workspace.locate(sup.cfg.local.workspaces, "maity", "agent-3")
+    holder = sup.cfg.local.workspaces.resolve() / ".maity-pg"
+    ctx = sup._context(placement(), claude, place, target, scratch=own)
+    assert ctx.pg_pass is None and holder in ctx.private
+    assert _stat_mode(holder) == 0o700 and not (holder / "plc-0003").exists()
+    assert not any("no MAITY_PG_DIR" in line for line in logs)
+    other = sup._scratch(placement(n=4), codex, target)
+    ctx = sup._context(placement(n=4), codex, place, target, scratch=other)
+    assert ctx.pg_pass is not None and ctx.pg_pass == holder / "plc-0004"
+    assert ctx.pg_pass.is_file()
+
+
 def _stat_mode(path: Path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
 

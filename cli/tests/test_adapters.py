@@ -1344,6 +1344,27 @@ def test_an_ssh_hosts_session_gets_no_test_cluster(tmp_path: Path) -> None:
     assert launched.argv == ["stub"]
 
 
+def test_a_claude_code_placement_gets_the_test_slots_but_no_cluster(tmp_path: Path) -> None:
+    """Claude Code's sandbox refuses socket(AF_UNIX) even in the placement's own scratch (a
+    probe on #2032), so with_postgres.sh's cluster cannot start there: no pgenv, even with a
+    password file, while the slots stay (tsk-zk2cse7s2rf7 brings the cluster over TCP)."""
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    passfile = Path("/srv/ws/.maity-pg/plc-0003")
+    assert adapters.pg_dir(room) is not None  # the socket would fit: only the harness decides
+    assert not adapters.gets_test_cluster("claude-code")
+    assert adapters.gets_test_cluster("codex") and adapters.gets_test_cluster("stub")
+    ctx = context(tmp_path / "c", scratch=room, pg_pass=passfile)
+    assert adapters.pg_launch(ctx, adapters.Launch(["claude"], {})).argv == ["claude"]
+    launched = adapters.launch(ctx)
+    assert launched.argv[0] == "/usr/bin/claude" and "maity.runner.pgenv" not in launched.argv
+    assert launched.env["MAITY_RUN_SLOTS_DIR"] == str(room / "slots")
+    assert not {"MAITY_PG_DIR", "MAITY_PG_PASSWORD"} & set(launched.env)
+    # Codex is not probed yet and keeps the cluster.
+    codex = context(tmp_path / "x", "codex", scratch=room, pg_pass=passfile)
+    assert adapters.pg_launch(codex, adapters.Launch(["codex"], {})).argv[1:4] == [
+        "-I", "-m", "maity.runner.pgenv"]  # fmt: skip
+
+
 def test_an_agy_placement_gets_no_test_slots_or_cluster(tmp_path: Path) -> None:
     """agy's scratch under `/tmp` is read-only to it but for `tmp` (the review of #2032), so a
     slot directory or cluster there could not be written: it keeps the scripts' defaults."""

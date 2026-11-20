@@ -1244,6 +1244,7 @@ class Supervisor:
                                     view=view, scratch=scratch)  # fmt: skip
             launch = adapters.launch(context)
             if (scratch is not None and not workspace.scratch_in_tmp(harness.id)
+                    and adapters.gets_test_cluster(harness.id)
                     and adapters.pg_dir(scratch) is None):  # fmt: skip
                 self.log(f"{p['id']}: no MAITY_PG_DIR: a PostgreSQL socket under "
                          f"{scratch / adapters.PG} would not fit a Unix socket path; "
@@ -1400,8 +1401,11 @@ class Supervisor:
         if holder is not None:
             private = (*private, holder)
         pg_pass = None
-        # Not on an ssh host: pgenv runs as this interpreter's module (adapters.pg_launch).
+        # Not on an ssh host: pgenv runs as this interpreter's module (adapters.pg_launch). Not
+        # for a harness whose sandbox refuses the cluster's Unix socket (gets_test_cluster): no
+        # password file is drawn for it. The holder is still made and denied, for the others.
         if (holder is not None and scratch is not None and not workspace.scratch_in_tmp(harness.id)
+                and adapters.gets_test_cluster(harness.id)
                 and target.as_user.here and adapters.pg_dir(scratch) is not None):  # fmt: skip
             pg_pass = self._pg_pass(p, holder, target)
         tmp_parent = self._tmp_scratch_parent(target, harness)

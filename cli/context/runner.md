@@ -4778,9 +4778,9 @@ placement ends without asking what in it matters.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-w7qtcbzcshn9, filed by the lead from tsk-deaaanqsq5e2 (placed sessions bypassed `tools/run_slot.sh`'s slots), 2026-11-20; security's rejection of a directory shared by a user's placements and the lead's choice of the scratch, 2026-11-20; the security review of #2032 (other placements' scratch denied, scram with a per-placement password kept outside every sandbox), 2026-11-20
+**Source:** card tsk-w7qtcbzcshn9, filed by the lead from tsk-deaaanqsq5e2 (placed sessions bypassed `tools/run_slot.sh`'s slots), 2026-11-20; security's rejection of a directory shared by a user's placements and the lead's choice of the scratch, 2026-11-20; the security review of #2032 (other placements' scratch denied, scram with a per-placement password kept outside every sandbox), 2026-11-20; red team's probe that Claude Code's sandbox refuses a Unix socket in the own scratch, and the lead's ruling to leave the cluster out of Claude Code placements and not to allow Unix sockets there, 2026-11-20
 **See:** runner.md — 03fee927-492a-4983-a4cc-738d192e26f0 — as of 2026-11-20
-**Revisit when:** a runner-mediated slot lock bounds heavy runs across placements (tsk-w7dx3h9mn8dp); each placement runs as its own OS user; `with_postgres.sh` moves its socket out of the data directory
+**Revisit when:** a runner-mediated slot lock bounds heavy runs across placements (tsk-w7dx3h9mn8dp); each placement runs as its own OS user; `with_postgres.sh` moves its socket out of the data directory; the test cluster reaches Claude Code placements over TCP (tsk-zk2cse7s2rf7); a Codex session is found unable to start the cluster
 
 The runner sets `MAITY_RUN_SLOTS_DIR=<scratch>/slots` for every placement
 with a scratch beside its clone, and `MAITY_RUN_NAME=<handle>#<instance>`
@@ -4788,7 +4788,13 @@ with a scratch beside its clone, and `MAITY_RUN_NAME=<handle>#<instance>`
 other shape is left out). The session gets `MAITY_PG_DIR=<scratch>/pg` and
 its password only where `<scratch>/pg/.s.PGSQL.<port>` fits a Unix socket
 path (`adapters.pg_dir`, room for a five-digit port), as `TMPDIR` does (the
-entry under See). Otherwise the runner logs that it left them out. No path
+entry under See). Otherwise the runner logs that it left them out. A
+Claude Code placement gets no test cluster yet (`adapters.gets_test_cluster`):
+its sandbox refuses `socket(AF_UNIX)` even inside the placement's own
+scratch, so the runner draws no password file for it and starts it without
+`pgenv`. Its test slots work as everywhere. A cluster over TCP on
+127.0.0.1 for these placements is tsk-zk2cse7s2rf7. Codex keeps the
+cluster, though no Codex session has started one yet. No path
 is opened in any sandbox beyond the scratch, which the sandbox already
 writes and which goes when the placement closes. Within a placement,
 `with_postgres.sh` keeps reusing its own cluster across runs.
@@ -4801,10 +4807,11 @@ Two hardening steps keep the scratch the placement's own:
   `outermost` leaves them out of the profile. A listing that cannot be
   completed refuses the start. The list covers the scratches that exist at
   the start. One made while a Claude Code session runs is a known residual,
-  tracked as tsk-rbys2j9q0m48: that session can read it, but a live probe
+  tracked as tsk-rbys2j9q0m48: that session can read it, but live probes
   showed it can neither write it (the sandbox writes only its own paths)
-  nor reach its cluster's socket. agy and opencode are not kept out by these
-  rules.
+  nor connect to that placement's cluster socket (the sandbox refuses
+  every Unix socket, its own included). agy and opencode are not kept out
+  by these rules.
 - **Password-protected cluster.** The cluster takes a password, which
   `with_postgres.sh` gets as `MAITY_PG_PASSWORD` and uses to make the
   cluster with `scram-sha-256`. The runner draws it once per placement into
@@ -4864,6 +4871,11 @@ a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
   this sandbox, and the own credential's deny would sit inside it.
 - A non-superuser cluster role: the hub's own tests run as a superuser
   (`hub/tests/test_db_role.py`).
+- Claude Code's `allowAllUnixSockets`, so its sessions could bind the
+  cluster's socket: the lead ruled it out and chose a cluster over TCP
+  (tsk-zk2cse7s2rf7) instead. The ruling gave no reason. That the setting
+  opens every Unix socket the session's user can reach, not only the own
+  cluster's, is inferred from its name, not recorded.
 
 ## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
 

@@ -288,6 +288,17 @@ def scratch_tmpdir(scratch: Path | None) -> Path | None:
 # (`-k "$MAITY_PG_DIR"`), named like `.s.PGSQL.<port>`, room taken for a five-digit port.
 SLOTS, PG = "slots", "pg"
 PG_SOCKET_ROOM = len(".s.PGSQL.65535")
+# The harnesses whose sandbox refuses a Unix socket even in the placement's own scratch, so
+# with_postgres.sh's cluster cannot start in their sessions: Claude Code's refuses
+# socket(AF_UNIX) (a probe on #2032; allowAllUnixSockets stays off). They get no password file
+# and no pgenv; the test slots work for them. A cluster over TCP on 127.0.0.1 for them is
+# tsk-zk2cse7s2rf7. Codex is not probed yet and keeps the cluster.
+NO_TEST_CLUSTER_HARNESSES = ("claude-code",)
+
+
+def gets_test_cluster(harness_id: str) -> bool:
+    """Whether a placement of this harness may get a test cluster (NO_TEST_CLUSTER_HARNESSES)."""
+    return harness_id not in NO_TEST_CLUSTER_HARNESSES
 
 
 def pg_dir(scratch: Path | None) -> Path | None:
@@ -318,7 +329,7 @@ def pg_launch(ctx: Context, launched: Launch, beside: bool = True) -> Launch:
     MAITY_PG_DIR and MAITY_PG_PASSWORD in its own process environment for the session (the
     review of #2032): never on a command line, in `launched.env` (which tmux keeps in its
     session environment) or in the loop's spec."""
-    pg = pg_dir(ctx.scratch) if beside else None
+    pg = pg_dir(ctx.scratch) if beside and gets_test_cluster(ctx.harness.id) else None
     if ctx.pg_pass is None or pg is None or not ctx.as_user.here:
         return launched
     root = ctx.pg_pass.parent.parent
