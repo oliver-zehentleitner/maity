@@ -1226,11 +1226,14 @@ window.Maity = window.Maity || {};
     // A later open page that failed (openFailed), each column with its group's own reason; the line
     // above the columns names the first that came. That line is the background read's own, shown
     // under every column filter: the status line stays the reader's actions', so a refusal said
-    // there is never replaced by it (A1711). Emptied, and hidden, by any read that clears openFailed.
+    // there is never replaced by it (A1711). Emptied, and hidden, by any read that clears openFailed;
+    // empty, it carries neither send-status nor failed, so no query for a failure or a status line
+    // finds it.
     const openMoreFailed = (err) => M.t("board.open.more_failed", { reason: err.message || String(err) });
-    const openStatus = h("p", { class: "send-status failed open-read-status", role: "status", hidden: true });
+    const openStatus = h("p", { class: "open-read-status", role: "status" });
     const sayOpen = () => {
       openStatus.textContent = openFailed ? openMoreFailed(openFailed.err) : "";
+      openStatus.className = openFailed ? "send-status failed open-read-status" : "open-read-status";
       openStatus.hidden = !openFailed;
     };
     // The focused element in the columns, so that the next draw can find it again: its data-focus
@@ -1565,6 +1568,7 @@ window.Maity = window.Maity || {};
         silentOnly ? h("label", { class: "check", for: "board-silent" }, silentOnly, " ", M.t("board.filter.silent")) : null),
       searchStatus, formBox, status.el, intro, wantedNote, closedStatus, openStatus, boardBody);
     sayClosed();
+    sayOpen();
     let markedCard = draw();
     // The closed group in, while the rest of the view goes on: the board drawn again with it (a local
     // search filters it too; a hub search keeps its own results), and the focus put back on the
