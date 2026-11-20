@@ -1182,7 +1182,7 @@ def test_check_keeps_the_passed_probe_version_and_warns_on_another(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A passing probe keeps the installed version for the target in the state directory; a
-    failing one forgets it and says what a start will warn about."""
+    failing one forgets it and says, as an error, what a start will warn about."""
     from maity import state
     from maity.runner import capabilities
 
@@ -1201,7 +1201,12 @@ def test_check_keeps_the_passed_probe_version_and_warns_on_another(
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
     monkeypatch.setattr(sys, "platform", "linux")
     state_dir = config.load(paired).state_dir
+    # A pass recorded for an older version: this run's pass replaces it before anything is
+    # compared, so no line about the probe's version and exit 0.
+    state.save_state(state_dir, {"local": "2.1.324"}, name=capabilities.PROBE_FILE)
+    capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    assert marked(capsys, "probe last passed") == []
     found = state.load_state(state_dir, name=capabilities.PROBE_FILE)
     assert found == {"local": "2.1.325"}
     answer["outcome"] = "inconclusive"
@@ -1209,7 +1214,18 @@ def test_check_keeps_the_passed_probe_version_and_warns_on_another(
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
     assert state.load_state(state_dir, name=capabilities.PROBE_FILE) == {}
     said = marked(capsys, "probe has not passed")
-    assert [s.split()[0] for s in said] == ["warn"], said
+    assert [s.split()[0] for s in said] == ["error"], said
+    # A preflight that refuses runs no probe: the record stays, and an older one is an error.
+    state.save_state(state_dir, {"local": "2.1.324"}, name=capabilities.PROBE_FILE)
+    monkeypatch.setattr(
+        capabilities,
+        "claude_seccomp",
+        lambda as_user: capabilities.ClaudeSeccomp("no_seccomp", "x64", "no Seccomp line"),
+    )
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
+    said = marked(capsys, "probe last passed with 2.1.324, installed 2.1.325")
+    assert [s.split()[0] for s in said] == ["error"], said
+    assert state.load_state(state_dir, name=capabilities.PROBE_FILE) == {"local": "2.1.324"}
 
 
 def test_check_runs_no_seccomp_preflight_under_seatbelt(

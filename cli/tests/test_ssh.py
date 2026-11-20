@@ -502,7 +502,7 @@ def test_check_names_the_host_on_its_claude_code_seccomp_and_probe_lines(
             "error"
         ]
         assert asked == []
-        assert any(level == "warn" and "probe has not passed" in text for level, text in mine)
+        assert any(level == "error" and "probe has not passed" in text for level, text in mine)
 
 
 def test_stop_all_names_a_host_it_could_not_reach(

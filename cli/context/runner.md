@@ -4960,9 +4960,9 @@ a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
 **Type:** constraint
 **Status:** open
 **Evidence:** inferred
-**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032, 2026-11-20; the ops team's read-only reading of the Claude Code 2.1.328 and 2.1.329 binaries (minified): the supported machines, the helper's resolution and the built-in helper handed in by file descriptor, the warning sent to the sandbox runtime's debug logger, 2026-11-20; `/proc/self/status` of an unconfined shell on a test host (`Seccomp: 0`, `Seccomp_filters: 0`), 2026-11-20; the ops team's live run of Claude Code 2.1.329 on an x64 Linux runner host (a throwaway session, no placement): headless with `SRT_DEBUG=1` the filter was applied, the interactive interface showed no sandbox-runtime line while it ran, 2026-11-20; the lead's decision for the static preflight, the headless probe in `check` only and dropping the pane check, 2026-11-20; the security review of #2063 (the pinned socket settings, the user settings refused) and the lead's decision to warn, not refuse, on a version whose probe has not passed, 2026-11-20
+**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032, 2026-11-20; the ops team's read-only reading of the Claude Code 2.1.328 and 2.1.329 binaries (minified): the supported machines, the helper's resolution and the built-in helper handed in by file descriptor, the warning sent to the sandbox runtime's debug logger, 2026-11-20; `/proc/self/status` of an unconfined shell on a test host (`Seccomp: 0`, `Seccomp_filters: 0`), 2026-11-20; the ops team's live run of Claude Code 2.1.329 on an x64 Linux runner host (a throwaway session, no placement): headless with `SRT_DEBUG=1` the filter was applied, the interactive interface showed no sandbox-runtime line while it ran, 2026-11-20; the lead's decision for the static preflight, the headless probe in `check` only and dropping the pane check, 2026-11-20; the security review of #2063 (the pinned socket settings, the user settings refused) and the lead's decision to warn, not refuse, on a version whose probe has not passed, 2026-11-20; the security delta review of #2063 (the settings read only at a start), 2026-11-20
 **See:** runner.md#a-placements-test-slots-and-test-cluster-live-in-its-own-scratch-so-its-slots-bound-only-its-own-runs — 2ce039de-925e-4244-9a90-8336e9375d68 — as of 2026-11-20
-**Revisit when:** every move of the Claude Code version pin (`capabilities.CHECKED`): run the `check` probe, and read the supported machines and the probe's two lines from the binary again; Claude Code shows the block's state itself or fails closed without the step; each placement runs as its own OS user
+**Revisit when:** every move of the Claude Code version pin (`capabilities.CHECKED`): run the `check` probe, and read the supported machines and the probe's two lines from the binary again; Claude Code shows the block's state itself or fails closed without the step; it is verified whether Claude Code reloads user settings during a session; each placement runs as its own OS user
 
 **Decision.** On Linux, before every start of a sandboxed Claude Code
 placement (`Supervisor._refusal`) and in `maity runner check` (local and
@@ -5012,8 +5012,10 @@ when the probe does not pass. At each sandboxed Claude Code start on Linux
 the service reads it (`Supervisor._probe_warning`): an installed version
 that differs, or no record, is logged with a line to run `check`, once
 per target and installed version for the service's run
-(`Target.probe_warned`), and the start goes ahead. `check` shows the same warning when its probe does not
-pass or is not run. The runner installs Claude Code itself, so refusing
+(`Target.probe_warned`), and the start goes ahead. `check` reports the
+same line as an error, so the operator sees it, when its probe does not
+pass or is not run; a pass in the same run is recorded before anything is
+compared, so it adds no such line. The runner installs Claude Code itself, so refusing
 every start after a version pin until someone runs `check` would be an
 outage.
 
@@ -5039,6 +5041,14 @@ for 2.1.329 on x64 by a live probe on 2026-11-20; re-check on every
 version pin with the `runner check` probe. A start does not run the probe,
 so a host where it fails still starts placements while its preflight
 passes; `check` reports it as an error.
+
+**Open residual.** The socket-settings check reads the managed and user
+settings at a start. If Claude Code re-reads its settings files during a
+session, a change to the user settings made after the start, from outside
+a Claude Code sandbox, is not seen until the next start.
+`allowAllUnixSockets` is pinned by the placement's settings file and still
+wins; `sandbox.seccompConfig` is not pinned. Whether Claude Code reloads
+user settings during a session is not verified.
 
 **Rejected alternatives:**
 - Claude Code's `allowAllUnixSockets`: it turns the whole seccomp filter

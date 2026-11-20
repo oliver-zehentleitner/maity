@@ -765,13 +765,15 @@ def _check_claude_seccomp(
 
 def _probe_stale(report: Report, where: str, record: ProbeRecord | None) -> None:
     """What a start on this target will warn about: the installed version is not the one
-    whose probe last passed (capabilities.probe_stale_line)."""
+    whose probe last passed (capabilities.probe_stale_line). An error here, so the operator
+    sees it; a start only logs it. Called only where the probe did not pass in this run,
+    after its record was updated, so a fresh pass never reads as stale."""
     if record is None or not record.state_dir.is_dir():
         return
     passed = capabilities.probe_passed(record.state_dir, record.target)
     stale = capabilities.probe_stale_line(passed, record.version)
     if stale is not None:
-        report.warn(f"{where}{stale}")
+        report.error(f"{where}{stale}")
 
 
 def _keep_probe(report: Report, where: str, record: ProbeRecord | None, passed: bool) -> None:
