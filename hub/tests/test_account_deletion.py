@@ -425,6 +425,29 @@ def test_the_links_go_with_the_account(
     assert (gone.website, gone.social, gone.links_visible) == (None, None, "private")
 
 
+def test_the_meat_proxy_and_the_presence_choice_go_with_the_account(
+    make_client: ClientFactory, migrated: Engine, moment: Clock
+) -> None:
+    """What the person said of themselves (§5.2 "Meat proxy") and whether public pages name them
+    online (§16.9) are their choices: a deleted account is back at a new account's values."""
+    admin_first(migrated, moment)
+    pat = person(make_client, migrated, moment)
+    query = select(
+        t.human.c.meat_proxy_lead, t.human.c.meat_proxy_hands, t.human.c.public_presence
+    ).where(t.human.c.id == pat.id)
+    with migrated.connect() as conn:
+        fresh = tuple(conn.execute(query).one())
+    assert fresh == (False, False, True)
+    choices = {"meat_proxy_lead": True, "meat_proxy_hands": True, "public_presence": False}
+    assert pat.patch("/me", choices).status_code == 200
+    with migrated.connect() as conn:
+        assert tuple(conn.execute(query).one()) == (True, True, False)
+    assert ask_deletion(pat).status_code == 202
+    assert press(pat, token_of(migrated)).status_code == 200
+    with migrated.connect() as conn:
+        assert tuple(conn.execute(query).one()) == fresh
+
+
 def test_the_kept_sizes_of_the_picture_go_with_the_account(
     make_client: ClientFactory, migrated: Engine, moment: Clock
 ) -> None:

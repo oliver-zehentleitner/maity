@@ -3623,7 +3623,10 @@ What deletion does:
   languages, preferences, notification settings, public profile and its
   static pages (§16.9) are deleted, and with the profile the person's
   links: `website` and `social` become `null`, `links_visible` its
-  default `private` (§16.9). The account row stays with its id
+  default `private` (§16.9). What the person chose for themselves goes
+  back to a new account's values: `meat_proxy_lead` and
+  `meat_proxy_hands` become `false` (§5.2, "Meat proxy"),
+  `public_presence` its default `true` (§16.9). The account row stays with its id
   and `deleted_at`, so that every stored id keeps resolving. Its handle
   and aliases stay reserved for good (§6.24): an old mention, an old
   link and an old project name (§6.25) never come to mean someone else.
