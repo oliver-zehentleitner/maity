@@ -51,19 +51,23 @@ traced cold load of the board, a card and settings):
   over is the tail of API reads after it: board 1546 ms, card 1534, settings 1287; chat,
   all, account, members and inbox at 1033–1142.
 - **The boot is serial:** `/bootstrap` starts at the load event and runs alone; the
-  notifications head (`/me/notifications?limit=0`, about 100–150 ms) only starts after it,
-  although the boot asks for both in one `Promise.all`, since that is reached after the
-  session and `/me`, which come from `/bootstrap`. On settings `…/me/settings` then waits
-  for a second wave before the last parallel reads; its main thread is idle throughout.
+  notifications head (`/me/notifications?limit=0`, about 100–150 ms) only starts after it.
+  In `web/js/app.js` the boot fires `/bootstrap` up front (`M.api.prime`), then awaits the
+  maintenance window, the session and `/me`, which all wait on it; only then does a
+  `Promise.all` start the notifications head (`M.notify.read()`), beside `loadContext` and
+  the project views. On settings a third wave follows (fonts, the event head and a second
+  notifications head, at 997–1124 ms), then `…/me/settings` alone, then the last parallel
+  reads; its main thread is idle throughout.
 - **Board and card:** the open column's second page is read only after its first (the
   open column is 245 kB, 45 % of a warm load's bytes), the avatars only after a fourth
   wave, and style recalculation over about 16,000 elements, repeated 3–4 times as the
   waves land, keeps the main thread busy until about 1.9 s (board) and 2.1 s (card),
   after the last request.
-- **Size:** `web/index.html` loads 110 files, 807 kB gzip (+130 kB, 10 new and 11 grown
-  files since the baseline, each from a feature pull request). Every page reads
-  `/auth/sessions?ended=true` (16 kB), and a project page reads its `/bootstrap` (83 kB)
-  again on every warm load.
+- **Size:** `web/index.html` loads 110 files, 807 kB gzip (+130 kB since the baseline:
+  10 new files, +27.3 kB, and the 11 that grew by more than 2 kB gzip, +81.5 kB, each
+  from a feature pull request; the remaining ~21 kB is smaller growth, not itemized).
+  Every page reads `/auth/sessions?ended=true` (16 kB), and a project page reads its
+  `/bootstrap` (83 kB) again on every warm load.
 - **Counting caveat:** until 2026-11-20 the tool's long-poll filter dropped every
   `/me/notifications` URL, the notifications head included. The "gaps" with no request in
   flight that the earlier runs showed after `/bootstrap` were that call. The tool counts
@@ -87,7 +91,7 @@ The list, in the order agreed (gain is the expected share of a page's time):
 | 9 | `Server-Timing` on the instance admin's API answers (statements, database time, total) | the yardstick for the rest | S | done, tsk-239r9cwxje6w (#1542) |
 | 10 | One boot read: the window, the session, `/me` and on a project view the head, the project and its members in one answer | two round trips fewer on a project view, one elsewhere (expected) | M, contract | done, tsk-x4z69ff785y6 and tsk-j591fzgnmspf (below) |
 | 11 | Bundling the scripts with a build step | fewer of a cold load's ~100 script and stylesheet requests, if a new measurement still needs it | L | later; measured 2026-11-20, tsk-kpbwm5cae99g: no case for it, the cold load event fits (621–703 ms); about 16 kB gzip of scripts that serve one page or flow are the first candidates for loading on demand |
-| 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later; measured 2026-11-20, tsk-rfv3a7ccbfv1 and tsk-jaw0g9fe3trz: does not apply to what was measured. It would pay only if one statement dominated; none does. `/bootstrap` and `…/members` are bound by statement count times a round trip (1.3–1.9 ms each), not by a slow plan |
+| 12 | Indexes for the hot queries, from EXPLAIN on PostgreSQL with a seeded copy of the shape | unknown | M | later; measured 2026-11-20, tsk-rfv3a7ccbfv1, tsk-jaw0g9fe3trz and tsk-nwq3azjf63db: it would pay only if one statement dominated. It does not apply to `/bootstrap`: its time rises with the statement count at a flat 1.3–1.9 ms per statement, a round trip each, and no single statement is slow. For `…/members` it is not yet shown: it was measured only in aggregate, 34–35 statements at about 2.0–3.2 ms each on average (median database time 71–108 ms in the two runs), with no per-statement split and no EXPLAIN |
 | 13 | Response size: fields the lists do not need, compression of API answers checked | unknown | S to measure, contract to trim | measured 2026-11-20, tsk-jaw0g9fe3trz and tsk-kpbwm5cae99g: the board's open column 245 kB (45 % of a warm load), `/auth/sessions?ended=true` 16 kB on every page, a project's `/bootstrap` 83 kB on every warm load; a fix is not decided |
 | 14 | Render cost in the browser, from a performance trace of the board and a chat | unknown | S to measure | measured 2026-11-20 for the board and a card, tsk-jaw0g9fe3trz: style recalculation over ~16k elements, 3–4 times, holds the main thread to ~1.9 s and ~2.1 s, past the last request; a fix is not decided, a chat not traced |
 | 15 | A statement test per list route, and a check on the number and size of the files the HTML loads, in CI | keeps the gains | S | open, tsk-xdn21ph67js9 |
@@ -209,18 +213,22 @@ that are drawn before or without a full session (signed out, the second-factor s
 pending account, a running maintenance window) on the same call: each of them needs the
 window and the session even when the rest is refused.
 
-**Measured on prod, 2026-11-20 (the Revisit when above; card tsk-rfv3a7ccbfv1, from the
-hub log of all pods over 60 minutes and the browser timelines of that day's rerun):** the
-route takes about 130–165 ms on a project view (73–100 statements) and 30–65 ms without
-one (10–49 statements), not the ~45 ms measured in-process. Its time rises linearly with
-the statement count at a flat 1.3–1.9 ms per statement, the round trip to the managed
-PostgreSQL that the in-process run did not have; no single statement is slow. The log
-does not record the pool's checkout wait, but on that load no request showed signs of
-one. Database time summed over the statements is 1.21 times the request's time in the
-median, so the parts do run on several connections at once. In the browser the route
+**Measured on prod, 2026-11-20 (the route, for the Revisit when above; card
+tsk-rfv3a7ccbfv1, from the hub log of all pods over 60 minutes and the browser timelines of
+that day's rerun):** the route takes about 130–165 ms on a project view (73–100
+statements) and 31–62 ms without one (medians of the 10–49 statement bands; the hub log
+puts agents' and project-less boots in the 30–39 band, median 47 ms), not the ~45 ms
+measured in-process on a project view. Its time rises linearly with the statement count
+at a flat 1.3–1.9 ms per statement, the round trip to the managed PostgreSQL that the
+in-process run did not have; no single statement is slow. The log does not record the
+pool's checkout wait, but on that load no request showed signs of one. Database time
+summed over the statements is 1.21 times the request's time in the median, so the parts
+do run on several connections at once. In the browser the route
 starts at the load event and runs alone, and the dashboard's next read (the notifications
-head) starts only after it. Not measured: the old waves on prod, so the saving against
-them is still expected, not measured. The re-check of this entry is open.
+head) starts only after it. The basis of `needs-review`: the route was measured on prod
+(130–165 ms on a project view against the ~45 ms in-process figure in the Reason), the old
+waves were not, so the saving against them is still expected, not measured. The re-check
+of this entry is open.
 
 **Rejected alternatives:**
 - A shape of its own that picks fields from each source, as the project overview (§6.11)
