@@ -6853,7 +6853,10 @@ closes the menu as before: the reader's own action has replaced it.
 The `Revisit when` above has partly come about with tsk-3b2t7hwc352s (2026-11-20): the late draw
 keeps a column on the page where it would be drawn the same (e58ffe3b). A card menu opened before it
 is still closed before the draw and opened again after it, as above. Opening it filled its list, so
-its column is not the same any more and is drawn anew. The steps here stay needed for that, for every
+its column is not the same any more and is drawn anew. The column of the marked card (a card opened
+by its link, or the one the board was left from) is drawn anew on every late draw too: the draw sets
+the card's `wanted` class and `tabindex` after the column is built, so the column on the page never
+compares the same as the new one (review A1761, 2026-11-20). This is accepted, as it is one column. The steps here stay needed for that, for every
 other column that changes, and for the presence refresh, which draws every column.
 
 **Reason:** the race is in the page, not only in the test. The fix belongs where a person meets it,
@@ -6922,7 +6925,9 @@ page of 50 stays. Since tsk-3b2t7hwc352s the late draw keeps every column that
 would be drawn the same (e58ffe3b). `M.dom.clear` empties an element with one
 `replaceChildren` where the browser has it. js/i18n.js keeps one date
 formatter per language, zone and options instead of making one for every
-date. The gain is not measured yet: ops' rerun of perf/trace.py on the same
+date. Since review A1760 it also reads the browser's zone once, so this holds
+without an account zone too: before, every date read it anew, which makes a
+formatter. The gain is not measured yet: ops' rerun of perf/trace.py on the same
 host after the deploy decides the card. A draw the reader starts still draws
 every column.
 
