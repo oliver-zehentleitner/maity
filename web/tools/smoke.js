@@ -5696,8 +5696,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   // The board draws from each open group's first page (tsk-qw08c8ds214g) through api.js's own cursor
   // loop: the fixture hub pages the open lists a card a page (MAITY_FIXTURE_TASK_PAGE) and holds or
   // refuses the open column's pages (MAITY_FIXTURE_HOLD). An open column keeps its count back while its
-  // later pages are read; one that fails keeps its first page and says so, in the column and in the status
-  // line, and every other column keeps what it read (tsk-ywf14h6qd6kq).
+  // later pages are read; one that fails keeps its first page and says so, in the column and in a line of
+  // its own above the columns, and every other column keeps what it read (tsk-ywf14h6qd6kq). The status
+  // line stays the reader's actions': a refusal said there is not replaced (A1711).
   {
     const fpAll = win.Maity.api.getAll;
     const fpColumn = (st) => main.querySelectorAll("section.column").find((col) => col.getAttribute("data-status") === st);
@@ -5706,20 +5707,25 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     const fpBusy = (st) => !!fpColumn(st) && fpColumn(st).getAttribute("aria-busy") === "true";
     const fpOpenLine = (st) => { const l = fpColumn(st) && fpColumn(st).querySelector(".open-read"); return l ? text(l) : null; };
     const fpStatus = () => main.querySelectorAll("p.send-status").find((x) => x.getAttribute("role") === "status" && x.getAttribute("tabindex") === "-1");
+    // The background read's own line above the columns: its text where shown, null where hidden or absent.
+    const fpRegion = () => { const l = main.querySelector(".open-read-status"); return l && !l.hidden ? text(l) : null; };
     const fpSaid = "More cards of the open columns could not be read: hub unreachable";
     const fpRefused = (p) => Promise.reject(new win.Maity.api.ApiError("hub unreachable", 0, p));
-    // The open column's later pages (status=open with a cursor) held until released; "closed" refuses
-    // the closed columns' pages at once, "first" the open column's first page.
+    // The open column's later pages (status=open with a cursor) held until released, with "both" the
+    // blocked,review group's too, refused as "hub busy"; "closed" refuses the closed columns' pages at
+    // once, "first" the open column's first page.
     let fpWait = [], fpFree = false, fpRefuse = null;
     const fpRelease = (how) => { if (how === "go") fpFree = true; fpWait.splice(0).forEach((x) => x[how]()); };
     win.MAITY_FIXTURE_TASK_PAGE = 1;
     win.MAITY_FIXTURE_HOLD = (m, p, full) => {
       if (m !== "GET" || p !== "/projects/maintainer/maity/tasks") return null;
       if (fpRefuse === "closed" && /[?&]status=(done|cancelled)&closed_after=/.test(full)) return fpRefused(full);
-      if (!/[?&]status=open&/.test(full)) return null;
+      const review = fpRefuse === "both" && /[?&]status=blocked(,|%2C)review&/i.test(full);
+      if (!review && !/[?&]status=open&/.test(full)) return null;
       if (!/[?&]cursor=/.test(full)) return fpRefuse === "first" ? fpRefused(full) : null;
       if (fpFree) return null;
-      return new Promise((res, rej) => { fpWait.push({ go: res, fail: () => rej(new win.Maity.api.ApiError("hub unreachable", 0, full)) }); });
+      const why = review ? "hub busy" : "hub unreachable";
+      return new Promise((res, rej) => { fpWait.push({ go: res, fail: () => rej(new win.Maity.api.ApiError(why, 0, full)) }); });
     };
     // The in_progress group answers without calling first, as a getAll that hands over no first page.
     win.Maity.api.getAll = (p, first) => (/[?&]status=in_progress$/.test(p) ? fpAll(p) : fpAll(p, first));
@@ -5743,18 +5749,55 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     fpRelease("fail"); for (let k = 0; k < 16; k++) await tick();
     const fpFailed = { open: fpCards("open"), count: fpCount("open"), busy: fpBusy("open"), line: fpOpenLine("open"),
       done: fpCards("done"), doneCount: fpCount("done"), cancelled: fpCards("cancelled"), closedRead: !!main.querySelector(".closed-read"),
-      inProgressLine: fpOpenLine("in_progress"), inProgressCount: fpCount("in_progress"), status: fpStatus() && text(fpStatus()) };
+      inProgressLine: fpOpenLine("in_progress"), inProgressCount: fpCount("in_progress"), status: fpStatus() && text(fpStatus()), region: fpRegion() };
     expect(fpFailed.open === 1 && fpFailed.count === null && !fpFailed.busy && fpFailed.line === fpSaid
       && fpFailed.done > 0 && fpFailed.doneCount === String(fpFailed.done) && fpFailed.cancelled > 0 && !fpFailed.closedRead
-      && fpFailed.inProgressLine === null && fpFailed.inProgressCount !== null && fpFailed.status === fpSaid
-      && !main.querySelector(".columns .error"),
-      "board: a later open page failing keeps the closed columns' cards and marks the open column alone, said in the status line " + JSON.stringify(fpFailed));
-    // Under a filter that shows another column, the status line still says it.
+      && fpFailed.inProgressLine === null && fpFailed.inProgressCount !== null && fpFailed.region === fpSaid
+      && !(fpFailed.status || "").includes("More cards") && !main.querySelector(".columns .error"),
+      "board: a later open page failing keeps the closed columns' cards and marks the open column alone, said in its own line above the columns " + JSON.stringify(fpFailed));
+    // Under a filter that shows another column, that line still says it.
     byId("board-column").value = "proposed"; byId("board-column").dispatch("change"); await tick();
-    const fpFiltered = { columns: main.querySelectorAll("section.column").length, status: fpStatus() && text(fpStatus()) };
+    const fpFiltered = { columns: main.querySelectorAll("section.column").length, region: fpRegion() };
     byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
-    expect(fpFiltered.columns === 1 && fpFiltered.status === fpSaid,
+    expect(fpFiltered.columns === 1 && fpFiltered.region === fpSaid,
       "board: the open column's failure is said under a filter that hides that column " + JSON.stringify(fpFiltered));
+
+    // A move refused while the open column's later page is held, then that page refused (review A1711):
+    // the refusal stays in the status line, the open failure is said in its own line, under the
+    // proposed filter too.
+    await fpBoard();
+    const fpMoved = fpColumn("proposed") && fpColumn("proposed").querySelector("article.card");
+    const fpMovedId = fpMoved && fpMoved.getAttribute("data-card");
+    const fpNotMoved = "Not moved: " + fpMovedId + " cannot go to Done.";
+    if (fpMoved) {
+      fpMoved.dispatch("dragstart", { dataTransfer: null });
+      fpColumn("done").dispatch("dragover"); fpMoved.dispatch("dragend"); await tick();
+    }
+    const fpRefusedFirst = { status: fpStatus() && text(fpStatus()), region: fpRegion(), held: fpWait.length };
+    fpRelease("fail"); for (let k = 0; k < 16; k++) await tick();
+    const fpBoth = { status: fpStatus() && text(fpStatus()), region: fpRegion(), line: fpOpenLine("open") };
+    byId("board-column").value = "proposed"; byId("board-column").dispatch("change"); await tick();
+    const fpBothFiltered = { columns: main.querySelectorAll("section.column").length, status: fpStatus() && text(fpStatus()), region: fpRegion() };
+    byId("board-column").value = ""; byId("board-column").dispatch("change"); await tick();
+    expect(!!fpMovedId && fpRefusedFirst.status === fpNotMoved && fpRefusedFirst.region === null && fpRefusedFirst.held === 1
+      && fpBoth.status === fpNotMoved && fpBoth.region === fpSaid && fpBoth.line === fpSaid
+      && fpBothFiltered.columns === 1 && fpBothFiltered.status === fpNotMoved && fpBothFiltered.region === fpSaid,
+      "board: a later open page failing after a refused move leaves the refusal in the status line and says itself in its own line, filtered too "
+      + JSON.stringify([fpMovedId, fpRefusedFirst, fpBoth, fpBothFiltered]));
+
+    // Two groups failing with different errors (review A1711): each column says its own group's reason,
+    // the line above the columns one of them.
+    fpRefuse = "both";
+    await fpBoard();
+    const fpBothHeld = fpWait.length;
+    fpRelease("fail"); for (let k = 0; k < 16; k++) await tick();
+    const fpBusy2 = "More cards of the open columns could not be read: hub busy";
+    const fpTwo = { held: fpBothHeld, open: fpOpenLine("open"), blocked: fpOpenLine("blocked"), review: fpOpenLine("review"),
+      proposed: fpOpenLine("proposed"), region: fpRegion() };
+    expect(fpTwo.held === 2 && fpTwo.open === fpSaid && fpTwo.blocked === fpBusy2 && fpTwo.review === fpBusy2 && fpTwo.proposed === null
+      && (fpTwo.region === fpSaid || fpTwo.region === fpBusy2),
+      "board: two open groups failing apart each say their own reason in their columns " + JSON.stringify(fpTwo));
+    fpRefuse = null;
 
     // A closed read failing while the open column's later pages are read: the open column takes every
     // card it read, with its count, and the closed columns say the failure.

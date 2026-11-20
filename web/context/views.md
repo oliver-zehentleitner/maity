@@ -6672,8 +6672,13 @@ that group keeps its first page, and its column holds no count and says
 "More cards of the open columns could not be read". Every other column keeps
 what it read, Done and Cancelled included. Before this change they lost their
 cards and showed the open column's failure, while the incomplete open column
-had no mark. The status line above the columns says the same, so a filter
-that hides that column still shows it. A read that fails otherwise after the
+had no mark. Each failed group's column says that group's own reason. A line
+of its own above the columns says the same (the first reason that came), so
+a filter that hides that column still shows it. It is not the status line:
+that line says what the reader's own actions did, and a refused move said
+there would be replaced by this background read's failure (review A1711).
+Any read that clears the failure, a reload after a write included, empties
+that line. A read that fails otherwise after the
 first draw (a closed column, the read again of the cards changed meanwhile)
 still hands over the open groups' cards. Without them an open column would be
 left at its first page with a count. The closed columns say the failure, as
