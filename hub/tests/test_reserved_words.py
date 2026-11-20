@@ -77,6 +77,25 @@ def test_every_reserved_name_in_the_tables_is_quoted() -> None:
 # or a table being created also by a `quote=True` keyword on the call. Names that are not string
 # literals (a variable, a helper's argument) cannot be judged here and are left out.
 QUOTE_KEYWORD = {"Column", "Table", "create_table"}
+# Calls whose first argument (or index_name=, constraint_name=, name=) names an index or constraint.
+NAMED_BY_FIRST = {
+    "Index": "index",
+    "create_index": "index",
+    "drop_index": "index",
+    "create_unique_constraint": "constraint",
+    "create_check_constraint": "constraint",
+    "create_foreign_key": "constraint",
+    "create_primary_key": "constraint",
+    "drop_constraint": "constraint",
+}
+# Constraints inside a table, named only by name=.
+CONSTRAINTS = {
+    "UniqueConstraint",
+    "PrimaryKeyConstraint",
+    "ForeignKeyConstraint",
+    "CheckConstraint",
+    "ForeignKey",
+}
 
 
 def _literal(node: ast.expr | None) -> tuple[str, bool] | None:
@@ -89,6 +108,8 @@ def _literal(node: ast.expr | None) -> tuple[str, bool] | None:
             return None
         flag = node.args[1] if len(node.args) > 1 else _keyword(node, "quote")
         return inner[0], isinstance(flag, ast.Constant) and flag.value is True
+    if isinstance(node, ast.Call) and _callee(node) == "f" and len(node.args) == 1:
+        return _literal(node.args[0])  # op.f("…"): the name as written, quoted by the dialect
     return None
 
 
@@ -134,7 +155,14 @@ def _names(call: ast.Call) -> list[tuple[str, ast.expr | None]]:
             found.append(("column", _keyword(call, "new_column_name")))
     elif callee == "add_column" and table is not None:
         found.append(("table", _arg(call, 0, "table_name")))
-    elif callee in ("create_index", "create_unique_constraint"):
+    elif callee in NAMED_BY_FIRST:
+        first = call.args[0] if call.args else None
+        for key in ("index_name", "constraint_name", "name"):
+            first = first if first is not None else _keyword(call, key)
+        found.append((NAMED_BY_FIRST[callee], first))
+    elif callee in CONSTRAINTS:
+        found.append(("constraint", _keyword(call, "name")))
+    if callee in ("create_index", "create_unique_constraint"):
         if table is not None:
             found.append(("table", _arg(call, 1, "table_name")))
         columns = _arg(call, 1 + shift, "columns")
@@ -198,6 +226,8 @@ op.create_table(
         'op.add_column("notification_position", sa.Column("vector", JSON_VALUE, quote=True))'
     ),
     "an ordinary name": 'sa.Column("body", sa.Text())',
+    "an index named by quoted_name": ('op.create_index(quoted_name("vector", True), "t", ["v"])'),
+    "an ordinary op.f name": 'sa.PrimaryKeyConstraint("id", name=op.f("pk_notification_position"))',
 }
 
 UNQUOTED_FORMS = {
@@ -224,6 +254,29 @@ UNQUOTED_FORMS = {
     "a single-quoted name": ("sa.Column('vector', JSON_VALUE)", "column"),
     "a lightweight table of the word": ('sa.table("vector", sa.column("id"))', "table"),
     "a lightweight column of the word": ('sa.table("t", sa.column("vector", X))', "column"),
+    "an index named the word": ('op.create_index("vector", "t", ["v"])', "index"),
+    "an index named by keyword": (
+        'op.create_index(index_name="vector", table_name="t", columns=["v"])',
+        "index",
+    ),
+    "an index named through op.f": ('op.create_index(op.f("vector"), "t", ["v"])', "index"),
+    "an Index in a table": ('sa.Index("vector", "v")', "index"),
+    "a unique constraint named by keyword": (
+        'sa.UniqueConstraint("v", name="vector")',
+        "constraint",
+    ),
+    "a primary key named through op.f": (
+        'sa.PrimaryKeyConstraint("id", name=op.f("vector"))',
+        "constraint",
+    ),
+    "a constraint created under the word": (
+        'op.create_unique_constraint("vector", "t", ["v"])',
+        "constraint",
+    ),
+    "a constraint dropped by the word": (
+        'op.drop_constraint("vector", "t", type_="unique")',
+        "constraint",
+    ),
     "an index in a batch": ('batch_op.create_index("ix", ["vector"])', "column"),
     "a quote=True on the call that renames": (
         'op.alter_column("t", "v", new_column_name="vector", quote=True)',

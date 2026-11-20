@@ -1059,11 +1059,13 @@ that reflects `notification_position` and writes `vector` names that column itse
 type above. The list in the test is kept by hand from the vendors' reserved-word pages. The revisions
 are checked by an `ast` walk over the calls that name tables and columns: `Column`/`column` (also
 inside `add_column`, on one line or several), `Table`/`table`/`create_table`/`drop_table`,
-`rename_table`, `alter_column` (the column and `new_column_name`), `drop_column`, `add_column`'s table
-and the columns of `create_index`/`create_unique_constraint`. Those operations have no `quote=True`, so
+`rename_table`, `alter_column` (the column and `new_column_name`), `drop_column`, `add_column`'s table,
+the columns of `create_index`/`create_unique_constraint`, and the names of indexes and constraints
+(`Index`, `create_index`/`drop_index`, `create_*_constraint`, `create_foreign_key`, `drop_constraint`,
+a `name=` on a constraint, also through `op.f`). Those operations have no `quote=True`, so
 there a reserved name is written `sa.sql.quoted_name("vector", True)`; Alembic writes a plain string
 unquoted on MariaDB (`MODIFY vector`, `DROP COLUMN vector`). Not judged: a name that is no string
-literal, the columns of a foreign or primary key, and raw SQL in `op.execute`. A line-based pattern came first and was
+literal, the column lists of a foreign or primary key, and raw SQL in `op.execute`. A line-based pattern came first and was
 replaced after review: it misread calls over several lines and missed renames.
 
 ## On MariaDB a migration run commits per step, and a refusal stays where it refused
