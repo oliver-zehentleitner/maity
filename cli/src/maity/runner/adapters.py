@@ -261,6 +261,9 @@ def scratch_tmpdir(scratch: Path | None) -> Path | None:
 class Launch:
     argv: list[str]
     env: dict[str, str]
+    # The start continues the harness's last conversation (`ctx.resume` where the harness
+    # can); False: a fresh session, which `reported.sessions` counts (§15.7).
+    resumed: bool = False
 
 
 def launch(ctx: Context) -> Launch:
@@ -604,7 +607,7 @@ def _claude_code(ctx: Context, env: dict[str, str]) -> Launch:
     if ctx.placement.get("mode") == "interactive":
         trust_clone(ctx)
         if ctx.resume:  # `--continue`: the clone's latest conversation, with its context
-            return Launch([*base, "--continue", RESUME_PROMPT], env)
+            return Launch([*base, "--continue", RESUME_PROMPT], env, resumed=True)
         return Launch([*base, START_PROMPT + _sandbox_prompt(ctx)], env)
     # Headless (`-p`) asks for no folder trust and records none: nothing to pre-accept.
     # No background command may hold a run open past its turn (§6.2).
@@ -927,7 +930,7 @@ def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
     extra = AGY_MAITY_PROMPT + _sandbox_prompt(ctx)
     if ctx.placement.get("mode") == "interactive":
         if ctx.resume:  # `-c`: the folder's latest conversation, so this placement's
-            return Launch([*base, "-c", "-i", RESUME_PROMPT], env)
+            return Launch([*base, "-c", "-i", RESUME_PROMPT], env, resumed=True)
         return Launch([*base, "-i", folder + START_PROMPT + extra], env)
     # `-c` continues the latest conversation of the working directory: the placement's own
     # folder, so never another placement's (cli/context/runner.md).
