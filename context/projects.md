@@ -838,8 +838,8 @@ rule.
 **Id:** 6fea85a1-c677-469c-84a5-c2bc2c6438f5
 **Type:** decision
 **Status:** active
-**Evidence:** confirmed
-**Source:** the maintainer's wish in chat, 2026-11-19, recorded on card tsk-qeftb8bg0yt6 ("Add Docs, set in the project settings in the Links section", beside a header that showed Repository, Actions, Pull Requests, Issues, Discussions, Chat, Why; with Docs and a Wiki where set the order is Repository, Actions, Pull Requests, Issues, Wiki, Discussions, Docs, Chat, Why); contract `docs/api.md` §6.11 "The project's own links"
+**Evidence:** inferred
+**Source:** the maintainer's wish in chat, 2026-11-19, recorded on card tsk-qeftb8bg0yt6 (no request id); contract `docs/api.md` §6.11 "The project's own links"
 **See:** projects.md#a-project-links-its-issues-wiki-discussions-and-chat-as-four-fixed-fields-on-any-host — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-11-20
 **Revisit when:** projects ask for a sixth kind of link, or the header row has no room for its buttons on a phone
 
@@ -853,6 +853,13 @@ discussions, docs, chat. Docs stands after Discussions and before Chat
 because that is where the maintainer put it; Wiki, which the maintainer's
 list did not name since the project sets none, keeps its place after
 Issues. `links` is a JSON column, so no migration.
+
+Which part is whose: the Docs link, its field under Links in the
+project settings and its place after Discussions are the maintainer's
+wish (confirmed). The reason below and the rejected alternative of
+deriving Docs from the repository are the implementer's reasoning
+(inferred): the card does not show that the maintainer weighed a derived
+link. The free list stays rejected for 11b7e786's confirmed reason.
 
 **Reason:** a project's documentation often lives outside the forge (a
 site of its own, a docs host), so it is a link the admin sets, like the

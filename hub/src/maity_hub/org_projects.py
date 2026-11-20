@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select, update
 
-from maity_hub import clock, restricted, start_tabs
+from maity_hub import clock, restricted, stars, start_tabs
 from maity_hub import tables as t
 from maity_hub.events import Actor, emit, lock_project, newest_seq
 from maity_hub.views import member_view
@@ -87,6 +87,7 @@ def keep_owner(conn: Connection, project: Any, human_id: str, by: str | None = N
         key = made.inserted_primary_key
         assert key is not None
         start_tabs.append(conn, human_id, project.id)  # it opens as the last tab (§5.1)
+        stars.drop(conn, human_id, project.id)  # a membership tab from now on (§5.1 "Stars")
         row = conn.execute(select(t.membership).where(t.membership.c.id == int(key[0]))).one()
         emit(
             conn,

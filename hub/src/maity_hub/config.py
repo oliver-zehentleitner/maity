@@ -177,6 +177,9 @@ class Settings:
     # MAITY_MAX_ALIASES (§16.5, §6.24): the aliases one human, organisation, agent profile or
     # project may hold, 1–8 and never `unlimited`; None leaves it to the instance admin.
     max_aliases: int | None = None
+    # MAITY_MAX_STARRED_PER_HUMAN (§16.5, §5.1 "Stars"): the public projects one human may keep
+    # as starred tabs, 1–1000 and never `unlimited`; None leaves it to the instance admin.
+    max_starred_per_human: int | None = None
     # MAITY_MAX_READS_PER_MINUTE (§16.5, §1.7): reads one credential may make per minute, 60 to
     # 100000, or `unlimited`; None leaves it to the instance admin.
     max_reads_per_minute: int | str | None = None
@@ -334,6 +337,7 @@ class Settings:
                 env, "MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT", 1024**2, 1024**5
             ),
             max_aliases=parse_alias_limit(env),
+            max_starred_per_human=parse_bounded(env, "MAITY_MAX_STARRED_PER_HUMAN", 1, 1000),
             max_reads_per_minute=parse_limit(env, "MAITY_MAX_READS_PER_MINUTE", 60, 100000),
             agent_firewall=parse_choice(env, "MAITY_AGENT_FIREWALL", ("on", "off"), "off") == "on",
             route_limits=parse_route_limits(env.get("MAITY_ROUTE_LIMITS", "")),
@@ -587,11 +591,18 @@ def parse_limit(
 def parse_alias_limit(env: dict[str, str]) -> int | None:
     """MAITY_MAX_ALIASES (§16.5): a whole number from 1 to 8; unlike the other caps it has no
     `unlimited`, since other bounds rest on 8 (§6.25). Unset or empty is None."""
-    value = env.get("MAITY_MAX_ALIASES", "").strip()
+    return parse_bounded(env, "MAITY_MAX_ALIASES", 1, 8)
+
+
+def parse_bounded(env: dict[str, str], name: str, low: int, high: int) -> int | None:
+    """A cap with no `unlimited` (§16.5: `max_aliases`, `max_starred_per_human`): a whole
+    number from `low` to `high`; unset or empty is None, the instance admin's to decide,
+    anything else stops the hub."""
+    value = env.get(name, "").strip()
     if not value:
         return None
-    if not value.isdigit() or not 1 <= int(value) <= 8:
-        raise ConfigError("MAITY_MAX_ALIASES must be a number from 1 to 8")
+    if not value.isdigit() or not low <= int(value) <= high:
+        raise ConfigError(f"{name} must be a number from {low} to {high}")
     return int(value)
 
 

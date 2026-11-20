@@ -6440,6 +6440,7 @@ window.MAITY_FIXTURES = {
       "public_agents": "public_projects",
       "public_presence": true,
       "public_stats": false,
+      "starred": [],
       "start_tabs": null
     },
     "projects": [

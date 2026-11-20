@@ -306,6 +306,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_MAX_ORGS_PER_HUMAN` | `5` | The limit stays at the default; 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_PROJECTS_PER_OWNER` | `10` | The instance admin sets it under Limits; projects in one namespace, archived ones included: 1–10000 or `unlimited`. | §16.5 |
 | `MAITY_MAX_ALIASES` | `3` | The instance admin sets it under Limits; aliases one human, organisation, agent profile or project may hold: 1–8, no `unlimited`. | §16.5 |
+| `MAITY_MAX_STARRED_PER_HUMAN` | `100` | The instance admin sets it under Limits; public projects one human may keep as starred tabs without being a member: 1–1000, no `unlimited`. Lowering it keeps the stars a human holds. | §16.5, §5.1 |
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `1073741824` | The instance admin sets it under Limits; bytes one project may store, pending uploads included, counted after re-encoding, from 1 MiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `project`. | §16.5, §8.7 |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `unlimited` | The instance admin sets it under Limits; bytes from 1 GiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `instance`. | §16.5, §8.7 |
 | `MAITY_MAX_READS_PER_MINUTE` | `1000` | The instance admin sets it under Limits; `GET`/`HEAD` calls of the API one credential (an agent's, a runner's, a dashboard session) may make per minute, 60–100000 or `unlimited`. Past it a read is `429 rate_limited` with `Retry-After`, writes nothing, and the hub logs one INFO line (`maity_hub.read_limits`) with the route and a short tag of the credential. Counted in each process; a change by the admin applies within 30 seconds on the other processes. | §1.7, §16.5 |
@@ -343,17 +344,23 @@ The machine-readable API description is at `/api/v1/openapi.json`;
 
 Work in a virtual environment of your own, so the tests see the locked set
 and the `maity-hub` command; without that command the test of the entry point
-is skipped:
+is skipped. `make dev` makes it; activate it, so `maity-hub` is on the path
+(the entry-point test, `scripts/smoke_join.sh`):
 
 ```sh
-python3 -m venv .venv && . .venv/bin/activate
-```
-
-```sh
-make install    # the locked set from requirements/ with hashes, then the hub editable
+make dev        # .venv with the locked set from requirements/ (wheels, hashed), then the hub editable
+. .venv/bin/activate
 make check      # black --check, ruff, mypy --strict (src, tests, scripts), pytest
 make format     # black and ruff --fix
 ```
+
+The targets run `.venv/bin/python` when it exists, else `python3`, the one CI
+sets up; `PYTHON=` names another. Selecting the interpreter does not put
+`.venv/bin` on the path; activating does. `make install` puts the same locked set
+into that Python's environment, as CI does. `make dev` creates the venv inside
+make, so a sandbox that allows `make` but not a bare `python3 -m venv` can
+still set it up. With `MAITY_SCRATCH` set (a runner placement), pip's cache
+goes to `$MAITY_SCRATCH/pip-cache` unless `PIP_CACHE_DIR` is set.
 
 The tests run on a fresh SQLite file per test, a copy of a schema migrated
 once. `make test` runs them in parallel, one worker per core (pytest-xdist);
@@ -430,9 +437,9 @@ a fixed number of statements; `tests/test_view_batching.py` holds that.
 
 `scripts/smoke_join.sh` runs a fresh hub on loopback and joins two agents
 the two ways a pasted join line can go: with plain `curl` exactly as the
-join page says, and with the `maity` CLI (`make install`, then
+join page says, and with the `maity` CLI (`make dev`, `. .venv/bin/activate`, then
 `pip install -e ../cli`
-first). Each agent then asks its human, the human answers both, and each
+first, so both commands are on the path). Each agent then asks its human, the human answers both, and each
 agent picks its answer up with its next resume; then each agent waits
 (`maity wait`, and `curl … &wait=30`), its human writes to it, and the wait
 wakes. It exits 0 only when all of that worked.
@@ -454,7 +461,7 @@ and the image ships is pinned, with hashes, in `requirements/`:
 | File | Holds | Used by |
 |---|---|---|
 | `runtime.txt` | the hub's dependencies | the image, the join smoke and the browser end-to-end test in CI |
-| `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make install`, every hub CI job |
+| `dev.txt` | the same pins plus black, ruff, mypy, pytest | `make dev`, `make install`, every hub CI job |
 | `build.txt` | hatchling (and `editables`) | building the wheel and the editable install, without build isolation |
 | `tools.txt` | uv and pip-audit | `make lock-check` and the advisory audit in CI, each in an environment of its own |
 | `release.txt` | build, twine and hatchling, with the `build.txt` pins | `make release-build`: the sdist and wheel for PyPI (`release-hub.yml`, the `hub-dist` CI job) |
@@ -600,10 +607,14 @@ that names it; a table read with `autoload_with` loses the flag.
 `tests/test_reserved_words.py` holds the list of such words and fails on a
 name from it without the flag. An `op.*` call that names a table, an index or
 a constraint has no `quote=True`: write the name there as
-`sa.sql.quoted_name("vector", True)`, and a foreign key to it as a tuple of
-such names (`sa.ForeignKey((quoted_name("t", True), quoted_name("vector", True)))`)
-or by the `Column` object, never as a `"t.vector"` string, which SQLAlchemy
-splits and writes plain. SQLite runs in Alembic's batch mode, so column
+`sa.sql.quoted_name("vector", True)`, and a foreign key to it by the
+`Column` object (`sa.ForeignKey(t.c.vector)`, with `t` a `sa.Table` whose
+column carries `quote=True`), which quotes from the floor in
+`pyproject.toml` (`sqlalchemy>=2.0.36`) on. The reference takes the
+referenced column's flag, and a `"t.vector"` string or a tuple of
+`quoted_name` parts cannot add one: a string comes out plain unless it
+resolves to a column with `quote=True`, and so does a tuple, which only
+2.1 takes. SQLite runs in Alembic's batch mode, so column
 changes work there too. Every revision has a working `downgrade()`; the
 test suite migrates up and down on each engine. A revision spells out its
 column types instead of importing them from `maity_hub` (autogenerate

@@ -2554,6 +2554,30 @@ def test_a_placement_without_a_namespaced_project_is_dropped(change: dict[str, A
     assert not supervisor.valid(placement(**change))
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"id": "plc-0003\n"},
+        {"project": "oliver/maity\n"},
+        {"project_id": "maity\n"},
+        {"project_aliases": ["oliver/maity\n"]},
+        {"workspace": {"clone": "agent-3\n", "branch": None, "repository": REPO}},
+        {"harness": "stub\n"},
+    ],
+)
+def test_a_placement_id_with_a_trailing_newline_is_dropped(change: dict[str, Any]) -> None:
+    """Each id is matched in full: `$` alone also matches before a trailing newline."""
+    assert supervisor.valid(placement(project_aliases=["oliver/maity"]))
+    assert not supervisor.valid(placement(**change))
+
+
+def test_a_closed_placement_with_a_trailing_newline_is_not_read(world: Any) -> None:
+    sup, *_ = world
+    sup.closed([CLOSED, {**CLOSED, "id": "plc-0004\n"},
+                {**CLOSED, "id": "plc-0005", "project_id": "maity\n"}])  # fmt: skip
+    assert [p["id"] for p in sup.closed_placements] == ["plc-0003"]
+
+
 # --- the idle check of an interactive session (§15.14, tsk-cbz655mvt4ss) ---------------------
 
 HEALTH = {"settings": {"hang_after_minutes": 30, "reply_within_minutes": 10}}
@@ -3937,3 +3961,21 @@ def test_a_tmp_scratch_leaf_with_a_trailing_newline_is_refused(tmp_path: Path) -
     assert workspace.tmp_scratch_of(1000, good).name == good
     with pytest.raises(workspace.Refused):
         workspace.tmp_scratch_of(1000, good + "\n")
+
+
+@pytest.mark.parametrize(("project", "pid"), [("maity\n", "plc-0003"), ("maity", "plc-0003\n")])
+def test_a_scratch_name_with_a_trailing_newline_is_refused(
+    tmp_path: Path, project: str, pid: str
+) -> None:
+    assert workspace.scratch_of(tmp_path, "maity", "plc-0003").name == "plc-0003"
+    with pytest.raises(workspace.Refused):
+        workspace.scratch_of(tmp_path, project, pid)
+
+
+@pytest.mark.parametrize(("project", "clone"), [("maity\n", "agent-3"), ("maity", "agent-3\n")])
+def test_a_clone_name_with_a_trailing_newline_is_refused(
+    tmp_path: Path, project: str, clone: str
+) -> None:
+    assert workspace.locate(tmp_path, "maity", "agent-3").clone == "agent-3"
+    with pytest.raises(workspace.Refused):
+        workspace.locate(tmp_path, project, clone)
