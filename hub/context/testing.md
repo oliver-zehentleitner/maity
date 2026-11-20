@@ -404,7 +404,7 @@ reads that are by design no request's cost (the maintenance frame).
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-xdn21ph67js9 (item 15 of the list in `context/performance.md`, the lead's go of 2026-11-18: a statement-count test per list route, 3 rows against 30 in the style of `test_view_batching`, a guard that fails a list route without one, a route that grows becoming its own card); implementation session, 2026-11-20 (how the routes and the claims are found); `hub/tests/list_rows.py`, `hub/tests/test_list_rows.py`
+**Source:** card tsk-xdn21ph67js9 (item 15 of the list in `context/performance.md`, the lead's go of 2026-11-18: a statement-count test per list route, 3 rows against 30 in the style of `test_view_batching`, a guard that fails a list route without one, a route that grows becoming its own card); implementation session, 2026-11-20 (how the routes and the claims are found); the review of #2039 (2026-11-20: lists under a key other than `items`, an enrollment list measured with empty rows); `hub/tests/list_rows.py`, `hub/tests/test_list_rows.py`
 **Revisit when:** the hub gains response models (a list could then be known from its type), or the `GROWING` list is empty and could become a hard rule with no exceptions
 **See:** https://github.com/oliver-zehentleitner/maity — f81ab39d-1f35-40e2-bf25-aea0fa6fb102 — as of 2026-11-20
 **See:** testing.md#get-answers-are-checked-against-hand-listed-contract-keys-each-anchored-to-a-line-of-docsapimd — 4e114a53-b5e1-417d-a29d-62af96440a74 — as of 2026-11-20
@@ -415,19 +415,30 @@ The guard, `tests/test_list_rows.py`, reads those decorators from the source of 
 `test_contract_shapes` walks it. Every route is claimed by a test, or is in `NOT_LISTS` (no
 list), `ITEMS_INSIDE` (its code names `items` in a part, with the reason) or `CATALOGS` (a list
 from the hub's own code, no rows); a route in none, an entry that is no route, and an entry in
-two fail. To find a list put into `NOT_LISTS` by mistake, the guard looks for `"items"` in the
-route's function and in the hub functions it calls, four calls deep by the names they call; a
-`NOT_LISTS` route that names it fails. The new tests measure with `same_for_3_and_30`: one call
+two fail. A list is a list of rows under any top-level key, not only `items` (`/me`'s
+`projects`, the jour fixe's `series`): its test counts the rows under that key (`rows=`). Each
+`NOT_LISTS` entry says what the route answers. To find a list put into `NOT_LISTS` by mistake,
+the guard does two things. It looks for `"items"` in the route's function and in the hub
+functions it calls, four calls deep by the names they call; a `NOT_LISTS` route that names it
+fails. And it reads every `NOT_LISTS` route as a small project's owner and as its agent: an
+answer with a list at the top under a key `LIST_KEYS` does not name for that route fails.
+`LIST_KEYS` names the lists that are bounded by something other than a table's rows (a
+catalog, one object's own parts, a setting). The new tests measure with `same_for_3_and_30`: one call
 first (so a first read's one-time write is not row cost), then 3 rows and 27 more, the list
-showing exactly 27 more rows, the statements on the sync engine the same both times. The
+showing exactly 27 more rows, the statements on the sync engine the same both times. SQLite's
+`PRAGMA query_only`, which `db.read_transaction` switches on a pooled connection whose last use
+was a write, is not counted: which connection the pool hands out decides it, not the rows (it
+made one run under load count 13 against 14). A seed must reach the code that runs per row:
+an enrollment with an empty `attach` reads no project names, so that test attaches one. The
 older tests that already measured a list (`test_view_batching`, the requests, the bell, the
 chat lists, the memory, the admin's users) only gained the decorator and keep their own
 numbers (2 against 8 chats, 5 against 30 requests, 3 against 20 entries).
 
 A route whose cost grows today is in `GROWING` with what it reads per row; its test asserts
-that the cost grows, so the entry fails and leaves once the fix lands. 21 of the 50 list
-routes grew when the guard came (2026-11-20, on SQLite and PostgreSQL); each is to become a
-card of its own, and none was fixed in this change.
+that the cost grows, so the entry fails and leaves once the fix lands. 25 of the 59 list
+routes grew when the guard came (2026-11-20; 21 first, on SQLite and PostgreSQL, four more
+after the review, on SQLite); each is to become a card of its own, and none was fixed in this
+change.
 
 **Reason:** the card asks for the cost of every list to stay flat after the performance cards.
 3 and 30 are the counts the 2026-11-08 measurement and `test_view_batching` used: 27 rows
@@ -436,14 +447,18 @@ claim on the test keeps the route and the test that measures it in one place, an
 request that adds a list and its test touches no shared table. The "names `items`" search
 cannot prove that a route is no list (a deeper helper, a key built at run time), but it
 catches the common case, a route whose own code builds `{"items": …}`; `ITEMS_INSIDE` keeps
-its false hits explicit. A `GROWING` test that asserts the growth keeps the exception honest
+its false hits explicit. The read of every `NOT_LISTS` route catches a list under another
+key, which no search of the source finds (`{"series": shown}`), but only for the routes the
+owner or the agent of a small project can read with 200; a route that needs more set up (an id
+of its own) is checked by its entry's reason alone. A `GROWING` test that asserts the growth keeps the exception honest
 in both directions.
 
 **Rejected alternatives:**
 - A central map from route to test name in the guard: it goes stale when a test is renamed,
   and parallel pull requests adding lists would all change it.
-- Calling every GET route at run time to see which answer `items`: 135 routes, most with ids
-  to set up first; a route the probe cannot reach would be classified by nothing.
+- Calling every GET route at run time to decide which is a list: 136 routes, many with ids
+  to set up first; a route the read cannot reach would be classified by nothing. The read is
+  kept as a second check on `NOT_LISTS`, where an entry already says what the route is.
 - Reading the lists from docs/api.md: the same three forms of shape and no marker of route,
   as in 4e114a53.
 - Fixing the growing routes here: the card keeps this change to tests and CI; each fix is its

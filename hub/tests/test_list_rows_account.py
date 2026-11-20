@@ -17,7 +17,7 @@ from maity_hub.ids import new_id
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.list_rows import flat_rows, same_for_3_and_30
-from tests.test_chat_access import allow, profile
+from tests.test_chat_access import allow, deny, profile
 from tests.test_cross_chats import create
 
 
@@ -309,3 +309,115 @@ def test_the_projects_cost_the_same_for_3_and_for_30(owner: flow.Human, migrated
             factory.membership(migrated, project_id, "owner", human_id=owner.id)
 
     same_for_3_and_30(migrated, "/projects", lambda: owner.get("/projects"), grow)
+
+
+# The lists below sit under a key of their own, not `items` (ub25's review of #2039): `rows=`
+# counts the list there.
+
+
+def _under(*keys: str) -> Any:
+    """`rows` for `same_for_3_and_30`: the rows of the answer's lists under `keys`, together."""
+
+    def rows(answer: Any) -> int:
+        body = answer.json()
+        assert all(isinstance(body[key], list) for key in keys), answer.text
+        return sum(len(body[key]) for key in keys)
+
+    return rows
+
+
+def _shared_projects(engine: Engine, n: int, *human_ids: str) -> None:
+    """n more projects, each with every one of `human_ids` as an active member (the first as
+    the owner)."""
+    for _ in range(n):
+        project_id = factory.project(engine, f"p-{new_id('project')[4:]}".lower())
+        for i, human_id in enumerate(human_ids):
+            factory.membership(
+                engine, project_id, "owner" if i == 0 else "member", human_id=human_id
+            )
+
+
+@flat_rows("/me/chat-access")
+def test_the_chat_access_lists_cost_the_same_for_3_and_for_30(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    made = [0]
+
+    def grow(n: int) -> None:
+        for other in _humans(migrated, n):
+            made[0] += 1
+            mine = profile(migrated, owner.id, f"agent-{new_id('agent')[4:]}")
+            rule = (allow, deny)[made[0] % 2]  # every second one a deny
+            answer = rule(owner, agents=[mine], owner_id=other)
+            assert answer.status_code == 201, answer.text
+
+    same_for_3_and_30(
+        migrated,
+        "/me/chat-access",
+        lambda: owner.get("/me/chat-access"),
+        grow,
+        rows=_under("allow", "deny"),
+    )
+
+
+@flat_rows("/me")
+def test_the_caller_s_projects_in_me_cost_the_same_for_3_and_for_30(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    same_for_3_and_30(
+        migrated,
+        "/me",
+        lambda: owner.get("/me"),
+        lambda n: _shared_projects(migrated, n, owner.id),
+        rows=_under("projects"),
+    )
+
+
+@flat_rows("/me/broadcasts")
+def test_the_broadcast_choice_s_agents_cost_the_same_for_3_and_for_30(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    chosen: list[str] = []
+
+    def grow(n: int) -> None:
+        chosen.extend(profile(migrated, owner.id, f"agent-{new_id('agent')[4:]}") for _ in range(n))
+        answer = owner.patch("/me/broadcasts", {"mode": "accept_only", "agents": chosen})
+        assert answer.status_code == 200, answer.text
+
+    same_for_3_and_30(
+        migrated,
+        "/me/broadcasts",
+        lambda: owner.get("/me/broadcasts"),
+        grow,
+        rows=_under("agents"),
+    )
+
+
+@flat_rows("/me/preferences")
+def test_the_preferences_projects_cost_the_same_for_3_and_for_30(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    same_for_3_and_30(
+        migrated,
+        "/me/preferences",
+        lambda: owner.get("/me/preferences"),
+        lambda n: _shared_projects(migrated, n, owner.id),
+        rows=_under("projects"),
+    )
+
+
+@flat_rows("/people/{}")
+def test_a_person_s_projects_cost_the_same_for_3_and_for_30(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    """Another person's projects that the caller shares with them. Their `agents` are listed
+    only where the person's public page is served (§16.9); that list is not measured here."""
+    other = factory.human(migrated, "colleague")
+    _shared_projects(migrated, 1, other, owner.id)  # with nothing shared, the person is not found
+    same_for_3_and_30(
+        migrated,
+        "/people/{}",
+        lambda: owner.get("/people/colleague"),
+        lambda n: _shared_projects(migrated, n, other, owner.id),
+        rows=_under("projects"),
+    )

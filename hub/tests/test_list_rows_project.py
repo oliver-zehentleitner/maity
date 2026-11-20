@@ -457,3 +457,118 @@ def test_pending_attachments_cost_the_same_for_3_and_for_30(
         lambda: owner.get(f"{P}/attachments?status=pending&limit=200"),
         grow,
     )
+
+
+def _keyed(key: str) -> Callable[[Any], int]:
+    """The rows of a list the answer carries under `key`, not `items`."""
+
+    def rows(answer: Any) -> int:
+        found = answer.json()[key]
+        assert isinstance(found, list), answer.text
+        return len(found)
+
+    return rows
+
+
+@flat_rows("/projects/{}/{}/jour-fixe")
+def test_the_jour_fixe_overview_costs_the_same_for_3_and_for_30_series(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    first = ensure_series(owner)
+    others = [factory.human(migrated, f"host-{n}") for n in range(3)]
+
+    def grow(n: int) -> None:
+        _copies(
+            migrated,
+            t.jour_fixe_series,
+            first,
+            n,
+            lambda i: {
+                "topic": f"Overview topic {i}",
+                "created_by": others[i % 3],
+                "created_at": clock.now() + timedelta(seconds=i),
+            },
+        )
+
+    same_for_3_and_30(
+        migrated,
+        "/projects/{}/{}/jour-fixe",
+        lambda: owner.get(f"{P}/jour-fixe"),
+        grow,
+        rows=_keyed("series"),
+    )
+
+
+@flat_rows("/projects/{}/{}/limits")
+def test_the_project_s_limits_cost_the_same_for_3_and_for_30_agents(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    project_id = _project_id(migrated)
+
+    def grow(n: int) -> None:
+        for _ in range(n):
+            factory.agent(migrated, project_id, owner.id)
+
+    same_for_3_and_30(
+        migrated,
+        "/projects/{}/{}/limits",
+        lambda: owner.get(f"{P}/limits"),
+        grow,
+        rows=_keyed("agents"),
+    )
+
+
+@flat_rows("/projects/{}/{}/swarm")
+def test_the_swarm_costs_the_same_for_3_and_for_30_members(
+    owner: flow.Human, migrated: Engine
+) -> None:
+    project_id = _project_id(migrated)
+    keepers = [factory.human(migrated, f"swarm-owner-{n}") for n in range(3)]
+
+    def grow(n: int) -> None:
+        for _ in range(n):
+            factory.agent(migrated, project_id, keepers[next(_STEP) % 3])
+
+    same_for_3_and_30(
+        migrated,
+        "/projects/{}/{}/swarm",
+        lambda: owner.get(f"{P}/swarm"),
+        grow,
+        rows=_keyed("members"),
+    )
+
+
+@flat_rows("/projects/{}/{}/overview")
+def test_the_overview_s_reports_cost_the_same_for_3_and_for_30(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The latest report of each card, up to `limit` (at most 50): cards reported by the owner
+    and three agents."""
+    project_id = _project_id(migrated)
+    reporters = [owner.id] + [flow.agent(make_client, owner).id for _ in range(3)]
+    created_by = _membership(migrated, owner.id)
+
+    def grow(n: int) -> None:
+        for _ in range(n):
+            i = next(_STEP)
+            factory.card(
+                migrated,
+                project_id,
+                created_by,
+                status="review",
+                report={
+                    "reported_by": reporters[i % 4],
+                    "reported_at": clock.rfc3339(clock.now() + timedelta(seconds=i)),
+                    "verification": "tests pass",
+                    "pr_status": "found",
+                    "pr": {"number": i, "url": f"https://github.com/o/r/pull/{i}"},
+                },
+            )
+
+    same_for_3_and_30(
+        migrated,
+        "/projects/{}/{}/overview",
+        lambda: owner.get(f"{P}/overview?limit=50"),
+        grow,
+        rows=_keyed("reports"),
+    )

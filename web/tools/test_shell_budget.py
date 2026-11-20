@@ -84,5 +84,9 @@ with tempfile.TemporaryDirectory() as root:
     problems, _, _ = dashboard(root, FILES, {"files": 4, "bytes": "3 MB", "gzip_bytes": 10**6})
     expect(any("`bytes` is not a whole number" in p for p in problems), "a budget that is no number fails " + repr(problems))
 
+with tempfile.TemporaryDirectory() as root:
+    problems, _, _ = dashboard(root, FILES, {"files": True, "bytes": size, "gzip_bytes": 10**6})
+    expect(any("`files` is not a whole number" in p for p in problems), "a budget of true is no number (JSON true is an int in Python) " + repr(problems))
+
 print("%d failure(s)" % failures)
 sys.exit(1 if failures else 0)

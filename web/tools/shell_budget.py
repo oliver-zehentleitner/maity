@@ -92,7 +92,8 @@ def check(root, budget_path):
     problems = [f"{ref}: not a file of the dashboard, so not measured" for ref in outside]
     problems += [f"{os.path.relpath(p, root)}: loaded by the shell, missing" for p in missing]
     for key in KEYS:
-        if not isinstance(budget.get(key), int):
+        value = budget.get(key)
+        if not isinstance(value, int) or isinstance(value, bool):
             problems.append(f"{os.path.basename(budget_path)}: `{key}` is not a whole number")
         elif measured[key] > budget[key]:
             problems.append(

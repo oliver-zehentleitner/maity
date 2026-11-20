@@ -191,12 +191,15 @@ def test_the_owner_s_enrollments_cost_the_same_for_3_and_for_30(
     make_client: ClientFactory, migrated: Engine
 ) -> None:
     owner = flow.human(make_client, migrated)
+    flow.project(owner, repository={"url": REPOSITORY})
     made = [0]
 
     def grow(n: int) -> None:
         for _ in range(n):
             made[0] += 1
-            enroll(owner, name=f"box-{made[0]:02d}")
+            # Each with a project to attach to: the view reads its full names (§6.25), and an
+            # empty `attach` reads nothing (ub25 at #2039).
+            enroll(owner, name=f"box-{made[0]:02d}", attach=["maintainer/maity"])
 
     same_for_3_and_30(
         migrated,
