@@ -4201,9 +4201,9 @@ file through the same path, so the session holds the right to search those
 directories. `O_PATH` needs that right and nothing more.
 
 **Boundary:** a descriptor opened with `O_PATH` reads nothing. A link on the
-way is still refused: with `O_NOFOLLOW`, `O_PATH` opens the link itself,
-which is no directory. Under Claude Code, maity runs outside the sandbox as
-the agents' user. Passing through a directory gives it nothing that this
+way is still refused: with `O_DIRECTORY` and `O_NOFOLLOW`, Linux refuses it
+(ENOTDIR), and a check that each step is a directory catches anything else.
+Under Claude Code, maity runs outside the sandbox as the agents' user. Passing through a directory gives it nothing that this
 user's own path lookup does not already give, and the file checks are as
 before.
 
