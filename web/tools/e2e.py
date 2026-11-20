@@ -566,10 +566,11 @@ BOOT_HEAD = "/api/v1/me/notifications?limit=0"
 class BootHeads:
     """The notifications heads a page asked beside its GET /bootstrap (tsk-zf3wd9t5gjab).
 
-    The dashboard asks the head before it knows the session, so a visitor's 401 and the 403 of a
-    session that owes the second factor are expected there, and the page drops them. Such a head is
-    told apart by its order alone: asked while that page's /bootstrap is still out. Every later head,
-    the page's own second ask once the session is read among them, is judged as any answer.
+    The dashboard asks the head before it knows the session, so a visitor's 401, the 403 of a
+    session that owes the second factor and the 503 of a running maintenance window are expected
+    there, and the page drops them. Such a head is told apart by its order alone: asked while that
+    page's /bootstrap is still out. Every later head, the page's own second ask once the session is
+    read among them, is judged as any answer. A head is forgotten once it answered or failed.
     """
 
     def __init__(self) -> None:
@@ -582,12 +583,13 @@ class BootHeads:
         elif path == BOOT_HEAD and self.out:
             self.early.add(key)
 
-    def ended(self, path: str) -> None:
+    def ended(self, path: str, key=None) -> None:
         if path.startswith("/api/v1/bootstrap") and self.out:
             self.out -= 1
+        self.early.discard(key)
 
     def excused(self, path: str, status: int, key) -> bool:
-        return status in (401, 403) and path == BOOT_HEAD and key in self.early
+        return status in (401, 403, 503) and path == BOOT_HEAD and key in self.early
 
 
 def watch_page(run: Run, page: Page) -> None:
@@ -604,7 +606,7 @@ def watch_page(run: Run, page: Page) -> None:
             run.problems.append(f"console error: {msg.text}")
 
     def request_failed(req) -> None:
-        heads.ended(req.url.split(run.base, 1)[-1])
+        heads.ended(req.url.split(run.base, 1)[-1], req)
         # A navigation or a re-render may cancel a request the page no longer needs.
         if req.failure != "net::ERR_ABORTED":
             run.problems.append(f"{req.method} {req.url} failed: {req.failure}")
@@ -613,12 +615,13 @@ def watch_page(run: Run, page: Page) -> None:
         path = resp.url.split(run.base, 1)[-1]
         if path.startswith("/api/v1/"):
             run.recent.append(resp)
-        heads.ended(path)
+        excused = heads.excused(path, resp.status, resp.request)
+        heads.ended(path, resp.request)
         # Signed out, the page asks /auth/session first and expects 401; the boot's early
-        # notifications head may meet the same (BootHeads).
+        # notifications head may meet the same, or a running window's 503 (BootHeads).
         if resp.status >= 400 and not (
             resp.status == 401 and path.startswith("/api/v1/auth/session")
-        ) and not heads.excused(path, resp.status, resp.request):
+        ) and not excused:
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
     page.on("request", request)

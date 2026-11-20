@@ -157,10 +157,13 @@ def boot_head_cases(ns: dict) -> int:
     heads.asked(head, late)
     check("boot head: a 401 of the head asked beside /bootstrap is excused", heads.excused(head, 401, early))
     check("boot head: a 403 of it too (a session that owes the second factor)", heads.excused(head, 403, early))
+    check("boot head: a 503 of it too (a running maintenance window)", heads.excused(head, 503, early))
     check("boot head: its 500 stays a problem", not heads.excused(head, 500, early))
     check("boot head: a head asked after /bootstrap answered stays a problem", not heads.excused(head, 401, late))
     check("boot head: another route asked beside /bootstrap stays a problem", not heads.excused("/api/v1/me", 401, other))
     check("boot head: with no /bootstrap out nothing is excused", not ns["BootHeads"]().excused(head, 401, early))
+    heads.ended(head, early)
+    check("boot head: an early head is forgotten once it answered", early not in heads.early and not heads.excused(head, 401, early))
     return failed
 
 

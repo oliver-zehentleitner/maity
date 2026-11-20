@@ -6292,8 +6292,9 @@ window.Maity = window.Maity || {};
   // change of the settings sets it from their answer.
   let zoneSaves = 0;
   // quiet: a read started before the drawing knows whether there is a session (the boot's
-  // notifications head, js/app.js): its 401 or enrolment 403 tells the page nothing, since the
-  // drawing has not yet read the session that would decide it (tsk-zf3wd9t5gjab).
+  // notifications head, js/app.js): its 401, enrolment 403 or 503 maintenance tells the page
+  // nothing, since the drawing has not yet read the session and the window that would decide it
+  // (tsk-zf3wd9t5gjab).
   function request(method, path, body, raw, signal, headers, quiet) {
     const saves = zoneSaves;
     const answer = requestOnce(method, path, body, raw, signal, headers, quiet);
@@ -6313,8 +6314,11 @@ window.Maity = window.Maity || {};
     if (method !== "GET" && !(method === "POST" && path === "/me/presence") && M.onWrite) M.onWrite(path);
     const epoch = M.sessionEpoch || 0;
     // §16.12: a window that runs refuses with 503 `maintenance`; the page is told once, in one
-    // place (js/maintenance.js), and the caller gets the refusal as before.
-    const told = (err) => { if (err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
+    // place (js/maintenance.js), and the caller gets the refusal as before. Not by a quiet read:
+    // the boot's head is refused while /bootstrap, which a window lets through, still runs, and
+    // the redraw it would start asks the next quiet head, refused again, without end; the drawing
+    // learns the window from its own reads and asks the head again itself (tsk-zf3wd9t5gjab).
+    const told = (err) => { if (!quiet && err && err.code === "maintenance" && M.onMaintenance) M.onMaintenance(err.details || {}); throw err; };
     if (sessionBlocked && !publicCall) return Promise.reject(obsoleteSession(path));
     // In fixture mode an image travels with the Content-Type the page sniffed.
     const single = () => {
@@ -6399,7 +6403,8 @@ window.Maity = window.Maity || {};
     fixtureMailTestTo,
     source,
     ApiError,
-    // opts: { signal } cancels the read; { quiet } (request, above) tells the page of no 401.
+    // opts: { signal } cancels the read; { quiet } (request, above) tells the page of no 401,
+    // enrolment 403 or maintenance 503.
     get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal, undefined, !!(opts && opts.quiet)),
     getAll,
     // The boot's bundle (§5.4, above): prime(project or null, live) gives a token for unprime.
