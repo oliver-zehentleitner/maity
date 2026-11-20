@@ -439,11 +439,12 @@ pinned uv instead of a second tool.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
+**Source:** card tsk-qcsd79map0yq (the maintainer's approval, 2026-11-09, after the v0.1.0a1 release run spent most of its time rerunning the hub suite; the MariaDB rule, the hand-run title and gating the image approved by the team lead); card tsk-5cah3a82dv63 (the 11.8 job beside the 11.4 suite, #2022); card tsk-07hb18s4j47f (from the reviews of #2022 and #2025: the reader, then the table of introducing commits, lotse's decision of 2026-11-20 after three review rounds); `tools/release_gate.py`, `.github/workflows/release-hub.yml`, `release-cli.yml`, `publish-image.yml`, `hub-mariadb.yml`
 **Revisit when:** ci stops running on every push to main, hub-mariadb comes back into the pull request gate, or GitHub's run list starts carrying a dispatch's inputs
 **See:** process.md#the-cli-is-published-to-pypi-as-maity-from-a-cli-v-tag-through-trusted-publishing — 227cd75c-bfc7-4cd8-9ba8-cf877cd3bf21 — as of 2026-11-09
 **See:** process.md#mariadb-checks-main-after-every-ci-run-and-every-hour-not-every-pull-request-postgresql-and-sqlite-stay-in-the-gate — 75a2382c-6a3d-450d-873e-8aade80d6e3b — as of 2026-11-09
 **See:** https://github.com/oliver-zehentleitner/maity — 843b8d35-45c7-4b91-827f-7109f470ca54 — as of 2026-11-09
+**See:** https://github.com/oliver-zehentleitner/maity — e70b5933-72f5-4951-b024-b92fe22dc521 — as of 2026-11-20
 
 The first job of `release-hub.yml` and `release-cli.yml` (`check`), and of
 `publish-image.yml` on a tag (`gate`), no longer runs tests. It runs
@@ -456,11 +457,22 @@ read-only token and lets the tag through only when:
   actually ran the suite on a commit of main with the same files the
   suite reads as the tag (the list `decide` compares; `git diff`) is
   green: the 11.4 suite and, since 2026-11-20, the 11.8 subset beside it.
-  Whether a run had the 11.8 job is read from `hub-mariadb.yml` at the
-  run's commit, not from the jobs the run lists: a file that defines it
-  and a run where it is missing, skipped or red stops the gate, and only a
-  file from before the job lets 11.4 count alone. A run that skipped the
-  suite counts for nothing, unless a job beside it went red. Only runs of
+  Whether a run had the 11.8 job is git's answer, not the workflow
+  file's: `tools/release_gate.py` keeps a table of each job beside the
+  11.4 suite and the commit of main that added it (`hub-mariadb-11-8`,
+  `4fafdf1f`, #2022), and a run whose workflow commit has that commit in
+  its history (`git merge-base --is-ancestor`) needs the job green;
+  missing, skipped or red stops the gate. Only a run from before that
+  commit counts on 11.4 alone. A history git cannot answer from (a
+  shallow checkout, a commit it cannot get, a git error) stops the gate,
+  never passes it, so both gate jobs check out with `fetch-depth: 0`. A
+  run that lists a `hub-mariadb*` job the table does not know stops it
+  too, until the pull request that adds the job adds its line. The jobs
+  API lists a job by its name, the same as its key only while no job of
+  `hub-mariadb.yml` sets `name:` (`test_release_gate.py` holds it so); a
+  renamed job reads as missing, which stops the gate. A run
+  that skipped the suite counts for nothing, unless a job beside it went
+  red. Only runs of
   main's own workflow file count: the run's ref is main and the commit
   it ran is on main, since a dispatch on another ref runs that ref's
   copy of `hub-mariadb.yml`, which could keep the title and the job's
@@ -506,6 +518,19 @@ the tag lacks.
 - Skipping a run whose commit cannot be compared, or one still running
   (the first version): an older green run then decides although a newer
   one may be red; found in review.
+- Reading the jobs from `hub-mariadb.yml` at the run's commit with a
+  reader of its own (#2022, and three rounds of #2025): a file that
+  defines the job needs it, one that does not predates it. Every round
+  of review found another layout the reader got wrong, a comment after
+  `jobs:`, quoted keys, values wrapped to column 0, open quotes and flow
+  values, anchors, tags, sequence items, and a wrong read let 11.4 count
+  alone; the table asks git a question with one answer instead.
+- Reading it with PyYAML: the gate runs on the release job's bare
+  interpreter, standard library only, and the file's layout would still
+  decide what the gate requires.
+- The run's job list alone: it is blind to a job the run does not list
+  (a partial re-run, a job that never started), so the commit decides
+  and the list only adds the jobs the table does not know.
 
 ## The coordinating agent manages, merges and releases; it does not code, review or test, and it routes work by model
 

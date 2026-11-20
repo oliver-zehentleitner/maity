@@ -6724,6 +6724,20 @@ columns are now one page of 50 each, done and cancelled read apart, not a
 group that pages (b7b0a38f). The draw before them is kept as it is; whether it
 still earns its cost with a page of 50 has not been measured.
 
+Since tsk-qw08c8ds214g (2026-11-20) the first draw waits for each open
+group's first page only, not for all its pages. On the maintainer's project
+the open column's second page (59 kB) came about 95 ms after its first, on
+the way to that draw. `M.api.getAll` hands over the first page as soon as it
+is in, and the pages asked stay the same: `limit=200`, the same cursors, no
+contract change. The later pages come with the whole read, which draws again,
+as it does for the closed columns. Until then an open column shows the cards
+of its first page. A later open page that fails after the first draw fails the
+whole read, as a closed read does. It is said as what it is ("More cards of
+the open columns could not be read"), in the same place as a failed closed
+read, and the board stays as drawn. A group that fails before its first page
+still fails the view, as before. A group read that answers without handing
+over a first page draws once the group is complete.
+
 **Reason:** on the maintainer's project the closed window was 783 cards,
 the largest group by far, and its pages follow each other through a
 keyset cursor, so it held the first draw by about a second while the open

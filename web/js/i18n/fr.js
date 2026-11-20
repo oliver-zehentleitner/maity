@@ -516,6 +516,7 @@ window.MAITY_I18N["fr"] = {
   "board.new_subtask": "Nouvelle sous-tâche",
   "board.no_match": "Aucune carte ne correspond au filtre.",
   "board.not_saved": "Non enregistré : {reason}",
+  "board.open.more_failed": "Impossible de lire les autres cartes des colonnes ouvertes : {reason}",
   "board.place.above": "{id} est maintenant au-dessus de {other}.",
   "board.place.below": "{id} est maintenant en dessous de {other}.",
   "board.place.bottom": "{id} est maintenant tout en bas.",

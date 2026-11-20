@@ -547,8 +547,9 @@ between, is still active. Every other ended session leaves the banner as it is. 
 Security → Sessions list, the bell's pinned alerts and the Notifications page keep reading
 the ended ones where they show or judge them.
 
-The cost of the fallback: while an active session's approver has ended (up to the 30
-days the hub keeps ended sessions), every build of the sign-in banner makes two calls
+The cost of the fallback: while an active session's approver has ended (at most 30
+days: the approved session itself lives no longer, `SESSION_ABSOLUTE` in
+`hub/src/maity_hub/auth/caller.py`), every build of the sign-in banner makes two calls
 instead of one, on every page and on each of its 60-second rebuilds. A render superseded
 while its view runs has already read the active sessions; the read is dropped unused.
 

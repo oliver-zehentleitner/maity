@@ -516,6 +516,7 @@ window.MAITY_I18N["en"] = {
   "board.new_subtask": "New subtask",
   "board.no_match": "No card matches the filter.",
   "board.not_saved": "Not saved: {reason}",
+  "board.open.more_failed": "More cards of the open columns could not be read: {reason}",
   "board.place.above": "{id} is now above {other}.",
   "board.place.below": "{id} is now below {other}.",
   "board.place.bottom": "{id} is now at the bottom.",

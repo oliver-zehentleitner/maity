@@ -516,6 +516,7 @@ window.MAITY_I18N["pt"] = {
   "board.new_subtask": "Nova subtarefa",
   "board.no_match": "Nenhum cartão corresponde ao filtro.",
   "board.not_saved": "Não salvo: {reason}",
+  "board.open.more_failed": "Não foi possível ler mais cartões das colunas abertas: {reason}",
   "board.place.above": "{id} agora está acima de {other}.",
   "board.place.below": "{id} agora está abaixo de {other}.",
   "board.place.bottom": "{id} agora está no fim.",
