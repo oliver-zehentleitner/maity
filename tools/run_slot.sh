@@ -92,9 +92,10 @@ waited=""
 start=$SECONDS
 while :; do
   for ((i = 0; i < slots; i++)); do
-    # Opened for appending, so that a failed try does not empty the file another run holds. A
-    # failed open returns here (bash outside POSIX mode) instead of ending the script.
-    if ! { exec 7>>"$dir/slot$i"; } 2>/dev/null; then
+    # Opened for appending, so that a failed try does not empty the file another run holds.
+    # `command` keeps a failed open from ending the script, even in POSIX mode (POSIXLY_CORRECT),
+    # where a failed redirection on the special builtin exec would end it before the command ran.
+    if ! { command exec 7>>"$dir/slot$i"; } 2>/dev/null; then
       no_slot "$dir/slot$i" "$@"
     fi
     if flock -n 7; then
@@ -144,7 +145,9 @@ while :; do
   if [ -z "$waited" ]; then
     holders=""
     for ((i = 0; i < slots; i++)); do
-      holders+="$(cat "$dir/slot$i.who" 2>/dev/null || true); "
+      # A holder that could not write its .who (a read-only directory) leaves it empty or missing.
+      holder="$(cat "$dir/slot$i.who" 2>/dev/null || true)"
+      holders+="${holder:-unknown}; "
     done
     echo "$0: all $slots run slots are taken (${holders%; }); waiting for one" >&2
     waited=1
