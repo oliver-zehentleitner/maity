@@ -1917,7 +1917,9 @@ tsk-deaaanqsq5e2), where the `.who` files name only the current holder.
 Since 2026-11-20 a run that cannot write the slot directory or a slot file in it does not fail:
 the script warns once on stderr and runs the command without a slot and without a log line, as
 it does without `flock`. `MAITY_RUN_SLOTS_DIR` points it to a directory the run may write.
-`make smoke SLOT=` is only for a machine where nothing else runs tests.
+`make smoke SLOT=` is only for a machine where nothing else runs tests. The slot file is opened
+with `command exec`, so a failed open never ends the script, even in bash's POSIX mode; a holder
+whose `.who` is empty or missing shows as `unknown` in the waiting message.
 
 **Reason:**
 - SQLite does not show PostgreSQL's errors, and CI as the first PostgreSQL run finds them only

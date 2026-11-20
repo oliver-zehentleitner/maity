@@ -4,6 +4,7 @@ the slot directory's log."""
 
 from __future__ import annotations
 
+import fcntl
 import os
 import shutil
 import signal
@@ -322,6 +323,35 @@ class RunSlotTest(unittest.TestCase):
         result = self.run_without_a_slot(env)
         self.assertIn(str(slots / "slot0"), result.stderr)
         self.assertEqual(sorted(p.name for p in slots.iterdir()), ["slot0"])
+
+    def test_a_slot_file_that_cannot_be_opened_runs_the_command_in_posix_mode_too(self) -> None:
+        # In bash's POSIX mode a failed redirection on a plain `exec` ends the script.
+        slots = self.tmp / "slots"
+        slots.mkdir()
+        (slots / "slot0").mkdir()
+        env = {**self.env, "MAITY_RUN_SLOTS": "1", "POSIXLY_CORRECT": "1"}
+        result = self.run_without_a_slot(env)
+        self.assertIn(str(slots / "slot0"), result.stderr)
+
+    def test_a_holder_without_a_name_shows_as_unknown(self) -> None:
+        slots = self.tmp / "slots"
+        slots.mkdir()
+        (slots / "slot1.who").touch()  # empty: its holder could not write it; slot0 has none
+        held = []
+        for i in range(2):  # held by this test, as by a run whose .who write was skipped
+            f = open(slots / f"slot{i}", "a")
+            self.addCleanup(f.close)
+            fcntl.flock(f, fcntl.LOCK_EX)
+            held.append(f)
+        run = subprocess.Popen([SCRIPT, "true"], env=self.env, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(run.kill)
+        assert run.stderr is not None
+        line = run.stderr.readline()
+        for f in held:
+            f.close()
+        run.communicate(timeout=30)
+        self.assertEqual(run.returncode, 0)
+        self.assertIn("all 2 run slots are taken (unknown; unknown); waiting for one", line)
 
     @unittest.skipIf(os.geteuid() == 0, "root writes a read-only directory")
     def test_a_holder_name_that_cannot_be_written_does_not_stop_the_run(self) -> None:
