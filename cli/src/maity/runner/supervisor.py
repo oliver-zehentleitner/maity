@@ -552,12 +552,35 @@ class Supervisor:
                     scratch.log_removal(self.cfg.state_dir, p["id"], path, removed, "closed")
                     self.log(f"{p['id']}: scratch removed on {target.name} ({removed} bytes): "
                              "the placement is closed")  # fmt: skip
+                if not self._remove_pg_pass(p, target):
+                    done = False
             if done:
                 with self.lock:
                     self.scratch_cleared.add(p["id"])
                     had_name = self.scratch_names.pop(p["id"], None) is not None
                 if had_name:  # its recorded leaf is gone with it
                     self._save_scratch_names()
+
+    def _remove_pg_pass(self, p: dict[str, Any], target: Target) -> bool:
+        """The closed placement's test cluster password file removed from the holder on
+        `target` (its name only, never through a link); False when it could not be, so the
+        sweep tries again. The password itself is never logged."""
+        if not workspace.SCRATCH_ID.fullmatch(p["id"]):
+            return True
+        root = target.workspaces if target.host else target.workspaces.resolve()
+        leaf = root / scratchop.PG_HOLDER / p["id"]
+        try:
+            target.as_user.pg("remove", root, leaf)
+        except scratchop.Unsupported:  # a host whose maity has no holder made none to remove
+            return True
+        except scratchop.OnTheWay as exc:  # a holder that is a link or another user's: left
+            self.log(f"{p['id']}: password file left on {target.name}: "
+                     f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.log(f"{p['id']}: password file not removed on {target.name}: "
+                     f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+            return False
+        return True
 
     def _measure(self, desired: list[dict[str, Any]], now: float) -> None:
         """The sizes of each placement's clone and scratch on its target, at most every
@@ -1220,6 +1243,12 @@ class Supervisor:
             context = self._context(p, harness, place, target, rec.resume and not reset,
                                     view=view, scratch=scratch)  # fmt: skip
             launch = adapters.launch(context)
+            if (scratch is not None and not workspace.scratch_in_tmp(harness.id)
+                    and adapters.gets_test_cluster(harness.id)
+                    and adapters.pg_dir(scratch) is None):  # fmt: skip
+                self.log(f"{p['id']}: no MAITY_PG_DIR: a PostgreSQL socket under "
+                         f"{scratch / adapters.PG} would not fit a Unix socket path; "
+                         "set a shorter workspaces root")  # fmt: skip
             self._clear_limit_file(p["id"], target)  # only the loop of this run may leave one
             target.backend.start(
                 name, place.path, launch.argv, launch.env, p["id"], p["generation"]
@@ -1365,7 +1394,20 @@ class Supervisor:
         target.as_user.mkdir(agent_dir)
         repository = config.normalise_repository(p["workspace"].get("repository") or "")
         found = view.found
-        private = self._private(target, place)
+        # The password holder first, so every sandbox of this start is denied a path that exists;
+        # only here: an ssh host's sessions get no test cluster (adapters.pg_launch).
+        holder = self._pg_holder(target) if target.as_user.here else None
+        private = self._private(target, place, scratch)
+        if holder is not None:
+            private = (*private, holder)
+        pg_pass = None
+        # Not on an ssh host: pgenv runs as this interpreter's module (adapters.pg_launch). Not
+        # for a harness whose sandbox refuses the cluster's Unix socket (gets_test_cluster): no
+        # password file is drawn for it. The holder is still made and denied, for the others.
+        if (holder is not None and scratch is not None and not workspace.scratch_in_tmp(harness.id)
+                and adapters.gets_test_cluster(harness.id)
+                and target.as_user.here and adapters.pg_dir(scratch) is not None):  # fmt: skip
+            pg_pass = self._pg_pass(p, holder, target)
         tmp_parent = self._tmp_scratch_parent(target, harness)
         if tmp_parent is not None:
             self._make_tmp_parent(tmp_parent, target)
@@ -1395,6 +1437,7 @@ class Supervisor:
             git=self.cfg.git,
             scratch=scratch,
             tmp_scratch_parent=tmp_parent,
+            pg_pass=pg_pass,
         )
 
     def _make_tmp_parent(self, parent: Path, target: Target) -> None:
@@ -1450,6 +1493,36 @@ class Supervisor:
             self.log(f"{p['id']}: no scratch on {target.name}: {onboarding.inline(str(exc))[:200]}")
             return None
         return path
+
+    def _pg_holder(self, target: Target) -> Path | None:
+        """The test clusters' password holder (scratchop.PG_HOLDER) under `target`'s workspaces
+        root, made 0700 before any settings of this start are written, so its path exists when
+        a sandbox is told to deny it; None when it cannot be made (the log says why), and then
+        no session of this start gets a test cluster."""
+        root = target.workspaces if target.host else target.workspaces.resolve()
+        holder = root / scratchop.PG_HOLDER
+        try:
+            target.as_user.pg("make", root, holder)
+        except (scratchop.OnTheWay, OSError, subprocess.SubprocessError) as exc:
+            self.log(f"no test cluster password holder on {target.name}: "
+                     f"{onboarding.inline(str(exc))[:200]}")  # fmt: skip
+            return None
+        return holder
+
+    def _pg_pass(self, p: dict[str, Any], holder: Path, target: Target) -> Path | None:
+        """The placement's password file in `holder`, drawn once and kept across restarts; None
+        when it is not one the runner vouches for (the log says why), and then the session gets
+        no test cluster: without the password it would be made with trust."""
+        leaf = holder / str(p["id"])
+        try:
+            made = target.as_user.pg("make", holder.parent, leaf)
+        except (scratchop.OnTheWay, OSError, subprocess.SubprocessError) as exc:
+            self.log(f"{p['id']}: no MAITY_PG_DIR: {onboarding.inline(str(exc))[:200]}")
+            return None
+        if made.get("pg_pass") is not True:
+            self.log(f"{p['id']}: no MAITY_PG_DIR: its password file is not one the runner made")
+            return None
+        return leaf
 
     def _tmp_scratch(self, p: dict[str, Any], target: Target) -> Path | None:
         """agy's scratch under the host's shared temp directory (workspace.tmp_scratch_of),
@@ -1520,10 +1593,13 @@ class Supervisor:
             return workspace.tmp_scratch_of(uid, leaf), True
         return workspace.scratch_of(target.workspaces, p["project_id"], p["id"], target.host), False
 
-    def _private(self, target: Target, place: workspace.Workspace) -> tuple[Path, ...]:
+    def _private(
+        self, target: Target, place: workspace.Workspace, scratch: Path | None = None
+    ) -> tuple[Path, ...]:
         """What the agent's sandbox may not read, as the agents' side of `target` sees it: its
-        user's home secrets, its own files (every agent's socket, log and settings) and the
-        other clones' credentials it can list; here also the runner's state and config."""
+        user's home secrets, its own files (every agent's socket, log and settings), the
+        other clones' credentials and the other placements' scratch (all but `scratch`, its
+        own) it can list; here also the runner's state and config."""
         as_user = target.as_user
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
         try:
@@ -1532,6 +1608,13 @@ class Supervisor:
             self.log(f"{place.path.name}: not every clone under {target.workspaces} on "
                      f"{target.name} could be listed; not starting an agent whose sandbox "
                      "might read another's credential")  # fmt: skip
+            raise
+        try:
+            others += other_scratches(target.workspaces, scratch, as_user, target.host)
+        except workspace.Refused:
+            self.log(f"{place.path.name}: not every scratch under {target.workspaces} on "
+                     f"{target.name} could be listed; not starting an agent whose sandbox "
+                     "might read another placement's scratch")  # fmt: skip
             raise
         if not as_user.here:  # an ssh host: its home was read on connecting
             return private_paths(None, target.agent_files.parent, place.repo, others,
@@ -1827,6 +1910,60 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     own = _below_root(real_clone, real_root, root) / ".git" / "maity"
     named = {_below_root(p, real_root, root) for p in _canonical(found, as_user, refused)}
     return sorted(named - {own})
+
+
+def other_scratches(
+    workspaces: Path, own: Path | None, as_user: AsUser, host: str = ""
+) -> list[Path]:
+    """The scratch of every other placement under `workspaces` as it stands now
+    (`<root>/<project>/.scratch/<placement id>`, workspace.scratch_of), so the sandbox hides
+    them as it hides the other clones' credentials (tsk-w7qtcbzcshn9, the security review of
+    #2032). The list covers the scratches there at the start (tsk-rbys2j9q0m48 tracks the rest,
+    as for the other clones' credentials). Named as scratch_of
+    names them: below the root resolved here, as given on an
+    ssh host. A listing that cannot be completed refuses the start (`workspace.Refused`): an
+    unreadable `.scratch` could hide one, and the sandbox would start without its deny."""
+    root = workspaces if host else workspaces.resolve()
+    refused = workspace.Refused("harness_refused")
+    found: list[Path] = []
+    if as_user.direct:
+        try:
+            for project in root.iterdir() if root.is_dir() else ():
+                holder = project / workspace.SCRATCH
+                if project.is_symlink() or holder.is_symlink() or not holder.is_dir():
+                    continue
+                found += [root / project.name / workspace.SCRATCH / e.name
+                          for e in holder.iterdir()]  # fmt: skip
+        except OSError as exc:
+            raise refused from exc
+    elif as_user.exists(root, "-d"):
+        # The root with a trailing slash, so a root that is a link is listed through it; only the
+        # projects' own `.scratch` (never a clone's content, which may be unreadable) is read.
+        listed = as_user.run(["sh", "-c", _SCRATCHES, "sh", f"{root}/"])
+        if listed.returncode != 0:  # some `.scratch` could not be read: the list may be short
+            raise refused
+        for entry in listed.stdout.split("\0"):
+            names = Path(entry).parts[-3:] if entry else ()
+            if len(names) == 3 and names[1] == workspace.SCRATCH:
+                found.append(root / names[0] / workspace.SCRATCH / names[2])
+    return sorted(set(found) - ({own} if own is not None else set()))
+
+
+# Every entry of every project's `.scratch` under the root given (with a trailing slash), one
+# NUL after each: the projects are the root's own entries (a project's name never starts with a
+# dot, workspace.TOKEN), a project or a `.scratch` that is a link is skipped, as on the direct
+# side. A root, a project or a `.scratch` that cannot be read and searched ends with 3, as a
+# PermissionError does on the direct side: it could hide a scratch (the review of #2032).
+_SCRATCHES = r"""[ -r "$1" ] && [ -x "$1" ] || exit 3
+for p in "$1"*; do
+  [ -d "$p" ] && ! [ -L "$p" ] || continue
+  [ -r "$p" ] && [ -x "$p" ] || exit 3
+  h=$p/.scratch
+  [ -d "$h" ] && ! [ -L "$h" ] || continue
+  [ -r "$h" ] && [ -x "$h" ] || exit 3
+  find "$h" -mindepth 1 -maxdepth 1 -print0 || exit 3
+done
+[ -r "$1" ] && [ -x "$1" ] || exit 3"""
 
 
 # For each clone entry given: its two places for a credential, looked at through a link as

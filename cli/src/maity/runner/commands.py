@@ -57,6 +57,8 @@ class Refused(Exception):
 # runner's own launch (the loop on an ssh host, the stub, Claude Code's hook, the pane's log):
 # the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
 # runner's own, and an agent's call of it is refused (cli.main).
+# Not `pgenv`: it reads a placement's password and starts any command outside the sandbox, so it
+# is no `maity runner` subcommand at all; the runner starts it as a module (adapters.pg_launch).
 IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
 # Of those, the ones that act on a file the call names: the loop's spec (what it runs) and the
 # pane's log (what it cuts). An agent's `maity` runs outside its sandbox, so such a file must
@@ -1156,7 +1158,8 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     # through its own `maity`, so the CLI reaches the same ops the module path does; `codex`
     # takes the config.toml text on stdin, and `--auth` is only its auth.json link target.
     r = rsub.add_parser("scratchop")
-    r.add_argument("op", choices=(*scratchop.OPS, "codex"))
+    # `pgmake` and `pgremove`: the test clusters' password holder and a placement's file in it.
+    r.add_argument("op", choices=(*scratchop.OPS, "codex", "pgmake", "pgremove"))
     r.add_argument("--under", required=True)
     r.add_argument("--auth")  # codex only: the auth.json link target; left out for the others
     r.add_argument("path")

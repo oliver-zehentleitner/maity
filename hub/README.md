@@ -397,7 +397,13 @@ only if this script started it; a server that was already up keeps running.
 (`../tools/run_slot.sh`, two by default; where the slot directory cannot be written, it
 warns and runs without one), and its database is
 `maity_test_<name>_<pid>` with `<name>` from `MAITY_RUN_NAME`; `CONTRIBUTING.md` has
-the rules for a shared machine. It needs `pg_ctl`, `initdb` and `psql`, on the path
+the rules for a shared machine. The server lets the account in on its socket without a
+password (`trust`, in a 0700 data directory) unless `MAITY_PG_PASSWORD` is set: then
+the cluster is made with `scram-sha-256` (initdb reads the password from a pipe) and the
+run gets the password as `PGPASSWORD`, which libpq reads (the URL stays without it). It
+must be letters, digits and `._~-` only, and a cluster whose `pg_hba.conf` lets anyone
+in without `scram-sha-256` is refused with it. A runner sets it for placed agents
+(`docs/runners.md`). It needs `pg_ctl`, `initdb` and `psql`, on the path
 or in `MAITY_PG_BIN`. Without a system PostgreSQL, the PyPI package `pgserver`
 brings them, in a venv of its own (its wheels stop at Python 3.12):
 

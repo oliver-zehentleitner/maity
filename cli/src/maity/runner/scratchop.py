@@ -153,8 +153,133 @@ def _size(fd: int) -> int:
 def make(under: str, path: str) -> dict[str, object]:
     """The scratch at `path` with `tmp` in it, made as needed below the workspaces root,
     which must be there (the runner makes it with the clone)."""
-    with _opened(under, [*_below(path, under), "tmp"], make=True):
-        return {"result": "made"}
+    names = _below(path, under)
+    with _opened(under, [*names, "tmp"], make=True):
+        pass
+    with _opened(under, names, make=False) as scratch:
+        # The scratch itself private too, not only its `tmp`: mkdir left it to the umask.
+        if stat.S_IMODE(os.fstat(scratch).st_mode) != 0o700:
+            os.fchmod(scratch, 0o700)
+    return {"result": "made"}
+
+
+# --- the test clusters' passwords (hub/scripts/with_postgres.sh, MAITY_PG_PASSWORD) -----------
+#
+# One holder under the workspaces root, `<root>/.maity-pg`, 0700 and owned by the agents' user,
+# with one file per placement (`<holder>/<placement id>`, 0600, 64 hex digits, drawn once and
+# kept across restarts, removed with the placement). The holder is outside every scratch and
+# clone and its path never changes, so every sandbox is denied it from its first start; the
+# session never reads the file: the runner's `pgenv` launcher reads it outside the sandbox and
+# hands the value to the session in its process environment (the review of #2032).
+PG_HOLDER = ".maity-pg"
+
+
+def _pg_parts(path: str, under: str) -> list[str]:
+    """`<under>/.maity-pg` or `<under>/.maity-pg/<placement id>`, and nothing else."""
+    try:
+        names = list(PurePath(path).relative_to(PurePath(under)).parts)
+    except ValueError:
+        raise OSError(f"{path} is not inside {under}") from None
+    if (
+        not names
+        or names[0] != PG_HOLDER
+        or len(names) > 2
+        or (len(names) == 2 and not SCRATCH_ID.fullmatch(names[1]))
+    ):
+        raise OSError(f"{path} is not the test clusters' password holder or a file in it")
+    return names
+
+
+@contextlib.contextmanager
+def _pg_holder(under: str, make: bool) -> Iterator[int]:
+    """The holder's descriptor, opened from the workspaces root without following a link and
+    checked to be a directory of this user, set to exactly 0700 (`make`: created when missing).
+    OnTheWay for a link, not a directory, or another user's."""
+    with _opened(under, [], make=False) as root:
+        if make:
+            with contextlib.suppress(FileExistsError):
+                os.mkdir(PG_HOLDER, 0o700, dir_fd=root)
+        fd = _step(root, PG_HOLDER, None)
+        try:
+            found = os.fstat(fd)
+            if found.st_uid != _uid(None):
+                raise OnTheWay(f"{PG_HOLDER} is another user's directory; not used")
+            if make and stat.S_IMODE(found.st_mode) != 0o700:
+                os.fchmod(fd, 0o700)
+            yield fd
+        finally:
+            os.close(fd)
+
+
+def _pg_vouched(dir_fd: int, name: str) -> bool:
+    """Whether `name` in the open holder is a regular file of this user, 0600, with one link."""
+    found = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    return (stat.S_ISREG(found.st_mode) and found.st_uid == _uid(None)
+            and stat.S_IMODE(found.st_mode) == 0o600 and found.st_nlink == 1)  # fmt: skip
+
+
+def pg_make(under: str, path: str) -> dict[str, object]:
+    """The holder (`path` the holder itself) or the holder and the placement's password file
+    in it (`path` the file): made 0600 without following a link when missing, a file already
+    there kept as it is. `pg_pass`: whether the file is one this op vouches for (a link or
+    anything else at the name is left untouched and gives False)."""
+    names = _pg_parts(path, under)
+    with _pg_holder(under, make=True) as holder:
+        if len(names) == 1:
+            return {"result": "made"}
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        try:
+            fd = os.open(names[1], flags, 0o600, dir_fd=holder)
+        except FileExistsError:
+            return {"result": "made", "pg_pass": _pg_vouched(holder, names[1])}
+        with os.fdopen(fd, "w") as handle:
+            os.fchmod(handle.fileno(), 0o600)  # the mode asked for is subject to the umask
+            handle.write(secrets.token_hex(32) + "\n")
+        return {"result": "made", "pg_pass": True}
+
+
+def pg_remove(under: str, path: str) -> dict[str, object]:
+    """The placement's password file removed by its name in the holder (a link there goes, not
+    what it points to); `missing` when there is none, or no holder."""
+    names = _pg_parts(path, under)
+    if len(names) != 2:
+        raise OSError(f"{path} is not a password file")
+    try:
+        with _pg_holder(under, make=False) as holder:
+            os.unlink(names[1], dir_fd=holder)
+    except FileNotFoundError:
+        return {"result": "missing"}
+    return {"result": "removed"}
+
+
+PG_PASSWORD = re.compile(r"[A-Za-z0-9._~-]{1,256}")
+
+
+def pg_read(under: str, path: str) -> str | None:
+    """The placement's password, read from the holder without following a link; None when the
+    file is missing or not one pg_make would vouch for, or its first line is no password; also
+    for a path that is not a placement's file in the holder, or a holder that is a link."""
+    try:
+        names = _pg_parts(path, under)
+        if len(names) != 2:
+            return None
+        with _pg_holder(under, make=False) as holder:
+            # Opened first, then checked on the descriptor itself: nothing swapped in between a
+            # check and the open is read, and a FIFO planted at the name does not block.
+            flags = os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+            fd = os.open(names[1], flags | getattr(os, "O_CLOEXEC", 0), dir_fd=holder)
+            try:  # the descriptor closed on every path, a directory planted at the name too
+                found = os.fstat(fd)
+                if not (stat.S_ISREG(found.st_mode) and found.st_uid == _uid(None)
+                        and stat.S_IMODE(found.st_mode) == 0o600
+                        and found.st_nlink == 1):  # fmt: skip
+                    return None
+                first = os.read(fd, 512).decode("ascii", "replace").split("\n", 1)[0]
+            finally:
+                os.close(fd)
+    except OSError:
+        return None
+    return first if PG_PASSWORD.fullmatch(first) else None
 
 
 def size(under: str, path: str) -> dict[str, object]:
@@ -663,6 +788,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "codex":
         return _main_codex(args[1:])
+    if args and args[0] in ("pgmake", "pgremove"):
+        if len(args) != 4 or args[1] != "--under":
+            print("usage: scratchop pgmake|pgremove --under DIR PATH", file=sys.stderr)
+            return 2
+        if not supported():
+            print("scratch: this system cannot open a directory without following links",
+                  file=sys.stderr)  # fmt: skip
+            return 1
+        pg_op = pg_make if args[0] == "pgmake" else pg_remove
+        return _emit(lambda: pg_op(args[2], args[3]))
     if args and args[0] == "tmpparent":
         if len(args) != 2:
             print("usage: scratchop tmpparent PATH", file=sys.stderr)

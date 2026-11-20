@@ -276,6 +276,22 @@ Nothing in a scratch counts as unsaved work. Once the hub reads the placement as
 
 Neither the sizes nor the removals go to the hub.
 
+## Test slots and the test database in the scratch
+
+A project's test scripts take a run slot for each heavy suite (`tools/run_slot.sh`) and keep a PostgreSQL test cluster (`hub/scripts/with_postgres.sh`). By default both live under `~/.local/state/maity/`, which no placement's sandbox may write. So the runner points both into the placement's scratch:
+
+- `MAITY_RUN_SLOTS_DIR=<scratch>/slots`: the slot locks and the slot log.
+- `MAITY_PG_DIR=<scratch>/pg` and `MAITY_PG_PASSWORD`: the test cluster, with its socket inside it (`with_postgres.sh` keeps its locks beside it, in `pg.locks`), and the password of its `postgres` role, so `with_postgres.sh` makes the cluster with `scram-sha-256` instead of `trust`.
+  - **The password file:** the runner draws one password per placement and keeps it in a file of its own, 0600, under `<workspaces>/.maity-pg/`. That directory is 0700 and outside every scratch and clone. Claude Code's and Codex's sandboxes are denied it from the session's start, and agy's file tools are denied it too. opencode has no sandbox to deny it.
+  - **How it reaches the session:** the session never reads the file. The runner starts the session through a small launcher, `pgenv`, which reads the password outside the sandbox and sets both variables in the session's process environment, so the password never appears on a command line, in tmux's environment or in a log.
+  - **When the session gets neither:** the launcher sets both only when the password file is one the runner made and the socket path, `<scratch>/pg/.s.PGSQL.<port>`, fits a Unix socket path (107 bytes on Linux, 103 on macOS). Otherwise the session gets neither, and the runner's log says why. For the socket, set a shorter `workspaces` root. The password file goes when the placement closes.
+  - **Not on ssh hosts yet:** the launcher is a module of the runner's own Python, not a `maity` command, so a placement on an ssh host gets no test cluster for now.
+  - **Not in Claude Code placements yet:** on Linux, Claude Code's sandbox refuses Unix sockets, even inside the placement's own scratch, so the cluster cannot start there. macOS is untested, and the runner treats it the same. The runner draws no password file for a Claude Code placement and does not start it through the launcher. A test cluster over TCP for these placements is tsk-zk2cse7s2rf7. The test slots work in Claude Code placements as in the others.
+  - **Codex:** a Codex placement gets the test cluster as described here, but no Codex session has started one yet.
+- `MAITY_RUN_NAME=<handle>#<instance>`: who took a slot, as the log names it. It is the handle alone before the first join has named an instance.
+
+This opens no path beyond the scratch, which the sandbox may already write. Everything in it stays with the placement and goes when the scratch goes. The sandboxes of Claude Code and Codex also keep a session out of every other placement's scratch. Claude Code gets each scratch that exists when the session starts in `denyRead` and `denyWrite`, the way it gets the other clones' credentials. A scratch made while a session runs is not covered for that session yet, a known residual tracked as tsk-rbys2j9q0m48: the session can read it, but cannot write it or connect to its test cluster, since Claude Code's sandbox refuses Unix sockets altogether. Codex opens only the clone and its own scratch under the workspaces root, so it does not see the others. A start whose scratch listing cannot be completed is refused. agy and opencode are not kept out by these rules. The slots bound only the runs of one placement. Bounding heavy runs across all the placements of a machine is a separate card (tsk-w7dx3h9mn8dp). A placement without a scratch beside its clone gets none of these variables, and its scripts use their defaults. That covers opencode, which has no scratch, and agy, whose scratch under `/tmp` is read-only to it except for its `tmp`.
+
 ## Keeping Claude Code and Codex current
 
 The runner can install Claude Code and Codex and keep them current, per tool and only when you say so in its configuration:
