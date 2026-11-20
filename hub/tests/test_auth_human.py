@@ -333,6 +333,49 @@ def test_a_session_expires_30_days_after_login_whatever_the_activity(
     assert client.get("/api/v1/me").headers["Maity-Error"] == "unauthenticated"
 
 
+@pytest.mark.parametrize(
+    ("seen", "expires", "ended", "alive"),
+    [
+        (timedelta(0), timedelta(days=1), False, True),
+        (timedelta(0), timedelta(days=1), True, False),
+        (timedelta(0), timedelta(0), False, False),
+        (timedelta(0), timedelta(seconds=1), False, True),
+        # The idle time runs from the latest call the stored time may stand for (`SEEN_EVERY`).
+        (caller_module.SESSION_IDLE + timedelta(seconds=60), timedelta(days=1), False, False),
+        (caller_module.SESSION_IDLE + timedelta(seconds=59), timedelta(days=1), False, True),
+    ],
+)
+def test_the_live_session_clause_reads_as_session_alive(
+    make_client: ClientFactory,
+    owner: str,
+    migrated: Engine,
+    seen: timedelta,
+    expires: timedelta,
+    ended: bool,
+    alive: bool,
+) -> None:
+    # The SQL that selects live sessions (the presence write, the mailer's hold, the address
+    # sweep) and the Python check every call makes agree, at both edges (§2.4).
+    _login(make_client())
+    now = clock.now()
+    session = t.human_session.c
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.human_session)
+            .where(session.human_id == owner)
+            .values(
+                last_seen_at=now - seen,
+                expires_at=now + expires,
+                ended_at=now if ended else None,
+            )
+        )
+        row = conn.execute(select(t.human_session).where(session.human_id == owner)).one()
+        clause = caller_module.live_session_clause(now)
+        found = conn.execute(select(session.id_hash).where(session.human_id == owner, clause)).first()
+    assert (row.ended_at is None and caller_module.session_alive(row, now)) is alive
+    assert (found is not None) is alive
+
+
 def test_every_login_issues_a_fresh_session(make_client: ClientFactory, owner: str) -> None:
     client = make_client()
     _login(client)

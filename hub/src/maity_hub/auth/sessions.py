@@ -14,14 +14,14 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Connection, insert, select, update
+from sqlalchemy import Connection, insert, not_, select, update
 
 from maity_hub import clock, ids
 from maity_hub import tables as t
 from maity_hub.auth import known_sources
 from maity_hub.auth.caller import (
     SESSION_ABSOLUTE,
-    SESSION_IDLE,
+    live_session_clause,
     session_alive,
     session_expires_at,
     session_id_hash,
@@ -29,7 +29,6 @@ from maity_hub.auth.caller import (
 from maity_hub.codes import digest
 from maity_hub.errors import ApiError, unauthenticated
 from maity_hub.notifications import records
-from maity_hub.seen import SEEN_EVERY
 from maity_hub.views import ts
 
 # Ended sessions stay in the list for this long (`?ended=true`).
@@ -228,8 +227,7 @@ def forget_expired_addresses(conn: Connection) -> None:
         update(t.human_session)
         .where(
             t.human_session.c.ended_at.is_(None),
-            (t.human_session.c.expires_at <= now)
-            | (t.human_session.c.last_seen_at <= now - SESSION_IDLE - SEEN_EVERY),
+            not_(live_session_clause(now)),  # not ended, so expired or idle
             (t.human_session.c.ip.is_not(None)) | (t.human_session.c.source.is_not(None)),
         )
         .values(ip=None, source=None)

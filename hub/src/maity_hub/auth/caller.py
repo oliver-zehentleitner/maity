@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import Connection, and_, or_, select, update
+from sqlalchemy import ColumnElement, Connection, and_, or_, select, update
 
 from maity_hub import availability, clock, read_limits, timing
 from maity_hub import tables as t
@@ -257,10 +257,7 @@ def _cookie(conn: Connection, facts: RequestFacts, renew: bool, seen: bool = Tru
             update(t.human_session)
             .where(
                 t.human_session.c.id_hash == id_hash,
-                t.human_session.c.ended_at.is_(None),
-                # session_alive(): before its end and within the idle time of the latest call
-                t.human_session.c.expires_at > now,
-                t.human_session.c.last_seen_at > now - SESSION_IDLE - SEEN_EVERY,
+                live_session_clause(now),
                 t.human_session.c.last_seen_at <= now - SEEN_EVERY,
             )
             .values(last_seen_at=now, ip=facts.origin.address[:64])  # the latest call's (§2.6.5)
@@ -363,6 +360,17 @@ def session_alive(row: Any, now: datetime) -> bool:
     # The idle time runs from the latest call the stored time may stand for (`seen`), so a
     # session in use never expires early.
     return now < expires and now < latest_call(last_seen) + SESSION_IDLE
+
+
+def live_session_clause(now: datetime) -> ColumnElement[bool]:
+    """`human_session` rows that are not ended and `session_alive` at `now`, in SQL: every
+    statement that selects live sessions takes this, so the readings move together."""
+    session = t.human_session.c
+    return and_(
+        session.ended_at.is_(None),
+        session.expires_at > now,
+        session.last_seen_at > now - SESSION_IDLE - SEEN_EVERY,  # latest_call() + SESSION_IDLE
+    )
 
 
 def session_expires_at(row: Any) -> datetime:
