@@ -273,6 +273,87 @@ def test_a_line_read_to_the_end_is_not_refused_as_unread(command: str) -> None:
     assert plaincall.refusal(bash(command)) != plaincall.RUNNER_REFUSED
 
 
+# Lines whose command, read past their leading comment lines and blank lines as Claude Code
+# reads a call, is `maity` after nothing but allowed assignments (S200): they are held to one
+# plain call, and the comment line makes them more than one line, so they are refused with
+# the plain-call reason.
+AFTER_COMMENT_LINES = [
+    "# check the board\nmaity status",
+    "  # a note\n\n\t# another\nmaity status",
+    "#!/bin/sh\nmaity task show tsk-x",
+    "#\nmaity status",
+    "# it's\nmaity status",
+    '# "\nmaity status',
+    "# note\nTZ=UTC maity status",
+    "# note\nMAITY_WAIT_TIMEOUT=5 maity wait",
+    "# note\nNO_COLOR=1 LC_ALL=C maity status",
+    "# note\nmaity runner status",
+    "# note\nmaity status && maity status",
+    "# note\nmaity status # more",
+]
+# Past a comment line, anything else before `maity` still makes the line a prefixed one.
+PREFIXED_AFTER_COMMENT_LINES = [
+    "# note\nX=1 maity status",
+    "# note\nPATH=/tmp maity status",
+    "# note\nTZ+=x maity status",
+    "# note\ntrue && maity status",
+    "# note\nenv maity status",
+    "# note\n/some/path/maity status",
+    "# note\nTZ=UTC X=1 maity status",
+]
+# Comment lines that do not stand at the start, or lines with no `maity` word after them.
+NOT_PAST_COMMENT_LINES = [
+    "maity status\n# done",
+    "echo x # maity\nmaity status",
+    "x=1 # note\nmaity status",
+]
+
+
+@pytest.mark.parametrize("command", AFTER_COMMENT_LINES)
+def test_a_maity_line_after_comment_lines_is_held_and_refused_as_not_plain(command: str) -> None:
+    assert plaincall.held(command)
+    assert plaincall.refusal(bash(command)) == plaincall.REFUSED
+
+
+@pytest.mark.parametrize("command", PREFIXED_AFTER_COMMENT_LINES)
+def test_maity_after_anything_but_allowed_assignments_past_comment_lines_is_prefixed(
+    command: str,
+) -> None:
+    assert plaincall.prefixed(command)
+    assert plaincall.refusal(bash(command)) == plaincall.RUNNER_REFUSED
+
+
+@pytest.mark.parametrize("command", NOT_PAST_COMMENT_LINES)
+def test_comment_lines_elsewhere_still_refuse_a_line_naming_maity(command: str) -> None:
+    assert plaincall.refusal(bash(command)) is not None
+
+
+def test_a_line_of_comment_lines_only_is_decided_as_before() -> None:
+    assert not plaincall.held("# maity status\n  # more")
+    assert plaincall.refusal(bash("# maity status\n  # more")) == plaincall.RUNNER_REFUSED
+    assert plaincall.refusal(bash("# a note\necho hi")) is None
+    assert plaincall.refusal(bash("# maity\necho hi")) == plaincall.RUNNER_REFUSED
+
+
+@pytest.mark.parametrize("comment", ["# note\n", "  # a\n\n", "#!/bin/sh\n# b\n", "#\n"])
+def test_no_line_naming_maity_passes_after_comment_lines(comment: str) -> None:
+    """Fail-closed: reading past comment lines only moves where the line's command starts;
+    the line is judged whole, so a line that names `maity` is refused after them, whatever
+    the line under them would get."""
+    lines = [*ALLOWED, *REFUSED, *RUNNER, *NOT_DECIDED, *READ_TO_THE_END]
+    lines += [prefix + " maity status" for prefix in (*ASSIGNMENTS, *NOT_ALLOWED)]
+    for line in lines:
+        if plaincall.names_maity(line):
+            assert plaincall.refusal(bash(comment + line)) is not None, line
+
+
+def test_an_assignment_that_names_maity_is_not_skipped_as_one() -> None:
+    """Assignments are read past to find the line's command only while they do not count as
+    `maity` themselves: a value whose path ends in `/maity` still makes the line prefixed."""
+    assert plaincall.prefixed("TZ=/usr/share/zoneinfo/maity maity status")
+    assert plaincall.refusal(bash("TZ=/x/maity maity status")) == plaincall.PREFIX_REFUSED
+
+
 # Words in quoted text count in the line's order, with the words around them.
 IN_LINE_ORDER = [
     "echo 'maity --for=' ' runner status'",
