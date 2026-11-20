@@ -2007,6 +2007,8 @@ window.Maity = window.Maity || {};
       releasedMark,
       ownLinks,
       refresh: render,
+      // A view's own read the drawing started beside the context (mineAhead), once, or null.
+      ahead: takeAhead,
       markSeen: () => {},
       // Once the session ended, a view still drawing starts nothing more.
       every: (ms, fn) => { if (!sessionEnded) timers.push(window.setInterval(fn, ms)); },
@@ -2257,6 +2259,69 @@ window.Maity = window.Maity || {};
   // Counted too: a drawing or a read again that began before a write keeps nothing it read.
   let writes = 0;
   M.onWrite = (path) => { kept = null; writes += 1; if (M.factorBanner) M.factorBanner.wrote(path); };
+  // Reads one drawing started that the next one may take (tsk-zf3wd9t5gjab): the notifications
+  // head, and Settings → Mine's own read. A drawing that leads on at once (/settings to
+  // settings/mine) would otherwise ask them again. Taken while in flight or answered less than
+  // SHARED_MS ago, and only with no write of this tab, no new session since it was started and
+  // the same session and member as the drawing that takes it (an account switched in another
+  // tab, which keepFresh finds, bumps no epoch); a failed one is not taken. Only a switch takes
+  // one (`reuse`): every other drawing reads afresh, as it reads the session and /me afresh.
+  const SHARED_MS = 2000;
+  // The session and member the drawing that stands drew for (whoOf), set once it read them.
+  let drawnFor = null;
+  const whoOf = (session) => JSON.stringify([session && session.member ? session.member.id : null, session ? session.session_id || null : null]);
+  function shared(answer) {
+    const read = { answer, writes, epoch: M.sessionEpoch || 0, who: drawnFor, done: null, failed: false, taken: false };
+    answer.then(() => { read.done = Date.now(); }, () => { read.done = Date.now(); read.failed = true; });
+    return read;
+  }
+  const takeable = (read) => !!read && !read.failed && read.writes === writes && read.epoch === (M.sessionEpoch || 0)
+    && read.who === drawnFor && (read.done === null || Date.now() - read.done < SHARED_MS);
+  // The notifications head (§18.2) the last drawing waited for.
+  let lastHead = null;
+  // A view's own read started beside the context (aheadRead below), taken once by the view.
+  let ahead = null; // { path, read }
+  function aheadRead(path, reuse) {
+    if (reuse && ahead && ahead.path === path && takeable(ahead.read)) return;
+    const answer = M.api.get(path);
+    answer.catch(() => {});
+    ahead = { path, read: shared(answer) };
+  }
+  function takeAhead(path) {
+    const one = ahead && ahead.path === path ? ahead : null;
+    if (!one) return null;
+    ahead = null;
+    return takeable(one.read) ? one.read.answer : null;
+  }
+  // A drawing that returns before the context (the root and the sign-in, which lead on, the
+  // second factor's own address, a public page's `?report` that leads a member to the Overview)
+  // waits for no head: asked at its boot, one would be wasted, and a visitor's sign-in would ask
+  // one that can only answer 401. The drawing it leads on to asks its own (tsk-zf3wd9t5gjab).
+  function headless(first, firstWhere) {
+    if (first === null || first === "login") return true;
+    const path = M.route.current().path;
+    if (path === "/sign-in/second-factor") return true;
+    return first === "project" && reportLeadsOn(firstWhere, path);
+  }
+  // A public page's Report coming back signed in (`?report`, §16.9) at a page of the project that
+  // has no report form for a member: the project's page and its public views (review of #1681).
+  function reportLeadsOn(where, path) {
+    if (where.scope !== "project" || !M.report || !M.report.asked()) return false;
+    const parts = path.split("/").filter(Boolean);
+    return parts.length === 2 || (parts.length === 3 && ["board", "team", "organisation", "why"].includes(parts[2]));
+  }
+  // The path of Settings → Mine's own read (js/notify-settings.js) where this address draws that
+  // tab: settings/mine, or settings for a human without project:admin, whom the view leads on
+  // to Mine (M.views.settings). Null elsewhere, so no other view pays for it.
+  function mineAhead(where, me) {
+    if (where.scope !== "project" || where.route !== "settings" || !me.member || me.member.kind !== "human") return null;
+    const p = me.projects.find((x) => x.full_name === where.slug);
+    if (!p) return null;
+    const args = where.args || [];
+    const mine = args.length === 1 && args[0] === "mine"
+      || (!args.length || (args.length === 1 && args[0] === "general")) && !M.trust.governs(p);
+    return mine ? "/projects/" + M.api.projectPath(where.slug) + "/me/settings" : null;
+  }
   const keptKey = (session, me) => JSON.stringify([
     session.member && session.member.id, session.second_factor || null, session.session_id || null,
     me.member, me.maintenance || null, me.limit || null,
@@ -2474,6 +2539,14 @@ window.Maity = window.Maity || {};
     boot.primed = primed;
     const early = reuse || ownRead ? null : M.api.get("/auth/session");
     if (early) early.catch(() => {});
+    // The notifications head (§18.2) beside /bootstrap, not after it (tsk-zf3wd9t5gjab): the
+    // context waits for it below, so asked there it came one round trip after the bundle. It is
+    // not a part of the bundle (§5.4 stays as it is). Asked before the session is known, it is
+    // quiet: a visitor's 401 and a 403 of a session that owes the second factor or its setup tell
+    // the page nothing and are dropped where the drawing never reaches the context; so is a 503 of
+    // a running window, which the drawing learns from /maintenance, /bootstrap and /me instead.
+    const bootHead = reuse || ownRead || headless(first, firstWhere) ? null : M.notify.read({ quiet: true });
+    if (bootHead) bootHead.catch(() => {});
     await M.maintenance.fresh();
     if (seq !== renderSeq) return;
     try {
@@ -2587,19 +2660,36 @@ window.Maity = window.Maity || {};
       // of the project gets their own view at that address, which has no report form there: the
       // project's page and its public views lead to the Overview, whose Report opens (review of #1681).
       // A card's page is the board with its panel, which opens its own.
-      if (where.scope === "project" && M.report && M.report.asked() && me.projects.some((p) => p.full_name === where.slug)) {
-        const parts = M.route.current().path.split("/").filter(Boolean);
-        if (parts.length === 2 || (parts.length === 3 && ["board", "team", "organisation", "why"].includes(parts[2]))) {
-          M.route.go(projectLink(where.slug, "overview") + "?report", { replace: true });
-          return;
-        }
+      if (reportLeadsOn(where, M.route.current().path) && me.projects.some((p) => p.full_name === where.slug)) {
+        M.route.go(projectLink(where.slug, "overview") + "?report", { replace: true });
+        return;
       }
       // Notifications never stop the page: a failed read is said in the
       // notice (watch), and the counts stay as /me has them.
       // The project's own reads are kept only for a switch inside the same project.
       keptSlug = reuse && reuse.project && where.scope === "project" && reuse.project.slug === where.slug ? where.slug : null;
+      // The head this drawing waits for: the boot's, asked beside /bootstrap; on a switch the last
+      // drawing's while it is fresh (takeable: a drawing that led on to this address), else a new
+      // read. The boot's quiet head that met a 401, a 403, an ended session or a window's 503 is
+      // asked again the usual way, now that the session is known and no running window held the
+      // page: a window that started meanwhile is then told (M.onMaintenance), and its redraw stops
+      // at the full page, before any head. Asked again only for the drawing that stands, or for
+      // the switch that took it; an overtaken drawing's head is asked by the newer one itself.
+      // Another session or member than the last drawing's takes nothing that drawing started.
+      const who = whoOf(session);
+      if (who !== drawnFor) { lastHead = null; ahead = null; drawnFor = who; }
+      let head;
+      if (bootHead) {
+        const again = (err) => err && (err.status === 401 || err.status === 403 || err.code === "aborted" || err.code === "maintenance");
+        head = shared(bootHead.catch((err) => (again(err) && (seq === renderSeq || head.taken) ? M.notify.read() : Promise.reject(err))));
+      } else if (reuse && takeable(lastHead)) { head = lastHead; head.taken = true; }
+      else head = shared(M.notify.read());
+      lastHead = head;
+      // Settings → Mine's own read beside the context, not after it (tsk-zf3wd9t5gjab).
+      const minePath = mineAhead(where, me);
+      if (minePath) aheadRead(minePath, reuse);
       const [loaded, views] = await Promise.all([loadContext(where, me, keptSlug ? reuse.project : null), projectViews(me),
-        M.notify.read().catch((err) => { notifyError = err; })]);
+        head.answer.catch((err) => { notifyError = err; })]);
       ctx = loaded;
       // The boot's reads are done: a part nobody asked for (a window read a minute ago) is dropped.
       if (primed) M.api.unprime(primed);
