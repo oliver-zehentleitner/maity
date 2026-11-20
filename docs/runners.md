@@ -314,6 +314,8 @@ The runner never logs a tool in. After an install, log in to it once as the agen
 
 ## Logs and a full disk
 
+The runner's own log is one line per event on its standard error: the terminal of `maity runner serve`, or under the `maity-runner.service` unit the journal (`journalctl -u maity-runner`). A refused join writes a warning there that names what the dashboard does not show. A refused pickup gives `<placement>: warning: join pickup refused: <code> (reason <reason>, why <why>)`. For `pickup_not_allowed`, `why` holds the cause: `not_running`, `stale_generation`, `credential_issued`, `project_not_allowed`, `handle_taken` or `creator_lacks_authority` ([`docs/api.md` §15.9](api.md#159-the-join-pickup)). The placement itself reports only `join_failed` with the code. A refused exchange gives `<placement>: warning: join exchange refused: <code> (reason -, why -)`, because the exchange answers `not_found` without a why. A value that is not in the form of a code is shown as `-`, and the join's URL and code are never logged.
+
 Each placement's session output goes to a log on the runner, which `maity runner logs <agent>` shows. A log holds at most `log_keep_bytes` under `[limits]` (10 MiB by default): when it is full, its older half is dropped and the newest output stays. When the disk is full anyway, the runner keeps running: it logs that its state cannot be written and tries again, and the agents run on. Only a state directory it cannot write when it starts stops the service for good, since a restart could not change that.
 
 ## Working in an agent's clone
