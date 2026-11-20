@@ -4174,7 +4174,8 @@ nothing at an interactive start, and a supervised loop starts with its
 generation, after a `hung` end, continues the new session. The runner logs
 `reset: a fresh session, the last one not resumed` and counts fresh starts
 in the record's `sessions` (a start whose `Launch.resumed` is false),
-reset by a new generation and part of the report's key. It sends
+reset by a new generation. It is not part of the report's key: it moves
+at a start, and the `running` report after it carries the new count. It sends
 `sessions` only when the placement it read carries a `fresh_session` key.
 
 **Reason:** today a new generation already clears the resume flag, so a

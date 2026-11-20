@@ -293,8 +293,9 @@ class Record:
         self.nudges, self.unsent, self.left_typed = 0, False, False
 
     def key(self) -> list[Any]:
-        return [self.state, self.reason, self.detail, self.generation, self.restarts,
-                self.sessions]  # fmt: skip
+        # Not `sessions`: it moves only at a start, between `starting` and `running`, and the
+        # report of `running` carries it; a key of its own would send `starting` twice.
+        return [self.state, self.reason, self.detail, self.generation, self.restarts]
 
     def enter(self, now: float, state_: str, reason: str | None = None, **fields: Any) -> None:
         if (state_, reason) != (self.state, self.reason):
