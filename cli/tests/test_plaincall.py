@@ -1637,6 +1637,11 @@ PLAIN_SUBSTITUTIONS = [
     "git commit -m \"$(cat <<'EOF'\nRead to EOF\n EOF is not the end\nEOF\n)\"",
     'echo "$(echo a#b)"',
     "echo \"$(git log -1 --format='%h #%s')\"",
+    # A body line that starts with the delimiter but has no `)` after it (review P3-1).
+    "git commit -m \"$(cat <<'EOF'\nFix the thing\n\nEOFError is handled now\nEOF\n)\"",
+    "git commit -m \"$(cat <<'EOF'\nFix the thing\n\nEOFs are fine\nEOF\n)\"",
+    "git commit -m \"$(cat <<-'EOF'\n\tFix the thing\n\tEOFError is handled now\n\tEOF\n)\"",
+    'git commit -m "$(cat <<"EOF"\nEOFs are fine; so is EOF\'s end.\nEOF\n)"',
 ]
 # Heredocs and substitutions without such constructs.
 PLAIN_CONSTRUCTS = [
@@ -1678,6 +1683,20 @@ SUBSTITUTIONS_WITH_RUNNER = [
     'echo "$(cat <<"A"\nx\nA)" ; ma?ty runner s ; echo "\nA\n)"',
     'echo "$(cat <<\\A\nx\nA)" ; ma?ty runner s ; echo "\nA\n)"',
     'git commit -m "$(cat <<\'EOF\'\nx\nEOF)" ; ma?ty runner s ; echo "\nEOF\n)"',
+    'echo "$(cat <<\'A\'\nx\nA\t)" ; ma?ty runner s ; echo "\nA\n)"',
+    "echo \"$(cat <<'A' <<'B'\nx\nA)\" ; ma?ty runner s ; echo \"\nA\ny\nB\n)\"",
+    "echo \"$(cat <<'A' <<'B'\nx\nA\ny\nB)\" ; ma?ty runner s ; echo \"\nB\n)\"",
+    "echo \"$(cat <<'A'; cat <<'B'\nx\nA\ny\nB)\" ; ma?ty runner s ; echo \"\nB\n)\"",
+    'echo "$(echo "$(cat <<\'A\'\nx\nA)" ; ma?ty runner s ; echo "\nA\n)")"',
+    "echo \"$(cat <<'A'''\nx\nA)\" ; ma?ty runner s ; echo \"\nA\n)\"",
+    'X="$(cat <<\'A\'\nx\nA)" true ; ma?ty runner s ; echo "\nA\n)"',
+    # A `)` anywhere after the delimiter, not only right after it (review P3-1).
+    'echo "$(cat <<\'A\'\nx\nA$)" ; ma?ty runner s ; echo "\nA\n)"',
+    'echo "$(cat <<\'A\'\nx\nA a)" ; ma?ty runner s ; echo "\nA\n)"',
+    "git commit -m \"$(cat <<'EOF'\nx\nEOF ma?ty runner s)\"",
+    "git commit -m \"$(cat <<'EOF'\nx\nEOFError; y; ma?ty runner s; y)\"",
+    "git commit -m \"$(cat <<'EOF'\nx\nEOFError || ma?ty runner s)\"",
+    "git commit -m \"$(cat <<'EOF'\nx\nEOF `ma?ty runner s`)\"",
     # A comment in it (review A1537).
     'echo "$(true;#<<"EOF"\nma?ty runner status\nEOF\n)"',
     "echo \"$(true;#<<'EOF'\nma?ty runner status\nEOF\n)\"",
@@ -1744,7 +1763,7 @@ def test_substitutions_in_double_quotes_run_maity_runner_only_if_refused(tmp_pat
             if plaincall.refusal(bash(line)) is None:
                 opened.append(line)
     assert opened == [], BASH_NAME
-    assert ran >= 31, ran  # the lines that run `maity runner` do run it in Bash
+    assert ran >= 44, ran  # the lines that run `maity runner` do run it in Bash
 
 
 # One construct each, without braces or names: each refuses the line.

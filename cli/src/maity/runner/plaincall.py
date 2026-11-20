@@ -78,7 +78,8 @@ RUNNER_REFUSED = (
     f"{BRACE_LIMIT} words or that the hook does not read; a construct the hook does not read "
     "exactly: `eval`, `source`, `.`, `trap` or `bash -c` with a quoted or expanded word, "
     "`$'...'`, a backslash-newline, a backtick or `${...}` that holds quotes, a substitution "
-    "in a word with braces, a comment on a line with braces). Run "
+    "in a word with braces, a comment on a line with braces, a comment in `$(...)`, a heredoc "
+    "in `$(...)` with a body line that starts with the delimiter and has a `)` after it). Run "
     "each `maity` command on a line of its own, without a comment; text that holds both "
     "words goes in a file in this clone, passed with `--body-file`."
 )
@@ -619,7 +620,7 @@ def _substitution_end(text: str, i: int, bodies: list[tuple[int, int]] | None = 
     delimiter alone) and the span of each body is added to the list; one followed by
     anything but a space, a tab, a newline or an operator, one the `)` closes before its
     body, one whose delimiter line never comes, and one with a body line that starts with
-    the delimiter but is not it still raise ValueError."""
+    the delimiter and has a `)` after it still raise ValueError."""
     depth, j, n = 0, i + 1, len(text)
     pending: list[tuple[str, bool]] = []
     while j < n:
@@ -676,8 +677,8 @@ def _substitution_end(text: str, i: int, bodies: list[tuple[int, int]] | None = 
                     if read == delimiter:
                         bodies.append((start, stop - len(line)))
                         break
-                    if read.startswith(delimiter):
-                        raise ValueError(text)  # starts with the delimiter but is not it
+                    if read.startswith(delimiter) and ")" in read[len(delimiter) :]:
+                        raise ValueError(text)  # Bash may end the body there
             pending = []
             continue
         elif c == "#" and (text[j - 1] in " \t" or text[j - 1] in _SEPARATORS):

@@ -166,7 +166,9 @@ start of a word), a heredoc (`<<`) or more than one line is refused
 whatever it starts with, and so is a line with a quote that never closes,
 with `$'…'` or `$"…"` text, a backslash-newline, `eval`, `source`, `.`,
 `trap` or `bash -c` with a quoted or expanded word, a comment beside
-braces, or quoted text nested more than four levels deep: run each
+braces, a comment in `$(…)`, a heredoc in `$(…)` with a body line that
+starts with the delimiter and has a `)` after it, or quoted text nested
+more than four levels deep: run each
 `maity` command on a line of its own, without a comment.
 
 Under a runner placement a Claude Code, Codex or agy session also has a
