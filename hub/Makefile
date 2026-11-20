@@ -1,14 +1,29 @@
 # The hub's checks. `make check` is what CI runs and what has to be green
 # before a pull request.
 
-PYTHON ?= python3
+# PYTHON is hub/.venv's (from `make dev`) when it exists, else python3, the one CI's
+# setup-python brings; `PYTHON=…` names another. Absolute, since `rechain` runs from the root.
+PYTHON ?= $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,python3)
 UV ?= uv
 
-.PHONY: install format check lint typecheck test revision rechain lock lock-upgrade lock-check \
+# In a runner placement pip cannot write ~/.cache/pip; its cache goes to the placement's
+# scratch instead, unless PIP_CACHE_DIR is set already.
+ifneq ($(MAITY_SCRATCH),)
+export PIP_CACHE_DIR ?= $(MAITY_SCRATCH)/pip-cache
+endif
+
+.PHONY: dev install format check lint typecheck test revision rechain lock lock-upgrade lock-check \
 	release-build release-check
 
+# hub/.venv with the tested set, made inside make, so a sandbox that allows `make` but
+# not a bare `python3 -m venv` can set it up (as cli's `make dev`).
+dev:
+	python3 -m venv .venv
+	.venv/bin/pip install -q --require-hashes -r requirements/dev.txt -r requirements/build.txt
+	.venv/bin/pip install -q --no-deps --no-build-isolation -e .
+
 # The tested set: every dependency pinned with hashes in requirements/, the
-# hub itself on top without resolving anything again.
+# hub itself on top without resolving anything again, into PYTHON's environment.
 install:
 	$(PYTHON) -m pip install --require-hashes -r requirements/dev.txt -r requirements/build.txt
 	$(PYTHON) -m pip install --no-deps --no-build-isolation -e .

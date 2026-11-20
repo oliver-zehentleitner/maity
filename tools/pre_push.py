@@ -198,7 +198,7 @@ def python_ready(top: Path) -> str | None:
     if not Path(python).exists():
         print(
             f"pre-push: no Python at {python}. Set up the hub's environment once:\n"
-            "  python3 -m venv hub/.venv && make -C hub install PYTHON=.venv/bin/python\n"
+            "  make -C hub dev\n"
             "or point MAITY_HOOK_PYTHON at a Python where `make -C hub install` ran.",
             file=sys.stderr,
         )
