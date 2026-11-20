@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .. import __version__, hub, onboarding, state
+from .. import __version__, clonecheck, hub, onboarding, state
 from . import (
     adapters,
     capabilities,
@@ -163,7 +163,7 @@ NUDGE_LINE = (
 )
 LIMIT_BACKOFF = 15 * 60.0  # reset_unknown: 15 min, doubling ...
 LIMIT_BACKOFF_MAX = 2 * 3600.0  # ... up to 2 h
-PLACEMENT_ID = re.compile(r"^plc-[0-9a-z-]{1,60}$")
+PLACEMENT_ID = clonecheck.PLACEMENT_ID  # one pattern, beside clonecheck.placement_id
 HARNESS_ID = re.compile(r"^[a-z0-9-]{1,40}$")
 
 

@@ -45,6 +45,55 @@ def placed(clone: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return clone
 
 
+PLACEMENT_VALUES = [None, "", " ", "plc-0003", "plc-0003\n", "PLC-0003", "../plc-0003"]
+
+
+@pytest.mark.parametrize("value", PLACEMENT_VALUES)
+def test_placed_and_placement_id(monkeypatch: pytest.MonkeyPatch, value: str | None) -> None:
+    """Set, even empty, is placed; only a value that is a placement id is one."""
+    if value is None:
+        monkeypatch.delenv(clonecheck.PLACEMENT_ENV, raising=False)
+    else:
+        monkeypatch.setenv(clonecheck.PLACEMENT_ENV, value)
+    assert clonecheck.placed() is (value is not None)
+    assert clonecheck.placement_id() == (value if value == "plc-0003" else None)
+
+
+@pytest.mark.parametrize("value", PLACEMENT_VALUES)
+def test_a_placement_that_is_not_an_id_is_refused_not_unplaced(
+    placed: Path, monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    """MAITY_PLACEMENT set but not a placement id, empty included, is a placed session of
+    unknown identity: refused, never maity's git in the current directory as if unplaced."""
+    if value is None:
+        monkeypatch.delenv(clonecheck.PLACEMENT_ENV)
+        assert clonecheck.placement_root(placed) is None  # no marker: unplaced, as before
+        return
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, value)
+    if value == "plc-0003":
+        assert clonecheck.placement_root(placed) == placed.resolve()
+        return
+    with pytest.raises(clonecheck.Refused, match="is set but not a placement id"):
+        clonecheck.placement_root(placed)
+
+
+def test_an_empty_placement_outside_any_clone_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty and without GIT_COMMON_DIR, in a directory no marker reaches: refused, where
+    reading "" as unplaced ran maity's git there with no placement root."""
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "")
+    monkeypatch.delenv("GIT_COMMON_DIR", raising=False)
+    with pytest.raises(clonecheck.Refused, match="is set but not a placement id"):
+        clonecheck.placement_root(tmp_path)
+
+
+def test_supervisor_takes_the_placement_id_pattern_from_clonecheck() -> None:
+    from maity.runner import supervisor
+
+    assert supervisor.PLACEMENT_ID is clonecheck.PLACEMENT_ID
+
+
 def test_a_plain_clone_reads_as_before(placed: Path) -> None:
     facts = gitfacts.collect(placed)
     assert facts.remote_head == facts.head

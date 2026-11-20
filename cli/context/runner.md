@@ -1921,7 +1921,9 @@ database, not from `HOME`, and no `..` or doubled slash; no step from
 `~/.maity-runner` down may be a link, each directory is this user's and
 not writable by others, and the file is an existing regular file of this
 user with a single link that neither group nor others may write. Under a
-placement it must be that placement's own file. So on an ssh host the
+placement it must be that placement's own file; a `MAITY_PLACEMENT` that
+is set but not a placement id, empty included, owns no file (card
+tsk-rasfq0wt751a: an empty one had skipped the check). So on an ssh host the
 runner makes the pane's log before pipe-pane starts logcap. It is checked
 on every call, not only under `MAITY_PLACEMENT`, which an agent can drop
 from its own `maity`'s environment: an agent's `maity` runs outside its
@@ -2666,7 +2668,7 @@ message says are no boundary.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13); card tsk-estwtzbae972 (an empty `.git/config.lock` the sandbox holds to keep `.git/config` unwritable, which refused a placement's own `maity report`/`checkpoint`; the lock's mechanism confirmed by `test_adapters.py` and `test_session_identity.py`, which leave an empty `config.lock`), 2026-11-18; PR #1954 review, 2026-11-18, correcting the reason: git never reads, adopts or commits a pre-existing `config.lock` (it writes `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL` and renames only that one into place), so refusing a non-empty lock is a fail-safe default — accept only the known-inert placeholder shape — not a guard against git applying the lock
+**Source:** CLI hardening task, the boundary and the clone root chosen by the coordinator, 2026-11-04; a prefixed `maity` call (a command, a variable, `PYTHONPATH`, PATH before it) checked with Claude Code 2.1.318 and git 2.47.3 on the maintainer's laptop, 2026-11-04 (`claude -p` in a temporary clone with the runner's settings, no hub; markers in a `denyWrite` directory): refused by the runner's permission rules, kept in the sandbox with permissions open, and `excludedCommands` matched the plain command only; a placement refused at its next start over `.git/config.worktree`, 2026-11-10, and the lead's choice to accept the sandbox's placeholders while empty, with the runner deleting nothing in the clone, 2026-11-10; Claude Code 2.1.321's sandbox (bubblewrap) leaving them in a scratch clone, 2026-11-10 (`ls -la .git` of a plain clone of the same repository before, of the clone after a session that wrote none of them); the `.git/glab-cli`, `.git/modules` and `.git/worktrees` guards read in the list of protected paths of Claude Code 2.1.321's binary and seen empty after every session start with 2.1.323 on the runner's host (tsk-ydxv7x37fg08, 2026-11-13); card tsk-estwtzbae972 (an empty `.git/config.lock` the sandbox holds to keep `.git/config` unwritable, which refused a placement's own `maity report`/`checkpoint`; the lock's mechanism confirmed by `test_adapters.py` and `test_session_identity.py`, which leave an empty `config.lock`), 2026-11-18; PR #1954 review, 2026-11-18, correcting the reason: git never reads, adopts or commits a pre-existing `config.lock` (it writes `.git/config` through a lock it creates itself with `O_CREAT|O_EXCL` and renames only that one into place), so refusing a non-empty lock is a fail-safe default — accept only the known-inert placeholder shape — not a guard against git applying the lock; card tsk-rasfq0wt751a (security rating S226), 2026-11-20: one helper decides whether a session is placed, an empty or malformed id refused
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-04
 **See:** report.md#what-maity-hands-to-git-and-gh-is-checked-first-and-gits-transports-are-fixed — 4f4e8ada-9e3b-47bc-8a9e-d44daf025512 — as of 2026-11-04
 **Revisit when:** agents under the runner need a git configuration key a plain clone has not, the runner starts sessions without `GIT_COMMON_DIR` or `.git/maity`, someone needs submodules, Git LFS, worktrees, sparse checkout, partial clones or other repository format extensions under the runner, a maity command under the runner starts to show what git reads from the clone's objects to someone other than the agent, a sandbox stops denying the agent `.git/maity` or leaves other entries in a clone, or puts anything in the ones it leaves, maity's git under the runner needs to write, a harness's sandbox starts maity outside it when a command line sets variables or a PATH in front of it, or the runner's git moves after a session started
@@ -2718,7 +2720,11 @@ checkout are refused under the runner for the alpha, and the refusal
 says so instead of offering a way back. The runner writes a marker,
 `.git/maity/placement`, into each clone it starts an agent in; a marked
 clone without `MAITY_PLACEMENT` runs no maity git, since the variables
-were removed, not never set. That holds for each way git finds a
+were removed, not never set. Set, even empty, `MAITY_PLACEMENT` means a
+placed session (`clonecheck.placed`); a value that is not a placement id
+(`clonecheck.placement_id`, the pattern the supervisor checks, as a full
+match) is a placed session of unknown identity and runs no maity git
+either, never one read as unplaced (card tsk-rasfq0wt751a). That holds for each way git finds a
 repository: a directory at or above the current one, a `.git` file
 pointing elsewhere, `GIT_DIR` or `GIT_COMMON_DIR` (a `.git` file that
 `GIT_DIR` names too), each followed through a `commondir`; read as
@@ -2832,6 +2838,10 @@ every call can run that way.
   configuration does.
 - Trusting a missing `MAITY_PLACEMENT`: removing it is all an agent
   needs to reach git without the check.
+- Reading an empty `MAITY_PLACEMENT` as unplaced, as `os.environ.get`
+  did at some sites while others tested only that it was set: an empty
+  or malformed value then took the unplaced path, the runner's own, with
+  no placement root (card tsk-rasfq0wt751a).
 - Looking for the marker only from the current directory upward: a
   `.git` file or `GIT_DIR` elsewhere leads git to the marked clone all
   the same.

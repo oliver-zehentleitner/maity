@@ -107,8 +107,9 @@ def runner_own_file(command: str, given: str) -> bool:
         return False
     if not shaped or not supervisor.PLACEMENT_ID.fullmatch(placement):
         return False
-    placed = os.environ.get(clonecheck.PLACEMENT_ENV)
-    if placed and placed != placement:
+    # Under a placement only its own file; set but not a placement id (empty included) is a
+    # placed session of unknown identity, which owns no file.
+    if clonecheck.placed() and clonecheck.placement_id() != placement:
         return False
     uid = os.getuid()
     step = root
@@ -1111,12 +1112,8 @@ def cmd_worktree_prune(args: argparse.Namespace) -> int:
     (worktree.prune_orphans, AsUser.worktree_prune). Internal, the supervisor's own: refused for a
     placed agent, which cannot redirect it at another path, and needs `--repo` to name the clone.
     There is no in-session remover; a placed agent's leftover is cleared when the placement next
-    starts."""
-    if clonecheck.PLACEMENT_ENV in os.environ:  # empty-string-safe: a placed session is placed
-        raise Refused(
-            "`maity runner worktree-prune` is the runner's placement-start hygiene, not a placed "
-            "agent's to call; a leftover worktree is cleared when the placement next starts"
-        )
+    starts. The refusal for a placed session is cli.main's, before this runs: worktree-prune
+    is not in IN_SESSION."""
     if not args.repo:
         raise Refused("`maity runner worktree-prune` needs --repo to name the clone to prune")
     print(json.dumps(worktree.prune_orphans(args.repo)))
