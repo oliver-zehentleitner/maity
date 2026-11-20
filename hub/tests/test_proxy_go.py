@@ -172,6 +172,21 @@ def test_a_body_over_the_cap_is_refused_by_name_and_one_at_it_fits(proxy: Proxy)
     assert refused.json()["error"]["details"]["fields"]["action.body"] == "too_large"
 
 
+def test_a_lone_surrogate_in_the_body_is_refused_and_an_emoji_is_not(proxy: Proxy) -> None:
+    def ask(text: str) -> Any:
+        # The body holds the character itself; the request's JSON writes it as `\ud800`.
+        body = json.dumps({"text": text}, ensure_ascii=False)
+        return proxy.ask({"method": "POST", "path": TICKER, "body": body})
+
+    refused = ask("half \ud800 a pair")
+    assert b"half \\ud800 a pair" in refused.request.content
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {"action.body": "lone_surrogate"}
+    asked = ask("🙂")
+    assert asked.status_code == 201, asked.text
+    assert json.loads(asked.json()["action"]["body"]) == {"text": "🙂"}
+
+
 def test_only_a_proxy_sets_action(owner: flow.Human, make_client: ClientFactory) -> None:
     refused = owner.post(
         f"{PROJECT}/requests",

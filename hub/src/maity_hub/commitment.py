@@ -17,6 +17,7 @@ from sqlalchemy import Connection, Engine, select, update
 from maity_hub import clock, instances, maintenance, namespace, policy, worker_runs
 from maity_hub import tables as t
 from maity_hub.events import emit, lock_project, transaction
+from maity_hub.plain_text import plain_line
 
 log = logging.getLogger(__name__)
 INTERVAL = 60.0  # seconds between the worker's sweeps
@@ -58,7 +59,7 @@ def packet(project: Any, credential: Any) -> dict[str, Any]:
     confirmed = credential.ktw_acknowledged_at
     return {
         "commitment": "required",
-        "acknowledged_at": clock.rfc3339(confirmed) if confirmed else None,
+        "acknowledged_at": clock.rfc3339_or_none(confirmed),
         **(
             {"acknowledge_by": clock.rfc3339(credential.ktw_acknowledge_by)}
             if confirmed is None and credential.ktw_acknowledge_by is not None
@@ -76,7 +77,7 @@ def instance_fields(project: Any, credential: Any) -> dict[str, Any]:
     confirmed = credential.ktw_acknowledged_at
     due = credential.ktw_acknowledge_by
     return {
-        "keep_the_why_acknowledged_at": clock.rfc3339(confirmed) if confirmed else None,
+        "keep_the_why_acknowledged_at": clock.rfc3339_or_none(confirmed),
         "keep_the_why_acknowledge_by": clock.rfc3339(due) if confirmed is None and due else None,
     }
 
@@ -226,7 +227,8 @@ def reconcile(
                 project.id,
                 row.member_row,
                 row.agent_id,
-                f"{row.handle}#{row.instance} has not confirmed Keep the Why in {project.name}",
+                f"{row.handle}#{row.instance} has not confirmed Keep the Why in "
+                f"{plain_line(project.name)}",
                 f"The commitment was due at {clock.rfc3339(due)} (UTC); "
                 f"session {row.ktw_session_id}.",
             )

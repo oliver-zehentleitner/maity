@@ -473,6 +473,9 @@ window.Maity = window.Maity || {};
     async function place(agent, member, text) {
       const no = viaRunner.blocked() || (!viaRunner.ready() ? M.t("placements.new.not_ready") : null);
       if (no) { status.fail(M.t("placements.new.failed"), { message: no }); viaRunner.first().focus(); return; }
+      // A tool that starts only on a named model (opencode) is never sent without one.
+      const unnamed = viaRunner.unnamed();
+      if (unnamed) { status.fail(M.t("placements.new.failed"), { message: unnamed }); viaRunner.model().focus(); return; }
       const req = agent.id ? { agent: { id: agent.id } } : {
         agent,
         trust: trust.value,

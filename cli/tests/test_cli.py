@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
 import stat
@@ -286,7 +287,11 @@ def test_the_error_line_comes_only_on_request_and_from_the_code_fields(
     err = hub.HubError("join: x: reason: dummysecret", code="Bad Code")
     assert hub.error_code(err) is None
     assert hub.error_code(hub.HubError("x", code="instance_quota\n", status=409)) is None
-    assert hub.error_code(hub.HubError("cannot reach https://h: down")) == "network"
+    # `network` is the `unreached` flag, for a hub not reached and an answer that broke off
+    # alike; a message's wording decides nothing (tsk-b6083ktng3dw).
+    assert hub.error_code(hub.unreached("https://h", ConnectionRefusedError("down"))) == "network"
+    assert hub.error_code(hub.unreached("https://h", http.client.IncompleteRead(b"{"))) == "network"
+    assert hub.error_code(hub.HubError("cannot reach https://h: down")) is None
     assert hub.error_code(hub.HubError("not a hub URL: x")) is None
 
 
@@ -1311,6 +1316,20 @@ def test_a_placed_session_that_cannot_read_its_credential_is_told_to_run_maity_a
     assert cli.main(["messages"]) != 0
     err = capsys.readouterr().err
     assert "run maity alone" in err and "has not joined" not in err
+
+
+@pytest.mark.parametrize("value", ["", " ", "plc-0003\n", "PLC-0003", "../plc-0003"])
+def test_any_set_placement_that_is_not_an_id_is_refused_not_told_to_join(
+    clone: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], value: str
+) -> None:
+    """Set, even empty or malformed, MAITY_PLACEMENT is a placed session, never one told it
+    has not joined: a value that is no placement id is refused before the credential is
+    looked for (clonecheck.placement_root, from the state lookup)."""
+    monkeypatch.setenv("MAITY_PLACEMENT", value)
+    monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    assert cli.main(["messages"]) != 0
+    err = capsys.readouterr().err
+    assert "is set but not a placement id" in err and "has not joined" not in err
 
 
 def test_an_unplaced_clone_without_a_credential_is_told_to_join(

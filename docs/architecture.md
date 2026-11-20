@@ -741,7 +741,9 @@ The hub stores its state through SQLAlchemy Core `Table` definitions on
 one metadata (`hub/src/maity_hub/tables.py`), with Core statements and
 no ORM mapping (`hub/context/persistence.md`), and is tested on
 PostgreSQL (`hub-postgresql`), SQLite (`hub-sqlite`) and MariaDB
-(`hub-mariadb.yml`, after every push to main). The alternative, stdlib
+(`hub-mariadb.yml`, after every push to main: 11.4, and a subset on 11.8;
+the supported versions are in `docs/install/README.md`, "Database
+versions"). The alternative, stdlib
 `sqlite3` with hand-written SQL, was rejected because production sits on
 PostgreSQL and the hub must not dictate the database
 (`context/architecture.md`).

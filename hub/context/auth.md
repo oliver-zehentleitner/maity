@@ -611,7 +611,8 @@ re-authentication, the address change and the second-factor check do it through
 account and source, use `place` and `release` directly in `LoginAttempt`, because a refusal there
 depends on the source. `LoginAttempt` places in both login buckets and refuses with `email_link` or `password_paused` when the account's bucket is full and the
 source is not a known one or has spent its own five. An address of no account counts in a bucket
-keyed by its fingerprint, never the address or a plain hash.
+keyed by its fingerprint, never the address or a plain hash; since tsk-2y0qbc1zm7r1 that is the
+key every limit keyed by an address takes (7d3f0a52).
 
 `known_source` holds an HMAC-SHA-256 of the source address per human. Its key is derived by HKDF
 (purpose `sign_in.known_source`) from `MAITY_SECRET_KEY`, or without one from the per-address
@@ -1095,3 +1096,89 @@ test instead.
   second-factor gate require the prefix: no route tells them apart
   today, but either is a change of an access gate, left to a card of
   its own.
+
+## Every limit keyed by a mail address counts it by one keyed fingerprint, `known_sources.address_key`
+
+**Id:** 7d3f0a52-1c4e-4b8a-9f6d-2e5b8c1a9d47
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-2y0qbc1zm7r1 (clean-up audit, limits and abuse), the follow-up agreed in tsk-q4zynccy5t0b (#1797) and named in notifications.md dc952df1; `hub/src/maity_hub/auth/known_sources.py` `address_key`; tests `test_*_counts_keep_the_address_only_as_its_keyed_fingerprint` in `test_email_sign_in.py`, `test_password_reset.py`, `test_registration.py`, `test_notification_address.py`, and `test_a_login_counts_an_address_of_no_account_only_by_its_keyed_fingerprint` in `test_auth_human.py`, all through `tests/stored_keys.py`
+**See:** auth.md#a-password-attempt-takes-its-place-in-the-count-before-the-compare-the-known-sources-fingerprints-are-keyed-from-the-locks-first-use-pepper — d12ec062-8d9e-4357-916a-a2f1a1bc3bd1 — as of 2026-11-18
+
+The login's bucket for an address of no account (`password_limits.account_key`), the pair and
+per-recipient limits of `POST /auth/email-link` and `POST /auth/password-reset`
+(`RequestLimits.take`, `email_links.recipient_over`), those of `POST /auth/register` and the
+per-recipient limits of a verification mail (`notifications.address._recipient_over`) all count the
+address by `known_sources.address_key`: an HMAC-SHA-256 of the address as each path normalises
+it, under a key derived by HKDF (purpose `rate_count.address`) from `MAITY_SECRET_KEY`, else from
+the per-address lock's pepper. A pair is that key, a space and the source network or the asking
+account. The limits take the key, not the address; the route makes it, after `addresses.prepare`
+before its transaction, and without the pepper `address_key` raises instead of counting every
+address in one bucket. `shared_counts._key` is a guard of length (and of a NUL) only. On deploy
+the counts of these limits start again once, as their keys changed.
+
+**Reason:** `rate_count` keeps a key for up to two days, and a plain SHA-256 of an address (the
+pairs of the link and the reset) or the address itself (the registration's pair, hashed only
+for its NUL, and the address in process memory) lets a copy of the table confirm a guessed
+address, which the login's bucket already ruled out (d12ec062). One helper makes the rule one
+place to keep. A purpose of its own keeps the counts' keys apart from the known sources'
+fingerprints, as every keyed value of the hub has one (notifications.md dc952df1). One bucket
+for all when no key exists, as the login's bucket had, would let five networks stop the mails
+to every address; a loud failure shows a path that forgot `prepare`.
+
+**Rejected alternatives:**
+- `shared_counts._key` refusing a key that holds an `@`: it runs only where the counts are
+  shared, on PostgreSQL, so a regression would pass every SQLite test and turn into a `500` in
+  production; and a plain hash has no `@`, so the guard misses the very case this entry is
+  about. A test per limit that reads the stored keys, on both counting paths, catches both.
+- The same check in `Limiter` for every key, also in the process: it would catch a raw address
+  in a test on SQLite, but not a plain hash either, and it puts a rule about addresses into a
+  generic limiter whose other keys are ids and source networks.
+- `RequestLimits.take` and `recipient_over` taking a connection and the address: every unit test
+  of the limits would need a database and a pepper, for a key they treat as an opaque string.
+- Reusing `known_sources.fingerprint` (purpose `sign_in.known_source`): one key for two uses.
+
+## Single-use mail links have one implementation, the table a parameter
+
+**Id:** 3b8e5f21-9c47-4d6a-b0e3-71a2c9d84f56
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-pfjwgw5e94k1 (item 1 of the clean-up audit tsk-f5sdcgr7vzj0); `hub/src/maity_hub/auth/single_use.py`; tests in `test_single_use.py`, each for `email_sign_in` and `password_reset`, and the limiters' names pinned in `test_request_limits_keep_their_names`
+**Revisit when:** a third kind of mailed single-use link comes, or one of the two needs a step of its own inside issuing, using or voiding that a column to clear cannot express
+
+`auth/single_use.py` holds, once, what the sign-in link (`email_sign_in`) and the password reset
+(`password_reset`) share: the human row lock (`lock_human`), issuing (`start`: under that lock,
+None when a newer row from the same source exists or the request outlived a row's life, else
+the earlier unused row from that source is voided; `add`: the new row; `issue`: both with a
+fresh nonce), `use`, `void_human`, `void_open`, and `RequestLimits(prefix)` with the recipient's
+limits (`recipient_over`, `RECIPIENT_*`). A `Kind` names the table, a row's life and the columns
+a spent row clears with `used_at`: `email_sign_in` clears `code_mac`, so a used or voided link's
+code dies with it. The statements, their order and the locks are those the two modules had.
+`email_links` keeps the code, its MAC, the per-day count of wrong codes, `live` and the mail,
+and draws the code between `start` and `add`, as before; `password_resets` keeps the token,
+`live`, the password generation and the wrong codes at resets. Both keep their former names as
+thin wrappers or re-exports (`RequestLimits` a subclass that passes `auth.email_links` or
+`auth.password_resets`), so callers, tests and their monkeypatches are unchanged, and
+`single_use` imports neither module. Nothing changes for users.
+
+**Reason:** the two modules held the same issue, use and void code and the same nine limiters,
+so a fix to one (a lock, a condition of single use) could miss the other on a security path.
+The limiters' names key the shared counts (`rate_count`): built from the same prefix, they stay
+exactly as they were, so no count starts again; the test pins every name. The audit's claim
+that use and the voids differ only in the table did not hold: the sign-in row also clears
+`code_mac`, hence `Kind.cleared`. `live` stays in each module, as the two read a row by
+different keys (a nonce hash or a browser's pending value; a token's nonce and human).
+
+**Rejected alternatives:**
+- One `issue` with a callback for the kind's columns: the sign-in code is drawn (and the day's
+  row read or written) after the void and before the insert, and also returned; a callback
+  hides that step and its statement. `start` and `add` keep it visible in `email_links.issue`.
+- Updating every caller to `single_use` and deleting the old names: a larger diff on a security
+  path for no change in behaviour, and the conftest finds the limiters through the routes'
+  `LIMITS` either way.
+- Clearing `code_mac` chosen by the table's columns rather than named in `Kind`: implicit, and a
+  later column of that name in another table would be cleared unasked.
+- `RequestLimits` taking a full name per limiter: nine strings per path to keep in step, where
+  one prefix cannot drift.

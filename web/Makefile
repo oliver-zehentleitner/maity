@@ -37,7 +37,9 @@ skeletons:
 
 # Behaviour smoke test against a DOM shim; needs a node binary, no packages.
 # It runs in one of the account's run slots (../tools/run_slot.sh, at most two
-# smoke or PostgreSQL runs at a time); `make smoke SLOT=` runs it without one.
+# smoke or PostgreSQL runs at a time). `make smoke SLOT=` runs it without one, only for a
+# machine where nothing else runs tests; where the slot directory cannot be written, the
+# script warns and runs it without a slot by itself.
 SLOT ?= ../tools/run_slot.sh
 
 smoke:

@@ -456,10 +456,19 @@ window.MAITY_I18N["it"] = {
   "board.claim.unclaimed": "Non presa in carico",
   "board.closed.failed": "Impossibile leggere le schede chiuse: {reason}",
   "board.closed.loading": "Lettura delle schede chiuse…",
+  "board.closed.more_failed": "Impossibile leggere altre schede chiuse: {reason}",
+  "board.closed.more_loaded": {
+    "one": "{count} scheda chiusa caricata",
+    "other": "{count} schede chiuse caricate"
+  },
   "board.closed.recheck_failed": "Non è stato possibile verificare se le schede chiuse sono cambiate durante la lettura: {reason}",
   "board.closed.show_more": {
     "one": "Mostra {count} altra scheda chiusa",
     "other": "Mostra altre {count} schede chiuse"
+  },
+  "board.closed.show_more_loaded": {
+    "one": "Mostra altre ({count} caricata)",
+    "other": "Mostra altre ({count} caricate)"
   },
   "board.column.other": "Altro",
   "board.column.unknown": "Stato sconosciuto",
@@ -507,6 +516,7 @@ window.MAITY_I18N["it"] = {
   "board.new_subtask": "Nuova sottoattività",
   "board.no_match": "Nessuna scheda corrisponde al filtro.",
   "board.not_saved": "Non salvato: {reason}",
+  "board.open.more_failed": "Impossibile leggere le altre schede delle colonne aperte: {reason}",
   "board.place.above": "{id} ora è sopra {other}.",
   "board.place.below": "{id} ora è sotto {other}.",
   "board.place.bottom": "{id} ora è in fondo.",
@@ -3011,7 +3021,6 @@ window.MAITY_I18N["it"] = {
   "nav.messages": "Messaggi",
   "nav.organisation": "Organizzazione",
   "nav.overview": "Panoramica",
-  "nav.runners": "Runner",
   "nav.runners.changed": "I runner sono cambiati.",
   "nav.settings": "Impostazioni",
   "nav.ticker": "Ticker",
@@ -3734,6 +3743,7 @@ window.MAITY_I18N["it"] = {
   "project.link.actions_on": "Actions su {forge}",
   "project.link.chat": "Chat",
   "project.link.discussions": "Discussioni",
+  "project.link.docs": "Docs",
   "project.link.issues": "Issue",
   "project.link.ktw_dashboard": "Dashboard di Keep the Why",
   "project.link.opens": "{what} (si apre in una nuova tab)",
@@ -4659,7 +4669,6 @@ window.MAITY_I18N["it"] = {
   "settings.repo.title": "Repository",
   "settings.repo.unchanged": "Nulla è cambiato.",
   "settings.repo.url": "URL",
-  "settings.runners_link": "I runner di questo progetto",
   "settings.saving": "Salvataggio in corso…",
   "settings.see_fields": "vedi i campi segnati qui sotto",
   "settings.signing.anyway": "Richiedi comunque la firma",

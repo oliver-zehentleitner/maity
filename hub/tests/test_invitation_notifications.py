@@ -10,7 +10,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, update
+from sqlalchemy import Engine, select, update
 
 from maity_hub import clock, invitations
 from maity_hub import tables as t
@@ -68,6 +68,19 @@ def test_the_request_of_an_invitation_by_handle_is_an_invitation_item(
     counts = anna.get("/me/notifications").json()["counts"]
     assert counts["inbox"] == 1  # an open request, whatever its item's kind
     assert set(counts) == {"inbox", "chat", "mention", "security", "total"}
+
+
+def test_the_request_names_the_inviter_by_display_name_and_handle(
+    make_client: ClientFactory, migrated: Engine, at: Any
+) -> None:
+    """As the invitation page does (§3.4): a display name alone can be anyone's."""
+    anna, olga = setup(make_client, migrated)
+    invite(olga)
+    with migrated.connect() as conn:
+        [summary] = conn.execute(
+            select(t.request.c.summary).where(t.request.c.to_human == anna.id)
+        ).scalars()
+    assert " (@olga) invites you to the project olga/lab as " in summary
 
 
 def test_an_invitation_mail_follows_its_own_kind_not_the_inbox(

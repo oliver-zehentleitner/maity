@@ -1458,8 +1458,8 @@ Renamed 2026-11-12: the tab is **Managed agents** on both pages (79438329), at t
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's
-**Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over)
+**Source:** card tsk-dsp6htj4c686 (the owner said yes to req-t9ev5zkeeg00, 2026-11-09: his runner was paired and online, and the dashboard had no way to start an agent on it; a "Start on a runner" form on the Agents page, an existing agent or a new profile, docs/api.md §15.6); the choices below about which runners and tools are offered are the implementer's, except the opencode model rule, the lead's decision (lotse) of 2026-11-18 on card tsk-sn90s6wzp9s7: fail closed on the model wherever opencode starts
+**Revisit when:** the hub lets an agent propose a placement from the dashboard (`agents:propose`), a runner of someone else can be attached (§15.4, invitations), or the form needs a field the join panel has and this one lacks (the subagents instruction, a take-over); for the opencode model rule: the hub refuses an opencode placement without a model itself, or every runner in use fails closed on the model (#1969), so the form need not hold it
 **See:** views.md#placements-are-a-section-of-agents-stop-goes-at-once-restart-asks-once-more-consent-stays-in-the-inbox — 5273b057-4d96-41b8-bd5f-e52f8828450c — as of 2026-11-09
 
 Moved 2026-11-12 (79438329): the form is no longer in the list. It opens from **Join an agent** →
@@ -1516,6 +1516,35 @@ Listing every attached runner and letting the hub refuse: a choice that
 can only fail. Listing a runner that does not offer the repository as
 unavailable instead of leaving it out: the other runners the hub would
 refuse are left out too, and with none left the section says why.
+
+**OpenCode names its model here (2026-11-18, tsk-sn90s6wzp9s7).** For
+`opencode` the form offers only the models the runner advertises, with
+no "runner's default", and sends nothing until one is chosen; where the
+runner advertises no `models`, OpenCode is left out of the tools and a
+line under them says why. The reason: without `--model` opencode runs
+its own default, a model opencode hosts, so the clone's conversation
+would go to opencode's servers instead of the provider the runner names
+(docs/api.md §15.3, docs/runners.md "OpenCode (Grok)"). A runner with the
+fail-closed adapter of #1969 starts a model-less placement on its
+`default_model` and refuses one it cannot resolve (`harness_refused`,
+`model_unsupported`), but a runner on an older `maity` starts it with no
+`--model`, and the hub does not know which one it is. A named model is
+safe on both, so the form does not depend on the runner's version. The
+list `MODEL_NAMED` in `web/js/placements.js` holds the tools this applies
+to; the other tools keep the runner's default.
+Local mode follows the same rule: `maity runner opencode` starts only
+with `--model`, and without it exits 2 before the join link is redeemed
+(docs/api.md §15.13; not built yet, as local mode is not). The reason is concrete: on
+2026-11-18 two opencode reviewers ran with no model set, so on
+opencode's hosted model, and repository content went to opencode's
+servers. Fail closed on the model wherever opencode starts, the lead's
+decision (lotse), recorded 2026-11-18.
+Rejected: keeping "The runner's default" for OpenCode, since only the
+runner knows whether it resolves to a configured model; offering
+OpenCode without models and letting the runner refuse it, a choice that
+can only fail, against this entry's rule of offering what can start;
+a hub check, which would change the contract for every client and is a
+card of its own.
 
 ## Project settings are the project's last tab, not a panel from the gear menu
 
@@ -1723,7 +1752,7 @@ show their lists without a form. Members has two blue buttons at the top,
 Invite user and Join agent; its own invitation form is gone (since 2026-11-12 in the Team page's
 shared head, Join as the Join an agent menu: 79438329). The project
 view `runners` keeps its route and its Settings tab mark, but has no tab:
-the project's Settings links it. `/invite` reads the projects one after
+the project's Settings links it (since 2026-11-20 a tab of Settings, and the route is gone: 1245c407). `/invite` reads the projects one after
 the other and draws again when another project is chosen. A counter
 drops an older pass still reading, as `renderSeq` does in the router;
 without it, two passes append their lists twice.
@@ -1996,6 +2025,10 @@ the same second as the newest one is recovered too. A pass of one page has
 no gap and ends the reading. After three passes that each followed a
 cursor, one list of every status in the window (`status=all` with the
 window, all its pages) is read instead and replaces the cards.
+Since tsk-d4anfsk1e94j the closed group is two reads, `done` and
+`cancelled`, one page of 50 each (b7b0a38f): six reads, not five. The one
+list of that fallback still holds every closed card of the window, so after
+it no closed page is left to read.
 What is guaranteed: every card that did not change during the reads is
 shown as its group read it, and every card that did is shown once, as the
 last pass, or the one list, has it. The one list has the gaps between its
@@ -3501,8 +3534,8 @@ handle, and is clicked away too easily.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** confirmed
-**Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy)
-**Revisit when:** §2.3 adds or drops a built-in role, or a project's own roles (§2.3) get a place in the pickers
+**Source:** the maintainer's note that roles were missing (manager, the red team, …) and the card tsk-g62vwd7bqztk, 2026-10-30; the coordinator's brief for its web part (labels and short help texts from §2.3, the picker everywhere), 2026-10-30; docs/api.md §2.3 (the roles' table, the security teams), §3.1 (a member's own agent: not ops, not proxy); the card tsk-0e7mrvccjttn and #1948 (a project's own roles in the pickers, §2.3 "Project roles"), 2026-11
+**Revisit when:** §2.3 adds or drops a built-in role
 **See:** views.md — b71cebbf-56d9-4f65-aef9-cbb4ab5131a1 — as of 2026-10-30
 
 `js/trust.js` holds the one list of built-in roles, in the order of the
@@ -3511,20 +3544,30 @@ member does, taken from that table. Every role picker (a member's form,
 an invitation, a join, a member's own agent) fills its options from it
 by label, with the role's words as the option's tooltip and, under the
 picker, as a hint line the select is described by, following the chosen
-role. What a picker offers stays its own rule: proxy only with trust
+role. Since #1948 the project's own roles (§2.3 "Project roles") follow
+the built-in ones in the same select: read once per view
+(`M.trust.projectRoles`, one `GET …/roles` for every picker drawn in it),
+each as "name (permissions of its base)", with its description, or else
+"a role of this project, with the permissions of its base", as tooltip
+and hint. A picker drawn before that read answers is filled again when
+it does, a choice made meanwhile kept; a failed read leaves the built-in
+roles only. What a picker offers stays its own rule: proxy only with trust
 admin and only from an owner, a member's own agent every role but `ops`
-and `proxy`. A security team counts as the role whose scopes it has
-(red team as tester, purple team as reviewer) where the dashboard asks
-who reviews, tests or prepares a release; the blue team counts as
-coder, which no dashboard question asks for. The fixture hub keeps the
-same roles in one list of its own. The list is the hub's too (`scopes.ROLES`
-and `COUNTS_AS` since #711, the same §2.3): a role added or dropped on one
-side is changed on the other in the same contract change. A member's
-line elsewhere ("admin · red-team", `M.trust.words`) keeps the hub's
-token: it is what the CLI and the hub's answers show, and the label is
-for the moment a role is chosen. `expert` (§2.3 "The expert",
-tsk-cwtw22tta8y8) came into the list after the hub had it; a card's
-needs leave it out, as the hub's do, since an expert takes no cards.
+and `proxy`, and of the project's own roles only those whose base a
+member join may give, so none on `ops` (the join form for one's own
+agent and the owner's role picker on Members alike). A security team
+counts as the role whose scopes it has (red team as tester, purple team
+as reviewer) where the dashboard asks who reviews, tests or prepares a
+release; the blue team counts as coder, which no dashboard question asks
+for. The fixture hub keeps the same roles in one list of its own. The
+list is the hub's too (`scopes.ROLES` and `COUNTS_AS` since #711, the
+same §2.3): a role added or dropped on one side is changed on the other
+in the same contract change. A member's line elsewhere ("admin ·
+red-team", `M.trust.words`) keeps the hub's token: it is what the CLI
+and the hub's answers show, and the label is for the moment a role is
+chosen. `expert` (§2.3 "The expert", tsk-cwtw22tta8y8) came into the
+list after the hub had it; a card's needs leave it out, as the hub's
+do, since an expert takes no cards.
 
 **Reason:** the roles had been copied into each picker, and `manager`
 and the three security teams were missing from all of them; one list is
@@ -4165,7 +4208,8 @@ redraws the tab it was made on.
 
 Grouping: General holds what the project is and where it lives (state,
 language, repository and its grant, links, name and transfer, public
-page, badge, ticker and webhook, logo and banner, the runners link);
+page, badge, ticker and webhook, logo and banner; the runners link until it
+became the Runners tab, 1245c407);
 Members and agents who joins on what terms and who reads what (members'
 own agents, agents of owners who are not members, onboarding, restricted
 access, signing); Way of working how work is done and kept (who closes a
@@ -4199,6 +4243,50 @@ Back land on the same tab. A tab bar of its own with arrow-key roving
 (`role="tablist"`): the dashboard's view tabs are links, and the card asks
 for the existing pattern. Keep the Why personal settings on Mine, as
 proposed: see the reason.
+
+## The project's runners are a tab of its Settings at settings/runners; the old /runners view is gone without a redirect
+
+**Id:** 1245c407-69b3-4219-b052-b7b74c8a9c6b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the owner in the project chat, 2026-11-19, relayed on the card tsk-ert2k23kr5m4 (the Runners page "should become a tab of settings"; asked about keeping the old address: no, no legacy); the tab's place, its permission and the hub's `404` are the implementer's, 2026-11-20
+**Revisit when:** a runner's owner who is no admin gets a way to detach from the dashboard (1cf107b2), or the Settings tabs are regrouped
+**See:** views.md#a-projects-settings-are-in-sub-tabs-one-address-each-general-members-and-agents-way-of-working-moderation-and-mine — bc864bf2-d64b-4947-b3d6-3d3a2e500eea — as of 2026-11-20
+**See:** views.md#the-header-gets-a--menu-to-bring-someone-in-invitations-get-their-own-page-runners-lose-their-tab — 3f6eadd3-d1d5-4389-bb65-626e9cdbc1dc — as of 2026-11-20
+**See:** views.md#project--runners-is-the-project-admins-tab-refreshes-redraw-in-place-and-a-missing-list-fails-loud — 1cf107b2-991d-42e4-aa35-9dd8f84216eb — as of 2026-11-20
+**See:** https://github.com/oliver-zehentleitner/maity — e34ae588-4dbc-423c-8da8-29fc62436cb5 — as of 2026-11-20
+
+What `/<owner>/<slug>/runners` showed (the attached runners, Allow it here,
+Detach, the 30-second refresh, the "runners changed" notice) is the
+**Runners** tab of the project's Settings, at `settings/runners`, between
+Moderation and Mine, drawn by `js/project-runners.js` under the Settings
+heading and tab row. It is offered to `project:admin` alone, the rule the
+old route had (1cf107b2); anyone else who types the address is led to the
+first tab they are shown, as for every Settings tab. The link "This
+project's runners" on General is gone, and every in-app link (the start
+on a runner's "Allow one under …") points at the tab. `runners` is no
+project view any more: the dashboard's NAV has no entry for it, and the
+hub's `never_a_page` answers `/<owner>/<slug>/runners…` with `404` and the
+shell, as it answers `members` (§16.11). The word stays reserved as a
+slug, so no project can take it.
+
+**Reason:** the tab and the removal without a redirect are the owner's
+(confirmed); why he wanted a tab was not said (unknown). Read from the
+code (inferred): since the Settings became sub-tabs (bc864bf2) the
+runners were the one project-admin part reached by a link out of
+Settings to a page of their own, under a Settings tab mark that was not
+a tab. The `404` follows the alpha rule (e34ae588): an address the
+dashboard no longer serves is not found, not kept alive.
+
+**Rejected alternative:** keeping `/<owner>/<slug>/runners` as an alias
+or a redirect to the tab: the owner's "no legacy". A tab back in the
+project's row: taken out on 2026-10-31 (3f6eadd3). A section among the
+General forms: the runners are a list with its own reads, refresh and
+status line, not a form saved through the project's `PATCH`. Leaving the
+hub's shell at `200` for the old address: the dashboard would say "not
+found" where the hub says the page exists, against the rule that the
+path's words alone decide the status.
 
 ## The meat-proxy switch has its two parts under it, each sent alone; the hub decides the switch and the note
 
@@ -4528,6 +4616,24 @@ While full, everything outside the chat is `inert`: no focus reaches the covered
 - The Fullscreen API (`requestFullscreen`): iOS Safari does not allow it on elements other than video, and it also hides the browser's own controls, which the owner did not ask for.
 - A route of its own for the full screen (`…/chat/<id>/full`): a reload or a shared link would open a page with no way out but the button, and the router would draw the chat again on every switch.
 - A history entry without the layer: the router draws the view again on every back (js/app.js `route.listen`), so the chat would be read again and lose its scroll position.
+
+## A chat bubble takes up to 60% of its column, at most 60rem; up to a 960px column it keeps 36rem
+
+**Id:** 40f31221-2c21-486f-acf3-e3d553a4393d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-e305sjdqes86, owner's wish 2026-11-18 (in the chat's full screen on a desktop a bubble used about a third of the width and the middle third stayed empty; bubbles should take 50–60%); the implementing change's estimate of the widths from the stylesheet (15px body text, 16px rem), not measured in a browser
+**Revisit when:** the body's font size or the chat's full-screen layout changes, or the page's main column (1200px) grows so far that the page's chat column passes 960px
+**See:** views.md#on-a-phone-a-chat-shows-less-around-it-and-any-chat-can-take-the-whole-window — 0e55c22f-572b-44a8-882a-52e1d4ee6813 — as of 2026-11-18
+
+A bubble (`.msg`, web/css/app.css) is `max-width: min(max(36rem, 60%), 60rem, 90%)` of the message column. Up to a 960px column, where 60% is no more than 36rem, that is the old `min(36rem, 90%)`. So a phone and the chat on the page are unchanged; the page's chat column stays under about 770px inside the 1200px main. Wider, as in full screen on a desktop, a bubble grows to 60% of the column, and from a 1600px column on it stops at 60rem: about 750px (60%) at 1280px, 960px (about half) at 1920px. It is one rule for every width, not one under `html.chat-full`, because the page's chat never reaches a column where the two would differ.
+
+**Reason:** the owner asked for 50–60% of the width on a desktop. The cap is in rem, not ch. The body's text is 15px and a `ch` there is about half of that, so 80ch is about 650–700px. That is barely more than the old 36rem (576px), and on a 1920px window a bubble would stay at about a third, the very thing the owner named. 60rem keeps a long line from running across the whole screen and still gives half of a 1920px window. The confirmed part is the wish (50–60% instead of about a third), which is the owner's. The 60rem cap and the arithmetic behind it are the implementing change's own reading and the owner has not confirmed them, so the entry is inferred.
+
+**Rejected alternatives:**
+- An 80ch cap, as the card's implementation note suggested ("e.g. ~80ch"): about 36% of a 1920px window, short of the owner's 50–60%.
+- A rule only under `html.chat-full`, as the card put it ("in full screen (and on wide screens)"): outside the full screen the column never passes 960px, so the rule would change nothing there; with it, a wide window's chat on the page would keep the narrow width for no reason if the page's column ever grew.
 
 ## The row of tabs has no New project tab; the tabs menu follows the tabs, a dragged tab's place is a line
 
@@ -5103,14 +5209,15 @@ so it was dropped.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11; the maintainer's request for an Actions button between Repository and Pull Requests, card tsk-kdkdy864q11r, 2026-11-10
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11; the maintainer's request for an Actions button between Repository and Pull Requests, card tsk-kdkdy864q11r, 2026-11-10; the maintainer's request for a Docs link after Discussions, card tsk-qeftb8bg0yt6, 2026-11-19
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
-**Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
+**See:** https://github.com/oliver-zehentleitner/maity — 6fea85a1-c677-469c-84a5-c2bc2c6438f5 — as of 2026-11-20
+**Revisit when:** a sixth kind of link is added, or the header row has no room for the buttons on a phone
 **See:** views.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-03
 
 The header's row shows the repository, then Actions, then Pull Requests, then the
-project's own links that are set (issues, wiki, discussions, chat, each
-with its mark), then the
+project's own links that are set (issues, wiki, discussions, docs, chat,
+each with its mark; docs a page, since the book is the wiki's and Why's), then the
 Keep the Why dashboard, and after them, at the right end, the state: the
 maintainer asked for the state on that side and for the Pull Requests
 button (tsk-hf70q6maf8cv, 2026-11-01; no reason was recorded). Unlike the
@@ -5122,7 +5229,7 @@ derived the same way, but only for the forges that call their workflows
 Actions (GitHub, Gitea): GitLab and Bitbucket call theirs Pipelines, a word
 of its own that no card has asked for yet. Its screen-reader name says the
 forge ("Actions on GitHub"), as the repository's does. A second derived
-button is not the "fifth kind of link" the Revisit condition below means
+button is not a new kind of link in the sense of the Revisit condition above
 (an own link of §6.11, which the hub stores): it follows the forge table,
 and on a phone the row still holds every button in one row that scrolls
 (e2e at 390 and 360 px, light and dark). Neither derived button is on the
@@ -5133,9 +5240,9 @@ repository's button reads "Repository" for every forge. Its mark and
 its name for a screen reader ("Repository on GitHub") still say which
 forge. The overview's Project tab shows the same links as buttons
 beside the repository. They are not in the header's list of projects:
-each entry there is itself a link, which cannot hold four more, and `/me`
+each entry there is itself a link, which cannot hold five more, and `/me`
 does not carry a project's links; §6.11 was changed to name the header
-beside the project's state instead (review of #884). Project settings have four fields that send only
+beside the project's state instead (review of #884). Project settings have five fields that send only
 the links that changed; an empty field clears its link, and each refusal
 of the hub is said at its field.
 
@@ -5757,9 +5864,7 @@ empty dark band. Every key of §16.7.4 is optional, so a panel with only a note 
 stays. The title is the form's heading, not a part of the panel. A new part that `pitch()` draws
 must be added to that rule. **Rejected:** hiding on subline and points only (it hid a note-only
 pitch, the ChatGPT reviewer's P2 on #1287); a class set by the script (a second source of truth);
-keeping the empty band. **Known gap:** the smoke case renders only a note-only panel, so dropping
-one of the rule's `:has()` parts, or a new part not named in it, stays green. Source: the author's
-notes on #1287, round 3 (card tsk-gsk31zvpfv02).
+keeping the empty band. Source: the author's notes on #1287, round 3 (card tsk-gsk31zvpfv02).
 
 ## A visitor's public page stands in the landing's frame, the app's bar only where the frame cannot be read
 
@@ -6497,7 +6602,7 @@ card asked for. Alternatives beyond that were not discussed.
 
 **Id:** e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7
 **Type:** decision
-**Status:** active
+**Status:** needs-review
 **Evidence:** confirmed
 **Source:** card tsk-a5pxwgkgr73e: the owner's feedback on deploy 6 (2026-11-10, the board one of two pages still over 1 s); the operators' per-call measurement of the board on rev 30 (2026-11-10: the five group reads start together and take 83–203 ms each; the closed group then pages serially, 4 pages of 200, about 0.9 s and 550 kB); the coordinator's go for this change the same day
 **See:** views.md#the-board-reads-its-column-groups-side-by-side — 145f0bf3-3024-414a-8026-19dad1960ff7 — as of 2026-11-10
@@ -6538,6 +6643,25 @@ draws the panel anew as before. A board left from a
 closed card finds that card now. A reload after a write
 supersedes the first read: an answer is drawn only if no later read's
 answer has been.
+
+The `Revisit when` above has come about with tsk-d4anfsk1e94j: the closed
+columns are now one page of 50 each, done and cancelled read apart, not a
+group that pages (b7b0a38f). The draw before them is kept as it is; whether it
+still earns its cost with a page of 50 has not been measured.
+
+Since tsk-qw08c8ds214g (2026-11-20) the first draw waits for each open
+group's first page only, not for all its pages. On the maintainer's project
+the open column's second page (59 kB) came about 95 ms after its first, on
+the way to that draw. `M.api.getAll` hands over the first page as soon as it
+is in, and the pages asked stay the same: `limit=200`, the same cursors, no
+contract change. The later pages come with the whole read, which draws again,
+as it does for the closed columns. Until then an open column shows the cards
+of its first page. A later open page that fails after the first draw fails the
+whole read, as a closed read does. It is said as what it is ("More cards of
+the open columns could not be read"), in the same place as a failed closed
+read, and the board stays as drawn. A group that fails before its first page
+still fails the view, as before. A group read that answers without handing
+over a first page draws once the group is complete.
 
 **Reason:** on the maintainer's project the closed window was 783 cards,
 the largest group by far, and its pages follow each other through a
@@ -6612,32 +6736,53 @@ and the e2e step then needs no wait of its own.
   listener for clicks elsewhere and none was removed until such a click, so repeated refreshes stacked
   them on detached menus (review of #1654).
 
-## A closed column draws the 50 cards closed last; Show more draws the rest
+## A closed column reads and draws the 50 cards closed last; Show more reads the next 50
 
 **Id:** b7b0a38f-66a0-4224-82de-57e1300cc63a
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10
+**Source:** card tsk-a5pxwgkgr73e: the owner's decision of 2026-11-11 on a decision request with three options (option 1); a render measurement in headless Chromium on the fixture hub with 783 closed cards, median of 5 runs, 2026-11-10; card tsk-d4anfsk1e94j: the board run measured by ops on 2026-11-12 (done column about 790 cards, its 3 follow-up pages one after another after the first, 546 kB in all), and the owner's choice of a first page of 50 with "Show more" on demand that says how many are loaded, req-aa0jka1xsfsy; the review of #1980 (a superseded page left the button disabled, reproduced in Chromium; the focus taken back from the board search; a refused cursor sent again)
 **See:** views.md#the-board-draws-once-the-open-groups-have-answered-the-closed-columns-follow — e58ffe3b-1855-4e2b-ab65-b9cc9c693fe7 — as of 2026-11-11
-**Revisit when:** the closed window or the hub's board shape changes, or a full redraw of the board is measured over about 200 ms again
+**See:** https://github.com/oliver-zehentleitner/maity — 7bad4e04-7132-4825-94c5-825301c20800 — as of 2026-11-18
+**Revisit when:** the closed window or the hub's board shape changes, the hub gives a closed column's total, or a full redraw of the board is measured over about 200 ms again
 
-The board still reads every card of the closed window (the entry above). The
-Done and Cancelled columns draw only the 50 cards closed last (by
-`closed_at`), in the column's own order, and a button below them shows how
-many more there are ("Show 11 more closed cards"). The column's count stays
-the whole number. The button draws that column whole for the rest of the
-board view, and the first card it added takes the focus, since the button is
-gone. A card the board is opened on (by its link, or coming back from it) is
-drawn wherever it stands, and a subtask folded under a parent with that
-parent, since it is found only under a drawn parent. A hub search's
-columns follow the same rule.
+Since tsk-d4anfsk1e94j the board no longer reads every card of the closed
+window. Done and Cancelled are each read as one page, `limit=50`, which the
+hub orders by `closed_at`, newest first (7bad4e04), and are drawn in the
+column's own order. Below each, **Show more (N loaded)** reads that column's
+next page of 50 with the cursor the hub handed out and adds it. It is there
+while the hub names a next page, disabled while that page is read, keeps the
+focus (after the last page, which takes it away, the first card that page
+added has it), and a live region says how many are loaded. The focus stays
+on Show more only where the click left it: a reader who moved it while the
+page was read (into the board search, a card's menu) keeps it there. A write
+whose reload is drawn while a page is read supersedes that page, which is
+dropped, and the button is enabled again with the reload's cursor (review of
+#1980). A Show more page the hub refuses as `invalid` (a cursor from before
+a hub release) reads the board again, each closed column from its first
+page, and then the page asked for with the fresh cursor, instead of offering
+the same cursor again: a closed cursor is bound to the list's filter
+fingerprint (hub/src/maity_hub/paging.py, `unclosed`), so the stored one can
+only fail again. A second refusal is said as a failure. The column's
+count is the cards loaded: the hub gives no total. A write that reads the
+board again reads each closed column with as many cards as it held (at most
+200, the hub's page), so it does not fold back what Show more loaded. A
+closed card the board is opened on that is not loaded opens in its panel,
+read by itself, as a card outside the window does. A hub search, whose
+results come whole, still draws the 50 closed last of each closed column
+and a button the rest ("Show 11 more closed cards").
 
 **Reason:** every redraw of the board (a filter change, each keystroke of
 the board search, a card's update) drew every closed card: with 783 a full
 redraw took about 640 ms (2.7 s on a CPU four times slower), with 100 about
-100 ms (0.44 s). The closed cards are the ones a reader works in least; the
-newest are the ones looked for.
+100 ms (0.44 s). Reading them all cost more still: the done column's pages
+followed one another through a keyset cursor, about 0.8 s and 546 kB after
+the first page. The closed cards are the ones a reader works in least; the
+newest are the ones looked for. The owner chose the first page of 50 with
+"Show more" on demand (req-aa0jka1xsfsy). Done and Cancelled are read apart
+because the hub orders a closed list by column first: one page of both would
+hold no cancelled card until every done card had been read.
 
 **Rejected alternatives:**
 - A leaner card shape for the board's list, without the largest fields: a
@@ -6646,6 +6791,22 @@ newest are the ones looked for.
   not only from the drawing, and changes what the board offers.
 - The first 50 in the column's order: that order is by rank and creation,
   so it would show old closed cards and hide the ones just closed.
+- Reading the whole closed window and drawing 50 of it (this entry before
+  tsk-d4anfsk1e94j): the drawing was fast, the read stayed serial.
+- Reading the follow-up pages in parallel once the cursor was short: a keyset
+  page needs the one before it, so they cannot start together; the owner's
+  choice removes the chain instead.
+- One page of `done,cancelled` together: the Cancelled column would stay empty
+  behind the done cards (above).
+- Offering the stored cursor again after an `invalid` refusal, as after any
+  failed page: it is bound to a fingerprint the hub no longer gives, so every
+  retry fails the same way (review of #1980).
+- Dropping Show more after an `invalid` refusal and asking the reader to
+  reload the page: the board can read the column again itself, keeping the
+  cards loaded.
+- Moving the focus to Show more on every page, wherever it stood (the first
+  version): it took the focus out of the board search or a card's menu the
+  reader had gone to while the page was read (review of #1980).
 
 ## Report is one small button where a reader sees the thing, one inline form for all, and the account's Reports tab is where its outcome shows
 
@@ -6998,6 +7159,41 @@ entry names an agent by id only, so the same lists give its handle.
 - A page of its own in the account: rejected, the entries are per agent and
   the agents' tabs are where an owner looks for them.
 
+## The firewall history sits under the lists on the Chat access tab; a request is named by its id, not linked
+
+**Id:** bcfb497a-fda1-4ace-aa3c-115dcf3af5a6
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-v34cv43wvec3 ("a History section (or tab) on /agents/chat-access"; links to the request in the inbox and to the entry if it still exists); docs/api.md §9.6 "History"; the dashboard's implementation, 2026-11-18; review A1438 of #1989 (P2-2: `/all` lists only open requests)
+**Revisit when:** the inbox of all projects gets an address per request, or the history grows a filter by entry or agent
+**See:** views.md#who-may-chat-with-ones-agents-is-a-tab-of-agents-whom-an-entry-names-is-chosen-among-the-members-of-ones-projects — 5be40abe-674f-412a-b4a4-7cfec2ff960d — as of 2026-11-18
+
+The history (`GET /me/chat-access/history`) is a section under the lists
+on the same tab, read after them, 50 items a page with **Show more**. An
+item whose entry is still in the lists has **Show the entry**, which
+focuses that entry's row above; the request of an answer or of an
+entry it made is named by its id, as text, not linked. People and agents are named by the item's `names`, so a deleted
+account or agent reads as deleted, never by an id or an old handle.
+
+**Reason:** an item is about an entry in the lists, so beside them the
+way from one to the other is a focus on the same page, not a route.
+The request to chat with one's agents belongs to no project, and the
+inbox has an address per request only inside a project
+(`/<owner>/<slug>/inbox/<id>`). The inbox of all projects (`/all`)
+reads only the open requests, and an answered one is never listed
+there, so no link reaches it; the id is what the card's link would
+have carried, and the owner can find the request by it.
+
+**Rejected alternatives:**
+- A fifth tab for the history: the card allowed either, but a tab would
+  make **Show the entry** a route change to the other tab and back.
+- A new inbox address for a personal request without a project: a
+  route change of its own (js/route.js, the inbox's view), beyond this
+  card.
+- A link to `/all` (the first build): it leads to a list without the
+  answered request (review A1438 of #1989, P2-2).
+
 ## A waiting agent is said in a group chat's people line; one's own lead to the inbox, not to the request
 
 **Id:** 57ad0b3e-1846-4063-9315-0d4ecdfbb200
@@ -7085,6 +7281,32 @@ panel the same edge, and a new form inside it needs no width of its own.
 - A `dl` of facts at the full width like a list: rejected, its pairs are
   short, and in a padded box (the settings' webhook) the column's parts
   beside it would end the box's padding past the column's edge.
+
+## The invitation page names the inviter by display name and handle, every typed name in its own `<bdi>`
+
+**Id:** 35cd35c9-317b-48d5-a750-6d1009fd451d
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-zadkerpebgd5 (one plain-text rule for names, notes, URLs and subjects), 2026-11-14; `js/invite.js`
+**Revisit when:** another signed-out page shows a name someone typed next to text of its own, or the hub's plain-text rule (docs/api.md §1.7.1) starts to allow a bidi or format character
+**See:** https://github.com/oliver-zehentleitner/maity — 893c6bee-9785-4e29-ae44-c8e6c71947df — as of 2026-11-14
+
+The invitation page (`/invite/<token>`) says who invites as "display name (@handle)", from the
+hub's `invited_by.handle`, in the lead sentence, under the note and in the no-registration hint.
+The project's name and the inviter's display name each sit in a `<bdi>`, and the note's paragraph
+has `dir="auto"`.
+
+**Reason:** the page is read by someone who has no account yet and nothing else to check the
+inviter against; a display name is free text anyone may choose, a handle is unique. A `<bdi>`
+isolates a right-to-left run or a direction mark in a name from the sentence around it, so the
+sentence reads as it is translated, also for a value stored before the hub refused such marks.
+
+**Rejected alternatives:**
+- The display name alone, trusting the hub's rule: the rule says nothing about two people who
+  pick the same visible name, and stored values predate it.
+- `unicode-bidi: isolate` in the stylesheet on a span: the same effect, but only where the
+  stylesheet loads; `<bdi>` carries it in the markup.
 
 ## A tab row brings its current tab into sight again once the fonts are in
 
@@ -7249,4 +7471,3 @@ sent is what the page shows (review A963).
   and cost a call on every save.
 - Merging the draft into the list read again (keeping roles others added): it would hide a
   conflict on the same role; refusing and reloading says it.
-

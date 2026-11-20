@@ -1,4 +1,4 @@
-"""docs/api.md §6.11, "The project's own links", and §16.9: four links set under project:admin,
+"""docs/api.md §6.11, "The project's own links", and §16.9: five links set under project:admin,
 merged by key, checked as a person's website is; on a public page, a link into the repository's
 own path only while the repository is public."""
 
@@ -17,6 +17,7 @@ from tests.conftest import ClientFactory
 PROJECT = "/projects/maintainer/maity"
 ISSUES = "https://github.com/acme/maity/issues"
 CHAT = "https://discord.gg/abc123"
+DOCS = "https://docs.example.org/maity"
 
 
 @pytest.fixture
@@ -39,8 +40,14 @@ def link_events(engine: Engine) -> list[Any]:
     return [r.payload["fields"] for r in rows if "links" in r.payload["fields"]]
 
 
-def test_a_project_has_four_empty_links_until_an_admin_sets_them(owner: flow.Human) -> None:
-    assert links_of(owner) == {"issues": None, "wiki": None, "discussions": None, "chat": None}
+def test_a_project_has_five_empty_links_until_an_admin_sets_them(owner: flow.Human) -> None:
+    assert links_of(owner) == {
+        "issues": None,
+        "wiki": None,
+        "discussions": None,
+        "docs": None,
+        "chat": None,
+    }
 
 
 def test_links_merge_by_key_and_null_clears_one_or_all(owner: flow.Human) -> None:
@@ -50,6 +57,7 @@ def test_links_merge_by_key_and_null_clears_one_or_all(owner: flow.Human) -> Non
         "issues": ISSUES,
         "wiki": None,
         "discussions": None,
+        "docs": None,
         "chat": CHAT,
     }
     # a key left out stays, a key given null clears it
@@ -58,10 +66,29 @@ def test_links_merge_by_key_and_null_clears_one_or_all(owner: flow.Human) -> Non
         "issues": ISSUES,
         "wiki": "https://wiki.example.org/maity",
         "discussions": None,
+        "docs": None,
         "chat": None,
     }
     assert owner.patch(PROJECT, {"links": None}).status_code == 200
-    assert links_of(owner) == {"issues": None, "wiki": None, "discussions": None, "chat": None}
+    assert links_of(owner) == {
+        "issues": None,
+        "wiki": None,
+        "discussions": None,
+        "docs": None,
+        "chat": None,
+    }
+
+
+def test_docs_is_a_link_like_the_others_set_cleared_and_checked(owner: flow.Human) -> None:
+    done = owner.patch(PROJECT, {"links": {"docs": DOCS}})
+    assert done.status_code == 200, done.text
+    assert done.json()["links"]["docs"] == DOCS
+    assert links_of(owner)["docs"] == DOCS
+    refused = owner.patch(PROJECT, {"links": {"docs": "http://docs.example.org/maity"}})
+    assert refused.json()["error"]["details"]["fields"] == {"links.docs": "format"}
+    assert links_of(owner)["docs"] == DOCS  # a refused PATCH keeps the stored one
+    assert owner.patch(PROJECT, {"links": {"docs": ""}}).status_code == 200
+    assert links_of(owner)["docs"] is None
 
 
 def test_a_change_emits_one_project_updated_and_an_unchanged_patch_none(
@@ -148,6 +175,7 @@ def test_inside_the_repository_is_its_host_and_path_by_segment_without_case() ->
         "wiki": "https://github.com/acme/maity-other/wiki",  # a name that merely starts alike
         "discussions": "https://github.com/acme",  # above the repository
         "chat": "https://matrix.to/#/#maity:example.org",  # another host
+        "docs": "https://github.com/acme/maity/tree/main/docs",  # inside, as a page of the tree
     }
     hidden = project_links.public(links, repo, False)
     assert hidden == [links["wiki"], links["discussions"], links["chat"]]
@@ -162,5 +190,7 @@ def test_inside_the_repository_is_its_host_and_path_by_segment_without_case() ->
     backslash = {"issues": "https://github.com/acme\\maity/issues"}  # a browser reads `\` as `/`
     assert project_links.public(backslash, repo, False) == []
     assert project_links.public(tricks, repo, True) == list(tricks.values())
-    assert project_links.public(links, repo, True) == list(links.values())
-    assert project_links.public(links, None, None) == list(links.values())
+    # In the order of KEYS, Docs after Discussions and before Chat, whatever the order given.
+    ordered = [links[k] for k in ("issues", "wiki", "discussions", "docs", "chat")]
+    assert project_links.public(links, repo, True) == ordered
+    assert project_links.public(links, None, None) == ordered

@@ -61,6 +61,14 @@ def test_team_is_a_view_and_members_stays_reserved_beside_it() -> None:
     assert {"team", "members"} <= paths.PROJECT_VIEWS
 
 
+def test_runners_stays_reserved_as_a_slug_but_is_no_view() -> None:
+    """The project's runners are the Settings tab `settings/runners` (tsk-ert2k23kr5m4): the old
+    `/<owner>/<slug>/runners` names nothing, yet no project may take the slug `runners`."""
+    assert "runners" in paths.PROJECT_VIEWS
+    assert paths.never_a_page("/someone/project/runners")
+    assert not paths.never_a_page("/someone/project/settings/runners")
+
+
 def test_the_hub_paths_are_the_contracts() -> None:
     section = _section()
     table = section[section.index("**Hub paths.**") : section.index("The join host is unchanged")]

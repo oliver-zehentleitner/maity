@@ -1976,6 +1976,37 @@ window.Maity = window.Maity || {};
       by: me().member.id, since: "2026-11-11T16:00:00Z" }],
     deny: [{ id: "cha-0002", agents: "all", agent_id: "agt-s2", by: me().member.id, since: "2026-11-12T09:00:00Z" }],
   });
+  // §9.6 "History": the human's own history of the lists, newest first by `seq`. Seeded with the
+  // answer that made cha-0001 and a deny removed once its person had deleted the account (shown
+  // without a handle, as §2.9); every write of the lists below adds its items.
+  let chatAccessLog = null;
+  let chatAccessSeq = 3;
+  const historyNames = (ids) => Object.fromEntries(ids.map((id) => [id, id === "hum-gone" ? { handle: null, deleted: true }
+    : { handle: id === "hum-anna" ? "anna" : (fixtures()["agents.json"].items.find((a) => a.id === id) || { handle: id }).handle, deleted: false }]));
+  const chatAccessHistory = () => chatAccessLog || (chatAccessLog = [
+    { id: "chh-0003", seq: 3, at: "2026-11-11T16:00:00Z", kind: "answer", by: me().member.id, request_id: "req-0chatanna1", side: "hum-anna",
+      reply_id: "allow_always", withdrawn: false, agents: ["agt-a"], their_human: false, their_agents: null,
+      allowed: "the shop's frontend, may work on it", denied: "nothing about releases", entries: ["cha-0001"],
+      names: historyNames(["agt-a", "hum-anna"]) },
+    { id: "chh-0002", seq: 2, at: "2026-11-11T16:00:00Z", kind: "entry", change: "created", list: "allow", entry_id: "cha-0001", entry_exists: true,
+      by: me().member.id, cause: "request", request_id: "req-0chatanna1", deny_id: null, conversation: null,
+      entry: Object.assign({}, chatAccess().allow[0], { handle: "anna" }), before: null, fields: [], names: historyNames(["agt-a", "hum-anna"]) },
+    { id: "chh-0001", seq: 1, at: "2026-11-10T09:00:00Z", kind: "entry", change: "deleted", list: "deny", entry_id: "cha-0000", entry_exists: false,
+      by: null, cause: "gone", request_id: null, deny_id: null, conversation: null,
+      entry: { id: "cha-0000", agents: "all", human_id: "hum-gone", handle: null, by: me().member.id, since: "2026-11-01T09:00:00Z" },
+      before: null, fields: [], names: historyNames(["hum-gone"]) },
+  ]);
+  // `names` covers the entry and the entry before, as the hub's `_named`; `denyId` names the deny
+  // entry that removed or narrowed an allow (§9.6: its cause stays the deny's, `list` here).
+  function chatAccessRecord(change, list, entry, before, denyId) {
+    const ids = [entry, before].filter(Boolean).flatMap((e) => [].concat(Array.isArray(e.agents) ? e.agents : [],
+      Array.isArray(e.their_agents) ? e.their_agents : [], [e.owner_id, e.human_id, e.agent_id].filter(Boolean)));
+    const fields = before ? Object.keys(entry).filter((k) => JSON.stringify(entry[k]) !== JSON.stringify(before[k])).sort() : [];
+    chatAccessHistory().unshift({ id: localId("chh"), seq: ++chatAccessSeq, at: nowIso(), kind: "entry", change, list, entry_id: entry.id,
+      entry_exists: change !== "deleted", by: me().member.id, cause: "list", request_id: null, deny_id: denyId || null, conversation: null,
+      entry: JSON.parse(JSON.stringify(entry)), before: before ? JSON.parse(JSON.stringify(before)) : null, fields, names: historyNames(ids) });
+    if (change === "deleted") chatAccessHistory().forEach((i) => { if (i.entry_id === entry.id) i.entry_exists = false; });
+  }
   function chatAccessAgents(raw, path) {
     if (raw === "all") return "all";
     if (!Array.isArray(raw) || !raw.length || raw.some((a) => typeof a !== "string")) fail(400, "invalid", "agents is all or a list of ids", path, { fields: { agents: "format" } });
@@ -3204,6 +3235,15 @@ window.Maity = window.Maity || {};
     }],
     // §9.6 "The lists": checked as the hub checks them (chat_access.py), the same details.fields.
     ["GET", /^\/me\/chat-access$/, () => JSON.parse(JSON.stringify(chatAccess()))],
+    ["GET", /^\/me\/chat-access\/history$/, (m, body, path, query) => {
+      const limit = Math.min(Number(query.get("limit") || 50), 200);
+      const all = chatAccessHistory();
+      const after = query.get("cursor");
+      const from = after ? all.findIndex((i) => String(i.seq) === after) + 1 : 0;
+      if (after && from === 0) fail(400, "invalid", "cursor", path, { fields: { cursor: "invalid" } });
+      const items = all.slice(from, from + limit);
+      return { items: JSON.parse(JSON.stringify(items)), next_cursor: from + limit < all.length ? String(items[items.length - 1].seq) : null };
+    }],
     ["POST", /^\/me\/chat-access\/(allow|deny)$/, (m, body, path) => {
       const allow = m[1] === "allow";
       const subjects = allow ? ["owner_id", "project"] : ["owner_id", "human_id", "agent_id", "project"];
@@ -3240,18 +3280,26 @@ window.Maity = window.Maity || {};
       const lists = chatAccess();
       if (lists.allow.length + lists.deny.length >= 1000) fail(400, "invalid", "too many entries", path, { reason: "too_many_entries" });
       // A deny removes the allows for the same agents and subject; an allow for all agents stays
-      // when the deny names some of them (a deny wins over it anyway).
+      // when the deny names some of them (a deny wins over it anyway). Each allow it removes or
+      // narrows gets its item after the deny's own, in the order of the ids, as the hub writes them.
+      const narrowed = [];
       if (!allow && (k === "owner_id" || k === "project")) {
         const same = (a) => (k === "owner_id" ? a.owner_id === entry.owner_id : a.project && JSON.stringify(a.project) === JSON.stringify(entry.project));
         lists.allow = lists.allow.flatMap((a) => {
           if (!same(a)) return [a];
-          if (entry.agents === "all") return [];
+          if (entry.agents === "all") { narrowed.push(["deleted", a, null]); return []; }
           if (a.agents === "all") return [a];
           const left = a.agents.filter((x) => !entry.agents.includes(x));
-          return left.length ? [Object.assign(a, { agents: left })] : [];
+          if (left.length === a.agents.length) return [a];
+          if (!left.length) { narrowed.push(["deleted", a, null]); return []; }
+          const was = JSON.parse(JSON.stringify(a));
+          narrowed.push(["changed", Object.assign(a, { agents: left }), was]);
+          return [a];
         });
       }
       lists[m[1]].unshift(entry);
+      chatAccessRecord("created", m[1], entry, null);
+      narrowed.sort((x, y) => (x[1].id < y[1].id ? -1 : 1)).forEach(([change, a, was]) => chatAccessRecord(change, "allow", a, was, entry.id));
       return JSON.parse(JSON.stringify(entry));
     }],
     ["PATCH", /^\/me\/chat-access\/allow\/([^/]+)$/, (m, body, path) => {
@@ -3273,12 +3321,16 @@ window.Maity = window.Maity || {};
       if (entry.owner_id && next.their_agents === "none" && !next.their_human) fail(400, "invalid", "names no one", path, { fields: { their_agents: "names_no_one" } });
       if ("duration" in body) Object.assign(next, chatAccessDuration(body.duration, path));
       ["allowed", "denied"].forEach((f) => { if (f in body) next[f] = chatAccessText(body[f], f, path); });
+      const was = JSON.parse(JSON.stringify(entry));
       Object.assign(entry, next);
+      if (JSON.stringify(was) !== JSON.stringify(entry)) chatAccessRecord("changed", "allow", entry, was);
       return JSON.parse(JSON.stringify(entry));
     }],
     ["DELETE", /^\/me\/chat-access\/(allow|deny)\/([^/]+)$/, (m) => {
       const lists = chatAccess();
+      const gone = lists[m[1]].find((e) => e.id === m[2]);
       lists[m[1]] = lists[m[1]].filter((e) => e.id !== m[2]);
+      if (gone) chatAccessRecord("deleted", m[1], gone, null);
       return null;
     }],
     ["GET", /^\/me\/broadcasts$/, () => Object.assign({}, broadcastsChoice, { agents: broadcastsChoice.agents.slice() })],
@@ -3426,7 +3478,7 @@ window.Maity = window.Maity || {};
         id: "plc-" + String(live.length + placementsOf(m[1]).length + 1).padStart(4, "0") + "n", project: fullOf(m[1]), agent,
         runner: { id: r.id, name: r.name }, target: body.target || null, harness: tool.id, mode, model: body.model || null,
         workspace: { clone, branch: (body.workspace && body.workspace.branch) || null, continues_existing: false },
-        desired: body.desired || "running", generation: 1, rejoin: false, stop_grace_seconds: body.stop_grace_seconds || 120,
+        desired: body.desired || "running", generation: 1, rejoin: false, fresh_session: false, stop_grace_seconds: body.stop_grace_seconds || 120,
         approval: { status: "approved", request_id: null, pending_change: null }, credential_id: null, reported_current: false,
         session_hint: null, logs_hint: null, active: true, closed_at: null, closed_reason: null,
         created_by: caller.id, proposed_by: null, foreign: false, created_at: at, updated_by: caller.id, updated_at: at, reported: null,
@@ -3457,7 +3509,7 @@ window.Maity = window.Maity || {};
       if (body.rejoin && !(cred && cred.revoked_at)) {
         fail(400, "invalid", "the placement's credential is not revoked", path, { fields: { rejoin: "credential_not_revoked" } });
       }
-      p.generation += 1; p.desired = "running"; p.rejoin = !!body.rejoin; p.reported_current = false;
+      p.generation += 1; p.desired = "running"; p.rejoin = !!body.rejoin; p.fresh_session = !!body.fresh_session; p.reported_current = false;
       p.updated_by = me().member.id; p.updated_at = nowIso();
       return p;
     }],
@@ -3844,7 +3896,7 @@ window.Maity = window.Maity || {};
       // person_links.website_problem does (500 characters): too_long first, then the form.
       if ("links" in body) {
         if (!["owner", "admin"].includes(trustIn(m[1]))) fail(403, "forbidden", "project:admin needed", path, { scope: "project:admin" });
-        const KEYS = ["issues", "wiki", "discussions", "chat"];
+        const KEYS = ["issues", "wiki", "discussions", "docs", "chat"];
         const merged = {};
         if (body.links !== null) {
           if (typeof body.links !== "object" || Array.isArray(body.links)) fail(400, "invalid", "the request does not validate", path, { fields: { links: "format" } });
@@ -4756,6 +4808,26 @@ window.Maity = window.Maity || {};
       }
       // `order=updated` (§6): the old updated_at desc order, as the board's reconciling read asks it.
       if (query.get("order") === "updated") items = items.slice().sort((a, b) => (Date.parse(b.updated_at || 0) || 0) - (Date.parse(a.updated_at || 0) || 0));
+      // Closed columns alone, in the board's order, are paged as the hub pages them (§6.4,
+      // hub/context/persistence.md 7bad4e04): the column, `closed_at` newest first (none last), the id;
+      // the cursor holds the last card's place. The board reads its closed columns this way, a page at a time.
+      const wanted = (query.get("status") || "").split(",");
+      const closedOnly = q === null && !query.get("order") && wanted.every((s) => s === "done" || s === "cancelled");
+      if (closedOnly) {
+        const at = (c) => [["done", "cancelled"].indexOf(c.status), c.closed_at ? 0 : 1, c.closed_at || "", c.id];
+        const before = (x, y) => x[0] - y[0] || x[1] - y[1] || (x[2] > y[2] ? -1 : x[2] < y[2] ? 1 : 0) || (x[3] < y[3] ? -1 : x[3] > y[3] ? 1 : 0);
+        const sorted = items.slice().sort((a, b) => before(at(a), at(b)));
+        const limit = pageLimit(query, path);
+        const given = query.get("cursor");
+        let after = null;
+        if (given !== null) {
+          try { after = JSON.parse(atob(given)); } catch (e) { after = null; }
+          if (!Array.isArray(after) || after.length !== 4) fail(400, "invalid", "not a cursor of this list", path, { fields: { cursor: "invalid" } });
+        }
+        const rest = after ? sorted.filter((c) => before(at(c), after) > 0) : sorted;
+        const page = rest.slice(0, limit);
+        return { items: page, next_cursor: rest.length > limit ? btoa(JSON.stringify(at(page[page.length - 1]))) : null };
+      }
       return { items, next_cursor: null };
     }],
     // One card (§6), its notes (§6.16, fixtures/<slug>/task-notes.json) and
@@ -6299,11 +6371,14 @@ window.Maity = window.Maity || {};
   // route ends at the path, whatever query follows.
   const PUBLIC_PATH = /^\/(auth\/(session|login|logout|register|methods|device-login(\/complete)?|email-link|email-code|password-reset(\/check|\/complete)?)|auth\/pages\/[^/?]+|site\/chrome|public\/pages\/[^?]+|legal|maintenance|bootstrap|openapi\.json|invitations\/[^/?]+)(\?|$)/;
 
-  // Every page of a list, following next_cursor (docs/api.md §1.4).
-  async function getAll(path) {
+  // Every page of a list, following next_cursor (docs/api.md §1.4). first, where given, is called
+  // with the first page's items as soon as it is in, before the next is asked (the board draws
+  // from its open columns' first pages, tsk-qw08c8ds214g); the pages asked stay the same.
+  async function getAll(path, first) {
     const sep = path.includes("?") ? "&" : "?";
     let page = await request("GET", path + sep + "limit=200");
     const items = page.items.slice();
+    if (first) first(items.slice());
     while (page.next_cursor) {
       page = await request("GET", path + sep + "limit=200&cursor=" + encodeURIComponent(page.next_cursor));
       items.push(...page.items);

@@ -258,6 +258,9 @@ class Tmux:
         self.as_user.mkdir(self.logs)
         if self.as_user.direct:
             log.touch(mode=0o600, exist_ok=True)
+        elif not self.as_user.exists(log, "-f"):
+            # `maity runner logcap` takes only an existing runner file (runner_own_file).
+            self.as_user.write(log, "")
         extra = [arg for key, value in env.items() for arg in ("-e", f"{key}={value}")]
         command = [
             "env", "-i", *self.environment(),

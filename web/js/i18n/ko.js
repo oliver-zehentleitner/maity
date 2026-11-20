@@ -436,9 +436,16 @@ window.MAITY_I18N["ko"] = {
   "board.claim.unclaimed": "담당 안 됨",
   "board.closed.failed": "닫힌 카드를 읽지 못했어요: {reason}",
   "board.closed.loading": "닫힌 카드를 읽는 중…",
+  "board.closed.more_failed": "닫힌 카드를 더 읽지 못했어요: {reason}",
+  "board.closed.more_loaded": {
+    "other": "닫힌 카드 {count}개를 불러왔어요"
+  },
   "board.closed.recheck_failed": "닫힌 카드를 읽는 동안 바뀐 내용을 확인하지 못했어요: {reason}",
   "board.closed.show_more": {
     "other": "닫힌 카드 {count}개 더 보기"
+  },
+  "board.closed.show_more_loaded": {
+    "other": "더 보기 ({count}개 불러옴)"
   },
   "board.column.other": "기타",
   "board.column.unknown": "알 수 없는 상태",
@@ -486,6 +493,7 @@ window.MAITY_I18N["ko"] = {
   "board.new_subtask": "새 하위 작업",
   "board.no_match": "필터와 일치하는 카드가 없어요.",
   "board.not_saved": "저장하지 못했어요: {reason}",
+  "board.open.more_failed": "닫히지 않은 열의 나머지 카드를 읽지 못했어요: {reason}",
   "board.place.above": "{id}: 이제 {other} 위에 있어요.",
   "board.place.below": "{id}: 이제 {other} 아래에 있어요.",
   "board.place.bottom": "{id}: 이제 맨 아래에 있어요.",
@@ -2944,7 +2952,6 @@ window.MAITY_I18N["ko"] = {
   "nav.messages": "메시지",
   "nav.organisation": "조직",
   "nav.overview": "개요",
-  "nav.runners": "러너",
   "nav.runners.changed": "러너가 변경되었어요.",
   "nav.settings": "설정",
   "nav.ticker": "티커",
@@ -3462,7 +3469,7 @@ window.MAITY_I18N["ko"] = {
   "placements.new.model": "모델",
   "placements.new.model_default": "러너 기본값",
   "placements.new.no_repository": "러너는 프로젝트 저장소의 클론에서 에이전트를 시작하는데, 이 프로젝트에는 저장소가 없어요.",
-  "placements.new.no_runner_offers": "이 프로젝트에 허용된 내 러너 중 그 저장소 {repository}를 제공하는 것이 없어요. 러너는 설정에 적힌 저장소를 제공해요.",
+  "placements.new.no_runner_offers": "이 프로젝트에 허용된 내 러너 중 그 저장소 {repository}을(를) 제공하는 것이 없어요. 러너는 설정에 적힌 저장소를 제공해요.",
   "placements.new.no_tool": "러너가 그곳에서 설치된 도구를 제공하지 않아요.",
   "placements.new.none": "페어링된 내 러너 중 이 프로젝트에 허용된 것이 아직 없어요. {link}에서 하나를 허용해 주세요.",
   "placements.new.none_link": "이 프로젝트의 러너",
@@ -3641,6 +3648,7 @@ window.MAITY_I18N["ko"] = {
   "project.link.actions_on": "{forge}의 Actions",
   "project.link.chat": "채팅",
   "project.link.discussions": "토론",
+  "project.link.docs": "문서",
   "project.link.issues": "이슈",
   "project.link.ktw_dashboard": "Keep the Why 대시보드",
   "project.link.opens": "{what} (새 탭에서 열림)",
@@ -4553,7 +4561,6 @@ window.MAITY_I18N["ko"] = {
   "settings.repo.title": "저장소",
   "settings.repo.unchanged": "변경된 내용이 없어요.",
   "settings.repo.url": "URL",
-  "settings.runners_link": "이 프로젝트의 러너",
   "settings.saving": "저장하는 중…",
   "settings.see_fields": "아래에 표시된 필드를 확인하세요",
   "settings.signing.anyway": "그래도 서명을 필수로 설정",

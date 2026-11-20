@@ -167,7 +167,7 @@ def test_the_settings_profile(tmp_path: Path) -> None:
                 *(f"{tool}({path})" for path in hidden for tool in ("read_file", "write_file")),
                 *(f"write_file({git_dir / name})" for name in adapters.GIT_PROTECTED),
                 "command(git -c)", "command(git --config-env)", "command(git --exec-path)",
-                "command(gh)",
+                "command(gh)", "command(maity runner)",  # S201/S202: not from an agent's shell
             ],
         },
     }  # fmt: skip
@@ -1547,6 +1547,38 @@ def test_an_interactive_restart_checks_the_folder_again(
     settle(sup)
     assert len(backend.started) == 2, logs
     assert backend.started[1][1][-3:-1] == ["-c", "-i"]
+
+
+def test_a_reset_starts_agy_on_a_fresh_conversation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reset (`fresh_session`, §15.6): the generation's first start is `-i` with the start
+    prompt, never `-c`, even with a resume left on the record; a resume later in the same
+    generation continues the new conversation, and only the fresh start counts in
+    `sessions` (§15.7)."""
+    sup, backend, logs = started(tmp_path, monkeypatch)
+    recorded_folder(sup.cfg)
+    clock = [1_800_000_000.0]
+    sup.now = lambda: clock[0]
+    # A record that would resume: the reset must not hand the last conversation back.
+    sup.records["plc-0003"] = supervisor.Record(generation=2, since=clock[0], resume=True)
+    sup.update([placement(mode="interactive", generation=2, fresh_session=True)])
+    settle(sup)
+    assert len(backend.started) == 1, logs
+    argv = backend.started[0][1]
+    assert "-c" not in argv and argv[-2] == "-i" and adapters.START_PROMPT in argv[-1]
+    rec = sup.records["plc-0003"]
+    assert rec.sessions == 1 and sup._body(rec)["sessions"] == 1
+    assert any("reset: a fresh session" in line for line in logs), logs
+    backend.exit(next(iter(backend.live)), 1)
+    sup.tick()
+    assert rec.state == "exited" and rec.retry_at is not None
+    rec.resume = True  # as after the idle check's end, now inside the reset's generation
+    clock[0] = rec.retry_at + 1
+    settle(sup)
+    assert len(backend.started) == 2, logs
+    assert backend.started[1][1][-3:-1] == ["-c", "-i"]
+    assert rec.sessions == 1 and sup._body(rec)["sessions"] == 1
 
 
 def test_running_without_agys_sandbox_is_reported(

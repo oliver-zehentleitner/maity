@@ -456,10 +456,19 @@ window.MAITY_I18N["es"] = {
   "board.claim.unclaimed": "Sin tomar",
   "board.closed.failed": "No se pudieron leer las tarjetas cerradas: {reason}",
   "board.closed.loading": "Leyendo las tarjetas cerradas…",
+  "board.closed.more_failed": "No se pudieron leer más tarjetas cerradas: {reason}",
+  "board.closed.more_loaded": {
+    "one": "{count} tarjeta cerrada cargada",
+    "other": "{count} tarjetas cerradas cargadas"
+  },
   "board.closed.recheck_failed": "No se pudo comprobar si las tarjetas cerradas cambiaron mientras se leían: {reason}",
   "board.closed.show_more": {
     "one": "Mostrar {count} tarjeta cerrada más",
     "other": "Mostrar {count} tarjetas cerradas más"
+  },
+  "board.closed.show_more_loaded": {
+    "one": "Mostrar más ({count} cargada)",
+    "other": "Mostrar más ({count} cargadas)"
   },
   "board.column.other": "Otras",
   "board.column.unknown": "Estado desconocido",
@@ -507,6 +516,7 @@ window.MAITY_I18N["es"] = {
   "board.new_subtask": "Nueva subtarea",
   "board.no_match": "Ninguna tarjeta coincide con el filtro.",
   "board.not_saved": "No se guardó: {reason}",
+  "board.open.more_failed": "No se pudieron leer más tarjetas de las columnas abiertas: {reason}",
   "board.place.above": "{id} ahora está encima de {other}.",
   "board.place.below": "{id} ahora está debajo de {other}.",
   "board.place.bottom": "{id} ahora está al final.",
@@ -3011,7 +3021,6 @@ window.MAITY_I18N["es"] = {
   "nav.messages": "Mensajes",
   "nav.organisation": "Organización",
   "nav.overview": "Resumen",
-  "nav.runners": "Runners",
   "nav.runners.changed": "Los runners han cambiado.",
   "nav.settings": "Ajustes",
   "nav.ticker": "Ticker",
@@ -3734,6 +3743,7 @@ window.MAITY_I18N["es"] = {
   "project.link.actions_on": "Actions en {forge}",
   "project.link.chat": "Chat",
   "project.link.discussions": "Discusiones",
+  "project.link.docs": "Docs",
   "project.link.issues": "Issues",
   "project.link.ktw_dashboard": "Panel de Keep the Why",
   "project.link.opens": "{what} (se abre en una pestaña nueva)",
@@ -4659,7 +4669,6 @@ window.MAITY_I18N["es"] = {
   "settings.repo.title": "Repositorio",
   "settings.repo.unchanged": "No ha cambiado nada.",
   "settings.repo.url": "URL",
-  "settings.runners_link": "Los runners de este proyecto",
   "settings.saving": "Guardando…",
   "settings.see_fields": "mira los campos marcados abajo",
   "settings.signing.anyway": "Exigir la firma de todos modos",

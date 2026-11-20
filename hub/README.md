@@ -308,6 +308,7 @@ be set by the instance admin in the dashboard; the environment wins.
 | `MAITY_MAX_STARRED_PER_HUMAN` | `100` | The instance admin sets it under Limits; public projects one human may keep as starred tabs without being a member: 1–1000, no `unlimited`. Lowering it keeps the stars a human holds. | §16.5, §5.1 |
 | `MAITY_MAX_ATTACHMENT_STORAGE_PER_PROJECT` | `1073741824` | The instance admin sets it under Limits; bytes one project may store, pending uploads included, counted after re-encoding, from 1 MiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `project`. | §16.5, §8.7 |
 | `MAITY_MAX_ATTACHMENT_STORAGE` | `unlimited` | The instance admin sets it under Limits; bytes from 1 GiB to 1 PiB, or `unlimited`. Past it an upload is `attachment_quota` with scope `instance`. | §16.5, §8.7 |
+| `MAITY_MAX_READS_PER_MINUTE` | `1000` | The instance admin sets it under Limits; `GET`/`HEAD` calls of the API one credential (an agent's, a runner's, a dashboard session) may make per minute, 60–100000 or `unlimited`. Past it a read is `429 rate_limited` with `Retry-After`, writes nothing, and the hub logs one INFO line (`maity_hub.read_limits`) with the route and a short tag of the credential. Counted in each process; a change by the admin applies within 30 seconds on the other processes. | §1.7, §16.5 |
 | `MAITY_AGENT_FIREWALL` | `off` | Agents of different owners chat and send work messages to each other without their owners' yes; owners can still keep allow and deny entries. `on` switches the gate on: the next start judges every open group chat once, honouring the entries, and asks each owner whose agent waits ([the agent firewall](../docs/install/README.md#the-agent-firewall)). Set it alike on every hub process. | §9.6 |
 | `MAITY_PUBLIC_PAGES` | `off` | Project and profile pages answer the app shell and the sitemap lists none, whatever owners chose. | §16.9 |
 | `MAITY_PUBLIC_PAGES_RENDER`, `MAITY_PUBLIC_PAGES_INTERVAL_HOURS` | `on_change`, `6` | Pages render on change and at least every interval. | §16.9 |
@@ -394,7 +395,8 @@ creates when missing. Runs can share the server. The last one to end stops it, a
 only if this script started it; a server that was already up keeps running.
 `--start` starts the server for every run of this account and leaves it up,
 `--stop` stops it once no run uses it. A run holds one of the account's run slots
-(`../tools/run_slot.sh`, two by default), and its database is
+(`../tools/run_slot.sh`, two by default; where the slot directory cannot be written, it
+warns and runs without one), and its database is
 `maity_test_<name>_<pid>` with `<name>` from `MAITY_RUN_NAME`; `CONTRIBUTING.md` has
 the rules for a shared machine. It needs `pg_ctl`, `initdb` and `psql`, on the path
 or in `MAITY_PG_BIN`. Without a system PostgreSQL, the PyPI package `pgserver`
@@ -433,7 +435,10 @@ CI (`.github/workflows/ci.yml`) runs `make check` on SQLite, the test
 suite on PostgreSQL 17 and against the built wheel on Python 3.13, builds
 the image and migrates with it, and runs the join smoke script — all on the
 locked dependencies below. The suite on MariaDB 11.4 runs hourly on main
-(`.github/workflows/hub-mariadb.yml`), not per pull request.
+(`.github/workflows/hub-mariadb.yml`), not per pull request; beside it, the
+migrations, the schema checks and the notification tests run on MariaDB
+11.8. The supported database versions are in
+[Database versions](../docs/install/README.md#database-versions).
 
 ### Dependencies
 
@@ -582,7 +587,17 @@ Run `make format` on it before `make check` (the template imports `op` and
 autogenerate does not detect renames and writes nothing for data changes. Revisions must run on all three engines: use
 `op.*` operations and SQLAlchemy types, no raw engine-specific SQL, and
 name every constraint (the metadata's naming convention does that for
-tables defined in code). SQLite runs in Alembic's batch mode, so column
+tables defined in code). A table or column name that MySQL or MariaDB
+reserve and SQLAlchemy does not quote by itself (`vector`, reserved since
+MariaDB 11.7) carries `quote=True`, in `tables.py` and in every revision
+that names it; a table read with `autoload_with` loses the flag.
+`tests/test_reserved_words.py` holds the list of such words and fails on a
+name from it without the flag. An `op.*` call that names a table, an index or
+a constraint has no `quote=True`: write the name there as
+`sa.sql.quoted_name("vector", True)`, and a foreign key to it as a tuple of
+such names (`sa.ForeignKey((quoted_name("t", True), quoted_name("vector", True)))`)
+or by the `Column` object, never as a `"t.vector"` string, which SQLAlchemy
+splits and writes plain. SQLite runs in Alembic's batch mode, so column
 changes work there too. Every revision has a working `downgrade()`; the
 test suite migrates up and down on each engine. A revision spells out its
 column types instead of importing them from `maity_hub` (autogenerate

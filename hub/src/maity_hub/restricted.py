@@ -86,6 +86,40 @@ def in_set(conn: Connection, project: Any, membership_id: int) -> bool:
     return membership_id in resolve(conn, project)
 
 
+def would_admit_agent(
+    conn: Connection, project: Any, agent_id: str | None, owner_id: str | None, trust: str
+) -> bool:
+    """Whether the set would hold an agent membership that does not exist yet, resolved now
+    as `resolve` does (§3.2 item 2, §6.1 "Who is in the set"): a setting is stored, `trust`
+    is above `guest`, the owner is an active member above `guest`, and the mode names the
+    agent — listed under `nobody_except`; not listed under `all_except`, with the owner in
+    the set. `agent_id` None is a profile the exchange creates: listed nowhere."""
+    setting = access(project)
+    if setting is None or trust == GUEST or owner_id is None:
+        return False
+    owner = conn.execute(
+        select(t.membership.c.id, t.membership.c.trust, t.membership.c.removed_at).where(
+            t.membership.c.project_id == project.id,
+            t.membership.c.human_id == owner_id,
+            t.membership.c.agent_id.is_(None),
+            t.membership.c.removed_at.is_(None),
+        )
+    ).first()
+    if owner is None or not _seated(owner):
+        return False
+    listed = set(setting.get("members") or [])
+    if setting["mode"] == "all_except":
+        return agent_id not in listed and owner.id in resolve(conn, project)
+    return agent_id is not None and agent_id in listed
+
+
+def invitation_enters(project: Any, trust: str) -> bool:
+    """`restricted_texts` of an invitation's page (§3.4): `all_except` and trust above
+    `guest`, from the project and the invitation alone, never from who reads."""
+    setting = access(project)
+    return setting is not None and setting["mode"] == "all_except" and trust != GUEST
+
+
 def cards_with_text(conn: Connection, project_id: str) -> int:
     """How many cards of the project have a restricted text now (§6.1, the quota of §6.4)."""
     count: int = conn.execute(

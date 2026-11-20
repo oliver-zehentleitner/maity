@@ -60,6 +60,11 @@ REASONS: dict[str, tuple[str, ...]] = {
     "join_failed": ("failed",),
     "crash_loop": ("failed",),
     "hung": ("exited", "failed"),  # §15.14: the runner ended a run that produced nothing
+    # §15.14: the harness's own exits as far as its adapter recognises them
+    "network": ("exited",),
+    "context_full": ("exited", "failed"),
+    "auth": ("failed",),
+    "harness_config": ("failed",),
     "quota": ("rate_limited", "exited", "failed"),
     "agent_credential_revoked": ("failed",),
     "oom_killed": ("failed", "exited"),
@@ -95,6 +100,8 @@ DETAILS: dict[str, tuple[str, str]] = {
     "workspace_unrecorded": ("reason", "workspace_in_use"),
     "locked_by_process": ("reason", "workspace_in_use"),
     "not_a_plain_clone": ("reason", "workspace_in_use"),
+    "workspace_in_repository": ("reason", "workspace_in_use"),
+    "workspace_not_bare": ("reason", "workspace_in_use"),
     "stale_index_lock": ("state", "starting"),
     "sandbox_unavailable": ("state", "running"),
     "hot_loop": ("reason", "crash_loop"),
@@ -102,6 +109,7 @@ DETAILS: dict[str, tuple[str, str]] = {
     "tool": ("reason", "hung"),
     "mode_unsupported": ("reason", "harness_refused"),
     "model_unsupported": ("reason", "harness_refused"),
+    "target_unknown": ("reason", "harness_refused"),
     "reset_unknown": ("state", "rate_limited"),
 }
 RUNNING_STATES = ("starting", "running", "stopping")
@@ -250,6 +258,11 @@ def _principal(conn: Connection, membership_id: int | None) -> str | None:
     return None if membership_id is None else principal_id(conn, membership_id)
 
 
+def fresh_session(placement: Any) -> bool:
+    """Whether the current generation is a reset's (§15.6): it starts on a fresh session."""
+    return bool(placement.fresh_session_generation == placement.generation)
+
+
 def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) -> dict[str, Any]:
     """The placement as humans and agents read it (§15.5). `viewer_id` decides the
     runner owner's fields; `briefing` whether a profile still to be made shows it."""
@@ -274,6 +287,7 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         "desired": placement.desired,
         "generation": placement.generation,
         "rejoin": placement.rejoin,
+        "fresh_session": fresh_session(placement),
         "stop_grace_seconds": placement.stop_grace_seconds,
         "workspace_retention": placement.workspace_retention,
         "workspace_epoch": placement.workspace_epoch,
@@ -391,6 +405,7 @@ def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
             "repository": project.repository_url,
         },
         "rejoin": placement.rejoin,
+        "fresh_session": fresh_session(placement),
         "stop_grace_seconds": placement.stop_grace_seconds,
         "workspace_retention": placement.workspace_retention,
         "workspace_epoch": placement.workspace_epoch,
@@ -836,15 +851,26 @@ def approve(conn: Connection, placement: Any, actor: Actor | None, by: str | Non
 
 
 def restart(
-    conn: Connection, placement: Any, rejoin: bool, actor: Actor | None, by: str | None
+    conn: Connection,
+    placement: Any,
+    rejoin: bool,
+    actor: Actor | None,
+    by: str | None,
+    *,
+    fresh_session: bool = False,
 ) -> Any:
+    """A restart; `fresh_session` makes it a reset (§15.6): the new generation starts the
+    harness on a fresh session instead of resuming the last one."""
+    generation = placement.generation + 1
+    fresh = {"fresh_session_generation": generation} if fresh_session else {}
     changed = _write(
         conn,
         placement.id,
         by,
-        generation=placement.generation + 1,
+        generation=generation,
         desired="running",
         rejoin=rejoin or placement.rejoin,
+        **fresh,
         **OUTCOME_CLEARED,
     )
     announce(conn, placement.id, "placement_updated", actor)
@@ -1204,6 +1230,8 @@ def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor)
         "target": body["target"],
         "reported_at": clock.rfc3339(now),
     }
+    if body.get("sessions") is not None:
+        fields["sessions"] = body["sessions"]
     if body.get("quota") is not None:
         fields["quota"] = runner_quota(placement.runner_id, body["quota"])
     values: dict[str, Any] = {"reported_seq": body["seq"]}

@@ -25,6 +25,7 @@ from maity_hub.cross_owner import owner_of
 from maity_hub.errors import ApiError, invalid
 from maity_hub.events import Actor, emit, lock_project, on_commit
 from maity_hub.ids import new_id
+from maity_hub.plain_text import plain_line
 from maity_hub.views import member_view, principal_id, ts
 
 OWNER_KIND = "bridge_owner"  # the personal consent of the bridge's owner
@@ -583,9 +584,9 @@ def _summary(
     nothing else of the project (§2.3)."""
     return "\n\n".join(
         [
-            f"In the project {project.name} ({namespace.full_name(conn, project)}), {asker} "
-            f"asks that the agent {bridge}, owned by {bridge_owner}, lend its hands to the "
-            f"agent {served}.",
+            f"In the project {plain_line(project.name)} ({namespace.full_name(conn, project)}), "
+            f"{asker} asks that the agent {bridge}, owned by {bridge_owner}, lend its hands to "
+            f"the agent {served}.",
             # Quoted, one plain line (routes/bridges.py): what the asker wrote, never a part of
             # the request's own text.
             f"Purpose, the frame of the agreement, as the asker wrote it:\n\n> {purpose}",

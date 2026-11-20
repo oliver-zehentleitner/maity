@@ -993,6 +993,50 @@ def test_another_command_fails_once_on_an_answer_that_breaks_off(
     assert len(served.requests) == 1
 
 
+@pytest.mark.parametrize(
+    ("cut_off", "name"),
+    [
+        ("body cut, Content-Length", "IncompleteRead"),
+        ("body cut, chunked", "IncompleteRead"),
+        ("status line cut", "BadStatusLine"),
+    ],
+)
+def test_an_answer_that_breaks_off_ends_in_a_network_machine_line(
+    joined: Path,
+    raw: Any,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    cut_off: str,
+    name: str,
+) -> None:
+    """A broken-off answer is a lost connection (`hub.unreached`), so the machine line names
+    `network` as for a hub not reached, not `-` (tsk-b6083ktng3dw); the text stays."""
+    nonce = "cd" * 16
+    monkeypatch.setenv("MAITY_ERROR_LINE", nonce)
+    raw([], BROKEN[cut_off])
+    assert cli.main(["messages"]) == cli.EXIT_ERROR
+    lines = capsys.readouterr().err.splitlines()
+    assert any(f"broke off its answer ({name})" in line for line in lines[:-1])
+    assert lines[-1] == f"maity-error {nonce}: network"
+
+
+def test_a_hub_not_reached_still_ends_in_a_network_machine_line(
+    joined: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of `hub.unreached`: a refused connection keeps its text and its line."""
+    closed = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    closed.bind(("127.0.0.1", 0))
+    url = f"http://127.0.0.1:{closed.getsockname()[1]}"
+    closed.close()  # nothing listens there any more: the connect is refused
+    state.save_state(joined, {**state.load_state(joined), "hub": url})
+    nonce = "ef" * 16
+    monkeypatch.setenv("MAITY_ERROR_LINE", nonce)
+    assert cli.main(["messages"]) == cli.EXIT_ERROR
+    lines = capsys.readouterr().err.splitlines()
+    assert any(f"cannot reach {url}" in line for line in lines[:-1])
+    assert lines[-1] == f"maity-error {nonce}: network"
+
+
 @pytest.fixture
 def cut() -> Iterator[RawHub]:
     """A RawHub, on no clone, whose every answer breaks off mid-body."""
@@ -1005,6 +1049,7 @@ def test_get_text_names_an_answer_that_breaks_off(cut: RawHub) -> None:
     with pytest.raises(hub.HubError, match=r"broke off its answer \(IncompleteRead\)") as raised:
         hub.get_text(f"{cut.url}/api/v1/agents.md", timeout=5)
     assert raised.value.status is None and raised.value.code is None
+    assert hub.error_code(raised.value) == "network"  # `-` before (tsk-b6083ktng3dw)
 
 
 def test_an_exchange_names_an_answer_that_breaks_off(cut: RawHub) -> None:
@@ -1013,6 +1058,7 @@ def test_an_exchange_names_an_answer_that_breaks_off(cut: RawHub) -> None:
     with pytest.raises(hub.HubError, match=r"broke off its answer \(IncompleteRead\)") as raised:
         hub._exchange(f"{cut.url}/api/v1/join/exchange", "code", "join", 5)
     assert raised.value.status is None and raised.value.code is None
+    assert hub.error_code(raised.value) == "network"
     assert [json.loads(b) for b in cut.bodies] == [{"code": "code", "client": hub.CLIENT}]
 
 

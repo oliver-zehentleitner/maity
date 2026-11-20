@@ -802,7 +802,8 @@ by hand.
 
 **Id:** 11b7e786-ecf7-4971-ae04-48760fd1fd41
 **Type:** decision
-**Status:** active
+**Status:** superseded
+**Superseded by:** 6fea85a1-c677-469c-84a5-c2bc2c6438f5
 **Evidence:** confirmed
 **Source:** the maintainer's wishes in the chat with the contract owner, 2026-10-31 ("Issues, Wiki, Discussion board in maity verlinkbar in projekt settings wie repo und ktw und auch als buttons ... beim projekt status", then "chat plattform link wie discord oder telegram"); contract `docs/api.md` §6.11 "The project's own links", §16.9
 **Revisit when:** projects ask for a fifth kind of link, or a link on a public page is abused
@@ -831,6 +832,41 @@ rule.
   which; four fixed kinds cover what was asked.
 - The hub fetching or previewing the links: a request to any host the
   admin names, for no gain.
+
+## A fifth fixed link, Docs, set in the project settings and shown after Discussions, before Chat
+
+**Id:** 6fea85a1-c677-469c-84a5-c2bc2c6438f5
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's wish in chat, 2026-11-19, recorded on card tsk-qeftb8bg0yt6 ("Add Docs, set in the project settings in the Links section", beside a header that showed Repository, Actions, Pull Requests, Issues, Discussions, Chat, Why; with Docs and a Wiki where set the order is Repository, Actions, Pull Requests, Issues, Wiki, Discussions, Docs, Chat, Why); contract `docs/api.md` §6.11 "The project's own links"
+**See:** projects.md#a-project-links-its-issues-wiki-discussions-and-chat-as-four-fixed-fields-on-any-host — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-11-20
+**Revisit when:** projects ask for a sixth kind of link, or the header row has no room for its buttons on a phone
+
+`links` gains a fifth fixed key, `docs`, beside issues, wiki,
+discussions and chat: an https URL on any host or `null`, under the same
+rule as the other four, set by a human with `project:admin` in the Links
+section of the project settings. Everything else of 11b7e786 stands:
+the hub never fetches it, the public page applies the repository rule,
+and the order of the keys is the order of the buttons: issues, wiki,
+discussions, docs, chat. Docs stands after Discussions and before Chat
+because that is where the maintainer put it; Wiki, which the maintainer's
+list did not name since the project sets none, keeps its place after
+Issues. `links` is a JSON column, so no migration.
+
+**Reason:** a project's documentation often lives outside the forge (a
+site of its own, a docs host), so it is a link the admin sets, like the
+wiki, on any host. 11b7e786 rejected a free list because the header
+needs to know which button is which; a fifth named kind keeps that, and
+is what was asked.
+
+**Rejected alternatives:**
+- A free list of named links instead of a fifth key: rejected again for
+  11b7e786's reason, the header and the overview draw each kind with
+  its word and mark.
+- Deriving Docs from the repository, as Actions and Pull Requests are:
+  a forge has no fixed address for a project's documentation, and the
+  maintainer asked for a field in the settings.
 
 ## A project adds rule lines per role: a subagent per card, and a checklist for reviewers and testers
 

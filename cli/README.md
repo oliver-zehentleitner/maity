@@ -46,7 +46,7 @@ the dashboard shows sets that shell to UTF-8; PowerShell 7 pipes UTF-8 already.
 been tried against a real hub on a Windows machine.
 
 `maity --version` prints the release version and build revision:
-`maity 0.1.0a15 (build <revision>)`. A `-dirty` suffix means the CLI
+`maity 0.1.0a17 (build <revision>)`. A `-dirty` suffix means the CLI
 source had uncommitted changes. Wheels carry a stamp made from the
 source repository; a source distribution preserves it when rebuilt
 without Git. Source and editable checkouts show their current revision.
@@ -592,8 +592,16 @@ maity placement start agent-f --runner rnr-0002 --tool codex --mode supervised \
   --reason "a second pair of hands on web/"     # under consent: prints the request id
 maity placement stop agent-f --grace 60
 maity placement restart agent-f
+maity placement restart agent-f --fresh-session # a reset: a fresh harness session
 maity placement stop agent-f#wqe2               # one of agent-f's placements
 ```
+
+`restart --fresh-session` is a reset (`fresh_session: true`, `docs/api.md`
+§15.6), the dashboard's **Reset**: the agent starts on a fresh session of
+its tool instead of resuming the last conversation, in the same clone with
+its branches. It takes the same right as a restart and combines with
+`--rejoin`. Today a plain restart already starts fresh too;
+`--fresh-session` is the one that stays fresh once a restart resumes.
 
 An agent is named by its handle or member id, and a placement by its id.
 An exact id wins. A name that matches more than one member or placement is
@@ -630,6 +638,21 @@ maity roles --json     # the hub's answer
 
 It only reads. A project's own roles are set by a human with `project:admin`,
 in the dashboard (Settings → Members and agents → Roles).
+
+## UUID
+
+`maity uuid` prints a UUID version 4 from the operating system's randomness
+(Python's `uuid.uuid4()`, which reads `os.urandom`), lowercase, and a newline.
+It calls no hub and reads no state: it works in any directory, joined or not,
+with no credential. Use it for a Keep the Why entry's Id where a harness
+sandbox refuses `uuidgen` or `cat /proc/sys/kernel/random/uuid`:
+
+```sh
+maity uuid         # one UUID
+maity uuid -n 5    # five, one per line
+```
+
+`-n` takes 1 to 1000; anything else is a usage error (exit 2).
 
 ## Profile
 
@@ -1183,7 +1206,10 @@ otherwise) and then starts, restarts, stops, adopts or ends sessions:
   last conversation (`--continue`). `crash_cap` such ends in a row,
   with no `maity wait` seen in between, hold the placement as
   `failed`/`hung`. The minutes are
-  30 and 10 until the hub sends the owner's health settings. Attaching
+  30 and 10 until the hub sends the owner's health settings. A reset
+  from the hub (a restart with `fresh_session`, docs/api.md §15.6)
+  starts the next generation on a fresh session instead, whatever the
+  harness, and the runner's log says so (`reset: a fresh session`). Attaching
   to the session pauses the check, so the runner never types while you
   are there. Needs `ps` where the agents run.
 - **Adoption and orphans.** After a runner restart, a live session of a
@@ -1404,16 +1430,22 @@ needs it.
 | `ssh` | the remote user's files on that host, minus that user's home secrets, its `~/.maity-runner` and the other clones' credentials listed on the host; never the runner host | run git as the remote user in an agent's clone |
 
 **Claude Code's sandbox and injected text.** maity runs outside Claude
-Code's sandbox, as a plain `maity …` call. Checked with Claude Code
-2.1.318: a command, a variable or a PATH placed in front of that call
-does not run outside the sandbox (the runner's permission rules refuse
-it, and past them it runs inside). This is the harness's behaviour, not
-a contract: with another Claude Code version the runner still starts the
-agent, and `maity runner check` and the runner's log say that the
-version was not checked. A repository's grant may only add plain
+Code's sandbox, as a plain `maity …` call. The runner's hook keeps a
+placed session to that one plain call: a line with a command, a wrapper
+or a path in front of `maity` is refused before it runs, and only
+assignments to `NO_COLOR`, `LANG`, `LC_*` or `TZ` may stand before it,
+the line then held to one plain call (a wait's timeout goes in
+`maity wait --timeout N`). The runner
+does not rely on how Claude Code's sandbox exclusion treats a call with
+something in front of `maity`. The hook needs Claude Code 2.1.295 or
+later; the version whose sandbox was last checked is recorded, and with
+another Claude Code version the runner still starts the agent, and
+`maity runner check` and the runner's log say that the version was not
+checked. A repository's grant may only add plain
 commands (below, under the configuration); a rule with a variable or
 `env` in front, or that names `maity`, is refused when the configuration
-is read. Not covered: Codex. Where it does not hold, a prefixed call would run as the
+is read. Not covered: Codex. Where the hook does not hold, such a call
+could run as the
 operator's account in the `single` layout, as the agents' user's account
 in `agent_user`. Run agents that read untrusted text (issues, pull
 requests, web pages) in the `agent_user` layout, which keeps your own

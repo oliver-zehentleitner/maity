@@ -5,11 +5,16 @@ the anonymous request's limits.
 A link is a signed token (§18.6) `{h, p: password_reset, n, x, g, e}`: the human, the nonce,
 the expiry, the password generation and the address epoch it was made under. The hub keeps
 `sha256(nonce)` for single use; a forged token is refused before any lookup.
+
+The single-use rows, the human row lock and the request limits are implemented once, for
+this table and `email_sign_in` alike, in auth/single_use.py; `issue`, `use`, `void_human`,
+`void_open` and `RequestLimits` here are thin wrappers over it. This module holds what only
+the reset has: the signed token, the reading of a row by its token (`live`), the password
+generation and the wrong codes at resets.
 """
 
 from __future__ import annotations
 
-import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -18,19 +23,12 @@ from sqlalchemy import Connection, delete, func, insert, select, update
 
 from maity_hub import clock
 from maity_hub import tables as t
-from maity_hub.auth.email_links import (
-    RECIPIENT_MAILS_PER_DAY,
-    RECIPIENT_MAILS_PER_HOUR,
-    RECIPIENT_PER_DAY,
-    RECIPIENT_PER_HOUR,
-    digest,
-    lock_human,
-    recipient_over,
-)
+from maity_hub.auth import single_use
+from maity_hub.auth.single_use import digest
 from maity_hub.notifications import tokens
-from maity_hub.ratelimit import Limiter
 
 LIFETIME = timedelta(minutes=30)
+KIND = single_use.Kind(t.password_reset, LIFETIME)
 PURPOSE = "password_reset"
 # The wrong codes at resets of one human in the 24 hours before each one, across every link:
 # the fifth and every further one voids the open links and alarms (§2.10).
@@ -48,40 +46,13 @@ def issue(conn: Connection, *, human_id: str, source: str, requested_at: datetim
     """A new link for `human_id`, asked from `source`. It voids the earlier unused link asked
     from the same source, and only that one, so nobody elsewhere can void the link the human
     is about to use. None when a newer request from that source has already issued one, or
-    this request has outlived a link's life before its turn came."""
-    lock_human(conn, human_id)
-    now = clock.now()
-    newer = conn.execute(
-        select(t.password_reset.c.nonce_hash)
-        .where(
-            t.password_reset.c.human_id == human_id,
-            t.password_reset.c.source == source,
-            t.password_reset.c.created_at > requested_at,
-        )
-        .limit(1)
-    ).first()
-    if newer is not None or requested_at + LIFETIME <= now:
+    this request has outlived a link's life before its turn came (`single_use.issue`)."""
+    issued = single_use.issue(
+        conn, KIND, human_id=human_id, source=source, requested_at=requested_at
+    )
+    if issued is None:
         return None
-    conn.execute(
-        update(t.password_reset)
-        .where(
-            t.password_reset.c.human_id == human_id,
-            t.password_reset.c.source == source,
-            t.password_reset.c.used_at.is_(None),
-        )
-        .values(used_at=now)
-    )
-    nonce = secrets.token_urlsafe(32)
-    expires = requested_at + LIFETIME
-    conn.execute(
-        insert(t.password_reset).values(
-            nonce_hash=digest(nonce),
-            human_id=human_id,
-            source=source,
-            created_at=requested_at,
-            expires_at=expires,
-        )
-    )
+    nonce, expires = issued
     return Issued(nonce, expires)
 
 
@@ -128,16 +99,7 @@ def live(conn: Connection, payload: dict[str, Any]) -> Any:
 
 
 def use(conn: Connection, row: Any) -> bool:
-    done = conn.execute(
-        update(t.password_reset)
-        .where(
-            t.password_reset.c.nonce_hash == row.nonce_hash,
-            t.password_reset.c.used_at.is_(None),
-            t.password_reset.c.expires_at > clock.now(),
-        )
-        .values(used_at=clock.now())
-    )
-    return done.rowcount == 1
+    return single_use.use(conn, KIND, row)
 
 
 def wrong_code(conn: Connection, human_id: str) -> int:
@@ -163,60 +125,17 @@ def wrong_code(conn: Connection, human_id: str) -> int:
     )
 
 
-class RequestLimits:
-    """`POST /auth/password-reset`, as `POST /auth/email-link` (§2.6.4), in buckets of its own:
-    only the source limit answers `429`; over the pair limits the answer stays `202` and nothing
-    is sent, and so over the recipient's limit. Existing and unknown addresses take the same
-    path. `source` is the caller's `Origin.limit_key`."""
+PREFIX = "auth.password_resets"  # the limiters' names: keys of the shared counts, never renamed
+
+
+class RequestLimits(single_use.RequestLimits):
+    """`POST /auth/password-reset`, as `POST /auth/email-link` (§2.6.4), in buckets named under
+    `auth.password_resets`: only the source limit answers `429`; over the pair limits the
+    answer stays `202` and nothing is sent, and so over the recipient's limit
+    (auth/single_use.py)."""
 
     def __init__(self) -> None:
-        self.by_source = Limiter(10, 3600, name="auth.password_resets.by_source")
-        self.pair_quarter = Limiter(3, 900, name="auth.password_resets.pair_quarter")
-        self.pair_day = Limiter(10, 86400, name="auth.password_resets.pair_day")
-        self.recipient_hour = Limiter(
-            RECIPIENT_PER_HOUR, 3600, name="auth.password_resets.recipient_hour"
-        )
-        self.recipient_day = Limiter(
-            RECIPIENT_PER_DAY, 86400, name="auth.password_resets.recipient_day"
-        )
-        self.recipient_hour_networks = Limiter(
-            1, 3600, name="auth.password_resets.recipient_hour_networks"
-        )
-        self.recipient_day_networks = Limiter(
-            1, 86400, name="auth.password_resets.recipient_day_networks"
-        )
-        self.recipient_mails_hour = Limiter(
-            RECIPIENT_MAILS_PER_HOUR,
-            3600,
-            name="auth.password_resets.recipient_mails_hour",
-            exact=True,
-        )
-        self.recipient_mails_day = Limiter(
-            RECIPIENT_MAILS_PER_DAY,
-            86400,
-            name="auth.password_resets.recipient_mails_day",
-            exact=True,
-        )
-
-    def take(self, address: str, source: str) -> tuple[int, bool]:
-        wait = self.by_source.hit(source)
-        if wait:
-            return wait, False
-        normalised = address.strip().casefold()
-        key = digest(f"{source}\0{normalised}")
-        quarter = self.pair_quarter.hit(key)
-        day = self.pair_day.hit(key)
-        if quarter or day:
-            return 0, False
-        recipient = (
-            self.recipient_hour,
-            self.recipient_day,
-            self.recipient_hour_networks,
-            self.recipient_day_networks,
-            self.recipient_mails_hour,
-            self.recipient_mails_day,
-        )
-        return 0, not recipient_over(recipient, normalised, source)
+        super().__init__(PREFIX)
 
 
 def password_changed(conn: Connection, human_id: str) -> None:
@@ -242,17 +161,9 @@ def password_changed(conn: Connection, human_id: str) -> None:
 def void_human(conn: Connection, human_id: str) -> None:
     """Every open link of one human: a password change, the human's own switch turned off, a
     change or removal of the address, or the fifth wrong code at resets in a day."""
-    conn.execute(
-        update(t.password_reset)
-        .where(t.password_reset.c.human_id == human_id, t.password_reset.c.used_at.is_(None))
-        .values(used_at=clock.now())
-    )
+    single_use.void_human(conn, KIND, human_id)
 
 
 def void_open(conn: Connection) -> None:
     """Every open link of the instance, when its switch turns the reset off."""
-    conn.execute(
-        update(t.password_reset)
-        .where(t.password_reset.c.used_at.is_(None))
-        .values(used_at=clock.now())
-    )
+    single_use.void_open(conn, KIND)

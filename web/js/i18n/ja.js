@@ -436,9 +436,16 @@ window.MAITY_I18N["ja"] = {
   "board.claim.unclaimed": "担当なし",
   "board.closed.failed": "クローズ済みのカードを読み込めませんでした: {reason}",
   "board.closed.loading": "クローズ済みのカードを読み込んでいます…",
+  "board.closed.more_failed": "クローズ済みのカードをさらに読み込めませんでした: {reason}",
+  "board.closed.more_loaded": {
+    "other": "クローズ済みのカードを {count} 件読み込みました"
+  },
   "board.closed.recheck_failed": "読み込み中にクローズ済みのカードが変更されたかどうかを確認できませんでした: {reason}",
   "board.closed.show_more": {
     "other": "クローズ済みのカードをさらに {count} 件表示"
+  },
+  "board.closed.show_more_loaded": {
+    "other": "さらに表示（{count} 件読み込み済み）"
   },
   "board.column.other": "その他",
   "board.column.unknown": "不明なステータス",
@@ -486,6 +493,7 @@ window.MAITY_I18N["ja"] = {
   "board.new_subtask": "新しいサブタスク",
   "board.no_match": "フィルターに一致するカードはありません。",
   "board.not_saved": "保存されませんでした: {reason}",
+  "board.open.more_failed": "未クローズの列の残りのカードを読み込めませんでした: {reason}",
   "board.place.above": "{id} は {other} の上になりました。",
   "board.place.below": "{id} は {other} の下になりました。",
   "board.place.bottom": "{id} は一番下になりました。",
@@ -2944,7 +2952,6 @@ window.MAITY_I18N["ja"] = {
   "nav.messages": "メッセージ",
   "nav.organisation": "組織",
   "nav.overview": "概要",
-  "nav.runners": "ランナー",
   "nav.runners.changed": "ランナーが変更されました。",
   "nav.settings": "設定",
   "nav.ticker": "ティッカー",
@@ -3641,6 +3648,7 @@ window.MAITY_I18N["ja"] = {
   "project.link.actions_on": "{forge} 上の Actions",
   "project.link.chat": "チャット",
   "project.link.discussions": "ディスカッション",
+  "project.link.docs": "ドキュメント",
   "project.link.issues": "イシュー",
   "project.link.ktw_dashboard": "Keep the Why のダッシュボード",
   "project.link.opens": "{what} (新しいタブで開きます)",
@@ -4553,7 +4561,6 @@ window.MAITY_I18N["ja"] = {
   "settings.repo.title": "リポジトリ",
   "settings.repo.unchanged": "変更はありません。",
   "settings.repo.url": "URL",
-  "settings.runners_link": "このプロジェクトのランナー",
   "settings.saving": "保存しています…",
   "settings.see_fields": "下でマークされた欄を確認してください",
   "settings.signing.anyway": "それでも署名を必須にする",

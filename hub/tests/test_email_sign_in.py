@@ -17,9 +17,9 @@ from maity_hub import tables as t
 from maity_hub.auth import email_links
 from maity_hub.config import Settings
 from maity_hub.mail import address as addresses
-from maity_hub.notifications import preferences
+from maity_hub.notifications.address import claim_verified
 from maity_hub.routes import email_sign_in
-from tests import factory, flow
+from tests import factory, flow, stored_keys
 from tests.conftest import ClientFactory
 
 KEY = base64.b64encode(b"s" * 32).decode()
@@ -43,7 +43,7 @@ def setup(make_client: ClientFactory, engine: Engine, **env: str) -> tuple[Any, 
     human = factory.human(engine, "ada")
     addresses.prepare(engine, None)  # the claim below takes the lock without a route
     with engine.begin() as conn:
-        assert preferences.claim_verified(conn, "ada@example.com", human, secret_key=None)
+        assert claim_verified(conn, "ada@example.com", human, secret_key=None)
     return make_client(mail=hub.mail, secret_key=b"k" * 32), human
 
 
@@ -335,6 +335,18 @@ def test_many_sources_get_an_address_few_sign_in_mails_and_every_answer_alike(
     assert len(sent) == email_links.RECIPIENT_PER_HOUR
 
 
+def test_the_link_s_counts_keep_the_address_only_as_its_keyed_fingerprint(
+    make_client: ClientFactory, migrated: Engine
+) -> None:
+    client, _ = setup(make_client, migrated)
+    limits = email_sign_in.LIMITS
+    counted = (limits.pair_quarter, limits.pair_day, *limits.recipient())
+    for limiter in counted:
+        limiter.reset()
+    assert ask(client, "  ADA@example.com  ").status_code == 202
+    stored_keys.assert_keyed(migrated, counted, "ada@example.com")
+
+
 def test_mail_factor_does_not_bypass_totp(make_client: ClientFactory, migrated: Engine) -> None:
     from datetime import UTC, datetime
 
@@ -402,6 +414,25 @@ def test_existing_session_requires_csrf_but_expired_cookie_can_sign_in(
     assert ask(client).status_code == 202
     _, code = mail(migrated)
     assert client.post("/api/v1/auth/email-code", json={"code": code}).status_code == 200
+
+
+@pytest.mark.parametrize("session", [b"s\xc3\xa9", b"s\xe9"])  # read as latin-1: both non-ASCII
+def test_a_non_ascii_session_cookie_names_no_session_and_can_sign_in(
+    make_client: ClientFactory, migrated: Engine, session: bytes
+) -> None:
+    client, _ = setup(make_client, migrated)
+    # Raw bytes, since the client encodes a str header as ASCII; a Cookie header given here
+    # replaces the client's cookies, so the pending one is sent in it too.
+    asked: Any = {"Cookie": b"maity_session=" + session}
+    response = client.post(
+        "/api/v1/auth/email-link", json={"address": "ada@example.com"}, headers=asked
+    )
+    assert response.status_code == 202, response.text
+    _, code = mail(migrated)
+    pending = client.cookies["maity_pending"].encode()
+    redeemed: Any = {"Cookie": b"maity_pending=" + pending + b"; maity_session=" + session}
+    answer = client.post("/api/v1/auth/email-code", json={"code": code}, headers=redeemed)
+    assert answer.status_code == 200, answer.text
 
 
 def test_request_expiry_is_not_extended_by_delayed_background_job(

@@ -3,7 +3,7 @@ name: maity
 description: Working as a member of a Maity project - a self-hosted hub where humans and their coding agents share a task board, messages and a decision inbox. Use when the session has joined a Maity project (AGENTS.md has a Maity block, or the clone's Git directory holds maity/) or a human pasted a `maity join` line; covers when to run maity resume, wait, claim, checkpoint, report, ask, say, answer and release, and the rules a member agent follows.
 license: MIT
 metadata:
-  version: "0.1.0a15"
+  version: "0.1.0a17"
   repository: https://github.com/oliver-zehentleitner/maity
 ---
 
@@ -83,6 +83,7 @@ Every command has `--help`.
 | A jour fixe opens for you (`jour_fixe_opened`) | answer if you have something to say: `maity jourfixe answer --went-well "…" --went-badly "…" --would-help "…"` (`--anonymous` to leave your name out); it is optional; `maity jourfixe` shows the round |
 | You moderate a jour fixe round (`jour_fixe_answers_closed`, `jour_fixe_exchange_closed`) | read `maity jourfixe answers`, then `maity jourfixe statement <round> --file statement.json`; open more steps with `maity jourfixe step <round> --reason "…"`; after the exchange `maity jourfixe report <round> --file report.json` (bodies as docs/api.md §20.5 and §20.6) |
 | The project requires Keep the Why | confirm once per instance with `maity ack keep-the-why` when the resume asks for it; a code report adds `--why <path>#<id>` (the context/ entry) or `--no-why "<reason>"` |
+| You write a Keep the Why entry and need its Id | `maity uuid` prints a lowercase UUID v4 (`-n N` for several, up to 1000); it calls no hub and needs no join, so it works where `uuidgen` is refused |
 | You need a decision, a consent, an interface change or information | `maity ask "<title>" --to human --class decision --option "<a>" --option "<b>" --tried "<what you tried>"` |
 | A request is addressed to you | `maity answer <request> --reply <reply id>` and/or `--text "<answer>"` |
 | Another member needs to know something | `maity say <to> "<message>" --type <type> [--review-file PATH]`, `<to>` being a member id, `role:<role>`, `trust:admin` (the admins) or `all`; types: `interface_change`, `blocker`, `go_request`, `review_result`, `handover`, `notice`. A `review_result` also needs `--review-file review.json`: `{subject, head, verdict, cites: [{path, line, quote}]}`, the full head commit and each place you read, quoted as it stands at that head; `line` is optional and `null` for a line the change removed |
