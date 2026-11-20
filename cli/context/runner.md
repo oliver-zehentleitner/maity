@@ -4790,11 +4790,12 @@ its password only where `<scratch>/pg/.s.PGSQL.<port>` fits a Unix socket
 path (`adapters.pg_dir`, room for a five-digit port), as `TMPDIR` does (the
 entry under See). Otherwise the runner logs that it left them out. A
 Claude Code placement gets no test cluster yet (`adapters.gets_test_cluster`):
-its sandbox refuses `socket(AF_UNIX)` even inside the placement's own
-scratch, so the runner draws no password file for it and starts it without
-`pgenv`. Its test slots work as everywhere. A cluster over TCP on
-127.0.0.1 for these placements is tsk-zk2cse7s2rf7. Codex keeps the
-cluster, though no Codex session has started one yet. No path
+on Linux its sandbox refuses `socket(AF_UNIX)` with EPERM (seccomp, before
+any path is checked), even inside the placement's own scratch, so the
+runner draws no password file for it and starts it without `pgenv`. macOS
+is untested and treated the same. Its test slots work as everywhere. A
+cluster over TCP on 127.0.0.1 for these placements is tsk-zk2cse7s2rf7.
+Codex keeps the cluster, though no Codex session has started one yet. No path
 is opened in any sandbox beyond the scratch, which the sandbox already
 writes and which goes when the placement closes. Within a placement,
 `with_postgres.sh` keeps reusing its own cluster across runs.
@@ -4872,10 +4873,9 @@ a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
 - A non-superuser cluster role: the hub's own tests run as a superuser
   (`hub/tests/test_db_role.py`).
 - Claude Code's `allowAllUnixSockets`, so its sessions could bind the
-  cluster's socket: the lead ruled it out and chose a cluster over TCP
-  (tsk-zk2cse7s2rf7) instead. The ruling gave no reason. That the setting
-  opens every Unix socket the session's user can reach, not only the own
-  cluster's, is inferred from its name, not recorded.
+  cluster's socket: on Linux it turns the sandbox's whole seccomp filter
+  off, not only the socket rule (red team's probe). A cluster over TCP on
+  127.0.0.1, which the sandbox allows, comes in tsk-zk2cse7s2rf7 instead.
 
 ## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
 

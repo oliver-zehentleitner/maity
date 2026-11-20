@@ -8,7 +8,7 @@
   `~/.local/state` were outside the sandbox. The slots are per placement. Bounding heavy runs
   across placements is tsk-w7dx3h9mn8dp (tsk-w7qtcbzcshn9).
 - runner: the test cluster is not available in Claude Code placements yet. Their sandbox
-  refuses Unix sockets, so the runner draws no password for them. Their test slots work. A
+  refuses Unix sockets on Linux (macOS untested), so the runner draws no password for them. Their test slots work. A
   cluster over TCP for them is tsk-zk2cse7s2rf7. Codex placements get the cluster, though no
   Codex session has started one yet.
 - hub: `scripts/with_postgres.sh` makes its cluster with `scram-sha-256` when
