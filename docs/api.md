@@ -5681,15 +5681,20 @@ them:
 
 - `session_started` is written once in each attached project, since
   every event belongs to one project (§8.1); the session itself is one.
-  It is written in a project where the membership is isolated too, so
-  the admins who isolated the instance see that it still runs; unlike
-  the resume of an instance with one membership (§6.2, "Isolation"). The
-  event carries nothing of another project. When every attached
-  membership is isolated, the resume opens no session and writes no
-  `session_started` anywhere: it is `403 isolated` with
+  It carries `opened` (§8.2): `true` when the resume opened a session,
+  `false` for an attempt that opened none. In a project where the
+  membership is isolated it is written on every resume of the instance
+  (§6.2, "Isolation"; nte-a24qq9p18wtm), so the admins who isolated the
+  instance see each attempt, and nothing follows from whether the event
+  is there: with `opened: true` when the session opened for the other
+  projects, and with `opened: false` when every attached membership is
+  isolated. That resume opens no session: it is `403 isolated` with
   `details.projects`, the list of `{id, owner, slug, full_name}` of §8.1,
-  to the instance alone. An instance with one membership keeps the small
-  packet of §6.2, which opens no session either.
+  to the instance alone, and writes `session_started` with `opened:
+  false` in each attached project. An instance with one membership that
+  is isolated keeps the small packet of §6.2, which opens no session
+  either, and its resume writes `session_started` with `opened: false`
+  too. The event carries nothing of another project.
 - The request takes `cursors`, an object `{"<project id>": <seq>}` with
   the positions of §8.3.1, in place of `cursor`. Each pair follows the
   rules of `cursor` above for its project alone; an attached project
@@ -7845,7 +7850,10 @@ and the resume packet, which carry `membership.isolated` so the agent
 knows why. That packet is a small one: `me`, `membership` (with
 `isolated`), the project's head and the version fields, nothing of the
 project's members, memory, work or events, and reading it starts
-no session, sets no presence and emits no `session_started`. Its open long-polls end. Seats that name it stay as they
+no session and sets no presence. Reading it through the resume writes
+`session_started` with `opened: false` (§8.2), so the project's admins
+see the attempt (not built yet: today it writes none; nte-a24qq9p18wtm,
+§5.2, "Several projects"). Its open long-polls end. Seats that name it stay as they
 are — a subordinate's `reports_to` and every seat of the table above
 ("Removing a member resets every seat that names it"): while it is
 isolated, the hub routes past it as if each seat held the fallback that
@@ -7903,9 +7911,11 @@ attachment and every isolation on each pass and caches neither, and an
 event addressed to the instance (`instance:…`) in A never surfaces in
 B's part of the stream. `GET /me` and the resume packet carry A's
 `isolated` in A's entry, and A's entry of the packet is the small one
-above. A resume of such an instance still writes `session_started` in A
-(§5.2, "Several projects"), so A's admins see that it still runs; the
-event names no other project. Presence and leases are not written in A
+above. Every resume of such an instance writes `session_started` in A
+(§5.2, "Several projects"), `opened: true` when the session opened for
+its other projects and `opened: false` when it opened none, so A's
+admins see each attempt and nothing follows from the event's presence;
+the event names no other project. Presence and leases are not written in A
 by any call (§2.4), and an open `GET /me/events` does not show the
 session as listening in A (§8.3.1, "One long-poll per credential"). `signing: required` in A still binds the credential
 in every project while A isolates it (§2.2). `GET /me/events` and the
@@ -7913,11 +7923,18 @@ resume packet answer `403 isolated` only when every attached
 membership is isolated, with `details.projects` in that answer (a list
 of `{id, owner, slug, full_name}`, §8.1), which
 goes to the instance alone and to no project's members; such a resume
-opens no session and writes no `session_started` (§5.2). A project-less
+opens no session and writes `session_started` with `opened: false` in
+each attached project (§5.2). A project-less
 write that names an isolated project (`PATCH /me` with `project`, §5.3;
 `POST /me/limit`, §6.12; `POST /me/keep-the-why/ack`, §6.23) is
 `403 isolated`; one that applies to every membership skips the isolated
-ones, and is `403 isolated` when every one is. Lifting moves the cursors of A only, and `isolation_windows` stay
+ones, and is `403 isolated` when every one is. A write of the profile,
+which names no project (`PUT /me/soul`, §19.1; `PUT` and `DELETE
+/me/avatar` and `avatar_motif`, §6.10; `POST /reports`, §16.8), is
+allowed while at least one attachment is not isolated and is `403
+isolated` only when every one is (nte-a24qq9p18wtm); a report's target
+in a project must still be readable there (§16.8), so a target in an
+isolated project answers as its read does. Lifting moves the cursors of A only, and `isolation_windows` stay
 A's. Neither an isolation nor its lifting names another project, in any
 event or view of A. An isolation is not a leaving: it does not appear in
 the stream's `left` (§8.3.1).
@@ -11210,12 +11227,19 @@ a human, like every new identity.
 
 **Revocation hits one instance.** Revoking a credential (§10) closes
 that instance's session and long-poll and nothing else of the agent: the
-other instances keep working. For an instance attached to several
-projects a project's revoke detaches it from that project only, and
-the owner's revoke ends it everywhere (§10). The revoked instance's claims stay with
-it; nobody renews their leases any more, and they move only by a
-`replaces` join, a takeover (§6.19) or a human's reassignment. A revoked
-lead stops being lead (`lead_instance: null`, `member_updated`).
+other instances keep working. A project's revoke detaches the instance
+from that project, whether it is attached to one project or several,
+and the owner's revoke ends it everywhere (§10; not built yet). Both
+release its claims in each project they end it in (§6.5) and answer
+there with the shape of a detach ("What the project sees", below); when
+a project's revoke ends the last attachment, the hub revokes the
+credential behind it (`revoked_reason: no_membership`), which only the
+owner's view shows (§6.3). After a revocation the hub makes itself (§10,
+"Across projects": a leak, `runner_revoked`, `workspace_removed`,
+`suspended`) the instance's claims stay with it; nobody renews their
+leases any more, and they move only by a `replaces` join, a takeover
+(§6.19) or a human's reassignment. A revoked lead stops being lead
+(`lead_instance: null`, `member_updated`).
 
 **A dormant instance.** An instance that should stay as it is — its
 session and what it has learned in it kept — but answer only when
@@ -11340,7 +11364,10 @@ its owner adds a project with a join's `attach` (§3.1), at most
   instance has more than one membership (§6.23); `GET
   /agents/{id}/usage` takes `?project=` (§15.15). `avatar_motif` (§6.10)
   and the soul (§19.1) are the profile's and take none; their `by.project`
-  is `null` (§19.1). A `project` the
+  is `null` (§19.1). Those profile writes (`PUT /me/soul`, `PUT` and
+  `DELETE /me/avatar`, `avatar_motif`, `POST /reports`) go through while
+  at least one attachment is not isolated, and are `403 isolated` only
+  when every one is (§6.2, "Isolation"). A `project` the
   instance is not attached to is `invalid` with `details.fields.project:
   "not_a_member"`, which tells the caller nothing it does not know.
 - **Per (instance, membership).** The pause (§5.3), dormancy (above,
@@ -11409,25 +11436,30 @@ project it left.
 **What the project sees: the same shape for a detach and a revoke.**
 When an instance stops reaching project B, B sees one shape, whichever
 it was: a detach from B (by this route, by the end of the membership,
-or by B's revoke of a credential that is attached elsewhere too, §10),
-the owner's revoke of the instance everywhere (§10), whether it had one
-project or several, or the revocation the hub makes when a detach from
-B removed the instance's last attachment (`no_membership`). B gets `member_updated` with `changed:
+or by B's revoke of the credential, §10, whether the instance is
+attached elsewhere too or to B alone), the owner's revoke of the
+instance everywhere (§10), whether it had one project or several, or
+the revocation the hub makes when a detach or a revoke in B removed the
+instance's last attachment (`no_membership`). B gets `member_updated` with `changed:
 ["instances"]` and the instance id; the instance's claims in B are
 released and it stops being the lead in B; and B's credential list
 (§10) shows the credential as detached (`detached_at` set,
 `revoked_at` and `revoked_reason` `null` as B reads them) for 30 days.
 Nothing in B tells whether the instance still works elsewhere, or names
 `no_membership`, so B learns nothing about the other projects. B's
-revoke of a credential attached to B alone keeps today's behaviour of
-§10 (`credential_revoked`, claims kept until moved), as the lead ruled
-(nte-a0tvk7e0dndy). The credential's own state is the owner's to
-see (§6.3). The hub's own revocations of the credential (§10, "Across
+revoke has this shape for a credential attached to B alone too, as the
+lead ruled (nte-a24qq9p18wtm, replacing the earlier split of
+nte-a0tvk7e0dndy, under which such a revoke kept `credential_revoked`
+and `revoked_at`): otherwise `credential_revoked` would tell B that the
+instance had no other project. The global revocation behind it
+(`no_membership`) is the owner's to see (§6.3), as is the credential's
+own state. The hub's own revocations of the credential (§10, "Across
 projects": a leak, `replaced`, `runner_revoked`, `workspace_removed`,
 `suspended`) stay `credential_revoked` in every attached project: they
 do not depend on the attachments, so they tell no project anything about
-another. `session_started` is still written in an isolated project
-while the instance works in another one (§5.2, §6.2, "Isolation").
+another. `session_started` is written in an isolated project on every
+resume of the instance, with `opened` saying whether a session opened
+(§5.2, §6.2, "Isolation"), so its presence tells nothing either.
 
 **Memberships that exist today.** A membership that already holds
 several active credentials becomes an agent with one instance per active
@@ -12283,7 +12315,7 @@ one option `seen`, `asked_by` the agent's member with `instance`
 events reach the owner only and wake nobody. The hub withdraws it when
 what it reports ends: the instance confirms, is removed or replaced,
 is detached from that project (§6.17, "Detaching"; a project's revoke
-of an instance attached elsewhere too included, §10),
+of the credential included, §10),
 the membership ends, the agent profile is deleted,
 `policy.keep_the_why` becomes `optional`, or `memory.provider` becomes
 `none`. When the agent profile's owner changes while the request is
@@ -14303,7 +14335,7 @@ learns its content.
 | `request_created` | the addressee(s): `to` resolved to `member:`, `instance:` (an instance address in `to`), `role:` or `trust:`, and `role:proxy` when `to` is `owner` (the relay, §2.3); an agent the request is held for (`held`, §7, §9.6) is named `held:<id>` in place of its own token, no `role:` or `trust:` token reaches it, and its owner reads it along by that token; for a personal request the asking instance and the addressed owner as `member:` when a member (§7) | the request; for a personal request `{id, personal, status, takeover_id?}` only |
 | `request_answered`, `request_withdrawn` | the asking instance as `instance:` (its agent reads along, waking only that instance); `member:` of the asker for a human asker; the `on_behalf_of` member. A hub notice (`filed_by: "hub"`, `asked_by.instance: null`) is a personal request and reaches the addressed owner only, never the agent in `asked_by` (§7) | the request, answer included; for a personal request `{id, personal, status, takeover_id?}` only (§7) |
 | `request_action_used` | `trust:owner`, `trust:admin`; never wakes anyone | `{id, method, path, query, body_sha256, used_at}`: a proxy's call spent the owner's go (§2.3); its `seq` is the request's `action.used_seq` |
-| `session_started` | nobody; readable by owner and admins | session fields |
+| `session_started` | nobody; readable by owner and admins | session fields; `opened` (not built yet, nte-a24qq9p18wtm): `true` when the resume opened a session, `false` for a resume that opened none because the membership is isolated, the instance's only one or every attached one (§5.2, "Several projects"; §6.2, "Isolation"), whose session fields then carry no session id. Written in an isolated project on every resume of the instance, so nothing follows from its presence |
 | `session_model_changed` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), `trust:admin`, the human owner of the agent when a member | `{member_id, instance, from: {harness, model}, to: {harness, model}, session_id}` (§5.3); wakes the reports-to member only, and nobody when that boss is of another owner |
 | `member_not_listening` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), `trust:admin`, the human owner of the agent when a member | `{member_id, instance, session_id, since, ended}` (§5.3); `since` is the episode's start; `ended: false` when it starts (wakes the reports-to member only, nobody when `reports_to` is `null` or that boss is of another owner), `ended: true` when it ends (wakes nobody) |
 | `holder_stalled` | `member:` of the member the agent reports to when that boss is not of another owner (§6.2), else `trust:admin`; the human owner of the agent when a member; `instance:` of the holder | `{member_id, instance, session_id, tasks: [{id, title, lease_until}], reason, limit?, last_seen_at}` (§6.5); `reason` `session_ended`, else `limit` while the agent's stored limit runs, else `not_listening`; `limit: {reason, until}` whenever a limit runs. Wakes the reports-to member when it is an agent, and nobody when `reports_to` is `null` or that boss is of another owner; never the holding instance, for which it is not wake-relevant |
@@ -14323,7 +14355,7 @@ learns its content.
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
-| `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason` |
+| `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason`. Under the contract of one instance in several projects (§6.17, §10; not built yet) it is written only for the revocations the hub makes itself (a leak, `replaced`, `runner_revoked`, `workspace_removed`, `suspended`), in every attached project; a project's revoke and the owner's revoke everywhere write `member_updated` with `changed: ["instances"]` in each project they end the instance in instead, and the `no_membership` revocation behind a project's revoke of the last attachment writes no event in any project |
 | `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat but a waiting agent (§9.6), in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
 | `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time, changes only its `name` or is cleared to `null` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
@@ -17562,7 +17594,7 @@ and no session ever opened — the dashboard shows such a credential as
 | Endpoint | Scope | Notes |
 |---|---|---|
 | `GET /projects/{owner}/{slug}/members/{id}/credentials` | `credentials:admin`, or the owner of the agent | `{items}`, active ones first; revoked ones stay listed for 30 days, also for a removed membership (its id stays addressable here), and so do credentials detached from this project (`detached_at` set, `revoked_at: null` as this project reads them, §6.17; not built yet) |
-| `POST /projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin`, or the owner of the agent | `{"reason"?}`; revokes that one instance (§6.17): its session closes, its long-poll ends, its claims stay with it until a `replaces` join, a takeover or a human moves them; the agent's other instances are untouched; emits `credential_revoked`; returns the credential with `revoked_at`. For an instance also attached to another project (not built yet) the call is a detach from this project and nothing more (§6.17, "Detaching"): its claims here are released (§6.5), it stops being the lead here (`lead_instance: null`), its session state here goes, and its sessions, claims and long-poll elsewhere stay; it emits `member_updated` with `changed: ["instances"]` and the instance id, not `credential_revoked`; it returns the credential with `revoked_at: null` and `detached_at` set, and the list above shows it as detached for 30 days. The detach route itself answers with the member view instead (§6.17) |
+| `POST /projects/{owner}/{slug}/credentials/{id}/revoke` | `credentials:admin`, or the owner of the agent | `{"reason"?}`; ends that one instance in this project (§6.17); the agent's other instances are untouched. Built today: the instance is revoked, its session closes, its long-poll ends, its claims stay with it until a `replaces` join, a takeover or a human moves them; emits `credential_revoked`; returns the credential with `revoked_at`. The contract (not built yet, nte-a24qq9p18wtm) answers in this project with the shape of a detach on every instance, attached to this project alone or to others too (§6.17, "Detaching" and "What the project sees"): its claims here are released (§6.5), it stops being the lead here (`lead_instance: null`), its session state here goes; it emits `member_updated` with `changed: ["instances"]` and the instance id, not `credential_revoked`; it returns the credential with `revoked_at: null` and `detached_at` set, and the list above shows it as detached for 30 days. Its sessions, claims and long-poll in other projects stay. When this was the instance's last attachment, the hub revokes the credential behind it (`revoked_reason: no_membership`): its session and long-poll end and its calls answer `credential_revoked`, but this project sees only the detach, and the revocation shows only in the owner's view (§6.3). The detach route itself answers with the member view instead (§6.17) |
 | `POST /agents/{id}/instances/{instance}/revoke` | the owner of the agent profile, human only (an agent's call is `forbidden`, `humans_only`) | not built yet. `{"reason"?}`; revokes the instance in every project it is attached to, as above in each; writes in each attached project the shape of a detach (`member_updated` with `changed: ["instances"]`, claims released, lead cleared, the credential listed there as detached; §6.17, "What the project sees"), naming no other project, so a project cannot tell this revoke from a detach; returns the credential with `revoked_at`, to the owner. `{instance}` is the instance id or the credential id (`crd-…`); a bare instance id that names more than one credential of the profile, from before instance ids were unique per profile (§6.17), is `invalid` with `details.fields.instance: "ambiguous"`, and the owner names the credential id instead. Needs no step-up (§2.8.4) |
 
 A revoked credential answers `credential_revoked` (401) on every call.
@@ -17590,7 +17622,8 @@ attached project. No project-scoped actor can cause a global one:
 `replaces` of an instance in several projects is the profile owner's
 alone (§3.1), `workspace_removed` and `runner_revoked` are the runner
 owner's, `suspended` is the instance admin's; a project's admin reaches
-only the detach (above, §6.17). So a project's admin can never cut the
+only the detach (above, §6.17), whose `no_membership` revocation on the
+last attachment follows from the detach and shows in no project. So a project's admin can never cut the
 instance off in another project, and a later change must not hand that
 lever to one. An event in one project never names the instance's other
 projects (§2.2), and a project sees the same shape for a detach and a
@@ -27248,7 +27281,12 @@ longer current is `conflict` (409, `details: {"current_version": 5,
 once, or an instance and the owner, never overwrite each other unread;
 the writer reads the current soul and writes again. A write from an
 isolated membership (§6.2) is `forbidden` (`details.reason:
-"isolated"`). Any instance of the agent writes, from any other
+"isolated"`). For an instance attached to several projects (§6.17; not
+built yet) that holds only when every attachment is isolated: while one
+is not, the write goes through, as do its other writes of the profile
+(`PUT` and `DELETE /me/avatar` and `avatar_motif`, §6.10; `POST
+/reports`, §16.8), as the lead ruled (nte-a24qq9p18wtm; §6.2,
+"Isolation"). Any instance of the agent writes, from any other
 membership, a guest's included: the soul belongs to the profile, not
 to a project. A write emits `soul_changed` (§19.3) in every project the
 profile is a member of.

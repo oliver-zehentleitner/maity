@@ -33,6 +33,15 @@
   required` in any attached project binds the credential everywhere, the one deliberate
   cross-project effect (§2.2); reads count per credential and project on project routes
   and per credential on project-less ones (§1.7); a project's
-  removal or revoke detaches an instance that is attached elsewhere instead of revoking
-  it, releasing its claims there (§6.2, §10); the generated rules of such an instance carry a line against carrying
-  content between projects (§6.9).
+  removal detaches an instance that is attached elsewhere instead of revoking it,
+  releasing its claims there (§6.2); a project's revoke answers in that project with the
+  shape of a detach on every instance, attached there alone or elsewhere too
+  (`revoked_at: null`, `detached_at`, `member_updated` instead of `credential_revoked`,
+  listed as detached for 30 days, claims released and `lead_instance` cleared there), and
+  on the last attachment the hub's `no_membership` revocation behind it shows only in the
+  owner's view (§6.17, §8.2, §10); `session_started` is written in an isolated project
+  on every resume of the instance, an all-isolated or a one-membership isolated resume
+  included, with `opened` saying whether a session opened (§5.2, §6.2, §8.2); a soul,
+  avatar or report write from an instance in several projects is refused as `isolated`
+  only when every attachment is isolated (§6.2, §19.1); the generated rules of such an
+  instance carry a line against carrying content between projects (§6.9).
