@@ -88,6 +88,7 @@ def test_a_human_sees_every_membership_with_its_open_requests(
         "experiment_notice_understood_at": None,  # not confirmed yet (§5.1)
         "limit": None,  # no limit declared (§6.12)
         "start_tabs": None,  # §5.1: every membership opens as a tab
+        "starred": [],  # §5.1 "Stars": no public project kept without a membership
     }
     assert body["projects"] == [
         {

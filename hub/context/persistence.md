@@ -204,6 +204,32 @@ table, `membership_area`, `request_option`. It would let the database
 filter audiences and areas, at the cost of a join on every read and a
 multi-row write for every event, for a volume where the scan is cheap.
 
+**2026-11-18, a human's stars (card tsk-kqn8zhptf06k, §5.1 "Stars"):** `human.starred` is
+one nullable JSON list of project ids in the order starred, as `human.start_tabs` is: the
+hub reads and writes it whole (`PATCH /me` sends the whole list) and no server query asks
+"who starred this project" — stars are private, with no count, event or notice. A star
+whose project is not public now stays in the list, hidden: `stars.visible` leaves it out
+of `GET /me` and the export, and `stars.checked` puts it back into every `PATCH` after the
+visible entry it followed; when the body drops that entry, after the nearest earlier
+visible entry the body keeps, first when it keeps none (a gap of the contract, filled in
+§5.1). `/me` is polled every 60 s per tab, so whether the stars are public is asked for
+all of them at once (`public_projects.served_among`, at most five statements, the same
+rule as `served`), never per project; `test_stars.py` counts the statements for two stars
+and for six. The points the contract left open, as the lead ruled them: an id that names
+no project is `not_public`, so the answer does not say whether a private one exists; a
+member is an active membership as `access` reads it, so a removed member may star the
+project again; the hub deletes no project, so a project gone is only filtered out on the
+read; and fail closed (the lead, 2026-11-18): with `MAITY_PUBLIC_PAGES` off nothing is
+public for an outsider, so `public_projects.public_for_outsiders` answers none, a star is
+`not_public` and a stored one is hidden, the rule the outsider read will share. A
+membership drops its star where it is made (`invitations.admit`, which every
+accepted invitation goes through, and `org_projects.keep_owner`); a project's creation
+needs no hook, since a new project cannot
+be starred yet. The export leaves hidden entries out: its full name is the current one,
+and it would name a project that is private now. Rejected: a `star` table (human,
+project, position) — it would let the database count and filter stars, which no server
+query needs, at the cost of a multi-row rewrite on every `PATCH` and a join on every poll.
+
 ## Timestamps: aware UTC in Python, naive UTC with microseconds in the database
 
 **Id:** f6041871-9416-4565-b3dc-c5af45c4528b
