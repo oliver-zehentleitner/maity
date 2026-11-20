@@ -1,6 +1,7 @@
 ### Fixed
 
 - cli: the runner's hook for a placed Claude Code session reads command
-  substitutions, and expansions glued to a name, when it decides where
-  `maity` stands on a line, so such a line is refused as its docstring and
+  substitutions, and an expansion glued right after `maity`, when it
+  decides where `maity` stands on a line, so a line that may leave the
+  sandbox runs only as one plain call, as its docstring and
   docs/runners.md describe.

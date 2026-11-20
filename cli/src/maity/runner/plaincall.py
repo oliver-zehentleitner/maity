@@ -11,10 +11,10 @@ it; the line itself is still judged whole, so such a line is refused. Any other 
 which `maity` is a word (`prefixed`) is
 refused outright: an assignment to another name, a command word, a keyword, `!`, a redirection,
 a subshell or a group before it, or `maity` by a path, and so is a line with `maity` in a
-command substitution, where the shell reads it as a line of its own, that names `maity`
-once its command substitutions and positional parameters are taken out, as output that is
-empty leaves it, or with a word that substitutions may join into `maity`
-(`_in_substitution`). A word counts as `maity`
+command substitution, whose text the shell reads as a line of its own (`_in_substitution`).
+On a line that names `maity`, substitutions the hook does not read to the end (a `case`
+statement, nesting past `_NESTING`) refuse it, and so does the line read again with its
+substitutions taken out. A word counts as `maity`
 (and as `runner`) also once its backslashes and quotes are taken off (`_reads_as`), also as
 each part of it between backticks and before a `$` (`_substituted`), since an expansion
 glued to a name may make nothing, and a word that
@@ -31,7 +31,10 @@ text is nested too deep: the hook does not read such lines to the end. Nor does 
 line that holds a construct it does not model exactly (`_unmodelled`): such a line is
 refused as well. A command the shell
 builds from values the hook cannot know, such as globs against files and expansions of
-variables or of input, is not read. Any other tool call is left to the
+variables or of input, is not read. What the hook holds is that a line Claude Code may take
+out of the sandbox, `maity` after only the allowed assignments, runs only as one plain
+call; a name the shell assembles from expansions is left to the sandbox and to the CLI's own
+guard (cli/context/runner.md). Any other tool call is left to the
 permission rules: the hook prints nothing and exits 0.
 
 It reads Claude Code's PreToolUse input on stdin and refuses with exit 2 and the reason on
@@ -192,9 +195,10 @@ def _assigns_wait_timeout(command: str) -> bool:
     leading comment lines and blank lines as `_placement` reads it, is an unquoted word that
     reads as an assignment to MAITY_WAIT_TIMEOUT (`_WAIT_ASSIGNMENT`), whether or not the
     shell takes it as one: the first word or any later one, after a command such as `env`,
-    as an argument or after an operator alike. It reads the line's own words, not the text
-    of a substitution, so a line that assigns it inside one gets the shared reason. It only
-    picks the reason for a line that is refused anyway."""
+    as an argument or after an operator alike. It reads the words as `_split` splits them:
+    an unquoted `$(` splits at its parentheses, so an assignment in one counts, while one in
+    backticks or in quoted text does not and gets the shared reason. It only picks the
+    reason for a line that is refused anyway."""
     command = _past_comment_lines(command)
     try:
         words = _split(command)
@@ -1182,263 +1186,117 @@ def calls_runner(command: str, depth: int = 0, seen: _Seen | None = None) -> boo
     return False
 
 
-def _backtick_end(text: str, i: int) -> int:
-    """The index of the backtick that closes the one at `i`, a backslash escaping the
-    character after it; -1 when none does."""
-    j = i + 1
-    while j < len(text):
-        if text[j] == "\\":
-            j += 2
-        elif text[j] == "`":
-            return j
-        else:
-            j += 1
-    return -1
-
-
-def _quote_end(text: str, i: int) -> int:
-    """The index of the double quote that closes the one at `i`, substitutions in it passed
-    over (`_paren_end`, `_backtick_end`); -1 when none does."""
-    j = i + 1
-    while j < len(text):
-        c = text[j]
-        if c == "\\":
-            j += 2
-            continue
-        if c == '"':
-            return j
-        if c == "`":
-            j = _backtick_end(text, j)
-        elif c == "$" and text[j + 1 : j + 2] == "(":
-            j = _paren_end(text, j + 1)
-        if j < 0:
-            return -1
-        j += 1
-    return -1
-
-
-def _paren_end(text: str, i: int) -> int:
-    """The index of the `)` that closes the `(` at `i`, quotes, escapes, backticks and
-    nested parentheses passed over; -1 when none does."""
-    depth, j = 0, i
-    while j < len(text):
-        c = text[j]
-        if c == "\\":
-            j += 2
-            continue
-        if c == "'":
-            j = text.find("'", j + 1)
-        elif c == '"':
-            j = _quote_end(text, j)
-        elif c == "`":
-            j = _backtick_end(text, j)
-        elif c == "(":
-            depth += 1
-        elif c == ")":
-            depth -= 1
-            if depth == 0:
-                return j
-        if j < 0:
-            return -1
-        j += 1
-    return -1
-
-
-# Positional parameters, which make nothing in a tool call (`bash -c` with no arguments),
-# and `$#`, which makes `0` there.
-_POSITIONAL = re.compile(r"\$(?:[@*1-9]|\{[@*1-9]\})")
-_COUNT = re.compile(r"\$(?:#|\{#\})")
-
-
-# What a substitution leaves in a word as `_Read` writes it: no character a line holds.
-_GLUE = "\x00"
-
-
-class _Read:
-    """What `_substitutions` reads of a line: the text of each outermost substitution, the
-    line with each of them taken out, and the literal text of each word a substitution is
-    glued into; for a word of two or more substitutions and literal text that is in
-    `maity`'s order, or none, the runs of letters in their text that are part of `maity`."""
-
-    def __init__(self) -> None:
-        self.bodies: list[str] = []
-        self.out: list[str] = []
-        self.glued: list[str] = []
-        self.chars: list[str] = []
-        self.written: list[str] = []
-        self.texts: list[str] = []
-        self.substituted = False
-
-    def text(self, chars: str, written: str | None = None) -> None:
-        """Literal text of the current word (`written` as the line holds it, quotes and
-        all): each character counts, and a `/` starts the word's last part again."""
-        self.written.append(chars if written is None else written)
-        for c in chars:
-            if c == "/":
-                self.chars, self.texts, self.substituted = [], [], False
-            else:
-                self.chars.append(c.lower())
-
-    def glue(self, text: str) -> None:
-        """A substitution in the current word, with its text."""
-        self.substituted = True
-        self.written.append(_GLUE)
-        self.texts.append(text)
-
-    def end(self) -> None:
-        """The current word ends: its literal text after its last `/` is kept when a
-        substitution is glued into it. A word with a `{` is taken as each word its braces
-        make (`_brace_words`), a substitution standing for nothing in it, and counts as
-        `maity` when they are not read."""
-        written = "".join(self.written)
-        if _GLUE in written and "{" in written:
-            made = _brace_words(written)
-            if made is None:
-                self.glued.append("maity")
-            for word in made or []:
-                last = word.rsplit("/", 1)[-1]
-                if _GLUE in last and last.replace(_GLUE, ""):
-                    self.glued.append(last.replace(_GLUE, "").lower())
-        elif self.substituted and self.chars:
-            self.glued.append("".join(self.chars))
-        if len(self.texts) >= 2 and _in_maity_order("".join(self.chars)):
-            for text in self.texts:
-                runs = re.findall(r"[a-z]+", re.sub(r"[\\'\"]", "", text).lower())
-                self.glued += [run for run in runs if len(run) >= 2 and _part_of_maity(run)]
-        self.chars, self.written, self.texts = [], [], []
-        self.substituted = False
-
-
-def _substitutions(line: str) -> tuple[list[str], str, list[str]] | None:
-    """What the hook reads of the line's command substitutions (a backtick pair, `$(…)`,
-    and `<(…)` or `>(…)` outside double quotes), outside single quotes: the text of each
-    outermost one; the line with each of them taken out, as one whose output is empty
-    leaves it (a process substitution leaves a path), and with each positional parameter
-    taken out and `$#` made `0`, as they are in a tool call; and the literal text of each
-    word a substitution is glued into, after the word's last `/`, quotes and backslashes
-    taken off, in lower case, or for a word of two or more substitutions and literal text in
-    `maity`'s order, or none, each run of letters in their text that is part of `maity`
-    (`_Read`). None when one
-    never closes. Quotes, escapes and nested
-    parentheses in a substitution are passed over; a `case` or a heredoc in `$(…)` may be
-    delimited otherwise than Bash delimits it, which only adds what `_in_substitution`
-    reads, since the line itself is read as before."""
-    read = _Read()
-    out = read.out
-    i, n, double = 0, len(line), False
+def _substitutions(line: str) -> tuple[list[str], str] | None:
+    """The text of each outermost command substitution on the line (a backtick pair,
+    `$(…)`, and `<(…)` or `>(…)` outside double quotes), and the line with each of them taken
+    out, as one whose output is empty leaves it (a process substitution leaves a path); None
+    when the hook does not read them. The line is read as `_unmodelled` and `_unsure_quoting`
+    read it: heredoc bodies taken out first (`_without_heredocs`), single-quoted text and
+    comments passed over, a backtick closed by the next backtick, and a `$(` closed where
+    `_substitution_end` closes it."""
+    stripped = _without_heredocs(line)
+    if stripped is None:
+        return None
+    text = stripped[0]
+    out: list[str] = []
+    bodies: list[str] = []
+    i, n, double = 0, len(text), False
     while i < n:
-        c = line[i]
-        if c == "\\":
-            out.append(line[i : i + 2])
-            read.text(line[i + 1 : i + 2], line[i : i + 2])
-            i += 2
-            continue
-        if c == "'" and not double:
-            end = line.find("'", i + 1)
-            if end < 0:
+        c = text[i]
+        if not double and c == "'":
+            close = text.find("'", i + 1)
+            if close < 0:
                 return None
-            out.append(line[i : end + 1])
-            read.text(line[i + 1 : end], line[i : end + 1])
-            i = end + 1
+            out.append(text[i : close + 1])
+            i = close + 1
+            continue
+        if not double and c == "#" and (i == 0 or text[i - 1] in " \t\n;&|()"):
+            close = text.find("\n", i)
+            close = n if close < 0 else close
+            out.append(text[i:close])
+            i = close
+            continue
+        if c == "\\":
+            out.append(text[i : i + 2])
+            i += 2
             continue
         if c == '"':
             double = not double
-            read.text("", c)
         elif c == "`":
-            end = _backtick_end(line, i)
-            if end < 0:
+            close = text.find("`", i + 1)
+            if close < 0:
                 return None
-            read.bodies.append(line[i + 1 : end])
-            read.glue(line[i + 1 : end])
-            i = end + 1
+            bodies.append(text[i + 1 : close])
+            i = close + 1
             continue
-        elif line[i + 1 : i + 2] == "(" and (c == "$" or (c in "<>" and not double)):
-            end = _paren_end(line, i + 1)
-            if end < 0:
+        elif text[i + 1 : i + 2] == "(" and (c == "$" or (c in "<>" and not double)):
+            try:
+                close = _substitution_end(text, i, [])
+            except ValueError:
                 return None
-            read.bodies.append(line[i + 2 : end])
-            read.glue(line[i + 2 : end])
+            bodies.append(text[i + 2 : close])
             out.append("" if c == "$" else "/dev/fd/0")
-            i = end + 1
+            i = close + 1
             continue
-        elif c == "$" and (m := _POSITIONAL.match(line, i) or _COUNT.match(line, i)):
-            made = "" if m.re is _POSITIONAL else "0"
-            out.append(made)
-            read.text(made)
-            i = m.end()
-            continue
-        elif not double and (c in " \t" or c in _SEPARATORS):
-            read.end()
-        else:
-            read.text(c)
         out.append(c)
         i += 1
-    read.end()
-    return read.bodies, "".join(out), read.glued
+    return None if double else (bodies, "".join(out))
 
 
-def _in_maity_order(chars: str) -> bool:
-    """Whether each character is found in `maity` after the one before it; true for none."""
-    rest = iter("maity")
-    return all(c in rest for c in chars)
+# A `case` statement, whose pattern ends with a `)` that a substitution's reading takes for
+# its own end.
+_CASE = re.compile(r"(?<![\w.-])case(?![\w.-])")
 
 
-def _part_of_maity(chars: str) -> bool:
-    """Whether a word's literal characters, in order, are part of `maity` with nothing
-    else: each one found in `maity` after the one before it (`ma`, `aity`, `maty`), two or
-    more of them, or `m` or `y` alone, the ends of the name. A substitution adds characters
-    to a word and takes none away, so a word with any other character never becomes
-    `maity`."""
-    return (len(chars) >= 2 or chars in ("m", "y")) and _in_maity_order(chars)
+def _unread_substitution(bodies: list[str], depth: int) -> bool:
+    """Whether the hook does not read one of these substitutions to the end: one whose own
+    substitutions it does not read (`_substitutions`), or nested `_NESTING` levels deep or
+    more."""
+    for body in bodies:
+        found = _substitutions(body)
+        if found is None:
+            return True
+        if found[0] and (depth >= _NESTING or _unread_substitution(found[0], depth + 1)):
+            return True
+    return False
 
 
 def _names_maity_as_line(text: str, depth: int) -> bool:
     """Whether a substitution's text, read as a line of its own, names `maity` as a word
-    (`_placement`), also once the substitutions in it are taken out or read the same way,
-    up to `_NESTING` levels deep; text nested deeper, or with a substitution that never
-    closes, counts when it names `maity` anywhere (`names_maity`)."""
+    (`_placement`), or the text of a substitution in it does, up to `_NESTING` levels deep;
+    text nested deeper, or with substitutions the hook does not read, counts when it names
+    `maity` anywhere (`names_maity`)."""
     if _placement(text) is not None:
         return True
     found = _substitutions(text)
-    if found is None:
+    if found is None or depth >= _NESTING:
         return names_maity(text)
-    bodies, without, glued = found
-    if any(_part_of_maity(letters) for letters in glued):
-        return True
-    if not bodies and without == text:
-        return False
-    if depth >= _NESTING:
-        return names_maity(text) or names_maity(without)
-    return _placement(without) is not None or any(
-        _names_maity_as_line(body, depth + 1) for body in bodies
-    )
+    return any(_names_maity_as_line(body, depth + 1) for body in found[0])
 
 
 def _in_substitution(command: str) -> str | None:
-    """The reason to refuse a line by its command substitutions, or None: a substitution
-    whose text, read as a line of its own, names `maity` (`_names_maity_as_line`) refuses it
-    outright, and so does a word whose own text, with a substitution glued in, is part of
-    `maity` (`_part_of_maity`): substitutions may join it into the name. So does a line that
-    names `maity` once its substitutions and positional parameters are taken out, as output
-    that is empty leaves it (`names_maity`, or as a word, braces expanded), with the reason
-    that line gets, or as not one plain call.
-    A line with a substitution that never closes counts when it names `maity` anywhere."""
+    """The reason to refuse a line by its command substitutions, or None. A substitution
+    whose text, read as a line of its own, names `maity` (`_names_maity_as_line`) refuses
+    the line outright. On a line that names `maity` (`names_maity`), substitutions the hook
+    does not read to the end refuse it (a `case` statement in the line, nesting past
+    `_NESTING`, one that never closes), and so does the line with its substitutions taken
+    out, when it gets a reason or holds `maity` as a word."""
+    named = names_maity(command)
     found = _substitutions(command)
     if found is None:
-        return RUNNER_REFUSED if names_maity(command) else None
-    bodies, without, glued = found
-    if not bodies and without == command:
+        return RUNNER_REFUSED if named else None
+    bodies, without = found
+    if not bodies:
         return None
-    if any(_part_of_maity(letters) for letters in glued) or any(
-        _names_maity_as_line(body, 1) for body in bodies
-    ):
+    if named and (_CASE.search(command) is not None or _unread_substitution(bodies, 1)):
+        return RUNNER_REFUSED
+    if any(_names_maity_as_line(body, 1) for body in bodies):
         return PREFIX_REFUSED
-    placement = _placement(without)
-    if placement is not None or names_maity(without):
+    if named:
         reason = _decide(without)
         if reason is not None:
             return reason
-        if placement is not None:
+        if _placement(without) is not None:
             return REFUSED
     return None
 
@@ -1468,19 +1326,24 @@ def _decide(command: str) -> str | None:
 
 
 def main(args: Sequence[str] | None = None) -> int:
-    """Exit 0 to leave the call to the permission rules, 2 to refuse it."""
+    """Exit 0 to leave the call to the permission rules, 2 to refuse it. Anything raised
+    while it reads the input or decides refuses the call, whatever it is, and so does a
+    reason it cannot print."""
     del args  # takes none
     try:
-        payload = json.loads(sys.stdin.buffer.read())
-    except (ValueError, OSError, RecursionError):
-        payload = None
-    try:
+        try:
+            payload = json.loads(sys.stdin.buffer.read())
+        except (ValueError, OSError, RecursionError):
+            payload = None
         reason = refusal(payload)
-    except Exception:  # noqa: BLE001 - a line the hook fails on is refused, not let through
+    except BaseException:  # noqa: BLE001 - a call the hook fails on is refused, not let through
         reason = FAILED
     if reason is None:
         return 0
-    print(reason, file=sys.stderr)
+    try:
+        print(reason, file=sys.stderr)
+    except BaseException:  # noqa: BLE001, S110 - the exit code refuses it all the same
+        pass
     return 2
 
 

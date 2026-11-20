@@ -877,7 +877,9 @@ def test_a_word_names_maity_or_runner_between_its_backticks() -> None:
     assert plaincall._is_runner("`runner`", "`runner`")
 
 
-# `maity` glued to an expansion right after it, which may make nothing (round 1 of #2026).
+# `maity` glued to an expansion right after it, which may make nothing (round 1 of #2026):
+# the line starts with `maity`, so it is held to one plain call; or `maity` stands in a
+# substitution's text.
 GLUED_EXPANSIONS = [
     "maity$(true) status",
     "maity$( ) status",
@@ -887,10 +889,14 @@ GLUED_EXPANSIONS = [
     "maity${x:-} status",
     "maity$@ status",
     "maity${IFS}status",
+    "maity`true` status",
+    "maity$() run$()ner",
     "NO_COLOR=1 maity$(true) status",
+    "TZ=UTC maity$x status",
     "true && maity$(true) status",
     "echo `maity$x`",
     "echo $(maity$x)",
+    "echo `maity$() status`",
 ]
 # A backtick substitution in double quotes whose words name `maity` once their braces expand.
 BRACES_IN_QUOTED_BACKTICKS = [
@@ -904,17 +910,14 @@ BRACES_IN_QUOTED_BACKTICKS = [
     'echo "`{Z..a} status`"',
     'echo "`ma{i..i}ty' + "{a..a}" * 257 + ' status`"',
 ]
-# Empty substitutions glued into the name: the line names `maity` once they are taken out.
-EMPTY_SUBSTITUTIONS = [
-    "maity$() run$()ner",
-    "ma``ity run``ner",
-    "ma``ity status",
-    "ma$()ity status",
-    "ma$(true)ity status",
-    "echo $(ma$()ity status)",
-    "echo `maity$() status`",
-    'echo "`ma$()ity status`"',
-    "true && mait{,}$( )y status",
+# A line that names `maity` with substitutions the hook does not read to the end: a `case`
+# statement, whose pattern ends with a `)`, or nesting past `_NESTING`.
+UNREAD_SUBSTITUTIONS = [
+    'echo "$(case x in x) echo " \'"; x=`maity`; echo "\' ";; esac)"',
+    "cat $(case x in x) echo y;; esac) maity.md",
+    'echo "$(case $1 in a) echo;; esac)" maity.md',
+    "cat $(echo $(echo $(echo $(echo $(echo x))))) maity.md",
+    'echo "$(echo "$(echo "$(echo "$(echo "$(echo x)")")")")" maity.md',
 ]
 # Substitutions and expansions in lines that do not name `maity`: left as before.
 SUBSTITUTIONS_WITHOUT_MAITY = [
@@ -928,83 +931,223 @@ SUBSTITUTIONS_WITHOUT_MAITY = [
     "echo file-$(date).log",
     'tar czf "backup-$(date +%F).tgz" src',
     "echo $# $@ $1",
+    'printf "%s\\n" "$@"',
     "echo $(basename $(pwd))",
     "cp a.txt b-`date +%s`.txt",
     'git commit -m"$(cat msg.txt)"',
+    "git commit -m \"$(cat <<'EOF'\nFix the thing\nEOF\n)\"",
+    "gh pr create --title x --body \"$(cat <<'EOF'\nBody text\nEOF\n)\"",
     "echo a$(date) t`date`",
-]
-# Positional parameters glued into the name: a tool call has none, so they make nothing.
-POSITIONAL_IN_THE_NAME = [
-    "mai$@ty status",
-    "mai$*ty status",
-    "ma${@}ity status",
-    "ma${*}ity status",
-    "mai$1ty status",
-    "ma${9}ity status",
-    'ma"$@"ity runner status',
-    "true && mai$@ty status",
-    "echo `mai$1ty status`",
-]
-# A word whose own letters, with a substitution glued in, are part of `maity`: the
-# substitution may supply the rest.
-GLUED_LETTERS = [
-    "ma$(echo i)ty status",
-    "m$(printf a)ity status",
-    "$(printf m)aity status",
-    "mait$(echo y) status",
     "echo ma$(true)ty",
-    '"ma$(echo i)ty" status',
-    "./ma$(echo i)ty status",
-    "/usr/bin/m$(echo a)ity status",
-    "ma`echo i`ty status",
-    "M$(echo A)ITY status",
-    "m\\a$(echo i)ty status",
-    "echo $(ma$(echo i)ty status)",
-    "ma<(true)ty",
-    "m$(echo aity) status",
-    "$(echo mait)y status",
-]
-# A word of two or more substitutions and nothing else, whose text holds part of `maity`.
-JOINED_SUBSTITUTIONS = [
-    "$(echo mait)$(echo y) status",
-    '"$(echo ma)""$(echo ity)" status',
-    "`echo m``echo aity` status",
-    "$(printf '%s' ma)$(printf ity) status",
-    "/usr/bin/$(echo mait)$(echo y) status",
-    "./$(echo ma)$(echo ity) status",
-    "echo $(echo `echo ma``echo ity`)",
-    "true && $(echo m)$(echo AITY) status",
-    "$(printf %s ma)i$(echo ty) status",
-    "$(echo m)a$(echo i)$(echo ty) status",
-]
-# The same shape without part of `maity` in the text, or with literal text in the word.
-JOINED_WITHOUT_MAITY = [
     "echo $(date)$(hostname)",
     "x=$(date)$(hostname)",
     "cat $(cat a)$(cat b)",
     "cp $(pwd)/$(basename f) x",
     'echo "$(whoami)@$(hostname)"',
     "echo v$(cat VERSION)-$(git rev-parse --short HEAD)",
-    "echo x$(echo ma)$(echo ty)",
+    "echo $(echo $(echo $(echo $(echo $(echo x)))))",
+    'echo "$(case x in x) echo y;; esac)"',
+    "ls # see $(x)",
+    "cat <<'EOF'\n$(not run) `nor this`\nEOF",
+]
+# The ordinary agent commands of a review of #2026 (round 1): each is left to the
+# permission rules, as on main.
+REVIEWED_ORDINARY = [
+    'git commit -m "$(cat f)"',
+    "cp $(pwd)/x dest",
+    "echo v$(cat VERSION)-$(git rev-parse --short HEAD)",
+    "echo file-$(date).log",
+    'echo "$(whoami)@$(hostname)"',
+    "python3 $(git rev-parse --show-toplevel)/main.py",
+    "touch my-$(date).txt",
+    "touch summary-$(date).md",
+    "git tag main-$(git rev-parse --short HEAD)",
+    "$(pwd)/my_script.sh",
+    '$(dirname "$0")/run.sh',
+    'cat "$1"/main.py',
+    'echo "my $(date)"',
+    'pytest -k "$(cat filter)"',
+    'curl -H "X: $(cat t)" https://example.com',
+    "tar czf backup-$(date +%Y%m%d).tar.gz .",
+    "tail -f $(pwd)/activity.log",
+    "mkdir -p m$(date +%m)",
+    "touch m$(date +%Y%m%d)",
+    "echo y$(date +%Y)",
+    "sleep $(cat delay)m",
+    "timeout $(cat secs)m pytest",
+    "echo $(cat count)m",
+    "echo $(date +%Y)y",
+    "echo my$(date +%Y)",
+    "touch my$(date +%Y%m%d)",
+    "echo at$(date +%H%M)",
+    "echo it$(cat id)",
+    "echo ai$(cat ver)",
+    "echo ma$(cat id)",
+    "echo mi$(cat id)",
+    "echo mt$(cat id)",
+    "echo ty$(cat id)",
+    "echo $(cat prefix)my",
+    "echo $(cat prefix)at",
+    "echo $(cat prefix)it",
+    "echo $(cat prefix)ty",
+    "echo $(cat prefix)y",
+    "echo $(cat prefix)m",
+    "echo $(cat prefix)mat",
+    "echo $(cat prefix)may",
+    "echo $(cat prefix)mit",
+    'echo "$(git log -1 --format=%at)$(git rev-parse --short HEAD)"',
+    "echo $(git log -1 --format=%at)-$(git rev-parse --short HEAD)",
+    "echo $(git log -1 --format=%at)$(git log -1 --format=%h)",
+    "echo $(cat my_a)$(cat my_b)",
+    "echo $(cat my.txt)$(cat other.txt)",
+    "echo $(cat it_1)$(cat it_2)",
+    "echo $(cat ai_prompt)$(cat suffix)",
+    "echo $(ls -at)$(echo x)",
+    "echo $(docker exec -it c cmd)$(cat f)",
+    "echo $(cat a)$(cat b)",
+    'echo "$(date +%Y%m%d)$(date +%H%M%S)"',
+    'echo "$(whoami)$(hostname)"',
+    'echo "$(uname -m)$(uname -s)"',
+    'echo "$(git branch --show-current)-$(git rev-parse --short HEAD)"',
+    'git commit -m"$(cat msg.txt)"',
+    "M=$(cat f)",
+    "Y=$(date +%Y)",
+    "MY=$(cat f)",
+    "AT=$(date +%s)",
+    "IT=$(cat id)",
+    'export MY="$(cat f)"',
+    "echo $MY",
+    'echo "${MY}/file"',
+    'git log -1 --format="%h %s" $(git rev-parse HEAD)',
+    "diff -u <(git show HEAD:a.py) <(git show HEAD~1:a.py)",
+    'python3 -m pytest -k "$(cat tests.txt)"',
+    "gh pr view $(cat pr_num)",
+    "git checkout -b fix/$(cat branch_name)",
+    "git show $(git merge-base main HEAD):README.md",
+    "jq -r .version package.json",
+    'echo "tag: v$(cat VERSION)"',
+    'echo "built at $(date -u +%FT%TZ)"',
+    'echo "$(git rev-parse --show-toplevel)/cli/src"',
+    "ls $(git rev-parse --show-toplevel)/tests",
+    'wc -l $(git ls-files "*.py")',
+    "grep -rn foo $(git rev-parse --show-toplevel)/src",
+    'cp "$(mktemp)" /tmp/out.txt',
+    'echo "$(dirname "$(pwd)")"',
+    'echo "$(basename "$(pwd)")"',
+    "echo $(realpath .)/foo",
+    'echo $(python3 -c "print(1)")',
+    'echo "count=$(wc -l < file.txt)"',
+    'echo "sha=$(sha256sum file.txt | cut -d" " -f1)"',
+    'git log --since="$(date -d "1 day ago" +%F)"',
+    "echo $(date +%Y)/$(date +%m)/$(date +%d)",
+    "echo $(date +%Y)/m$(date +%m)",
+    "echo /tmp/m$(date +%s)",
+    "echo /tmp/my$(date +%s)",
+    "echo /tmp/at$(date +%s)",
+    "echo /tmp/$(cat id)y",
+    "echo /tmp/$(cat id)m",
+    "touch /tmp/run$(date +%s)",
+    "touch /tmp/tmp$(date +%s)",
+    "touch /tmp/a$(date +%s)",
+    "touch /tmp/i$(date +%s)",
+    "touch /tmp/t$(date +%s)",
+    "echo a$(date +%s) i$(date +%s) t$(date +%s)",
+    "echo $(cat a) $(cat b)",
+    'echo "a: $(cat a), b: $(cat b)"',
+    'printf "%s\\n" "$(cat a)" "$(cat b)"',
+    "echo $(git status -s)",
+    "echo $(uname -a)",
+    "echo $(id -u)",
+    "echo $(nproc)",
+    "make -j$(nproc)",
+    "make -j $(nproc)",
+    "pytest -n$(nproc)",
+    "tar -czf /tmp/out-$(date +%s).tgz .",
+    "docker build -t app:$(git rev-parse --short HEAD) .",
+    'curl -s "https://api.example.com/v1/items?ts=$(date +%s)"',
+    'echo "https://example.com/$(cat slug)"',
+    'echo "prefix_$(date +%Y%m%d)_suffix"',
+    'echo "m_$(date +%Y%m%d)"',
+    'echo "my_$(date +%Y%m%d)"',
+    'echo "at_$(date +%Y%m%d)"',
+    'echo "y_$(date +%Y%m%d)"',
+    "cat $(which python3)",
+    "ls -la $(dirname $(which python3))",
+    "echo $(cat a.json)$(cat b.json)",
+    "echo $(jq -r .a f.json)$(jq -r .b f.json)",
+    "echo $(jq -r .id f.json)$(jq -r .my f.json)",
+    "echo $(jq -r .at f.json)$(jq -r .id f.json)",
+    'echo $(python3 -c "print(1)")$(python3 -c "print(2)")',
+    "echo $(date +%s)ms",
+    "echo $(cat n)MB",
+    "echo $(cat n)M",
+    "echo $(cat n)k",
+    "echo $(cat n)G",
+    "dd if=/dev/zero of=/tmp/f bs=1M count=$(cat n)",
+    "head -c $(cat n)M file.bin",
+    "head -c $(cat n)m file.bin",
+    "echo $(cat val)mi",
+    "echo $(cat val)mt",
+    "echo $(cat val)ai",
+    "echo $(cat val)ay",
+    "echo $(cat val)may",
+    "echo $(cat val)mat",
+    "echo $(cat val)mit",
+    'echo "$1" "$2" "$@" "$*" "$#"',
+    'echo "args: $1 $2"',
+    'echo "${1}/foo"',
+    'echo "${1}-bar"',
+    'for f in $(git diff --name-only); do echo "$f"; done',
+    "xargs -I{} echo {} < list.txt",
+    'echo "my-app-$(git describe --tags)"',
+    'echo "summary-$(date +%F).md"',
+    'echo "main-$(git rev-parse --short HEAD)"',
+    'echo "$(pwd)/main.py"',
+    'echo "$(pwd)/my_app/main.py"',
+]
+# The shapes of the false refusals that review found, each left to the permission rules.
+REVIEWED_SHAPES = [
+    "sleep $(cat delay)m",
+    "timeout $(cat secs)m pytest",
+    "head -c $(cat n)M file.bin",
+    "head -c $(cat n)m file.bin",
+    "echo $(cat n)M",
+    "mkdir -p m$(date +%m)",
+    "touch m$(date +%Y%m%d)",
+    "touch my$(date +%Y%m%d)",
+    "echo y$(date +%Y)",
+    "echo at$(date +%H%M)",
+    "echo it$(cat id)",
+    "echo /tmp/m$(date +%s)",
+    "echo /tmp/my$(date +%s)",
+    'echo "$(git log -1 --format=%at)$(git rev-parse --short HEAD)"',
+    "echo $(git log -1 --format=%at)$(git log -1 --format=%h)",
+    "echo $(cat my_a)$(cat my_b)",
+    "echo $(cat my.txt)$(cat other.txt)",
+    "echo $(cat it_1)$(cat it_2)",
+    "echo $(cat ai_prompt)$(cat suffix)",
+    "echo $(ls -at)$(echo x)",
+    "echo $(docker exec -it c cmd)$(cat f)",
+    "echo $(jq -r .id f.json)$(jq -r .my f.json)",
+    "echo $(jq -r .at f.json)$(jq -r .id f.json)",
 ]
 
 
-@pytest.mark.parametrize(
-    "command",
-    [
-        *GLUED_EXPANSIONS,
-        *BRACES_IN_QUOTED_BACKTICKS,
-        *EMPTY_SUBSTITUTIONS,
-        *POSITIONAL_IN_THE_NAME,
-        *GLUED_LETTERS,
-        *JOINED_SUBSTITUTIONS,
-    ],
-)
-def test_maity_glued_braced_or_spliced_in_a_substitution_is_refused(command: str) -> None:
+@pytest.mark.parametrize("command", [*GLUED_EXPANSIONS, *BRACES_IN_QUOTED_BACKTICKS])
+def test_maity_glued_to_an_expansion_or_braced_in_a_substitution_is_refused(command: str) -> None:
     assert plaincall.refusal(bash(command)) is not None
 
 
-@pytest.mark.parametrize("command", [*SUBSTITUTIONS_WITHOUT_MAITY, *JOINED_WITHOUT_MAITY])
+@pytest.mark.parametrize("command", UNREAD_SUBSTITUTIONS)
+def test_a_line_naming_maity_with_substitutions_not_read_to_the_end_is_refused(
+    command: str,
+) -> None:
+    assert plaincall.refusal(bash(command)) is not None
+
+
+@pytest.mark.parametrize(
+    "command", [*SUBSTITUTIONS_WITHOUT_MAITY, *REVIEWED_ORDINARY, *REVIEWED_SHAPES]
+)
 def test_substitutions_in_lines_without_maity_are_left_to_the_permission_rules(
     command: str,
 ) -> None:
@@ -1015,26 +1158,22 @@ def test_the_substitutions_of_a_line_and_the_line_without_them() -> None:
     assert plaincall._substitutions(r"""a `b` "$(c "d)")" <(e) '$(g)'""") == (
         ["b", 'c "d)"', "e"],
         """a  "" /dev/fd/0 '$(g)'""",
-        [],
     )
-    assert plaincall._substitutions(r"""M"a"$(x)\t y$1 f-$(d).log ${x}$# $@z /$(e)/i$(o)""") == (
-        ["x", "d", "e", "o"],
-        r"""M"a"\t y f-.log ${x}0 z //i""",
-        ["mat", "f-.log", "i"],
+    assert plaincall._substitutions("a # `b` '\nc $(d)") == (["d"], "a # `b` '\nc ")
+    assert plaincall._substitutions("cat <<'E'\n`x` $(y) '\nE\nz `w`") == (
+        ["w"],
+        "cat <<'E'\n\nz ",
     )
-    assert plaincall._substitutions(r"a \`b` c") is None  # an escaped backtick, then one open
+    assert plaincall._substitutions("a `b") is None
     assert plaincall._substitutions("a $(b") is None
+    assert plaincall._substitutions('a "b') is None
 
 
-def test_letters_glued_to_a_substitution_count_only_as_part_of_maity_in_order() -> None:
-    yes = ("m", "y", "ma", "maty", "aity", "mit", "maity")
-    no = ("", "a", "i", "t", "am", "maityx", "-m", "m-y", "f-.log")
-    assert all(plaincall._part_of_maity(w) for w in yes)
-    assert not any(plaincall._part_of_maity(w) for w in no)
-
-
-def test_a_wait_timeout_inside_a_substitution_gets_the_shared_reason() -> None:
+def test_a_wait_timeout_inside_a_substitution_gets_the_reason_of_the_words_as_split() -> None:
     assert plaincall.refusal(bash("`MAITY_WAIT_TIMEOUT=5 maity`")) == plaincall.PREFIX_REFUSED
+    assert plaincall.refusal(bash("$(MAITY_WAIT_TIMEOUT=5 maity)")) == (
+        plaincall.WAIT_TIMEOUT_REFUSED
+    )
 
 
 # A `!`, a subshell or a group right before `maity`: the line counts as starting with `maity`
@@ -1590,6 +1729,35 @@ def test_a_call_the_hook_fails_on_is_refused(
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(bash("x")).encode())))
     assert plaincall.main([]) == 2
     assert capsys.readouterr().err.strip() == plaincall.FAILED
+
+
+class _Broken:
+    """A stream whose every use fails, as no stream the hook reads should."""
+
+    def __getattr__(self, name: str) -> object:
+        raise AttributeError(name)
+
+
+@pytest.mark.parametrize("raised", [SystemExit(0), KeyboardInterrupt(), MemoryError(), KeyError()])
+def test_anything_raised_while_deciding_refuses_the_call(
+    monkeypatch: pytest.MonkeyPatch, raised: BaseException
+) -> None:
+    def fails(payload: object) -> str | None:
+        raise raised
+
+    monkeypatch.setattr(plaincall, "refusal", fails)
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(bash("x")).encode())))
+    assert plaincall.main([]) == 2
+
+
+def test_input_or_output_the_hook_cannot_use_refuses_the_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "stdin", _Broken())
+    assert plaincall.main([]) == 2
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(b"[]")))
+    monkeypatch.setattr(sys, "stderr", _Broken())
+    assert plaincall.main([]) == 2
 
 
 # Steps and ends with more digits than an integer holds: Bash leaves the range as text.
@@ -2393,30 +2561,36 @@ SUBSTITUTED_COMMANDS = [
     "maity ",
     "\tmaity",
 ]
-
-
-# The name `maity` as the shell may make it: glued to an expansion that makes nothing, with
-# an empty substitution inside, or from braces (round 1 of #2026).
-NAME_SPELLINGS = [
-    "maity",
-    "maity$(true)",
-    "maity$x",
-    "maity${x}",
-    "maity$()",
-    "ma``ity",
-    "ma$()ity",
-    "{maity,}",
-    "ma{ity,}",
-    "ma{i..i}ty",
-    "mait{,}$( )y",
+# What may stand right after `maity` at the start of a line, glued to it: expansions that
+# may make nothing, and quoting that makes nothing.
+GLUED_AFTER_MAITY = [
+    "",
+    "$(true)",
+    "$( )",
+    "$()",
+    "$x",
+    "${x}",
+    "${x:-}",
+    "$@",
+    "$*",
+    "$1",
+    "${IFS}",
+    "`true`",
+    '"$(true)"',
+    '"$x"',
+    "''$x",
+    '""',
+    "''",
 ]
-_MAITY_WORD = re.compile(r"(?<![\w-])maity(?![\w-])")
+# The allowed assignments, and none, before a line's `maity`.
+ALLOWED_PREFIXES = ["", "NO_COLOR=1 ", "TZ=UTC LANG=C ", "LC_ALL=C ", " ", "\t"]
 
 
 def bash_runs_maity(lines: list[str], tmp_path: Path) -> tuple[list[str], int, int]:
     """Each line in its own Bash, with `maity` a program on the path and in the working
     directory that records its arguments: the lines Bash runs `maity` from that the hook
-    lets through, how many lines run `maity`, and how many run `maity runner`."""
+    lets through and that are not one plain call, how many lines run `maity`, and how many
+    run `maity runner`."""
     print(BASH_NAME)  # noqa: T201 - recorded in the test log
     assert BASH is not None
     bin_dir, mark = tmp_path / "bin", tmp_path / "ran"
@@ -2442,71 +2616,40 @@ def bash_runs_maity(lines: list[str], tmp_path: Path) -> tuple[list[str], int, i
         if mark.exists():
             ran += 1
             runner += "ran runner" in mark.read_text()
-            if plaincall.refusal(bash(line)) is None:
+            one_plain_call = plaincall.held(line) and plaincall.plain(line)
+            if plaincall.refusal(bash(line)) is None and not one_plain_call:
                 opened.append(line)
     return opened, ran, runner
 
 
 @pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
-def test_substitutions_run_maity_only_if_refused(tmp_path: Path) -> None:
-    """Each shape with each command, with and without arguments, and with each spelling of
-    the name: Bash runs `maity` from no line the hook lets through."""
-    bin_dir = tmp_path / "bin"
-    lines = []
-    for shape in SUBSTITUTION_SHAPES:
-        for command in SUBSTITUTED_COMMANDS:
-            for args in ("", " status", " -h"):
-                lines.append(shape.format(c=command.format(bin=bin_dir) + args))
-            for spelling in NAME_SPELLINGS[1:]:
-                for args in ("", " status"):
-                    made = command.format(bin=bin_dir) + args
-                    lines.append(shape.format(c=_MAITY_WORD.sub(spelling, made)))
-    opened, ran, _ = bash_runs_maity(lines, tmp_path)
+def test_a_line_that_starts_with_maity_runs_it_only_as_one_plain_call(tmp_path: Path) -> None:
+    """A line that starts with `maity`, after nothing or the allowed assignments, with each
+    glued expansion or quoting after it, with and without arguments and with `runner`: Bash
+    runs `maity` from none that the hook lets through unless it is one plain call, and from
+    none with `runner`."""
+    lines = [
+        prefix + "maity" + glued + args
+        for prefix in ALLOWED_PREFIXES
+        for glued in GLUED_AFTER_MAITY
+        for args in ("", " status", " runner status", "${IFS}status", "$(true) status")
+    ]
+    opened, ran, runner = bash_runs_maity(lines, tmp_path)
     assert opened == [], BASH_NAME
-    assert ran >= 6000, ran  # most of the lines do run `maity` in Bash
-
-
-# A line that starts with a spelling of the name, glued to an expansion or with an empty
-# substitution in it, alone or after other words.
-GLUED_SHAPES = ["{c}", "NO_COLOR=1 {c}", "true && {c}", "env {c}", "echo `{c}`", "echo $({c})"]
-# Spellings made with positional parameters, which a tool call does not have, and with
-# substitutions whose output supplies letters of the name.
-JOINED_SPELLINGS = [
-    "mai$@ty",
-    "ma${1}ity",
-    'ma"$*"ity',
-    "ma$(echo i)ty",
-    "m$(printf a)ity",
-    "$(printf m)aity",
-    "mait$(echo y)",
-    "ma`echo i`ty",
-    "m$(echo aity)",
-    "$(echo mait)y",
-    "$(echo mait)$(echo y)",
-    '"$(printf ma)""$(printf ity)"',
-    "`echo m``echo aity`",
-]
+    assert ran >= len(lines) - 10, ran
+    assert runner >= len(ALLOWED_PREFIXES) * len(GLUED_AFTER_MAITY) - 5, runner
 
 
 @pytest.mark.skipif(BASH is None, reason="needs Bash 5.2 or later on the path (not on Windows)")
-def test_glued_spellings_and_the_reported_lines_run_maity_only_if_refused(
-    tmp_path: Path,
-) -> None:
-    """The spellings in shapes that put the name at the start of a line, with `status` and
-    with `runner` after it, and every line of round 1 of #2026: Bash runs `maity` from each
-    of the reported lines, and from none that the hook lets through."""
+def test_maity_runner_runs_from_no_line_the_hook_lets_through(tmp_path: Path) -> None:
+    """Each shape with each command and `runner` after it: Bash runs `maity runner` from
+    none of the lines the hook lets through."""
+    bin_dir = tmp_path / "bin"
     lines = [
-        shape.format(c=spelling + args)
-        for shape in GLUED_SHAPES
-        for spelling in [*NAME_SPELLINGS[1:], *JOINED_SPELLINGS]
-        for args in (" status", " runner status", " run$()ner status")
+        shape.format(c=command.format(bin=bin_dir) + " runner status")
+        for shape in SUBSTITUTION_SHAPES
+        for command in SUBSTITUTED_COMMANDS
     ]
-    reported = [*GLUED_EXPANSIONS, *BRACES_IN_QUOTED_BACKTICKS[:6], *EMPTY_SUBSTITUTIONS]
-    reported += [*POSITIONAL_IN_THE_NAME, *GLUED_LETTERS[:4], *GLUED_LETTERS[5:7]]
-    reported += [GLUED_LETTERS[8], *GLUED_LETTERS[10:12], *GLUED_LETTERS[13:]]
-    reported += [*JOINED_SUBSTITUTIONS[:4], JOINED_SUBSTITUTIONS[5], *JOINED_SUBSTITUTIONS[8:]]
-    opened, ran, runner = bash_runs_maity(lines + reported, tmp_path)
+    opened, ran, runner = bash_runs_maity(lines, tmp_path)
     assert opened == [], BASH_NAME
-    assert ran >= len(lines) + len(reported) - 10, ran
-    assert runner >= 230, runner  # `maity runner` does run from many of them
-    assert bash_runs_maity(reported, tmp_path)[1] == len(reported)
+    assert runner >= 250, runner  # most of the lines do run `maity runner` in Bash
