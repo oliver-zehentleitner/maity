@@ -516,6 +516,11 @@ fixed per clone keeps that pairing consistent; a hub that changes beside the cre
 a state whose parts belong to different hubs. The join is where a hub and its credential are
 set together, so it is the one place the hub changes.
 
+What this rule does not cover: the guard is in maity, not in the state file, so whoever can
+write that file directly can still change the stored hub. And the request signature does not
+name the hub, so the rule does not bind a signed request to it; that is a separate card,
+tsk-t03pp2ftd1f3.
+
 **Rejected alternatives:**
 - Accepting `--hub` on a joined clone and rewriting the stored hub, the behaviour until now:
   the hub then changed without the credential and the rest of the state changing with it.
