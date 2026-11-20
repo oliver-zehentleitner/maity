@@ -254,6 +254,44 @@ def test_every_picture_the_public_pages_stylesheet_names_is_served(
         assert "<script" not in answer.text, name
 
 
+def _luminance(colour: str) -> float:
+    """WCAG 2 relative luminance of `#rgb` or `#rrggbb`."""
+    digits = colour.lstrip("#")
+    if len(digits) == 3:
+        digits = "".join(d * 2 for d in digits)
+    channels = [int(digits[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+    r, g, b = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(one: str, other: str) -> float:
+    lighter, darker = sorted((_luminance(one), _luminance(other)), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def test_a_door_forms_field_edge_has_3_to_1_on_the_light_frame() -> None:
+    """WCAG 1.4.11: an input's edge on the door pages the hub draws itself (such as the
+    registration link page and the join page) has 3:1 on the light `--surface` and
+    `--bg`. landing.css defines no light `--field`, so the edge there is the fallback in
+    public-pages.css: the dashboard's light `--field` since #1492, not the older #8a939d
+    (2.89:1 on white, nte-j9ae0tjdqykf)."""
+    import re
+
+    from maity_hub import landing_files
+
+    rule = r"\.door-form input,\.door-form select\{[^}]*var\(--field,(#[0-9a-f]+)\)"
+    edge = re.search(rule, (landing_files.HERE / "public-pages.css").read_text(encoding="utf-8"))
+    assert edge is not None
+    landing = (landing_files.HERE / "landing.css").read_text(encoding="utf-8")
+    light = re.search(r":root\{([^}]*)\}", landing)
+    assert light is not None and "--field" not in light[1]  # so the fallback is what is drawn
+    token = r"--([a-z0-9-]+):(#[0-9a-f]{3}(?:[0-9a-f]{3})?)(?=;|$)"
+    tokens = dict(re.findall(token, light[1]))
+    for ground in ("surface", "bg"):
+        ratio = _contrast(edge[1], tokens[ground])
+        assert ratio >= 3, f"{edge[1]} on --{ground} {tokens[ground]}: {ratio:.2f}:1"
+
+
 def test_explore_is_in_the_language_of_its_frame(
     owner: flow.Human, make_client: ClientFactory, settings: Any
 ) -> None:
