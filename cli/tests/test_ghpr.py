@@ -741,38 +741,37 @@ def lead(placed: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(cli, "_hub_role", manager)
     reads = tmp_path / "reads"
     reads.mkdir()
-    (reads / "pr.json").write_text(json.dumps(PR_ANSWER))
-    (reads / "rules.json").write_text(json.dumps(RULES_ANSWER))
+    (reads / "queue.json").write_text(json.dumps(queue_answer()))
     lead_gh(Path(placed["gh"]), placed["log"], reads)
     return {**placed, "lead_record": record, "runner_dir": where, "reads": reads}
 
 
-# The merge's two reads (ghpr.direct_merge_only) and their answers in the shapes the real gh
-# gives: `pr view --json=baseRefName,headRefOid` an object, the branch rules endpoint a list
-# of rules, each with its `type` and the ruleset it comes from (GitHub's REST reference,
-# "Get rules for a branch").
-PR_READ = f"pr view --repo={REPOSITORY} --json=baseRefName,headRefOid -- 2045"
-RULES_READ = "api --hostname=github.com --method=GET repos/oliver-zehentleitner/maity/rules/branches/{}?per_page=100"  # noqa: E501
-PR_ANSWER = {"baseRefName": "main", "headRefOid": SHA}
-RULE = {"ruleset_source_type": "Repository", "ruleset_source": "oliver-zehentleitner/maity",
-        "ruleset_id": 42}  # fmt: skip
-RULES_ANSWER = [{"type": "deletion", **RULE}, {"type": "non_fast_forward", **RULE}]
+# The merge's read (ghpr.direct_merge_only), and its answer in the shape GitHub's GraphQL API
+# gives through `gh api graphql`: `data`, `repository`, `pullRequest`.
+QUEUE_READ = [
+    "api", "graphql", "--hostname=github.com", "-f", f"query={ghpr.MERGE_QUERY}",
+    "-f", "owner=oliver-zehentleitner", "-f", "name=maity", "-F", "number=2045",
+]  # fmt: skip
+
+
+def queue_answer(**fields: Any) -> dict[str, Any]:
+    pr = {"baseRefName": "main", "headRefOid": SHA, "isMergeQueueEnabled": False,
+          "isInMergeQueue": False, **fields}  # fmt: skip
+    return {"data": {"repository": {"pullRequest": pr}}}
 
 
 def lead_gh(gh: Path, log: Path, reads: Path, out: str = "", err: str = "") -> None:
-    """A gh that answers the merge's reads from `reads` (`pr.json` for the base and head,
-    `rules.json` for the branch's rules; a missing file fails the read) and writes each read
-    to `reads/calls`; any other call it writes down in `log` (argv, stdin, cwd) and prints
-    `out` and `err`."""
+    """A gh that answers the merge's read (`api graphql`) from `reads/queue.json` (missing:
+    the read fails) and writes its argv to `reads/calls`, one JSON list a line; any other call
+    it writes down in `log` (argv, stdin, cwd) and prints `out` and `err`."""
     gh.write_text(
         f"#!{sys.executable}\nimport json, os, sys\n"
-        "read = 'pr.json' if '--json=baseRefName,headRefOid' in sys.argv else"
-        " 'rules.json' if sys.argv[1:2] == ['api'] else None\n"
-        "if read:\n"
-        f"    open(os.path.join({str(reads)!r}, 'calls'), 'a').write(' '.join(sys.argv[1:]) + '\\n')\n"  # noqa: E501
-        f"    answer = os.path.join({str(reads)!r}, read)\n"
+        f"reads = {str(reads)!r}\n"
+        "if sys.argv[1:3] == ['api', 'graphql']:\n"
+        "    open(os.path.join(reads, 'calls'), 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "    answer = os.path.join(reads, 'queue.json')\n"
         "    if not os.path.exists(answer):\n"
-        "        sys.stderr.write('HTTP 404: Not Found\\n')\n"
+        "        sys.stderr.write('HTTP 502: Bad Gateway\\n')\n"
         "        sys.exit(1)\n"
         "    sys.stdout.write(open(answer).read())\n"
         "    sys.exit(0)\n"
@@ -783,68 +782,63 @@ def lead_gh(gh: Path, log: Path, reads: Path, out: str = "", err: str = "") -> N
     gh.chmod(0o755)
 
 
-def merge_reads(lead: dict[str, Any]) -> list[str]:
+def merge_reads(lead: dict[str, Any]) -> list[list[str]]:
     calls = lead["reads"] / "calls"
-    return calls.read_text().splitlines() if calls.exists() else []
+    return [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
 
 
 @runs_gh
 @pytest.mark.parametrize(
-    ("pr", "rules", "reads"),
+    "answer",
     [
-        # the base branch merges through a queue
-        (PR_ANSWER, [*RULES_ANSWER, {"type": "merge_queue", "parameters": {}, **RULE}], 2),
-        (None, RULES_ANSWER, 1),  # the pull request read fails
-        ("not json", RULES_ANSWER, 1),
-        ({"headRefOid": SHA}, RULES_ANSWER, 1),  # no base named
-        ({"baseRefName": "main..x:y", "headRefOid": SHA}, RULES_ANSWER, 1),  # no branch name
-        (PR_ANSWER, None, 2),  # the rules read fails
-        (PR_ANSWER, "not json", 2),
-        (PR_ANSWER, {"type": "merge_queue"}, 2),  # not a list
-        (PR_ANSWER, ["merge_queue"], 2),  # a rule that is no object
-        (PR_ANSWER, [{"type": "deletion", **RULE}] * 100, 2),  # a full page: more may follow
+        queue_answer(isMergeQueueEnabled=True),  # the base branch merges through a queue
+        queue_answer(isInMergeQueue=True),  # the pull request is in one
+        queue_answer(isMergeQueueEnabled=None),  # a field of another type
+        queue_answer(isInMergeQueue="false"),
+        {"data": {"repository": {"pullRequest": {"headRefOid": SHA}}}},  # fields missing
+        {"data": {"repository": {"pullRequest": None}}},  # no such pull request
+        {"data": {"repository": None}},
+        {"data": None},
+        {**queue_answer(), "errors": [{"message": "Something went wrong"}]},
+        [queue_answer()],  # not an object
+        "not json",
+        None,  # the read fails
     ],
 )
 def test_a_merge_that_would_not_be_direct_is_refused_before_gh_merges(
-    lead: dict[str, Any], pr: Any, rules: Any, reads: int, capsys: pytest.CaptureFixture[str]
+    lead: dict[str, Any], answer: Any, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Review A1804 of #2054, the lead's ruling: on a base branch with a merge queue
     `gh pr merge` hands the method and the moment to the queue, so `--squash` and the head
-    named would no longer be the outcome. maity reads the base branch, then its rules, and
-    refuses on a `merge_queue` rule or any answer it cannot read; gh never merges then."""
-    for name, answer in (("pr.json", pr), ("rules.json", rules)):
-        if answer is None:
-            (lead["reads"] / name).unlink()
-        else:
-            text = answer if isinstance(answer, str) else json.dumps(answer)
-            (lead["reads"] / name).write_text(text)
+    named would no longer be the outcome. maity reads GitHub's queue state for the pull
+    request and merges only when both fields are literally false; any other answer, an
+    `errors` member or a failed read refuses, and gh never merges then."""
+    queue = lead["reads"] / "queue.json"
+    if answer is None:
+        queue.unlink()
+    else:
+        queue.write_text(answer if isinstance(answer, str) else json.dumps(answer))
     err = refused(["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
                    "--body", "b"], capsys)  # fmt: skip
     assert "does not merge directly" in err and ran(lead) is None
-    assert merge_reads(lead) == [PR_READ, RULES_READ.format("main")][:reads]
+    assert merge_reads(lead) == [QUEUE_READ]
 
 
 @runs_gh
-def test_a_merge_whose_head_moved_is_refused_before_the_rules_read(
+def test_a_merge_whose_head_moved_is_refused(
     lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (lead["reads"] / "pr.json").write_text(json.dumps({**PR_ANSWER, "headRefOid": "0" * 40}))
+    (lead["reads"] / "queue.json").write_text(json.dumps(queue_answer(headRefOid="0" * 40)))
     err = refused(["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
                    "--body", "b"], capsys)  # fmt: skip
-    assert "read it again" in err and ran(lead) is None and merge_reads(lead) == [PR_READ]
+    assert "read it again" in err and ran(lead) is None and merge_reads(lead) == [QUEUE_READ]
 
 
-@runs_gh
-def test_the_rules_read_names_the_base_branch_quoted(
-    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
-) -> None:
-    """A base branch with a slash goes into the endpoint as one quoted segment."""
-    (lead["reads"] / "pr.json").write_text(json.dumps({**PR_ANSWER, "baseRefName": "rel/2.0"}))
-    argv = ["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
-            "--body", "b"]  # fmt: skip
-    assert cli.main(argv) == 0
-    assert merge_reads(lead) == [PR_READ, RULES_READ.format("rel%2F2.0")]
-    assert ran(lead) is not None
+def test_the_merge_query_takes_its_values_as_variables_only() -> None:
+    """The query is fixed text: the owner, the name and the number are GraphQL variables
+    (`-f` strings, `-F` the number as an integer), never written into it."""
+    assert "$owner" in ghpr.MERGE_QUERY and "$number: Int!" in ghpr.MERGE_QUERY
+    assert all(f in ghpr.MERGE_QUERY for f in ("headRefOid", *ghpr.QUEUE_FIELDS))
 
 
 @pytest.mark.parametrize("layout", ["another placement", "not the runner's layout"])
@@ -888,8 +882,8 @@ def test_merge_squashes_the_named_head_with_the_footer_left_out(
     assert call["stdin"] == "Card tsk-x.\n\nSays co-authored-by: in a sentence, which stays.\n"
     assert "left out 3 footer line(s)" in capsys.readouterr().err
     assert ROLE_READS == ["read"]
-    # The base branch and its rules were read first, and no rule queues the merge (A1804).
-    assert merge_reads(lead) == [PR_READ, RULES_READ.format("main")]
+    # GitHub's queue state was read first and said the merge is direct (review A1804).
+    assert merge_reads(lead) == [QUEUE_READ]
 
 
 @pytest.mark.parametrize(

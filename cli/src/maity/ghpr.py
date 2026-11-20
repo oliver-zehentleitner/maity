@@ -20,7 +20,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import urllib.parse
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -564,60 +563,53 @@ def run(args: argparse.Namespace, role_of: RoleOf | None = None) -> int:
     return done.returncode
 
 
-# What the merge reads first (the lead's ruling on review A1804 of #2054): the pull request's
-# base branch and head, by fields `gh pr view --json` exports, then that branch's active rules
-# over REST. A page holds at most RULES_PAGE rules; a full page refuses rather than miss one
-# on the next.
-MERGE_FIELDS = "baseRefName,headRefOid"
-RULES_PAGE = 100
-MERGE_QUEUE_RULE = "merge_queue"
-
-
-def _gh_json(gh: str, args: list[str], cwd: str) -> Any:
-    """gh's answer to `args` as JSON, or None when gh fails or answers something else."""
-    done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built by the caller
-        [gh, *args], cwd=cwd, env=gh_env(os.environ, gh), check=False, capture_output=True
-    )
-    if done.returncode != 0:
-        return None
-    try:
-        return json.loads(done.stdout)
-    except ValueError:
-        return None
+# What the merge reads first (the lead's ruling on review A1804 of #2054): GitHub's own
+# merge-queue state for the pull request, through one fixed GraphQL query. It answers for a
+# queue whatever configured it, a ruleset or a classic branch protection rule, and for every
+# reader; the owner, the name and the number go as variables, never into the query's text.
+MERGE_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) {"
+    " repository(owner: $owner, name: $name) {"
+    " pullRequest(number: $number) {"
+    " baseRefName headRefOid isMergeQueueEnabled isInMergeQueue } } }"
+)
+QUEUE_FIELDS = ("isMergeQueueEnabled", "isInMergeQueue")
 
 
 def direct_merge_only(gh: str, repository: str, number: str, head: str, cwd: str) -> None:
     """Refused unless the pull request merges directly, as a squash of `head` (review A1804
     of #2054). On a base branch with a merge queue `gh pr merge` hands the method and the
     moment to the queue, so `--squash` and `--match-head-commit` would be flags, not the
-    outcome. So the base branch is read first (`pr view --json=baseRefName,headRefOid`, the
-    pinned repository, the checked number), then its active rules
-    (`api repos/<owner>/<repo>/rules/branches/<base>`); a `merge_queue` rule refuses. So does
-    every answer that is not the expected shape: a failed read, no JSON, a base that is no
-    branch name, a head other than the one named, a rule list that is no list or a full page
-    (fail closed)."""
+    outcome. So maity asks GitHub first (`gh api graphql`, MERGE_QUERY, the pinned host,
+    owner and name, the checked number as an integer) and goes on only when both
+    `isMergeQueueEnabled` and `isInMergeQueue` are literally false and `headRefOid` is
+    `head`. A failed read, no JSON, an `errors` member, a missing pull request or a field
+    that is missing or of another type refuses (fail closed)."""
     host, owner, name = repository.split("/")
-    refused = Refused(
-        f"pull request {number} does not merge directly (its base branch requires a merge "
-        "queue, or gh could not say): maity gh merges only by a direct squash of the head named"
+    argv = [gh, "api", "graphql", f"--hostname={host}", "-f", f"query={MERGE_QUERY}",
+            "-f", f"owner={owner}", "-f", f"name={name}", "-F", f"number={number}"]  # fmt: skip
+    done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built here
+        argv, cwd=cwd, env=gh_env(os.environ, gh), check=False, capture_output=True
     )
-    pr = _gh_json(gh, ["pr", "view", f"--repo={repository}", f"--json={MERGE_FIELDS}", "--",
-                       number], cwd)  # fmt: skip
-    base = pr.get("baseRefName") if isinstance(pr, dict) else None
-    if not isinstance(base, str) or not SELECTOR.fullmatch(base):
-        raise refused
+    try:
+        answer = json.loads(done.stdout) if done.returncode == 0 else None
+    except ValueError:
+        answer = None
+    pr: Any = None
+    if isinstance(answer, dict) and "errors" not in answer:
+        data = answer.get("data")
+        repo = data.get("repository") if isinstance(data, dict) else None
+        pr = repo.get("pullRequest") if isinstance(repo, dict) else None
+    if not isinstance(pr, dict) or any(pr.get(f) is not False for f in QUEUE_FIELDS):
+        raise Refused(
+            f"pull request {number} does not merge directly (a merge queue, or GitHub could "
+            "not say): maity gh merges only by a direct squash of the head named"
+        )
     if pr.get("headRefOid") != head:
         raise Refused(
-            f"pull request {number}'s head is not {head} (it moved, or gh could not say): "
+            f"pull request {number}'s head is not {head} (it moved, or GitHub could not say): "
             "read it again before merging"
         )
-    path = f"repos/{owner}/{name}/rules/branches/{urllib.parse.quote(base, safe='')}"
-    rules = _gh_json(gh, ["api", f"--hostname={host}", "--method=GET",
-                          f"{path}?per_page={RULES_PAGE}"], cwd)  # fmt: skip
-    if not isinstance(rules, list) or len(rules) >= RULES_PAGE:
-        raise refused
-    if any(not isinstance(r, dict) or r.get("type") == MERGE_QUEUE_RULE for r in rules):
-        raise refused
 
 
 def _clean(answer: bytes) -> str:
