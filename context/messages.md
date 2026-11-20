@@ -576,6 +576,42 @@ one from prose.
 - Searching `review.subject` for any `#<n>`: free text such as
   `#1203 after #1197` would resolve to the wrong card.
 
+## A boss of another owner is left out in review_delivery, before the gate, not held
+
+**Id:** 1c3c5331-c8a6-4a15-aa5b-0d1ff5cca36d
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-95kvvd03fgs4 and the lead's ruling on its plan, 2026-11-20; contract `docs/api.md` §8.4 ("A review result reaches the author and both leads, except a boss of another owner"), §6.2 "What the edge does" and "Across owners", §9.6
+**Revisit when:** the consent for a cross-owner edge comes to name review results, or the gate on work messages is revisited (`req-55469pjca13n`)
+**See:** messages.md#the-hub-delivers-a-review-result-to-the-author-and-both-leads — 2c02c8c4-6918-495c-ae29-84ec7f3e51f4 — as of 2026-11-20
+**See:** members.md#a-boss-of-another-owner-is-sent-only-session_paused — 8abdbd28-cf43-4f5c-9ee4-9e78c5fb688a — as of 2026-11-20
+
+`review_delivery` adds the sender's and the author's `reports_to` only
+when that boss is of the same owner as its subordinate. Whether it is of
+another owner is the cross-owner test of §6.2 (`cross_owner.owners`): the
+subordinate is an agent and the boss is an agent of another owner or a
+human who is not its owner; a human's own `reports_to` is never
+cross-owner, so a human reviewer's boss is still added. The check sits in
+`_lead`, so such a boss is never among the recipients, and therefore not
+among the card's own flow that `routes/events._deliver_review` hands the
+owner's gate as `passes`. A `to` or a mention naming that boss puts it in
+the audience as for any message, and the gate judges it as anyone else's.
+The rule holds whether the agent firewall is on or off.
+
+**Reason:** §8.4 says such a boss is left out of both additions, and §6.2
+says the edge's consent names only `session_paused` (8abdbd28). Leaving it
+out where the recipients are found keeps it out of the audience and out of
+`passes` at once, independent of the firewall switch, which is off by
+default.
+
+**Rejected alternatives:**
+- Routing each added boss through `chat_gate` as an ordinary recipient:
+  with the firewall off the gate passes every audience, so the boss would
+  still be added; with it on, the boss would appear in `held`, its owner
+  would be asked for a consent, and the event would name it, where §8.4
+  says it is not added at all.
+
 ## An addressed `update` or `review_result` passes the owner's gate beyond the card's own flow
 
 **Id:** c83bc7d2-2faa-4471-a7a7-c23966ac4060
