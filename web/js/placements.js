@@ -211,9 +211,9 @@ window.Maity = window.Maity || {};
         return b;
       };
       // Ended by the runner's owner or the profile's owner, who places it again on a
-      // runner of their own (§15.5, §15.14): the start form (`startForm`) offers an agent
-      // again only once its placement here is gone (`placed`), an own one as much as a
-      // foreign one. Whoever may act on a row here may delete it (§15.6 DELETE: the runner's
+      // runner of their own (§15.5, §15.14): its instance stops counting toward the agent's
+      // max_instances, which the start form (`runnerPart`) counts, once its credential is
+      // revoked. Whoever may act on a row here may delete it (§15.6 DELETE: the runner's
       // owner with any trust, members:admin with the runner included, or the profile's
       // owner): `mayAct` above.
       const remove = h("button", { type: "button", class: "danger", "aria-label": M.t("placements.remove.label", { name }),
@@ -588,9 +588,16 @@ window.Maity = window.Maity || {};
     // credential made is not among the member's live ones (a revoked credential, waiting to
     // rejoin): the hub counts both (`instances_held`, review A1746 of #2058).
     function instancesOf(member) {
-      const liveIds = new Set((member.instances || []).filter((i) => !i.revoked_at).map((i) => i.id));
+      const liveInstances = (member.instances || []).filter((i) => !i.revoked_at);
+      const liveIds = new Set(liveInstances.map((i) => i.id));
+      // A members:admin view names each instance's credential (review A1745 of #2058): then a
+      // placement's credential among the live ones is what makes it hold a live instance; else
+      // its instance id among the live ones.
+      const byCredential = liveInstances.some((i) => i.credential_id);
+      const liveCredentials = new Set(liveInstances.map((i) => i.credential_id).filter(Boolean));
+      const holdsLive = (p) => (byCredential ? liveCredentials.has(p.credential_id) : !p.instance || liveIds.has(p.instance));
       const mine = current.filter((p) => p.active && p.agent && p.agent.id === member.id);
-      const waiting = mine.filter((p) => !p.credential_id || (p.instance && !liveIds.has(p.instance))).length;
+      const waiting = mine.filter((p) => !p.credential_id || !holdsLive(p)).length;
       const live = liveIds.size;
       const max = member.team && Number.isInteger(member.team.max_instances) ? member.team.max_instances : 1;
       const where = [...new Set(mine.map((p) => p.runner && p.runner.name).filter(Boolean))];
@@ -607,7 +614,8 @@ window.Maity = window.Maity || {};
     }
     // An agent that runs already, with room: what the start adds and where the others run.
     function anotherText() {
-      if (!chosen.member || blocked()) return null;
+      // Not before the placements are read: where the others run is not known until then.
+      if (!fields || !chosen.member || blocked()) return null;
       const n = instancesOf(chosen.member);
       if (!n.count) return null;
       const where = n.where.length ? M.t("placements.new.instance_where", { runners: M.fmt.list(n.where) }) : M.t("placements.new.instance_where_none");
@@ -637,7 +645,9 @@ window.Maity = window.Maity || {};
       another.hidden = !more;
       another.textContent = more || "";
       if (fields) fields.set.disabled = !offer.checked;
-      if (fields) fields.clone.setAttribute("placeholder", member ? cloneFor(member.handle) : chosen.handle || M.t("placements.new.clone_placeholder"));
+      // The clone the hub would give: for an agent here or a new profile's handle alike.
+      const named = member ? member.handle : chosen.handle;
+      if (fields) fields.clone.setAttribute("placeholder", named ? cloneFor(named) : M.t("placements.new.clone_placeholder"));
     }
 
     function body() {

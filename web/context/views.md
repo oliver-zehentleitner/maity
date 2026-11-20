@@ -7057,7 +7057,11 @@ clone, branch and reason, read from one's own live runners here that offer the r
 the button reads **Start on the runner**; the fields a placement does not take are hidden
 (validity, the instance choice, take-over, hand-over, subagents, the boss of an agent already
 here), and the submit is `POST …/placements` instead of a join. An agent by id must be a member
-here without an active placement (§15.6, §15.5); otherwise the part says why and nothing is sent.
+here (§15.6) with room under its `max_instances` (§15.5, one placement per instance, several per
+agent, as the hub has taken since tsk-rfa7fwa2sz5g): the part counts its live instances and its
+active placements holding no live credential as the hub does, says for an agent that runs already
+that the start adds another instance and where the others run, and at the limit says that the
+agent's owner raises it first (tsk-yfpwawy3xk3a); otherwise nothing is sent.
 A new profile sends its join fields. The part reads the runners and placements each time it is
 ticked and each time the panel opens. A runner that answers after it was unticked draws nothing.
 

@@ -3447,7 +3447,15 @@ window.Maity = window.Maity || {};
         const a = members.find((x) => x.id === body.agent.id && !x.removed_at);
         if (!a || a.kind !== "agent") fail(400, "invalid", "not an agent of this project", path, { fields: { "agent.id": "not_a_member" } });
         if (a.owner_id !== caller.id) fail(400, "invalid", "name one of your own agents", path, { fields: { "agent.id": "not_yours" } });
-        if (live.some((x) => x.agent.id === a.id)) fail(409, "placement_exists", "an active placement holds this", path);
+        // §15.5: one placement per instance, within max_instances (1 when unset, §6.18): its live
+        // instances plus its active placements holding no live credential (hub instances_held).
+        const liveInstances = (a.instances || []).filter((i) => !i.revoked_at);
+        const liveIds = new Set(liveInstances.map((i) => i.id));
+        const liveCredentials = new Set(liveInstances.map((i) => i.credential_id).filter(Boolean));
+        const holdsLive = (x) => (liveCredentials.size ? liveCredentials.has(x.credential_id) : !x.instance || liveIds.has(x.instance));
+        const waiting = live.filter((x) => x.agent.id === a.id && (!x.credential_id || !holdsLive(x))).length;
+        const max = a.team && Number.isInteger(a.team.max_instances) ? a.team.max_instances : 1;
+        if (liveIds.size + waiting >= max) fail(409, "instance_quota", "the team has as many instances as its rulebook allows", path, { max });
         agent = { id: a.id, handle: a.handle, display_name: a.display_name, avatar_url: null };
       } else {
         const handle = body.agent && body.agent.handle, name = body.agent && body.agent.display_name;
@@ -3460,7 +3468,14 @@ window.Maity = window.Maity || {};
         if (body.role != null && roleBaseIn(m[1], body.role, path) === null) fail(400, "invalid", "the request does not validate", path, { fields: { role: "unknown" } });
         agent = { id: null, handle, display_name: name, avatar_url: null };
       }
-      const clone = (body.workspace && body.workspace.clone) || agent.handle;
+      // Without a clone: the first of <handle>, <handle>-2, … that on this runner no active placement
+      // names, nor a closed one of another member whose clone was not reported removed (§15.5).
+      const holds = (x) => x.runner.id === r.id && (x.active || ((!agent.id || x.agent.id !== agent.id)
+        && !(x.workspace_outcome && x.workspace_outcome.state === "removed")));
+      const taken = new Set(placementsOf(m[1]).filter(holds).map((x) => x.workspace.clone));
+      let free = agent.handle;
+      for (let n = 2; taken.has(free); n += 1) free = agent.handle + "-" + n;
+      const clone = (body.workspace && body.workspace.clone) || free;
       if (live.some((x) => x.runner.id === r.id && x.workspace.clone === clone)) fail(409, "placement_exists", "an active placement holds this", path);
       const c = r.capabilities || {};
       const tool = (c.harnesses || []).find((x) => x.id === body.harness && x.available !== false && (!body.target || (x.targets || []).includes(body.target)));
