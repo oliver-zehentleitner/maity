@@ -3954,6 +3954,7 @@ window.MAITY_I18N["de"] = {
   "project.link.actions_on": "Actions auf {forge}",
   "project.link.chat": "Chat",
   "project.link.discussions": "Discussions",
+  "project.link.docs": "Doku",
   "project.link.issues": "Issues",
   "project.link.ktw_dashboard": "Keep-the-Why-Dashboard",
   "project.link.opens": "{what} (öffnet in einem neuen Tab)",

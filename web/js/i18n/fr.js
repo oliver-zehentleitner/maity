@@ -3742,6 +3742,7 @@ window.MAITY_I18N["fr"] = {
   "project.link.actions_on": "Actions sur {forge}",
   "project.link.chat": "Discussion",
   "project.link.discussions": "Discussions",
+  "project.link.docs": "Docs",
   "project.link.issues": "Issues",
   "project.link.ktw_dashboard": "Tableau de bord Keep the Why",
   "project.link.opens": "{what} (s'ouvre dans un nouvel onglet)",

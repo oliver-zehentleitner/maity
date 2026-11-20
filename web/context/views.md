@@ -5208,14 +5208,15 @@ so it was dropped.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11; the maintainer's request for an Actions button between Repository and Pull Requests, card tsk-kdkdy864q11r, 2026-11-10
+**Source:** the card tsk-ayaav7naskbe, taken over from #846 with its review; the maintainer's decision recorded with 11b7e786, relayed by the coordinator (the repository button reads "Repository"), 2026-10-31; docs/api.md §6.11; the maintainer's request for an Actions button between Repository and Pull Requests, card tsk-kdkdy864q11r, 2026-11-10; the maintainer's request for a Docs link after Discussions, card tsk-qeftb8bg0yt6, 2026-11-19
 **See:** https://github.com/oliver-zehentleitner/maity — 11b7e786-ecf7-4971-ae04-48760fd1fd41 — as of 2026-10-31
-**Revisit when:** a fifth kind of link is added, or the header row has no room for the buttons on a phone
+**See:** https://github.com/oliver-zehentleitner/maity — 6fea85a1-c677-469c-84a5-c2bc2c6438f5 — as of 2026-11-20
+**Revisit when:** a sixth kind of link is added, or the header row has no room for the buttons on a phone
 **See:** views.md#on-a-phone-the-projects-links-are-one-row-that-scrolls-the-state-stands-beside-it — df210b31-e55a-47c9-93da-2d139e9ded89 — as of 2026-11-03
 
 The header's row shows the repository, then Actions, then Pull Requests, then the
-project's own links that are set (issues, wiki, discussions, chat, each
-with its mark), then the
+project's own links that are set (issues, wiki, discussions, docs, chat,
+each with its mark; docs a page, since the book is the wiki's and Why's), then the
 Keep the Why dashboard, and after them, at the right end, the state: the
 maintainer asked for the state on that side and for the Pull Requests
 button (tsk-hf70q6maf8cv, 2026-11-01; no reason was recorded). Unlike the
@@ -5227,7 +5228,7 @@ derived the same way, but only for the forges that call their workflows
 Actions (GitHub, Gitea): GitLab and Bitbucket call theirs Pipelines, a word
 of its own that no card has asked for yet. Its screen-reader name says the
 forge ("Actions on GitHub"), as the repository's does. A second derived
-button is not the "fifth kind of link" the Revisit condition below means
+button is not a new kind of link in the sense of the Revisit condition above
 (an own link of §6.11, which the hub stores): it follows the forge table,
 and on a phone the row still holds every button in one row that scrolls
 (e2e at 390 and 360 px, light and dark). Neither derived button is on the
@@ -5238,9 +5239,9 @@ repository's button reads "Repository" for every forge. Its mark and
 its name for a screen reader ("Repository on GitHub") still say which
 forge. The overview's Project tab shows the same links as buttons
 beside the repository. They are not in the header's list of projects:
-each entry there is itself a link, which cannot hold four more, and `/me`
+each entry there is itself a link, which cannot hold five more, and `/me`
 does not carry a project's links; §6.11 was changed to name the header
-beside the project's state instead (review of #884). Project settings have four fields that send only
+beside the project's state instead (review of #884). Project settings have five fields that send only
 the links that changed; an empty field clears its link, and each refusal
 of the hub is said at its field.
 

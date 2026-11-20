@@ -307,11 +307,13 @@ window.Maity = window.Maity || {};
   };
   const BOOK = "M2 2.5A1.5 1.5 0 013.5 1H13v11H3.5a.5.5 0 000 1H13v1.5H3.5A1.5 1.5 0 012 13V2.5zM5 4v1h5V4H5z";
   // The project's own links (§6.11), in this order, each with its word and a 16 × 16 mark
-  // (Octicons, MIT): an issue, a book, a speech bubble, a chat bubble.
+  // (Octicons, MIT): an issue, a book, a speech bubble, a page, a chat bubble. Docs stands
+  // after Discussions and before Chat, where the maintainer listed it (tsk-qeftb8bg0yt6).
   const OWN_LINKS = [
     ["issues", () => M.t("project.link.issues"), "M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm9 3a1 1 0 11-2 0 1 1 0 012 0zm-.25-6.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z"],
     ["wiki", () => M.t("project.link.wiki"), BOOK],
     ["discussions", () => M.t("project.link.discussions"), "M1.75 1A1.75 1.75 0 000 2.75v6.5C0 10.216.784 11 1.75 11H3v3.25a.75.75 0 001.28.53L7.56 11H11.25A1.75 1.75 0 0013 9.25v-6.5A1.75 1.75 0 0011.25 1H1.75z"],
+    ["docs", () => M.t("project.link.docs"), "M2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16h-9.5A1.75 1.75 0 0 1 2 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 0 0 .25-.25V6h-2.75A1.75 1.75 0 0 1 9 4.25V1.5Zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-.011-.013-2.914-2.914-.013-.011Z"],
     ["chat", () => M.t("project.link.chat"), "M2.75 2h10.5c.966 0 1.75.784 1.75 1.75v7A1.75 1.75 0 0113.25 12.5H6.06L3.28 14.78A.75.75 0 012 14.25V12.5h-.25A1.75 1.75 0 010 10.75v-7C0 2.784.784 2 1.75 2h1z"],
   ];
   // The links that are set, as plain https only: what the header and the overview show.
@@ -621,7 +623,7 @@ window.Maity = window.Maity || {};
     status.el);
   }
 
-  // The project's own links (§6.11), for project:admin: four fields, only
+  // The project's own links (§6.11), for project:admin: five fields, only
   // the changed ones sent (the hub merges by key, so another admin's change
   // to another link meanwhile stays), each refusal said at its field.
   function linksForm(ctx) {

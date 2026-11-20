@@ -3647,6 +3647,7 @@ window.MAITY_I18N["ja"] = {
   "project.link.actions_on": "{forge} 上の Actions",
   "project.link.chat": "チャット",
   "project.link.discussions": "ディスカッション",
+  "project.link.docs": "ドキュメント",
   "project.link.issues": "イシュー",
   "project.link.ktw_dashboard": "Keep the Why のダッシュボード",
   "project.link.opens": "{what} (新しいタブで開きます)",

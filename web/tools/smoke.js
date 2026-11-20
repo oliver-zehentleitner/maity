@@ -3872,10 +3872,11 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     + "https://github.com/oliver-zehentleitner/maity/actions|Actions on GitHub (opens in a new tab)|Actions,"
     + "https://github.com/oliver-zehentleitner/maity/pulls|Pull Requests (opens in a new tab)|Pull Requests,"
     + "https://github.com/oliver-zehentleitner/maity/issues|Issues (opens in a new tab)|Issues,"
+    + "https://maity.dev/|Docs (opens in a new tab)|Docs,"
     + "https://discord.gg/maity|Chat (opens in a new tab)|Chat,"
     + "https://maity.dev/keep-the-why-dashboard/|Keep the Why dashboard (opens in a new tab)|Why"
     && hlLinks().every((a) => a.getAttribute("target") === "_blank" && a.getAttribute("rel") === "noopener noreferrer" && a.querySelector("svg")),
-    "header: the repository (\"Repository\", its forge in the mark and the name), Actions and Pull Requests from its forge, the project's own links that are set, and the Keep the Why dashboard, beside the state, in tabs of their own");
+    "header: the repository (\"Repository\", its forge in the mark and the name), Actions and Pull Requests from its forge, the project's own links that are set (Docs after Discussions, before Chat, tsk-qeftb8bg0yt6), and the Keep the Why dashboard, beside the state, in tabs of their own");
   // The links in a row of their own, which a phone scrolls, the state beside it, not in it (tsk-m9ew7v609fq0).
   const hlBlock = Array.from(header.querySelector(".project-state").childNodes).map((c) => String(c.className || ""));
   expect(hlBlock[0] === "project-links" && hlBlock.findIndex((c) => c.split(" ").includes("state")) > 0
@@ -3914,26 +3915,29 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     { repository: Object.assign({}, x.repository, { url: "https://git.example.org/o/r", forge: "gitea" }), links: Object.assign({}, x.links, { wiki: "http://plain.example/wiki" }),
       keep_the_why_export: Object.assign({}, x.keep_the_why_export, { members: x.keep_the_why_export.members.map((m) => Object.assign({}, m, { dashboard_url: "http://plain.example/" })) }) })) : hlGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
-  expect(hlLinks().length === 5 && text(hlLinks()[0]) === "Repository" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
+  expect(hlLinks().length === 6 && text(hlLinks()[0]) === "Repository" && hlLinks()[0].getAttribute("aria-label") === "Repository on Gitea (opens in a new tab)",
     "header: another forge in the name for a screen reader; a dashboard or a link that is not plain https gets no link");
-  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null, links: { issues: null, wiki: null, discussions: null, chat: null } })) : hlGet(p));
+  win.Maity.api.get = (p) => (p === "/projects/maintainer/maity" ? hlGet(p).then((x) => Object.assign({}, x, { repository: null, keep_the_why_export: null, links: { issues: null, wiki: null, discussions: null, docs: null, chat: null } })) : hlGet(p));
   await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
   expect(!hlLinks().length, "header: neither where the project has neither");
   win.Maity.api.get = hlGet;
-  // The project's own links (§6.11, tsk-ayaav7naskbe): buttons beside the repository on the overview; four fields in
+  // The project's own links (§6.11, tsk-ayaav7naskbe): buttons beside the repository on the overview; five fields in
   // Project settings that send only what changed, each refusal at its field.
   {
     await go("#/maintainer/maity/overview/project"); for (let k = 0; k < 4; k++) await tick();
     const olinks = () => main.querySelectorAll("a.project-own-link").map((a) => a.getAttribute("data-link") + "|" + a.getAttribute("href") + "|" + a.getAttribute("rel"));
-    expect(JSON.stringify(olinks()) === JSON.stringify(["issues|https://github.com/oliver-zehentleitner/maity/issues|noopener noreferrer", "chat|https://discord.gg/maity|noopener noreferrer"]),
+    expect(JSON.stringify(olinks()) === JSON.stringify(["issues|https://github.com/oliver-zehentleitner/maity/issues|noopener noreferrer", "docs|https://maity.dev/|noopener noreferrer", "chat|https://discord.gg/maity|noopener noreferrer"]),
       "links: the overview's Project tab shows the set links as buttons beside the repository " + JSON.stringify(olinks()));
     const lkPatches = [];
     const lkPatch = win.Maity.api.patch;
     win.Maity.api.patch = (p, b) => { if (b && "links" in b) lkPatches.push(JSON.parse(JSON.stringify(b))); return lkPatch(p, b); };
     await projectSettings(); await tick();
     const lkForm = () => main.querySelector("form.links-form");
-    expect(lkForm() && byId("link-issues").value === "https://github.com/oliver-zehentleitner/maity/issues" && byId("link-wiki").value === "",
-      "links: Project settings show the four fields with what is set");
+    expect(lkForm() && byId("link-issues").value === "https://github.com/oliver-zehentleitner/maity/issues" && byId("link-wiki").value === ""
+      && byId("link-docs").value === "https://maity.dev/"
+      && JSON.stringify(lkForm().querySelectorAll("input").map((i) => i.getAttribute("id"))) === JSON.stringify(["link-issues", "link-wiki", "link-discussions", "link-docs", "link-chat"])
+      && lkForm().querySelectorAll("label").map((l) => text(l)).join() === "Issues,Wiki,Discussions,Docs,Chat",
+      "links: Project settings show the five fields with what is set, Docs after Discussions");
     lkForm().dispatch("submit"); for (let k = 0; k < 4; k++) await tick();
     expect(!lkPatches.length && text(lkForm()).includes("Nothing changed."), "links: nothing changed, nothing sent");
     byId("link-wiki").value = "https://wiki.example.org:8443/maity"; byId("link-chat").value = "";
@@ -3946,13 +3950,19 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(JSON.stringify(lkPatches[1]) === JSON.stringify({ links: { wiki: "https://wiki.example.org/maity", chat: null } }) && text(main).includes("Links saved."),
       "links: saved; the chat link cleared, the issues link left as it was");
     const after = await win.Maity.api.get("/projects/maintainer/maity");
-    expect(JSON.stringify(after.links) === JSON.stringify({ issues: "https://github.com/oliver-zehentleitner/maity/issues", wiki: "https://wiki.example.org/maity", discussions: null, chat: null }),
+    expect(JSON.stringify(after.links) === JSON.stringify({ issues: "https://github.com/oliver-zehentleitner/maity/issues", wiki: "https://wiki.example.org/maity", discussions: null, docs: "https://maity.dev/", chat: null }),
       "links: the fixture hub merged by key, as the hub does");
     const tooLong = await win.Maity.api.patch("/projects/maintainer/maity", { links: { issues: "https://x.example/" + "a".repeat(500) } }).catch((e) => e);
     const unknown = await win.Maity.api.patch("/projects/maintainer/maity", { links: { forum: "https://x.example/" } }).catch((e) => e);
     expect(tooLong.details.fields["links.issues"] === "too_long" && unknown.details.fields["links.forum"] === "unknown", "links: too long and an unknown key refused as the hub does");
     win.Maity.api.patch = lkPatch;
     await win.Maity.api.patch("/projects/maintainer/maity", { links: { wiki: null, chat: "https://discord.gg/maity" } });
+    // Docs not set: no Docs button, the other links stay (tsk-qeftb8bg0yt6).
+    await win.Maity.api.patch("/projects/maintainer/maity", { links: { docs: null } });
+    await go("#/maintainer/maity/inbox"); for (let k = 0; k < 4; k++) await tick();
+    expect(!hlLinks().some((a) => text(a) === "Docs") && hlLinks().some((a) => text(a) === "Issues") && hlLinks().some((a) => text(a) === "Chat"),
+      "links: a project without a docs link shows no Docs button " + hlLinks().map((a) => text(a)).join());
+    await win.Maity.api.patch("/projects/maintainer/maity", { links: { docs: "https://maity.dev/" } });
   }
   await go("#/maintainer/sample/board"); for (let k = 0; k < 4; k++) await tick();
   // The released mark (§6.1): beside the state in the header, on the overview and in Project settings; none where unset.
