@@ -16978,8 +16978,9 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   const csRev = win.Maity.notify.state.sessionsRev;
   win.Maity.notify.state.sessionsRev = "acr-999";
   win.Maity.notify.changed(); for (let k = 0; k < 4; k++) await tick();
-  // Two reads of the active sessions: this section's and the sign-in banner's (tsk-g776fdyg6ekc).
-  expect(csGets.length === 2 && csRows().length === 6 && text(csRows()[0]).includes("Oct 26") && text(csRows()[1]).includes("not confirmed") && !text(csRows()[0]).includes("not confirmed")
+  // One read: this section's. notify.changed() runs the section's watcher, not the banner's
+  // (that one follows a sessions_rev moved by the bell's own reads, the case further below).
+  expect(csGets.length === 1 && csRows().length === 6 && text(csRows()[0]).includes("Oct 26") && text(csRows()[1]).includes("not confirmed") && !text(csRows()[0]).includes("not confirmed")
     && text(csRows()[5]).includes("and 2 more"),
     "notifications: a moved sessions_rev reads them again; newest first, five shown, the rest counted, the unconfirmed marked " + text(csBox()));
   win.Maity.api.get = (p) => (p === "/auth/sessions" ? Promise.reject(new win.Maity.api.ApiError("down", 500, p, "internal", {})) : csGet(p));
