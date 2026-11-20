@@ -49,6 +49,20 @@ REMOTE_HOME = re.compile(r"^/[A-Za-z0-9._/-]*$")
 SSH_UNREACHABLE = 255  # ssh's own exit code when the connection fails
 
 
+def shell_quote(word: str) -> str:
+    """`shlex.quote`, and a word that starts with `=` quoted too: `shlex.quote` leaves it bare
+    (`=` is safe in POSIX sh), but zsh expands a bare `=name` to the path of the command `name`
+    and fails when there is none, so an exact tmux target (`=maity_p_c`) would not reach tmux."""
+    if word.startswith("="):
+        return "'" + word.replace("'", "'\"'\"'") + "'"
+    return shlex.quote(word)
+
+
+def shell_join(words: Sequence[str]) -> str:
+    """`shlex.join` with `shell_quote`: one line for a POSIX shell or zsh."""
+    return " ".join(shell_quote(word) for word in words)
+
+
 class Unreachable(OSError):
     """An ssh target's host did not answer (ssh's exit 255)."""
 
@@ -443,7 +457,7 @@ class Ssh(AsUser):
         """One remote command line: every word quoted, `env` set explicitly."""
         pairs = [f"{key}={value}" for key, value in (env or {}).items()]
         words = [*(["env", *pairs] if pairs else []), *argv]
-        return [*self.ssh(), "--", " ".join(shlex.quote(word) for word in words)]
+        return [*self.ssh(), "--", shell_join(words)]
 
     def run(
         self,

@@ -25,7 +25,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from .asuser import SSH_UNREACHABLE, AsUser, Unreachable
+from .asuser import SSH_UNREACHABLE, AsUser, Unreachable, shell_join
 
 PREFIX = "maity_"
 CONF = 'set -g update-environment ""\nset -g remain-on-exit on\nset -g history-limit 5000\n'
@@ -177,8 +177,8 @@ def attach_words(socket: Path, name: str, as_user: AsUser) -> list[str]:
 
 
 def attach_hint(socket: Path, name: str, as_user: AsUser) -> str:
-    """`attach_words` as one line to paste, every word quoted."""
-    return shlex.join(attach_words(socket, name, as_user))
+    """`attach_words` as one line to paste, every word quoted (the `=` target too, for zsh)."""
+    return shell_join(attach_words(socket, name, as_user))
 
 
 def session_name(project: str, clone: str) -> str:

@@ -249,7 +249,8 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert states(reports) == [("starting", None, None), ("running", None, None)]
     first, second = (b for _, b in reports.sent)
     assert (first["seq"], second["seq"]) == (1, 2)
-    assert second["session_hint"] == "tmux -S /run/maity/tmux.sock attach -t =maity_maity_agent-3"
+    hint = "tmux -S /run/maity/tmux.sock attach -t '=maity_maity_agent-3'"
+    assert second["session_hint"] == hint
     assert second["target"] == "local" and second["observed_generation"] == 1
 
 

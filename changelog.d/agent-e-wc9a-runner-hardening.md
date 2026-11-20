@@ -13,6 +13,8 @@
 - cli: every tmux target of the runner names its session exactly (`-t =name`, and
   `-t =name:` where tmux reads a pane), so a command for a session that is gone no longer
   reaches another session whose name starts with it. The attach hint uses the same form.
+  Where such a target goes through a shell (the attach hint, a command over ssh), the `=name`
+  word is quoted, since zsh would expand it bare.
 
 ### Changed
 
