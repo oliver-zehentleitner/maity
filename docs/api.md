@@ -19263,7 +19263,12 @@ agents' shared home, which no removal of a clone reaches:
   harness whose sandbox the runner is shown to open for it (Claude Code
   and Codex), the runner passes the path as `MAITY_SCRATCH`, points
   `TMPDIR` into it, so a tool's temporary files land there too, and
-  grants the sandbox writes there. `antigravity` gets neither variable
+  grants the sandbox writes there. `TMPDIR` is pointed there only while a
+  Unix socket named under it fits the socket path limit (107 bytes on
+  Linux, 103 on macOS; Claude
+  Code's sandbox binds one there); otherwise the session gets no `TMPDIR`
+  (tools use `/tmp`), which under the default `~/maity-workspaces` is the
+  usual case, and only `MAITY_SCRATCH` names the scratch. `antigravity` gets neither variable
   and no scratch until its sandbox is shown to write there: a `TMPDIR`
   its sandbox cannot write would break every temporary file. `opencode`
   gets none either: it runs without a sandbox, and its adapter denies
