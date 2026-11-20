@@ -40,7 +40,11 @@
   listed as detached for 30 days, claims released and `lead_instance` cleared there), and
   on the last attachment the hub's `no_membership` revocation behind it writes
   `credential_revoked` with `reason: no_membership` to the agent profile's owner alone, so
-  no member of the project reads it (§6.17, §8.2, §10); `session_started` carries `opened`
+  no member of the project reads it (§6.17, §8.2, §10);
+  an admin of the project may still notice the `seq` gap that event leaves right after the
+  detach's `member_updated`, which is accepted, as its content and cause stay hidden (§6.17);
+  how an owner who is not a member of that project reads it is open, for it and for
+  `credential_in_payload` alike, until hub PR A (§8.2); `session_started` carries `opened`
   and is written in an isolated project on every resume of the instance, an all-isolated
   or a one-membership isolated resume included, always with `opened: false` there, so it
   tells that project nothing about other attachments; in a project that is not isolated
