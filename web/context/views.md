@@ -6467,6 +6467,52 @@ working against a hub from before #1656.
 - Asking `/bootstrap` on a switch inside the project too: such a switch reuses the kept session,
   `/me` and project, and reads only the head; the bundle would read more than it saves.
 
+## The notifications head starts beside /bootstrap, quiet until the session is known; a drawing led on at once takes the same head
+
+**Id:** 19a7d2b5-22af-4a7e-8592-b4446081e9cd
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** the card tsk-zf3wd9t5gjab (fix 1 of the umbrella tsk-a5pxwgkgr73e, the lead's go on its proposal); the measurements in notes nte-58398aanz1j9, nte-r4ykqgw8mwnk and nte-9m9144akc4zw (2026-11-20, cold loads from one host); web/js/app.js `drawing` (`bootHead`, `shared`, `mineAhead`), web/js/api.js `request` (`quiet`); web/tools/e2e.py `BootHeads`; the boot-order cases in web/tools/smoke.js
+**Revisit when:** a rerun on the measured host does not show the head overlapping `/bootstrap`, the head becomes a part of `/bootstrap` (a §5.4 change), or the dashboard can tell before any read whether it has a session
+**See:** views.md#the-boot-reads-one-get-bootstrap-and-answers-its-own-reads-from-the-parts-an-older-hubs-404-leaves-them-to-their-routes — 884b01fe-ffc5-4d39-843e-aa0d9c84ffde — as of 2026-11-20
+**See:** refresh.md#a-page-switch-draws-from-the-session-me-and-project-it-kept-and-reads-them-again-behind-the-view — f71932e2-191d-492b-aef9-02a274a8855c — as of 2026-11-20
+
+A cold drawing asks `GET /me/notifications?limit=0` right after it asks `/bootstrap`, not in the
+`Promise.all` beside the context, which it reached only once the session and `/me` had been
+answered. The head stays outside the bundle; §5.4 is unchanged. Since the session is not known yet,
+the read is quiet (`M.api.get(path, { quiet: true })`): its 401 or 403 does not end the session and
+does not redraw the setup. Where the drawing returns early (the sign-in, a visitor's page, the second
+factor's step, the setup, a pending account) the answer is dropped. Where it reaches the context,
+the session is known, and a quiet head that met a 401, a 403 or an ended session is asked once more
+through the usual handling. A real failure is then reported the way it always was.
+A drawing that follows at once (Settings leading a member without project:admin on to
+`settings/mine`) takes the same head while it is in flight or answered less than 2 s before, with no
+write of the tab and no new session since. Settings → Mine's own `…/me/settings` is started beside
+the context where the address draws that tab, and the view takes it once under the same rule.
+
+**Reason:** on prod the head took 100–150 ms alone after `/bootstrap` on every page, so the two
+boot reads ran one after the other where they could overlap. On settings a second head followed in
+the drawing the view led on to, and `…/me/settings` came only after both. The quiet read with one
+re-ask keeps the handling of 63c48583 and 884b01fe for every read that decides something: only an
+answer read before its session was known is quiet. Where the head starts, that a signed-out 401 is
+dropped, that the bundle stays as it is and that settings asks no second head are the card's scope,
+confirmed by the lead's go; the 2 s window, the re-ask and the harness rule are this
+implementation's reading of it, not yet confirmed by review.
+
+**Rejected alternatives:**
+- The head as a part of `/bootstrap`: a contract change (§5.4), which the card left out.
+- Starting the head once the bundle's session part has answered: that is the round trip already
+  paid after the bundle, so no gain.
+- Gating the early head on the readable `maity_csrf` cookie, as the early `/me` of 63c48583 once was:
+  a session that owes the second factor has the cookie too, and its 403 would still come. Without the
+  gate a visitor's page load asks one head more, which answers 401 and is dropped.
+- The e2e harness excusing every 401 or 403 of the head: that could hide a real failing head, which
+  is why the early `/me` was given up (63c48583). `BootHeads` excuses only a head asked while that
+  page's `/bootstrap` was still out; the re-ask and every later head are judged as before.
+- No head on a switch at all: the counts then waited for the next 60-second round on every switch,
+  not only on the one a view leads on to.
+
 ## A handle field's hint is a sentence of fixed words, with no handle or address filled in
 
 **Id:** e9c2136d-efa9-4222-b013-6042a56ec86c
