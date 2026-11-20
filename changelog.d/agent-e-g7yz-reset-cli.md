@@ -1,8 +1,8 @@
 ### Added
 
 - cli: `maity placement restart --fresh-session`, a reset from the CLI (`fresh_session: true`,
-  docs/api.md §15.6) for a runner's owner or an agent with `agents:propose`; it combines with
-  `--rejoin` (tsk-dqxmc1f0cxj0).
+  docs/api.md §15.6); it takes the same right as a restart (§15.6) and combines with `--rejoin`
+  (tsk-dqxmc1f0cxj0).
 
 ### Fixed
 

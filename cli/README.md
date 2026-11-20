@@ -600,7 +600,8 @@ maity placement stop agent-f#wqe2               # one of agent-f's placements
 §15.6), the dashboard's **Reset**: the agent starts on a fresh session of
 its tool instead of resuming the last conversation, in the same clone with
 its branches. It takes the same right as a restart and combines with
-`--rejoin`.
+`--rejoin`. Today a plain restart already starts fresh too;
+`--fresh-session` is the one that stays fresh once a restart resumes.
 
 An agent is named by its handle or member id, and a placement by its id.
 An exact id wins. A name that matches more than one member or placement is

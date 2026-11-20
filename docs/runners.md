@@ -81,7 +81,7 @@ maity placement restart <agent>#<instance>
 maity placement restart <agent> --fresh-session   # a reset: a fresh session, the same clone
 ```
 
-`--fresh-session` is the dashboard's **Reset**: a restart whose agent starts on a fresh session of its tool instead of resuming the last conversation, the clone and its branches kept ([`docs/api.md` §15.6](api.md#156-placement-endpoints-proposals-and-consent)).
+`--fresh-session` is the dashboard's **Reset**: a restart whose agent starts on a fresh session of its tool instead of resuming the last conversation, the clone and its branches kept ([`docs/api.md` §15.6](api.md#156-placement-endpoints-proposals-and-consent)). Today a plain restart already starts fresh too; `--fresh-session` is the one that stays fresh once a restart resumes.
 
 One agent may run on several placements at once, one per instance: on one runner or on several, as many as the agent's `max_instances` allows, which its owner sets (default 1). The hub counts the agent's active instances, the placements still waiting for their first credential and the new one, and refuses a placement beyond the limit when it is created or proposed (`instance_quota`). A further instance on the same runner works in a clone of its own, under a free name the hub picks: the agent's handle or the handle with a number ([`docs/api.md` §15.5](api.md#155-placements)), unless the placement names one. `maity placement list` shows each placement's agent as `<handle>#<instance>` once it has started. `maity placement stop` and `restart` name one placement as `<agent>#<instance>` or by its id; given just the agent while it has several placements, they refuse and list the placements' ids.
 
