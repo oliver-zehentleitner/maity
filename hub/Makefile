@@ -28,8 +28,8 @@ dev:
 # The tested set: every dependency pinned with hashes in requirements/, the
 # hub itself on top without resolving anything again, into PYTHON's environment.
 install:
-	$(PYTHON) -m pip install --require-hashes -r requirements/dev.txt -r requirements/build.txt
-	$(PYTHON) -m pip install --no-deps --no-build-isolation -e .
+	"$(PYTHON)" -m pip install --require-hashes -r requirements/dev.txt -r requirements/build.txt
+	"$(PYTHON)" -m pip install --no-deps --no-build-isolation -e .
 
 format:
 	"$(PYTHON)" -m black src tests scripts hatch_build.py
