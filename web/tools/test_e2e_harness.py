@@ -26,6 +26,7 @@ WANTED = {
     "trace_path", "trace_data", "trace_line", "report_failure",
     "clean_environment",
     "LOCK_PATH", "_machine_lock", "open_lock_file", "take_machine_lock",
+    "BOOT_HEAD", "BootHeads",
 }
 
 
@@ -33,11 +34,11 @@ def load() -> dict:
     tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
     nodes = []
     for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name in WANTED:
+        if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in WANTED:
             nodes.append(node)
         elif isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in WANTED for t in node.targets):
             nodes.append(node)
-    found = {n.name if isinstance(n, ast.FunctionDef) else n.targets[0].id for n in nodes}
+    found = {n.name if isinstance(n, (ast.FunctionDef, ast.ClassDef)) else n.targets[0].id for n in nodes}
     if found != WANTED:
         sys.exit(f"e2e.py lacks {sorted(WANTED - found)}")
     namespace = {"re": re, "json": json, "sys": sys, "Path": Path, "Run": object, "os": os, "fcntl": fcntl, "time": time}
@@ -133,6 +134,33 @@ def trace_cases(ns: dict) -> int:
     check("an error keeps its code, not its message", '"code":"forbidden"' in lines[4] and "message" not in lines[4], lines[4])
     check("an enrollment keeps no code", '"code"' not in lines[3], lines[3])
     check("a body that is not JSON, or gone, is not shown", lines[1].endswith("(body not shown)") and lines[5].endswith("(body not shown)") and lines[6].endswith("(body not shown)"), lines)
+    return failed
+
+
+def boot_head_cases(ns: dict) -> int:
+    """The boot's early notifications head (BootHeads, tsk-zf3wd9t5gjab): its 401 or 403 is excused only
+    while that page's /bootstrap is out; a later head's refusal stays a problem."""
+    failed = 0
+
+    def check(name: str, ok: bool) -> None:
+        nonlocal failed
+        failed += not ok
+        print(("ok   " if ok else "FAIL ") + name)
+
+    head, boot = ns["BOOT_HEAD"], "/api/v1/bootstrap?project=owner/e2e-alpha"
+    heads = ns["BootHeads"]()
+    early, late, other = object(), object(), object()
+    heads.asked(boot, object())
+    heads.asked(head, early)
+    heads.asked("/api/v1/me", other)
+    heads.ended(boot)
+    heads.asked(head, late)
+    check("boot head: a 401 of the head asked beside /bootstrap is excused", heads.excused(head, 401, early))
+    check("boot head: a 403 of it too (a session that owes the second factor)", heads.excused(head, 403, early))
+    check("boot head: its 500 stays a problem", not heads.excused(head, 500, early))
+    check("boot head: a head asked after /bootstrap answered stays a problem", not heads.excused(head, 401, late))
+    check("boot head: another route asked beside /bootstrap stays a problem", not heads.excused("/api/v1/me", 401, other))
+    check("boot head: with no /bootstrap out nothing is excused", not ns["BootHeads"]().excused(head, 401, early))
     return failed
 
 
@@ -350,6 +378,7 @@ def main() -> int:
         failed += not ok
         print(("ok   " if ok else "FAIL ") + name + ("" if ok else f": {got}"))
     failed += trace_cases(ns)
+    failed += boot_head_cases(ns)
     failed += environment_cases(ns)
     failed += lock_cases(ns)
     failed += a11y_cases()

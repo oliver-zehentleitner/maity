@@ -6291,9 +6291,12 @@ window.Maity = window.Maity || {};
   // refused before this) and no change of the zone was saved while it was on its way; a saved
   // change of the settings sets it from their answer.
   let zoneSaves = 0;
-  function request(method, path, body, raw, signal, headers) {
+  // quiet: a read started before the drawing knows whether there is a session (the boot's
+  // notifications head, js/app.js): its 401 or enrolment 403 tells the page nothing, since the
+  // drawing has not yet read the session that would decide it (tsk-zf3wd9t5gjab).
+  function request(method, path, body, raw, signal, headers, quiet) {
     const saves = zoneSaves;
-    const answer = requestOnce(method, path, body, raw, signal, headers);
+    const answer = requestOnce(method, path, body, raw, signal, headers, quiet);
     const setZone = (name) => { if (M.i18n && M.i18n.setZone) M.i18n.setZone(name); };
     if (method === "GET" && path === "/me") {
       return answer.then((m) => { if (saves === zoneSaves && m && m.member && m.member.kind === "human") setZone(m.member.timezone); return m; });
@@ -6303,7 +6306,7 @@ window.Maity = window.Maity || {};
     }
     return answer;
   }
-  function requestOnce(method, path, body, raw, signal, headers) {
+  function requestOnce(method, path, body, raw, signal, headers, quiet) {
     const publicCall = PUBLIC_PATH.test(path);
     // A write may change what the dashboard keeps between page switches (js/app.js): told first.
     // A tab's presence (§18.4) changes nothing the page shows, so it keeps what is kept.
@@ -6347,6 +6350,7 @@ window.Maity = window.Maity || {};
         if (sessionBlocked || epoch !== (M.sessionEpoch || 0)) throw obsoleteSession(path);
         return answer;
       }, (err) => {
+        if (quiet) throw err;
         if (err && err.status === 401 && M.onSessionEnded) M.onSessionEnded(path, epoch);
         // The hub moved a running session into enrolment (§2.8.5): the setup is all it reaches now.
         if (err && err.status === 403 && err.details && err.details.reason === "second_factor_enrolment_required" && M.onEnrolmentRequired) M.onEnrolmentRequired();
@@ -6395,7 +6399,8 @@ window.Maity = window.Maity || {};
     fixtureMailTestTo,
     source,
     ApiError,
-    get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal),
+    // opts: { signal } cancels the read; { quiet } (request, above) tells the page of no 401.
+    get: (path, opts) => request("GET", path, undefined, undefined, opts && opts.signal, undefined, !!(opts && opts.quiet)),
     getAll,
     // The boot's bundle (§5.4, above): prime(project or null, live) gives a token for unprime.
     prime,

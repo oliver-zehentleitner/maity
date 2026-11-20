@@ -560,7 +560,42 @@ def stop_hub(hub: subprocess.Popen) -> None:
             hub.wait()
 
 
+BOOT_HEAD = "/api/v1/me/notifications?limit=0"
+
+
+class BootHeads:
+    """The notifications heads a page asked beside its GET /bootstrap (tsk-zf3wd9t5gjab).
+
+    The dashboard asks the head before it knows the session, so a visitor's 401 and the 403 of a
+    session that owes the second factor are expected there, and the page drops them. Such a head is
+    told apart by its order alone: asked while that page's /bootstrap is still out. Every later head,
+    the page's own second ask once the session is read among them, is judged as any answer.
+    """
+
+    def __init__(self) -> None:
+        self.out = 0
+        self.early: set = set()
+
+    def asked(self, path: str, key) -> None:
+        if path.startswith("/api/v1/bootstrap"):
+            self.out += 1
+        elif path == BOOT_HEAD and self.out:
+            self.early.add(key)
+
+    def ended(self, path: str) -> None:
+        if path.startswith("/api/v1/bootstrap") and self.out:
+            self.out -= 1
+
+    def excused(self, path: str, status: int, key) -> bool:
+        return status in (401, 403) and path == BOOT_HEAD and key in self.early
+
+
 def watch_page(run: Run, page: Page) -> None:
+    heads = BootHeads()
+
+    def request(req) -> None:
+        heads.asked(req.url.split(run.base, 1)[-1], req)
+
     def console(msg) -> None:
         # Chromium logs every answer of 400 or more as "Failed to load
         # resource: the server responded with a status of …"; those are judged
@@ -569,6 +604,7 @@ def watch_page(run: Run, page: Page) -> None:
             run.problems.append(f"console error: {msg.text}")
 
     def request_failed(req) -> None:
+        heads.ended(req.url.split(run.base, 1)[-1])
         # A navigation or a re-render may cancel a request the page no longer needs.
         if req.failure != "net::ERR_ABORTED":
             run.problems.append(f"{req.method} {req.url} failed: {req.failure}")
@@ -577,12 +613,15 @@ def watch_page(run: Run, page: Page) -> None:
         path = resp.url.split(run.base, 1)[-1]
         if path.startswith("/api/v1/"):
             run.recent.append(resp)
-        # Signed out, the page asks /auth/session first and expects 401.
+        heads.ended(path)
+        # Signed out, the page asks /auth/session first and expects 401; the boot's early
+        # notifications head may meet the same (BootHeads).
         if resp.status >= 400 and not (
             resp.status == 401 and path.startswith("/api/v1/auth/session")
-        ):
+        ) and not heads.excused(path, resp.status, resp.request):
             run.problems.append(f"{resp.request.method} {path} answered {resp.status}")
 
+    page.on("request", request)
     page.on("console", console)
     page.on("pageerror", lambda err: run.problems.append(f"page error: {err}"))
     page.on("response", response)
@@ -727,19 +766,31 @@ def bootstrap_boot(run: Run, page: Page) -> None:
     singles = {f"{base}/maintenance", f"{base}/auth/session", f"{base}/me", f"{base}/projects/owner/e2e-alpha",
                f"{base}/projects/owner/e2e-alpha/members", f"{base}/projects/owner/e2e-alpha/events?after=latest&wait=0"}
     asked: list[str] = []
+    # Whether /bootstrap had answered when each notifications head was asked (tsk-zf3wd9t5gjab).
+    bundle = {"answered": False}
+    heads: list[bool] = []
 
     def record(r) -> None:
         path = r.url.split("://", 1)[1].split("/", 1)[1]
         if path.startswith("api/v1/"):
             asked.append("/" + path)
+        if "/" + path == BOOT_HEAD:
+            heads.append(bundle["answered"])
+
+    def answered(resp) -> None:
+        if BOOTSTRAP.search(resp.url):
+            bundle["answered"] = True
 
     page.on("request", record)
+    page.on("response", answered)
     try:
         page.goto(f"{run.base}/owner/e2e-alpha/board")
         expect(page.locator("main section.view-board")).to_be_visible()
         boot = [a for a in asked if a.startswith(f"{base}/bootstrap")]
         assert boot == [f"{base}/bootstrap?project=owner/e2e-alpha"], asked
         assert not singles.intersection(asked), f"single reads beside the bundle: {sorted(singles.intersection(asked))}"
+        # The notifications head is asked beside the bundle, not after its answer.
+        assert heads[:1] == [False], f"the first notifications head was asked after the bundle answered: {heads} {asked}"
         asked.clear()
 
         def older_hub(route) -> None:
@@ -757,6 +808,7 @@ def bootstrap_boot(run: Run, page: Page) -> None:
             page.unroute(BOOTSTRAP, older_hub)
     finally:
         page.remove_listener("request", record)
+        page.remove_listener("response", answered)
 
 
 def no_problems(run: Run, where: str) -> None:
