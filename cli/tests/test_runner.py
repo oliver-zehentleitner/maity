@@ -839,6 +839,264 @@ def test_check_runs_no_bubblewrap_probe_under_seatbelt(
     assert not (bin_dir / "bwrap.ran").exists()
 
 
+FILTERING = "Name:\tcat\nSeccomp:\t0\nSeccomp_filters:\t0\n"
+
+
+@pytest.mark.parametrize(
+    ("machine", "release", "status", "outcome", "arch"),
+    [
+        ("x86_64", "6.12.0-1-amd64", FILTERING, "ok", "x64"),
+        ("aarch64", "6.8.0", FILTERING, "ok", "arm64"),
+        ("arm64", "6.8.0", FILTERING, "ok", "arm64"),
+        ("amd64", "6.8.0", FILTERING, "ok", "x64"),
+        ("AMD64", "6.8.0", FILTERING, "ok", "x64"),
+        ("AArch64", "6.8.0", FILTERING, "ok", "arm64"),
+        ("x86_64", "5.4.0-200", "Seccomp:\t0\n", "ok", "x64"),  # before Seccomp_filters
+        ("riscv64", "6.12.0", FILTERING, "unsupported_arch", "riscv64"),
+        ("i686", "6.12.0", FILTERING, "unsupported_arch", "i686"),
+        ("x64", "6.12.0", FILTERING, "unsupported_arch", "x64"),  # Claude Code's name, no uname
+        ("ppc64le", "6.12.0", FILTERING, "unsupported_arch", "ppc64le"),
+        ("x86_64", "6.12.0", "Name:\tcat\n", "no_seccomp", "x64"),
+        ("x86_64", "6.12.0", "Seccomp:\t0\n", "no_seccomp", "x64"),
+        ("x86_64", "5.9.0", "Seccomp:\t0\n", "no_seccomp", "x64"),
+        ("x86_64", "6.12.0", "Seccomp:\tx\n", "inconclusive", "x64"),
+        ("x86_64", "unknown", "Seccomp:\t0\n", "inconclusive", "x64"),
+        ("", "6.12.0", FILTERING, "inconclusive", ""),
+        ("x86_64", "6.12.0", None, "inconclusive", ""),
+    ],
+)  # fmt: skip
+def test_the_seccomp_preflight_reads_the_machine_and_the_kernels_seccomp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    machine: str,
+    release: str,
+    status: str | None,
+    outcome: str,
+    arch: str,
+) -> None:
+    """A machine Claude Code ships its seccomp helper for, and a kernel with seccomp filtering:
+    `Seccomp:` always, `Seccomp_filters:` from Linux 5.9 on. What cannot be read is
+    `inconclusive`, never `ok`."""
+    import platform
+
+    from maity.runner import capabilities
+
+    proc = tmp_path / "status"
+    if status is not None:
+        proc.write_text(status)
+    monkeypatch.setattr(capabilities, "PROC_STATUS", proc)
+    monkeypatch.setattr(platform, "machine", lambda: machine)
+    monkeypatch.setattr(platform, "release", lambda: release)
+    found = capabilities.claude_seccomp()
+    assert (found.outcome, found.arch) == (outcome, arch)
+    if outcome != "ok":
+        assert found.detail
+
+
+def test_the_seccomp_preflight_asks_the_agents_side_in_one_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Through sudo or ssh: one fixed `sh -c` as the agents' user, its three answers in order;
+    a call that fails is `inconclusive`."""
+    import subprocess
+
+    from maity.runner import capabilities
+    from maity.runner.asuser import AsUser
+
+    calls: list[list[str]] = []
+    answer = {"code": 0, "out": "aarch64\n6.12.0\n" + FILTERING}
+
+    def run(self: AsUser, argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(argv, int(str(answer["code"])), str(answer["out"]), "")
+
+    monkeypatch.setattr(AsUser, "run", run)
+    found = capabilities.claude_seccomp(AsUser("agents"))
+    assert (found.outcome, found.arch) == ("ok", "arm64")
+    assert calls == [["sh", "-c", 'uname -m && uname -r && cat "$1"', "sh", "/proc/self/status"]]
+    answer["code"] = 1
+    assert capabilities.claude_seccomp(AsUser("agents")).outcome == "inconclusive"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "level", "code"),
+    [("ok", "ok", 0), ("unsupported_arch", "error", 1), ("no_seccomp", "error", 1),
+     ("inconclusive", "error", 1)],
+)  # fmt: skip
+def test_check_reports_the_seccomp_preflight_under_bubblewrap(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
+    level: str,
+    code: int,
+) -> None:
+    """Every answer but `ok` is an error, as the supervisor refuses the start on it."""
+    from maity.runner import capabilities
+
+    answers = {
+        "ok": capabilities.ClaudeSeccomp("ok", "x64"),
+        "unsupported_arch": capabilities.ClaudeSeccomp("unsupported_arch", "riscv64", "m"),
+        "no_seccomp": capabilities.ClaudeSeccomp("no_seccomp", "x64", "no Seccomp line"),
+        "inconclusive": capabilities.ClaudeSeccomp("inconclusive", detail="unreadable"),
+    }
+    monkeypatch.setattr(capabilities, "claude_seccomp", lambda as_user: answers[outcome])
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "linux")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
+    said = [line for line in lines(capsys) if "seccomp" in line]
+    assert [line.split()[0] for line in said] == [level], said
+    if outcome == "ok":
+        assert said[0].endswith("machine x64, kernel seccomp filtering present")
+    else:
+        assert said[0].endswith("its placements are not started")
+
+
+PROBE_APPLIED = "[SandboxDebug] [Sandbox Linux] Applying seccomp filter for Unix socket blocking"
+PROBE_MISSING = (
+    "[SandboxDebug] [Sandbox Linux] apply-seccomp binary not available - unix socket "
+    "blocking disabled."
+)
+
+
+@pytest.mark.parametrize(
+    ("answer", "outcome", "detail"),
+    [
+        ((0, f"start\n{PROBE_APPLIED}\n"), "ok", ""),
+        ((0, f"{PROBE_MISSING}\n"), "off", "Claude Code found no seccomp helper"),
+        ((1, f"{PROBE_MISSING}\n"), "off", "Claude Code found no seccomp helper"),
+        ((0, "[SandboxDebug] something else\n"), "inconclusive",
+         "the debug log named neither outcome"),
+        ((1, f"{PROBE_APPLIED}\nInvalid API key\n"), "inconclusive",
+         "Claude Code exited 1 (its login?)"),
+        ("timeout", "inconclusive", "no answer within 180 s"),
+        ("oserror", "inconclusive", "Claude Code did not start: No such file or directory"),
+    ],
+)  # fmt: skip
+def test_the_socket_probe_reads_the_runtimes_lines_and_fails_closed_otherwise(
+    monkeypatch: pytest.MonkeyPatch, answer: object, outcome: str, detail: str
+) -> None:
+    """One headless run as the agents' user with the sandbox on, socket blocking left on and
+    the debug log on; only the runtime's line that it applied the filter is `ok`."""
+    import subprocess
+
+    from conftest import REAL_SOCKET_PROBE
+
+    from maity.runner import capabilities
+    from maity.runner.asuser import AsUser
+
+    calls: list[tuple[list[str], dict[str, str]]] = []
+
+    def run(
+        self: AsUser, argv: list[str], env: dict[str, str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append((list(argv), env))
+        if answer == "timeout":
+            raise subprocess.TimeoutExpired(argv, 180)
+        if answer == "oserror":
+            raise FileNotFoundError(2, "No such file or directory")
+        assert isinstance(answer, tuple)
+        return subprocess.CompletedProcess(argv, answer[0], "the model's answer", answer[1])
+
+    monkeypatch.setattr(AsUser, "run", run)
+    found = REAL_SOCKET_PROBE("/opt/claude", "/agents/bin", AsUser("agents"))
+    assert (found.outcome, found.detail) == (outcome, detail)
+    [(argv, env)] = calls
+    assert argv[0] == "/opt/claude"
+    assert argv[argv.index("-p") + 1] == capabilities.SOCKET_PROBE_PROMPT
+    settings = json.loads(argv[argv.index("--settings") + 1])
+    assert settings["sandbox"]["enabled"] is True
+    assert "allowAllUnixSockets" not in json.dumps(settings)
+    assert env["SRT_DEBUG"] == "1"
+    assert env["PATH"] == "/agents/bin"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "level", "code"),
+    [("ok", "ok", 0), ("off", "error", 1), ("inconclusive", "error", 1)],
+)
+def test_check_runs_the_socket_probe_after_an_ok_preflight(
+    paired: Path,
+    bin_dir: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
+    level: str,
+    code: int,
+) -> None:
+    """Under bubblewrap with an `ok` preflight, `check` runs the probe with the probed binary
+    and the agents' PATH; anything but `ok` is an error."""
+    from maity.runner import capabilities
+
+    asked: list[tuple[str, str]] = []
+
+    def probe(binary: str, path: str, as_user: object) -> capabilities.SocketProbe:
+        asked.append((binary, path))
+        return capabilities.SocketProbe(outcome, "why")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "linux")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == code
+    assert [binary for binary, _ in asked] == [str(bin_dir / "claude")]
+    said = [line for line in lines(capsys) if "probe run" in line]
+    assert [line.split()[0] for line in said] == [level], said
+
+
+def test_check_runs_no_socket_probe_when_the_preflight_refuses(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity.runner import capabilities
+
+    def probe(*args: object) -> object:
+        raise AssertionError("not asked")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    monkeypatch.setattr(
+        capabilities,
+        "claude_seccomp",
+        lambda as_user: capabilities.ClaudeSeccomp("unsupported_arch", "riscv64", "m"),
+    )
+    for tool in ("tmux", "maity", "bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 1
+
+
+def test_check_runs_no_seccomp_preflight_under_seatbelt(
+    paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maity.runner import capabilities
+
+    def preflight(as_user: object) -> object:
+        raise AssertionError("not asked")
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    monkeypatch.setattr(capabilities, "claude_socket_probe", preflight)
+    for tool in ("tmux", "maity", "sandbox-exec"):
+        fake_tool(bin_dir, tool)
+    fake_tool(bin_dir, "claude", "2.1.325")
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0
+    assert not any("seccomp" in line for line in lines(capsys))
+
+
 def test_check_refuses_a_loose_state_dir(
     paired: Path, bin_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

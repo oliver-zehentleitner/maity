@@ -11,6 +11,7 @@ import functools
 import getpass
 import json
 import os
+import platform as _platform
 import re
 import shutil
 import subprocess
@@ -38,6 +39,12 @@ _UNPRINTABLE = re.compile(r"[^\x20-\x7e]")
 # in front of `maity` (runner.md, the adapters entry). Another version still runs; the runner
 # says that it was not checked.
 CHECKED = {"claude-code": "2.1.325"}
+# The machines (Claude Code's names) Claude Code supports its seccomp step on, the step that
+# keeps a sandboxed command from opening a Unix socket on Linux: x64 and arm64, read from the
+# 2.1.328 and 2.1.329 binaries (ia32 is named unsupported, any other machine too). Elsewhere
+# no helper resolves and every sandboxed command runs with Unix sockets open, without a word
+# (`claude_seccomp`). Read again from the binary whenever CHECKED moves.
+CLAUDE_SECCOMP_ARCHES = frozenset({"x64", "arm64"})
 
 
 # The oldest Claude Code whose hooks refuse the call when they fail or time out
@@ -380,6 +387,175 @@ def claude_nested_userns(path: str, as_user: AsUser = RUNNER) -> NestedUserns:
     if done.returncode == 1 and any(mark in (done.stderr or "") for mark in NESTED_REFUSED):
         return NestedUserns("refused", last)
     return NestedUserns("inconclusive", last)
+
+
+# Claude Code's Linux sandbox keeps a sandboxed command from opening any Unix socket with a
+# seccomp step (`apply-seccomp`, built into the binary) inside bubblewrap. Every placement runs
+# as the same OS user, so that step is what keeps one placement's commands away from another
+# placement's sockets; read-only paths do not stop a connect. Where the step cannot run, Claude
+# Code still runs the command in bubblewrap, with Unix sockets open, and `failIfUnavailable`
+# does not catch it (it covers the sandbox as a whole). Its warning then goes to a debug log
+# that writes nothing by default, so nothing a session shows says so. The runner therefore
+# checks, before a sandboxed Claude Code placement starts and in `check`, what the step needs
+# from the host: a machine Claude Code ships the helper for (CLAUDE_SECCOMP_ARCHES) and a kernel
+# with seccomp filtering. Linux only: Seatbelt (macOS) has no such step. On a supported machine
+# the step still depends on Claude Code handing in its built-in helper, which this does not
+# see and `check`'s headless probe does (`claude_socket_probe`, cli/context/runner.md).
+# `uname -m` as Claude Code names the machine, compared in lower case; any other name is no
+# supported machine, Claude Code's own names included.
+SECCOMP_MACHINES = {"x86_64": "x64", "amd64": "x64", "aarch64": "arm64", "arm64": "arm64"}
+PROC_STATUS = Path("/proc/self/status")
+# `Seccomp:` is in a task's status with CONFIG_SECCOMP, `Seccomp_filters:` with
+# CONFIG_SECCOMP_FILTER from Linux 5.9 on; before 5.9 only the first one can be read. Their
+# values are the task's own mode and filter count (0 for an unconfined shell): only whether
+# the lines are there says what the kernel supports.
+SECCOMP_FILTERS_FROM = (5, 9)
+_SECCOMP_HOST = 'uname -m && uname -r && cat "$1"'
+_RELEASE_HEAD = re.compile(r"(\d+)\.(\d+)")
+
+
+@dataclass(frozen=True)
+class ClaudeSeccomp:
+    """The seccomp preflight's answer: `ok`, `unsupported_arch` (no helper is shipped for the
+    machine), `no_seccomp` (the kernel has no seccomp filtering) or `inconclusive` (what it
+    needs could not be read). Only `ok` starts a sandboxed Claude Code placement. `arch` is
+    the machine as Claude Code names it; `detail` says why, for `check` and the log."""
+
+    outcome: str
+    arch: str = ""
+    detail: str = ""
+
+
+def claude_seccomp_applies(as_user: AsUser = RUNNER, platform: str | None = None) -> bool:
+    """Where Claude Code's sandbox has the seccomp step: Linux, which every ssh host is; not
+    under Seatbelt."""
+    if not as_user.here:
+        return True
+    return (sys.platform if platform is None else platform).startswith("linux")
+
+
+def _seccomp_host(as_user: AsUser) -> tuple[str, str, str] | None:
+    """The machine, the kernel release and a task's status, as the agents' user sees them;
+    None when they cannot be read."""
+    if as_user.direct:
+        try:
+            return _platform.machine(), _platform.release(), PROC_STATUS.read_text()
+        except OSError:
+            return None
+    try:
+        done = as_user.run(["sh", "-c", _SECCOMP_HOST, "sh", str(PROC_STATUS)],
+                           timeout=VERSION_TIMEOUT)  # fmt: skip
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    lines = done.stdout.split("\n", 2)
+    if done.returncode != 0 or len(lines) < 3:
+        return None
+    return lines[0], lines[1], lines[2]
+
+
+def claude_seccomp(as_user: AsUser = RUNNER) -> ClaudeSeccomp:
+    """Whether the host gives Claude Code's seccomp step what it needs, as the agents' user:
+    a machine in CLAUDE_SECCOMP_ARCHES, and a kernel that has seccomp (`Seccomp:` in
+    /proc/self/status) with filters (`Seccomp_filters:`, from Linux 5.9 on). Anything that
+    cannot be read is `inconclusive`, which starts nothing either."""
+    host = _seccomp_host(as_user)
+    if host is None:
+        return ClaudeSeccomp("inconclusive", detail=f"{PROC_STATUS} or uname could not be read")
+    machine, release, status = (part.strip() for part in host)
+    if not machine:
+        return ClaudeSeccomp("inconclusive", detail="uname gave no machine")
+    arch = SECCOMP_MACHINES.get(machine.lower())
+    if arch is None or arch not in CLAUDE_SECCOMP_ARCHES:
+        named = ascii_text(machine, 40)
+        return ClaudeSeccomp("unsupported_arch", arch or named, f"machine {named}")
+    fields = dict(
+        (key.strip(), value.strip())
+        for key, sep, value in (line.partition(":") for line in status.splitlines())
+        if sep
+    )
+    if "Seccomp" not in fields:
+        return ClaudeSeccomp("no_seccomp", arch, f"no Seccomp line in {PROC_STATUS}")
+    if not fields["Seccomp"].isdigit():
+        return ClaudeSeccomp("inconclusive", arch, f"an unreadable Seccomp line in {PROC_STATUS}")
+    if "Seccomp_filters" in fields:
+        return ClaudeSeccomp("ok", arch)
+    head = _RELEASE_HEAD.match(release)
+    if head is None:
+        return ClaudeSeccomp("inconclusive", arch, f"kernel release {ascii_text(release, 40)!r}")
+    if (int(head.group(1)), int(head.group(2))) >= SECCOMP_FILTERS_FROM:
+        return ClaudeSeccomp("no_seccomp", arch, f"no Seccomp_filters line in {PROC_STATUS}")
+    return ClaudeSeccomp("ok", arch)
+
+
+def claude_seccomp_line(found: ClaudeSeccomp) -> str:
+    """Why sandboxed Claude Code placements are not started on a host, for `check` and the log.
+    No `sandbox` in it: `check`'s sandbox line is the one that names the sandbox."""
+    if found.outcome == "unsupported_arch":
+        why = (f"Claude Code ships no seccomp helper for {found.arch} ({found.detail}), so its "
+               "commands would run with Unix sockets open")  # fmt: skip
+    elif found.outcome == "no_seccomp":
+        why = (f"the kernel has no seccomp filtering ({found.detail}), so its commands would "
+               "run with Unix sockets open")  # fmt: skip
+    else:
+        why = f"whether the seccomp step can run could not be read ({found.detail})"
+    return f"harness claude-code: {why}; its placements are not started"
+
+
+# The static preflight above sees what the host gives the seccomp step, not whether Claude Code
+# hands its built-in helper in. `maity runner check` (never a placement start: it spends one
+# small prompt on the agents' Claude login) therefore runs the installed Claude Code once
+# headless, with the sandbox on as a placement has it (socket blocking on, no
+# allowAllUnixSockets) and the sandbox runtime's debug log on, and reads its standard error
+# for the runtime's own lines. Only these lines are kept, never the model's answer.
+SOCKET_PROBE_APPLIED = "Applying seccomp filter for Unix socket blocking"
+SOCKET_PROBE_MISSING = "apply-seccomp binary not available"
+SOCKET_PROBE_COMMAND = "echo maity-socket-probe"
+SOCKET_PROBE_PROMPT = (
+    f"Run exactly this one shell command with the Bash tool, then stop: {SOCKET_PROBE_COMMAND}"
+)
+SOCKET_PROBE_SETTINGS = {
+    "permissions": {"allow": [f"Bash({SOCKET_PROBE_COMMAND})"], "defaultMode": "dontAsk"},
+    "sandbox": {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
+                "autoAllowBashIfSandboxed": False},
+}  # fmt: skip
+SOCKET_PROBE_TIMEOUT = 180
+
+
+@dataclass(frozen=True)
+class SocketProbe:
+    """The headless probe's answer: `ok` (the runtime applied the filter), `off` (it found no
+    helper, so Unix sockets stay open) or `inconclusive` (a timeout, a launch error, a non-zero
+    exit, neither line: a missing login among them). `detail` says which."""
+
+    outcome: str
+    detail: str = ""
+
+
+def claude_socket_probe(binary: str, path: str, as_user: AsUser = RUNNER) -> SocketProbe:
+    """One headless Claude Code run as the agents' user, Linux only, for `maity runner check`:
+    whether its sandbox applies the seccomp filter that blocks Unix sockets. Never at a start."""
+    argv = [binary, "--setting-sources", "user",
+            "--settings", json.dumps(SOCKET_PROBE_SETTINGS, separators=(",", ":")),
+            "--permission-mode", "dontAsk",
+            "--strict-mcp-config", '--mcp-config={"mcpServers":{}}',
+            "-p", SOCKET_PROBE_PROMPT]  # fmt: skip
+    env = {"PATH": path, "SRT_DEBUG": "1", "DISABLE_UPDATES": "1",
+           "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}  # fmt: skip
+    try:
+        done = as_user.run(argv, env=env, cwd=Path.home() if as_user.direct else None,
+                           timeout=SOCKET_PROBE_TIMEOUT)  # fmt: skip
+    except subprocess.TimeoutExpired:
+        return SocketProbe("inconclusive", f"no answer within {SOCKET_PROBE_TIMEOUT} s")
+    except OSError as exc:
+        return SocketProbe("inconclusive", f"Claude Code did not start: {exc.strerror or exc}")
+    said = (done.stderr or "").splitlines()
+    if any(SOCKET_PROBE_MISSING in line for line in said):
+        return SocketProbe("off", "Claude Code found no seccomp helper")
+    if done.returncode != 0:
+        return SocketProbe("inconclusive", f"Claude Code exited {done.returncode} (its login?)")
+    if any(SOCKET_PROBE_APPLIED in line for line in said):
+        return SocketProbe("ok")
+    return SocketProbe("inconclusive", "the debug log named neither outcome")
 
 
 def agy_login(as_user: AsUser = RUNNER) -> Path:

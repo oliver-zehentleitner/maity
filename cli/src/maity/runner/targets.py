@@ -45,6 +45,9 @@ class Target:
     sandbox: dict[str, bool] = field(default_factory=dict)  # harness id -> its OS sandbox
     # Harnesses whose sandbox is off for their version alone (capabilities.sandbox_held).
     held: set[str] = field(default_factory=set)
+    # Claude Code's seccomp preflight on this target (capabilities.claude_seccomp), once it
+    # answered `ok`: the machine and the kernel do not change under a running service.
+    seccomp: capabilities.ClaudeSeccomp | None = None
     backend: Tmux | None = None
     reachable: bool = True
     unreachable_since: float | None = None

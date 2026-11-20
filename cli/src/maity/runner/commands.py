@@ -500,7 +500,7 @@ def _check_harness(
         else:
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
-        _check_claude_code(report, harness, as_user, agent_path, found.version)
+        _check_claude_code(report, harness, as_user, agent_path, found.version, found.path)
     if harness.id == "antigravity":
         _check_antigravity(report, harness, as_user, agent_path)
     if harness.id == "opencode":
@@ -672,6 +672,7 @@ def _check_claude_code(
     as_user: AsUser = RUNNER,
     agent_path: str = "",
     version: str | None = None,
+    binary: str | None = None,
 ) -> None:
     # On the agents' PATH, as their user finds it: that is where the sandbox starts.
     tools = capabilities.claude_sandbox_tools()
@@ -691,6 +692,7 @@ def _check_claude_code(
         report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
         if tools == ("bwrap", "socat"):  # bubblewrap's nesting; Seatbelt has none
             _check_claude_nesting(report, agent_path, as_user)
+            _check_claude_seccomp(report, as_user, "", binary, agent_path)
         _check_claude_hooks(report, as_user, "")
     _check_claude_settings(report, as_user, "")
 
@@ -718,6 +720,44 @@ def _check_claude_nesting(report: Report, agent_path: str, as_user: AsUser) -> N
         report.warn(
             "harness claude-code: could not tell whether a user namespace starts inside "
             f"bubblewrap ({found.detail})"
+        )
+
+
+def _check_claude_seccomp(
+    report: Report, as_user: AsUser, where: str, binary: str | None, agent_path: str
+) -> None:
+    """Linux only: what Claude Code's seccomp step needs from the host (capabilities.
+    claude_seccomp). Anything but `ok` is an error: the supervisor starts no sandboxed Claude
+    Code placement on it, an unreadable answer included. On `ok`, the headless probe."""
+    found = capabilities.claude_seccomp(as_user)
+    if found.outcome != "ok":
+        report.error(f"{where}{capabilities.claude_seccomp_line(found)}")
+        return
+    report.ok(
+        f"{where}harness claude-code: seccomp for blocking Unix sockets: machine "
+        f"{found.arch}, kernel seccomp filtering present"
+    )
+    if binary is not None:
+        _check_claude_socket_probe(report, as_user, where, binary, agent_path)
+
+
+def _check_claude_socket_probe(
+    report: Report, as_user: AsUser, where: str, binary: str, agent_path: str
+) -> None:
+    """One headless run of Claude Code (capabilities.claude_socket_probe), here and never at a
+    start; anything but the runtime's line that it applied the filter is an error."""
+    probe = capabilities.claude_socket_probe(binary, agent_path, as_user)
+    if probe.outcome == "ok":
+        report.ok(f"{where}harness claude-code: probe run: Unix socket blocking applied")
+    elif probe.outcome == "off":
+        report.error(
+            f"{where}harness claude-code: probe run: Unix socket blocking is off "
+            f"({probe.detail}); Claude Code placements must not run here"
+        )
+    else:
+        report.error(
+            f"{where}harness claude-code: probe run: Unix socket blocking not confirmed "
+            f"({probe.detail}); treat Claude Code placements here as unprotected"
         )
 
 
@@ -828,6 +868,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                 refused = capabilities.sandbox_refused(harness, False, harness.id in held)
                 (report.error if refused else report.warn)(line)
             elif harness.id == "claude-code":
+                _check_claude_seccomp(report, as_user, f"{name}: ", probe.path, target.agent_path)
                 _check_claude_hooks(report, as_user, f"{name}: ")
             if harness.id == "antigravity":
                 _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")

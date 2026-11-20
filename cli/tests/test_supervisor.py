@@ -515,6 +515,95 @@ def test_a_sandboxed_start_is_refused_while_settings_switch_hooks_off(
     assert any("sets allowManagedHooksOnly" in line for line in logged)
 
 
+SECCOMP_ANSWERS = {
+    "ok": capabilities.ClaudeSeccomp("ok", "x64"),
+    "unsupported_arch": capabilities.ClaudeSeccomp(
+        "unsupported_arch", "riscv64", "machine riscv64"
+    ),
+    "no_seccomp": capabilities.ClaudeSeccomp("no_seccomp", "x64", "no Seccomp line"),
+    "inconclusive": capabilities.ClaudeSeccomp("inconclusive", detail="could not be read"),
+}
+
+
+@pytest.mark.parametrize("outcome", sorted(SECCOMP_ANSWERS))
+def test_a_sandboxed_claude_code_start_needs_the_seccomp_preflight_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    """On Linux only `ok` starts a sandboxed Claude Code placement; an unsupported machine, a
+    kernel without seccomp filtering and an answer that could not be read refuse it with the
+    reason in the log. Other harnesses are not asked."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    asked: list[object] = []
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        asked.append(as_user)
+        return SECCOMP_ANSWERS[outcome]
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+
+    def probe(*args: object) -> object:
+        raise AssertionError("the headless probe runs in `check` only, never at a start")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    found = sup._refusal(placement(harness="claude-code"), target)
+    if outcome == "ok":
+        assert found is None and logged == []
+    else:
+        assert found == ("harness_refused", None)
+        assert logged == [capabilities.claude_seccomp_line(SECCOMP_ANSWERS[outcome])]
+        assert logged[0].endswith("its placements are not started")
+    assert len(asked) == 1
+    for other in ("stub", "codex"):
+        assert sup._refusal(placement(harness=other), target) is None
+    assert len(asked) == 1  # only claude-code asks
+
+
+def test_an_ok_preflight_is_kept_and_any_other_answer_is_read_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    answers = [SECCOMP_ANSWERS["inconclusive"], SECCOMP_ANSWERS["ok"]]
+    asked: list[str] = []
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        asked.append("asked")
+        return answers.pop(0)
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    target = sup.targets["local"]
+    p = placement(harness="claude-code")
+    assert sup._refusal(p, target) == ("harness_refused", None)
+    assert sup._refusal(p, target) is None  # read again, now ok
+    assert sup._refusal(p, target) is None  # kept: not read a third time
+    assert asked == ["asked", "asked"]
+
+
+@pytest.mark.parametrize(("platform", "tools"), [("darwin", True), ("linux", False)])
+def test_no_preflight_under_seatbelt_or_without_claude_codes_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, tools: bool
+) -> None:
+    """Seatbelt has no seccomp step; an unsandboxed Claude Code is reported as such already."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", platform)
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        raise AssertionError("not asked")
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", tools)
+    assert sup._refusal(placement(harness="claude-code"), sup.targets["local"]) is None
+
+
 def test_a_missing_harness_binary(world: Any) -> None:
     sup, _, reports, _, _ = world
     sup.probes["codex"] = capabilities.Probe(None, None, "binary_not_found")

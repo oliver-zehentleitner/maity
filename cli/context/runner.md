@@ -4905,6 +4905,84 @@ a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
   off, not only the socket rule (red team's probe). A cluster over TCP on
   127.0.0.1, which the sandbox allows, comes in tsk-zk2cse7s2rf7 instead.
 
+## A sandboxed Claude Code placement starts only where the host gives its seccomp step what it needs, and `runner check` probes that the step applies
+
+**Id:** c774c132-1f84-4b61-bb01-13a6ee7ca7e3
+**Type:** decision
+**Type:** constraint
+**Status:** open
+**Evidence:** inferred
+**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032, 2026-11-20; the ops team's read-only reading of the Claude Code 2.1.328 and 2.1.329 binaries (minified): the supported machines, the helper's resolution and the built-in helper handed in by file descriptor, the warning sent to the sandbox runtime's debug logger, 2026-11-20; `/proc/self/status` of an unconfined shell on a test host (`Seccomp: 0`, `Seccomp_filters: 0`), 2026-11-20; the ops team's live run of Claude Code 2.1.329 on an x64 Linux runner host (a throwaway session, no placement): headless with `SRT_DEBUG=1` the filter was applied, the interactive interface showed no sandbox-runtime line while it ran, 2026-11-20; the lead's decision for the static preflight, the headless probe in `check` only and dropping the pane check, 2026-11-20
+**See:** runner.md#a-placements-test-slots-and-test-cluster-live-in-its-own-scratch-so-its-slots-bound-only-its-own-runs — 2ce039de-925e-4244-9a90-8336e9375d68 — as of 2026-11-20
+**Revisit when:** every move of the Claude Code version pin (`capabilities.CHECKED`): run the `check` probe, and read the supported machines and the probe's two lines from the binary again; Claude Code shows the block's state itself or fails closed without the step; each placement runs as its own OS user
+
+**Decision.** On Linux, before every start of a sandboxed Claude Code
+placement (`Supervisor._refusal`) and in `maity runner check` (local and
+each ssh host), the runner reads as the agents' user the machine
+(`uname -m`; `x86_64`/`amd64` as `x64`, `aarch64`/`arm64` as `arm64`, in
+lower case) and `/proc/self/status` (`capabilities.claude_seccomp`). It
+starts the placement only for a machine in `CLAUDE_SECCOMP_ARCHES` (x64
+and arm64) on a kernel that has a `Seccomp:` line and, from Linux 5.9, a
+`Seccomp_filters:` line. Their values are the reading task's own (0 for an
+unconfined shell) and are ignored. Any other machine, a missing line or an
+answer that cannot be read refuses the start (`harness_refused`, the reason
+in the log) and is an error in `check`. An `ok` is kept per target for the
+service's lifetime, and anything else is read again at the next start.
+Seatbelt (macOS) has no seccomp step and is not checked.
+
+After an `ok` preflight, `check` alone (never a start) runs the installed
+Claude Code once headless as the agents' user
+(`capabilities.claude_socket_probe`): the sandbox on with socket blocking
+left on, `SRT_DEBUG=1`, one harmless command, a bounded timeout. Its
+standard error decides: the runtime's line that it applies the seccomp
+filter for Unix socket blocking is `ok`; its warning that the helper is not
+available is an error that the block is off; a timeout, a non-zero exit or
+neither line is an error that the block is not confirmed. The model's
+answer is not kept. Operators run `check` after every version pin.
+
+**Reason:** every placement of a host runs as the same OS user, so the
+seccomp step is the only thing between a sandboxed command and the other
+placements' sockets and the agents' tmux server. A read-only path does not
+stop a connect. The other-scratch residual of the entry under See (a
+scratch made after a session started is readable to it, but it cannot
+connect to that placement's sockets) holds only while the step runs. Read
+from the binary: Claude Code supports the step on x64 and arm64 only (ia32
+is named unsupported, any other machine too), and when no helper resolves
+it runs the command in bubblewrap with Unix sockets open. It sends the
+warning to the sandbox runtime's debug logger, which (inferred) writes only
+with `SRT_DEBUG` set. So nothing a session shows says the block is off,
+and only a check before the start fails closed. The static preflight sees
+the host, not whether Claude Code hands its built-in helper in by file
+descriptor (the other places it looks for one are empty under the runner's
+native install); the headless probe shows that. It stays out of the start
+because it spends a small prompt on the agents' Claude login each time.
+
+**Open residual.** That the built-in helper is handed in is established
+for 2.1.329 on x64 by a live probe on 2026-11-20; re-check on every
+version pin with the `runner check` probe. A start does not run the probe,
+so a host where it fails still starts placements while its preflight
+passes; `check` reports it as an error.
+
+**Rejected alternatives:**
+- Claude Code's `allowAllUnixSockets`: it turns the whole seccomp filter
+  off (the entry under See).
+- A preflight that looks for the helper file beside the binary and starts
+  it around a socket attempt, as the nested user namespace is started: the
+  helper is built into the binary, so a file lookup finds nothing on any
+  host and would have refused every Claude Code placement. No command of
+  Claude Code starts the step alone.
+- The headless probe before every start: a prompt on the login per start,
+  and a start would wait for a model call.
+- Reading each session's pane for Claude Code's warning, ending the
+  session and holding its binary (built first in this card), dropped for
+  good: the warning is debug-only by default, so the check never fired and
+  failed open, and in the interactive interface no sandbox-runtime output
+  reaches the pane or standard error while it runs, even with `SRT_DEBUG`
+  (live, 2026-11-20).
+- Checking the values of `Seccomp:` and `Seccomp_filters:`: they describe
+  the reading task, not the kernel, and are 0 on a host that supports
+  filters.
+
 ## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
 
 **Id:** 0f216e9d-1661-4887-a035-094efa301dfa

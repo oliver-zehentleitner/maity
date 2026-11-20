@@ -44,6 +44,7 @@ from . import (
     workspace,
 )
 from .asuser import RUNNER, AsUser, Unreachable
+from .capabilities import ClaudeSeccomp
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
 
@@ -1095,7 +1096,27 @@ class Supervisor:
             if why is not None:
                 self.log(capabilities.claude_hooks_line(why))
                 return ("harness_refused", None)
+            # Every placement runs as the same OS user: the seccomp step is what keeps a
+            # sandboxed command away from the other placements' sockets, and Claude Code says
+            # nothing when it cannot run (capabilities.claude_seccomp).
+            seccomp = self._seccomp(target)
+            if seccomp.outcome != "ok":
+                self.log(capabilities.claude_seccomp_line(seccomp))
+                return ("harness_refused", None)
         return None
+
+    def _seccomp(self, target: Target) -> ClaudeSeccomp:  # the field `capabilities` hides it
+        """The seccomp preflight for `target` (Linux only, `ok` elsewhere): an `ok` is kept for
+        the service's lifetime, any other answer is read again at the next start, so a host
+        that could not be read starts once it can."""
+        if not capabilities.claude_seccomp_applies(target.as_user):
+            return ClaudeSeccomp("ok")
+        if target.seccomp is not None:
+            return target.seccomp
+        found = capabilities.claude_seccomp(target.as_user)
+        if found.outcome == "ok":
+            target.seccomp = found
+        return found
 
     def _wait(self, rec: Record, why: str, name: str) -> int:
         if rec.waiting != why:
