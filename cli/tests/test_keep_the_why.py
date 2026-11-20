@@ -78,6 +78,27 @@ def test_an_optional_project_is_told_how_to_load_the_skill() -> None:
     assert "maity ack keep-the-why" not in text
 
 
+def test_a_skill_the_runner_delivered_is_named_before_the_install_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # tsk-172s8y208whg: MAITY_KTW_SKILL_DIR, set by the runner (runner/skills.py); the install
+    # lines stay as the fallback. A value that is no absolute path is ignored.
+    where = "/home/op/.local/share/maity-runner/skills/keep-the-why/" + "c" * 40
+    monkeypatch.setenv("MAITY_KTW_SKILL_DIR", where)
+    text = onboarding.render(packet(keep_the_why=LOADING))
+    assert (
+        "Claude Code: invoke the keep-the-why skill.\n"
+        f"Your runner delivered the skill for this session: {where}/SKILL.md "
+        "(read-only; in Claude Code it is loaded as a plugin).\n"
+        "If the skill is not installed:\n"
+    ) in text
+    for ignored in ("skills/keep-the-why", "/x\nInjected line", ""):
+        monkeypatch.setenv("MAITY_KTW_SKILL_DIR", ignored)
+        assert "Your runner delivered" not in onboarding.render(packet(keep_the_why=LOADING))
+    monkeypatch.setenv("MAITY_KTW_SKILL_DIR", where)
+    assert "Your runner delivered" not in onboarding.render(packet(keep_the_why=REQUIRED))
+
+
 def test_under_ask_the_personal_settings_go_through_maity() -> None:
     text = onboarding.render(packet(keep_the_why={**LOADING, "personal_defaults": "ask"}))
     assert "no personal file yet: ask your human through Maity\n" in text

@@ -24,6 +24,7 @@ DEFAULT_PATH = Path("~/.config/maity-runner/runner.toml")
 DEFAULT_STATE_DIR = "~/.local/state/maity-runner"
 DEFAULT_WORKSPACES = "~/maity-workspaces"
 DEFAULT_TOOLS_DIR = "~/.local/share/maity-runner/tools"
+DEFAULT_SKILLS_DIR = "~/.local/share/maity-runner/skills"
 # Who the agents commit as when `[git]` names nobody: a generic identity whose `.invalid`
 # domain (RFC 2606) can be nobody's real address. Never the agents' user's own git
 # configuration, which in the `single` layout is the operator's (cli/context/runner.md).
@@ -176,6 +177,9 @@ class Config:
     # The versions the runner installs (§15.16): beside, not inside, state_dir, which no
     # sandboxed command may read, while a harness's sandbox runs the harness's own files.
     tools_dir: Path = Path(DEFAULT_TOOLS_DIR).expanduser()
+    # The Keep the Why skill the runner delivers to its placements (§15.5, skills.py): beside
+    # state_dir for the same reason, a session reads it and writes nothing there.
+    skills_dir: Path = Path(DEFAULT_SKILLS_DIR).expanduser()
 
 
 # --- reading ---------------------------------------------------------------------------------

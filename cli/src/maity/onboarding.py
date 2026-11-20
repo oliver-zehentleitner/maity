@@ -22,6 +22,7 @@ bodies; `maity resume --full` renders the same packet without that.
 
 from __future__ import annotations
 
+import os
 import re
 import unicodedata
 from collections.abc import Callable, Iterable
@@ -1022,11 +1023,27 @@ def _setup(packet: dict[str, Any], names: dict[str, str]) -> list[str]:
     return ["Setup waits:", *lines, ""] if lines else []
 
 
-def _ktw_loading(block: dict[str, Any]) -> list[str]:
+def delivered_skill() -> str | None:
+    """The skill a runner delivered to this session (MAITY_KTW_SKILL_DIR, runner/skills.py), when
+    it names an absolute directory; anything else is ignored."""
+    given = os.environ.get("MAITY_KTW_SKILL_DIR", "")
+    if not os.path.isabs(given) or any(c in given for c in "\r\n\0"):
+        return None
+    return given
+
+
+def _ktw_loading(block: dict[str, Any], delivered: str | None = None) -> list[str]:
     """How to load the skill, whatever the machine has installed (§6.23): texts for the agent,
-    never run here. Every field is optional: the block prints what it has."""
+    never run here. Every field is optional: the block prints what it has. `delivered`: the
+    directory a runner put the skill in for this session, named first; the install texts stay
+    as the fallback."""
     skill = _dict(block.get("skill"))
     lines = [inline(skill["load"])] if skill.get("load") else []
+    if delivered and skill:
+        lines.append(
+            f"Your runner delivered the skill for this session: {inline(delivered)}/SKILL.md "
+            "(read-only; in Claude Code it is loaded as a plugin)."
+        )
     given = skill.get("install")
     install = [i for i in given if isinstance(i, str)] if isinstance(given, list) else []
     if install:
@@ -1066,7 +1083,7 @@ def _keep_the_why(packet: dict[str, Any]) -> list[str]:
     block = _dict(packet.get("keep_the_why"))
     if not block.get("enabled"):
         return []
-    lines = _ktw_loading(block) + _ktw_commitment(block)
+    lines = _ktw_loading(block, delivered_skill()) + _ktw_commitment(block)
     return ["Keep the Why:", *lines, ""] if lines else []
 
 

@@ -26,6 +26,7 @@ from maity.runner import (
     scratch,
     scratchop,
     serve,
+    skills,
     supervisor,
     tmux,
     workspace,
@@ -3689,6 +3690,85 @@ def test_a_claude_code_placement_gets_no_password_file(
 
 def _stat_mode(path: Path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
+
+
+KTW = {
+    "source": "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why",
+    "commit": "c" * 40,
+}
+
+
+def test_a_placement_naming_the_skill_starts_with_the_runners_copy(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tsk-172s8y208whg: the commit the hub names, from the runner's skills directory; the
+    session is told where it lies, and nothing is reported missing."""
+    sup, backend, _, _, logs = world
+    recorded(sup.cfg)
+    asked: list[tuple[Path, str, str]] = []
+    copy: Path = sup.cfg.skills_dir / "keep-the-why" / KTW["commit"] / "plugin"
+
+    def ensure(skills_dir: Path, source: str, commit: str) -> Path:
+        asked.append((skills_dir, source, commit))
+        return copy
+
+    monkeypatch.setattr(skills, "ensure", ensure)
+    sup.update([placement(keep_the_why=KTW)])
+    settle(sup)
+    assert asked == [(sup.cfg.skills_dir, KTW["source"], KTW["commit"])]
+    ((_, _, env),) = backend.started
+    assert env["MAITY_KTW_SKILL_DIR"] == str(copy / "skills" / "keep-the-why")
+    assert sup.records["plc-0003"].skill_missing is False
+    assert not any("Keep the Why" in line for line in logs)
+
+
+def test_a_skill_that_cannot_be_had_starts_the_session_without_it_and_says_so(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """req-b3q6ttwgrp1v: the session starts anyway; the log says why, and the report with
+    `running` names keep_the_why_unavailable."""
+    sup, backend, reports, clock, logs = world
+    recorded(sup.cfg)
+
+    def ensure(*_: Any) -> Path:
+        raise skills.Unavailable("git fetch exited 128: could not resolve host")
+
+    monkeypatch.setattr(skills, "ensure", ensure)
+    sup.update([placement(keep_the_why=KTW)])
+    settle(sup)
+    ((_, _, env),) = backend.started
+    assert "MAITY_KTW_SKILL_DIR" not in env
+    assert sup.records["plc-0003"].skill_missing is True
+    assert any("no Keep the Why skill: git fetch exited 128" in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, "keep_the_why_unavailable")
+
+
+def test_a_placement_without_the_skill_fetches_nothing_and_reports_nothing(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sup, backend, reports, clock, logs = world
+    recorded(sup.cfg)
+
+    def ensure(*_: Any) -> Path:
+        raise AssertionError("fetched")
+
+    monkeypatch.setattr(skills, "ensure", ensure)
+    sup.update([placement(keep_the_why=None)])
+    settle(sup)
+    ((_, _, env),) = backend.started
+    assert "MAITY_KTW_SKILL_DIR" not in env and sup.records["plc-0003"].skill_missing is False
+    clock.now += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, None)
+    assert not any("Keep the Why" in line for line in logs)
+
+
+def test_the_running_detail_names_a_missing_sandbox_before_a_missing_skill() -> None:
+    assert supervisor.running_detail(True, True) == "sandbox_unavailable"
+    assert supervisor.running_detail(False, True) == "keep_the_why_unavailable"
+    assert supervisor.running_detail(False, False) is None
 
 
 def test_a_closed_placements_password_file_goes_with_it(world: Any) -> None:

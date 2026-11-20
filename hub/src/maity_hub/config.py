@@ -23,7 +23,12 @@ DEFAULT_BIND = "127.0.0.1:8080"
 KTW_SKILL_SOURCE = (
     "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why"
 )
+# The commit KTW_SKILL_SOURCE's release tag points to, the tag in the comment: what a runner
+# fetches and delivers to its placements (§15.5). A tag can move, a commit id cannot;
+# tools/ktw_pin.py holds the comment to the release, a reviewer the id to the tag (git ls-remote).
+KTW_SKILL_COMMIT = "2771046616a3c6bcd62916ed072f71feb5afd222"  # v0.20.3
 KTW_SKILL_GUIDE = "https://keepthewhy.com/installation/"
+_COMMIT = re.compile(r"[0-9a-fA-F]{40}")
 
 _WILDCARD_HOSTS = {"0.0.0.0", "::"}
 
@@ -141,6 +146,9 @@ class Settings:
     # MAITY_KTW_SKILL_SOURCE: where the Keep the Why skill is published, as told to a
     # joining agent (§6.23); an operator who mirrors the skill points it elsewhere.
     ktw_skill_source: str = KTW_SKILL_SOURCE
+    # MAITY_KTW_SKILL_COMMIT: the git commit of that source a runner fetches for its placements
+    # (§15.5); required whenever MAITY_KTW_SKILL_SOURCE is set.
+    ktw_skill_commit: str = KTW_SKILL_COMMIT
     # MAITY_KTW_SKILL_GUIDE: the skill's installation guide for every harness, the page an
     # agent names to its human when `install` or `load` does not fit (§6.23).
     ktw_skill_guide: str = KTW_SKILL_GUIDE
@@ -289,6 +297,9 @@ class Settings:
                 env, "MAITY_ON_RUNNER_REVOKE", ("keep", "stop", "stop_floor"), "keep"
             ),
             ktw_skill_source=parse_skill_source(env.get("MAITY_KTW_SKILL_SOURCE", "")),
+            ktw_skill_commit=parse_skill_commit(
+                env.get("MAITY_KTW_SKILL_SOURCE", ""), env.get("MAITY_KTW_SKILL_COMMIT", "")
+            ),
             ktw_skill_guide=parse_skill_url(
                 "MAITY_KTW_SKILL_GUIDE", env.get("MAITY_KTW_SKILL_GUIDE", ""), KTW_SKILL_GUIDE
             ),
@@ -338,6 +349,20 @@ class Settings:
 def parse_skill_source(value: str) -> str:
     """Unset is the skill's published tree; anything but an https URL stops the hub."""
     return parse_skill_url("MAITY_KTW_SKILL_SOURCE", value, KTW_SKILL_SOURCE)
+
+
+def parse_skill_commit(source: str, value: str) -> str:
+    """Unset is the default source's commit, but only while the source is the default too: a
+    source set without its commit stops the hub (req-b3q6ttwgrp1v), since every runner would
+    otherwise fetch a commit of another tree. Anything but 40 hex digits stops it as well."""
+    value = value.strip()
+    if not value:
+        if source.strip():
+            raise ConfigError("MAITY_KTW_SKILL_COMMIT must be set with MAITY_KTW_SKILL_SOURCE")
+        return KTW_SKILL_COMMIT
+    if not _COMMIT.fullmatch(value):
+        raise ConfigError("MAITY_KTW_SKILL_COMMIT must be a full git commit id (40 hex digits)")
+    return value.lower()
 
 
 def parse_skill_url(name: str, value: str, default: str) -> str:

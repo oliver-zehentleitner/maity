@@ -1365,6 +1365,45 @@ def test_a_claude_code_placement_gets_the_test_slots_but_no_cluster(tmp_path: Pa
         "-I", "-m", "maity.runner.pgenv"]  # fmt: skip
 
 
+SKILL = Path("/home/op/.local/share/maity-runner/skills/keep-the-why/" + "a" * 40 + "/plugin")
+
+
+def test_a_claude_code_session_gets_the_skill_as_a_plugin_it_reads_and_never_writes(
+    tmp_path: Path,
+) -> None:
+    """tsk-172s8y208whg: the delivered Keep the Why skill for this session only (`--plugin-dir`),
+    its files readable through Read (the skill sends the agent to its references) and nowhere
+    writable: an Edit deny and the sandbox's denyWrite, whatever the clone's rules say."""
+    ctx = context(tmp_path, sandbox=True, skill=SKILL)
+    launched = adapters.launch(ctx)
+    assert f"--plugin-dir={SKILL}" in launched.argv
+    assert launched.argv.index(f"--plugin-dir={SKILL}") < len(launched.argv) - 1  # not the prompt
+    assert launched.env["MAITY_KTW_SKILL_DIR"] == f"{SKILL}/skills/keep-the-why"
+    settings = adapters.claude_settings(ctx)
+    allow, deny = settings["permissions"]["allow"], settings["permissions"]["deny"]
+    assert f"Read(/{SKILL}/**)" in allow
+    assert not [r for r in allow if str(SKILL) in r and not r.startswith("Read(")]
+    assert f"Edit(/{SKILL}/**)" in deny
+    assert str(SKILL) in settings["sandbox"]["filesystem"]["denyWrite"]
+    assert str(SKILL) not in settings["sandbox"]["filesystem"].get("allowWrite", [])
+
+
+def test_without_a_delivered_skill_nothing_of_it_is_set(tmp_path: Path) -> None:
+    ctx = context(tmp_path, sandbox=True)
+    launched = adapters.launch(ctx)
+    assert not [a for a in launched.argv if a.startswith("--plugin-dir")]
+    assert "MAITY_KTW_SKILL_DIR" not in launched.env
+    settings = adapters.claude_settings(ctx)
+    assert not [r for r in settings["permissions"]["allow"] if "skills" in r]
+
+
+def test_every_harness_is_told_where_the_delivered_skill_lies(tmp_path: Path) -> None:
+    # Codex has no plugin flag the runner uses yet: the variable, which the resume block names.
+    codex = context(tmp_path, "codex", skill=SKILL)
+    assert adapters.skill_env(codex) == {"MAITY_KTW_SKILL_DIR": f"{SKILL}/skills/keep-the-why"}
+    assert adapters.skill_env(context(tmp_path / "n", "codex")) == {}
+
+
 def test_an_agy_placement_gets_no_test_slots_or_cluster(tmp_path: Path) -> None:
     """agy's scratch under `/tmp` is read-only to it but for `tmp` (the review of #2032), so a
     slot directory or cluster there could not be written: it keeps the scripts' defaults."""

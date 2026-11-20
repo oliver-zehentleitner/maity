@@ -1,0 +1,191 @@
+"""The Keep the Why skill a runner delivers (runner/skills.py, tsk-172s8y208whg): fetched at the
+commit the hub names, only plain files, checked against its manifest every time it is handed out.
+
+The fetch runs real git against a local repository; the https-only source is swapped for a
+`file://` one, the only thing these tests change in the module.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import stat
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from maity.runner import skills
+
+SOURCE = "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why"
+
+
+def _git(repo: Path, *args: str) -> str:
+    # Nothing of a placed session's git (GIT_COMMON_DIR and the rest) reaches the fixture's.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env |= {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+    done = subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@invalid", *args],
+        env=env, capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    return done.stdout.strip()
+
+
+@pytest.fixture
+def upstream(tmp_path: Path) -> Path:
+    repo = tmp_path / "upstream"
+    (repo / "skills" / "keep-the-why" / "references").mkdir(parents=True)
+    (repo / "skills" / "keep-the-why" / "SKILL.md").write_text("---\nname: keep-the-why\n---\n")
+    (repo / "skills" / "keep-the-why" / "references" / "help.md").write_text("# help\n")
+    (repo / "README.md").write_text("not part of the skill\n")
+    _git(repo, "init", "--quiet", "-b", "main")
+    _git(repo, "config", "uploadpack.allowAnySHA1InWant", "true")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "--quiet", "-m", "skill")
+    return repo
+
+
+@pytest.fixture
+def local(monkeypatch: pytest.MonkeyPatch, upstream: Path) -> Path:
+    monkeypatch.setattr(skills, "_TRANSPORTS", "file")
+    real = skills.split_source
+
+    def split(source: str) -> tuple[str, str]:
+        _, path = real(source)
+        return f"file://{upstream}", path
+
+    monkeypatch.setattr(skills, "split_source", split)
+    return upstream
+
+
+def test_the_named_commit_is_fetched_as_a_plugin_of_plain_read_only_files(
+    tmp_path: Path, local: Path
+) -> None:
+    commit = _git(local, "rev-parse", "HEAD")
+    root = skills.ensure(tmp_path / "skills", SOURCE, commit)
+    assert root == skills.plugin_root(tmp_path / "skills", commit)
+    skill = skills.skill_dir(tmp_path / "skills", commit)
+    assert (skill / "SKILL.md").read_text() == "---\nname: keep-the-why\n---\n"
+    assert (skill / "references" / "help.md").read_text() == "# help\n"
+    assert not (root / "README.md").exists() and not (skill / "README.md").exists()
+    plugin = json.loads((root / ".claude-plugin" / "plugin.json").read_text())
+    assert (plugin["name"], plugin["version"]) == ("keep-the-why", commit[:12])
+    for path in [root, *root.rglob("*")]:
+        mode = stat.S_IMODE(path.lstat().st_mode)
+        assert mode == (0o755 if path.is_dir() else 0o644), path
+    manifest = json.loads((root.parent / skills.MANIFEST).read_text())
+    assert manifest["commit"] == commit
+    assert "plugin/skills/keep-the-why/SKILL.md" in manifest["files"]
+    assert not [p for p in (tmp_path / "skills" / "keep-the-why").iterdir() if p.name != commit]
+
+
+def test_a_checked_copy_is_handed_out_again_without_a_fetch(
+    tmp_path: Path, local: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    commit = _git(local, "rev-parse", "HEAD")
+    first = skills.ensure(tmp_path / "skills", SOURCE, commit)
+
+    def no_fetch(*_: object) -> None:
+        raise AssertionError("fetched again")
+
+    monkeypatch.setattr(skills, "_fetch", no_fetch)
+    assert skills.ensure(tmp_path / "skills", SOURCE, commit) == first
+
+
+def test_a_changed_copy_is_refused_not_handed_out(tmp_path: Path, local: Path) -> None:
+    commit = _git(local, "rev-parse", "HEAD")
+    root = skills.ensure(tmp_path / "skills", SOURCE, commit)
+    skill = root / "skills" / "keep-the-why"
+    os.chmod(skill / "SKILL.md", 0o644)
+    (skill / "SKILL.md").write_text("changed\n")
+    with pytest.raises(skills.Unavailable, match="does not match its manifest"):
+        skills.ensure(tmp_path / "skills", SOURCE, commit)
+    (skill / "SKILL.md").write_text("---\nname: keep-the-why\n---\n")
+    (skill / "extra.md").write_text("added\n")
+    with pytest.raises(skills.Unavailable, match="does not match its manifest"):
+        skills.verify(root.parent)
+    (skill / "extra.md").unlink()
+    (skill / "link.md").symlink_to(skill / "SKILL.md")
+    with pytest.raises(skills.Unavailable, match="a link"):
+        skills.verify(root.parent)
+
+
+def test_a_commit_the_source_does_not_have_is_unavailable(tmp_path: Path, local: Path) -> None:
+    with pytest.raises(skills.Unavailable, match="git fetch exited"):
+        skills.ensure(tmp_path / "skills", SOURCE, "0" * 40)
+    assert not (tmp_path / "skills" / "keep-the-why" / ("0" * 40)).exists()
+
+
+def test_a_link_or_a_submodule_in_the_skill_is_refused(tmp_path: Path, local: Path) -> None:
+    (local / "skills" / "keep-the-why" / "evil.md").symlink_to("/etc/passwd")
+    _git(local, "add", ".")
+    _git(local, "commit", "--quiet", "-m", "link")
+    commit = _git(local, "rev-parse", "HEAD")
+    with pytest.raises(skills.Unavailable, match="not a plain file"):
+        skills.ensure(tmp_path / "skills", SOURCE, commit)
+    assert not (tmp_path / "skills" / "keep-the-why" / commit).exists()
+
+
+def test_a_tree_without_the_skill_is_unavailable(tmp_path: Path, local: Path) -> None:
+    other = SOURCE.replace("skills/keep-the-why", "skills/other")
+    commit = _git(local, "rev-parse", "HEAD")
+    with pytest.raises(skills.Unavailable, match="has no skills/other/"):
+        skills.ensure(tmp_path / "skills", other, commit)
+
+
+def test_too_large_a_skill_is_refused(
+    tmp_path: Path, local: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(skills, "MAX_BYTES", 10)
+    commit = _git(local, "rev-parse", "HEAD")
+    with pytest.raises(skills.Unavailable, match="larger than 10 bytes"):
+        skills.ensure(tmp_path / "skills", SOURCE, commit)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (SOURCE, ("https://github.com/oliver-zehentleitner/keep-the-why", "skills/keep-the-why")),
+        (
+            "https://gitlab.example.org/g/ktw/-/tree/v1/skills/keep-the-why",
+            ("https://gitlab.example.org/g/ktw", "skills/keep-the-why"),
+        ),
+    ],
+)
+def test_the_source_splits_into_repository_and_path(source: str, expected: tuple[str, str]) -> None:
+    assert skills.split_source(source) == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "http://github.com/o/ktw/tree/v1/skills/keep-the-why",
+        "file:///etc/tree/v1/skills",
+        "https://github.com/o/ktw",
+        "https://github.com/o/ktw/tree/v1",
+        "https://github.com/o/ktw/tree/v1/../../etc",
+        "https://github.com/o/ktw/tree/v1/skills?x=1",
+    ],
+)
+def test_a_source_the_runner_does_not_fetch_is_unavailable(source: str) -> None:
+    with pytest.raises(skills.Unavailable):
+        skills.split_source(source)
+
+
+def test_what_a_placement_names() -> None:
+    commit = "a" * 40
+    assert skills.named({}) is None
+    assert skills.named({"keep_the_why": None}) is None
+    assert skills.named({"keep_the_why": {"source": SOURCE, "commit": commit}}) == (SOURCE, commit)
+    for bad in ("x", {"source": SOURCE}, {"source": SOURCE, "commit": "A" * 40},
+                {"source": 1, "commit": commit}):  # fmt: skip
+        with pytest.raises(skills.Unavailable):
+            skills.named({"keep_the_why": bad})
+
+
+def test_gc_removes_only_commits_no_placement_names(tmp_path: Path) -> None:
+    parent = tmp_path / "keep-the-why"
+    for name in ("a" * 40, "b" * 40, ".fetch-x", "notes"):
+        (parent / name).mkdir(parents=True)
+    assert sorted(skills.remove_unused(tmp_path, {"a" * 40})) == [".fetch-x", "b" * 40]
+    assert sorted(p.name for p in parent.iterdir()) == ["a" * 40, "notes"]

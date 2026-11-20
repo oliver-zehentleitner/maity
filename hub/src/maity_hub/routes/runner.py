@@ -30,6 +30,7 @@ from maity_hub import (
     idempotency,
     instances,
     invitations,
+    ktw_skill,
     longpoll,
     namespace,
     wakeups,
@@ -299,6 +300,7 @@ def hello(body: Hello, request: Request, caller: RunnerCaller) -> JSONResponse:
     `resume` (§15.8)."""
     runner_id = caller.runner_id
     assert runner_id is not None
+    skill = ktw_skill.for_runner(settings_of(request))
 
     def run() -> dict[str, Any]:
         with events.transaction(engine_of(request)) as conn:
@@ -345,7 +347,9 @@ def hello(body: Hello, request: Request, caller: RunnerCaller) -> JSONResponse:
                 "server_time": clock.rfc3339(now),
                 "runner": {"id": runner_id, "name": name, "session_id": session_id},
                 "projects": _projects(conn, runner_id),
-                "placements": [pl.for_runner(conn, p) for p in pl.runner_reads(conn, runner_id)],
+                "placements": [
+                    pl.for_runner(conn, p, skill) for p in pl.runner_reads(conn, runner_id)
+                ],
                 "cursor": events.highest_for_runner(
                     conn, event_project_ids(conn, runner_id), runner_id
                 ),
@@ -550,9 +554,9 @@ def _own_placement(conn: Connection, runner_id: str, placement_id: str) -> Any:
     return found
 
 
-def _runner_answer(conn: Connection, placement: Any) -> dict[str, Any]:
+def _runner_answer(conn: Connection, placement: Any, skill: dict[str, str]) -> dict[str, Any]:
     return {
-        **pl.for_runner(conn, placement),
+        **pl.for_runner(conn, placement, skill),
         "active": placement.active is True,
         "reported": pl.view(conn, placement, viewer_id="", briefing=False)["reported"],
     }
@@ -564,18 +568,19 @@ def runner_placements(request: Request, caller: RunnerCaller, closed: bool = Fal
     has not reported removed, wherever they are (§15.5, §15.8)."""
     runner_id = caller.runner_id
     assert runner_id is not None
+    skill = ktw_skill.for_runner(settings_of(request))
     with engine_of(request).begin() as conn:
         if closed:
             items = [
                 {
-                    **pl.for_runner(conn, p),
+                    **pl.for_runner(conn, p, skill),
                     "active": False,
                     "closed_reason": p.closed_reason,
                 }
                 for p in pl.runner_reads_closed(conn, runner_id)
             ]
         else:
-            items = [pl.for_runner(conn, p) for p in pl.runner_reads(conn, runner_id)]
+            items = [pl.for_runner(conn, p, skill) for p in pl.runner_reads(conn, runner_id)]
         return JSONResponse({"items": items, "next_cursor": None})
 
 
@@ -596,7 +601,8 @@ def report_status(
             after = pl.report(conn, placement, body.model_dump(), caller.runner_actor())
         except pl.Refusal as refusal:
             raise ApiError(refusal.status, refusal.code, refusal.message, refusal.details) from None
-        return JSONResponse(_runner_answer(conn, after))
+        skill = ktw_skill.for_runner(settings_of(request))
+        return JSONResponse(_runner_answer(conn, after, skill))
 
 
 class WorkspaceReport(Strict):
@@ -648,7 +654,10 @@ def report_workspace(
         except pl.Refusal as refusal:
             raise ApiError(refusal.status, refusal.code, refusal.message, refusal.details) from None
         return JSONResponse(
-            {**_runner_answer(conn, after), "workspace_outcome": pl.workspace_outcome(after)}
+            {
+                **_runner_answer(conn, after, ktw_skill.for_runner(settings_of(request))),
+                "workspace_outcome": pl.workspace_outcome(after),
+            }
         )
 
 

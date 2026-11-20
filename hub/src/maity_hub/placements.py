@@ -104,6 +104,8 @@ DETAILS: dict[str, tuple[str, str]] = {
     "workspace_not_bare": ("reason", "workspace_in_use"),
     "stale_index_lock": ("state", "starting"),
     "sandbox_unavailable": ("state", "running"),
+    # Started without the Keep the Why skill the placement names (§15.5): it could not be fetched.
+    "keep_the_why_unavailable": ("state", "running"),
     "hot_loop": ("reason", "crash_loop"),
     "idle": ("reason", "hung"),
     "tool": ("reason", "hung"),
@@ -372,11 +374,14 @@ def _shown_report(report: dict[str, Any] | None) -> dict[str, Any] | None:
     return {k: v for k, v in report.items() if k not in ("seq", "session_hint")}
 
 
-def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
+def for_runner(conn: Connection, placement: Any, skill: dict[str, str]) -> dict[str, Any]:
     """A placement as its runner reads it (§15.8): never the briefing, the approval or
-    who created it."""
+    who created it. `skill` is the Keep the Why skill the instance names
+    (ktw_skill.for_runner), given only for a project that uses Keep the Why."""
     project = conn.execute(
-        select(t.project.c.repository_url).where(t.project.c.id == placement.project_id)
+        select(t.project.c.repository_url, t.project.c.keep_the_why).where(
+            t.project.c.id == placement.project_id
+        )
     ).one()
     agent = _agent(conn, placement)
     found: dict[str, Any] = {
@@ -406,6 +411,8 @@ def for_runner(conn: Connection, placement: Any) -> dict[str, Any]:
         },
         "rejoin": placement.rejoin,
         "fresh_session": fresh_session(placement),
+        # The skill the runner delivers to the session, fetched at this commit (§15.5).
+        "keep_the_why": dict(skill) if project.keep_the_why else None,
         "stop_grace_seconds": placement.stop_grace_seconds,
         "workspace_retention": placement.workspace_retention,
         "workspace_epoch": placement.workspace_epoch,
