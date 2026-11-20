@@ -257,10 +257,24 @@ window.Maity = window.Maity || {};
   const asDate = (value) => (value instanceof Date ? value : new Date(value));
   // A date and time, a date, or a time in the zone; `value` an ISO string or a Date. An option
   // `timeZone` of the caller's own wins. An unreadable value is returned as given.
+  // One formatter per language, zone and options, made once: the board formats a date or two on
+  // every card at every draw, and making the formatter cost more than formatting (tsk-3b2t7hwc352s).
+  // A formatter never changes, so a kept one formats as a new one would.
+  const formatters = new Map();
+  function formatterFor(options) {
+    const key = i18n.locale + "\n" + JSON.stringify(options);
+    let made = formatters.get(key);
+    if (!made) {
+      if (formatters.size >= 64) formatters.clear();
+      made = new Intl.DateTimeFormat(i18n.locale, options);
+      formatters.set(key, made);
+    }
+    return made;
+  }
   function when(value, options) {
     const d = asDate(value);
     if (Number.isNaN(d.getTime())) return String(value);
-    return new Intl.DateTimeFormat(i18n.locale, Object.assign({ timeZone: zone() }, options)).format(d);
+    return formatterFor(Object.assign({ timeZone: zone() }, options)).format(d);
   }
   // The wall clock of a moment in the zone, as numbers; null for an unreadable value.
   function wall(value) {

@@ -38,6 +38,9 @@ class Node_ {
   // end, so a smoke case that keeps a caret across a redraw holds only with the code that restores
   // it. The e2e step at tools/e2e.py's note-edit redraw checks the caret in Chromium itself.
   removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) this.childNodes.splice(i, 1); c.parentNode = null; dropSelection(c); return c; }
+  // As a browser's: the children go (each as removeChild takes it, the shim's caret rule included),
+  // then the given ones come in. js/dom.js clear() uses it where the browser has it.
+  replaceChildren(...cs) { while (this.childNodes.length) this.removeChild(this.childNodes[0]); cs.forEach((c) => this.appendChild(typeof c === "string" ? new Text_(c) : c)); }
   replaceChild(c, old) { const i = this.childNodes.indexOf(old); if (i < 0) return old; if (c.parentNode) c.parentNode.removeChild(c); this.childNodes[i] = c; c.parentNode = this; old.parentNode = null; return old; }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
   get textContent() { return this.childNodes.map((c) => c.textContent).join(""); }
@@ -6083,6 +6086,71 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     expect(clRecheckHeld && clRecheck.includes("The closed cards could not be checked for changes made while they were read: hub unreachable")
       && !clRecheck.includes("The closed cards could not be read"),
       "board: a failed read again of the changed cards is not called a failed closed read " + JSON.stringify(clRecheck));
+
+    // The late draw replaces only the columns that changed (tsk-3b2t7hwc352s). The closed reads held, then
+    // answered with cards no open card names (no parent, no edge): every open column keeps its node and each
+    // card node in it while the closed columns fill, in the same order and none twice; the focus on a title in
+    // a kept column stays on that very node; a status menu opened meanwhile opens again on its focused item,
+    // and the other open columns are kept around it.
+    {
+      const dkBase = (await clGetReal("/projects/maintainer/maity/tasks?status=done")).items[0];
+      const dkAt = new Date(Date.now() - 3600000).toISOString().replace(/\.\d{3}Z$/, "Z");
+      const dkRows = (st) => [0, 1].map((i) => Object.assign({}, dkBase, { id: "tsk-dk" + st.slice(0, 2) + i, title: "Kept " + st + " " + i, status: st,
+        closed_at: dkAt, parent: null, depends_on: [], ships_with: [], related: [], children: null }));
+      let dkWait = [];
+      // No card changed while read: a card an earlier case wrote a moment ago would come back from the read
+      // again of the changed cards as a new object, and its column be drawn anew, rightly.
+      win.Maity.api.get = (p) => {
+        if (/[?&]order=updated/.test(p)) return Promise.resolve({ items: [], next_cursor: null });
+        const m = /^\/projects\/maintainer\/maity\/tasks\?status=(done|cancelled)&closed_after=/.exec(p);
+        if (!m) return clGetReal(p);
+        return new Promise((res) => { dkWait.push(() => res({ items: dkRows(m[1]), next_cursor: null })); });
+      };
+      const dkRelease = () => dkWait.splice(0).forEach((f) => f());
+      const dkOpen = ["proposed", "open", "in_progress", "blocked", "review"];
+      const dkTake = () => new Map(main.querySelectorAll("section.column").map((col) => [col.getAttribute("data-status"), { col, cards: col.querySelectorAll("article.card") }]));
+      const dkSame = (before, after, skip) => dkOpen.filter((st) => st !== skip && before.get(st)).map((st) => [st, !!after.get(st) && before.get(st).col === after.get(st).col
+        && before.get(st).cards.length === after.get(st).cards.length && after.get(st).cards.every((a, i) => a === before.get(st).cards[i])]);
+      const dkOrder = () => main.querySelectorAll("section.column").map((col) => col.getAttribute("data-status")).join();
+      clProto.focus = function () { document.activeElement = this; };
+
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+      const dkHeld = clReading() && dkWait.length === 2;
+      const dkBefore = dkTake();
+      const dkOrderBefore = dkOrder();
+      const dkTitleCol = dkOpen.find((st) => dkBefore.get(st) && dkBefore.get(st).cards.length);
+      const dkTitle = dkTitleCol ? dkBefore.get(dkTitleCol).cards[0].querySelector("a.card-open") : null;
+      if (dkTitle) dkTitle.focus();
+      dkRelease(); for (let k = 0; k < 8; k++) await tick();
+      const dkAfter = dkTake();
+      const dkKept = dkSame(dkBefore, dkAfter);
+      const dkFilled = ["done", "cancelled"].map((st) => {
+        const now = dkAfter.get(st);
+        const count = now && now.col.querySelector(".column-head .count");
+        return [st, !!now && now.col !== dkBefore.get(st).col && !dkBefore.get(st).col.parentNode, !!now && now.cards.length === 2, !!count && text(count) === "2"];
+      });
+      const dkFocus = [!!dkTitle, document.activeElement === dkTitle, main.contains(dkTitle)];
+      const dkPlaced = [dkOrder() === dkOrderBefore, main.querySelectorAll("section.column").length === dkBefore.size, !clReading()];
+
+      await go("#/maintainer/maity/inbox"); await go("#/maintainer/maity/board"); for (let k = 0; k < 6; k++) await tick();
+      const dkBefore2 = dkTake();
+      const dkMenuCard = () => main.querySelector(".columns").querySelectorAll("article.card").find((a) => a.attrs["data-card"] === "tsk-0008");
+      const dkMenuAt = dkOpen.find((st) => dkBefore2.get(st) && dkBefore2.get(st).cards.some((a) => a.attrs["data-card"] === "tsk-0008"));
+      const dkButton = () => dkMenuCard().querySelector(".card-move .menu-button");
+      const dkItems = () => dkMenuCard().querySelectorAll(".card-move .menu-item");
+      dkButton().click(); await tick();
+      dkItems()[1].focus();
+      dkRelease(); for (let k = 0; k < 8; k++) await tick();
+      const dkMenu = [!!dkMenuAt, dkButton().getAttribute("aria-expanded") === "true", !dkMenuCard().querySelector(".card-move .menu").hidden,
+        dkItems().length === 2, document.activeElement === dkItems()[1]];
+      const dkKept2 = dkSame(dkBefore2, dkTake(), dkMenuAt);
+      win.Maity.api.get = clGetReal;
+      clProto.focus = clFocus; document.activeElement = undefined;
+      expect(dkHeld && dkKept.length === dkOpen.length && dkKept.every((r) => r[1]) && dkFilled.every((r) => r.slice(1).every(Boolean))
+        && dkFocus.every(Boolean) && dkPlaced.every(Boolean) && dkMenu.every(Boolean) && dkKept2.length === dkOpen.length - 1 && dkKept2.every((r) => r[1]),
+      "board: the late draw keeps the open columns' nodes while the closed columns fill, the focus on a kept title and an open menu with them "
+        + JSON.stringify([dkHeld, dkKept, dkFilled, dkFocus, dkPlaced, dkMenu, dkKept2]));
+    }
   }
 
   // A closed column reads one page of 50 at board load and the next page only on Show more (tsk-d4anfsk1e94j,
