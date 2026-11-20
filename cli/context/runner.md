@@ -4012,6 +4012,68 @@ opens `.git` once from the root's descriptor, refusing a different one;
 `maity gh` reads the record and compares the walk through that
 descriptor.
 
+## A placed lead merges, edits, readies and reads CI through `maity gh`, gated by a grant and the hub's role
+
+**Id:** fada2113-3767-4eb2-a26a-c21e693a4e1a
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the maintainer's decision on req-ynxe01x39drc (option A), 2026-11-20; card tsk-pvnj16k8d6m0 and the lead's approval of the plan with its decisions (edit lead-only, whole-line footer filter, 400-line log cut), 2026-11-20; the arbiter's go on req-mvdwmhwymgyb for the files list in docs/api.md; `cli/src/maity/ghpr.py`
+**See:** runner.md#placed-agents-open-their-pull-requests-through-maity-gh-pinned-to-the-clones-repository — 9f43804d-cfdc-4496-b07b-b01e65fc6410 — as of 2026-11-20
+**Revisit when:** the runner gets a forge credential per placement (tsk-anek9pkb5r82), the hub gives roles a right that names merging, or placed authors need `pr edit` on their own pull requests
+
+A lead that runs as a runner placement cannot run gh, by the same
+design as every placed session (9f43804d). `maity gh` therefore takes
+five more shapes for it: `pr merge <number> --match-head-commit <sha>
+--subject <text>` with a body, a squash merge only; `pr edit` for the
+title and the body; `pr ready`; `run list --commit <sha>`; and `run view
+<run id> [--job <id>] [--log-failed]`. They are built like `pr create`:
+strict options, every value as `--name=value` after maity checked it,
+the repository from the runner's record, gh in an empty directory with
+the same environment. Two gates come on top, both checked before a body
+is read or gh starts. The runner writes a `gh_lead` record only for a
+grant with `lead = true` beside `pull_requests = true`, and never for
+Codex. maity reads the member's role from the hub at each call, with the
+session's credential, and refuses unless it is `manager`. It also
+refuses when the hub does not answer, and under `--for`.
+
+**Reason:** a lead merges, fixes pull request bodies, readies drafts and
+reads CI every day. As a placement it had only `pr create` and `pr view`,
+so each merge waited for a person. The forge login on the machine is the
+operator's and reaches every repository, so the boundary has to be maity
+parsing the call, as for `pr create`. The role comes from the hub
+because local state and the resume packet on disk are not proof of the
+role now. A role taken away must stop the next merge, and a lead's
+membership is the hub's to say. Merging requires the full head sha:
+gh then refuses a head that moved after the lead read it, so a push
+that lands after the review cannot be merged unseen. The body filter
+drops only whole `Co-Authored-By:` and "Generated with [tool](link)"
+lines. That is what the project leaves out of squash commits, and
+rewriting text inside a line could change what an author wrote. The
+log is cut to its last 400 lines because a failing job's cause is near
+its end, and a whole log would flood the lead's context.
+
+**Rejected alternatives:**
+- `pr edit` for every placed author under `pull_requests`: gh's login is
+  the operator's, so maity cannot tell whether a pull request is the
+  caller's own, and a body edit is a write on someone else's pull
+  request. Left for a card of its own with its own boundary.
+- `gh pr checks` for CI: the project reads a required check from the
+  pull request's own newest run on the exact head, never the commit's
+  checks (context/process.md, the CI watcher). `run view` gives the
+  run's jobs by name instead.
+- The role from the resume packet or the clone's state: a demoted lead
+  could go on merging until its next resume.
+- Allowing `--admin`, `--auto`, another merge method or
+  `--delete-branch`: none of them is needed for the daily work, and each
+  widens what a placed lead can do past the review and CI gate.
+- A grant per placement instead of per repository: the runner's grants
+  are per repository. The per-member gate is the hub's role, which an
+  admin changes without touching the runner.
+- A `maity runner check` warning for a lead placement whose member is
+  not a manager: the check reads no member from the hub, so it cannot
+  know. The role is checked at each call instead.
+
 ## Under a placement maity writes a file only inside the clone, and reads its records from the runner's directory
 
 **Id:** 818828af-24cb-4b2a-be54-1bff2211ccb0

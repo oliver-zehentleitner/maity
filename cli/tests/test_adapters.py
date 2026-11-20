@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from maity import __version__, clonecheck
+from maity import __version__, clonecheck, ghpr
 from maity.runner import adapters, config, loop, scratch, scratchop, supervisor
 from maity.runner.asuser import AsUser, Ssh
 
@@ -1131,6 +1131,34 @@ def test_codex_gets_no_pull_requests_record_and_no_word_of_maity_gh(
         " runner sets up `maity gh` only for a `maity` outside it",
     ]
     assert adapters.codex_left_out(config.RepositoryGrant(network=("pypi.org",))) == []
+
+
+LEAD = config.RepositoryGrant(pull_requests=True, lead=True)
+
+
+def test_the_lead_record_needs_lead_and_the_pull_request_record_and_is_cleared_without(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`lead = true` writes `lead` beside the pull-request record, in the runner's directory
+    for the agent; without it (or without pull_requests, or for Codex) the record is empty,
+    and a former launch's is overwritten. The role is not decided here: `maity gh` reads it
+    from the hub at each call."""
+    fake_gh(tmp_path, monkeypatch)
+    placed = {**PLACEMENT, "workspace": {"repository": REPOSITORY}}
+    ctx = context(tmp_path, sandbox=True, grant=LEAD, placement=placed)
+    (ctx.clone / ".git").mkdir(parents=True)
+    adapters.launch(ctx)
+    assert (ctx.agent_dir / "git" / ghpr.LEAD).read_text() == "lead\n"
+    assert not (ctx.clone / ".git" / "maity" / ghpr.LEAD).exists()
+    adapters.launch(dataclasses.replace(ctx, grant=PULLS))  # the grant taken back
+    assert (ctx.agent_dir / "git" / ghpr.LEAD).read_text() == ""
+    alone = config.RepositoryGrant(lead=True)
+    assert adapters.lead_record(context(tmp_path / "a", grant=alone, placement=placed)) == ""
+    codex = context(tmp_path / "c", "codex", grant=LEAD, placement=placed)
+    assert adapters.lead_record(codex) == ""
+    assert adapters.codex_left_out(LEAD)[-1] == (
+        "lead is not given to codex, for the same reason as pull_requests"
+    )
 
 
 def test_pull_requests_without_gh_on_the_path_record_nothing(

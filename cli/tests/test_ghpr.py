@@ -657,3 +657,328 @@ def test_maity_gh_walks_the_body_file_against_the_checked_git(
     argv = ["gh", "pr", "create", "--title", "t", "--head", "x"]
     assert cli.main([*argv, "--body-file", ".git-moved/maity/pull_requests"]) == 4
     assert ran(placed) is None
+
+
+# --- the lead commands (tsk-pvnj16k8d6m0) -----------------------------------------------------
+
+SHA = "4a59187965ed2fca8c6ecb874d053823ba14ce91"
+ROLE_READS: list[str] = []
+
+
+@pytest.fixture
+def lead(placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """`placed` with the runner's LEAD record and a hub that names the member a manager; the
+    role read is counted, so a test can see it happened at the call."""
+    record = placed["record"].parent / ghpr.LEAD
+    record.write_text("lead\n")
+    ROLE_READS.clear()
+
+    def manager() -> str:
+        ROLE_READS.append("read")
+        return "manager"
+
+    monkeypatch.setattr(cli, "_hub_role", manager)
+    return {**placed, "lead_record": record}
+
+
+@runs_gh
+def test_merge_squashes_the_named_head_with_the_footer_left_out(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    body = (
+        "Card tsk-x.\n\nSays co-authored-by: in a sentence, which stays.\n"
+        "Co-Authored-By: Someone <a@example.org>\n"
+        "\U0001f916 Generated with [A Tool](https://example.org/tool)\n"
+    )
+    (lead["clone"] / "body.md").write_text(body)
+    argv = ["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject",
+            "ci + context: #2025 follow-ups (tsk-x) (#2045)", "--body-file", "body.md"]  # fmt: skip
+    assert cli.main(argv) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["pr", "merge", f"--repo={REPOSITORY}", "--squash",
+                            f"--match-head-commit={SHA}",
+                            "--subject=ci + context: #2025 follow-ups (tsk-x) (#2045)",
+                            "--body-file=-", "--", "2045"]  # fmt: skip
+    assert call["stdin"] == "Card tsk-x.\n\nSays co-authored-by: in a sentence, which stays.\n"
+    assert "left out 2 footer line(s)" in capsys.readouterr().err
+    assert ROLE_READS == ["read"]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        # no --match-head-commit: argparse refuses before anything runs
+        ["gh", "pr", "merge", "2045", "--subject", "s", "--body", "b"],
+        # a short sha, a branch, a URL
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA[:8],
+            "--subject",
+            "s",
+            "--body",
+            "b",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "agent-x/branch",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "https://github.com/o/n/pull/1",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+        ],
+        # another method, an admin bypass, auto-merge, a branch deletion, another repository
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--merge",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--admin",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--auto",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "--delete-branch",
+        ],
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s",
+            "--body",
+            "b",
+            "-R",
+            "other/repo",
+        ],
+        # a subject over two lines
+        [
+            "gh",
+            "pr",
+            "merge",
+            "2045",
+            "--match-head-commit",
+            SHA,
+            "--subject",
+            "s\nCo-Authored-By: x",
+            "--body",
+            "b",
+        ],
+        # other gh commands and options
+        ["gh", "pr", "close", "2045"],
+        ["gh", "pr", "edit", "2045", "--body", "b", "--add-reviewer", "x"],
+        ["gh", "pr", "edit", "2045", "--body", "b", "--base", "other"],
+        ["gh", "pr", "ready", "2045", "--undo"],
+        ["gh", "run", "rerun", "1"],
+        ["gh", "run", "list"],
+        ["gh", "run", "list", "--commit", "main"],
+        ["gh", "run", "view", "x1"],
+        ["gh", "run", "view", "1", "--job", "x"],
+        ["gh", "run", "view", "1", "--log"],
+        ["gh", "api", "repos/o/n"],
+    ],
+)
+def test_a_lead_command_takes_only_its_shapes(
+    lead: dict[str, Any], argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    refused(argv, capsys)
+    assert ran(lead) is None
+
+
+@runs_gh
+def test_edit_sets_the_title_and_the_body_and_ready_marks_it(lead: dict[str, Any]) -> None:
+    assert cli.main(["gh", "pr", "edit", "2045", "--title", "t", "--body", "b\n"]) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["pr", "edit", f"--repo={REPOSITORY}", "--title=t", "--body-file=-",
+                            "--", "2045"]  # fmt: skip
+    assert call["stdin"] == "b\n"
+    assert cli.main(["gh", "pr", "ready"]) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["pr", "ready", f"--repo={REPOSITORY}", "--", BRANCH]
+
+
+@runs_gh
+def test_run_list_and_view_read_the_heads_runs_and_jobs(lead: dict[str, Any]) -> None:
+    assert cli.main(["gh", "run", "list", "--commit", SHA]) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["run", "list", f"--repo={REPOSITORY}", f"--commit={SHA}",
+                            f"--json={','.join(ghpr.RUN_FIELDS)}", "--limit=50"]  # fmt: skip
+    assert cli.main(["gh", "run", "view", "44802593768"]) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["run", "view", f"--repo={REPOSITORY}",
+                            f"--json={','.join(ghpr.RUN_VIEW_FIELDS)}", "--",
+                            "44802593768"]  # fmt: skip
+    assert "jobs" in ghpr.RUN_VIEW_FIELDS
+    assert cli.main(["gh", "run", "view", "4", "--job", "5", "--log-failed"]) == 0
+    call = ran(lead)
+    assert call is not None
+    assert call["argv"] == ["run", "view", f"--repo={REPOSITORY}", "--job=5", "--log-failed",
+                            "--", "4"]  # fmt: skip
+
+
+@runs_gh
+def test_a_failed_log_is_cleaned_and_cut_to_its_last_lines(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    lines = ghpr.LOG_TAIL + 5
+    Path(lead["gh"]).write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        f"sys.stdout.write(''.join(f'line {{n}}\\x1b[31m\\n' for n in range({lines})))\n"
+    )
+    assert cli.main(["gh", "run", "view", "4", "--log-failed"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == f"maity: cut to the last {ghpr.LOG_TAIL} of {lines} lines"
+    assert len(out) == ghpr.LOG_TAIL + 1
+    assert out[1].startswith("line 5") and out[-1].startswith(f"line {lines - 1}")
+    assert "\x1b" not in "".join(out)
+
+
+@pytest.mark.parametrize("role", ["coder", "reviewer", None])
+def test_a_member_the_hub_does_not_name_a_manager_is_refused(
+    lead: dict[str, Any], role: str | None, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    monkeypatch.setattr(cli, "_hub_role", lambda: role)
+    err = refused(["gh", "pr", "ready", "2045"], capsys)
+    assert "role manager" in err and ran(lead) is None
+
+
+def test_a_hub_that_does_not_answer_refuses(
+    lead: dict[str, Any], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def down() -> str:
+        raise ghpr.Refused("the hub did not say this member's role: unreachable")
+
+    monkeypatch.setattr(cli, "_hub_role", down)
+    err = refused(["gh", "pr", "merge", "2045", "--match-head-commit", SHA, "--subject", "s",
+                   "--body", "b"], capsys)  # fmt: skip
+    assert "unreachable" in err and ran(lead) is None
+
+
+@pytest.mark.parametrize("content", ["", "yes\n", "lead", "lead\nlead\n"])
+def test_without_the_runners_lead_record_the_lead_commands_are_refused(
+    lead: dict[str, Any], content: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lead["lead_record"].write_text(content)
+    refused(["gh", "pr", "ready", "2045"], capsys)
+    assert ran(lead) is None and ROLE_READS == []
+
+
+def test_a_missing_lead_record_names_the_grant_and_reads_no_role(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    lead["lead_record"].unlink()
+    err = refused(["gh", "run", "list", "--commit", SHA], capsys)
+    assert "lead = true" in err and ran(lead) is None and ROLE_READS == []
+
+
+@runs_gh
+def test_create_and_view_need_no_lead_record_and_no_role(
+    placed: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def no_read() -> str:
+        raise AssertionError("create and view read no role")
+
+    monkeypatch.setattr(cli, "_hub_role", no_read)
+    assert cli.main(["gh", "pr", "view", "7"]) == 0
+
+
+def test_the_role_is_never_read_for_an_agent_served_with_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli.Session, "for_target", "agt-other")
+    with pytest.raises(ghpr.Refused, match="--for"):
+        cli._hub_role()
+
+
+def test_the_footer_filter_drops_whole_lines_only() -> None:
+    text = (
+        "Title line\n"
+        "  co-authored-by: Lower Case <x@example.org>\r\n"
+        "Thanks; Co-Authored-By: is named here in a sentence\n"
+        "Generated with [Tool](https://example.org)\n"
+        "Generated with care by hand\n"
+    )
+    kept, dropped = ghpr.strip_footer(text)
+    assert dropped == 2
+    assert kept == (
+        "Title line\n"
+        "Thanks; Co-Authored-By: is named here in a sentence\n"
+        "Generated with care by hand\n"
+    )
+    assert ghpr.strip_footer("no footer") == ("no footer", 0)
+
+
+def test_check_role_fails_closed() -> None:
+    with pytest.raises(ghpr.Refused):
+        ghpr.check_role(None)
+    with pytest.raises(ghpr.Refused, match="no role"):
+        ghpr.check_role(lambda: None)
+    ghpr.check_role(lambda: "manager")

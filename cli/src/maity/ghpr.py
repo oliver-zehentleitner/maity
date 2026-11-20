@@ -19,7 +19,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from maity import clonecheck, gitfacts, inclone, onboarding
@@ -61,7 +61,40 @@ WALKS = inclone.WALKS
 ALLOWED = (
     "maity gh pr create --title <title> (--body <text> | --body-file <file in this clone or"
     " the scratch>) [--base <branch>] [--head <branch>] [--draft]; "
-    "maity gh pr view [<number> | <branch>] [--json <fields>] [--comments]"
+    "maity gh pr view [<number> | <branch>] [--json <fields>] [--comments]; for a placed lead"
+    " (a manager, with lead = true in the grant): "
+    "maity gh pr merge <number> --match-head-commit <sha> --subject <text> (--body <text> |"
+    " --body-file <file>); "
+    "maity gh pr edit [<number> | <branch>] [--title <text>] (--body <text> | --body-file"
+    " <file>); "
+    "maity gh pr ready [<number> | <branch>]; "
+    "maity gh run list --commit <sha>; "
+    "maity gh run view <run id> [--job <job id>] [--log-failed]"
+)
+
+# The lead commands (tsk-pvnj16k8d6m0): what a placed lead needs daily and no placed session
+# can do with gh itself. Each needs the runner's LEAD record beside PULL_REQUESTS and the
+# member's role `manager`, read from the hub at each call (cli/context/runner.md).
+LEAD = "gh_lead"
+LEAD_COMMANDS = frozenset({("pr", "merge"), ("pr", "edit"), ("pr", "ready"),
+                           ("run", "list"), ("run", "view")})  # fmt: skip
+LEAD_ROLE = "manager"
+SHA = re.compile(r"[0-9a-f]{40}")  # a full commit id: a merge names exactly the head it read
+NUMBER = re.compile(r"[1-9][0-9]{0,9}")  # a pull request, run or job of this repository
+# What `run list` asks gh for: one run per line of the head's workflows, the ids `run view` takes.
+RUN_FIELDS = (
+    "databaseId", "workflowName", "name", "event", "status", "conclusion", "headSha",
+    "createdAt",
+)  # fmt: skip
+# What `run view` without `--log-failed` asks gh for: the run's jobs by name, so a required
+# check (`ci-ok`) is read as a job of the head's own run (context/process.md, the CI watcher).
+RUN_VIEW_FIELDS = ("databaseId", "name", "status", "conclusion", "headSha", "event", "jobs")
+LOG_TAIL = 400  # lines of `run view --log-failed` maity prints, the last ones
+# Whole lines a lead's merge or edit body loses: the attribution trailers and the generated-with
+# footer a harness appends. Only a line that is wholly one of these; text inside a line stays.
+FOOTER = (
+    re.compile(r"\s*co-authored-by:.*", re.IGNORECASE),
+    re.compile(r"\s*(?:\U0001f916\s*)?generated (?:with|by) \[[^\]]*\]\([^)]*\)\s*", re.IGNORECASE),
 )
 
 
@@ -97,7 +130,50 @@ def parser(sub: argparse._SubParsersAction) -> argparse.ArgumentParser:  # type:
     view.add_argument("selector", nargs="?", help="its number or head branch (the current one)")
     view.add_argument("--json", dest="json_fields", help="comma-separated fields, as gh's --json")
     view.add_argument("--comments", action="store_true", help="with its comments")
+    lead = " (a placed lead: a manager, with lead = true in the grant)"
+    merge = pr_sub.add_parser("merge", help="squash-merge a pull request" + lead,
+                              allow_abbrev=False)  # fmt: skip
+    merge.add_argument("selector", metavar="number", help="the pull request's number")
+    merge.add_argument(
+        "--match-head-commit",
+        dest="head_commit",
+        required=True,
+        help="the full sha of the head you read; gh refuses if it moved",
+    )
+    merge.add_argument("--subject", required=True, help="the squash commit's subject, one line")
+    _body_options(merge)
+    edit = pr_sub.add_parser("edit", help="set a pull request's body" + lead, allow_abbrev=False)
+    edit.add_argument("selector", nargs="?", help="its number or head branch (the current one)")
+    edit.add_argument("--title", help="a new title")
+    _body_options(edit)
+    ready = pr_sub.add_parser("ready", help="mark a draft ready for review" + lead,
+                              allow_abbrev=False)  # fmt: skip
+    ready.add_argument("selector", nargs="?", help="its number or head branch (the current one)")
+    run = gh_sub.add_parser("run", help="CI runs" + lead, allow_abbrev=False)
+    run_sub = run.add_subparsers(dest="gh_command", required=True)
+    runs = run_sub.add_parser("list", help="the runs of a commit" + lead, allow_abbrev=False)
+    runs.add_argument("--commit", required=True, help="the commit's full sha")
+    shown = run_sub.add_parser("view", help="a run's jobs, or its failed lines" + lead,
+                               allow_abbrev=False)  # fmt: skip
+    shown.add_argument("selector", metavar="run_id", help="the run's id (digits)")
+    shown.add_argument("--job", help="one job of the run, by its id (digits)")
+    shown.add_argument("--log-failed", action="store_true",
+                       help=f"the failed steps' log, its last {LOG_TAIL} lines")  # fmt: skip
     return gh
+
+
+def _body_options(command: argparse.ArgumentParser) -> None:
+    """`--body` or `--body-file`, one of them required, as `pr create` takes them."""
+    body = command.add_mutually_exclusive_group(required=True)
+    body.add_argument("--body", help="the body as text")
+    body.add_argument(
+        "--body-file", help="a file in this clone or the scratch, read by maity, not by gh"
+    )
+
+
+def is_lead(args: argparse.Namespace) -> bool:
+    """Whether the call is one of the lead commands (LEAD_COMMANDS)."""
+    return (args.gh_group, args.gh_command) in LEAD_COMMANDS
 
 
 def _record(root: Path, dot_git: int | None) -> bytes:
@@ -127,6 +203,40 @@ def granted(root: Path, dot_git: int | None = None) -> tuple[str, str]:
     if not (os.path.isabs(program) and os.path.isfile(program) and os.access(program, os.X_OK)):
         raise Refused(f"the gh the runner recorded ({program}) is not a program here")
     return lines[0], program
+
+
+def lead_granted(root: Path, dot_git: int | None = None) -> None:
+    """Refused unless the runner wrote its LEAD record for this clone (`lead = true` beside
+    `pull_requests = true`): `lead` and a newline, in the runner's directory for the agent.
+    Never one in the clone (Codex's IN_CLONE), which the session could write itself."""
+    if clonecheck.runner_dir(root) is None:
+        raise Refused("the lead commands need the runner's own record, which this placement lacks")
+    try:
+        content = clonecheck.runner_record(root, dot_git, LEAD, 64)
+    except FileNotFoundError:
+        content = b""
+    except (OSError, clonecheck.Refused):
+        raise Refused(f"the runner's record {LEAD} is not readable") from None
+    if content == b"":
+        raise Refused(
+            "this clone's repository grants no lead commands: the runner's operator sets "
+            "lead = true (with pull_requests = true) in its repositories table"
+        )
+    if content != b"lead\n":
+        raise Refused(f"the runner's record {LEAD} is not one it writes")
+
+
+def strip_footer(text: str) -> tuple[str, int]:
+    """`text` without the whole lines FOOTER names, and how many it dropped. Text inside a
+    line is never rewritten; the remaining lines keep their order and line ends."""
+    kept: list[str] = []
+    dropped = 0
+    for line in text.splitlines(keepends=True):
+        if any(pattern.fullmatch(line.rstrip("\r\n")) for pattern in FOOTER):
+            dropped += 1
+        else:
+            kept.append(line)
+    return "".join(kept), dropped
 
 
 def body_file(root: Path, given: str, opened: clonecheck.Opened | None = None) -> bytes:
@@ -173,15 +283,32 @@ def command(
     """gh's argument list, built here option by option (`--name=value`, so no value is read
     as an option), with the recorded repository, and what goes to its standard input. The
     head branch and the pull request to view are always named: gh reads nothing from git."""
-    argv = [gh, "pr", args.gh_command, f"--repo={repository}"]
+    argv = [gh, args.gh_group, args.gh_command, f"--repo={repository}"]
+    if args.gh_group == "run":
+        return _run_command(args, argv), None
+    if args.gh_command == "merge":
+        if not NUMBER.fullmatch(args.selector):
+            raise Refused(f"{args.selector!r}: a merge names the pull request by its number")
+        if not SHA.fullmatch(args.head_commit):
+            raise Refused(f"--match-head-commit {args.head_commit!r}: the head's full sha")
+        if not args.subject.strip() or not args.subject.isprintable():
+            raise Refused("--subject: one line of text")
+        argv += ["--squash", f"--match-head-commit={args.head_commit}",
+                 f"--subject={args.subject}", "--body-file=-", "--", args.selector]  # fmt: skip
+        return argv, _lead_body(args, root, opened)
+    if args.gh_command == "edit":
+        if args.title is not None:
+            if not args.title.strip() or not args.title.isprintable():
+                raise Refused("--title: one line of text")
+            argv.append(f"--title={args.title}")
+        argv.append("--body-file=-")
+        stdin = _lead_body(args, root, opened)
+        return [*argv, "--", _selector(args, root)], stdin
+    if args.gh_command == "ready":
+        return [*argv, "--", _selector(args, root)], None
     if args.gh_command == "create":
         argv.append(f"--title={args.title}")
-        if args.body_file is not None:
-            stdin = body_file(root, args.body_file, opened)
-        else:
-            stdin = args.body.encode("utf-8")
-            if len(stdin) > BODY_MAX:
-                raise Refused(f"--body: over {BODY_MAX} bytes")
+        stdin = _body(args, root, opened)
         argv.append("--body-file=-")  # gh reads the body from maity, never a path
         head = args.head if args.head is not None else current_branch(root)
         for name, value in (("base", args.base), ("head", head)):
@@ -201,19 +328,99 @@ def command(
     else:  # never gh's text view (VIEW_FIELDS): the fields maity prints as text
         fields = [*VIEW_FIELDS, *(["comments"] if args.comments else [])]
         argv.append(f"--json={','.join(fields)}")
+    argv += ["--", _selector(args, root)]
+    return argv, None
+
+
+def _selector(args: argparse.Namespace, root: Path) -> str:
+    """The pull request a `view`, `edit` or `ready` names: a number or a branch of this
+    repository (the current branch when left out), never a URL or another repository's."""
     selector = args.selector if args.selector is not None else current_branch(root)
     if not SELECTOR.fullmatch(selector):
         raise Refused(
             f"{selector!r}: a pull request of this repository by number or branch, "
             f"not a URL or another repository's. Allowed: {ALLOWED}"
         )
-    argv += ["--", selector]
-    return argv, None
+    return selector
+
+
+def _body(args: argparse.Namespace, root: Path, opened: clonecheck.Opened | None) -> bytes:
+    """`--body` or `--body-file` (read by maity, `body_file`), at most BODY_MAX bytes."""
+    if args.body_file is not None:
+        return body_file(root, args.body_file, opened)
+    body: bytes = str(args.body).encode("utf-8")
+    if len(body) > BODY_MAX:
+        raise Refused(f"--body: over {BODY_MAX} bytes")
+    return body
+
+
+def _lead_body(args: argparse.Namespace, root: Path, opened: clonecheck.Opened | None) -> bytes:
+    """A merge's or an edit's body (`_body`) without its footer lines (`strip_footer`); how
+    many went is said on stderr, so the lead sees it."""
+    try:
+        text = _body(args, root, opened).decode("utf-8")
+    except UnicodeDecodeError:
+        raise Refused("the body is not UTF-8 text") from None
+    kept, dropped = strip_footer(text)
+    if dropped:
+        sys.stderr.write(f"maity: left out {dropped} footer line(s) of the body\n")
+    return kept.encode("utf-8")
+
+
+def _run_command(args: argparse.Namespace, argv: list[str]) -> list[str]:
+    """`run list --commit <sha>` and `run view <id> [--job <id>] [--log-failed]`, read only."""
+    if args.gh_command == "list":
+        if not SHA.fullmatch(args.commit):
+            raise Refused(f"--commit {args.commit!r}: the commit's full sha")
+        return [*argv, f"--commit={args.commit}", f"--json={','.join(RUN_FIELDS)}",
+                "--limit=50"]  # fmt: skip
+    if not NUMBER.fullmatch(args.selector):
+        raise Refused(f"{args.selector!r}: a run of this repository by its id (digits)")
+    if args.job is not None:
+        if not NUMBER.fullmatch(args.job):
+            raise Refused(f"--job {args.job!r}: a job by its id (digits)")
+        argv.append(f"--job={args.job}")
+    if args.log_failed:
+        argv.append("--log-failed")
+    else:
+        argv.append(f"--json={','.join(RUN_VIEW_FIELDS)}")
+    return [*argv, "--", args.selector]
 
 
 def as_text(args: argparse.Namespace) -> bool:
     """Whether maity prints gh's answer as text: a `pr view` without `--json`."""
-    return bool(args.gh_command == "view" and args.json_fields is None)
+    return bool(args.gh_group == "pr" and args.gh_command == "view" and args.json_fields is None)
+
+
+def as_log(args: argparse.Namespace) -> bool:
+    """Whether gh's answer is a job log that maity cleans and cuts (`_tail`)."""
+    return bool(args.gh_group == "run" and args.gh_command == "view" and args.log_failed)
+
+
+def _tail(answer: bytes) -> str:
+    """A `run view --log-failed` answer, cleaned (`onboarding`: the log is the repository's
+    code's output) and cut to its last LOG_TAIL lines, with a line that says so."""
+    text = answer.decode("utf-8", "replace").replace("\r\n", "\n")
+    lines = onboarding.clean(text).split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    if len(lines) <= LOG_TAIL:
+        return "".join(line + "\n" for line in lines)
+    head = f"maity: cut to the last {LOG_TAIL} of {len(lines)} lines\n"
+    return head + "".join(line + "\n" for line in lines[-LOG_TAIL:])
+
+
+def check_role(role_of: Callable[[], str | None] | None) -> None:
+    """Refused unless the hub names this member's role `manager` now: `role_of` reads it with
+    the session's credential at each call; None, or a read that fails, refuses (fail closed)."""
+    if role_of is None:
+        raise Refused("the lead commands need this member's role from the hub")
+    role = role_of()
+    if role != LEAD_ROLE:
+        raise Refused(
+            f"the lead commands are for a member with the role {LEAD_ROLE}; "
+            f"the hub names this one {role or 'no role'}"
+        )
 
 
 def _readable(answer: bytes) -> str:
@@ -253,10 +460,12 @@ def gh_env(environ: Mapping[str, str], gh: str) -> dict[str, str]:
     return env
 
 
-def run(args: argparse.Namespace) -> int:
+def run(args: argparse.Namespace, role_of: Callable[[], str | None] | None = None) -> int:
     """The call, under the runner's placement only (`clonecheck.placement_root`): gh's exit
     code. gh runs in an empty directory of its own, never in the clone, whose .git the
-    session can shape: the repository, the branch and the body all come from maity."""
+    session can shape: the repository, the branch and the body all come from maity. A lead
+    command also needs the LEAD record and the role `manager` from the hub (`role_of`), both
+    checked before its body is read or gh starts."""
     try:
         root = clonecheck.placement_root()
     except clonecheck.Refused as exc:
@@ -265,11 +474,15 @@ def run(args: argparse.Namespace) -> int:
         raise Refused("maity gh runs only in a session a runner placed; " + ALLOWED)
     try:
         with clonecheck.opened_clone(root) as opened:
-            repository, gh = granted(root, None if opened is None else opened.git)
+            dot_git = None if opened is None else opened.git
+            repository, gh = granted(root, dot_git)
+            if is_lead(args):
+                lead_granted(root, dot_git)
+                check_role(role_of)
             argv, stdin = command(args, root, repository, gh, opened)
     except clonecheck.Refused as exc:
         raise Refused(str(exc)) from None
-    text = as_text(args)
+    text, log = as_text(args), as_log(args)
     with tempfile.TemporaryDirectory(prefix="maity-gh-") as empty:
         done = subprocess.run(  # noqa: S603 - the recorded gh, arguments built above
             argv,
@@ -277,9 +490,9 @@ def run(args: argparse.Namespace) -> int:
             cwd=empty,
             env=gh_env(os.environ, gh),
             check=False,
-            stdout=subprocess.PIPE if text else None,
+            stdout=subprocess.PIPE if text or log else None,
         )
-    if text and done.stdout:
-        sys.stdout.write(_readable(done.stdout))
+    if done.stdout:
+        sys.stdout.write(_readable(done.stdout) if text else _tail(done.stdout))
         sys.stdout.flush()
     return done.returncode

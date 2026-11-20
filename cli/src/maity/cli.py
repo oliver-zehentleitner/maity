@@ -1618,11 +1618,30 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
 
 
 def cmd_gh(args: argparse.Namespace) -> int:
-    """`maity gh pr create|view` (ghpr): gh's own exit code, a refusal before it runs."""
+    """`maity gh` (ghpr): gh's own exit code, a refusal before it runs. A lead command reads
+    this member's role from the hub (`_hub_role`)."""
     try:
-        return ghpr.run(args)
+        return ghpr.run(args, _hub_role)
     except ghpr.Refused as exc:
         raise LocalRefusal(str(exc)) from None
+
+
+def _hub_role() -> str | None:
+    """This clone's member's role as the hub answers it now (`GET …/members/{id}`), for the
+    lead commands of `maity gh`: never from the resume packet or other local state, never for
+    an agent served with `--for`. A hub that does not answer refuses (ghpr.check_role)."""
+    if Session.for_target is not None:
+        raise ghpr.Refused("the lead commands act as this clone's own member, not with --for")
+    try:
+        session = Session()
+        member = session.me
+        if not isinstance(member, str):
+            raise ghpr.Refused("this clone's member is not known; run `maity resume`")
+        answer = session.client.call("GET", session.project_path("members", member))
+    except (state.StateError, hub.HubError) as exc:
+        raise ghpr.Refused(f"the hub did not say this member's role: {exc}") from None
+    role = _field(answer, "role")
+    return role if isinstance(role, str) else None
 
 
 def cmd_report(args: argparse.Namespace) -> int:

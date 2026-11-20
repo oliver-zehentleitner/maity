@@ -1138,6 +1138,46 @@ sandbox off, such a grant refuses the Codex start. `maity runner check`
 and the runner's log at each start name what a Codex placement does not
 get.
 
+For a lead that runs as a placement, add `lead` beside `pull_requests`:
+
+```toml
+[repositories."github.com/oliver-zehentleitner/maity"]
+pull_requests = true
+lead = true
+```
+
+A placed member whose role the hub names `manager` then also runs:
+
+- `maity gh pr merge <number> --match-head-commit <sha> --subject <text>
+  --body-file <file>` (or `--body <text>`): a squash merge, always. The
+  pull request goes by number only, and `--match-head-commit` takes the
+  head's full 40-character sha and is required, so a merge without it is
+  refused before anything runs, and gh refuses a head that moved since.
+  There is no other merge method, no `--admin`, `--auto` or
+  `--delete-branch`. Whole lines of the body that are a `Co-Authored-By:`
+  trailer (in any case) or a "Generated with [tool](link)" footer are left
+  out, and maity says how many. Text inside a line is never changed.
+- `maity gh pr edit [<number> | <branch>] [--title <text>] --body-file
+  <file>` (or `--body <text>`): the title and the body, nothing else. The
+  body loses the same footer lines.
+- `maity gh pr ready [<number> | <branch>]`: marks a draft ready for review.
+- `maity gh run list --commit <sha>`: the runs of a commit as gh's JSON
+  (id, workflow, name, event, status, conclusion, head, time).
+- `maity gh run view <run id> [--job <job id>]`: the run with its jobs by
+  name, as gh's JSON, so a required job such as `ci-ok` is read from the
+  head's own run. With `--log-failed`: the failed steps' log, cleaned of
+  control characters and cut to its last 400 lines. maity says when it cut
+  the log, and how many lines it had.
+
+At each of these calls maity reads the member's role from the hub with
+the session's credential (`GET …/members/{id}`), never from the resume
+packet or other local state. It refuses unless the role is `manager`,
+and when the hub does not answer. These commands are refused under
+`--for`. Without `lead = true` they are refused, as they are without
+`pull_requests`, which `maity runner check` warns about. The repository,
+the environment and the empty directory are those of `pr create`. A
+Codex placement gets no `lead`, as it gets no `pull_requests`.
+
 Open gaps:
 
 - `git push` in the sandbox reads the same login, so code an allowed
