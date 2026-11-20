@@ -928,14 +928,21 @@ def _views(
     keys: Sequence[Any],
     search: card_search.Search | None,
     fg: Forge,
-    mine: Membership,
+    mine: Membership | access.OutsideReader,
 ) -> list[dict[str, Any]]:
     """The page's cards in full, in the order of their keys. A card gone since its key was
-    read is left out."""
+    read is left out, and for an outsider a card it no longer reads (§2.3): decided on the
+    full rows, in the statement that reads them, not only on the keys read before (READ
+    COMMITTED; `task_views` decides it once more in its last statement)."""
     if not keys:
         return []
     ids = [row.id for row in keys]
-    found = {row.id: row for row in conn.execute(select(t.card).where(t.card.c.id.in_(ids)))}
+    full = select(t.card).where(t.card.c.id.in_(ids))
+    if isinstance(mine, access.OutsideReader):
+        from maity_hub import public_cards  # the public pages' modules, as `access` reads them
+
+        full = full.where(public_cards.outside_clause())
+    found = {row.id: row for row in conn.execute(full)}
     rows = [found[card_id] for card_id in ids if card_id in found]
     shown = task_views(conn, rows, fg, mine)
     if search is not None:

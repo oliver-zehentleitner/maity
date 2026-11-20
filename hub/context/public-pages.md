@@ -631,21 +631,23 @@ public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, 
   `moderation.hold` the Board and the card page read), and no hidden card's id is in another card's view
   (`public_cards.outside_views`, called once by `views.task_views` for an `OutsideReader`: `depends_on`,
   `ships_with`, `related`, `parent`, the `children` counts and a release's pull requests, groups and blockers,
-  with one query for the hidden ids of a page; the lead's rulings 6 and 7, 2026-11-19).
+  with one statement for a page; the lead's rulings 6 and 7, 2026-11-19). A known residual, not cleaned (§2.3 as
+  adopted in req-mfnmm9m8fgsd): an older entry of a visible card's history can still name a hidden card's id in a
+  past `depends_on`, `related` or `parent` change, and a body or a note can name its id as text.
 - The rule is decided on the rows a read returns, in the statement that reads them, never only in a statement
   before (the lead's point, 2026-11-20): on PostgreSQL each statement of a transaction reads its own snapshot (READ
   COMMITTED), so a card that became `security` or held between the statement that listed it and the one that
   shaped it would otherwise reach the outsider, the gap #2005 closed for a request list by deciding its full rows
-  again. So the list's and the card's own statement carry `outside_clause` (the `parent` filter's card too, as an
-  `EXISTS`), the history's and the notes' statement `outside_card`, and `outside_views` reads last: one statement
-  that drops a view whose card is hidden by then, counts `children` again from the children it reads (not by
-  subtracting from the earlier count, which a hidden child added meanwhile would turn negative) and strips the ids
-  hidden by then; no hold is read for an outsider after it. A card hidden after a history's or notes' card read
-  gives an empty page, not `not_found`: nothing of it is read. `test_outside_reads.py` forces the interleaving by
-  writing between the statements, on the route's own transaction (every engine) and committed from another
-  connection (seen on PostgreSQL; SQLite reads one snapshot per read transaction). A known residual, not
-  cleaned (§2.3 as adopted in req-mfnmm9m8fgsd): an older entry of a visible card's history can still name a hidden
-  card's id in a past `depends_on`, `related` or `parent` change, and a body or a note can name its id as text.
+  again. So the list's keys statement and the statement that reads the page's full rows after them (`_views`,
+  keys first since tsk-ybc2ma72dzvq) both carry `outside_clause`, the keys statement also for the card a `parent`
+  filter names (an `EXISTS`); the card's own statement carries it too, and the history's and the notes' statement
+  `outside_card`. `outside_views` reads last: one statement that drops a view whose card is hidden by then, counts
+  `children` again from the children it reads (not by subtracting from the earlier count, which a hidden child
+  added meanwhile would turn negative) and strips the ids hidden by then; no hold is read for an outsider after
+  it. A card hidden after a history's or notes' card read gives an empty page, not `not_found`: nothing of it is
+  read. `test_outside_reads.py` forces the interleaving by writing between the statements, on the route's own
+  transaction (every engine) and committed from another connection (seen on PostgreSQL; SQLite reads one snapshot
+  per read transaction).
 - An allow-list of the project view's keys (`OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from
   outside until it is named; never `repository`, `settings` beyond `language` (`role_rules`), `memory` or
   `setup`, and the links as the public page shows them.

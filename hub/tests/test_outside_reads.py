@@ -546,15 +546,18 @@ def _hide(conn: Connection, change: str, card_id: str, reporter: str) -> None:
         _hold_on(conn, reporter, card_id)
 
 
-# A read, and the function after which the card is hidden: after the statement that read the
-# card (the list's own, or `_project_card`, and the views' edges and counts after it) and
-# before the statements that read what the outsider gets (`outside_views`, the entries).
+# A read, and the function around which the card is hidden: before the list's full rows are
+# read after its keys (`_views`, `before`), or after the statement that read the card (the
+# list's full rows or `_project_card`, and the views' edges and counts after them) and before
+# the statements that read what the outsider gets (`outside_views`, the entries).
 BETWEEN = {
-    "board": ("", card_views, "_task_views"),
-    "updated": ("?order=updated", card_views, "_task_views"),
-    "card": ("/{card}", card_views, "_task_views"),
-    "history": ("/{card}/history", board_routes, "_project_card"),
-    "notes": ("/{card}/notes", board_routes, "_project_card"),
+    "board_keys": ("", task_routes, "_views", True),
+    "updated_keys": ("?order=updated", task_routes, "_views", True),
+    "board": ("", card_views, "_task_views", False),
+    "updated": ("?order=updated", card_views, "_task_views", False),
+    "card": ("/{card}", card_views, "_task_views", False),
+    "history": ("/{card}/history", board_routes, "_project_card", False),
+    "notes": ("/{card}/notes", board_routes, "_project_card", False),
 }
 
 
@@ -581,22 +584,28 @@ def test_a_card_hidden_between_the_statements_of_a_read_does_not_reach_an_outsid
     assert renamed.status_code == 200, renamed.text
     noted = world.owner.post(f"{P}/tasks/{card}/notes", {"body": "NOTE-SENTINEL-4b1e"})
     assert noted.status_code == 201, noted.text
-    tail, module, name = BETWEEN[read]
+    tail, module, name, before = BETWEEN[read]
     if own_connection:
         monkeypatch.setattr(task_routes, "read_transaction", _writable)
         monkeypatch.setattr(board_routes, "read_transaction", _writable)
     original = getattr(module, name)
     fired: list[bool] = []
 
+    def hide(conn: Connection) -> None:
+        if fired:
+            return
+        fired.append(True)
+        if own_connection:
+            _hide(conn, change, card, world.owner.id)
+        else:
+            with migrated.begin() as other:
+                _hide(other, change, card, world.owner.id)
+
     def hooked(conn: Connection, *args: Any) -> Any:
+        if before:
+            hide(conn)
         result = original(conn, *args)
-        if not fired:
-            fired.append(True)
-            if own_connection:
-                _hide(conn, change, card, world.owner.id)
-            else:
-                with migrated.begin() as other:
-                    _hide(other, change, card, world.owner.id)
+        hide(conn)
         return result
 
     monkeypatch.setattr(module, name, hooked)
@@ -612,7 +621,7 @@ def test_a_card_hidden_between_the_statements_of_a_read_does_not_reach_an_outsid
         return
     assert answer.status_code == 200, answer.text
     items = answer.json()["items"]
-    if read in ("board", "updated"):
+    if read in ("board", "updated", "board_keys", "updated_keys"):
         assert (card not in {item["id"] for item in items}) is hidden, items
         if hidden:
             assert "moderation" not in answer.text
