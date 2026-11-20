@@ -3,7 +3,7 @@
 
 For every package a push touches (hub/, cli/) it runs CI's own lint and type targets,
 `make lint typecheck`, without the tests, with the Python of the hub's environment, which
-`make -C hub install` fills from the hashed lock. Before that it compares black, ruff and
+`make -C hub dev` makes from the hashed lock. Before that it compares black, ruff and
 mypy in that environment with their pins in hub/requirements/dev.txt and stops on a
 difference, so the hook does not pass or fail on another version than the lock.
 

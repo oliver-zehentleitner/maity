@@ -342,16 +342,19 @@ The machine-readable API description is at `/api/v1/openapi.json`;
 
 Work in a virtual environment of your own, so the tests see the locked set
 and the `maity-hub` command; without that command the test of the entry point
-is skipped. `make dev` makes it:
+is skipped. `make dev` makes it; activate it, so `maity-hub` is on the path
+(the entry-point test, `scripts/smoke_join.sh`):
 
 ```sh
-make dev        # .venv with the locked set from requirements/ (hashed), then the hub editable
+make dev        # .venv with the locked set from requirements/ (wheels, hashed), then the hub editable
+. .venv/bin/activate
 make check      # black --check, ruff, mypy --strict (src, tests, scripts), pytest
 make format     # black and ruff --fix
 ```
 
 The targets run `.venv/bin/python` when it exists, else `python3`, the one CI
-sets up; `PYTHON=` names another. `make install` puts the same locked set
+sets up; `PYTHON=` names another. Selecting the interpreter does not put
+`.venv/bin` on the path; activating does. `make install` puts the same locked set
 into that Python's environment, as CI does. `make dev` creates the venv inside
 make, so a sandbox that allows `make` but not a bare `python3 -m venv` can
 still set it up. With `MAITY_SCRATCH` set (a runner placement), pip's cache
@@ -426,9 +429,9 @@ a fixed number of statements; `tests/test_view_batching.py` holds that.
 
 `scripts/smoke_join.sh` runs a fresh hub on loopback and joins two agents
 the two ways a pasted join line can go: with plain `curl` exactly as the
-join page says, and with the `maity` CLI (`make dev`, then
-`.venv/bin/pip install -e ../cli`
-first). Each agent then asks its human, the human answers both, and each
+join page says, and with the `maity` CLI (`make dev`, `. .venv/bin/activate`, then
+`pip install -e ../cli`
+first, so both commands are on the path). Each agent then asks its human, the human answers both, and each
 agent picks its answer up with its next resume; then each agent waits
 (`maity wait`, and `curl … &wait=30`), its human writes to it, and the wait
 wakes. It exits 0 only when all of that worked.
