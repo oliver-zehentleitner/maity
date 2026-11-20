@@ -1257,7 +1257,8 @@ _GLUE = "\x00"
 class _Read:
     """What `_substitutions` reads of a line: the text of each outermost substitution, the
     line with each of them taken out, and the literal text of each word a substitution is
-    glued into."""
+    glued into; for a word of two or more substitutions and literal text that is in
+    `maity`'s order, or none, the runs of letters in their text that are part of `maity`."""
 
     def __init__(self) -> None:
         self.bodies: list[str] = []
@@ -1265,6 +1266,7 @@ class _Read:
         self.glued: list[str] = []
         self.chars: list[str] = []
         self.written: list[str] = []
+        self.texts: list[str] = []
         self.substituted = False
 
     def text(self, chars: str, written: str | None = None) -> None:
@@ -1273,14 +1275,15 @@ class _Read:
         self.written.append(chars if written is None else written)
         for c in chars:
             if c == "/":
-                self.chars, self.substituted = [], False
+                self.chars, self.texts, self.substituted = [], [], False
             else:
                 self.chars.append(c.lower())
 
-    def glue(self) -> None:
-        """A substitution in the current word."""
+    def glue(self, text: str) -> None:
+        """A substitution in the current word, with its text."""
         self.substituted = True
         self.written.append(_GLUE)
+        self.texts.append(text)
 
     def end(self) -> None:
         """The current word ends: its literal text after its last `/` is kept when a
@@ -1298,7 +1301,12 @@ class _Read:
                     self.glued.append(last.replace(_GLUE, "").lower())
         elif self.substituted and self.chars:
             self.glued.append("".join(self.chars))
-        self.chars, self.written, self.substituted = [], [], False
+        if len(self.texts) >= 2 and _in_maity_order("".join(self.chars)):
+            for text in self.texts:
+                runs = re.findall(r"[a-z]+", re.sub(r"[\\'\"]", "", text).lower())
+                self.glued += [run for run in runs if len(run) >= 2 and _part_of_maity(run)]
+        self.chars, self.written, self.texts = [], [], []
+        self.substituted = False
 
 
 def _substitutions(line: str) -> tuple[list[str], str, list[str]] | None:
@@ -1308,7 +1316,10 @@ def _substitutions(line: str) -> tuple[list[str], str, list[str]] | None:
     leaves it (a process substitution leaves a path), and with each positional parameter
     taken out and `$#` made `0`, as they are in a tool call; and the literal text of each
     word a substitution is glued into, after the word's last `/`, quotes and backslashes
-    taken off, in lower case (`_Read`). None when one never closes. Quotes, escapes and nested
+    taken off, in lower case, or for a word of two or more substitutions and literal text in
+    `maity`'s order, or none, each run of letters in their text that is part of `maity`
+    (`_Read`). None when one
+    never closes. Quotes, escapes and nested
     parentheses in a substitution are passed over; a `case` or a heredoc in `$(…)` may be
     delimited otherwise than Bash delimits it, which only adds what `_in_substitution`
     reads, since the line itself is read as before."""
@@ -1338,7 +1349,7 @@ def _substitutions(line: str) -> tuple[list[str], str, list[str]] | None:
             if end < 0:
                 return None
             read.bodies.append(line[i + 1 : end])
-            read.glue()
+            read.glue(line[i + 1 : end])
             i = end + 1
             continue
         elif line[i + 1 : i + 2] == "(" and (c == "$" or (c in "<>" and not double)):
@@ -1346,7 +1357,7 @@ def _substitutions(line: str) -> tuple[list[str], str, list[str]] | None:
             if end < 0:
                 return None
             read.bodies.append(line[i + 2 : end])
-            read.glue()
+            read.glue(line[i + 2 : end])
             out.append("" if c == "$" else "/dev/fd/0")
             i = end + 1
             continue
@@ -1366,14 +1377,19 @@ def _substitutions(line: str) -> tuple[list[str], str, list[str]] | None:
     return read.bodies, "".join(out), read.glued
 
 
+def _in_maity_order(chars: str) -> bool:
+    """Whether each character is found in `maity` after the one before it; true for none."""
+    rest = iter("maity")
+    return all(c in rest for c in chars)
+
+
 def _part_of_maity(chars: str) -> bool:
     """Whether a word's literal characters, in order, are part of `maity` with nothing
     else: each one found in `maity` after the one before it (`ma`, `aity`, `maty`), two or
     more of them, or `m` or `y` alone, the ends of the name. A substitution adds characters
     to a word and takes none away, so a word with any other character never becomes
     `maity`."""
-    rest = iter("maity")
-    return (len(chars) >= 2 or chars in ("m", "y")) and all(c in rest for c in chars)
+    return (len(chars) >= 2 or chars in ("m", "y")) and _in_maity_order(chars)
 
 
 def _names_maity_as_line(text: str, depth: int) -> bool:

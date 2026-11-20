@@ -964,6 +964,29 @@ GLUED_LETTERS = [
     "m$(echo aity) status",
     "$(echo mait)y status",
 ]
+# A word of two or more substitutions and nothing else, whose text holds part of `maity`.
+JOINED_SUBSTITUTIONS = [
+    "$(echo mait)$(echo y) status",
+    '"$(echo ma)""$(echo ity)" status',
+    "`echo m``echo aity` status",
+    "$(printf '%s' ma)$(printf ity) status",
+    "/usr/bin/$(echo mait)$(echo y) status",
+    "./$(echo ma)$(echo ity) status",
+    "echo $(echo `echo ma``echo ity`)",
+    "true && $(echo m)$(echo AITY) status",
+    "$(printf %s ma)i$(echo ty) status",
+    "$(echo m)a$(echo i)$(echo ty) status",
+]
+# The same shape without part of `maity` in the text, or with literal text in the word.
+JOINED_WITHOUT_MAITY = [
+    "echo $(date)$(hostname)",
+    "x=$(date)$(hostname)",
+    "cat $(cat a)$(cat b)",
+    "cp $(pwd)/$(basename f) x",
+    'echo "$(whoami)@$(hostname)"',
+    "echo v$(cat VERSION)-$(git rev-parse --short HEAD)",
+    "echo x$(echo ma)$(echo ty)",
+]
 
 
 @pytest.mark.parametrize(
@@ -974,13 +997,14 @@ GLUED_LETTERS = [
         *EMPTY_SUBSTITUTIONS,
         *POSITIONAL_IN_THE_NAME,
         *GLUED_LETTERS,
+        *JOINED_SUBSTITUTIONS,
     ],
 )
 def test_maity_glued_braced_or_spliced_in_a_substitution_is_refused(command: str) -> None:
     assert plaincall.refusal(bash(command)) is not None
 
 
-@pytest.mark.parametrize("command", SUBSTITUTIONS_WITHOUT_MAITY)
+@pytest.mark.parametrize("command", [*SUBSTITUTIONS_WITHOUT_MAITY, *JOINED_WITHOUT_MAITY])
 def test_substitutions_in_lines_without_maity_are_left_to_the_permission_rules(
     command: str,
 ) -> None:
@@ -2458,6 +2482,9 @@ JOINED_SPELLINGS = [
     "ma`echo i`ty",
     "m$(echo aity)",
     "$(echo mait)y",
+    "$(echo mait)$(echo y)",
+    '"$(printf ma)""$(printf ity)"',
+    "`echo m``echo aity`",
 ]
 
 
@@ -2477,8 +2504,9 @@ def test_glued_spellings_and_the_reported_lines_run_maity_only_if_refused(
     reported = [*GLUED_EXPANSIONS, *BRACES_IN_QUOTED_BACKTICKS[:6], *EMPTY_SUBSTITUTIONS]
     reported += [*POSITIONAL_IN_THE_NAME, *GLUED_LETTERS[:4], *GLUED_LETTERS[5:7]]
     reported += [GLUED_LETTERS[8], *GLUED_LETTERS[10:12], *GLUED_LETTERS[13:]]
+    reported += [*JOINED_SUBSTITUTIONS[:4], JOINED_SUBSTITUTIONS[5], *JOINED_SUBSTITUTIONS[8:]]
     opened, ran, runner = bash_runs_maity(lines + reported, tmp_path)
     assert opened == [], BASH_NAME
     assert ran >= len(lines) + len(reported) - 10, ran
-    assert runner >= 200, runner  # `maity runner` does run from many of them
+    assert runner >= 230, runner  # `maity runner` does run from many of them
     assert bash_runs_maity(reported, tmp_path)[1] == len(reported)
