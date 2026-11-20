@@ -4320,8 +4320,10 @@ a Unix socket still fits under it: Claude Code binds its sandbox socket
 at most 107 bytes on Linux (103 on macOS), and a deep workspaces root made
 it 117 in cli 0.1.0a16,
 so no Claude Code placement's sandbox started. Where `<scratch>/tmp` leaves
-no room the session keeps the host's `TMPDIR` (normally `/tmp`) and only
-`MAITY_SCRATCH` names the scratch (`adapters.scratch_tmpdir`). The runner removes it
+no room the session gets no `TMPDIR` at all (it starts from a clean
+environment, so tools use `/tmp`) and only `MAITY_SCRATCH` names the scratch
+(`adapters.scratch_tmpdir`). Under the default root `~/maity-workspaces` that
+is the usual case: a home longer than `/home/ab` already leaves no room. The runner removes it
 when the placement closes; after a stop it is to go on the clone's clock,
 which is not built yet (tsk-34gb7frfbsk7). Nothing
 in it counts as unsaved work, and only the operator sees its size and

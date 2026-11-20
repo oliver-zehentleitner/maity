@@ -236,7 +236,9 @@ SOCKET_NAME_ROOM = len("claude-socks-0123456789abcdef.sock")
 def scratch_tmpdir(scratch: Path | None) -> Path | None:
     """The TMPDIR inside the placement's scratch, or None when there is no scratch or when a
     socket named like Claude Code's under it would not fit a Unix socket path: then the session
-    keeps the host's TMPDIR (normally /tmp) and only `MAITY_SCRATCH` names the scratch."""
+    gets no TMPDIR at all (the runner starts it with a clean environment, so tools use their
+    default, /tmp) and only `MAITY_SCRATCH` names the scratch. Under the default workspaces root
+    `~/maity-workspaces` that is the usual case: a home longer than `/home/ab` leaves no room."""
     if scratch is None:
         return None
     tmp = scratch / "tmp"
