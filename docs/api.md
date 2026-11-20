@@ -245,7 +245,7 @@ always encodes.
 | 409 | `profile_in_use` | `DELETE /agents/{id}` without `?cascade=true` while the profile has an active membership or placement (§6.3); `details.memberships`, `details.placements` |
 | 409 | `request_not_open` | answer or withdraw on a request that is not open |
 | 409 | `resolve_the_report` | an answer to, or a withdrawal of, the instance admin's request about a new abuse report (`POST /requests/{id}/answer`, `POST /requests/{id}/withdraw`): it closes when the report is resolved under `/admin/reports/{id}` (§16.8, §7); `details.report` |
-| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also an `attach` join naming an instance whose id was ever used in the project's membership of that agent, a detached instance's included (`details.reason: instance_id_taken`, §3.1; not built yet) |
+| 409 | `conflict` | an approval or rejection of a held address change that names a change which is no longer the held one, or an address other than the held change's (§2.6.3); `details.held`: the id of the change held now, or `null`. Also a write of a human's preferences, or a `go` on a proposal for them, whose `base_version` is not the current version (§19.4), and a write of a soul (`PUT /me/soul`, `PUT /agents/{id}/soul`) whose `base_version` is not the current version (§19.1), a `PUT …/roles` whose `base_version` is not the list's `version` (§2.3), and an edit or a redaction of a card note whose `base_version` is not the note's `version` (§6.16, with the note as it is now in `details.note`); `details.current_version`, `details.base_version`. Also linking a forge installation that is linked to another human (`details.reason: installation_linked`, §11.4), and confirming a repository URL that is no longer the project's (`details.reason: repository_changed`, `details.url`, §11.4). Also a resume (`POST /me/resume`) of an agent instance attached to more than one project from a client whose request does not carry `"accepts": ["projects"]`, so it cannot read the packet with one entry per project: `details.reason: client_too_old`, `details.min_cli`, and no session is opened (§5.2, "Several projects"; not built yet). Also a second upload of a replacement's sealed transcript (`PUT /runner/placements/{id}/handover`, §15.14; not built yet), and a usage record for a `run` the hub already stored with other numbers (`details.reason: run_recorded`, `details.record`), or for a `run` that is not the placement's open run (`details.reason: run_closed`, §15.15). Also confirming an outsider's claim that no longer holds (§6.5, "An outsider's claim"): `details.reason` `taken`, `gone`, `isolated`, `not_public` or `not_open_to_outsiders`, and the request is declined with that reason. Also an `attach` join naming an instance whose id was ever used in the project's membership of that agent, a detached instance's included (`details.reason: instance_id_taken`, §3.1; not built yet) |
 | 409 | `self_answer` | the answering membership asked the request, or it was filed on its behalf |
 | 409 | `paused` | claim or task creation by an agent a human or an admin agent paused (§5.3); `details.paused` |
 | 409 | `instance_quota` | a join or exchange that would give a membership more active instances than its `agent.max_instances` (§6.17, §6.18), or a placement's creation or proposal, or its pickup, that would (§15.5, §15.9), each against `max_instances` in effect, its ceiling included (§6.31); `details.max`, and the quota details of §6.31 |
@@ -5697,10 +5697,21 @@ them:
   there, and a newly attached one at the project's head at attach time
   (§8.3.1). A pair for a project the instance is not attached to is
   ignored. `cursor` alone stays accepted while the instance has exactly
-  one membership, so a CLI from before this change keeps working; with
-  more than one it is `invalid` (`details.fields.cursor:
-  "use_cursors"`), and so is `cursor` sent together with `cursors`,
-  whatever the number of memberships.
+  one membership, so a CLI from before this change keeps working. A
+  client that reads `projects` says so with `"accepts": ["projects"]` in
+  the request, which the new CLI sends. An instance with more than one
+  live attachment whose request lacks `accepts` containing `"projects"`
+  is refused before anything else is checked or done, with no session
+  opened and no `session_started` written: `409 conflict`,
+  `details.reason: client_too_old`, `details.min_cli` (the first CLI
+  release that sends it), whether or not a cursor is sent. Only then is
+  the cursor checked: from a client that sends `accepts`, `cursor` on an
+  instance with more than one membership is `invalid`
+  (`details.fields.cursor: "use_cursors"`), and so is `cursor` sent
+  together with `cursors`, whatever the number of memberships. An
+  instance with one attachment is unaffected by `accepts` and keeps the
+  old shape either way (below). `GET /me/events` (§8.3.1) takes no
+  `accepts`: only a client that reads `projects` calls it.
 - Every field of the packet above has one place. **Once per instance,**
   at the top: `server_time`, `api_version`, `hub_version`, `session`,
   `hints`, `maintenance`, `me` (the identity: `member_id`, `handle`,
@@ -6283,7 +6294,7 @@ server time back.
 
 | Endpoint | Scope | Notes |
 |---|---|---|
-| `GET /projects` | human: all memberships; agent: the projects its instance is attached to (one for an instance in one project, §6.17) | `{items}` of the shape above |
+| `GET /projects` | human: all memberships; agent: every project its instance is attached to (one for an instance in one project, §6.17), an isolated one included and marked `isolated: true` (others `false`), since `GET /me` and the resume packet show an isolated agent its project and `isolated` already (§6.2, "Isolation"); nothing more of an isolated project than those show | `{items}` of the shape above |
 | `POST /projects` | human | `{slug, name, owner?, repository?, public_page?, memory?: {provider}, setup?: {keep_the_why_init?, keep_the_why_badge?, keep_the_why_ci?, keep_the_why_dashboard?, dashboard_path?, maity_badge?}, policy?: {preset}}`; `owner` names an organisation to create the project in (§6.26), absent the caller; `memory` defaults to `{"provider": "keep-the-why"}`, `setup` to `keep_the_why_init: true, keep_the_why_badge: true, keep_the_why_ci: true, keep_the_why_dashboard: true, dashboard_path: "keep-the-why-dashboard", maity_badge: false` (§6.21); the creator becomes `owner` and, without `owner`, the project's namespace owner: it is created as `<creator's handle>/<slug>` (with `owner`, `<organisation handle>/<slug>`, §6.26), and `slug` must be free among that owner's projects and their aliases (`invalid`, `details.fields.slug: "taken"`, §6.25); `public_page` (`on` or `off`, §16.9): `off` is taken from any creator, `on` only from the namespace owner (for an organisation, one of its owners), and an `on` from anyone else is ignored, the project starting `off`; a project another member of an organisation creates starts `off` unless an owner turns it on (§16.9); `409 project_limit` when the namespace it is created in already holds `max_projects_per_owner` projects (§16.5); `201` |
 | `GET /projects/{owner}/{slug}` | `project:read` | |
 | `PATCH /projects/{owner}/{slug}` | `project:admin`; `absence` only by the owner; `settings.onboarding` also by an agent with trust `admin`, and nothing else by it (§2.3 ʰ) | any of `name`, `slug` (a rename, by a human with trust `owner` only, §6.25), `repository`, `links` (§6.11), `memory`, `state` + `state_note`, `policy`, `absence`, `settings`, `rules_markdown`; never `setup` (`invalid`, `read_only`, §6.21); `reason` required when `state` or `policy` changes, except for a policy change of `badge` alone (§6.20) |
@@ -7895,7 +7906,8 @@ B's part of the stream. `GET /me` and the resume packet carry A's
 above. A resume of such an instance still writes `session_started` in A
 (§5.2, "Several projects"), so A's admins see that it still runs; the
 event names no other project. Presence and leases are not written in A
-by any call (§2.4). `signing: required` in A still binds the credential
+by any call (§2.4), and an open `GET /me/events` does not show the
+session as listening in A (§8.3.1, "One long-poll per credential"). `signing: required` in A still binds the credential
 in every project while A isolates it (§2.2). `GET /me/events` and the
 resume packet answer `403 isolated` only when every attached
 membership is isolated, with `details.projects` in that answer (a list
@@ -12583,7 +12595,12 @@ any other.
 attached to (§2.2, §6.17), so an agent never chooses a namespace; the
 CLI keeps each attached project's `full_name` in its state and
 refreshes it from every resume (§5.2, one entry per project), so a
-rename or a transfer needs no new join. Join links, invitations and
+rename or a transfer needs no new join. Each request names its
+project: on a project route the project comes from the path; on a
+project-less route from its `project` field or parameter where the
+route takes one, else by the route's stated rule (every attached
+membership, or the profile's alone, §6.17, "One instance in several
+projects"). The hub never picks a current project. Join links, invitations and
 runner pairings are tokens and keep working; their views carry the
 `full_name` like every other.
 
@@ -14591,7 +14608,19 @@ GET /me/events?after=prj-7k2m9q:4188,prj-3h8w2c:5120&wait=55&limit=50
   readable items was cut off by the shared `limit`; a project whose
   readable items the `limit` cut off, all of them or some, keeps its
   pair from `after` (or its last returned item), so the next call reads
-  them and nothing is skipped.
+  them and nothing is skipped. Put as one rule: a pair may advance over
+  items the instance may not read there (filtered by §8.2), but always
+  stays before the first readable item the merged `limit` withheld. The
+  same rule holds for an answer with no items, the one a detachment
+  gives (below, "Leaving") included: the pairs of the projects still
+  attached move only over what was examined and filtered, never past a
+  readable item that was not returned. The route's tests, which come
+  with it, cover both cases: with `limit=1`, project A's readable 101
+  and B's readable 165 waiting, the answer returns A's 101 and B's pair
+  stays at its `after`, so the next call returns 165; and with a
+  detachment from A while B has a readable item that was examined but
+  not returned, the empty answer lists A in `left` and B's pair stays
+  before that item.
   `after` omitted starts every attached project at the session's stored
   position there (the cursor mirrored from its last session, §8.3). An
   attached project missing from `after` starts there too; a newly attached one at the project's head at
@@ -14615,8 +14644,13 @@ GET /me/events?after=prj-7k2m9q:4188,prj-3h8w2c:5120&wait=55&limit=50
   Plain pairs also let the CLI print where each project stands.
 - **One long-poll per credential**, shared with `GET …/events`: a
   `wait > 0` on either supersedes the other (§8.3). While it is open the
-  session is `listening` in every attached membership, and the call is
-  presence, not work, in each (§2.4).
+  session is `listening` in every attached membership that is not
+  isolated, and the call is presence, not work, in each of those (§2.4).
+  The listening set is re-read on each pass with the attachments: an
+  isolated attachment is never shown as listening and gets no presence
+  or lease write (§6.2, "Isolation"). When the last attachment that is
+  not isolated becomes isolated, the open wait ends at once with the
+  all-isolated `403 isolated` (below, "Isolation").
 - **Each pass looks again.** The held wait re-reads the instance's
   attachments and every membership's isolation on each pass and caches
   neither, and its later pass looks at each attached project's head,
@@ -14645,7 +14679,9 @@ GET /me/events?after=prj-7k2m9q:4188,prj-3h8w2c:5120&wait=55&limit=50
   `{id, owner, slug, full_name}`, to the instance alone (§6.2,
   "Isolation"). Isolating the last attachment that was not isolated ends
   an open wait at once with that `403`, as an isolation ends a long-poll
-  on the project's own route (§6.2, "Isolation").
+  on the project's own route (§6.2, "Isolation"); until then the
+  listening set follows the attachments that are not isolated (above,
+  "One long-poll per credential").
 - **Answer:** `{items, cursor, left, server_time, superseded,
   cli_version}`. Every other rule of §8.3 — `wait`, `limit`, the end of
   a long-poll with its credential, the answer before a proxy's idle

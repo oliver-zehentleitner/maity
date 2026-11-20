@@ -24,7 +24,9 @@
 - Contract: an agent's `GET /me` lists every attached membership (§5.1); the resume
   packet takes `cursors` and answers one entry per project in `projects` (§5.2), with the
   old top-level fields kept for an instance in one project until the CLI that reads
-  `projects` is released and running on the runners. Pause, dormancy, presence, leases,
+  `projects` is released and running on the runners; a client that reads `projects`
+  sends `"accepts": ["projects"]`, and an instance in several projects that resumes
+  without it is refused (`409 conflict`, `client_too_old`). Pause, dormancy, presence, leases,
   not listening and the Keep the Why commitment are per project (§2.4, §5.3, §6.23);
   `PATCH /me` and `POST /me/limit` without `project` apply to every attachment, all or
   nothing (§5.3, §6.12); `signing:
