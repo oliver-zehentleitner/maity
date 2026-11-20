@@ -1699,9 +1699,10 @@ same paths as sandbox write denies, plus `.git/maity`. The rest of `.git`
 stays writable, because Claude Code's sandbox turns an `Edit(…)` deny
 into a write deny for every command, and commit, fetch and push need
 refs, the index, objects, logs and `FETCH_HEAD` between them (a commit
-writes the index, a fetch `FETCH_HEAD`, both refs, objects and logs). That a call with something in front of
-`maity` stays inside Claude Code's sandbox was checked with Claude Code 2.1.318
-and, by a static read, again at 2.1.325 (`capabilities.CHECKED`); with
+writes the index, a fetch `FETCH_HEAD`, both refs, objects and logs). A call with something in front of
+`maity` is held by the runner's hook (63492c65), not by how Claude
+Code's sandbox exclusion matches it (corrected in S200, 2fa61a18); the
+Claude Code version last checked is `capabilities.CHECKED`, and with
 another version the runner still
 starts the agent, and `runner check` and the supervisor log say that it
 was not checked for it.
@@ -1784,31 +1785,39 @@ one version, not a contract.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** inferred
-**Source:** card tsk-zjv2xyhyggnm (the owner/lead's approval of the bump); a static read of Claude Code 2.1.325's command matching, with no runtime session with the harness; the security detail of the read held to DM to the lead and the security lead
+**Source:** card tsk-zjv2xyhyggnm (the owner/lead's approval of the bump); a static read of Claude Code 2.1.325's command matching, with no runtime session with the harness; the security detail of the read held to DM to the lead and the security lead; the runtime re-check on 2.1.325 and 2.1.329 of security round 5, S200, 2026-11-20 (996b6f48), its details with the lead; the order to correct this entry's claim and the README's, relayed by the lead from the author of the security record, 2026-11-20
 **See:** runner.md#sandboxed-agents-git-redirects-are-pinned-other-clones-and-secrets-unreadable — ea36c196-f8e6-43ae-bc47-49c8d5379a65 — as of 2026-11-16
-**Verification:** contradicted — a runtime re-check on 2.1.325 and 2.1.329 (S200, 996b6f48) did not confirm the recorded behaviour without the runner's hook; with the hook in place each tested line was refused before it ran
-**Revisit when:** a full runtime confirmation is still open — a few downstream normalizers were not exhaustively traced statically, their observed behaviour is harmless and a downstream guard catches the relevant case, so a session able to run the harness should confirm it; or a later Claude Code version changes how it matches commands for the sandbox, which calls for a re-check and another bump
+**See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-20
+**Verification:** corroborated — the corrected claim below: in the runtime re-check (S200) the runner's hook refused before it ran each tested line with something in front of `maity` but the allowed assignments, and held those to one plain call; the claim it replaces, that the sandbox itself keeps such a call inside, was not confirmed without the hook
+**Revisit when:** a later Claude Code version changes how it matches commands for the sandbox, which calls for a re-check before another bump; the runner's hook stops holding a placed session to one plain `maity` call; the re-check of 996b6f48 decides on `capabilities.CHECKED`
 
 `capabilities.CHECKED` for `claude-code` is raised from 2.1.318 to 2.1.325,
 so `maity runner check` no longer warns that the installed harness is a
-version whose sandbox behaviour was not checked. The property the runner
-relies on — a command with something in front of `maity` (a leading
-assignment or wrapper) stays inside the sandbox, as it did at the
-previously-checked 2.1.318 — was confirmed for 2.1.325.
+version whose sandbox behaviour was not checked. What holds for a call
+with something in front of `maity` is the runner's hook (63492c65): it
+refuses such a line before it runs, but for assignments to the allowed
+names, after which the line is held to one plain call. The runner does
+not rely on Claude Code's sandbox exclusion for such a call.
+
+Corrected in security round 5 (S200): this entry first said that such a
+call stays inside the sandbox, as at 2.1.318, confirmed for 2.1.325 by a
+static read. The runtime re-check on 2.1.325 and 2.1.329 (996b6f48) did
+not confirm that without the hook. The bump itself is not undone; whether
+`CHECKED` stays, moves or means something else is left to the re-check
+of 996b6f48, which is why this entry stays `needs-review`.
 
 **Reason:** the installed runner moved to Claude Code 2.1.325, and the
-version check warned that this version was not checked. A static read of how
-2.1.325 matches the command for the sandbox confirmed it still reads past a
-leading assignment or wrapper on a `maity` line, so the placement stays
-sandboxed as before. The decision to record the bump was approved by the
-lead and the security lead; the particulars of the read are held to DM and
-kept out of the repository, so this entry stays general.
+version check warned that this version was not checked. The decision to
+record the bump was approved by the lead and the security lead on a
+static read of how 2.1.325 matches the command for the sandbox; the
+particulars of that read are held to DM and kept out of the repository,
+so this entry stays general.
 
 **Rejected alternative:** a runtime confirmation with the harness before
 bumping. No session able to run the harness was available, and the static
 read together with a downstream guard that catches the relevant case was
-judged enough to raise the recorded version now, with the full runtime
-confirmation left open under **Revisit when**.
+judged enough to raise the recorded version then. The runtime check came
+later (S200) and is why the claim above was corrected.
 
 ## In the `agent_user` layout everything on the agents' side belongs to the agents' user
 
@@ -3363,8 +3372,10 @@ the probe's managed-settings and user-settings steps (they change the
 files the container's own Claude Code reads), and its step for another
 clone's credential twice ended without the one call it asks for (the
 call that ran found the file hidden). `capabilities.CHECKED` stays at
-2.1.325 until a person re-checks this entry, 2fa61a18 and the README's
-sentence on the checked behaviour.
+2.1.325 until a person re-checks this entry. The claim of 2fa61a18 and
+the README's sentence on the checked behaviour were corrected on order
+(S200): the hook, not the exclusion, holds a call with something in
+front of `maity`.
 
 **Reason:** the old message sent the agent to `maity join`, which it cannot
 do, and hid that the cause was the shape of its own command.

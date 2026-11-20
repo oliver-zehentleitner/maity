@@ -653,6 +653,78 @@ def test_maity_after_anything_but_assignments_is_refused_outright(command: str) 
     assert plaincall.refusal(bash(command)) == plaincall.PREFIX_REFUSED
 
 
+# Security round 5, S183/S203: the hook decides on the line's command as the shell runs it. A
+# single `maity` call behind a wrapper command, known or not, by name or path, with or without
+# its options, is refused outright; only the allowed assignments may stand before `maity`.
+S203_WRAPPERS = [
+    "nice",
+    "nice -n 19",
+    "NICE",
+    "/usr/bin/nice",
+    "timeout 60",
+    "timeout -s KILL 60",
+    "timeout --foreground 1m",
+    "env",
+    "env TZ=UTC",
+    "env -- X=1",
+    "nohup",
+    "nohup nice",
+    "command",
+    "command -p",
+    "exec",
+    "exec -a x",
+    "time",
+    "stdbuf -i0 -o0",
+    "ionice -c3",
+    "chrt -i 0",
+    "taskset -c 0",
+    "setsid -w",
+    "sudo",
+    "doas -u x",
+    "xargs",
+    "xargs -0",
+    "busybox",
+    "unbuffer",
+    "frobnicate",
+    "TZ=UTC nice",
+    "NO_COLOR=1 env",
+]
+# The allowed names, as in #1942: a single plain call after them passes, held to one plain call.
+S183_ALLOWED_SINGLE = [
+    "TZ=1 maity status",
+    "TZ=UTC maity status",
+    "NO_COLOR=1 maity status",
+    "LANG=C maity status",
+    "LC_ALL=C maity status",
+    "MAITY_WAIT_TIMEOUT=5 maity wait",
+    "TZ=UTC LANG=C.UTF-8 NO_COLOR=1 maity status",
+]
+
+
+@pytest.mark.parametrize("wrapper", S203_WRAPPERS)
+def test_s203_a_single_maity_call_behind_a_wrapper_is_refused_outright(wrapper: str) -> None:
+    assert plaincall.prefixed(wrapper + " maity status")
+    assert plaincall.refusal(bash(wrapper + " maity status")) == plaincall.PREFIX_REFUSED
+    assert plaincall.refusal(bash(wrapper + " maity runner status")) == plaincall.RUNNER_REFUSED
+
+
+@pytest.mark.parametrize("wrapper", S203_WRAPPERS)
+def test_s203_a_wrapped_maity_call_after_comment_lines_is_refused(wrapper: str) -> None:
+    assert plaincall.refusal(bash("# a note\n" + wrapper + " maity status")) is not None
+
+
+@pytest.mark.parametrize("command", S183_ALLOWED_SINGLE)
+def test_s183_a_single_call_after_allowed_assignments_is_held_to_one_plain_call(
+    command: str,
+) -> None:
+    assert plaincall.held(command)
+    assert plaincall.refusal(bash(command)) is None
+    assert plaincall.refusal(bash(command + " && maity status")) == plaincall.REFUSED
+    assert plaincall.refusal(bash(command + " > out.txt")) == plaincall.REFUSED
+    runner = command.replace(" maity ", " maity runner ", 1)
+    assert plaincall.refusal(bash(runner)) == plaincall.RUNNER_REFUSED
+
+
 # A `!`, a subshell or a group right before `maity`: the line counts as starting with `maity`
 # (a leading character a plain call may not hold is skipped) and is not one plain call.
 NOT_PLAIN_BEFORE_MAITY = ["! maity status", "!maity status", "(maity status)", "{ maity status; }"]
