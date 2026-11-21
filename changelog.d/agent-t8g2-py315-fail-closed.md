@@ -10,4 +10,4 @@
 
 ### Changed
 
-- ci: the cli job also runs on Python 3.14 and 3.15.
+- ci: the cli and cli-windows jobs also run on Python 3.14 and 3.15.
