@@ -2201,6 +2201,10 @@ def other_scratches(
                     continue
                 named = root / project.name / workspace.SCRATCH
                 if named != own_holder:
+                    # Named whole, but only once it can be read and searched, as the delegated
+                    # listing checks (`-r`, `-x`): an unreadable `.scratch` still refuses the start.
+                    if not os.access(holder, os.R_OK | os.X_OK):
+                        raise refused
                     found.append(named)
                     continue
                 found += [named / e.name for e in holder.iterdir()]
@@ -2213,15 +2217,20 @@ def other_scratches(
         if listed.returncode != 0:  # some `.scratch` could not be read: the list may be short
             raise refused
         for entry in listed.stdout.split("\0"):
-            parts = Path(entry).parts if entry else ()
-            if len(parts) >= 2 and parts[-1] == workspace.SCRATCH:  # a holder itself
-                named = root / parts[-2] / workspace.SCRATCH
+            # Told apart by depth below the root, never by a name the agents' user could pick:
+            # `<project>/.scratch` is a holder, `<project>/.scratch/<name>` an entry in one.
+            try:
+                parts = Path(entry).relative_to(root).parts if entry else ()
+            except ValueError:  # not below the root given: never printed by the listing
+                continue
+            if len(parts) == 2 and parts[1] == workspace.SCRATCH:
+                named = root / parts[0] / workspace.SCRATCH
                 if named != own_holder:
                     found.append(named)
-            elif len(parts) >= 3 and parts[-2] == workspace.SCRATCH:  # an entry in one
-                named = root / parts[-3] / workspace.SCRATCH
+            elif len(parts) == 3 and parts[1] == workspace.SCRATCH:
+                named = root / parts[0] / workspace.SCRATCH
                 if named == own_holder:
-                    found.append(named / parts[-1])
+                    found.append(named / parts[2])
     return sorted(set(found) - ({own} if own is not None else set()))
 
 

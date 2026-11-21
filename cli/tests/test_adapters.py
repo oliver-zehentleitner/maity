@@ -1660,8 +1660,8 @@ def test_the_own_projects_scratch_holder_is_denied_for_reading_and_only_the_scra
     assert not ctx.clone.is_relative_to(room) and not room.is_relative_to(ctx.clone)
     assert {str(sibling), str(other), str(pg)} <= set(filesystem["denyRead"])
     # A scratch elsewhere (agy's under `/tmp`) or none: no holder denied, nothing opened again.
-    assert adapters.scratch_holder(Path("/tmp/maity-scratch-1002/" + "a" * 32)) is None  # noqa: S108
-    assert adapters.scratch_holder(None) is None
+    agy = Path("/tmp/maity-scratch-1002") / ("a" * 32)  # noqa: S108 - a path only
+    assert adapters.scratch_holder(agy) is None and adapters.scratch_holder(None) is None
     bare = adapters.claude_settings(context(tmp_path / "n", sandbox=True))["sandbox"]["filesystem"]
     assert "allowRead" not in bare and "allowWrite" not in bare
     assert not any(p.endswith("/.scratch") for p in bare["denyRead"])

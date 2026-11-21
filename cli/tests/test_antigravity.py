@@ -930,8 +930,12 @@ def test_every_other_placements_scratch_is_listed(tmp_path: Path, side: str) -> 
         (room / "tmp").mkdir(parents=True)
     (ws / "empty" / ".scratch").mkdir(parents=True)  # no scratch in it yet
     (ws / "maity" / "agent-3").mkdir()  # a clone is no scratch
+    # An entry the agents' user names `.scratch` is an entry, on every side: records are told
+    # apart by their depth below the root, not by their last name.
+    odd = root / "maity" / ".scratch" / ".scratch"
+    (ws / "maity" / ".scratch" / ".scratch").mkdir()
     holders = [root / "empty" / ".scratch", root / "other" / ".scratch"]
-    assert supervisor.other_scratches(ws, own, as_user, host) == sorted([sibling, *holders])
+    assert supervisor.other_scratches(ws, own, as_user, host) == sorted([sibling, odd, *holders])
     everything = sorted([root / "maity" / ".scratch", *holders])
     assert supervisor.other_scratches(ws, None, as_user, host) == everything
     assert supervisor.other_scratches(tmp_path / "none", own, as_user, host) == []
@@ -975,18 +979,22 @@ def test_a_scratch_listing_that_cannot_be_completed_refuses_the_start(
     tmp_path: Path, side: str, locked: str
 ) -> None:
     """An unreadable root, project or `.scratch` could hide a scratch: every side refuses the
-    start, none returns a short list (the review of #2032)."""
+    start, none returns a short list (the review of #2032). That holds for another project's
+    `.scratch`, now named whole, and for the own one, whose entries are named (A1921)."""
     ws = tmp_path / "ws"
     holder = ws / "maity" / ".scratch"
     (holder / "plc-0004").mkdir(parents=True)
     at = {"root": ws, "project": ws / "maity", "holder": holder}[locked]
     as_user = SIDES[side]()
+    host = "" if as_user.here else "host"
+    own = (ws if host else ws.resolve()) / "maity" / ".scratch" / "plc-0003"
     at.chmod(0o000)
     try:
         if os.access(at, os.R_OK):  # root reads it anyway: nothing to prove here
             pytest.skip("running as a user that reads a 0000 directory")
-        with pytest.raises(workspace.Refused):
-            supervisor.other_scratches(ws, None, as_user, "" if as_user.here else "host")
+        for mine in (None, own):  # the holder another project's, then the own project's
+            with pytest.raises(workspace.Refused):
+                supervisor.other_scratches(ws, mine, as_user, host)
     finally:
         at.chmod(0o700)
 
