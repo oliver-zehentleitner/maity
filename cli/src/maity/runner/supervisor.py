@@ -2213,24 +2213,30 @@ def other_scratches(
     elif as_user.exists(root, "-d"):
         # The root with a trailing slash, so a root that is a link is listed through it; only the
         # projects' own `.scratch` (never a clone's content, which may be unreadable) is read.
-        listed = as_user.run(["sh", "-c", _SCRATCHES, "sh", f"{root}/"])
+        # The separator added only when absent: a root of `/` given as `//` comes back from find
+        # as `//<project>/...`, which is not below `/` for Path and would be lost (A1930).
+        given = str(root) if str(root).endswith("/") else f"{root}/"
+        listed = as_user.run(["sh", "-c", _SCRATCHES, "sh", given])
         if listed.returncode != 0:  # some `.scratch` could not be read: the list may be short
             raise refused
         for entry in listed.stdout.split("\0"):
             # Told apart by depth below the root, never by a name the agents' user could pick:
             # `<project>/.scratch` is a holder, `<project>/.scratch/<name>` an entry in one.
-            try:
-                parts = Path(entry).relative_to(root).parts if entry else ()
-            except ValueError:  # not below the root given: never printed by the listing
+            # Anything else (not below the root, another depth) means the script and this parser
+            # are out of step: refuse, never skip, since a skipped record shortens the denies.
+            if not entry:  # after the last NUL
                 continue
-            if len(parts) == 2 and parts[1] == workspace.SCRATCH:
-                named = root / parts[0] / workspace.SCRATCH
-                if named != own_holder:
-                    found.append(named)
-            elif len(parts) == 3 and parts[1] == workspace.SCRATCH:
-                named = root / parts[0] / workspace.SCRATCH
-                if named == own_holder:
-                    found.append(named / parts[2])
+            try:
+                parts = Path(entry).relative_to(root).parts
+            except ValueError as exc:
+                raise refused from exc
+            if len(parts) not in (2, 3) or parts[1] != workspace.SCRATCH:
+                raise refused
+            named = root / parts[0] / workspace.SCRATCH
+            if len(parts) == 2 and named != own_holder:
+                found.append(named)
+            elif len(parts) == 3 and named == own_holder:
+                found.append(named / parts[2])
     return sorted(set(found) - ({own} if own is not None else set()))
 
 

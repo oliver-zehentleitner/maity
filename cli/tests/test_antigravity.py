@@ -973,6 +973,40 @@ def test_the_scratch_listing_reads_only_the_projects_scratch(tmp_path: Path, sid
     assert found == [root / "maity" / ".scratch" / "plc-0004"]  # in the own holder: entries
 
 
+@dataclass(frozen=True)
+class Listed(Remote):
+    """An ssh host's side whose scratch listing prints the records given: what a find there
+    returns, for a root this test cannot list itself (`/`). `given` keeps the root it got."""
+
+    records: tuple[str, ...] = ()
+    given: list[str] = field(default_factory=list)
+
+    def run(self, argv: Sequence[str], env: Any = None, input: Any = None, cwd: Any = None,
+            timeout: float = 60) -> subprocess.CompletedProcess[str]:  # fmt: skip
+        if argv[0] == "sh":
+            self.given.append(argv[-1])
+            return subprocess.CompletedProcess(argv, 0, "".join(f"{r}\0" for r in self.records))
+        return subprocess.CompletedProcess(argv, 0, "")  # `test -d` on the root
+
+
+def test_a_root_of_slash_is_listed_without_a_doubled_separator_and_strays_refuse() -> None:
+    """A1930: a root of `/` was handed to the listing as `//`, which find keeps, and every
+    record then failed to fall below `/` and was dropped, so the deny list got shorter. The
+    separator is added only when absent, and a record not below the root, or at a depth the
+    listing never prints, refuses the start (A1932)."""
+    root = Path("/")
+    records = ("/maity/.scratch", "/maity/.scratch/plc-0004", "/other/.scratch")
+    listed = Listed("a", records)
+    found = supervisor.other_scratches(root, None, listed, "host")
+    assert listed.given == ["/"]
+    assert found == [Path("/maity/.scratch"), Path("/other/.scratch")]
+    # Outside the root, or at a depth the listing never prints (A1932): refused, not skipped.
+    for stray in ("//maity/.scratch", "/srv/elsewhere/.scratch", "/srv/mw/maity",
+                  "/srv/mw/maity/.scratch/plc-0004/tmp", "/srv/mw/maity/clone"):  # fmt: skip
+        with pytest.raises(workspace.Refused):
+            supervisor.other_scratches(Path("/srv/mw"), None, Listed("a", (stray,)), "host")
+
+
 @pytest.mark.parametrize("side", sorted(SIDES))
 @pytest.mark.parametrize("locked", ["root", "project", "holder"])
 def test_a_scratch_listing_that_cannot_be_completed_refuses_the_start(
