@@ -69,7 +69,7 @@ TMP_SCRATCH_PARENT_HIDERS = ("claude-code", "codex")
 # 0.171.0 writes it, live 2026-11-20). Claude Code since tsk-k7svzz2p4v7y: its sandbox writes the
 # re-opened `tmp` once the parent is denied for reading only, and a sibling leaf stays out of
 # reach under the empty mount of that read deny (Claude Code 2.1.329, live 2026-11-21, probe P4);
-# Claude Code's own temp files and socket go in the leaf itself, outside the re-opened `tmp`
+# Claude Code's own temp files and socket go in the leaf itself, beside the re-opened `tmp`
 # (adapters.own_tmp_env).
 OWN_TMPDIR_HARNESSES = ("codex", "claude-code")
 # Deliberate: the host-shared writable location is where agy can write. The hijack risk `/tmp`

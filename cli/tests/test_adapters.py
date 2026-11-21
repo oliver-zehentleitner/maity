@@ -901,7 +901,8 @@ def test_claude_codes_own_tmpdir_is_the_leafs_tmp_and_its_own_files_sit_beside_i
     exist in it (P4); with the parent also denied for writing, the `tmp` is mounted read-only
     (P3). So with no room under the scratch: TMPDIR is the leaf's `tmp`, opened for reading and
     writing, the parent denied for reading alone, and Claude Code's own files and socket in the
-    leaf itself (CLAUDE_CODE_TMPDIR), which the sandbox does not open."""
+    leaf itself (CLAUDE_CODE_TMPDIR), which the runner's settings do not open (Claude Code
+    itself opens its own `claude-<uid>/` there, live 2.1.329)."""
     deep = Path("/") / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
     parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
     leaf, sibling = parent / ("a" * 32), parent / ("b" * 32)
@@ -958,7 +959,7 @@ def test_a_sandboxed_claude_code_placement_without_a_tmpdir_of_its_own_is_refuse
     assert refusal(context(tmp_path / "r", sandbox=True, scratch=room)) is None
     why = refusal(context(tmp_path / "d", sandbox=True, scratch=deep))
     assert why is not None and str(deep / "tmp") in why and "workspaces" in why
-    assert "/tmp/claude-<uid>" in why
+    assert "/tmp/claude-<uid>" in why  # noqa: S108 - text only
     assert refusal(context(tmp_path / "s", sandbox=True)) is not None  # no scratch at all
     assert refusal(context(tmp_path / "u", sandbox=False, scratch=deep)) is None
     codex = context(tmp_path / "c", harness_id="codex", binary="/usr/bin/codex", scratch=deep)

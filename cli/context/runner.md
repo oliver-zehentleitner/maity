@@ -5419,7 +5419,7 @@ separate item of the incident card.
 **Id:** 893d9dfd-6d56-4a8f-b46a-5f43c9e26737
 **Type:** decision
 **Status:** superseded
-**Superseded by:** runner.md#a-claude-code-or-codex-placement-without-room-under-its-scratch-gets-a-private-tmpdir-in-a-leaf-under-the-read-denied-tmp-parent — 3c02dc4f-3189-4926-b52a-d3a2571e16a5 — as of 2026-11-21
+**Superseded by:** 3c02dc4f-3189-4926-b52a-d3a2571e16a5
 **Evidence:** inferred
 **Source:** card tsk-0zb9mgzmbwn4, 2026-11-20 (the lead's go for this shape, with a live check before the merge); the ops live check on a runner host, 2026-11-20, with Claude Code 2.1.329 and Codex 0.171.0; card tsk-k7svzz2p4v7y, 2026-11-21 (the lead's go for Claude Code's CLAUDE_CODE_TMPDIR, no TMPDIR, no allow change); the ops live probes P1 to P3 on a runner host with Claude Code 2.1.329, 2026-11-21 (two test placements, main's own `adapters.launch`); Claude Code's documentation of CLAUDE_CODE_TMPDIR (code.claude.com/docs/en/env-vars.md); `cli/src/maity/runner/supervisor.py` (`_tmpdir`, `_remove_tmpdir`, `_remove_stale`), `workspace.py` (`OWN_TMPDIR_HARNESSES`), `adapters.py` (`session_tmpdir`, `own_tmp_env`, `own_tmp_leaf`). The live results are confirmed; the shape and the rejected alternatives are the author's and the lead's
 **See:** runner.md#agys-scratch-lives-under-the-hosts-shared-temp-directory-not-beside-the-clone — 8ec06e26-42b6-47b7-9f23-2bad37da3dfa — as of 2026-11-20
@@ -5532,11 +5532,26 @@ Each sandbox re-opens the leaf for its own placement alone:
   leaf's `tmp` (`allowRead`, `allowWrite`). Claude Code then hands its
   sandboxed commands `$TMPDIR` = `<leaf>/tmp/claude-<uid>`, private to the
   placement.
-- Claude Code's own temporary files (`claude-<uid>/`) and its sandbox socket
-  (`cc-socks/`) go in the leaf itself, as its `CLAUDE_CODE_TMPDIR`. They sit
-  beside the re-opened `tmp`, outside it, so the session's commands cannot
-  reach them. Claude Code writes them from outside its sandbox.
+- Claude Code's own temporary files (`claude-<uid>/`: the project directory,
+  task outputs, working-directory files, edit diffs, plugin staging) and its
+  sandbox socket (`cc-socks/`) go in the leaf itself, as its
+  `CLAUDE_CODE_TMPDIR`, beside the re-opened `tmp`. They go with the leaf.
+  Claude Code itself opens `claude-<uid>/` to the placement's sandbox for
+  reading and writing, though it is in none of the runner's allows; only
+  `cc-socks/` stays hidden. That was found in the ops live check on #2084's
+  head (Claude Code 2.1.329, 2026-11-21, note nte-8md57zfz9zkq). It stays
+  within the placement: the other placement could not reach it. It is what
+  already holds wherever the scratch's own `tmp` is the TMPDIR. The lead
+  accepted it (2026-11-21).
 - Its HTTP and mux bridge sockets go under TMPDIR, `<leaf>/tmp`, and fit.
+
+This holds for a placement started with this configuration. A session the
+runner adopts across an upgrade, and a supervised loop that keeps running,
+keeps the environment it was started with: the guard and the settings apply
+only when the supervisor starts a session (review A1869). So a Claude Code
+placement started before this change keeps the shared `/tmp/claude-<uid>`
+until the placement itself is restarted. Restarting the runner service does
+not do it, and the upgrade note and the operator guide say so.
 
 A sandboxed Claude Code placement that gets no TMPDIR of its own fails closed.
 That happens where the scratch's `tmp` does not fit and no leaf can be made:
@@ -5576,11 +5591,14 @@ it is not.
   `CLAUDE_CODE_TMPDIR` in the leaf (tsk-k7svzz2p4v7y's step 1): Claude Code's
   own files leave the shared directory, but its commands keep the shared
   `/tmp/claude-<uid>`.
-- Claude Code's whole leaf opened, as Codex's: its own files and socket
-  directory would be writable from its sandbox.
+- Claude Code's whole leaf opened, as Codex's: its socket directory would be
+  writable from its sandbox too, which Claude Code itself keeps hidden.
+- A write deny on `<leaf>/claude-<uid>`, to keep Claude Code's own files from
+  its sandbox: its sandboxed commands write there by design (in P3, with that
+  area read-only, Claude Code's own cwd file failed), so it would break
+  Claude Code. Not probed further.
 - `CLAUDE_CODE_TMPDIR` or TMPDIR in the long scratch: the bridge sockets under
-  TMPDIR do not fit (about 33 bytes past a path of about 83, over 107), and
-  Claude Code's own files would be writable from the sandbox.
+  TMPDIR do not fit (about 33 bytes past a path of about 83, over 107).
 - Dropping the parent from Codex's `none` too: Codex's profile already
   re-opens the leaf under it, so there is nothing to gain.
 - A sandboxed Claude Code placement with no TMPDIR of its own started anyway,

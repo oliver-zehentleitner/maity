@@ -362,9 +362,11 @@ def private_tmpdir_refusal(ctx: Context) -> str | None:
 def own_tmp_env(ctx: Context) -> dict[str, str]:
     """Claude Code's CLAUDE_CODE_TMPDIR in the leaf itself where the session's TMPDIR is the
     leaf's `tmp`: Claude Code's own temp files (`claude-<uid>/`) and its sandbox socket
-    (`cc-socks/`) then sit beside the `tmp` its sandbox writes, outside it, so the session's
-    commands cannot reach them, and they go with the leaf (tsk-k7svzz2p4v7y). Empty otherwise:
-    where the scratch's `tmp` is the TMPDIR, Claude Code's own files follow it, as before."""
+    (`cc-socks/`) then sit beside the `tmp` its sandbox writes, and go with the leaf
+    (tsk-k7svzz2p4v7y). Claude Code itself opens `claude-<uid>/` to the placement's sandbox
+    for reading and writing, while `cc-socks/` stays hidden (live, Claude Code 2.1.329): both
+    stay within the placement. Empty otherwise: where the scratch's `tmp` is the TMPDIR,
+    Claude Code's own files follow it, as before."""
     own = own_tmpdir_in_use(ctx)
     if ctx.harness.id != "claude-code" or own is None:
         return {}
@@ -560,8 +562,8 @@ def own_tmp_leaf(ctx: Context) -> Path | None:
     """The leaf of the placement's own TMPDIR under the per-user `/tmp` parent, to open again
     in its sandbox: only when that TMPDIR is the one the session gets (session_tmpdir), so the
     sandbox never opens a leaf the session does not use. Codex's profile opens the whole leaf;
-    Claude Code's settings open only its `tmp` (claude_settings), since Claude Code keeps its own
-    files in the leaf beside it (own_tmp_env)."""
+    Claude Code's settings open its `tmp` (claude_settings); Claude Code keeps its own files in
+    the leaf beside it (own_tmp_env)."""
     own = own_tmpdir_in_use(ctx)
     return None if own is None else own.parent
 
