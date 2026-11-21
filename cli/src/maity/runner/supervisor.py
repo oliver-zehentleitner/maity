@@ -93,6 +93,13 @@ class Retry(Exception):
     """A step that may succeed on the next tick (a pickup whose answer was lost)."""
 
 
+class HubRefused(workspace.Refused):
+    """A pickup or join the hub refused with an error code (`detail`): `join_failed` as any
+    refusal, and the watch's `pickup_refused` finding on that report (§15.7, §15.14). Not for
+    `network`, a bare 404, a refusal without a code or a missing credential: no hub answer
+    named a code there."""
+
+
 def run_join(
     place: workspace.Workspace,
     url: str,
@@ -645,6 +652,29 @@ class Supervisor:
         self.note(pid, line)
         self._found(rec, self._finding(pid, verdict))
         return True
+
+    def _pickup_finding(
+        self, p: dict[str, Any], harness: config.Harness, target: Target,
+        view: GateView | None, code: str | None,
+    ) -> dict[str, Any] | None:  # fmt: skip
+        """The `pickup_refused` finding for the refusal report itself (§15.14, "A refused
+        pickup is reported at once"): outside the diagnosis order, in the start thread, the
+        login probed there too. None when the code is not in the code form."""
+        if code is None or not DETAIL_CODE.fullmatch(code):
+            return None
+        found = (view or GateView.of(target, harness.id)).found
+        try:
+            login = self.login(harness.id, found.path if found else None, target.as_user)
+        except Exception:  # noqa: BLE001 - a probe that fails says nothing about the login
+            login = "unknown"
+        signals = watch.signals(
+            process="gone", exit_code=None, below="unknown", pane_match=[],
+            login=login if login in watch.LOGIN else "unknown", pickup_code=code,
+        )  # fmt: skip
+        seen_at = self.now() + self.hub_offset
+        self.note(p["id"], f"join refused by the hub: {code}; failed (join_failed), no restart")
+        log = watch.log_entries(p["id"], self.notes.entries(p["id"]), self.hub_offset)
+        return watch.finding("pickup_refused", seen_at, signals, log)
 
     def _end(
         self, pid: str, rec: Record, session: Session, backend: Tmux, now: float,
@@ -1812,9 +1842,14 @@ class Supervisor:
             if refused.why:  # the runner's log only; the report keeps the codes
                 self.log(f"{p['id']}: {refused.reason}: {refused.why}")
                 self.note(p["id"], f"{_code_or_dash(refused.reason)}: <error>", log=False)
+            finding = None
+            if isinstance(refused, HubRefused) and watch.takes_finding(p):
+                finding = self._pickup_finding(p, harness, target, view, refused.detail)
             with self.lock:
                 rec.enter(self.now(), "failed", refused.reason, detail=refused.detail,
                           exit_code=refused.exit_code)  # fmt: skip
+                if finding is not None:
+                    self._found(rec, finding)
             return
         except adapters.NotYet as refused:
             # A fail-closed adapter refusal (opencode's model guard): a clean harness_refused,
@@ -1925,6 +1960,8 @@ class Supervisor:
             reason, why = exc.details.get("reason"), exc.details.get("why")
             self.note(p["id"], refusal_line("pickup", exc.code, reason, why))
             detail = None if gone else join_detail(exc.code, reason)
+            if detail is not None and detail != "network":
+                raise HubRefused("join_failed", detail) from None
             raise workspace.Refused("join_failed", detail) from None
         url, code = pickup.get("join_url"), pickup.get("code")
         if not isinstance(url, str) or not isinstance(code, str):
@@ -1934,6 +1971,8 @@ class Supervisor:
             # The child's machine line carries the code only (for `forbidden`, the reason in
             # its place), and the exchange answers `not_found` without a why (§15.9).
             self.note(p["id"], refusal_line("exchange", why))
+            if why is not None and why != "network":  # the hub's code, from the machine line
+                raise HubRefused("join_failed", why)
             raise workspace.Refused("join_failed", why)
         try:
             if not as_user.direct:
