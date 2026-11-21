@@ -1438,6 +1438,146 @@ def test_an_existing_member_of_another_owner_is_not_yours(
         assert conn.execute(select(t.placement.c.id)).first() is None
 
 
+# --- a profile that is not a member yet (§15.6) ---------------------------------------------
+
+
+def _own_profile(who: flow.Human, handle: str = "agent-own") -> str:
+    made = who.post("/agents", {"handle": handle, "display_name": "Own agent"})
+    assert made.status_code == 201, made.text
+    agent_id: str = made.json()["id"]
+    return agent_id
+
+
+def _stored(s: Setup, placement_id: str) -> Any:
+    with s.engine.connect() as conn:
+        return conn.execute(select(t.placement).where(t.placement.c.id == placement_id)).one()
+
+
+def _as_member_with_member_agents(s: Setup, **project: Any) -> None:
+    """The runner's owner as a member with trust `member` under "Bringing your own agent"
+    (§3.1); the runner stays attached, as an admin attached it before."""
+    with s.engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.human_id == s.owner.id).values(trust="member")
+        )
+        conn.execute(update(t.project).values(member_agents="on", **project))
+
+
+def test_a_profile_not_yet_a_member_is_placed_with_a_first_joins_fields(setup: Setup) -> None:
+    agent_id = _own_profile(setup.owner)
+    body = placed(
+        setup, agent={"id": agent_id}, role="reviewer", briefing="Review it.", subagents=True
+    )
+    assert body["agent"]["id"] == agent_id and body["agent"]["handle"] == "agent-own"
+    assert body["briefing"] == "Review it." and body["instance"] is None
+    row = _stored(setup, body["id"])
+    assert (row.agent_id, row.membership_id, row.new_handle) == (agent_id, None, None)
+    assert row.new_profile["trust"] == "member" and row.new_profile["role"] == "reviewer"
+    assert row.new_profile["subagents"] is True
+
+
+def test_an_agent_never_admits_a_profile(setup: Setup, make_client: ClientFactory) -> None:
+    agent_id = _own_profile(setup.owner)  # its own human's
+    response = place(setup, admin_agent(make_client, setup), agent={"id": agent_id}, reason="in")
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"] == {"agent.id": "not_a_member"}
+
+
+def test_another_owners_profile_that_is_not_a_member_is_not_yours(
+    setup: Setup, make_client: ClientFactory
+) -> None:
+    other = flow.human(make_client, setup.engine, "someone")
+    response = place(setup, agent={"id": _own_profile(other, "theirs")})
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["details"]["fields"] == {"agent.id": "not_yours"}
+    with setup.engine.connect() as conn:
+        assert conn.execute(select(t.placement.c.id)).first() is None
+
+
+def test_only_an_owner_admits_a_profile_with_trust_admin(setup: Setup) -> None:
+    agent_id = _own_profile(setup.owner)
+    with setup.engine.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.human_id == setup.owner.id)
+            .values(trust="admin")
+        )
+    refused = place(setup, agent={"id": agent_id}, trust="admin")
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "owner_only"
+
+
+def test_a_member_admits_an_agent_of_their_own_within_the_member_rule(setup: Setup) -> None:
+    # §15.6 with §3.1 "Bringing your own agent": no members:admin needed, the join's limits.
+    agent_id = _own_profile(setup.owner)
+    _as_member_with_member_agents(setup)
+    over = place(setup, agent={"id": agent_id}, areas=["hub"])
+    assert over.status_code == 403, over.text
+    assert over.json()["error"]["details"] == {"reason": "member_join_limit", "field": "areas"}
+    assert (
+        place(setup, agent={"id": agent_id}, trust="admin").json()["error"]["details"]["field"]
+        == "trust"
+    )
+    body = placed(setup, agent={"id": agent_id})
+    row = _stored(setup, body["id"])
+    with setup.engine.connect() as conn:
+        mine = conn.execute(
+            select(t.membership.c.id).where(t.membership.c.human_id == setup.owner.id)
+        ).scalar_one()
+    assert row.created_by == setup.owner.id and row.new_profile["reports_to"] == mine
+    assert body["approval"]["status"] == "approved"
+    # A member placed by id still needs members:admin.
+    refused = place(setup)
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "members:admin"}
+
+
+def test_a_members_placement_counts_as_the_profiles_open_first_join(setup: Setup) -> None:
+    # The owner already holds setup.agent; with member_agents_max 2 one more profile fits,
+    # and the placement holds that slot as its open first join (§3.1, §15.6).
+    first, second = _own_profile(setup.owner, "first"), _own_profile(setup.owner, "second")
+    _as_member_with_member_agents(setup, member_agents_max=2)
+    placed(setup, agent={"id": first})
+    refused = place(setup, agent={"id": second})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "member_agents_max"
+    assert place(setup, agent={"id": first}).status_code == 201  # the same profile again
+
+
+def test_without_member_agents_a_member_admits_nothing(setup: Setup) -> None:
+    agent_id = _own_profile(setup.owner)
+    _as_member_with_member_agents(setup)
+    with setup.engine.begin() as conn:
+        conn.execute(update(t.project).values(member_agents="off"))
+    refused = place(setup, agent={"id": agent_id})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "members:admin"}  # as before
+
+
+def test_a_member_changes_an_admitting_placement_only_as_its_profiles_owner(setup: Setup) -> None:
+    # §15.6: "Bringing your own agent" covers creating the placement only. A spec change
+    # still needs members:admin and the runner; `desired` stays the profile owner's.
+    agent_id = _own_profile(setup.owner)
+    _as_member_with_member_agents(setup)
+    body = placed(setup, agent={"id": agent_id})
+    path = f"/projects/maintainer/maity/placements/{body['id']}"
+    refused = setup.owner.patch(path, {"stop_grace_seconds": 30})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"] == {"scope": "members:admin"}
+    assert _stored(setup, body["id"]).stop_grace_seconds != 30
+    for desired in ("stopped", "running"):
+        changed = setup.owner.patch(path, {"desired": desired})
+        assert changed.status_code == 200, changed.text
+        assert changed.json()["desired"] == desired
+
+
+@pytest.mark.parametrize("field", [{"trust": "member"}, {"briefing": "x"}, {"subagents": True}])
+def test_a_member_by_id_takes_no_join_fields(setup: Setup, field: dict[str, Any]) -> None:
+    refused = place(setup, **field)
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["error"]["details"]["fields"] == {next(iter(field)): "not_with_agent_id"}
+
+
 def test_a_replay_shows_a_placement_only_while_the_agent_still_sees_it(
     setup: Setup, make_client: ClientFactory
 ) -> None:
