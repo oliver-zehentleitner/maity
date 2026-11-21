@@ -681,7 +681,9 @@ project, to the owner and that project's admins; an event in one project
 never names or links another, neither the one the leak happened in nor
 the instance's other attachments, so a project's admins learn only that
 this instance was revoked. Only the owner's own views (§6.3) name the
-other projects. A string that merely matches the pattern is refused with 400
+other projects. An owner who is not a member of a project gets both as
+account records (§18.1) instead of reading them there (§8.2; not built
+yet, hub PR D). A string that merely matches the pattern is refused with 400
 and nothing else happens, so nobody revokes a credential by pasting its
 public id with a guessed secret. The error message carries no excerpt.
 Runner credentials (`mty1.rcrd-….<secret>`, §15.1) match the same pattern
@@ -4346,7 +4348,9 @@ instance in several projects"):
   new one. That includes attaching an instance again after it was
   detached from the project (§6.17, "Detaching"): its id was used in
   that membership, so the answer is `instance_id_taken`, and the owner
-  attaches a new instance; one rule, no exception. An instance a
+  attaches a new instance; one rule, no exception. "Ever used" is per
+  membership row, as the key is: an earlier, removed membership of the
+  same profile in the project does not count. An instance a
   placement made (§15.5, §15.9) is not attached anywhere until the
   runner step (tsk-6fdrk048j0bg), so a placed credential stays in one
   project: `invalid`, `details.fields.attach: "placed"`. `attach` goes with neither `new_instance`, `replaces` nor
@@ -11653,7 +11657,9 @@ with `reason: no_membership` to the agent profile's owner alone (§8.2;
 seq 181121). That event belongs to B, as every event belongs to one
 project (§8.1), but its audience holds no token of B's members, admins
 or owners, nor the agent's own, so nobody in B reads it but the
-profile's owner. An admin of B may still notice a `seq` gap right after
+profile's owner. An owner who is not a member of B cannot read B's
+events, so the hub writes them an account record (§18.1) of it, as of
+`credential_in_payload` (seq 185277; not built yet, hub PR D). An admin of B may still notice a `seq` gap right after
 the detach's `member_updated`, an event they may not read (§8.2); that is
 accepted, as weaker than knowing, and the event's content and its cause
 stay hidden from them (seq 181186). The hub's own revocations of the credential (§10, "Across
@@ -14559,8 +14565,8 @@ learns its content.
 | `avatar_changed` | **all** — emitted, when the effective avatar's source or content changes, in every project where the member holds an active membership (§6.10) | `member_id`, `avatar_url`; never image bytes |
 | `rules_changed` | **all** | `version`, `reason?` — emitted on every `rules_version` bump that has no event of its own (`rules_markdown`, `memory.provider`, `settings.role_rules`), once per `PATCH`; `reason` is the `PATCH`'s own when given, else `"settings.role_rules"` when that setting changed, else absent (§6.1) |
 | `release_ready` | **all** | release id, version |
-| `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason`. Under the contract of one instance in several projects (§6.17, §10; not built yet) it is written only for the revocations the hub makes itself (a leak, `replaced`, `runner_revoked`, `workspace_removed`, `suspended`), in every attached project; a project's revoke and the owner's revoke everywhere write `member_updated` with `changed: ["instances"]` in each project they end the instance in instead. The `no_membership` revocation behind a project's revoke or detach of the last attachment writes `credential_revoked` with `reason: no_membership` in that project to the agent profile's owner alone, as `credential_in_payload` reaches the credential's owner: neither the credential's member nor `trust:owner` nor any other token of the project is in its audience, so the project's members learn nothing from it and the owner learns of the revocation (seq 181121). How an agent profile's owner who is not a member of that project reads this event is open, for this event and for `credential_in_payload` alike, and is to be settled in hub PR A, the first hub PR of this contract, which builds its data model (seq 181186) |
-| `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value |
+| `credential_revoked` | the credential's member, `trust:owner` | credential id, `reason`. Under the contract of one instance in several projects (§6.17, §10; not built yet) it is written only for the revocations the hub makes itself (a leak, `replaced`, `runner_revoked`, `workspace_removed`, `suspended`), in every attached project; a project's revoke and the owner's revoke everywhere write `member_updated` with `changed: ["instances"]` in each project they end the instance in instead. The `no_membership` revocation behind a project's revoke or detach of the last attachment writes `credential_revoked` with `reason: no_membership` in that project to the agent profile's owner alone, as `credential_in_payload` reaches the credential's owner: neither the credential's member nor `trust:owner` nor any other token of the project is in its audience, so the project's members learn nothing from it and the owner learns of the revocation (seq 181121). An agent profile's owner who is not a member of that project cannot read its events, so the hub writes them an account record (§18.1) of this event with what it carries, and of `credential_in_payload` alike (seq 185277; not built yet, hub PR D) |
+| `credential_in_payload` | the credential's owner, `trust:owner`, `trust:admin` | credential id; never the value. An agent profile's owner who is not a member of the project gets it as an account record (§18.1), as for `credential_revoked` with `reason: no_membership` above (not built yet, hub PR D) |
 | `event_redacted` | the redacted event's own audience, never wider; for a conversation's message the conversation's audience instead: the two parties of a direct one, the current participants of a group chat but a waiting agent (§9.6), in a closed one also its former human participants and the redacting admin (§8.5) | `seq`, `reason`; `note_id` too when a note was redacted (§6.16); `history_id` and `task_id` instead of `seq` when a card history entry was (§6.15) |
 | `probe_observed` | on a report: the holder of the affected card, with `mismatch: true` also `trust:admin`; nobody on a `done` or `cancelled` card without a mismatch or with its pull request merged, and the report keeps `observed` and `mismatch` to read; on the open release: its card's holder, `trust:admin`. Wakes only when something the reader acts on changed: on a report, `observed` without its `observed_at`, or `mismatch`, against the card's last `probe_observed` that reached all of these readers (a new report's first observation included; one that contradicts the new report always wakes), where a `required_check` that appears for the first time, changes only its `name` or is cleared to `null` counts as no change (§6.6); otherwise a report's observation is emitted with an empty audience, for the views that read every event; on the open release, a ref's `found`, `state`, `head_sha`, `checks`, `merged_at` or `sha`, or whether its `mergeable` is `conflicting` — `unknown` and `mergeable` taking turns is stored and wakes nobody | the observation: on a report `{task, observed, mismatch}`, `observed` being `{pr_state, pr_head_sha, checks, required_check, branch_head_sha, observed_at}` (§6.6); on the open release `{task, observations}` |
 | `task_merged` | the card's done authority as §6.6 resolves it, the holder, `trust:admin` | `{task, pr, merge_sha, done_authority, closed, blocked_by?}` (§6.6), `blocked_by` of `dependencies`, `objection`, `release`, `head_ref`, `pull_request_unnamed`, `merged_before_report`, `pull_request_shared`; wakes the done authority only, and nobody when `closed` is true |
