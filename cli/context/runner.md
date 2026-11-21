@@ -6074,6 +6074,14 @@ Where the contract left the choice open, it decided as follows.
   `codex login status` exiting 1 with the line `Not logged in` (it also
   exits 1 on an error). Any other exit, a timeout or an error is `unknown`,
   since `needed` ends the placement as `failed`/`auth` with no restart.
+  Evidence: the two answers come from the tools' documentation and are not
+  yet observed in a live session (neither probe may run in the placement
+  that wrote this; security delta A1959). A wrong answer for Codex only
+  turns a real logout into `unknown`. If Claude Code's exit 1 also covers an
+  error, a placement can end as `failed`/`auth` with no restart (availability
+  only). Revisit when ops has seen the live not-logged-in answers: give
+  Claude Code a text check like Codex's. Re-check this first if placements
+  start ending as `auth` unexpectedly.
 - **The scrub also takes a URL's userinfo and underscore key prefixes**
   (A1942): `scheme://user:pass@host` and `scheme://token@host` keep the
   scheme and the host and lose the userinfo; Stripe `sk_live_`, `sk_test_`,
