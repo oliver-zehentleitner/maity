@@ -567,6 +567,35 @@ def test_gc_keeps_everything_when_an_active_placements_pin_cannot_be_read(
     assert keys is None
 
 
+def test_gc_skills_goes_on_past_a_copy_it_cannot_remove_and_forgets_only_what_went(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The review of #2093 (kduz): one copy whose removal fails is named, the next one still
+    # goes, and only the removed copy's record leaves skills.json.
+    from maity.runner import operate
+
+    runner_copy(tmp_path / "runner", tmp_path / "state")
+    stuck, gone = ("e" * 40 + "-" + "1" * 16), ("f" * 40 + "-" + "2" * 16)
+    for name in (stuck, gone):
+        (tmp_path / "runner" / "keep-the-why" / name / "plugin").mkdir(parents=True)
+        skills._record(tmp_path / "state", name, "0" * 64)
+    real = skillop._remove_tree
+
+    def remove_tree(parent: int, name: str) -> None:
+        if name == stuck:
+            raise PermissionError(13, "Permission denied")
+        real(parent, name)
+
+    monkeypatch.setattr(skillop, "_remove_tree", remove_tree)
+    monkeypatch.setattr(operate, "_skills_running", lambda cfg: set())
+    operate._collect_skills(_cfg(tmp_path), {KEY}, remove=True)
+    left = sorted(p.name for p in (tmp_path / "runner" / "keep-the-why").iterdir())
+    assert left == sorted([KEY, stuck])
+    assert set(skills._anchors(tmp_path / "state")) == {KEY, stuck}
+    out = capsys.readouterr().out
+    assert f"not removed: {stuck}" in out and f"{gone}: removed" in out
+
+
 def test_gc_skills_keeps_everything_when_the_hubs_list_is_partial(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
