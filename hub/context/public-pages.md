@@ -136,6 +136,28 @@ removal; only the render, which shows the state after the change, moves after th
 - Deleting without the per-target lock and accepting the window: on PostgreSQL a render already running when
   a removal commits wrote the removed content back until the removal's own render ended.
 
+## A test that deletes stored pages keeps the pages worker from running
+
+**Id:** 783a0bd6-0bcc-439c-8fcc-1ff3737ec4fa
+**Type:** constraint
+**Status:** active
+**Evidence:** confirmed
+**Source:** the review of pull request #2069, 2026-11-21 (a flaky `assert 201 == 404` in `hub/tests/test_reports_public.py`), reproduced with a late first worker pass; `public_pages.startup`, `Worker._run`, `_unrendered`
+**See:** public-pages.md#a-touched-page-is-taken-off-in-the-writers-transaction-and-rendered-after-its-commit-one-render-has-a-time-limit-and-a-start-takes-up-no-target-after-its-budget — deafb243-f385-4108-8de4-81fc8f9a7872 — as of 2026-11-21
+
+A test that deletes stored pages to model "not served" keeps the pages worker from running
+(`public_pages.Worker.start` patched to a no-op before the first app is built), and builds no
+pages app after the delete. Every app with pages on renders, at its start (`startup`), the
+pages of the targets it takes up within `public_pages_startup_seconds`, and starts
+`public_pages.Worker`, whose first pass renders every target without a stored page; either can
+bring the deleted page back, the worker's pass at a moment the test does not control.
+
+**Reason:** a first pass that runs late on a loaded runner turned a filing the test expected to
+be refused into an accepted one.
+
+**Rejected alternative:** deleting the pages again before each assertion: the worker can still
+render them between the delete and the read.
+
 ## A person's page exists by their choice, and `touch` is called wherever that can change
 
 **Id:** 833b0f1f-5dad-43c8-b7e6-a22cdaa26c9f
@@ -603,6 +625,81 @@ renderer puts it there.
 `refresh` compares `view` and `data` as well as `inputs`, since a change may reach `data` without touching the
 HTML. Such a change keeps the row's `lastmod`, because the sitemap's date says what a crawler can read. Rejected:
 `data` in the digest, which would move that date.
+
+**Superseded for signed-in outsiders (2026-11-19).** The maintainer's decision of 2026-11-14 (tsk-yr3ckca01b9q,
+"public is public", `docs/api.md` §2.3) has a signed-in human without an active membership read a public project
+through the member routes; a visitor without a session still reads only `GET /public/pages/{path}`, and the
+rejection above still holds for them. For the outsider the risk this entry names (a field added later becomes
+public) is met by closing every list instead of filtering it (tsk-kqn8zhptf06k, PR 2, the lead's rulings):
+
+- A closed allow-list of routes: `access.OUTSIDE_READS`, nine GETs (the project, its members and one member, the
+  cards and one card, a card's history and notes, the logo and the banner). Only those endpoints call
+  `access.reader`, which hands them an `OutsideReader` (no `Membership`, `project:read` alone, `not_found` where a
+  member would get `forbidden`), and each carries `@outside_read`. `tests/test_outside_reads.py` holds the three
+  together and walks every project route the app has: an unknown path parameter fails the walk, so a new route
+  is closed until someone opens it on purpose.
+- A gate in `ProjectRoute`: an outsider's call to any other project route answers `not_found` before FastAPI
+  reads its body or query, so no `400` names a route's fields to them. Members, strangers to a private or unknown
+  project, agents and callers without a session pass it unchanged. A human who owns an agent or a runner in the
+  project passes it on `access.OWNER_CALLS` alone, the calls §1.3 lists for such an owner (the chats they read
+  along, a jour-fixe round, their agent's briefings and its briefing view, membership and bridge, the placements
+  on their runner); on any other route they are an outsider like any other (the lead's ruling, 2026-11-19).
+  Strangers to a private or unknown project need no gate: the body is validated before the route reads the
+  membership, for both alike (`errors.py`'s `invalid` before e.g. `create_card`'s `membership`), so a bad body
+  tells them apart no more than `not_found` does (checked, not changed, and tested). The gate names a route by
+  the template the app serves, `access.API` before the route's own path: FastAPI keeps an included router behind
+  its own object (hub/context/namespace.md), so a route's `path` is the router's, without the prefix. The tests
+  walk the app with `iter_route_contexts` and take each endpoint from the routers of `maity_hub.routes`.
+- The gate reads the caller as `caller.authenticate` does (2026-11-20, review A1788/A1789): a call is another
+  credential's, not the cookie's, only with a non-empty `Authorization` header, which authenticates and makes the
+  cookie alongside ignored; an empty one authenticates nothing. `Maity-For` authenticates nothing on its own (a
+  bridge calls with its own `Authorization`, §2.3), so a cookie call with it is still the cookie's human and is
+  gated as any outsider. Rejected: passing a call on a header's mere presence, a reading other than the one
+  that decides the caller.
+- A not-done card labelled `security` stays out of the outsider's reads exactly as off the Board and the card page
+  (`public_cards.shown`, `shown_clause`): absent from `GET …/tasks`, `not_found` on the card, its history and its
+  notes; a member reads it as before. A card under a moderation hold likewise (`unheld_clause`, the
+  `moderation.hold` the Board and the card page read), and no hidden card's id is in another card's view
+  (`public_cards.outside_views`, called once by `views.task_views` for an `OutsideReader`: `depends_on`,
+  `ships_with`, `related`, `parent`, the `children` counts and a release's pull requests, groups and blockers,
+  with one statement for a page; the lead's rulings 6 and 7, 2026-11-19). A known residual, not cleaned (§2.3 as
+  adopted in req-mfnmm9m8fgsd): an older entry of a visible card's history can still name a hidden card's id in a
+  past `depends_on`, `related` or `parent` change, and a body or a note can name its id as text.
+- The rule is decided on the rows a read returns, in the statement that reads them, never only in a statement
+  before (the lead's point, 2026-11-20): on PostgreSQL each statement of a transaction reads its own snapshot (READ
+  COMMITTED), so a card that became `security` or held between the statement that listed it and the one that
+  shaped it would otherwise reach the outsider, the gap #2005 closed for a request list by deciding its full rows
+  again. So the list's keys statement and the statement that reads the page's full rows after them (`_views`,
+  keys first since tsk-ybc2ma72dzvq) both carry `outside_clause`, the keys statement also for the card a `parent`
+  filter names (an `EXISTS`); the card's own statement carries it too, and the history's and the notes' statement
+  `outside_card`. `outside_views` reads last: one statement that drops a view whose card is hidden by then, counts
+  `children` again from the children it reads (not by subtracting from the earlier count, which a hidden child
+  added meanwhile would turn negative) and strips the ids hidden by then; no hold is read for an outsider after
+  it. A card hidden after a history's or notes' card read gives an empty page, not `not_found`: nothing of it is
+  read. `test_outside_reads.py` forces the interleaving by writing between the statements, on the route's own
+  transaction (every engine) and committed from another connection (seen on PostgreSQL; SQLite reads one snapshot
+  per read transaction).
+- An allow-list of the project view's keys (`OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from
+  outside until it is named; never `repository`, `settings` beyond `language` (`role_rules`), `memory` or
+  `setup`, and the links as the public page shows them.
+- An allow-list of the member view's keys too (`members.OUTSIDE_MEMBER_KEYS`, `manages` with
+  `OUTSIDE_COUNT_KEYS`; 2026-11-20, review A1789, the lead's order): who the member is and where it stands, as the
+  public Team and Organisation pages show it, and nothing else, so no sign of presence or isolation reaches the
+  outsider through a derived field either (`availability`, `paused`, `session`, `instances`, the `online` and
+  `dormant` counts of `manages`, `covered_by`, `covering`, `moderation`), and a key the view gains later stays
+  hidden. The members are those the public page names (`outside_named`, `public_project_views.members`): an
+  isolated member, one under a moderation hold on its profile, and one whose account (or whose owner's) is not
+  served are in no outsider's list, `not_found` on `GET …/members/{id}` as a hidden card is, and neither named
+  in `reports_to` nor counted in `manages`. Rejected: a deny-list with neutral values for the derived fields (a
+  value the member does not have, and a field added later would still pass). The public page names no isolated
+  agent and shows no presence, so the outsider's read does not open more (fail closed). Notes and history show a
+  redaction's tombstone without its reason; no read of a card carries a restricted text; the outsider has no
+  hidden window of its own. Reading a public project never makes the outsider a colleague for `links_visible`.
+  `GET /bootstrap` stays with members.
+
+Rejected: filtering the member routes by a denylist for the outsider (the risk above, route by route); reusing the
+public page's stored `data` for the outsider (a visitor's projection of a few views, partly rendered on a timer,
+without the card history and the member and card fields the contract opens to an outsider).
 
 ## A visitor on the way to a public page never ends at the login
 

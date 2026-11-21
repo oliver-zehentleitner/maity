@@ -14,6 +14,7 @@ from pydantic_core import PydanticCustomError
 from sqlalchemy import Connection, select, update
 
 from maity_hub import (
+    access,
     admin_agents,
     agent_owners,
     attachments,
@@ -435,15 +436,23 @@ def _owners(conn: Connection, project_id: str) -> int:
 
 
 @router.get("/projects/{owner}/{slug}/members")
+@access.outside_read
 def list_members(slug: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        return JSONResponse(members_body(conn, caller, slug))
+        mine = access.reader(conn, caller, slug)
+        return JSONResponse(members_body(conn, caller, slug, mine))
 
 
-def members_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
+def members_body(
+    conn: Connection,
+    caller: Caller,
+    slug: str,
+    given: Membership | access.OutsideReader | None = None,
+) -> dict[str, Any]:
     """`GET /projects/{owner}/{slug}/members`' answer (§6.2), also the `members` part of
-    `GET /bootstrap` (§5.4)."""
-    mine = membership(conn, caller, slug)
+    `GET /bootstrap` (§5.4), which passes no reader (`given`): the caller's membership is read
+    here, so an outsider reads no part of it (§2.3)."""
+    mine = given if given is not None else membership(conn, caller, slug)
     mine.require("project:read")
     rows = conn.execute(
         select(t.membership).where(
@@ -451,7 +460,13 @@ def members_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
         )
     ).all()
     admin = mine.may("members:admin")
-    owned = _owned_agents(conn, mine)
+    outside = isinstance(mine, access.OutsideReader)
+    named: set[int] = set()
+    if outside:  # the members the public page names, and only those (§2.3)
+        named = outside_named(conn, mine.project.id)
+        rows = [r for r in rows if r.id in named]
+    # An outsider who owns an agent here reads it as any outsider does (§2.3): no details.
+    owned: set[str] = set() if outside else _owned_agents(conn, mine)
     views = member_views(
         conn,
         rows,
@@ -463,6 +478,8 @@ def members_body(conn: Connection, caller: Caller, slug: str) -> dict[str, Any]:
     counted = instance_counts.manages(rows, by_id, by_id)
     for member_id, view in by_id.items():
         view["manages"] = counted[member_id]
+    if outside:
+        views = [outside_member_view(v, r, named) for r, v in zip(rows, views, strict=True)]
     views.sort(key=lambda v: (v["kind"] != "human", v["handle"]))
     return {"items": views, "next_cursor": None}
 
@@ -489,12 +506,80 @@ def list_briefings(slug: str, member_id: str, request: Request, caller: AnyCalle
 
 
 @router.get("/projects/{owner}/{slug}/members/{member_id}")
+@access.outside_read
 def get_member(slug: str, member_id: str, request: Request, caller: AnyCaller) -> JSONResponse:
     with engine_of(request).begin() as conn:
-        mine = membership(conn, caller, slug)
+        mine = access.reader(conn, caller, slug)
         mine.require("project:read")
         row = member_row(conn, mine.project.id, member_id)
+        if isinstance(mine, access.OutsideReader):
+            named = outside_named(conn, mine.project.id)
+            if row.id not in named:  # one the public page does not name, as a hidden card
+                raise not_found()
+            view = member_view(conn, row, links=person_links.Reader(mine.principal_id))
+            view["manages"] = instance_counts.for_member(conn, row, among=named)
+            return JSONResponse(outside_member_view(view, row, named))
         return JSONResponse(member_as_read(conn, mine, row))
+
+
+# The keys of a member view an outsider reads (§2.3), an allow-list as the project's
+# (`projects.OUTSIDE_PROJECT_KEYS`): a key the view gains later stays hidden from outside
+# until it is named here. Who the member is and where it stands in the project, as the public
+# Team and Organisation pages show them (§16.9); never a sign of presence or isolation
+# (`presence`, `last_seen_at`, `availability`, `paused`, `session`, `instances`, `covered_by`,
+# `covering`), nor a field only an admin, the member itself or an agent's owner reads, nor
+# the agent's working set-up (`harness`, `model`, `team`, `placements`, `bridges`, …).
+OUTSIDE_MEMBER_KEYS = (
+    "id",  # the member's principal, as every card and history names it
+    "kind",  # human or agent
+    "handle",  # the name the public page shows
+    "name",  # an agent's global name, `owner/handle` (§6.3)
+    "display_name",  # as the public page shows it
+    "avatar_url",  # the picture the public page shows
+    "deleted",  # a deleted account's shape (§2.9)
+    "owner_id",  # an agent's owner, whom the agent's public page is under (§16.9)
+    "trust",  # the member's standing, as the Organisation page shows it
+    "role",  # as the Team page shows it
+    "role_base",  # the built-in role a custom one is based on (§2.3)
+    "reports_to",  # the organisation chart's edge (§16.9 Organisation)
+    "cross_owner",  # whether that edge crosses owners (§6.2 "The marker")
+    "areas",  # what the member looks after (§6.2)
+    "capabilities",  # what the member can do (§6.2)
+    "expert_for",  # an expert's subject (§2.3 "The expert")
+    "expert_sources",  # an expert's sources (§2.3 "The expert")
+    "org_owner",  # a human who owns the organisation that owns the project (§6.26)
+    "website",  # a human's links, as `links_visible` admits the reader (§16.9)
+    "social",
+    "joined_at",  # when the member joined
+    "manages",  # how many members and instances stand behind it (`OUTSIDE_COUNT_KEYS`)
+)
+OUTSIDE_COUNT_KEYS = ("members", "instances")  # of `manages.direct` and `manages.total`
+
+
+def outside_named(conn: Connection, project_id: str) -> set[int]:
+    """The memberships an outsider reads: those the public page names (§16.9,
+    `public_project_views.members`), so never an isolated member nor one under a hold of
+    moderation or whose account is not served."""
+    from maity_hub import public_project_views  # the public pages' modules, as `access` reads
+
+    people = public_project_views.members(conn, project_id)
+    return {membership_id for membership_id, person in people.items() if person.shown}
+
+
+def outside_member_view(view: dict[str, Any], row: Any, named: set[int]) -> dict[str, Any]:
+    """A member view as an outsider reads it (§2.3): `OUTSIDE_MEMBER_KEYS` alone, `manages`
+    with `OUTSIDE_COUNT_KEYS` alone, and no edge to a member the outsider does not read
+    (`named`)."""
+    shown: dict[str, Any] = {key: view[key] for key in OUTSIDE_MEMBER_KEYS if key in view}
+    if isinstance(shown.get("manages"), dict):
+        shown["manages"] = {
+            part: {key: counts[key] for key in OUTSIDE_COUNT_KEYS if key in counts}
+            for part, counts in shown["manages"].items()
+            if part in ("direct", "total") and isinstance(counts, dict)
+        }
+    if row.reports_to is not None and row.reports_to not in named:
+        shown["reports_to"], shown["cross_owner"] = None, False
+    return shown
 
 
 def _owned_agents(conn: Connection, mine: Any) -> set[str]:
