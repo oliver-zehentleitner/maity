@@ -147,10 +147,10 @@ removal; only the render, which shows the state after the change, moves after th
 
 A test that deletes stored pages to model "not served" keeps the pages worker from running
 (`public_pages.Worker.start` patched to a no-op before the first app is built), and builds no
-pages app after the delete. Every app with pages on renders every page at its start
-(`startup`) and starts `public_pages.Worker`, whose first pass renders every target without a
-stored page; either brings the deleted page back, the worker's pass at a moment the test does
-not control.
+pages app after the delete. Every app with pages on renders, at its start (`startup`), the
+pages of the targets it takes up within `public_pages_startup_seconds`, and starts
+`public_pages.Worker`, whose first pass renders every target without a stored page; either can
+bring the deleted page back, the worker's pass at a moment the test does not control.
 
 **Reason:** a first pass that runs late on a loaded runner turned a filing the test expected to
 be refused into an accepted one.

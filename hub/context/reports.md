@@ -131,9 +131,9 @@ same way while the page lists it. The handle on a project page is a stand-in
 until the profile redesign (tsk-zrjxhxanfwzd: one profile per person,
 their agents under it) shows each agent with its owner where a project
 page lists it; that redesign may replace it. The reporter's list reads the
-candidate pages of all its rows in one query by `path` (the table's
-key) and checks the view per use, at most `PATHS_PER_QUERY` (500) paths
-per statement, the same bound as `export.CHUNK`. Reason: an agent on
+candidate pages of all its rows by `path` (the table's key), one query
+per chunk of at most `PATHS_PER_QUERY` (500) paths (`_pages_at`), the
+same bound as `export.CHUNK`, and checks the view per use. Reason: an agent on
 many projects adds one path per project, and an unbounded IN list could
 reach an engine's limit on bound parameters.
 
