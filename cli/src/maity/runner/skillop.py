@@ -457,10 +457,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         _op, _flag, home, key, source, commit = args
     elif len(args) == 3 and args[0] == "put" and args[1] == "--home":
         home = args[2]
-        text = sys.stdin.read(DOCUMENT_MAX + 1)  # the skill's bounds, base64, with room
-        try:
+        try:  # a read or decoding error is an answer too, never a traceback (the review of #2089)
+            text = sys.stdin.read(DOCUMENT_MAX + 1)  # the skill's bounds, base64, with room
             document = json.loads(text) if len(text) <= DOCUMENT_MAX else None
-        except ValueError:
+        except (OSError, ValueError):
             document = None
         if not isinstance(document, dict):
             print("skillop: the skill's document is not a JSON object within its bound",

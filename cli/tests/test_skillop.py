@@ -278,8 +278,10 @@ def test_every_delivery_error_is_unavailable_so_a_start_goes_on_without_the_skil
         skills.deliver(AsUser(), home, tmp_path / "runner", tmp_path / "state", SOURCE, COMMIT)
 
 
+# Evaluated at import, which Windows collection does too: no geteuid there (the review of #2089).
 needs_permissions = pytest.mark.skipif(
-    os.geteuid() == 0, reason="root reads every directory whatever its mode"
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root reads every directory whatever its mode",
 )
 
 
@@ -368,6 +370,19 @@ def test_a_document_over_its_bound_is_not_read_whole(
     monkeypatch.setattr(skillop, "DOCUMENT_MAX", 16)
     monkeypatch.setattr("sys.stdin", io.StringIO('{"key": "' + "a" * 64 + '"}'))
     assert skillop.main(["put", "--home", str(home)]) == 1
+    assert list(home.iterdir()) == []
+
+
+def test_a_document_that_cannot_be_read_or_decoded_is_an_answer_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The review of #2089 (A1904): stdin decoded strictly, holding invalid UTF-8.
+    home = tmp_path / "agents"
+    home.mkdir()
+    stdin = io.TextIOWrapper(io.BytesIO(b"\xff"), encoding="utf-8", errors="strict")
+    monkeypatch.setattr("sys.stdin", stdin)
+    assert skillop.main(["put", "--home", str(home)]) == 1
+    assert "skillop:" in capsys.readouterr().err
     assert list(home.iterdir()) == []
 
 
