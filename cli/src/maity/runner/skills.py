@@ -126,8 +126,7 @@ def ensure(skills_dir: Path, state_dir: Path, source: str, commit: str) -> Path:
     final = skills_dir / NAME / name
     recorded = _anchors(state_dir).get(name)
     if os.path.lexists(final / MANIFEST):
-        verify(final, source, commit)
-        digest = _sha256(final / MANIFEST)
+        digest = verify(final, source, commit)  # the manifest's SHA-256, as it read it
         if digest == recorded:
             return final / PLUGIN
         if recorded is not None:
@@ -147,8 +146,7 @@ def ensure(skills_dir: Path, state_dir: Path, source: str, commit: str) -> Path:
         except OSError:
             if not os.path.lexists(final / MANIFEST):  # not another start's finished copy
                 raise Unavailable(f"cannot put the skill at {final}") from None
-    verify(final, source, commit)
-    if _sha256(final / MANIFEST) != fresh:  # a copy that was there before: the same, or not ours
+    if verify(final, source, commit) != fresh:  # a copy that was there before: ours, or not
         raise Unavailable(f"the skill's copy at {final} is not what commit {commit} holds")
     _record(state_dir, name, fresh)
     return final / PLUGIN

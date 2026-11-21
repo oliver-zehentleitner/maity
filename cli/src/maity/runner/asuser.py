@@ -409,18 +409,19 @@ class AsUser:
     def _skill_answer(done: subprocess.CompletedProcess[str], op: str, key: str) -> dict[str, Any]:
         """A skill op's one JSON line (skillop.main): LINK (4) for a link below the home, 2 for
         a host `maity` without the ops (older than this one), as with scratchop's `codex`."""
+        what = f"skill {op} {key}" if key else f"skill {op}"
         if done.returncode == skillop.LINK:
-            raise skillop.OnTheWay(f"skill {op} {key}: a link below the agents' home")
+            raise skillop.OnTheWay(f"{what}: a link below the agents' home")
         if done.returncode == 2:
             raise scratchop.Unsupported(f"host maity has no skill ops: {done.stderr.strip()[:200]}")
         if done.returncode != 0:
-            raise OSError(f"skill {op} {key} failed: {done.stderr.strip()[:200]}")
+            raise OSError(f"{what} failed: {done.stderr.strip()[:200]}")
         try:
             answer = json.loads(done.stdout)
         except ValueError:
-            raise OSError(f"skill {op} {key}: no answer") from None
+            raise OSError(f"{what}: no answer") from None
         if not isinstance(answer, dict):
-            raise OSError(f"skill {op} {key}: no answer")
+            raise OSError(f"{what}: no answer")
         return answer
 
     def worktree_prune(self, repo: Path) -> dict[str, Any]:

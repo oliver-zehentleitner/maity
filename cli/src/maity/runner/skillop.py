@@ -16,8 +16,9 @@ and every file are reached from a descriptor without following a link, each file
 waiting on a FIFO and its type checked on the descriptor before anything is read, within the
 bounds the fetch holds.
 
-Standard library only: like scratchop, it runs with `-I` on the agents' side, through sudo as
-`python -I -m maity.runner.skillop`, and on an ssh host as that host's `maity runner skillop`.
+Imports only the standard library and scratchop (its removal of a tree that may hold restrictive
+directories), which does the same: like scratchop it runs with `-I` on the agents' side, through
+sudo as `python -I -m maity.runner.skillop`, and on an ssh host as `maity runner skillop`.
 """
 
 from __future__ import annotations
@@ -35,6 +36,8 @@ import stat
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+from maity.runner import scratchop
 
 NAME = "keep-the-why"
 MANIFEST = "manifest.json"
@@ -97,7 +100,10 @@ def verify(
 ) -> str:  # fmt: skip
     """The open copy `copy_fd` (named `copy` in messages) holds `source` at `commit` as its
     manifest says: every file the manifest names, with its hash, and nothing else, none of them
-    a link, within the bounds. The manifest's SHA-256; Mismatch otherwise."""
+    a link, within the bounds. Every directory below the plugin root must be one a named file
+    lies in, and one that cannot be opened and listed is a mismatch, never skipped: whatever
+    could lie in it is not checked (the review of #2089). The manifest's SHA-256; Mismatch
+    otherwise."""
     raw = _read_at(copy_fd, MANIFEST, manifest_max, copy / MANIFEST, max_bytes)
     try:
         manifest = json.loads(raw.decode("utf-8"))
@@ -108,14 +114,23 @@ def verify(
         raise Mismatch(f"{copy / MANIFEST} is not a manifest the runner wrote") from None
     if manifest.get("source") != source or manifest.get("commit") != commit:
         raise Mismatch(f"the skill's copy at {copy} is not of {source} at {commit}")
+    # The directories the named files need: each file's parents below the plugin root.
+    needed = {str(p) for name in files for p in PurePosixPath(str(name)).parents}
     plugin_fd = _dir_at(copy_fd, PLUGIN, copy / PLUGIN)
     found: dict[str, str] = {}
     total = 0
+
+    def unreadable(exc: OSError) -> None:
+        raise Mismatch(f"a directory in the skill's copy at {copy} cannot be read") from None
+
     try:
-        for top, dirs, names, top_fd in os.fwalk(".", dir_fd=plugin_fd, follow_symlinks=False):
+        walk = os.fwalk(".", dir_fd=plugin_fd, follow_symlinks=False, onerror=unreadable)
+        for top, dirs, names, top_fd in walk:
             where = PurePosixPath(PLUGIN, top)
             for name in dirs:
                 _kind_at(top_fd, name, stat.S_ISDIR, "directory", copy / where / name)
+                if str(where / name) not in needed:
+                    raise Mismatch(f"{copy / where / name} is not a directory of the skill")
             for name in names:
                 if len(found) >= max_files + 1:  # the skill's files and plugin.json
                     raise Mismatch(f"the skill's copy at {copy} has too many files")
@@ -231,13 +246,16 @@ def _decoded(document: Mapping[str, Any]) -> tuple[str, bytes, dict[str, Any], d
         raise Mismatch("the skill's key is not the one of its source and commit")
     if set(named) != set(sent):
         raise Mismatch("the skill's payload does not hold exactly the files its manifest names")
+    if not named:
+        raise Mismatch("the skill's payload holds no files")
     if len(named) > MAX_FILES + 1:
         raise Mismatch("the skill has too many files")
     files: dict[str, bytes] = {}
     total = 0
     for name, encoded in sorted(sent.items()):
         parts = PurePosixPath(name).parts
-        if (len(parts) < 2 or parts[0] != PLUGIN or name != PurePosixPath(*parts).as_posix()
+        if ("\0" in name or len(parts) < 2 or parts[0] != PLUGIN
+                or name != PurePosixPath(*parts).as_posix()
                 or any(p in ("", ".", "..") or p.startswith(".git") for p in parts)):  # fmt: skip
             raise Mismatch(f"the skill holds a path the runner does not write: {name[:200]}")
         try:
@@ -327,13 +345,17 @@ def put(home: str, document: Mapping[str, Any]) -> dict[str, object]:
                 for name, data in files.items():
                     _write_into(staged, PurePosixPath(name).parts, data)
                 _write_file(staged, MANIFEST, raw)
-                for _top, dirs, _names, top_fd in os.fwalk(".", dir_fd=staged,
-                                                           follow_symlinks=False):  # fmt: skip
-                    for name in dirs:
-                        os.chmod(name, 0o755, dir_fd=top_fd, follow_symlinks=False)  # noqa: S103
+                # Each directory 0755 through its own descriptor: no chmod by name, which would
+                # need follow_symlinks=False, not supported for chmod on Linux.
+                for _top, _dirs, _names, top_fd in os.fwalk(".", dir_fd=staged,
+                                                            follow_symlinks=False):  # fmt: skip
+                    os.fchmod(top_fd, 0o755)  # noqa: S103 - read by the session only
                 os.fchmod(staged, 0o755)  # noqa: S103 - read by the session, written by nobody
-                digest = verify(staged, Path(staging), str(manifest["source"]),
-                                str(manifest["commit"]))  # fmt: skip
+                try:
+                    digest = verify(staged, Path(staging), str(manifest["source"]),
+                                    str(manifest["commit"]))  # fmt: skip
+                except Mismatch as exc:
+                    raise OSError(f"the staged copy does not hold: {exc}") from None
             finally:
                 os.close(staged)
             _replace(holder, staging, key)
@@ -381,40 +403,35 @@ def _replace(holder: int, staging: str, key: str) -> None:
     aside = f"{STAGING}old-{secrets.token_hex(8)}"
     os.rename(key, aside, src_dir_fd=holder, dst_dir_fd=holder)
     os.rename(staging, key, src_dir_fd=holder, dst_dir_fd=holder)
-    _remove_tree(holder, aside)
+    # The new copy is in place: removing the old one is best effort, never a failed put. What
+    # is left keeps its `.put-` name, which `gc --skills` removes (the review of #2089).
+    with contextlib.suppress(OSError):
+        _remove_tree(holder, aside)
 
 
 def _remove_tree(parent: int, name: str) -> None:
     """The directory `name` in the open `parent` and all below it, each level reached without
-    following a link (a link is removed, never entered); a non-directory there is unlinked."""
+    following a link (a link is removed, never entered), the owner's access restored on every
+    level first, a 0000 one included, as a placement's scratch is removed (scratchop._remove_in,
+    the review of #2089); a non-directory there is unlinked."""
     try:
-        fd = os.open(name, _FOLDER | _NOFOLLOW, dir_fd=parent)
+        found = os.lstat(name, dir_fd=parent)
     except FileNotFoundError:
         return
-    except OSError as exc:
-        if exc.errno in (errno.ELOOP, errno.ENOTDIR):
-            os.unlink(name, dir_fd=parent)
-            return
-        raise
-    try:
-        os.fchmod(fd, 0o700)
-        for _top, dirs, names, top_fd in os.fwalk(".", dir_fd=fd, topdown=False,
-                                                  follow_symlinks=False):  # fmt: skip
-            for entry in names:
-                os.unlink(entry, dir_fd=top_fd)
-            for entry in dirs:
-                if stat.S_ISLNK(os.lstat(entry, dir_fd=top_fd).st_mode):
-                    os.unlink(entry, dir_fd=top_fd)
-                else:
-                    os.rmdir(entry, dir_fd=top_fd)
-    finally:
-        os.close(fd)
-    os.rmdir(name, dir_fd=parent)
+    if not stat.S_ISDIR(found.st_mode):
+        os.unlink(name, dir_fd=parent)
+        return
+    # Only directories of the user the op runs as (the agents') are widened and removed: one
+    # another user holds is left, as scratchop leaves it.
+    scratchop._remove_in(parent, name, os.getuid())
 
 
 # --- the entry point on the agents' side ----------------------------------------------------------
 
 LINK = 4  # the exit code for a link below the agents' home, as scratchop.LINK: nothing was done
+# The document `put` reads from stdin: the skill's own bound in base64 (4/3), its manifest, and
+# room for the JSON around them.
+DOCUMENT_MAX = 8 * 1024 * 1024
 USAGE = "usage: skillop check --home HOME KEY SOURCE COMMIT | put --home HOME (document on stdin)"
 
 
@@ -440,12 +457,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         _op, _flag, home, key, source, commit = args
     elif len(args) == 3 and args[0] == "put" and args[1] == "--home":
         home = args[2]
+        text = sys.stdin.read(DOCUMENT_MAX + 1)  # the skill's bounds, base64, with room
         try:
-            document = json.loads(sys.stdin.read())
+            document = json.loads(text) if len(text) <= DOCUMENT_MAX else None
         except ValueError:
             document = None
         if not isinstance(document, dict):
-            print("skillop: the skill's document is not a JSON object", file=sys.stderr)
+            print("skillop: the skill's document is not a JSON object within its bound",
+                  file=sys.stderr)  # fmt: skip
             return 1
     else:
         print(USAGE, file=sys.stderr)
@@ -459,10 +478,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             answer = put(home, document)
         else:
             answer = check(home, key, source, commit)
-    except OnTheWay as exc:
+    except (OnTheWay, scratchop.OnTheWay) as exc:
         print(json.dumps({"result": "link", "why": str(exc)}))
         return LINK
-    except OSError as exc:
+    except (OSError, ValueError, Mismatch) as exc:  # an answer, never a traceback (#2089)
         print(f"skillop: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(answer))

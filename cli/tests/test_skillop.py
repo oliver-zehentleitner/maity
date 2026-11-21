@@ -278,6 +278,99 @@ def test_every_delivery_error_is_unavailable_so_a_start_goes_on_without_the_skil
         skills.deliver(AsUser(), home, tmp_path / "runner", tmp_path / "state", SOURCE, COMMIT)
 
 
+needs_permissions = pytest.mark.skipif(
+    os.geteuid() == 0, reason="root reads every directory whatever its mode"
+)
+
+
+@needs_permissions
+def test_a_directory_the_check_cannot_read_is_a_mismatch_on_both_sides(tmp_path: Path) -> None:
+    # The review of #2089: a directory below the plugin root that cannot be opened is never
+    # skipped, on the agents' copy (skillop.check) and the runner's own (skills.verify).
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    home = tmp_path / "agents"
+    home.mkdir()
+    skillop.put(str(home), json.loads(skillop.payload(root.parent, KEY)))
+    for plugin in (root, skillop.agent_copy(home, KEY) / "plugin"):
+        closed = plugin / "skills" / "keep-the-why" / "extra"
+        closed.mkdir()
+        (closed / "more.md").write_text("not in the manifest\n")
+        os.chmod(closed, 0o111)  # noqa: S103 - searchable, not readable: the case under test
+    try:
+        found = skillop.check(str(home), KEY, SOURCE, COMMIT)
+        assert found["result"] == "mismatch"
+        with pytest.raises(skills.Unavailable):
+            skills.verify(root.parent, SOURCE, COMMIT)
+    finally:
+        for plugin in (root, skillop.agent_copy(home, KEY) / "plugin"):
+            os.chmod(plugin / "skills" / "keep-the-why" / "extra", 0o755)  # noqa: S103
+
+
+def test_a_directory_the_manifest_does_not_need_is_a_mismatch(tmp_path: Path) -> None:
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    (root / "skills" / "keep-the-why" / "empty").mkdir()
+    with pytest.raises(skills.Unavailable, match="not a directory of the skill"):
+        skills.verify(root.parent, SOURCE, COMMIT)
+
+
+@needs_permissions
+@pytest.mark.parametrize("which", ["subdirectory", "copy"])
+def test_a_restrictive_old_copy_is_replaced_and_nothing_is_left_beside(
+    tmp_path: Path, which: str
+) -> None:
+    # The review of #2089: an old copy holding a 0555 directory, or itself 0000, is replaced,
+    # the put does not fail after the swap, and no set-aside directory stays.
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    home = tmp_path / "agents"
+    home.mkdir()
+    document = json.loads(skillop.payload(root.parent, KEY))
+    skillop.put(str(home), document)
+    copy = skillop.agent_copy(home, KEY)
+    if which == "subdirectory":
+        references = copy / "plugin" / "skills" / "keep-the-why" / "references"
+        os.chmod(references, 0o555)  # noqa: S103 - a read-only directory left behind
+    else:
+        os.chmod(copy, 0o000)
+    assert skillop.put(str(home), document)["result"] == "put"
+    assert skillop.check(str(home), KEY, SOURCE, COMMIT)["result"] == "ok"
+    assert sorted(p.name for p in copy.parent.iterdir()) == [KEY]
+
+
+@pytest.mark.parametrize("change", ["nul", "empty"])
+def test_a_nul_name_or_an_empty_payload_is_refused_and_main_answers_without_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    change: str,
+) -> None:  # fmt: skip
+    document = _document(tmp_path)
+    manifest = json.loads(base64.b64decode(document["manifest"]))
+    if change == "nul":
+        name = "plugin/skills/keep-the-why/a\0b.md"
+        manifest["files"][name] = hashlib.sha256(b"x").hexdigest()
+        document["files"][name] = _encode(b"x")
+    else:
+        manifest["files"], document["files"] = {}, {}
+    document["manifest"] = _encode(json.dumps(manifest).encode())
+    home = tmp_path / "agents"
+    home.mkdir()
+    with pytest.raises(OSError):
+        skillop.put(str(home), document)
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(document)))
+    assert skillop.main(["put", "--home", str(home)]) == 1
+    assert "skillop:" in capsys.readouterr().err
+    assert list(home.iterdir()) == []
+
+
+def test_a_document_over_its_bound_is_not_read_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "agents"
+    home.mkdir()
+    monkeypatch.setattr(skillop, "DOCUMENT_MAX", 16)
+    monkeypatch.setattr("sys.stdin", io.StringIO('{"key": "' + "a" * 64 + '"}'))
+    assert skillop.main(["put", "--home", str(home)]) == 1
+    assert list(home.iterdir()) == []
+
+
 def test_an_old_host_maity_without_the_ops_is_unsupported() -> None:
     import subprocess
 
