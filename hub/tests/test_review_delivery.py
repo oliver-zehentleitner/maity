@@ -1,6 +1,7 @@
 """docs/api.md §8.4, "A review result reaches the author and both leads" (tsk-w52ds51rpxs0): the
 hub adds a review result's author, the reviewer's lead and the author's lead to its audience,
-each once, a part that resolves to nobody dropped, `to` and mentions still adding."""
+each once, a part that resolves to nobody dropped, `to` and mentions still adding; a lead of
+another owner than its subordinate is left out (tsk-95kvvd03fgs4)."""
 
 from __future__ import annotations
 
@@ -9,9 +10,9 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock
+from maity_hub import chat_gate, clock, events
 from maity_hub import tables as t
-from tests import flow
+from tests import factory, flow
 from tests.conftest import ClientFactory
 
 HEAD = "7039a4b6fd8b988d71a63338711da188fcd95fba"
@@ -436,3 +437,145 @@ def test_an_isolated_holder_of_a_held_card_is_left_out(
     answer = post(reviewer, task_id=card["id"])
     assert answer.status_code == 400, answer.text
     assert answer.json()["error"]["details"]["fields"] == {"to": "required"}
+
+
+# A lead of another owner than its subordinate (§8.4, §6.2 "What the edge does",
+# tsk-95kvvd03fgs4): not added for the sender's nor the author's `reports_to`, so it is
+# neither in the audience nor named in `held`, does not read the result and is not woken.
+
+
+def other_owner(make_client: ClientFactory, engine: Engine) -> flow.Human:
+    """A second human, an admin of the project, who owns agents of their own."""
+    other = flow.human(make_client, engine, "other")
+    with engine.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(engine, project_id, "admin", human_id=other.id)
+    return other
+
+
+def seqs(who: Any) -> list[int]:
+    got = who.get("/projects/maintainer/maity/events?after=0&limit=200")
+    assert got.status_code == 200, got.text
+    return [e["seq"] for e in got.json()["items"]]
+
+
+def woken(engine: Engine, agent_id: str) -> list[int]:
+    with engine.connect() as conn:
+        row = conn.execute(select(t.membership).where(t.membership.c.agent_id == agent_id)).one()
+        rows, _ = events.read_waking(conn, row.project_id, row, agent_id, 0, 200)
+    return [r.seq for r in rows]
+
+
+def assert_left_out(engine: Engine, answer: Any, boss: flow.Agent) -> None:
+    assert answer.status_code == 201, answer.text
+    seq = int(answer.json()["seq"])
+    assert all(boss.id not in token for token in audience(engine, seq))
+    assert answer.json()["payload"]["held"] == []
+    assert seq not in seqs(boss)
+    assert seq not in woken(engine, boss.id)
+
+
+def test_the_senders_lead_of_another_owner_is_left_out(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other = other_owner(make_client, migrated)
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    boss = flow.agent(make_client, other, role="manager")
+    boss.resume()
+    author_lead = flow.agent(make_client, owner, role="manager")
+    reports_to(migrated, reviewer, boss)
+    reports_to(migrated, author, author_lead)
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    answer = post(reviewer, task_id=card["id"])
+    assert_left_out(migrated, answer, boss)
+    # The author's lead, of the author's own owner, is still added.
+    assert sent(migrated, answer) == [
+        f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+        f"member:{author_lead.id}",
+    ]
+
+
+def test_the_authors_lead_of_another_owner_is_left_out(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    other = other_owner(make_client, migrated)
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    boss = flow.agent(make_client, other, role="manager")
+    boss.resume()
+    reviewer_lead = flow.agent(make_client, owner, role="manager")
+    reports_to(migrated, author, boss)
+    reports_to(migrated, reviewer, reviewer_lead)
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    answer = post(reviewer, task_id=card["id"])
+    assert_left_out(migrated, answer, boss)
+    assert sent(migrated, answer) == [
+        f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+        f"member:{reviewer_lead.id}",
+    ]
+    # An author of the other owner keeps its own owner's lead: the edge is not cross-owner.
+    theirs = flow.agent(make_client, other)
+    theirs.resume()
+    reports_to(migrated, theirs, boss)
+    other_card = task(owner)
+    held(migrated, other_card, theirs, theirs.instance)
+    got = sent(migrated, post(reviewer, task_id=other_card["id"]))
+    assert f"member:{boss.id}" in got
+
+
+def test_a_lead_of_another_owner_is_left_out_with_the_firewall_off(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Leaving the lead out is §8.4's rule, not the gate's: it holds with the gate off."""
+    other = other_owner(make_client, migrated)
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    boss = flow.agent(make_client, other, role="manager")
+    boss.resume()
+    author_boss = flow.agent(make_client, other, role="manager")
+    author_boss.resume()
+    reports_to(migrated, reviewer, boss)
+    reports_to(migrated, author, author_boss)
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    chat_gate.configure(False)
+    try:
+        answer = post(reviewer, task_id=card["id"])
+        assert_left_out(migrated, answer, boss)
+        assert_left_out(migrated, answer, author_boss)
+        assert sent(migrated, answer) == [
+            f"member:{reviewer.id}",
+            f"instance:{author.id}#{author.instance}",
+        ]
+    finally:
+        chat_gate.configure(True)
+
+
+def test_a_human_senders_human_lead_is_still_added(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A human's `reports_to` is never cross-owner (§6.2 "Across owners")."""
+    other = other_owner(make_client, migrated)
+    writer = flow.human(make_client, migrated, "writer")
+    with migrated.connect() as conn:
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+    factory.membership(migrated, project_id, "member", human_id=writer.id)
+    reports_to(migrated, writer, other)
+    author = flow.agent(make_client, owner)
+    author.resume()
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    got = sent(migrated, post(writer, task_id=card["id"]))
+    assert got == [
+        f"member:{writer.id}",
+        f"instance:{author.id}#{author.instance}",
+        f"member:{other.id}",
+    ]

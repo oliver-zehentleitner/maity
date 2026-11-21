@@ -13,12 +13,11 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import capabilities, config
-from .asuser import SSH_UNREACHABLE, AsUser, Ssh, Unreachable
+from .asuser import SSH_UNREACHABLE, AsUser, Ssh, Unreachable, shell_join
 from .tmux import Tmux, attach_words
 
 LOGS = "logs"
@@ -45,6 +44,13 @@ class Target:
     sandbox: dict[str, bool] = field(default_factory=dict)  # harness id -> its OS sandbox
     # Harnesses whose sandbox is off for their version alone (capabilities.sandbox_held).
     held: set[str] = field(default_factory=set)
+    # Claude Code's seccomp preflight on this target (capabilities.claude_seccomp), once it
+    # answered `ok`: the machine and the kernel do not change under a running service. An ssh
+    # target forgets it when it turns unreachable (another machine may answer when it is back).
+    seccomp: capabilities.ClaudeSeccomp | None = None
+    # Installed Claude Code versions this service run has already warned about on this target
+    # (no `check` probe passed with them): the warning is logged once per version.
+    probe_warned: set[str | None] = field(default_factory=set)
     backend: Tmux | None = None
     reachable: bool = True
     unreachable_since: float | None = None
@@ -63,9 +69,12 @@ class Target:
         assert self.backend is not None  # noqa: S101 - set once connected
         attach = attach_words(self.backend.socket, session, self.as_user)
         if isinstance(self.as_user, Ssh):
+            # ssh hands the host's login shell its words joined by spaces, so the remote line
+            # is quoted for that shell (the `=` target too, for zsh) and passed as one word.
             ssh = self.as_user
-            attach = ["ssh", "-t", "-p", str(ssh.port), f"{ssh.login}@{ssh.address}", *attach]
-        return shlex.join(attach)  # every word quoted: a remote value cannot become a command
+            destination = f"{ssh.login}@{ssh.address}"
+            attach = ["ssh", "-t", "-p", str(ssh.port), destination, shell_join(attach)]
+        return shell_join(attach)  # every word quoted: a remote value cannot become a command
 
     def connect(self, harnesses: dict[str, config.Harness]) -> None:
         """For an ssh target: its home, tmux server and harnesses, on the first connection.

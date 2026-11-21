@@ -147,6 +147,9 @@ human = Table(
     # The projects a browser with no tabs of its own opens, in order, as project ids (§5.1
     # "Start tabs"); NULL opens every membership.
     Column("start_tabs", JSON_VALUE),
+    # The public projects the human keeps as tabs without a membership, in the order starred,
+    # as project ids (§5.1 "Stars"); a project not public now stays in it, hidden. NULL is none.
+    Column("starred", JSON_VALUE),
     # `active`, or `pending` while a registration waits for the operator (§2.7.5).
     Column("account_status", String(16), nullable=False, server_default="active"),
     Column("registered_at", UtcDateTime),  # set only for an account made by registration
@@ -1436,6 +1439,10 @@ placement = Table(
     # A profile it creates: the handle (unique while active) and the join fields (§3.1).
     Column("new_handle", String(HANDLE)),
     Column("new_profile", JSON_VALUE),
+    # A profile of the creator's own that was not a member when placed (§15.6): it, and its
+    # join fields in `new_profile`, until the first pickup's exchange makes the membership.
+    # Indexed for the cascades of a membership's removal and a profile's deletion (§6.2, §6.3).
+    _ref("agent_id", "agent_profile.id", index=True),
     _ref("runner_id", "runner.id", nullable=False, index=True),
     Column("target", String(TITLE)),
     Column("harness", String(32), nullable=False),
@@ -1491,7 +1498,10 @@ placement = Table(
     UniqueConstraint("project_id", "new_handle", "active"),
     UniqueConstraint("project_id", "runner_id", "clone", "active"),
     CheckConstraint("active IS NOT FALSE", name="active_true_or_null"),
-    CheckConstraint("membership_id IS NOT NULL OR new_handle IS NOT NULL", name="names_an_agent"),
+    CheckConstraint(
+        "membership_id IS NOT NULL OR new_handle IS NOT NULL OR agent_id IS NOT NULL",
+        name="names_an_agent",
+    ),
     **MYSQL_TABLE,
 )
 

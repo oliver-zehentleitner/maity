@@ -20,6 +20,19 @@ public site at maity.dev is `docs/index.html`, not this.
   value (or, without it, the `csrf_token` of `/auth/session`) as
   `X-CSRF-Token`. A mismatch comes back as 403 `csrf_mismatch` and is
   shown as an error.
+- **The boot's reads.** A page load asks `GET /bootstrap` (`docs/api.md`
+  §5.4: the window, the session, `/me`, and on a project view its event
+  head, the project and its members) and, beside it, the notifications
+  head `GET /me/notifications?limit=0`, which is not a part of the bundle.
+  That head is asked before the session is known, so its 401 for a visitor
+  (or a 403 for a session that owes the second factor, or the 503
+  `maintenance` of a running window) ends nothing, redraws nothing and is
+  dropped; once the session is read, a head that failed so is asked again
+  the usual way. A view drawn at once after another one (Settings leading
+  a member without project:admin on to `settings/mine`) takes the same
+  head while it is fresh (in flight, or answered less than 2 s before, with
+  no write of the tab since). Settings → Mine's own
+  `GET …/me/settings` starts beside the project's reads, not after them.
 
 ## Projects and routes
 
@@ -1513,8 +1526,9 @@ text, and for the instance admin **End maintenance now** and the way to
 change the window; a visitor gets the way to sign in, which the hub keeps
 open, and a signed-in session **Sign out** in the header, the admin's own
 window and a session that must still set up its second factor included.
-The window is read from `GET /maintenance`, from `/me` and from any
-`503 maintenance`; the full page asks again every 30 seconds and goes
+The window is read from `GET /maintenance`, from `/me` and from a
+`503 maintenance` (any but the boot's notifications head's, which is asked
+before the session is known and dropped); the full page asks again every 30 seconds and goes
 when the window does. In fixture mode `?maintenance=upcoming` or
 `?maintenance=running` starts with a window, and the fixture hub refuses
 like the hub while one runs. Why it is built this way:

@@ -30,6 +30,30 @@ def test_a_unicode_escape_hides_no_credential() -> None:
         hub._guard_payload(body, "")
 
 
+# No `-` or `_` in the secret: with one, the pattern backtracks to the boundary before it and
+# matches under a Unicode `\b` too, so only a secret of letters and digits shows the difference.
+PLAIN = "mty1.crd-dummy.abcDEF9"
+
+
+@pytest.mark.parametrize("after", ["é", "ß", "日", "."])
+def test_the_pattern_ends_a_credential_before_any_non_ascii_letter(after: str) -> None:
+    # The hub's `\b` is ASCII (a bytes pattern): a non-ASCII letter ends a credential there.
+    assert sign.contains_credential(f"see {PLAIN}{after} here")
+
+
+@pytest.mark.parametrize("after", ["é", "ß", "日", "."])
+def test_a_body_with_a_credential_before_a_non_ascii_letter_is_refused(after: str) -> None:
+    body = f"see {PLAIN}{after} here".encode()  # raw UTF-8, as an upload or --on-request sends
+    with pytest.raises(hub.HubError, match="refusing to send"):
+        hub._guard_payload(body, "")
+
+
+@pytest.mark.parametrize("after", ["é", "ß", "日", "."])
+def test_a_query_with_a_credential_before_a_non_ascii_letter_is_refused(after: str) -> None:
+    with pytest.raises(hub.HubError, match="refusing to send"):
+        hub._guard_payload(b"", sign.canonical_query([("q", f"{PLAIN}{after}")]))
+
+
 def test_a_body_without_one_is_sent() -> None:
     hub._guard_payload(json.dumps({"body": "mty1 crd-1 abc"}).encode(), "")
     hub._guard_payload(b"[" * 100_000, "")  # too deep to decode: the raw scan stays

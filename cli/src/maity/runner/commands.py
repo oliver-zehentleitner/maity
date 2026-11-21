@@ -30,6 +30,7 @@ from . import (
     scratch,
     scratchop,
     serve,
+    skills,
     stub,
     supervisor,
     targets,
@@ -57,6 +58,8 @@ class Refused(Exception):
 # runner's own launch (the loop on an ssh host, the stub, Claude Code's hook, the pane's log):
 # the only ones that run with `MAITY_PLACEMENT` set. Every other one is the operator's or the
 # runner's own, and an agent's call of it is refused (cli.main).
+# Not `pgenv`: it reads a placement's password and starts any command outside the sandbox, so it
+# is no `maity runner` subcommand at all; the runner starts it as a module (adapters.pg_launch).
 IN_SESSION = frozenset({"loop", "stub", "plaincall", "logcap"})
 # Of those, the ones that act on a file the call names: the loop's spec (what it runs) and the
 # pane's log (what it cuts). An agent's `maity` runs outside its sandbox, so such a file must
@@ -375,6 +378,12 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
             # Codex starts without what it cannot enforce, said here and at each start.
             for part in adapters.codex_left_out(grant):
                 report.warn(f"repositories.{name}: {part}")
+        if grant.lead and not grant.pull_requests:
+            # Whether the placed member is a manager is the hub's to say at each call; the
+            # check reads no member, so it does not warn about that.
+            report.warn(
+                f"repositories.{name}: lead = true gives nothing without pull_requests = true"
+            )
         if grant.pull_requests and "api.github.com" in grant.network:
             report.warn(
                 f"repositories.{name}: network api.github.com is not needed for pull requests "
@@ -469,6 +478,7 @@ def _check_harness(
     as_user: AsUser = RUNNER,
     tools_dir: Path | None = None,
     layout: str | None = None,
+    state_dir: Path | None = None,
 ) -> None:
     if harness.id == "stub":
         report.ok("harness stub (test adapter)")
@@ -498,7 +508,10 @@ def _check_harness(
         else:
             report.error(f"harness {harness.id}: env_file {harness.env_file} does not exist")
     if harness.id == "claude-code":
-        _check_claude_code(report, harness, as_user, agent_path, found.version)
+        _check_claude_code(
+            report, harness, as_user, agent_path, found.version, found.path, state_dir
+        )
+        _check_user_skill(report, as_user)
     if harness.id == "antigravity":
         _check_antigravity(report, harness, as_user, agent_path)
     if harness.id == "opencode":
@@ -510,6 +523,21 @@ def _check_harness(
         login = Path(own or home / ".codex") / "auth.json"
         if not as_user.exists(login, "-f"):
             report.warn(f"harness codex: no login at {login}; agents would start without one")
+
+
+def _check_user_skill(report: Report, as_user: AsUser) -> None:
+    """A Keep the Why skill the agents' user installed for Claude Code by hand: a placed
+    session still sees it beside the one the runner delivers, as a plain `keep-the-why` that
+    may be another version and whose files the session cannot read (skills.py, the review of
+    #2056). The operator's content, so named, never refused or removed."""
+    home = config.home_of(as_user.user) if as_user.user else Path.home()
+    found = home / ".claude" / "skills" / skills.NAME
+    if as_user.exists(found) or as_user.exists(found, "-L"):
+        report.warn(
+            f"harness claude-code: {found} is installed for the agents' user; placed sessions "
+            f"also get the skill the runner delivers, as `keep-the-why:keep-the-why`, and see "
+            "this copy beside it under the plain name"
+        )
 
 
 def _check_opencode(
@@ -670,6 +698,8 @@ def _check_claude_code(
     as_user: AsUser = RUNNER,
     agent_path: str = "",
     version: str | None = None,
+    binary: str | None = None,
+    state_dir: Path | None = None,
 ) -> None:
     # On the agents' PATH, as their user finds it: that is where the sandbox starts.
     tools = capabilities.claude_sandbox_tools()
@@ -687,9 +717,15 @@ def _check_claude_code(
         (report.error if refused else report.warn)(line)
     else:
         report.ok(f"harness claude-code: OS sandbox ({', '.join(tools or ())})")
+        # The settings first: the headless probe runs, and its pass is kept, only under
+        # settings a start accepts.
+        clean = _check_claude_hooks(report, as_user, "")
+        clean = _check_claude_socket_settings(report, as_user, "") and clean
         if tools == ("bwrap", "socat"):  # bubblewrap's nesting; Seatbelt has none
             _check_claude_nesting(report, agent_path, as_user)
-        _check_claude_hooks(report, as_user, "")
+            record = None if state_dir is None else ProbeRecord(state_dir, "local", version)
+            _check_claude_seccomp(report, as_user, "", binary, agent_path, record, clean)
+    _check_worktree_guard(report, as_user, "", version)
     _check_claude_settings(report, as_user, "")
 
 
@@ -719,14 +755,244 @@ def _check_claude_nesting(report: Report, agent_path: str, as_user: AsUser) -> N
         )
 
 
-def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:
+# Configured, not seen working: the hook rests on Claude Code's documented behaviour, which no
+# check here runs (cli/context/runner.md).
+WORKTREES_OFF = (
+    "harness claude-code: placements are set up without git worktrees (EnterWorktree and git "
+    "worktree denied; a WorktreeCreate hook refuses worktree creation; not confirmed on this "
+    "Claude Code version)"
+)
+# Claude Code's working trees: a leftover directory there alone does not stop maity's git.
+CLAUDE_WORKTREES = Path(".claude", "worktrees")
+# git's registration of a worktree: while it holds an entry maity runs no git in the clone.
+GIT_WORKTREES = Path(".git", "worktrees")
+
+
+def _check_worktree_guard(report: Report, as_user: AsUser, where: str, version: str | None) -> None:
+    """The worktree guard as the runner's settings configure it, or a warning, sandbox or not,
+    where the hook is not written (a version older than CLAUDE_WORKTREE_HOOK_MIN, or unknown)
+    or would not run (capabilities.claude_hooks_off): then only the deny rules hold. It reports
+    the configuration, it runs nothing. Under the sandbox `_check_claude_hooks` already reports
+    the refused starts as an error; this line stays a warning, never an ok after it."""
+    why: str | None
+    if not capabilities.worktree_hook_version_ok(version):
+        oldest = ".".join(str(part) for part in capabilities.CLAUDE_WORKTREE_HOOK_MIN)
+        why = f"version {version or 'unknown'} is older than {oldest} or unknown"
+        written = "the runner writes no WorktreeCreate hook"
+    else:
+        why = capabilities.claude_hooks_off(as_user)
+        written = "the runner's WorktreeCreate hook does not run"
+    if why is None:
+        report.ok(f"{where}{WORKTREES_OFF}")
+        return
+    report.warn(
+        f"{where}harness claude-code: {why}, so {written} and a subagent's worktree isolation "
+        "is not refused; the EnterWorktree and git worktree denies remain"
+    )
+
+
+def _check_leftover_worktrees(
+    report: Report, cfg: config.Config, as_user: AsUser, host: str = "", where: str = ""
+) -> None:
+    """A warning per clone the runner recorded on this target (`workspaces.json`; the clones
+    it made, kept or not) that holds a registered worktree or a leftover directory under
+    `.claude/worktrees/`. Read-only: the runner clears a `.claude/worktrees/` leftover only at
+    the placement's next start (worktree.py)."""
+    for key, entry in sorted(workspace.records(cfg.state_dir).items()):
+        # `host:/path` for an ssh target, the bare path for the local one (Place.key); a
+        # Windows drive letter is no host, as the remote path is always absolute POSIX.
+        on_host, _, path = key.partition(":")
+        if not path.startswith("/") or key.startswith("/"):
+            on_host, path = "", key
+        if on_host != host:
+            continue
+        repo = Path(path) / workspace.REPO if workspace.recorded_layout(entry) else Path(path)
+        if _holds_entries(as_user, repo / GIT_WORKTREES):
+            report.warn(f"{where}clone {repo} {_registered(repo, as_user)}")
+        # Only a real directory there is what the start's prune removes (worktree._is_real_dir);
+        # a file or a link there neither stops maity's git nor is removed, so it is not named.
+        elif _holds_entries(as_user, repo / CLAUDE_WORKTREES, directories=True):
+            report.warn(
+                f"{where}clone {repo} holds a leftover directory under .claude/worktrees/ with "
+                "no registration; it does not stop maity's git, and the runner clears it at the "
+                "placement's next start"
+            )
+
+
+BLOCKS_GIT = "so maity runs no git there and `maity report` and `maity gh` fail"
+
+
+def _registered(repo: Path, as_user: AsUser) -> str:
+    """What a clone's worktree registration means, by the start prune's own rule
+    (worktree.registrations): cleared at the next start, or left for a person. Read here as
+    the runner's own user only; through sudo or ssh the kind is not told apart."""
+    counts = worktree.registrations(str(repo)) if as_user.direct else None
+    if counts is None or sum(counts) == 0:
+        return (
+            f"holds a git worktree registration (.git/worktrees), {BLOCKS_GIT}; the runner "
+            "clears one whose working tree is under .claude/worktrees/ at the placement's next "
+            "start, uncommitted work in it included, and leaves any other for a person"
+        )
+    if counts[1]:
+        return (
+            f"holds a git worktree registration (.git/worktrees) the runner's start does not "
+            f"clear (its working tree is not under .claude/worktrees/), {BLOCKS_GIT}; a person "
+            "removes it outside the session (`git worktree remove` or `git worktree prune`)"
+        )
+    return (
+        f"holds a git worktree registration (.git/worktrees) of a working tree under "
+        f".claude/worktrees/, {BLOCKS_GIT}; the runner clears it at the placement's next start, "
+        "uncommitted work in it included"
+    )
+
+
+def _holds_entries(as_user: AsUser, path: Path, directories: bool = False) -> bool:
+    """Whether the directory `path` has any entry (with `directories`, any real directory, a
+    link to one not counted), as the agents' user sees it; a missing or unreadable one counts
+    as none (check warns, it does not refuse). The directory and its parent (`.claude`,
+    `.git`) are tested with `test -L`, and a link as either counts as none; the clone's path
+    above them is the runner's own record and is not tested. Only a boolean reaches the
+    operator."""
+    try:
+        if not as_user.exists(path, "-d") or any(
+            as_user.exists(part, "-L") for part in (path.parent, path)
+        ):
+            return False
+        if as_user.direct:
+            with os.scandir(path) as listed:
+                return any(not directories or e.is_dir(follow_symlinks=False) for e in listed)
+        kind = ["-type", "d"] if directories else []  # find follows no link without -L
+        done = as_user.run(["find", str(path), "-mindepth", "1", "-maxdepth", "1", *kind,
+                            "-print", "-quit"])  # fmt: skip
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0 and bool(done.stdout.strip())
+
+
+@dataclass(frozen=True)
+class ProbeRecord:
+    """Where `check` keeps the Claude Code version whose probe passed (capabilities.
+    PROBE_FILE): the state directory, the target's name and the installed version."""
+
+    state_dir: Path
+    target: str
+    version: str | None
+
+
+def _check_claude_seccomp(
+    report: Report,
+    as_user: AsUser,
+    where: str,
+    binary: str | None,
+    agent_path: str,
+    record: ProbeRecord | None = None,
+    settings_clean: bool = True,
+) -> None:
+    """Linux only: what Claude Code's seccomp step needs from the host (capabilities.
+    claude_seccomp). Anything but `ok` is an error: the supervisor starts no sandboxed Claude
+    Code placement on it, an unreadable answer included. On `ok`, the headless probe, only
+    when the hook and socket settings are clean (`settings_clean`): otherwise it is not run
+    and no pass is kept, as for a probe that did not pass."""
+    found = capabilities.claude_seccomp(as_user)
+    if found.outcome != "ok":
+        report.error(f"{where}{capabilities.claude_seccomp_line(found)}")
+        _probe_stale(report, where, record)
+        return
+    report.ok(
+        f"{where}harness claude-code: seccomp for blocking Unix sockets: machine "
+        f"{found.arch}, kernel seccomp filtering present"
+    )
+    if binary is None:
+        return
+    if not settings_clean:
+        _keep_probe(report, where, record, False)
+        report.warn(f"{where}harness claude-code: probe not run: the settings above refuse "
+                    "every sandboxed start")  # fmt: skip
+        _probe_stale(report, where, record)
+        return
+    _check_claude_socket_probe(report, as_user, where, binary, agent_path, record)
+
+
+def _probe_stale(report: Report, where: str, record: ProbeRecord | None) -> None:
+    """What a start on this target will warn about: the installed version is not the one
+    whose probe last passed (capabilities.probe_stale_line). An error here, so the operator
+    sees it; a start only logs it. Called only where the probe did not pass in this run,
+    after its record was updated, so a fresh pass never reads as stale."""
+    if record is None or not record.state_dir.is_dir():
+        return
+    passed = capabilities.probe_passed(record.state_dir, record.target)
+    stale = capabilities.probe_stale_line(passed, record.version)
+    if stale is not None:
+        report.error(f"{where}{stale}")
+
+
+def _keep_probe(report: Report, where: str, record: ProbeRecord | None, passed: bool) -> None:
+    """Record the probed version as passed, or forget the target's record when it did not
+    pass. The service reads it at each start (supervisor._probe_warning)."""
+    if record is None or not record.state_dir.is_dir():  # `check` reports the directory
+        return
+    try:
+        capabilities.record_probe(record.state_dir, record.target,
+                                  record.version if passed else None)  # fmt: skip
+    except (OSError, state.StateError) as exc:
+        report.warn(f"{where}harness claude-code: the probe result is not kept "
+                    f"({onboarding.inline(str(exc))[:160]})")  # fmt: skip
+
+
+def _check_claude_socket_probe(
+    report: Report,
+    as_user: AsUser,
+    where: str,
+    binary: str,
+    agent_path: str,
+    record: ProbeRecord | None = None,
+) -> None:
+    """One headless run of Claude Code (capabilities.claude_socket_probe), here and never at a
+    start; anything but the runtime's line that it applied the filter is an error. Its result
+    is kept per target for the service's start warning."""
+    probe = capabilities.claude_socket_probe(binary, agent_path, as_user)
+    _keep_probe(report, where, record, probe.outcome == "ok")
+    if probe.outcome != "ok":
+        _probe_stale(report, where, record)
+    if probe.outcome == "ok":
+        report.ok(f"{where}harness claude-code: probe run: Unix socket blocking applied")
+    elif probe.outcome == "off":
+        report.error(
+            f"{where}harness claude-code: probe run: Unix socket blocking is off "
+            f"({probe.detail}); Claude Code placements must not run here"
+        )
+    else:
+        report.error(
+            f"{where}harness claude-code: probe run: Unix socket blocking not confirmed "
+            f"({probe.detail}); treat Claude Code placements here as unprotected"
+        )
+
+
+def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> bool:
     """With the sandbox on, the runner's hook must run: settings that switch hooks off
-    refuse every start of a sandboxed agent (supervisor), so `check` says so as an error."""
+    refuse every start of a sandboxed agent (supervisor), so `check` says so as an error.
+    True when the settings are clean."""
     why = capabilities.claude_hooks_off(as_user)
     if why is None:
         report.ok(f"{where}harness claude-code: hooks are not switched off")
-    else:
-        report.error(f"{where}{capabilities.claude_hooks_line(why)}")
+        return True
+    report.error(f"{where}{capabilities.claude_hooks_line(why)}")
+    return False
+
+
+def _check_claude_socket_settings(report: Report, as_user: AsUser, where: str) -> bool:
+    """With the sandbox on, the managed and the agents' user's settings must carry no Unix
+    socket setting (capabilities.SOCKET_SETTINGS): such settings refuse every start of a
+    sandboxed agent (supervisor), so `check` says so as an error. True when they are clean."""
+    why = capabilities.claude_socket_settings(as_user)
+    if why is None:
+        report.ok(
+            f"{where}harness claude-code: the managed and user settings carry no Unix socket "
+            "setting"
+        )
+        return True
+    report.error(f"{where}{capabilities.claude_socket_settings_line(why)}")
+    return False
 
 
 def _check_claude_settings(report: Report, as_user: AsUser, where: str) -> None:
@@ -826,7 +1092,14 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                 refused = capabilities.sandbox_refused(harness, False, harness.id in held)
                 (report.error if refused else report.warn)(line)
             elif harness.id == "claude-code":
-                _check_claude_hooks(report, as_user, f"{name}: ")
+                record = ProbeRecord(cfg.state_dir, name, probe.version)
+                where = f"{name}: "
+                clean = _check_claude_hooks(report, as_user, where)
+                clean = _check_claude_socket_settings(report, as_user, where) and clean
+                _check_claude_seccomp(report, as_user, where, probe.path, target.agent_path,
+                                      record, clean)  # fmt: skip
+            if harness.id == "claude-code":
+                _check_worktree_guard(report, as_user, f"{name}: ", probe.version)
             if harness.id == "antigravity":
                 _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
             if harness.id == "opencode":
@@ -839,6 +1112,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
         report.ok(f"{name}: workspaces {root}")
     if "claude-code" in cfg.harnesses:
         _check_claude_settings(report, as_user, f"{name}: ")
+        _check_leftover_worktrees(report, cfg, as_user, target.host, f"{name}: ")
     if "antigravity" in cfg.harnesses:
         _check_agy_workspaces(report, root, as_user, f"{name}: ")
     if as_user.run(["sudo", "-n", "true"]).returncode == 0:
@@ -903,12 +1177,14 @@ def cmd_check(args: argparse.Namespace) -> int:
         for harness in cfg.harnesses.values():
             _check_harness(
                 report, harness, agent_path, supervisor.agents_user(cfg), cfg.tools_dir,
-                cfg.local.layout,
+                cfg.local.layout, cfg.state_dir,
             )  # fmt: skip
         if "antigravity" in cfg.harnesses:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
         if "codex" in cfg.harnesses:
             _check_codex_home(report, cfg, supervisor.agents_user(cfg))
+        if "claude-code" in cfg.harnesses:
+            _check_leftover_worktrees(report, cfg, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()
@@ -1156,7 +1432,8 @@ def add_parser(sub: Any, fmt: type[argparse.HelpFormatter]) -> None:
     # through its own `maity`, so the CLI reaches the same ops the module path does; `codex`
     # takes the config.toml text on stdin, and `--auth` is only its auth.json link target.
     r = rsub.add_parser("scratchop")
-    r.add_argument("op", choices=(*scratchop.OPS, "codex"))
+    # `pgmake` and `pgremove`: the test clusters' password holder and a placement's file in it.
+    r.add_argument("op", choices=(*scratchop.OPS, "codex", "pgmake", "pgremove"))
     r.add_argument("--under", required=True)
     r.add_argument("--auth")  # codex only: the auth.json link target; left out for the others
     r.add_argument("path")

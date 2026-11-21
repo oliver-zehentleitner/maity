@@ -531,8 +531,9 @@ class Workflows(unittest.TestCase):
         self.assertNotRegex(text, r"(?m)^    name:")
 
     def test_each_extra_job_was_added_by_its_commit(self):
-        # The table's commit is the one whose hub-mariadb.yml first has the job. Needs the
-        # history; skipped in a checkout that lacks it.
+        # The table's commit is the one whose hub-mariadb.yml first has the job. Needs each
+        # commit and its parent: skipped in a local checkout that lacks them, failed on GitHub
+        # Actions, where ci.yml's changelog job fetches them (a skip there would hide the check).
         import subprocess
 
         def show(rev):
@@ -548,7 +549,10 @@ class Workflows(unittest.TestCase):
             with self.subTest(job):
                 at, before = show(added), show(added + "^")
                 if at.returncode != 0 or before.returncode != 0:
-                    self.skipTest(f"{added} or its parent is not in this checkout")
+                    missing = f"{added} or its parent is not in this checkout"
+                    if os.environ.get("GITHUB_ACTIONS") == "true":
+                        self.fail(missing + " (ci.yml's changelog job fetches them)")
+                    self.skipTest(missing)
                 self.assertRegex(at.stdout, rf"(?m)^  {re.escape(job)}:$")
                 self.assertNotRegex(before.stdout, rf"(?m)^  {re.escape(job)}:$")
 

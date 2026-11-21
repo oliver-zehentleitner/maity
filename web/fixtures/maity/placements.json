@@ -8,7 +8,7 @@
       "workspace": { "clone": "agent-b", "branch": null, "continues_existing": true },
       "desired": "running", "generation": 4, "rejoin": false, "fresh_session": false, "stop_grace_seconds": 120,
       "approval": { "status": "approved", "request_id": null, "pending_change": null },
-      "credential_id": "crd-b-0003", "reported_current": true,
+      "credential_id": "crd-b-0003", "instance": "wle2", "reported_current": true,
       "session_hint": "tmux -S /var/lib/maity-runner/tmux.sock attach -t maity_maity_agent-b", "logs_hint": "maity runner logs plc-0001",
       "active": true, "closed_at": null, "closed_reason": null,
       "created_by": "hum-maintainer", "proposed_by": null, "foreign": false,

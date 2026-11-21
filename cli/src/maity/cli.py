@@ -186,6 +186,28 @@ SANDBOXED_CALL = (
 )
 
 
+# `--hub` under a placement whose clone's state names no hub: the runner's join stores the hub
+# with the credential, and under a placement --hub names only the clone's hub, so there is
+# nothing it can name (cli/context/credentials.md).
+PLACED_NO_HUB = (
+    "under a placement, --hub names only the clone's hub, and this clone's state names none: "
+    "the runner's join stores it. Nothing was changed or fetched"
+)
+
+
+def _keep_hub(stored: str, given: str) -> None:
+    """`--hub` on a clone whose state names a hub: only that hub's origin passes (scheme, host
+    and port, `hub.origin`), anything else is refused before anything is written or sent. A
+    clone's hub changes only by a new join (cli/context/credentials.md)."""
+    if hub.same_origin(stored, given):
+        return
+    raise LocalRefusal(
+        f"this clone is joined to the hub at {hub.shown_origin(stored)}, and --hub names "
+        f"{hub.shown_origin(given)}, another origin. A clone's hub is fixed: it changes only "
+        "by a new join (`maity join <url> --code <code>`). Nothing was changed"
+    )
+
+
 class Session:
     """A joined clone: its state directory, its state, and a signing client for its hub.
     `on_request` is this command's `--on-request`, `for_target` the global `--for`, both set
@@ -207,10 +229,21 @@ class Session:
                 "this clone has not joined a project; run `maity join <url> --code <code>`"
             )
         self.data = state.load_state(self.dir)
-        if hub_url:  # a credential from the page-driven join has no state.json yet
-            self.data["hub"] = hub.hub_base(hub_url)
+        if hub_url:
+            if isinstance(self.data.get("hub"), str):
+                # The clone's hub is fixed: the same origin passes and the stored URL stays.
+                _keep_hub(self.data["hub"], hub_url)
+            elif clonecheck.placed():
+                raise LocalRefusal(PLACED_NO_HUB)
+            else:  # a credential from the page-driven join has no state.json yet
+                self.data["hub"] = hub.hub_base(hub_url)
         stored = self.data.get("hub")
         if not isinstance(stored, str):
+            if clonecheck.placed():  # --hub names only the clone's hub here (PLACED_NO_HUB)
+                raise state.StateError(
+                    "this placed clone holds a credential but no hub URL: ask the runner's "
+                    "owner to restart the placement; the runner joins it again"
+                )
             raise state.StateError(
                 "this clone holds a credential but no hub URL; run `maity resume --hub <url>`"
             )
@@ -227,6 +260,24 @@ class Session:
                 self.client.for_member = target
             else:
                 self.client.for_resolve = lambda: _for_member_id(self, target)
+
+    @classmethod
+    def through(cls, root: Path, top: int) -> Session:
+        """The session of the runner's clone at `root`, its state and credential read through
+        `top`, the clone's `.git` as `clonecheck.opened_clone` checked it (state.read_placed),
+        never by a path: for the lead commands of `maity gh` (review A1738 of #2054). Its
+        client follows no rename by writing state back, and serves no `--for`."""
+        data, credential = state.read_placed(top)
+        stored = data.get("hub")
+        if not isinstance(stored, str):
+            raise state.StateError("the placement's state names no hub; run `maity resume`")
+        self = cls.__new__(cls)
+        self.dir = root / ".git" / "maity"
+        self.data = data
+        self.client = ProjectClient(
+            hub.hub_base(stored), sign.signing_key(credential), on_request=Session.on_request
+        )
+        return self
 
     @property
     def for_member(self) -> str | None:
@@ -448,12 +499,28 @@ def cmd_join(args: argparse.Namespace) -> int:
     target = hub.join_target(url)
     if not code.strip():
         raise UsageError("the join code is empty")
+    if clonecheck.placed() or clonecheck.GIT_PRIVATE_ENV in os.environ:
+        # Before the state lookup and any call: the runner's pickup and exchange join a
+        # placement, so a placed session never joins (cli/context/credentials.md).
+        raise LocalRefusal(
+            "a placed session never joins: the runner's pickup and exchange join a "
+            "placement. Nothing was sent; the join code still works"
+        )
     derived = False
     try:
         directory = state.resolve_state_dir()
-    except state.StateError as outside:
+    except (state.NotInClone, state.NoGit) as outside:
+        # Before a join, outside a clone or without git (unplaced, as checked above): a
+        # directory of the agent's own, as before.
         directory = _identity_dir(url, target, outside)
         derived = True
+    except state.StateError as exc:
+        # A runner's clone it cannot place, or a clone git cannot read: the state directory
+        # cannot be named, fails closed.
+        raise LocalRefusal(
+            f"this clone's state directory cannot be named: {exc}. Nothing was sent; the join "
+            "code still works"
+        ) from None
     # A derived directory that holds a credential belongs to another instance of this agent
     # (§6.17): this one gets `<handle>#<instance>` beside it, once the exchange names it.
     sibling = derived and state.has_credential(directory)
@@ -1618,11 +1685,58 @@ def _card_pr_mismatch(card: Any, facts: gitfacts.Facts, card_id: str) -> str | N
 
 
 def cmd_gh(args: argparse.Namespace) -> int:
-    """`maity gh pr create|view` (ghpr): gh's own exit code, a refusal before it runs."""
+    """`maity gh` (ghpr): gh's own exit code, a refusal before it runs. A lead command reads
+    this member's role from the hub (`_hub_role`)."""
     try:
-        return ghpr.run(args)
+        return ghpr.run(args, _hub_role)
     except ghpr.Refused as exc:
         raise LocalRefusal(str(exc)) from None
+
+
+def _hub_role(root: Path, opened: clonecheck.Opened | None) -> str | None:
+    """The base of the role the hub gives the caller in this project now (`role_base`: a
+    project role counts as the built-in role it is built on, never more, context/trust.md),
+    for the lead commands of `maity gh`. The session is the placement's own: its state and
+    signing credential read through `opened`, the clone ghpr.run checked, before any client
+    exists (Session.through, review A1738 of #2054); refused where there is no such
+    descriptor (Windows). Bound to the credential that signed the calls, never to a member id
+    from local state (review A1720): `GET /me` names who the hub authenticated, refuses here
+    for an isolated agent (/me answers one, §6.2), and must list this project; that member's
+    own view then gives `role_base`. Never from the resume packet, never for an agent served
+    with `--for`, never under a placement with MAITY_STATE_DIR set. A hub that does not
+    answer refuses (ghpr.check_role)."""
+    if Session.for_target is not None:
+        raise ghpr.Refused("the lead commands act as this clone's own member, not with --for")
+    if clonecheck.placed() and state.STATE_DIR_ENV in os.environ:
+        # The runner never sets it: under a placement only the placement's own state counts.
+        raise ghpr.Refused(f"the lead commands refuse {state.STATE_DIR_ENV} under a placement")
+    if opened is None:
+        raise ghpr.Refused(
+            "the lead commands read the placement's state only through its checked .git, "
+            "which this system cannot open that way"
+        )
+    try:
+        session = Session.through(root, opened.git)
+        project = session.data.get("full_name")
+        if not (isinstance(project, str) and _FULL_NAME.fullmatch(project)):
+            raise ghpr.Refused("the placement's state names no project; run `maity resume`")
+        me = session.client.call("GET", "/me")
+        if _field(me, "membership", "isolated") is not None:
+            raise ghpr.Refused("an isolated member runs no lead command")
+        member = _field(me, "member", "id")
+        listed = [
+            p for p in (_field(me, "projects") or [])
+            if isinstance(p, dict) and p.get("full_name") == project
+        ]  # fmt: skip
+        if not isinstance(member, str) or len(listed) != 1:
+            raise ghpr.Refused(f"the hub lists no membership of yours in {project}")
+        view = session.client.call("GET", session.project_path("members", member))
+    except (state.StateError, hub.HubError, sign.CredentialFormatError) as exc:
+        raise ghpr.Refused(f"the hub did not say this member's role: {exc}") from None
+    if _field(view, "id") != member:
+        raise ghpr.Refused("the hub's member view is not the member /me named")
+    base = _field(view, "role_base")
+    return base if isinstance(base, str) else None
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -4805,6 +4919,22 @@ def cmd_api(args: argparse.Namespace) -> int:
 def cmd_help(args: argparse.Namespace) -> int:
     if args.hub:
         base = hub.hub_base(args.hub)
+        stored: object = None
+        try:
+            stored = state.load_state(state.resolve_state_dir()).get("hub")
+        except state.NotInClone:
+            pass  # outside a clone: before a join, no stored hub to keep
+        except state.StateError as exc:
+            # A clone whose state cannot be read may name a hub: fails closed, nothing fetched.
+            raise LocalRefusal(
+                "--hub is checked against the hub this clone is joined to, and its state "
+                f"cannot be read: {exc}. Nothing was fetched"
+            ) from None
+        if isinstance(stored, str):
+            _keep_hub(stored, args.hub)
+            base = hub.hub_base(stored)
+        elif clonecheck.placed():
+            raise LocalRefusal(PLACED_NO_HUB)
     else:
         stored = state.load_state(state.resolve_state_dir()).get("hub")
         if not isinstance(stored, str):
@@ -4948,7 +5078,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="print the last resume's packet in full, without calling the hub",
     )
     p.add_argument(
-        "--hub", help="the hub URL, once, when the credential came from the page-driven join"
+        "--hub",
+        help="the hub URL, once, when the credential came from the page-driven join; on a "
+        "clone whose state already names a hub, another origin is refused (exit "
+        f"{EXIT_REFUSED}, nothing written): the hub changes only by a new join",
     )
     _session_args(p)
     p.add_argument("--json", action="store_true", help="print the resume packet as JSON")
@@ -6072,7 +6205,11 @@ def build_parser() -> argparse.ArgumentParser:
         description="Fetch and print /api/v1/help from the hub this clone joined, or from --hub.",
         formatter_class=fmt,
     )
-    p.add_argument("--hub", help="hub URL, for use before joining")
+    p.add_argument(
+        "--hub",
+        help="hub URL, for use before joining; on a joined clone only its own hub's origin "
+        f"(exit {EXIT_REFUSED} otherwise)",
+    )
     p.set_defaults(handler=cmd_help)
 
     p = add(
@@ -6342,9 +6479,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _main(argv: Sequence[str] | None = None) -> int:
     _utf8_streams()
     parser = build_parser()
-    if _restricted_argv(sys.argv[1:] if argv is None else argv):
+    words = list(sys.argv[1:] if argv is None else argv)
+    if _restricted_argv(words):
         _quiet_ancestors(parser)
     args, extra = parser.parse_known_args(argv)
+    if args.command == "runner" and words[:1] != ["runner"]:
+        # The runner's commands are its operator's, and the rules that keep them from placed
+        # agents look for `runner` right after `maity`: argparse also takes it after `--` or a
+        # global option (`maity -- runner …`, `maity --for x runner …`). Nothing runs.
+        _err("`maity runner` is taken only as the first argument: nothing may come before `runner`")
+        return EXIT_USAGE
     if extra and getattr(args, "handler", None) in _RESTRICTED_HANDLERS:
         # Never repeated: what is left over may be the restricted text itself (§13).
         parser.error(_RESTRICTED_ARGV_HINT)
@@ -6363,12 +6507,6 @@ def _main(argv: Sequence[str] | None = None) -> int:
             return EXIT_USAGE
     if args.for_target is not None and args.command == "join":
         _err("--for applies to project commands; join is the bridge's own: run it without --for")
-        return EXIT_USAGE
-    if args.for_target is not None and args.command == "runner":
-        _err(
-            "--for applies to project commands; `maity runner` is the operator's: "
-            "run it without --for"
-        )
         return EXIT_USAGE
     if args.command == "runner" and sys.platform == "win32":
         _err(
