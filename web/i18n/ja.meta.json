@@ -3413,7 +3413,7 @@
   },
   "chat_access.choose_agents": {
     "en": "122f8047527faf57",
-    "text": "d8cd30173e7d8368"
+    "text": "b8a4f0779fafca2a"
   },
   "chat_access.choose_subject": {
     "en": "330e63125ab74ec5",
@@ -3493,19 +3493,19 @@
   },
   "chat_access.history.allow.changed": {
     "en": "fbeadefaa8af01d0",
-    "text": "d4332628efcf121f"
+    "text": "f0015a66d99b7e54"
   },
   "chat_access.history.allow.created": {
     "en": "8c67ac7917e02c77",
-    "text": "e5cb456465189dce"
+    "text": "4a74d57eecf066cf"
   },
   "chat_access.history.allow.deleted": {
     "en": "d2668013c41cf746",
-    "text": "2f954c75d8d01f18"
+    "text": "9eae0ee42675040a"
   },
   "chat_access.history.allow.expired": {
     "en": "82e56165d7805d03",
-    "text": "9779e394a0d8ea0a"
+    "text": "84c6b8c7012bbc42"
   },
   "chat_access.history.answer": {
     "en": "12bc3115739768d0",
@@ -3569,19 +3569,19 @@
   },
   "chat_access.history.deny.changed": {
     "en": "87e72c16ca6599fd",
-    "text": "3d171f63b5f01cf6"
+    "text": "7869ed1beaf2b231"
   },
   "chat_access.history.deny.created": {
     "en": "eb57a4badef684c8",
-    "text": "69224f662fc6a12b"
+    "text": "31087ebb6513b214"
   },
   "chat_access.history.deny.deleted": {
     "en": "6921ed55873af775",
-    "text": "5e2de7002d85d10b"
+    "text": "3a19eb5ba48245b8"
   },
   "chat_access.history.deny.expired": {
     "en": "c635edb6297ccc16",
-    "text": "9096e4e16688589b"
+    "text": "ae1ff7bb300e9508"
   },
   "chat_access.history.empty": {
     "en": "5f6c957859d52bd3",
@@ -5873,7 +5873,7 @@
   },
   "inbox.chat_access.none": {
     "en": "9108684fdfc8e60a",
-    "text": "350fb97ec753a19e"
+    "text": "beec115d35a9886a"
   },
   "inbox.chat_access.their_agents": {
     "en": "f96a7ca5647e1494",
@@ -10705,7 +10705,7 @@
   },
   "members.expert.refused.sources_too_long": {
     "en": "071f25a5df2ce278",
-    "text": "f44d1b9f9ad1cc07"
+    "text": "5149e6c5f3b5de21"
   },
   "members.expert.save": {
     "en": "504d58f1a943866e",
@@ -11789,7 +11789,7 @@
   },
   "mine.leave.rule": {
     "en": "60600b8ad4f71913",
-    "text": "f0ae3dee2910ebee"
+    "text": "422c5dfd17595928"
   },
   "mine.leave.stays": {
     "en": "c45cf85f098c23cc",
@@ -16705,7 +16705,7 @@
   },
   "roles.move.approvals": {
     "en": "62c6b1c01db81b0c",
-    "text": "4f5213c18bd3e3fa"
+    "text": "75ee30bcb3df9f65"
   },
   "roles.move.back": {
     "en": "7ceade8f25b58fe9",
@@ -18453,7 +18453,7 @@
   },
   "settings.repo.forge_rule": {
     "en": "8385e3bd11777f1f",
-    "text": "6b208ba845ef6514"
+    "text": "440c21ecaca1bead"
   },
   "settings.repo.hint": {
     "en": "d93dadbb10ff55c5",

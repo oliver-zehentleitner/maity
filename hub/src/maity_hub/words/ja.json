@@ -82,7 +82,7 @@
   "mail_links.reset_title": "2要素サインインをリセット",
   "mail_links.unlock_button": "今日もう一度試せるようにする",
   "mail_links.unlock_done": "第2要素のコードをもう一度入力できます。",
-  "mail_links.unlock_text": "本日、あなたのアカウントで第2要素のコードの誤りが多すぎたため、その日が終わるまで (UTC) コードは拒否されます。これらのコードを入力したのがあなた自身である場合にのみ、ボタンを押してください。",
+  "mail_links.unlock_text": "本日、あなたのアカウントで第2要素のコードの誤りが多すぎたため、本日の終わり (UTC) までコードは拒否されます。これらのコードを入力したのがあなた自身である場合にのみ、ボタンを押してください。",
   "mail_links.unlock_title": "第2要素をもう一度試す",
   "mail_links.unsub_button": "このメールの配信を停止",
   "mail_links.unsub_done": "{kind} メールは今後届きません。設定でもう一度オンにできます。",
