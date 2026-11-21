@@ -684,7 +684,7 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
   - The source, shared with the public page's **Why** (`public_project_views.why_data`, `WHY_CACHE`): only what
     the forge serves publicly, read with the instance's token and without a grant, its visibility asked of the
     forge itself, and only for a project in the operator's own namespaces, which that token serves, where the
-    page shows it too (`render_views`' `by_instance`). Three checks, in order. `access.gate`
+    page shows it too (`render_views`' `by_instance`). These checks, in order. `access.gate`
     (`PUBLIC_REPOSITORY_READS`, before the query is read; `instance_serves_project`, from the app's settings) and
     `_require_why` with `_outside_token` answer `not_found` unless the stored `repository_public` is true and the
     instance's token serves the namespace, the cheap first checks. Then the gate, still before the query is read,
@@ -692,7 +692,7 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
     endpoint's `outside_reader`, which reuses the answer the gate just kept): asked live (`_visibility`,
     uncached, in a worker thread outside any database connection) when the kept answer is older than
     `_refresh(max_age)`, at the latest every `VISIBILITY_SECONDS`, with `max_age=0` every `FORCE_INTERVAL`, the
-    query's `max_age` read leniently for that window alone; not public, or no answer, is `not_found` before
+    query's `max_age` read with the routes' own type (`ktw.max_age_of`); not public, or no answer, is `not_found` before
     validation (A1863 point 2), a spent budget passes to the endpoint, which answers `probe_unavailable` as for a
     member. A kept positive answer only lets `OUTSIDE_CACHE` serve what it holds: every content fetch for an
     outsider is preceded by a live visibility answer in the same request (the lead's rule, seq 186723, A1863
