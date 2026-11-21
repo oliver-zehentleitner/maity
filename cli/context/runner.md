@@ -5131,7 +5131,15 @@ git worktree in its clone:
   not offered the tool.
 - `git worktree` and `git worktree *` denied for the shell (for opencode
   too), over a repository grant that allows them: a registration outside
-  `.claude/worktrees/` is one the start's prune does not clear.
+  `.claude/worktrees/` is one the start's prune does not clear. Not
+  `git * worktree *` (review A1807): it also denied ordinary commands that
+  only mention the word, `git log --grep worktree` or a commit message.
+  Known gap: the deny does not match a global option before the
+  subcommand (`git -C <dir> worktree …`); Claude Code still refuses such a
+  line because no allow rule matches it (`dontAsk`), and opencode because
+  its bash map's default is deny, unless a repository grant allows it. The
+  deny is a guard against accidents; the start prune and check's warning
+  cover a leftover.
 - A `WorktreeCreate` hook, a plain shell line that prints a short reason
   to stderr, no path to stdout, and exits 2. Claude Code then fails every
   worktree it would make, a subagent's `isolation: worktree` included.

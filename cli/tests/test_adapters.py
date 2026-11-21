@@ -290,9 +290,7 @@ def test_a_placed_claude_code_session_makes_no_git_worktree(
     assert written == adapters.claude_settings(ctx)
     deny = written["permissions"]["deny"]
     assert "EnterWorktree" in deny
-    assert {"Bash(git worktree)", "Bash(git worktree *)", "Bash(git * worktree *)"} <= set(
-        deny
-    )  # from the shell too, also after a global option
+    assert {"Bash(git worktree)", "Bash(git worktree *)"} <= set(deny)  # from the shell too
     assert not any(rule.startswith("Agent(") for rule in deny)
     assert written["disableAllHooks"] is False  # the agents' user settings cannot turn it off
     (entry,) = written["hooks"]["WorktreeCreate"]
@@ -350,23 +348,58 @@ def test_no_other_harness_gets_the_worktree_rules(tmp_path: Path) -> None:
     for rule in adapters.GIT_WORKTREE_DENIED:  # denied, after every allow: the last match wins
         assert bash[rule] == "deny"
         assert all(bash[key] == "deny" for key in order[order.index(rule) :])
-    assert bash["git * worktree *"] == "deny"
 
-    def resolve(command: str) -> str:  # opencode: the last matching pattern wins
+    def resolve(rules: dict[str, str], command: str) -> str:  # opencode: the last match wins
         verdict = "deny"
-        for pattern, value in bash.items():
+        for pattern, value in rules.items():
+            if fnmatch.fnmatchcase(command, pattern):  # `*` matches spaces too, as opencode's
+                verdict = value
+        return verdict
+
+    for command in ("git worktree add x", "git worktree"):
+        assert resolve(bash, command) == "deny", command
+    assert resolve(bash, "make check") == "allow" and resolve(bash, "git status") == "allow"
+    claude = adapters.claude_settings(context(tmp_path / "c", grant=worktree_grant))
+    assert "Bash(git worktree)" in claude["permissions"]["allow"]  # the grant, as written
+    assert "Bash(git worktree)" in claude["permissions"]["deny"]  # and the deny, which wins
+
+
+def test_the_worktree_deny_matches_only_the_subcommand(tmp_path: Path) -> None:
+    """The known gap and its cover: the deny does not match `git -C <dir> worktree …`, but with
+    no grant nothing allows that line either (opencode's default deny; no Claude Code allow rule,
+    and dontAsk refuses the rest). And a line that only mentions the word stays allowed: a
+    wildcard before `worktree` in the deny would have refused it (review A1807)."""
+
+    def patterns(rules: list[str]) -> list[str]:
+        return [rule[len("Bash(") : -1] for rule in rules if rule.startswith("Bash(")]
+
+    def resolve(rules: dict[str, str], command: str) -> str:  # opencode: the last match wins
+        verdict = "deny"
+        for pattern, value in rules.items():
             if fnmatch.fnmatchcase(command, pattern):
                 verdict = value
         return verdict
 
-    # fnmatch semantics, as the UUID test above: `*` matches any characters, spaces included.
-    assert fnmatch.fnmatchcase("git -C . worktree add x", "git * worktree *")
-    for command in ("git worktree add x", "git -C . worktree add x", "git worktree"):
-        assert resolve(command) == "deny", command
-    assert resolve("make check") == "allow" and resolve("git status") == "allow"
-    claude = adapters.claude_settings(context(tmp_path / "c", grant=worktree_grant))
-    assert "Bash(git worktree)" in claude["permissions"]["allow"]  # the grant, as written
-    assert "Bash(git worktree)" in claude["permissions"]["deny"]  # and the deny, which wins
+    no_grant = config.RepositoryGrant()
+    claude = adapters.claude_settings(context(tmp_path / "c", grant=no_grant))["permissions"]
+    allow, deny = patterns(claude["allow"]), patterns(claude["deny"])
+    o_ctx = context(tmp_path / "o", harness_id="opencode", grant=no_grant)
+    bash = adapters.opencode_config(o_ctx)["permission"]["bash"]
+    assert claude["defaultMode"] == "dontAsk"
+
+    gap = "git -C . worktree add x"
+    assert not any(fnmatch.fnmatchcase(gap, pattern) for pattern in deny)  # the gap
+    assert not any(fnmatch.fnmatchcase(gap, pattern) for pattern in allow)  # refused anyway
+    assert [key for key in bash if fnmatch.fnmatchcase(gap, key)] == ["*"]  # the default alone
+    assert resolve(bash, gap) == "deny"
+
+    for command, allowed_by in (
+        ("git log --grep worktree --all", "git log *"),
+        ('git commit -m "runner: no git worktree in its clone"', "git commit *"),
+    ):
+        assert not any(fnmatch.fnmatchcase(command, pattern) for pattern in deny), command
+        assert allowed_by in allow and fnmatch.fnmatchcase(command, allowed_by)
+        assert resolve(bash, command) == "allow", command
 
 
 def test_the_hook_refuses_when_it_cannot_start(tmp_path: Path) -> None:

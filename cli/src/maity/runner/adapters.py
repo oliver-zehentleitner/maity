@@ -90,8 +90,11 @@ GIT_DENIED = (
 # one outside `.claude/worktrees/` is not cleared at the next start (worktree.py). A guard
 # against accidents like the lists above, not a boundary. Kept apart from GIT_DENIED, which is
 # about git running programs or reading configuration, and which agy's rules mirror.
-# `git * worktree *` takes it after a global option too (`git -C . worktree add …`).
-GIT_WORKTREE_DENIED = ("git worktree", "git worktree *", "git * worktree *")
+# Only the subcommand itself: a pattern with a wildcard before `worktree` (`git * worktree *`,
+# also `git -C * worktree *`) would deny ordinary commands that only mention the word
+# (`git log --grep worktree`, a commit message), so it is not used. `git -C <dir> worktree …`
+# is not matched; no allow rule matches it either (cli/context/runner.md).
+GIT_WORKTREE_DENIED = ("git worktree", "git worktree *")
 # No session runs gh: the token is the operator's and reaches every repository it may, and no
 # glob on a command line pins one (`-dR`, a URL). Agents open and read their pull requests
 # with `maity gh`, which runs outside the sandbox with the repository fixed by the runner
