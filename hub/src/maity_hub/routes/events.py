@@ -614,8 +614,11 @@ def post_message(
         # restricted-access setting and set (§6.1), a card's restriction (§6.4), a member's
         # state. So that lock is taken before any of it is read, and the project and the
         # sender's own row are read again under it (`_locked`): what decides the audience is
-        # then what holds when the event is written (§8.4).
+        # then what holds when the event is written (§8.4). The sender's own scope is checked
+        # again on that row: a trust or role change committed before the lock, after the
+        # route's check on the row read first, decides whether it may post at all.
         mine = _locked(conn, mine)
+        mine.require("events:post")
     # Presence, not value: an explicit null is refused like any other non-integer (§8.4).
     answered = _answered(conn, mine, body) if "in_reply_to" in body.model_fields_set else None
     if body.to_instance is not None and (
@@ -896,19 +899,18 @@ def _deliver_review(
     neither: it does not wake a supervised member, and beside it an added token wakes only such
     a one. One that then reaches nobody but its sender is `invalid`."""
     sender = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
-    found = review_delivery.recipients(
-        conn, mine.project, sender, task_id, review, answered, mine.instance
-    )
+
     # An orderer whose message reached the sender only through `all`, a role or a trust token
     # has no exemption from the gate (§8.4): it is added only where the gate would let the
     # sender reach it anyway, and never held, so its owner is not asked for a consent the
-    # sender did not seek by addressing it.
-    found = [
-        r
-        for r in found
-        if r.ungated
-        or not chat_gate.hold(conn, mine.project.id, mine, "review_result", [r.token])[1]
-    ]
+    # sender did not seek by addressing it. It is judged before recipients are de-duplicated,
+    # so an orderer left out does not displace a lead of the same member (review A1882).
+    def admits(r: review_delivery.Recipient) -> bool:
+        return not chat_gate.hold(conn, mine.project.id, mine, "review_result", [r.token])[1]
+
+    found = review_delivery.recipients(
+        conn, mine.project, sender, task_id, review, answered, mine.instance, admits
+    )
     # The reviewer means the author and the orderer: the member id would wake other instances
     # by the agent's `wake` rule (§6.18). The payload's `to` stays as written.
     meant: dict[str, list[str]] = {}

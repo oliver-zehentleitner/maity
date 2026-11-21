@@ -21,6 +21,7 @@ restricted text (§6.4); that also leaves out a guest.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -231,12 +232,16 @@ def recipients(
     review: dict[str, Any],
     answered: Any = None,
     sender_instance: str | None = None,
+    admits: Callable[[Recipient], bool] = lambda _: True,
 ) -> list[Recipient]:
     """Author, the orderer (with `answered`, the event row `in_reply_to` names), the sender's
     lead, the author's lead: in that order, without the sender. An instance is kept once per
     token, so the author and the orderer may be two instances of one member; a member token is
     kept only for a member no earlier recipient names, so a lead whose member is the author's or
-    the orderer's is replaced by that one. `sender` is the sender's membership row."""
+    the orderer's is replaced by that one. An orderer that is not `ungated` is kept only where
+    `admits` lets it through (the §9.6 gate, §8.4), judged before that de-duplication: one left
+    out never takes the place of a lead of the same member. `sender` is the sender's
+    membership row."""
     found: list[Recipient] = []
     card = _card(conn, project.id, task_id, review)
     author = _author(conn, project.id, card) if card is not None else None
@@ -245,7 +250,7 @@ def recipients(
         found.append(author[0])
     if answered is not None:
         orderer = _orderer(conn, project, sender, sender_instance, answered, card)
-        if orderer is not None:
+        if orderer is not None and (orderer.ungated or admits(orderer)):
             found.append(orderer)
     for lead in (_lead(conn, sender), _lead(conn, author[1] if author else None)):
         if lead is not None and lead.member_id != me:

@@ -984,3 +984,41 @@ def test_the_orderer_is_judged_on_the_project_row_read_under_the_lock(
     got = sent(migrated, post(reviewer, task_id=card["id"], in_reply_to=asked))
     assert all(orderer.id not in token for token in got)
     assert f"instance:{author.id}#{author.instance}" in got
+
+
+def test_a_review_result_is_authorized_on_the_senders_row_read_under_the_lock(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A trust change that commits after the sender's membership was looked up but before the
+    event takes the project's lock decides whether it may post (review A1882, point 2).
+    Simulated in the request's own transaction: the reviewer is a member when its membership is
+    read and a guest, who holds no `events:post`, right after; the result is refused and no
+    event is written."""
+    from maity_hub.routes import events as event_routes
+
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    row = membership_id(migrated, reviewer.id)
+    with migrated.connect() as conn:
+        before = conn.execute(select(t.event.c.seq).order_by(t.event.c.seq.desc())).scalar()
+    looked_up = getattr(event_routes, "membership")  # noqa: B009 - imported, not exported
+
+    def then_demoted(conn: Any, caller: Any, slug: str, *args: Any, **kwargs: Any) -> Any:
+        mine = looked_up(conn, caller, slug, *args, **kwargs)
+        if mine.id == row:  # the sender becomes a guest after the lookup
+            conn.execute(update(t.membership).where(t.membership.c.id == row).values(trust="guest"))
+        return mine
+
+    monkeypatch.setattr(event_routes, "membership", then_demoted)
+    refused = post(reviewer, task_id=card["id"])
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["scope"] == "events:post"
+    with migrated.connect() as conn:
+        after = conn.execute(select(t.event.c.seq).order_by(t.event.c.seq.desc())).scalar()
+    assert after == before

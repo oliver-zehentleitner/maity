@@ -15215,7 +15215,8 @@ or instance, or it mentions them. An order that reached the sender only
 through `all`, a role or a trust token gives the orderer no exemption; it
 is then added only where the gate would let the sender reach it anyway.
 Such an orderer the gate would hold is left out: it gets no held entry
-and no consent request.
+and no consent request. When it is also the sender's or the author's lead,
+it still receives the result as that lead.
 Without `in_reply_to` nothing changes. The hub never searches a body or a subject for the
 message being answered.
 

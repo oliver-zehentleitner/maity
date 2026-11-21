@@ -489,6 +489,46 @@ def test_an_orderer_passes_the_gate_only_for_an_order_addressed_to_the_sender(
     assert result["seq"] in seqs(theirs)
 
 
+def test_an_orderer_left_out_by_the_gate_keeps_its_delivery_as_the_authors_lead(
+    owner: flow.Human, make_client: ClientFactory, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """Review A1882, point 1: `theirs` leads the card's author, an agent of the same owner, and
+    ordered the review through `all`. As the orderer the gate would hold it, so it is left out
+    (§8.4); as the author's lead it is the card's own flow and still gets the result. The
+    orderer is judged before recipients are de-duplicated, so it cannot displace the lead."""
+    theirs, writer, other = sides["theirs"], sides["writer"], sides["other"]
+    theirs.resume()
+    author = flow.agent(make_client, other)
+    author.resume()
+    task_id = card(owner)
+    with migrated.begin() as conn:
+        rows = dict(
+            conn.execute(
+                select(t.membership.c.agent_id, t.membership.c.id).where(
+                    t.membership.c.agent_id.in_([theirs.id, author.id])
+                )
+            ).all()
+        )
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == rows[author.id])
+            .values(reports_to=rows[theirs.id])
+        )
+        conn.execute(
+            update(t.card)
+            .where(t.card.c.id == task_id)
+            .values(claim_holder=rows[author.id], claim_instance=author.instance)
+        )
+    broadcast = send(theirs, "all", body="please review #7")["seq"]
+    result = answer_order(writer, broadcast, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    got = audience_of(migrated, result["seq"])
+    assert f"member:{theirs.id}" in got
+    assert f"instance:{theirs.id}#{theirs.instance}" not in got
+    assert result["seq"] in seqs(theirs)
+    assert result["seq"] in woken(migrated, theirs.id)
+
+
 def test_a_review_results_lead_of_another_owner_is_reached_only_through_the_gate(
     owner: flow.Human, make_client: ClientFactory, sides: dict[str, Any], migrated: Engine
 ) -> None:
