@@ -15,7 +15,8 @@
   attachments. A project id or any other form, or a project the instance is not attached
   to, is `invalid` (`project: not_a_member`). `GET /me` lists each live attachment in
   `projects` with its `trust`, `role`, `isolated`, `paused` and `dormant`, and its top-level
-  `membership` is `null` for an instance with more than one. `PATCH /me` with
+  `membership` is `null` for an instance with more than one; its `member` names the
+  calling instance in `instance`. `PATCH /me` with
   `avatar_motif`, the profile's, and `project` but no `paused` is `invalid`
   (`project: not_allowed`).
 - hub: `POST /me/resume` of an instance with more than one live attachment is refused with

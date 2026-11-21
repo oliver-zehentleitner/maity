@@ -462,6 +462,8 @@ def test_get_me_lists_every_attachment_with_its_flags(world: World) -> None:
     assert a["dormant"]["by"] == w.agent.agent_id and b["dormant"] is None
     assert a["paused"] is None and b["paused"] is None
     assert body["membership"] is None
+    assert body["member"]["owner_id"] == w.agent.owner_id
+    assert body["member"]["instance"] == w.agent.instance
 
 
 def test_get_me_of_a_single_attachment_reads_as_before(world: World) -> None:

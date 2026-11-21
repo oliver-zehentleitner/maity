@@ -90,6 +90,7 @@ def test_bearer_over_tls_answers_the_agents_me(
             agent.agent_id, images.etag(avatar_generated.draw(agent.agent_id))
         ),
         "owner_id": agent.owner_id,
+        "instance": agent.instance,  # the calling instance (§5.1, §6.17)
         "avatar_source": "generated",
         "avatar_motif": None,
     }

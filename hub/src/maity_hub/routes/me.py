@@ -76,6 +76,8 @@ def me_body(conn: Connection, caller: Caller) -> dict[str, Any]:
                     avatar_url=None,
                     owner_handle=owner_handles(conn, [agent.owner_id])[agent.owner_id],
                 ),
+                # The calling instance's own id (§5.1, §6.17): one credential, one instance.
+                "instance": caller.instance,
                 "aliases": handles.aliases(conn, [agent.id])[agent.id],
                 **avatars.state(conn, agent.id),
                 "avatar_motif": agent.avatar_motif,
