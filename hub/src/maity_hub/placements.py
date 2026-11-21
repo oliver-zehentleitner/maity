@@ -20,6 +20,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
+from pydantic import AwareDatetime, TypeAdapter, ValidationError
 from sqlalchemy import Connection, func, insert, or_, select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -110,12 +111,42 @@ DETAILS: dict[str, tuple[str, str]] = {
     "hot_loop": ("reason", "crash_loop"),
     "idle": ("reason", "hung"),
     "tool": ("reason", "hung"),
+    # The runner's watch (§15.14): a session that stayed not listening, or never joined.
+    "not_listening": ("reason", "hung"),
+    "never_joined": ("reason", "hung"),
     "mode_unsupported": ("reason", "harness_refused"),
     "model_unsupported": ("reason", "harness_refused"),
     "target_unknown": ("reason", "harness_refused"),
     "codex_host_too_old": ("reason", "harness_refused"),
     "reset_unknown": ("state", "rate_limited"),
 }
+# A finding (§15.7): what the runner's watch concluded, and the signals it saw. Closed lists.
+FINDING_CAUSES = (
+    "harness_exited",
+    "not_waiting",
+    "wait_deaf",
+    "never_joined",
+    "usage_limit",
+    "login_invalid",
+    "pickup_refused",
+    "unknown",
+)
+PANE_CODES = ("usage_limit", "login_prompt")
+SIGNAL_VALUES: dict[str, tuple[str, ...]] = {
+    "process": ("alive", "gone"),
+    "below": ("waiting", "working", "idle", "unknown"),
+    "login": ("ok", "needed", "unknown"),
+}
+SIGNAL_KEYS = ("process", "exit_code", "below", "pane_match", "login", "pickup_code")
+PANE_MATCH_MAX = 8
+# The runner's own log lines in a finding (§15.7): at most 200, each 1 to 1024 bytes of
+# printable ASCII, 24 KiB together.
+LOG_LINES_MAX = 200
+LOG_LINE_BYTES = 1024
+LOG_TOTAL_BYTES = 24 * 1024
+TIMESTAMP: TypeAdapter[datetime] = TypeAdapter(AwareDatetime)
+# The form §1.1 gives every timestamp, `2026-10-21T13:41:10Z`; ASCII digits only, `fullmatch`.
+WIRE_TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 RUNNING_STATES = ("starting", "running", "stopping")
 # Closing at once tells a running agent, except where it never ran or cannot listen:
 # a refused or withdrawn proposal, and a removed membership (§15.10).
@@ -279,9 +310,12 @@ def fresh_session(placement: Any) -> bool:
     return bool(placement.fresh_session_generation == placement.generation)
 
 
-def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) -> dict[str, Any]:
+def view(
+    conn: Connection, placement: Any, *, viewer_id: str, briefing: bool, logs: bool = False
+) -> dict[str, Any]:
     """The placement as humans and agents read it (§15.5). `viewer_id` decides the
-    runner owner's fields; `briefing` whether a profile still to be made shows it."""
+    runner owner's fields; `briefing` whether a profile still to be made shows it; `logs`
+    whether a finding in `reported` keeps the runner's log lines (`reads_logs`, §15.7)."""
     runner = _runner(conn, placement.runner_id)
     project_name = namespace.name_of(conn, placement.project_id)
     approved = placement.approval_status
@@ -326,7 +360,7 @@ def view(conn: Connection, placement: Any, *, viewer_id: str, briefing: bool) ->
         "created_at": ts(placement.created_at),
         "updated_by": placement.updated_by,
         "updated_at": ts(placement.updated_at),
-        "reported": _shown_report(placement.reported),
+        "reported": shown_report(placement.reported, logs=logs),
     }
     if placement.membership_id is None and briefing:
         found["briefing"] = (placement.new_profile or {}).get("briefing")
@@ -382,16 +416,151 @@ def held(placement: Any) -> bool:
     return stopped_or_closed(placement) and placement.workspace_state in HELD
 
 
-def _shown_report(report: dict[str, Any] | None) -> dict[str, Any] | None:
+def shown_report(report: dict[str, Any] | None, *, logs: bool) -> dict[str, Any] | None:
+    """`reported` as a reader sees it; without `logs` a finding comes without its `log`."""
     if report is None:
         return None
-    return {k: v for k, v in report.items() if k not in ("seq", "session_hint")}
+    shown = {k: v for k, v in report.items() if k not in ("seq", "session_hint")}
+    if not logs and shown.get("finding") is not None:
+        shown["finding"] = without_log(shown["finding"])
+    return shown
 
 
-def for_runner(conn: Connection, placement: Any, skill: dict[str, str]) -> dict[str, Any]:
+def without_log(finding: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A finding without the runner's log lines (§15.7): what every reader but three gets,
+    and what the `placement_reported` event carries."""
+    if finding is None:
+        return None
+    return {k: v for k, v in finding.items() if k != "log"}
+
+
+def reads_logs(
+    conn: Connection, placement: Any, *, principal_id: str, trust: str, bridged: bool
+) -> bool:
+    """Whether a caller reads a finding's `log` (§15.5, §15.7): the runner's owner, the agent
+    profile's owner, and the project's members with trust `owner` or `admin`; never through a
+    bridge (`Maity-For`), whoever it serves."""
+    if bridged:
+        return False
+    if trust in ("owner", "admin"):
+        return True
+    runner_owner = conn.execute(
+        select(t.runner.c.owner_id).where(t.runner.c.id == placement.runner_id)
+    ).scalar()
+    return principal_id in (runner_owner, profile_owner(conn, placement))
+
+
+# --- the agent's session, as the runner reads it (§15.8) ----------------------------------
+
+
+def runner_sessions(conn: Connection, placements: list[Any]) -> dict[str, dict[str, Any] | None]:
+    """Per placement its `session` (§15.8): when the newest session of its credential
+    started, the episode of not listening that runs now, and whether the instance or the
+    membership is paused and the instance dormant; `null` for a foreign placement, whose agent
+    profile the runner's owner does not own. Computed at each read, for the whole page in a
+    fixed number of statements whatever its rows; nothing of it is stored or an event."""
+    if not placements:
+        return {}
+    runner_ids = {p.runner_id for p in placements}
+    runner_owners = dict(
+        conn.execute(
+            select(t.runner.c.id, t.runner.c.owner_id).where(t.runner.c.id.in_(runner_ids))
+        ).all()
+    )
+    membership_ids = {p.membership_id for p in placements if p.membership_id is not None}
+    members = {
+        m.id: m
+        for m in conn.execute(
+            select(
+                t.membership.c.id,
+                t.membership.c.paused_since,
+                t.membership.c.availability_state,
+                t.agent_profile.c.owner_id,
+            )
+            .join(t.agent_profile, t.agent_profile.c.id == t.membership.c.agent_id)
+            .where(t.membership.c.id.in_(membership_ids))
+        )
+    }
+    credential_ids = {p.credential_id for p in placements if p.credential_id is not None}
+    credentials = {
+        c.id: c
+        for c in conn.execute(
+            select(
+                t.credential.c.id, t.credential.c.paused_since, t.credential.c.dormant_since
+            ).where(t.credential.c.id.in_(credential_ids))
+        )
+    }
+    s = t.agent_session.c
+    started = dict(
+        conn.execute(
+            select(s.credential_id, func.max(s.started_at))
+            .where(s.credential_id.in_(credential_ids))
+            .group_by(s.credential_id)
+        ).all()
+    )
+    live = {
+        r.credential_id: r
+        for r in conn.execute(
+            select(s.credential_id, s.not_listening_since, s.supervisor).where(
+                s.credential_id.in_(credential_ids), s.live.is_(True), s.ended_at.is_(None)
+            )
+        )
+    }
+    # §5.3 asks whether *an* active placement names the credential, not the row shown: a
+    # closed placement's credential carried over to an active one (`carried_credential`).
+    named_active = set(
+        conn.execute(
+            select(t.placement.c.credential_id).where(
+                t.placement.c.credential_id.in_(credential_ids), t.placement.c.active.is_(True)
+            )
+        ).scalars()
+    )
+    found: dict[str, dict[str, Any] | None] = {}
+    for p in placements:
+        member = members.get(p.membership_id)
+        owner = member.owner_id if member is not None else p.created_by
+        if owner != runner_owners.get(p.runner_id):
+            found[p.id] = None  # a foreign placement: its agent is not the runner owner's
+            continue
+        credential = credentials.get(p.credential_id)
+        paused = (member is not None and member.paused_since is not None) or (
+            credential is not None and credential.paused_since is not None
+        )
+        session = live.get(p.credential_id)
+        since = None if session is None else session.not_listening_since
+        # §5.3's exclusions, also before the worker's next pass has ended the episode.
+        if (
+            paused
+            or (member is not None and (member.availability_state or "available") != "available")
+            or (
+                session is not None
+                and session.supervisor is not None
+                and p.credential_id in named_active
+            )
+        ):
+            since = None
+        found[p.id] = {
+            "started_at": clock.rfc3339_or_none(started.get(p.credential_id)),
+            "not_listening_since": clock.rfc3339_or_none(since),
+            "paused": paused,
+            "dormant": credential is not None and credential.dormant_since is not None,
+        }
+    return found
+
+
+def for_runner(
+    conn: Connection,
+    placement: Any,
+    skill: dict[str, str],
+    sessions: dict[str, dict[str, Any] | None] | None = None,
+) -> dict[str, Any]:
     """A placement as its runner reads it (§15.8): never the briefing, the approval or
     who created it. `skill` is the Keep the Why skill the instance names
-    (ktw_skill.for_runner), given only for a project that uses Keep the Why."""
+    (ktw_skill.for_runner), given only for a project that uses Keep the Why. `sessions` is
+    `runner_sessions` of the page the placement is read in; without it the placement's own
+    is computed."""
+    if sessions is None or placement.id not in sessions:
+        sessions = runner_sessions(conn, [placement])
     project = conn.execute(
         select(t.project.c.repository_url, t.project.c.keep_the_why).where(
             t.project.c.id == placement.project_id
@@ -430,6 +599,8 @@ def for_runner(conn: Connection, placement: Any, skill: dict[str, str]) -> dict[
         "stop_grace_seconds": placement.stop_grace_seconds,
         "workspace_retention": placement.workspace_retention,
         "workspace_epoch": placement.workspace_epoch,
+        # What the hub knows of the agent behind it, for the runner's watch (§15.8, §15.14).
+        "session": sessions[placement.id],
         "seq": placement.reported_seq,
     }
     if stopped_or_closed(placement):
@@ -1260,6 +1431,162 @@ def runner_quota(runner_id: str, quota: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _timestamp(value: Any) -> bool:
+    """A timestamp in the wire form of §1.1: RFC 3339 in UTC, `Z`, second precision. The form
+    is checked before the parse, which alone also takes an epoch, an offset or no zone."""
+    if not isinstance(value, str) or not WIRE_TIMESTAMP.fullmatch(value):
+        return False
+    try:
+        TIMESTAMP.validate_python(value)
+    except ValidationError:
+        return False
+    return True
+
+
+def _exit_code(value: Any) -> bool:
+    return value is None or (
+        isinstance(value, int) and not isinstance(value, bool) and -(2**31) <= value < 2**31
+    )
+
+
+def check_finding(finding: Any) -> dict[str, str]:
+    """A report's `finding` against §15.7: the lists and the forms only, not whether the
+    signals fit the cause. Returns `details.fields` (dotted paths), empty when it holds. A key
+    the contract does not name is refused as any unknown field of a body is
+    (`extra_forbidden`)."""
+    if finding is None:
+        return {}
+    if not isinstance(finding, dict):
+        return {"finding": "invalid"}
+    errors: dict[str, str] = {}
+    for key in finding:
+        if key not in ("cause", "seen_at", "signals", "log"):
+            errors[f"finding.{key}"] = "extra_forbidden"
+    if "cause" not in finding:
+        errors["finding.cause"] = "required"
+    elif finding["cause"] not in FINDING_CAUSES:
+        errors["finding.cause"] = "unknown"
+    if "seen_at" not in finding:
+        errors["finding.seen_at"] = "required"
+    elif not _timestamp(finding["seen_at"]):
+        errors["finding.seen_at"] = "invalid"
+    if "signals" not in finding:
+        errors["finding.signals"] = "required"
+    else:
+        errors.update(_check_signals(finding["signals"]))
+    if "log" in finding:
+        errors.update(_check_log(finding["log"]))
+    return errors
+
+
+def _check_signals(signals: Any) -> dict[str, str]:
+    if not isinstance(signals, dict):
+        return {"finding.signals": "invalid"}
+    errors: dict[str, str] = {}
+    for key in signals:
+        if key not in SIGNAL_KEYS:
+            errors[f"finding.signals.{key}"] = "extra_forbidden"
+    for key in SIGNAL_KEYS:
+        path = f"finding.signals.{key}"
+        if key not in signals:
+            errors[path] = "required"
+            continue
+        value = signals[key]
+        if key in SIGNAL_VALUES:
+            if value not in SIGNAL_VALUES[key]:
+                errors[path] = "unknown"
+        elif key == "exit_code":
+            if not _exit_code(value):
+                errors[path] = "invalid"
+        elif key == "pickup_code":
+            if value is not None and not (
+                isinstance(value, str) and JOIN_DETAIL_CODE.fullmatch(value)
+            ):
+                errors[path] = "format"
+        elif not isinstance(value, list):  # pane_match
+            errors[path] = "invalid"
+        elif len(value) > PANE_MATCH_MAX:
+            errors[path] = "too_many"
+        elif any(code not in PANE_CODES for code in value):
+            errors[path] = "unknown"
+        elif len(set(value)) != len(value):
+            errors[path] = "duplicate"
+    return errors
+
+
+PRINTABLE = re.compile(r"[\x20-\x7e]+")
+
+
+def _check_log(log: Any) -> dict[str, str]:
+    """`finding.log` (§15.7): at most 200 entries of `{at, line}`, each line 1 to 1024 bytes
+    of printable ASCII, 24 KiB together."""
+    if not isinstance(log, list):
+        return {"finding.log": "invalid"}
+    if len(log) > LOG_LINES_MAX:
+        return {"finding.log": "too_many"}
+    errors: dict[str, str] = {}
+    total = 0
+    for index, entry in enumerate(log):
+        path = f"finding.log.{index}"
+        if not isinstance(entry, dict):
+            errors[path] = "invalid"
+            continue
+        for key in entry:
+            if key not in ("at", "line"):
+                errors[f"{path}.{key}"] = "extra_forbidden"
+        if "at" not in entry:
+            errors[f"{path}.at"] = "required"
+        elif not _timestamp(entry["at"]):
+            errors[f"{path}.at"] = "invalid"
+        line = entry.get("line")
+        if "line" not in entry:
+            errors[f"{path}.line"] = "required"
+        elif not isinstance(line, str):
+            errors[f"{path}.line"] = "invalid"
+        elif line == "":
+            errors[f"{path}.line"] = "empty"
+        elif not PRINTABLE.fullmatch(line):
+            errors[f"{path}.line"] = "format"
+        elif len(line) > LOG_LINE_BYTES:  # printable ASCII: one byte a character
+            errors[f"{path}.line"] = "too_long"
+        else:
+            total += len(line)
+    if total > LOG_TOTAL_BYTES:
+        errors["finding.log"] = "too_large"
+    return errors
+
+
+def stored_finding(finding: dict[str, Any] | None, now: datetime) -> dict[str, Any] | None:
+    """A validated finding (`routes.runner.check_finding`) as `reported` keeps it: as sent,
+    its times in the hub's form, a `seen_at` after hub time set to hub time (§15.7)."""
+    if finding is None:
+        return None
+    signals = finding["signals"]
+    stored: dict[str, Any] = {
+        "cause": finding["cause"],
+        "seen_at": clock.rfc3339(min(_parsed(finding["seen_at"]), now)),
+        "signals": {
+            "process": signals["process"],
+            "exit_code": signals["exit_code"],
+            "below": signals["below"],
+            "pane_match": list(signals["pane_match"]),
+            "login": signals["login"],
+            "pickup_code": signals["pickup_code"],
+        },
+    }
+    if "log" in finding:
+        stored["log"] = [
+            {"at": clock.rfc3339(_parsed(entry["at"])), "line": entry["line"]}
+            for entry in finding["log"]
+        ]
+    return stored
+
+
+def _parsed(value: str) -> datetime:
+    parsed: datetime = TIMESTAMP.validate_python(value)
+    return parsed
+
+
 def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor) -> Any:
     """A status report, as a compare-and-set on `seq`. Returns the placement after it."""
     if placement.active is None or body["seq"] <= placement.reported_seq:
@@ -1286,6 +1613,8 @@ def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor)
         "deadline_at": _stamp(body.get("deadline_at")),
         "since": clock.rfc3339(clamp_since(body["since"], placement.reported, now)),
         "target": body["target"],
+        # What the runner found (§15.7), stored as sent; `null` when the report has none.
+        "finding": stored_finding(body.get("finding"), now),
         "reported_at": clock.rfc3339(now),
     }
     if body.get("sessions") is not None:
@@ -1316,6 +1645,8 @@ def report(conn: Connection, placement: Any, body: dict[str, Any], actor: Actor)
                     "retry_at",
                 )
             },
+            # Never with its `log` (§15.7, §15.10): the event goes to every reader of events.
+            "finding": without_log(fields["finding"]),
         },
         actor=actor,
         subject=("placement", placement.id),

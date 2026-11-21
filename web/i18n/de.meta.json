@@ -755,6 +755,10 @@
     "en": "504343e7d2b4ed8c",
     "text": "224a4333bb0e3259"
   },
+  "agents.limit.held_only": {
+    "en": "bc841fef25926d80",
+    "text": "73f88b5a8bde1d9b"
+  },
   "agents.limit.instances_only": {
     "en": "772dc6887fc7ee0a",
     "text": "47b6155c7753711c"
@@ -13951,6 +13955,10 @@
     "en": "2585c200021d665e",
     "text": "f3d68c715e79b5bd"
   },
+  "placements.new.none_member": {
+    "en": "e441cf2b43c5ef88",
+    "text": "8f417299df04fc1c"
+  },
   "placements.new.not_member": {
     "en": "55e42ae71f048f84",
     "text": "9fc0feb086224698"
@@ -13963,9 +13971,17 @@
     "en": "78860a7edd225009",
     "text": "147af4ecbf6b969d"
   },
+  "placements.new.own_only": {
+    "en": "06c571aea4fa2ebe",
+    "text": "dda1d753836001ad"
+  },
   "placements.new.quota": {
     "en": "f64b09af35af4b42",
     "text": "e3746afd8e0c4075"
+  },
+  "placements.new.quota_ask": {
+    "en": "978d27df409fe88a",
+    "text": "d9acaf735056e310"
   },
   "placements.new.quota_link": {
     "en": "8fa180b5970a7dc9",

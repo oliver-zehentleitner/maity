@@ -7105,9 +7105,9 @@ head above the tabs puts the menu on every tab, and the Team page no longer jump
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** the maintainer on the card tsk-hdczmsq2r431, 2026-11-16 (the way on a runner was drawn without any layout; one form that starts with the agent's profile for both ways, with a part below for a runner instead of a join line); the lead's go on the design proposal, 2026-11-16; docs/api.md §15.6
+**Source:** the maintainer on the card tsk-hdczmsq2r431, 2026-11-16 (the way on a runner was drawn without any layout; one form that starts with the agent's profile for both ways, with a part below for a runner instead of a join line); the lead's go on the design proposal, 2026-11-16; docs/api.md §15.6; for a member's own agent the card tsk-at3gnzqd8svy (2026-11-21, after tsk-swrhej87tp0c and #2073), docs/api.md §15.6 "A profile that is not a member yet", §15.4 (`capabilities` in the project's runner list for members:admin only)
 **See:** views.md#one-page-head-for-agents-and-team-managed-agents-at-placements-the-start-on-a-runner-in-a-join-an-agent-menu — 79438329-b7bb-435a-b384-3f597a2d7d04 — as of 2026-11-17
-**Revisit when:** a placement takes a field the join has and this form hides (subagents, a take-over), a human without members:admin may start an agent on a runner, or a way in other than a join line and a runner needs a place in the form
+**Revisit when:** a placement takes a field the join has and this form hides (subagents, a take-over), a way in other than a join line and a runner needs a place in the form, the project's runner list names capabilities to every member, or the form offers an admin a profile of their own that is not a member yet
 
 **Join an agent** is one button that opens the join panel (`js/join.js`) on the project's Agents
 and Team pages and on `/agents`. Its form starts with the agent and its place in the team, as
@@ -7137,13 +7137,40 @@ change small. Until then the hub's `instance_quota` answers for a lower limit.
 A new profile sends its join fields. The part reads the runners and placements each time it is
 ticked and each time the panel opens. A runner that answers after it was unticked draws nothing.
 
+A member without members:admin who brings agents of their own (`M.bringing`: trust member,
+`member_agents` not off) gets the same part since 2026-11-21 (tsk-at3gnzqd8svy), within §15.6 "A
+profile that is not a member yet": ticked, the agent choice offers only their own profiles that
+are not members here, without "A new agent profile", and the fields are those of their own join
+(member or guest, a member join's roles, oneself or one's own manager as the boss, the briefing;
+no areas). The start sends the profile's id with those fields, which the placement stores for the
+first join its pickup makes. The project's runner list names a runner's capabilities only to
+members:admin (§15.4), so for a member the part takes them from their own runner views (`GET
+/runners`). The form's count of one's agents against `member_agents_max` does not stop a start:
+a profile a placement admits already holds its slot there, which the count does not see, so the
+hub's `member_agents_max` answers. Nor does it close **Join an agent** on Agents while one
+holds any agent here, a member or an open first join of one's own: the hub takes a profile it
+already holds (`agents_held`) without a new slot, so the button stays and the limit beside it says
+so; a join line is refused before sending only for a profile not held (review A1877 of #2085).
+The hub's refusals of a member's own agent are said in the join's words (`memberRefusal` in `js/join.js`). On **Managed agents** such a placement runs no
+membership until its pickup, so its creator counts as the profile's owner for Start, Restart and
+Reset (only that owner creates one, §15.6). An admin's form still offers by id only an agent
+already in the project.
+
 **Reason:** the maintainer found the runner way asking for the profile a second time in a form of
 its own, and that form had no layout (its fields were `div.field` outside the grid that
 `.join-fields` gives). One form asks for the agent once, and the runner fields sit in the same
 grid. The join line stays the default: it works without a runner, for every member who may
-bring an agent.
+bring an agent. For a member, the choices are cut to what the hub admits (inferred: the
+implementer's reading of the part's rule of offering only what can start): an agent already
+here, or a new profile, needs members:admin by id (`forbidden`), so offering them would be a
+choice that can only fail, and the fields a member's join may not carry (areas, capabilities)
+are `member_join_limit`.
 
 **Rejected alternatives:**
+- For a member, every profile and field offered and the hub's refusal shown: each of those
+  choices can only fail, against the part's rule.
+- For a member, the runners left without tools where the project's list names no capabilities:
+  the part would say none of them offers anything while their own runner views name it.
 - The menu of two ways, each with its own form (79438329, 2026-11-12): the profile asked twice,
   in two layouts, and the way chosen before the agent.
 - Only fixing the start form's layout: the profile would still be asked in two places.
