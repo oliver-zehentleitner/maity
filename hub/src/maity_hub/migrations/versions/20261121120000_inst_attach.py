@@ -20,7 +20,7 @@ A downgrade puts the columns back from the one row of each credential and sessio
 therefore refuses while a credential is attached to more than one project.
 
 Revision ID: 20261121120000_inst_attach
-Revises: 20261118090000_starred
+Revises: 20261120205253_plc_agent_id
 Create Date: 2026-11-21
 """
 
@@ -32,7 +32,7 @@ from alembic import op
 from sqlalchemy.dialects import mysql, postgresql
 
 revision: str = "20261121120000_inst_attach"
-down_revision: str | None = "20261118090000_starred"
+down_revision: str | None = "20261120205253_plc_agent_id"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
