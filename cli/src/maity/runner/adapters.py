@@ -547,8 +547,11 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             "failIfUnavailable": True,  # never fall back to unsandboxed commands
             "allowUnsandboxedCommands": False,  # no dangerouslyDisableSandbox retry
             "autoAllowBashIfSandboxed": False,  # the allowlist above still decides
+            # Unix sockets stay blocked (the seccomp step), pinned here: this file wins over the
+            # agents' user's settings, which may not carry socket settings at all
+            # (capabilities.SOCKET_SETTINGS).
             "network": {"allowedDomains": sorted({*ctx.hosts, *ctx.grant.network}),
-                        "strictAllowlist": True},
+                        "strictAllowlist": True, "allowAllUnixSockets": False},
             # Repository code run by an allowed build or test command cannot read or replace
             # the clone's credential, other clones' or the runner's; `maity` alone, which
             # signs with it, runs outside.

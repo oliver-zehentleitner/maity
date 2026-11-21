@@ -44,6 +44,13 @@ class Target:
     sandbox: dict[str, bool] = field(default_factory=dict)  # harness id -> its OS sandbox
     # Harnesses whose sandbox is off for their version alone (capabilities.sandbox_held).
     held: set[str] = field(default_factory=set)
+    # Claude Code's seccomp preflight on this target (capabilities.claude_seccomp), once it
+    # answered `ok`: the machine and the kernel do not change under a running service. An ssh
+    # target forgets it when it turns unreachable (another machine may answer when it is back).
+    seccomp: capabilities.ClaudeSeccomp | None = None
+    # Installed Claude Code versions this service run has already warned about on this target
+    # (no `check` probe passed with them): the warning is logged once per version.
+    probe_warned: set[str | None] = field(default_factory=set)
     backend: Tmux | None = None
     reachable: bool = True
     unreachable_since: float | None = None
