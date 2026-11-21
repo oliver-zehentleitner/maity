@@ -935,9 +935,13 @@ def codex_config(ctx: Context) -> str:
     roots = outermost((*((ctx.workspaces,) if ctx.workspaces else ()), *ctx.private, *shared),
                       opened=reopened)  # fmt: skip
     hidden = "".join(f'{json.dumps(str(path))} = "none"\n' for path in roots)
+    # The placement's effort, a top-level key before any table. In this file, not a `-c` flag:
+    # a resume reads the same home, so the first start and every resume run the same level.
+    effort = ctx.placement.get("effort")
     return (
         'approval_policy = "never"\n'
         'default_permissions = "maity"\n'
+        + (f"model_reasoning_effort = {json.dumps(effort)}\n" if effort else "")
         # A version the runner manages is never swapped by Codex itself (§15.16).
         + ("check_for_update_on_startup = false\n" if managed(ctx) else "") + "\n"
         # The clone's own .codex/config.toml would override this profile; an untrusted
@@ -1198,6 +1202,11 @@ def _antigravity(ctx: Context, env: dict[str, str]) -> Launch:
     model = ctx.placement.get("model")
     if model:
         base += ["--model", model]
+    # In `base`, so the first command and every continued one run the same level. A model id
+    # that carries an effort of its own is passed as it is beside it: agy decides (§15.5).
+    effort = ctx.placement.get("effort")
+    if effort:
+        base += ["--effort", effort]
     folder = AGY_FOLDER_PROMPT.format(repo=ctx.clone.name)
     extra = AGY_MAITY_PROMPT + _sandbox_prompt(ctx)
     if ctx.placement.get("mode") == "interactive":

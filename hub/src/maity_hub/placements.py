@@ -116,6 +116,7 @@ DETAILS: dict[str, tuple[str, str]] = {
     "never_joined": ("reason", "hung"),
     "mode_unsupported": ("reason", "harness_refused"),
     "model_unsupported": ("reason", "harness_refused"),
+    "effort_unsupported": ("reason", "harness_refused"),
     "target_unknown": ("reason", "harness_refused"),
     "codex_host_too_old": ("reason", "harness_refused"),
     "reset_unknown": ("state", "rate_limited"),
@@ -152,7 +153,7 @@ RUNNING_STATES = ("starting", "running", "stopping")
 # a refused or withdrawn proposal, and a removed membership (§15.10).
 STOP_TOLD = ("removed", "detached", "project_archived", "runner_removed", "runner_revoked")
 CLOSED_LIST_DAYS = 30
-SPEC_FIELDS = ("harness", "mode", "model", "target", "stop_grace_seconds")
+SPEC_FIELDS = ("harness", "mode", "model", "effort", "target", "stop_grace_seconds")
 # The clone after a stop or a close (§15.5).
 RETENTIONS = ("immediate", "3h", "24h", "7d")
 WORKSPACE_STATES = ("retained", "removed", "kept")
@@ -329,6 +330,7 @@ def view(
         "harness": placement.harness,
         "mode": placement.mode,
         "model": placement.model,
+        "effort": placement.effort,
         "workspace": {
             "clone": placement.clone,
             "branch": placement.branch,
@@ -600,6 +602,7 @@ def for_runner(
         "harness": placement.harness,
         "mode": placement.mode,
         "model": placement.model,
+        "effort": placement.effort,
         "target": placement.target,
         "workspace": {
             "clone": placement.clone,
@@ -696,6 +699,7 @@ def request_summary(conn: Connection, placement_id: str | None) -> dict[str, Any
         "runner_name": runner.name,
         "harness": spec["harness"],
         "model": spec["model"],
+        "effort": spec["effort"],
         "mode": spec["mode"],
         "target": spec["target"],
         "isolation": _isolation(runner.capabilities, spec["target"]),
@@ -732,10 +736,12 @@ def view_spec(placement: Any) -> dict[str, Any]:
 # --- what a runner offers (§15.3) ----------------------------------------------------------
 
 
-def check_offered(
-    runner: Any, harness: str, mode: str, model: str | None, target: str | None
-) -> None:
-    """Refuse a spec outside what the runner last advertised; never a grant (§15.3)."""
+def check_offered(runner: Any, spec: dict[str, Any]) -> None:
+    """Refuse a spec outside what the runner last advertised; never a grant (§15.3). A
+    runner from before `efforts` advertises none, so a named effort is refused there, never
+    sent to a runner that would drop it (tsk-0fr0xzy2ce95)."""
+    harness, mode, model, target = spec["harness"], spec["mode"], spec["model"], spec["target"]
+    effort = spec.get("effort")
     capabilities = runner.capabilities or {}
     offers = [h for h in capabilities.get("harnesses") or [] if h.get("available")]
     names = {x.get("name") for x in capabilities.get("targets") or []}
@@ -744,14 +750,16 @@ def check_offered(
         offer is not None
         and mode in (offer.get("modes") or [])
         and (model is None or model in (offer.get("models") or []))
+        and (effort is None or effort in (offer.get("efforts") or []))
         and (target is None or (target in names and target in (offer.get("targets") or [])))
     )
     if not ok:
-        offered = [{k: h.get(k) for k in ("id", "modes", "models", "targets")} for h in offers]
+        keys = ("id", "modes", "models", "efforts", "targets")
+        offered = [{k: h.get(k) for k in keys} for h in offers]
         raise Refusal(
             409,
             "harness_not_offered",
-            "the runner does not offer this harness, mode, model or target",
+            "the runner does not offer this harness, mode, model, effort or target",
             {"offered": offered},
         )
 
@@ -1399,7 +1407,7 @@ def _still_allowed(conn: Connection, placement: Any) -> None:
         raise allowed_projects.not_allowed()  # nobody gives a go for what cannot start (§6.3)
     spec = {**view_spec(placement), **(placement.pending_change or {})}
     runner = _runner(conn, placement.runner_id)
-    check_offered(runner, spec["harness"], spec["mode"], spec["model"], spec["target"])
+    check_offered(runner, spec)
     check_repository(runner, project.repository_url)
 
 

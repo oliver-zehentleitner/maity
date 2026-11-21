@@ -1455,6 +1455,96 @@ log). Rejected because the harm — repository content reaching opencode's
 servers — happens on the start itself, not later, so only refusing the start
 prevents it.
 
+## A placement's effort goes into Codex's own config.toml, and an effort no longer offered refuses the start
+
+**Id:** 16f71263-bf51-4fed-9472-e5a5dd40efb7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract request req-bq4vg5f0jcvd (adopted 2026-11-21) and its accepted correction of the same day, card tsk-0fr0xzy2ce95
+**See:** runner.md#the-opencode-adapter-fails-closed-on-the-model — 7c23704d-d02f-4cbf-80ca-494119f8fa5c — as of 2026-11-21
+**Revisit when:** Codex or agy change how they take a reasoning effort, or Claude Code or opencode get one the runner maps
+
+A placement names its reasoning effort (`effort`, docs/api.md §15.5) from the
+`efforts` the operator configures per harness. Codex gets it as
+`model_reasoning_effort` in the placement's own `config.toml` under
+CODEX_HOME; agy gets `--effort` in the base of every command. A start whose
+effort the harness no longer offers fails with `harness_refused`,
+`effort_unsupported`. `efforts` is advertised only when configured, and the
+configuration check refuses it on a harness whose launch passes none.
+
+**Reason:** the owner asked for a specific level for the reviewers; running
+another one without a word is the wrong failure, as with the opencode model
+above. Codex's resume (`exec … resume --last`) reads the same home as the
+first start, so a key in that file holds both alike, where a flag would have
+to be repeated on every command line. The hub's hello is strict about harness
+entries, so a key sent by a runner with nothing configured would make every
+older hub refuse the runner; leaving it out keeps such a runner working
+against any hub, as `tools` does. The adopted contract first said an older
+hub ignores the key; reading the hub showed `HarnessOffer` is strict, and the
+correction (only when configured, optional with default `[]` on the hub, the
+hub upgraded first) was accepted. A test pins the hello of a runner without
+efforts to exactly the old keys.
+
+**Rejected alternatives:**
+- `-c model_reasoning_effort=…` on the Codex command line: works, but first
+  start and resume could drift apart.
+- Starting on the harness's default when the effort is gone, with a warning:
+  the placement would silently run a level nobody asked for.
+- A hub-side list of allowed values: the values differ per harness and
+  version (Codex has `ultra`, agy does not), so they come from the runner.
+- Mapping Claude Code and opencode now: not verified when the change was
+  made; adding them later is a runner-only change.
+
+## A fail-closed listing decides with stat, not pathlib's predicates; Python stays uncapped
+
+**Id:** 52b35dea-cf66-4fc9-9574-417dca42ef5e
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** card tsk-0tje3vzzedtx (the tester's finding on Python 3.15.2, confirmed on 3.14) and the lead's go on the plan, 2026-11-21
+**Revisit when:** a listing that guards a deny is added to the runner, or pathlib's or `os.stat`'s error handling changes again
+
+`supervisor.other_credentials` and `other_scratches` decide on their
+direct side with `asuser.present` (`os.stat`/`os.lstat`), and so does
+`AsUser.exists` on the runner's own side. Only ENOENT, ENOTDIR and
+ELOOP count as nothing there; every other error raises, which refuses
+the start or names a file as one that cannot be checked. That is what
+pathlib's predicates did for every caller up to 3.13.
+
+Audit of the runner's direct-side checks (main 1ab5dfa7; the
+pull request's body predates the last two rows):
+- guarding a deny or a refusal, now by stat: the two listings above;
+  `capabilities._present`, the Claude Code settings files behind the
+  hook and socket checks; supervisor's existing-directory gate in front
+  of `workspace.owned`; `workspace.prepare`'s existing-clone branch;
+- every other `AsUser.exists` caller (adapters, commands, operate,
+  supervisor's start checks, tmux, workspace) gets the 3.13 meaning
+  back through the same method;
+- left on pathlib, since a quiet False only does less: `operate.py`'s
+  gc walk of `.scratch`, `skills.py` over the runner's own cache,
+  `asuser.link`, the runner's own state_dir checks, and the
+  `/proc/self/fd` feature probe in `scratchop.py`. CI runs the CLI on 3.11,
+3.13, 3.14 and 3.15 on Linux; Windows stays on 3.11 and 3.13, since
+what changed is POSIX search permission and each Windows leg costs every
+CLI pull request about 15 minutes. `requires-python` stays `>=3.11`.
+
+**Reason:** from Python 3.14 pathlib's predicates answer False for a
+path below a directory that cannot be searched instead of raising, so
+the listing silently skipped what it could not see. The sandbox then
+started without the deny for it. A listing behind a deny must not let
+the interpreter decide what an error means. The three errnos are the
+ones pathlib read as absence up to 3.13. ELOOP stays among them,
+because a test pins the direct side to an empty list for a loop of
+links.
+
+**Rejected alternatives:**
+- Capping `requires-python` below 3.14, which the card offered: runners
+  already run 3.14, and a cap only hides the next change of this kind
+  instead of making the listing correct.
+- Keeping pathlib and checking the Python version: it still leaves the
+  meaning of an error to the library, and breaks again on the next change.
+
 ## The configuration refuses unknown keys and documents every default; the CLI needs Python 3.11
 
 **Id:** 4bc67bf6-75e1-4fbf-b665-4f9bd04cf908

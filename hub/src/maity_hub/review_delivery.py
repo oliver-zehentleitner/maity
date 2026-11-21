@@ -2,10 +2,11 @@
 result reaches the author and both leads, except a boss of another owner").
 
 The author of the reviewed work, the member the reviewer reports to and the member the author
-reports to, each boss only when it is not of another owner than its subordinate. The card is
-the one the message's `task_id` names, or without it the card whose latest report names the
-pull request `#<n>` when `review.subject` is exactly that; its author is the holding instance,
-or on a card nobody holds the instance that sent its latest report.
+reports to, each boss only when it is of the same owner as its subordinate (an owner that
+cannot be resolved on either side leaves it out). The card is the one the message's `task_id`
+names, or without it the card whose latest report names the pull request `#<n>` when
+`review.subject` is exactly that; its author is the holding instance, or on a card nobody holds
+the instance that sent its latest report.
 A part that resolves to nobody is left out; `routes/events._deliver_review` drops whoever the
 audience already reaches (the author's instance only that same instance; `all` never).
 
@@ -67,10 +68,10 @@ def _active(conn: Connection, project_id: str, member_id: str) -> Any:
 
 def _lead(conn: Connection, membership: Any) -> Recipient | None:
     """The member `membership` reports to, while that member is still in the project; an
-    isolated one is routed past as `views.routing_boss` does (§6.2). A boss of another owner
-    (a cross-owner edge, `cross_owner.owners`) is left out: it is never added, so it is no part
-    of the card's own flow the gate leaves open, and a `to` or a mention naming it passes the
-    gate like anyone else's (§8.4, §9.6)."""
+    isolated one is routed past as `views.routing_boss` does (§6.2). A boss of another owner,
+    or one whose owner or whose subordinate's owner cannot be resolved (`_same_owner`), is left
+    out: it is never added, so it is no part of the card's own flow the gate leaves open, and a
+    `to` or a mention naming it passes the gate like anyone else's (§8.4, §9.6)."""
     if membership is None or membership.reports_to is None:
         return None
     lead = conn.execute(
@@ -83,10 +84,24 @@ def _lead(conn: Connection, membership: Any) -> Recipient | None:
     ).first()
     if lead is None:
         return None
-    if cross_owner.owners(conn, membership, lead) is not None:
+    if not _same_owner(conn, membership, lead):
         return None  # a boss of another owner is left out, not gated (§8.4, §6.2)
     member_id = _principal(lead)
     return Recipient(member_id, instances.token(member_id, None))
+
+
+def _same_owner(conn: Connection, membership: Any, lead: Any) -> bool:
+    """Whether `lead` may be added as `membership`'s boss (§8.4): its owner
+    (`cross_owner.owner_of`: an agent's profile owner, a human itself, as `takeovers._owner`
+    resolves it) is the owner of the agent it leads. An owner that cannot be resolved on either
+    side leaves the lead out. A human's own `reports_to` is never of another owner (§6.2,
+    "Across owners"), so a human's boss whose owner resolves is added."""
+    side = cross_owner.owner_of(conn, lead)
+    if side is None:
+        return False
+    if membership.agent_id is None:
+        return True
+    return cross_owner.owner_of(conn, membership) == side
 
 
 def _card(conn: Connection, project_id: str, task_id: str | None, review: dict[str, Any]) -> Any:

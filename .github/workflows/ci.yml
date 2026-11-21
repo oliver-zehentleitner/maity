@@ -494,16 +494,18 @@ jobs:
       - run: make install
       - run: make test
 
-  # The agent-side command: lint, types and tests on the oldest and the newest
-  # Python it supports, and on 3.11 the release lock checked and the release built.
+  # The agent-side command: lint, types and tests on the oldest Python it supports and on
+  # every newer one runners use, and on 3.11 the release lock checked and the release built.
+  # 3.14 and 3.15 since pathlib's predicates stopped raising there (tsk-0tje3vzzedtx).
   cli:
     needs: changes
     if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30  # a hang fails here, not after GitHub's 6 h (context/process.md, the entry on job timeouts)
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
+        python-version: ["3.11", "3.13", "3.14", "3.15"]
     defaults:
       run:
         working-directory: cli
@@ -527,7 +529,9 @@ jobs:
           make lock-check
           make release-build
 
-  # About 15 minutes, against about 7 on Linux; only when cli/ changes.
+  # About 15 minutes, against about 7 on Linux; only when cli/ changes. Not on 3.14 or 3.15 as
+  # the cli job is: what those Pythons changed is POSIX search permission, which Windows does not
+  # have, and each Windows leg costs every CLI pull request about 15 minutes (tsk-0tje3vzzedtx).
   cli-windows:
     needs: changes
     if: needs.changes.outputs.cli == 'true'

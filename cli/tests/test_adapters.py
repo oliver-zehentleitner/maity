@@ -714,6 +714,29 @@ def test_codex_config(tmp_path: Path) -> None:
     assert set(domains) == {"maity.team", "github.com", "pypi.org", *adapters.CODEX_PROVIDER_HOSTS}
 
 
+def test_codex_writes_the_placements_effort_into_its_own_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§15.5 (tsk-0fr0xzy2ce95): `model_reasoning_effort` in the placement's config.toml, a
+    top-level key, never a `-c` flag: the resume reads the same home, so it keeps the level."""
+    effort = {**PLACEMENT, "mode": "supervised", "effort": "medium"}
+    ctx = context(tmp_path, harness_id="codex", binary="/usr/bin/codex", placement=effort)
+    found = tomllib.loads(adapters.codex_config(ctx))
+    assert found["model_reasoning_effort"] == "medium"
+    home = tmp_path / "home"
+    (home / "codex").mkdir(parents=True)
+    (home / "codex" / "auth.json").write_text("{}")
+    monkeypatch.setenv("CODEX_HOME", str(home / "codex"))
+    launch = adapters.launch(ctx)
+    written = tomllib.loads((Path(launch.env["CODEX_HOME"]) / "config.toml").read_text())
+    assert written["model_reasoning_effort"] == "medium"
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    assert not any("effort" in arg for arg in (*spec["first"], *spec["again"]))
+    # No effort: no key, so Codex runs its own default.
+    plain = context(tmp_path / "plain", harness_id="codex", binary="/usr/bin/codex")
+    assert "model_reasoning_effort" not in tomllib.loads(adapters.codex_config(plain))
+
+
 def test_a_headless_placement_is_offered_no_question_tool(tmp_path: Path) -> None:
     supervised = {**PLACEMENT, "mode": "supervised"}
     claude = adapters.claude_settings(context(tmp_path / "c", placement=supervised))
@@ -1211,6 +1234,24 @@ def test_codex_is_advertised_as_sandbox_confined(monkeypatch: pytest.MonkeyPatch
     assert capabilities.sandbox_available(codex)
 
 
+def test_efforts_are_advertised_only_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§15.3 (tsk-0fr0xzy2ce95): a hub from before `efforts` refuses the key in a strict
+    hello, so a harness without efforts sends exactly what that hub takes."""
+    from maity.runner import capabilities
+
+    monkeypatch.setattr("shutil.which", lambda name, path=None: "/usr/bin/codex")
+    monkeypatch.setattr(capabilities, "_codex_sandbox_starts", lambda binary, user=None: True)
+    probe = capabilities.Probe("/usr/bin/codex", "1.0", None)
+    plain = config.Harness("codex", ("supervised",), "supervised", binary="codex")
+    # Exactly the keys of a hello from before `efforts`, which a strict older hub takes.
+    assert set(capabilities.harness_entry(plain, probe)) == {
+        "id", "version", "available", "reason", "modes", "default_mode", "models", "targets",
+        "confinement", "sandbox",
+    }  # fmt: skip
+    with_efforts = dataclasses.replace(plain, efforts=("low", "medium"))
+    assert capabilities.harness_entry(with_efforts, probe)["efforts"] == ["low", "medium"]
+
+
 def test_codex_whose_sandbox_cannot_start_is_not_advertised_as_sandboxed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1555,6 +1596,38 @@ def test_managed_settings_that_switch_hooks_off_are_named(text: str, off: str | 
     _managed(capabilities).write_text(text)
     why = capabilities.claude_hooks_off(AsUser(), "linux")
     assert (why is None) if off is None else (why is not None and off in why)
+
+
+# No `os.geteuid` on Windows, and test_trust imports this module there (tsk-0tje3vzzedtx).
+@pytest.mark.skipif(getattr(os, "geteuid", lambda: -1)() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("quiet", [False, True])
+def test_managed_settings_that_cannot_be_looked_at_are_named_not_taken_for_absent(
+    monkeypatch: pytest.MonkeyPatch, quiet: bool
+) -> None:
+    """A managed settings file below a directory the runner cannot search could switch the
+    hook off: the check names it, never takes it for absent. Also where pathlib's predicates
+    answer False instead of raising, as from Python 3.14 (tsk-0tje3vzzedtx, A1943)."""
+    from maity.runner import capabilities
+
+    if quiet:
+        for name in ("is_dir", "is_file", "exists", "is_symlink"):
+            original = getattr(Path, name)
+
+            def answer(self: Path, *args: Any, _original: Any = original, **kw: Any) -> bool:
+                try:
+                    return bool(_original(self, *args, **kw))
+                except PermissionError:
+                    return False
+
+            monkeypatch.setattr(Path, name, answer)
+    managed = _managed(capabilities)
+    managed.write_text('{"disableAllHooks": true}')
+    managed.parent.chmod(0)
+    try:
+        why = capabilities.claude_hooks_off(AsUser(), "linux")
+    finally:
+        managed.parent.chmod(0o700)
+    assert why is not None and "cannot be checked" in why
 
 
 def test_no_managed_settings_switch_no_hook_off() -> None:

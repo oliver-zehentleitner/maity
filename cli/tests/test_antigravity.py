@@ -124,6 +124,24 @@ def test_supervised_with_a_model(tmp_path: Path) -> None:
         assert argv[argv.index("--model") + 1] == "m-1"
 
 
+def test_an_effort_reaches_the_first_and_every_continued_command(tmp_path: Path) -> None:
+    """§15.5 (tsk-0fr0xzy2ce95): agy's `--effort`, so a continued run keeps the level."""
+    effort = {"id": "plc-0003", "mode": "supervised", "effort": "medium"}
+    launch = adapters.launch(context(tmp_path, placement=effort))
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    for argv in (spec["first"], spec["again"]):
+        assert argv[argv.index("--effort") + 1] == "medium"
+    shown = {**effort, "mode": "interactive"}
+    interactive = adapters.launch(context(tmp_path / "i", placement=shown))
+    assert interactive.argv[interactive.argv.index("--effort") + 1] == "medium"
+    resumed = adapters.launch(context(tmp_path / "r", placement=shown, resume=True))
+    assert resumed.argv[resumed.argv.index("--effort") + 1] == "medium"
+
+
+def test_no_effort_passes_no_flag(tmp_path: Path) -> None:
+    assert "--effort" not in adapters.launch(context(tmp_path)).argv
+
+
 def test_the_pull_request_line_reaches_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1071,6 +1089,63 @@ def test_a_place_that_cannot_be_looked_at_refuses_the_start(
         assert refused.value.reason == "harness_refused"
     finally:
         locked.chmod(0o700)
+
+
+def _pathlib_as_on_314(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pathlib's predicates as Python 3.14 and later answer them: False for a path below a
+    directory that cannot be searched, where 3.13 raised PermissionError (tsk-0tje3vzzedtx).
+    So the fail-closed listings are checked against that on every interpreter."""
+    for name in ("is_dir", "is_file", "exists", "is_symlink"):
+        original = getattr(Path, name)
+
+        def quiet(self: Path, *args: Any, _original: Any = original, **kwargs: Any) -> bool:
+            try:
+                return bool(_original(self, *args, **kwargs))
+            except PermissionError:
+                return False
+
+        monkeypatch.setattr(Path, name, quiet)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("linked", sorted(SLOTS))
+def test_an_unsearchable_place_refuses_also_where_pathlib_keeps_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, linked: str
+) -> None:
+    """The runner's own side decides with stat, not with pathlib's predicates: where those
+    answer False instead of raising (3.14+), a slot linked into a directory the agents' user
+    cannot search still refuses the start, never an empty list (tsk-0tje3vzzedtx)."""
+    _pathlib_as_on_314(monkeypatch)
+    ws, locked = tmp_path / "ws", tmp_path / "elsewhere" / "locked"
+    own = ws / "maity" / "agent-3"
+    (own / ".git" / "maity").mkdir(parents=True)
+    slot = ws.joinpath("maity", *SLOTS[linked])
+    (locked / slot.name).mkdir(parents=True)
+    slot.parent.mkdir(parents=True, exist_ok=True)
+    slot.symlink_to(locked / slot.name)
+    locked.chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_credentials(ws, own, AsUser())
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+def test_an_unsearchable_project_refuses_the_scratch_listing_where_pathlib_keeps_quiet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same for the scratches: a project that cannot be searched could hide a `.scratch`,
+    so the runner's own side refuses, also where pathlib answers False (tsk-0tje3vzzedtx)."""
+    _pathlib_as_on_314(monkeypatch)
+    ws = tmp_path / "ws"
+    (ws / "maity" / ".scratch" / "plc-0004").mkdir(parents=True)
+    (ws / "maity").chmod(0)
+    try:
+        with pytest.raises(workspace.Refused):
+            supervisor.other_scratches(ws, None, AsUser())
+    finally:
+        (ws / "maity").chmod(0o700)
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
