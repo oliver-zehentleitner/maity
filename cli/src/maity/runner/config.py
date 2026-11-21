@@ -57,7 +57,10 @@ MODES = ("interactive", "supervised")
 # The harnesses whose launch passes a placement's effort (adapters.py): Codex's
 # model_reasoning_effort, agy's --effort. Claude Code and opencode take none yet.
 EFFORT_HARNESSES = ("codex", "antigravity")
-EFFORT_PATTERN = re.compile(r"^[a-z]{1,16}$")  # the hub's shape for an effort (§15.5)
+# The hub's shape for an effort (§15.5), the whole string: `\Z`, not `$`, which also matches
+# before a trailing newline the hub refuses (A1994).
+EFFORT_PATTERN = re.compile(r"\A[a-z]{1,16}\Z")
+EFFORTS_MAX = 16  # the hub's bound on a harness's advertised efforts (HarnessOffer.efforts)
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 # A project as the hub names it (§6.25): the namespace owner's handle and the slug.
 FULL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}/[a-z0-9][a-z0-9-]{1,62}$")
@@ -751,6 +754,10 @@ def _harness(name: str, table: _Reader, problems: list[str]) -> Harness:
         problems.append(f"{where}.efforts: the runner passes no effort to this harness")
     if len(set(efforts)) != len(efforts):
         problems.append(f"{where}.efforts: an effort is named twice")
+    if len(efforts) > EFFORTS_MAX:
+        # A hello the hub refuses stops the whole runner (serve exits 78), so the check refuses
+        # what the hub would (A1994).
+        problems.append(f"{where}.efforts: at most {EFFORTS_MAX}, the hub's bound")
     env_file = table.get("env_file", str, None)
     install = table.get("install", bool, False)
     update = table.get("update", str, "never", check=_one_of("daily", "never"))

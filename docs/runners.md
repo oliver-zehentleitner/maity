@@ -113,7 +113,7 @@ efforts = ["low", "medium", "high"]
 
 A placement then names one with `"effort": "medium"` (`POST` or `PATCH …/placements`, [`docs/api.md` §15.5](api.md#155-placements)) or `maity placement start … --effort medium`; without one the harness runs on its own default. The hub refuses a level the runner does not offer. Codex gets it as `model_reasoning_effort` in the placement's own `config.toml`, so a resumed run keeps it; agy gets `--effort` on every start and continued run. A change makes a new generation and restarts the agent on the new level. If you later drop a level from `efforts`, a placement that still names it is not started (`failed`, `harness_refused`, `effort_unsupported`) rather than run on the default; change its effort or set it back to none.
 
-- `maity runner check` refuses `efforts` on Claude Code and opencode, since the runner passes them no effort yet, and refuses a level that is not lowercase letters (at most 16) or is named twice.
+- `maity runner check` refuses `efforts` on Claude Code and opencode, since the runner passes them no effort yet. It also refuses a level that is not 1 to 16 lowercase letters (nothing else, not even a trailing newline), a level named twice, and more than 16 levels for one harness: the hub refuses such a list, and a refused hello stops the runner.
 - agy's catalog also has model ids that carry an effort (`…-high`). Offer either those ids under `models` or `efforts`, not both, for the same harness: with both set the runner passes both, and agy decides.
 - A runner with `efforts` configured needs a hub that knows them: an older hub refuses its hello (`invalid`, on `capabilities.harnesses.<n>.efforts`). A runner without `efforts` sends what every hub takes. Update the hub first.
 

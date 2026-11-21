@@ -272,6 +272,16 @@ def test_harness_efforts() -> None:
     assert any(p.startswith("harness.codex.efforts: not an effort") for p in bad), bad
     twice = problems(minimal() + '\n[harness.codex]\nefforts = ["low", "low"]\n')
     assert "harness.codex.efforts: an effort is named twice" in twice
+    # What the hub's hello refuses, the check refuses too, since a refused hello stops the
+    # whole runner (A1994): a trailing newline, and more than the hub's 16.
+    newline = problems(minimal() + '\n[harness.codex]\nefforts = ["low\\n"]\n')
+    assert any(p.startswith("harness.codex.efforts: not an effort") for p in newline), newline
+    many = ", ".join(f'"{letter}"' for letter in "abcdefghijklmnopq")  # 17 distinct
+    over = problems(minimal() + f"\n[harness.codex]\nefforts = [{many}]\n")
+    assert "harness.codex.efforts: at most 16, the hub's bound" in over
+    sixteen = ", ".join(f'"{letter}"' for letter in "abcdefghijklmnop")
+    assert len(parse(minimal() + f"\n[harness.codex]\nefforts = [{sixteen}]\n")
+               .harnesses["codex"].efforts) == 16  # fmt: skip
 
 
 def test_every_bad_repository_is_named() -> None:

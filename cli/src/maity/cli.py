@@ -3920,7 +3920,7 @@ def cmd_placement_start(args: argparse.Namespace) -> int:
         body["mode"] = args.mode
     if args.model:
         body["model"] = args.model
-    if args.effort:
+    if args.effort is not None:  # an explicit empty one goes to the hub, which refuses it
         body["effort"] = args.effort
     if args.target:
         body["target"] = args.target
