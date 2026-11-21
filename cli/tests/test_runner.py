@@ -1418,12 +1418,13 @@ def test_check_reads_the_settings_before_it_runs_and_keeps_the_probe(
     commands._check_claude_code(report, harness, version="2.1.325", binary="/usr/bin/claude",
                                 state_dir=state_dir)  # fmt: skip
     kept = state.load_state(state_dir, name=capabilities.PROBE_FILE)
+    guard = ["claude_hooks_off"]  # the worktree guard reads the hook setting once more, last
     if unclean is None:
-        assert order == ["claude_hooks_off", "claude_socket_settings", "probe"]
+        assert order == ["claude_hooks_off", "claude_socket_settings", "probe", *guard]
         assert kept == {"local": "2.1.325"}
         assert not report.failed, report.lines
     else:
-        assert order == ["claude_hooks_off", "claude_socket_settings"]  # no probe
+        assert order == ["claude_hooks_off", "claude_socket_settings", *guard]  # no probe
         assert kept == {}
         assert ("warn", "harness claude-code: probe not run: the settings above refuse every "
                 "sandboxed start") in report.lines  # fmt: skip
