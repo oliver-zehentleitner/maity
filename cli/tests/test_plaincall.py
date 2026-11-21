@@ -434,6 +434,85 @@ def test_other_command_lines_are_left_to_the_permission_rules(command: str) -> N
     assert plaincall.refusal(bash(command)) is None
 
 
+# Characters at which the shell does not split words, but another reader of the line may:
+# control characters other than a tab and a newline, spaces other than the ASCII one, and
+# invisible format characters (Unicode category Cf).
+ODD = [
+    "\r",
+    "\v",
+    "\f",
+    "\x00",
+    "\x1b",
+    "\x7f",
+    "\x85",
+    "\N{NO-BREAK SPACE}",
+    "\N{EM SPACE}",
+    "\N{IDEOGRAPHIC SPACE}",
+    "\N{LINE SEPARATOR}",
+    "\N{ZERO WIDTH SPACE}",
+    "\N{ZERO WIDTH NO-BREAK SPACE}",
+    "\N{MONGOLIAN VOWEL SEPARATOR}",
+    "\N{ZERO WIDTH JOINER}",
+    "\N{ZERO WIDTH NON-JOINER}",
+    "\N{WORD JOINER}",
+    "\N{RIGHT-TO-LEFT OVERRIDE}",
+    "\N{LEFT-TO-RIGHT ISOLATE}",
+    "\N{SOFT HYPHEN}",
+]
+# Lines where such a character stands where a space would make `maity` a word, or between
+# the letters of `maity`: to the shell `maity` is no word of any of them, so the other rules
+# leave each of them through.
+ODD_SHAPES = [
+    "maity{c}resume",
+    "maity{c}a ; x",
+    "maity{c}a | sh",
+    "LANG=C{c}maity a | x",
+    "x{c}maity a",
+    "ma{c}ity a ; x",
+    "git commit -m 'maity{c}x'",
+]
+
+
+@pytest.mark.parametrize("shape", ODD_SHAPES)
+@pytest.mark.parametrize("c", ODD)
+def test_a_line_naming_maity_with_a_control_character_or_unicode_space_is_refused(
+    c: str, shape: str
+) -> None:
+    command = shape.format(c=c)
+    assert plaincall.odd_spacing(command)
+    assert plaincall.refusal(bash(command)) == plaincall.SPACING_REFUSED
+
+
+# Lines with such a character that another rule refused before: each keeps its reason.
+ODD_REFUSED_BEFORE = [
+    ("maity a{c}b", plaincall.REFUSED),  # `maity` then a space: held, and not plain
+    ("maity resume{c}", plaincall.REFUSED),
+    ("{c}maity a ; x", plaincall.REFUSED),  # skipped before `maity`, as the harness may trim
+    ("{c}TZ=UTC maity a | x", plaincall.PREFIX_REFUSED),
+]
+
+
+@pytest.mark.parametrize(("shape", "reason"), ODD_REFUSED_BEFORE)
+@pytest.mark.parametrize("c", ODD)
+def test_a_line_refused_before_keeps_its_reason_with_an_odd_character(
+    c: str, shape: str, reason: str
+) -> None:
+    assert plaincall.refusal(bash(shape.format(c=c))) == reason
+
+
+@pytest.mark.parametrize("c", ODD)
+def test_a_line_that_does_not_name_maity_may_hold_an_odd_character(c: str) -> None:
+    for command in (f"echo a{c}b", f"printf 'x{c}y'", f"git commit -m 'fix{c}it'"):
+        assert not plaincall.odd_spacing(command)
+        assert plaincall.refusal(bash(command)) is None
+
+
+@pytest.mark.parametrize("command", ["maity resume", "maity\tresume", "maityx resume"])
+def test_a_line_with_only_ascii_spaces_and_tabs_is_decided_as_before(command: str) -> None:
+    assert not plaincall.odd_spacing(command)
+    assert plaincall.refusal(bash(command)) is None
+
+
 # Assignments before `maity` to each name that may stand there: one, several, a quoted value.
 ASSIGNMENTS = [
     "NO_COLOR=1",

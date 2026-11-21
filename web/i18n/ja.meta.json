@@ -13063,6 +13063,26 @@
     "en": "0f5300ecabf4f2b2",
     "text": "e52c649a79751520"
   },
+  "placements.new.instance_full": {
+    "en": "928d5705dbab404c",
+    "text": "61c188ff9261eb50"
+  },
+  "placements.new.instance_quota": {
+    "en": "b704e284c337b6ea",
+    "text": "24d93db033d984c7"
+  },
+  "placements.new.instance_room": {
+    "en": "1e9ed15905932911",
+    "text": "1a1b7918dc277c59"
+  },
+  "placements.new.instance_where": {
+    "en": "3787cc7c2510f7a0",
+    "text": "a8971883e1c7af76"
+  },
+  "placements.new.instance_where_none": {
+    "en": "2ff3627caedcbf95",
+    "text": "4b49b654d0f2144c"
+  },
   "placements.new.legend": {
     "en": "87df56605ba0a822",
     "text": "c7d860263b1158f9"
@@ -13110,10 +13130,6 @@
   "placements.new.offer": {
     "en": "78860a7edd225009",
     "text": "a01b68efcf533608"
-  },
-  "placements.new.placed": {
-    "en": "46eba681e2d58129",
-    "text": "0586319930060e22"
   },
   "placements.new.quota": {
     "en": "f64b09af35af4b42",

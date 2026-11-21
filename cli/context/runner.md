@@ -3467,7 +3467,7 @@ do, and hid that the cause was the shape of its own command.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** inferred
-**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13; card tsk-54492gk4xp69 part 1 (the lead's order to refuse `maity runner` from a placed session's tool call), 2026-11-17; the fifth review round of #1942 (the order to refuse a line that names `maity` and holds a comment, a heredoc or more than one line, and to count quoted words in line order), 2026-11-18; the `excludedCommands` matcher of Claude Code 2.1.327 (native binary, sha256 `343c744baa14bfd38286a7cb90871051f04379956da6c5b803a9e66019a76ac9`), read statically only in the sixth review round of #1942, 2026-11-18: the readings differ, and nothing was checked live; the sixth review round of #1942 (the order to hold a `maity` line after variable assignments or a wrapper command to the same rules, whichever way the exclusion matches), 2026-11-18; the seventh review round of #1942 (the decision to replace the wrapper list by one rule: only variable assignments may stand before `maity`, anything else is refused outright), 2026-11-18; a review leg of the seventh round (the confirmation that a word whose path ends in `/maity` counts as `maity` in every position, and the order to name that rule and test it), 2026-11-18; the eighth review round of #1942 (review A1269 and its order: a word counts as `maity` or `runner` also with the backslashes and quotes left in it taken off, the line starts with `maity` only when its first word is `maity` alone, and the sentence that assignments cannot run another program goes; review A1271 on the same start of the line), 2026-11-18; review A1270 of the seventh round, relayed in message 162483 (a quoted or escaped first word skipped before `maity`, `$"…"` locale quoting, quoted text read again one level less than `calls_runner` reads it, mutants that survived), 2026-11-18; the decision of the eighth round (message 162185) to allow only assignments to a list of names before `maity`, and every `+=` refused, 2026-11-18; review A1269 and the decision of the eighth round that amends 162185 (message 162361, relayed in 162371 and 162378): no `MAITY_*` wildcard, only `MAITY_` names documented for agents, every runner-trusted name refused and a guard test for the list, 2026-11-18; the inventory of the `MAITY_` names in `cli/src/maity` at d6474bb5 for that decision, 2026-11-18; the ninth review round of #1942 (review A1309 and the order in message 163399: a word that holds literal brace alternatives counts by each alternative; lowercase and bare `LC_` names before `maity` stay refused), 2026-11-18; the tenth review round of #1942 (review A1337, and the lead's order in message 164326 after the decision in message 164294 to do it in one round: a word's brace expansion, joined with the text around it, counts by each word it makes, capped at 256 words, a word over the cap refuses the line, and the reason the ninth round gave for leaving such names unread was wrong), 2026-11-18; the eleventh review round of #1942 (review A1371, and the lead's decision in message 165140: a letter range's step may carry a sign, and a word that holds an unquoted `{` and also a quoted or escaped `{`, `}` or `,` is not read and refuses the line, fail-closed, quote-aware expansion left for a later card), 2026-11-18; Bash 5.2.21 on the author's machine, 2026-11-18: `{a..e..+2}` and `{a..e..-2}` make `a c e`, `{e..a..+2}` makes `e c a`, `{a..e..0}` and `{a..e..+0}` make `a b c d e`, `{a..e..++2}` stays as it is; review A1372 of the tenth round, relayed in the twelfth review round of #1942 (Bash's rule for when a `}` closes a brace group, and the quote removal after a range of mixed letters), 2026-11-18; Bash 5.2.21 on the author's machine, 2026-11-18: the closing rule, ranges of mixed letters, number ranges and their zero padding, compared word by word with the hook's expansion; review notes of the eleventh round's head, relayed in the twelfth review round of #1942 (message 165755: other fail-open forms of the mixed-word refusal, a crash on a long step, false refusals of quoted programs), and the decision of the twelfth round (message 165756, relayed in 165786): quote-aware brace expansion replaces the mixed-word refusal, a fuzz test against Bash in CI, the step bounded as Bash bounds it, a failing hook refuses, 2026-11-18; the CI run of #1942 at b6d523e6 on Ubuntu 26.04 (job 135108287127), whose Bash expanded a word otherwise than the hook's 5.2 rules, and Bash 5.3's `braces.c` (Ubuntu's 5.3 source), read 2026-11-18; reviews A1406 and A1407 of the twelfth round's head, relayed in the thirteenth review round of #1942 (messages 166319 and 166393), and lotse's ruling for that round (message 166401, relayed in 166408): a line with a construct the hook does not model exactly is refused, 2026-11-18; the S200 re-check on Claude Code 2.1.329 with the runner's hook, 2026-11-20 (996b6f48: `MAITY_WAIT_TIMEOUT=5 maity wait` passed the hook and its `maity` found no credential; lines with only the other allowed names before `maity` got it), and card tsk-f5fy2zq26xcy from the review of #2019 (the order to take `MAITY_WAIT_TIMEOUT` off the list, with `maity wait --timeout N` as the way out), 2026-11-20, and the lead's ruling on it (the hint in its own reason, only for a prefix that assigns `MAITY_WAIT_TIMEOUT`), 2026-11-20; the review of #2024 and card tsk-12zb1s0zgdjw, 2026-11-20: a correction to how the hook reads backticks, with a Bash differential test, and the lead's ruling to keep the timeout hint for any unquoted word before `maity` that reads as an assignment to `MAITY_WAIT_TIMEOUT`, after `env` included, and to correct only its wording; the first and second review rounds of #2026 (both review legs, and the lead's and security's reset of the scope), 2026-11-20: substitutions and expansions that hide the name, read as a correction with a Bash differential test, and the boundary of what the hook guarantees. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
+**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13; card tsk-54492gk4xp69 part 1 (the lead's order to refuse `maity runner` from a placed session's tool call), 2026-11-17; the fifth review round of #1942 (the order to refuse a line that names `maity` and holds a comment, a heredoc or more than one line, and to count quoted words in line order), 2026-11-18; the `excludedCommands` matcher of Claude Code 2.1.327 (native binary, sha256 `343c744baa14bfd38286a7cb90871051f04379956da6c5b803a9e66019a76ac9`), read statically only in the sixth review round of #1942, 2026-11-18: the readings differ, and nothing was checked live; the sixth review round of #1942 (the order to hold a `maity` line after variable assignments or a wrapper command to the same rules, whichever way the exclusion matches), 2026-11-18; the seventh review round of #1942 (the decision to replace the wrapper list by one rule: only variable assignments may stand before `maity`, anything else is refused outright), 2026-11-18; a review leg of the seventh round (the confirmation that a word whose path ends in `/maity` counts as `maity` in every position, and the order to name that rule and test it), 2026-11-18; the eighth review round of #1942 (review A1269 and its order: a word counts as `maity` or `runner` also with the backslashes and quotes left in it taken off, the line starts with `maity` only when its first word is `maity` alone, and the sentence that assignments cannot run another program goes; review A1271 on the same start of the line), 2026-11-18; review A1270 of the seventh round, relayed in message 162483 (a quoted or escaped first word skipped before `maity`, `$"…"` locale quoting, quoted text read again one level less than `calls_runner` reads it, mutants that survived), 2026-11-18; the decision of the eighth round (message 162185) to allow only assignments to a list of names before `maity`, and every `+=` refused, 2026-11-18; review A1269 and the decision of the eighth round that amends 162185 (message 162361, relayed in 162371 and 162378): no `MAITY_*` wildcard, only `MAITY_` names documented for agents, every runner-trusted name refused and a guard test for the list, 2026-11-18; the inventory of the `MAITY_` names in `cli/src/maity` at d6474bb5 for that decision, 2026-11-18; the ninth review round of #1942 (review A1309 and the order in message 163399: a word that holds literal brace alternatives counts by each alternative; lowercase and bare `LC_` names before `maity` stay refused), 2026-11-18; the tenth review round of #1942 (review A1337, and the lead's order in message 164326 after the decision in message 164294 to do it in one round: a word's brace expansion, joined with the text around it, counts by each word it makes, capped at 256 words, a word over the cap refuses the line, and the reason the ninth round gave for leaving such names unread was wrong), 2026-11-18; the eleventh review round of #1942 (review A1371, and the lead's decision in message 165140: a letter range's step may carry a sign, and a word that holds an unquoted `{` and also a quoted or escaped `{`, `}` or `,` is not read and refuses the line, fail-closed, quote-aware expansion left for a later card), 2026-11-18; Bash 5.2.21 on the author's machine, 2026-11-18: `{a..e..+2}` and `{a..e..-2}` make `a c e`, `{e..a..+2}` makes `e c a`, `{a..e..0}` and `{a..e..+0}` make `a b c d e`, `{a..e..++2}` stays as it is; review A1372 of the tenth round, relayed in the twelfth review round of #1942 (Bash's rule for when a `}` closes a brace group, and the quote removal after a range of mixed letters), 2026-11-18; Bash 5.2.21 on the author's machine, 2026-11-18: the closing rule, ranges of mixed letters, number ranges and their zero padding, compared word by word with the hook's expansion; review notes of the eleventh round's head, relayed in the twelfth review round of #1942 (message 165755: other fail-open forms of the mixed-word refusal, a crash on a long step, false refusals of quoted programs), and the decision of the twelfth round (message 165756, relayed in 165786): quote-aware brace expansion replaces the mixed-word refusal, a fuzz test against Bash in CI, the step bounded as Bash bounds it, a failing hook refuses, 2026-11-18; the CI run of #1942 at b6d523e6 on Ubuntu 26.04 (job 135108287127), whose Bash expanded a word otherwise than the hook's 5.2 rules, and Bash 5.3's `braces.c` (Ubuntu's 5.3 source), read 2026-11-18; reviews A1406 and A1407 of the twelfth round's head, relayed in the thirteenth review round of #1942 (messages 166319 and 166393), and lotse's ruling for that round (message 166401, relayed in 166408): a line with a construct the hook does not model exactly is refused, 2026-11-18; the S200 re-check on Claude Code 2.1.329 with the runner's hook, 2026-11-20 (996b6f48: `MAITY_WAIT_TIMEOUT=5 maity wait` passed the hook and its `maity` found no credential; lines with only the other allowed names before `maity` got it), and card tsk-f5fy2zq26xcy from the review of #2019 (the order to take `MAITY_WAIT_TIMEOUT` off the list, with `maity wait --timeout N` as the way out), 2026-11-20, and the lead's ruling on it (the hint in its own reason, only for a prefix that assigns `MAITY_WAIT_TIMEOUT`), 2026-11-20; the review of #2024 and card tsk-12zb1s0zgdjw, 2026-11-20: a correction to how the hook reads backticks, with a Bash differential test, and the lead's ruling to keep the timeout hint for any unquoted word before `maity` that reads as an assignment to `MAITY_WAIT_TIMEOUT`, after `env` included, and to correct only its wording; the first and second review rounds of #2026 (both review legs, and the lead's and security's reset of the scope), 2026-11-20: substitutions and expansions that hide the name, read as a correction with a Bash differential test, and the boundary of what the hook guarantees; card tsk-wc9ayykt4hdg (the order that the hook hold on its own where `maity` meets a control character or a Unicode space, by either of two options), 2026-11-20. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
 **See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
 **Verification:** uncorroborated — what this entry says of Claude Code's sandbox exclusion rests on static readings of its 2.1.327 binary that differ from each other; none was checked live, and the hook relies on none of them
@@ -3812,6 +3812,28 @@ no line pass that names `maity`: the whole line then starts with a `#`
 or holds a newline, and `read_whole` refuses it (a test runs every
 listed line under comment lines). The live re-check of S200 is in
 996b6f48.
+
+Since card tsk-wc9ayykt4hdg (2026-11-20), a line that names `maity`,
+also once such characters are taken out, and holds a control character
+other than a tab or a newline (C0, DEL, C1) or a space other than the
+ASCII one (each character Python counts as a space, U+0085 and the
+Unicode spaces among them) or a format character (Unicode category Cf:
+U+180E, U+200B, U+FEFF, the zero-width joiners, the word joiner, the
+soft hyphen and the bidi controls, all invisible, counted since the
+review of #2070) is refused (`odd_spacing`). The check runs after the other rules, so a line they
+refuse keeps its reason. The shell splits words only at a space, a tab
+and a newline: `maity` followed by a carriage return, a vertical tab, a
+form feed or a no-break space was part of a longer word to it, and no
+rule above held such a line, while a harness that splits at that
+character would read `maity` as the command. Rejected: the card's other
+option, holding a line in which `maity` is followed by any character
+outside the word set to one plain call. It covers only the character
+right after `maity`, not one between an allowed assignment and `maity`
+(`LANG=C`, a no-break space, `maity`) or between its letters, so the
+hook would still depend on how the harness splits. The cost: text that
+names `maity` and holds such a character (a no-break space in quoted
+text) is refused as well, with `--body-file` as the way out; a line
+that does not name `maity` is left as before.
 
 **Reason:** only `maity` itself needs to run outside the sandbox. A line
 that holds more than maity's call is held to the rules every other
@@ -4990,6 +5012,182 @@ a slot lock the runner holds and agents cannot write (tsk-w7dx3h9mn8dp).
   off, not only the socket rule (red team's probe). A cluster over TCP on
   127.0.0.1, which the sandbox allows, comes in tsk-zk2cse7s2rf7 instead.
 
+## A sandboxed Claude Code placement starts only where the host gives its seccomp step what it needs, and `runner check` probes that the step applies
+
+**Id:** c774c132-1f84-4b61-bb01-13a6ee7ca7e3
+**Type:** decision
+**Type:** constraint
+**Status:** open
+**Evidence:** inferred
+**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032, 2026-11-20; the ops team's read-only reading of the Claude Code 2.1.328 and 2.1.329 binaries (minified): the supported machines, the helper's resolution and the built-in helper handed in by file descriptor, the warning sent to the sandbox runtime's debug logger, 2026-11-20; `/proc/self/status` of an unconfined shell on a test host (`Seccomp: 0`, `Seccomp_filters: 0`), 2026-11-20; the ops team's live run of Claude Code 2.1.329 on an x64 Linux runner host (a throwaway session, no placement): headless with `SRT_DEBUG=1` the filter was applied, the interactive interface showed no sandbox-runtime line while it ran, 2026-11-20; the lead's decision for the static preflight, the headless probe in `check` only and dropping the pane check, 2026-11-20; the security review of #2063 (the pinned socket settings, the user settings refused) and the lead's decision to warn, not refuse, on a version whose probe has not passed, 2026-11-20; the security delta review of #2063 (the settings read only at a start), 2026-11-20; the code review of #2063 and the review lead's decision (an ssh target's kept preflight forgotten while unreachable, the settings read before the probe), 2026-11-21
+**See:** runner.md#a-placements-test-slots-and-test-cluster-live-in-its-own-scratch-so-its-slots-bound-only-its-own-runs — 2ce039de-925e-4244-9a90-8336e9375d68 — as of 2026-11-20
+**Revisit when:** every move of the Claude Code version pin (`capabilities.CHECKED`): run the `check` probe, and read the supported machines and the probe's two lines from the binary again; Claude Code shows the block's state itself or fails closed without the step; it is verified whether Claude Code reloads user settings during a session; each placement runs as its own OS user
+
+**Decision.** On Linux, before every start of a sandboxed Claude Code
+placement (`Supervisor._refusal`) and in `maity runner check` (local and
+each ssh host), the runner reads as the agents' user the machine
+(`uname -m`; `x86_64`/`amd64` as `x64`, `aarch64`/`arm64` as `arm64`, in
+lower case) and `/proc/self/status` (`capabilities.claude_seccomp`). It
+starts the placement only for a machine in `CLAUDE_SECCOMP_ARCHES` (x64
+and arm64) on a kernel that has a `Seccomp:` line and, from Linux 5.9, a
+`Seccomp_filters:` line. Their values are the reading task's own (0 for an
+unconfined shell) and are ignored, as long as they read as numbers. Any
+other machine, a missing line or an answer that cannot be read refuses the
+start (`harness_refused`, the reason in the log) and is an error in
+`check`. An `ok` is kept per target for the service's lifetime, and
+anything else is read again at the next start. That is enough for the
+machine and the kernel: neither changes while the service runs, and a
+reboot restarts it. Seatbelt (macOS) has no seccomp step and is not
+checked.
+
+The placement pins its socket settings and refuses user settings that would
+change them. Its settings file sets `sandbox.network.allowAllUnixSockets`
+to `false` (`adapters.claude_settings`); a `--settings` file wins over the
+user's settings, as the runner already relies on for `disableAllHooks`.
+Placements load the agents' user's settings (`--setting-sources user`), so
+a sandboxed Claude Code start is refused, and `check` reports an error,
+while that file carries `sandbox.network.allowAllUnixSockets`,
+`sandbox.network.allowUnixSockets` or `sandbox.seccompConfig`, whatever
+the value, or cannot be read as a JSON object
+(`capabilities.claude_socket_settings`, read as `claude_hooks_off` reads
+it, at every start). The managed settings win over the `--settings` file,
+so they are read for the same keys and refused the same way, an unreadable
+managed file included.
+
+After an `ok` preflight, `check` alone (never a start) runs the installed
+Claude Code once headless as the agents' user
+(`capabilities.claude_socket_probe`): the sandbox on with socket blocking
+left on, `SRT_DEBUG=1`, one harmless command, a bounded timeout. Its
+standard error decides: the runtime's line that it applies the seccomp
+filter for Unix socket blocking is `ok`; its warning that the helper is not
+available is an error that the block is off; a timeout, a non-zero exit,
+output that cannot be decoded or neither line is an error that the block
+is not confirmed. The model's answer is not kept. Operators run `check`
+after every version pin. `check` reads the hook and socket settings first
+and runs the probe only while both are clean: a pass under settings that
+refuse every start would be kept for a configuration no start runs with,
+so none is run or kept then.
+
+An `ok` preflight is kept in `Target.seccomp`. A local target keeps it for
+the service's run; an ssh target forgets it when it turns unreachable
+(`Supervisor._reachable`), because the machine that answers under that
+name when it is back may be another one or run another kernel. A re-read
+at every start was weighed and left out: a dropped connection is the
+point where the host behind the name can change, and the reviewers chose
+that cheaper refresh.
+
+`check` keeps, per target, the Claude Code version whose probe passed in
+the state directory (`capabilities.PROBE_FILE`, written with
+`state.save_state` like the runner's other state files) and forgets it
+when the probe does not pass. At each sandboxed Claude Code start on Linux
+the service reads it (`Supervisor._probe_warning`): an installed version
+that differs, or no record, is logged with a line to run `check`, once
+per target and installed version for the service's run
+(`Target.probe_warned`), and the start goes ahead. `check` reports the
+same line as an error, so the operator sees it, when its probe does not
+pass or is not run; a pass in the same run is recorded before anything is
+compared, so it adds no such line. The runner installs Claude Code
+itself, so refusing every start after a version pin until someone runs
+`check` would be an outage.
+
+**Reason:** every placement of a host runs as the same OS user, so the
+seccomp step is the only thing between a sandboxed command and the other
+placements' sockets and the agents' tmux server. A read-only path does not
+stop a connect. The other-scratch residual of the entry under See (a
+scratch made after a session started is readable to it, but it cannot
+connect to that placement's sockets) holds only while the step runs. Read
+from the binary: Claude Code supports the step on x64 and arm64 only (ia32
+is named unsupported, any other machine too), and when no helper resolves
+it runs the command in bubblewrap with Unix sockets open. It sends the
+warning to the sandbox runtime's debug logger, which (inferred) writes only
+with `SRT_DEBUG` set. So nothing a session shows says the block is off,
+and only a check before the start fails closed. The static preflight sees
+the host, not whether Claude Code hands its built-in helper in by file
+descriptor (the other places it looks for one are empty under the runner's
+native install); the headless probe shows that. It stays out of the start
+because it spends a small prompt on the agents' Claude login each time.
+
+**Open residual.** That the built-in helper is handed in is established
+for 2.1.329 on x64 by a live probe on 2026-11-20; re-check on every
+version pin with the `runner check` probe. A start does not run the probe,
+so a host where it fails still starts placements while its preflight
+passes; `check` reports it as an error.
+
+**Open residual.** The socket-settings check reads the managed and user
+settings at a start. If Claude Code re-reads its settings files during a
+session, a change to the user settings made after the start, from outside
+a Claude Code sandbox, is not seen until the next start.
+`allowAllUnixSockets` is pinned by the placement's settings file and still
+wins; `sandbox.seccompConfig` is not pinned. Whether Claude Code reloads
+user settings during a session is not verified.
+
+**Rejected alternatives:**
+- Claude Code's `allowAllUnixSockets`: it turns the whole seccomp filter
+  off (the entry under See).
+- A preflight that looks for the helper file beside the binary and starts
+  it around a socket attempt, as the nested user namespace is started: the
+  helper is built into the binary, so a file lookup finds nothing on any
+  host and would have refused every Claude Code placement. No command of
+  Claude Code starts the step alone.
+- The headless probe before every start: a prompt on the login per start,
+  and a start would wait for a model call.
+- Reading each session's pane for Claude Code's warning, ending the
+  session and holding its binary (built first in this card), dropped for
+  good: the warning is debug-only by default, so the check never fired and
+  failed open, and in the interactive interface no sandbox-runtime output
+  reaches the pane or standard error while it runs, even with `SRT_DEBUG`
+  (live, 2026-11-20).
+- Checking the values of `Seccomp:` and `Seccomp_filters:`: they describe
+  the reading task, not the kernel, and are 0 on a host that supports
+  filters.
+- Refusing a start whose installed Claude Code is not the version whose
+  probe last passed: for now. The runner installs and updates Claude Code
+  itself, so every placement would stop after each version pin until
+  someone ran `check`; the start warns instead.
+- Relying on the placement's pinned `allowAllUnixSockets` alone, without
+  refusing user settings that carry socket keys: `allowUnixSockets` and
+  `seccompConfig` are not pinned by it, and the merge of the two files is
+  Claude Code's, not shown for every key.
+
+## agy and opencode are no boundary between placements of one OS user, and no deny of other scratches is written for agy
+
+**Id:** dcd10585-3918-4bec-ae2e-6a9030597093
+**Type:** decision
+**Type:** constraint
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-rbys2j9q0m48, filed from the security review of #2032 (items for agy and opencode, with the opencode wording), 2026-11-20; the agy settings the runner writes (`adapters.antigravity_settings`) and the agy settings entry of this file (a read deny seen to hide `.git/maity` in a test, a write deny's reach unknown)
+**See:** runner.md#a-sandboxed-claude-code-placement-starts-only-where-the-host-gives-its-seccomp-step-what-it-needs-and-runner-check-probes-that-the-step-applies — c774c132-1f84-4b61-bb01-13a6ee7ca7e3 — as of 2026-11-20
+**Revisit when:** agy documents or is shown to apply its deny rules to sandboxed commands at the OS level, writes included; opencode gets an OS sandbox (tsk-nynpvag9zvhh); each placement runs as its own OS user (req-ynkndnybr9z3)
+
+docs/runners.md states that an agy placement's scratch under
+`/tmp/maity-scratch-<uid>/` can be read and written by every other agy
+placement of the same agents' user on the host, and that opencode, which
+has no OS sandbox, reaches everything that user can, other placements'
+scratch directories and sockets included. Neither harness is described as
+a boundary between placements. The runner writes no deny of the other agy
+leaves into agy's settings; nothing in the code changed for either.
+
+**Reason:** every placement of a host runs as one OS user, so the 0700
+parent and the random leaf keep out other users only; privacy between
+placements can come only from the harness's own sandbox. agy's
+`permissions` rules are file-tool rules. One test saw a read deny hide a
+directory from agy's sandboxed commands too, but whether agy keeps its
+commands out of a denied path in general, writes included, is not shown,
+and agy has no documented OS-level path deny for commands. The runner's
+`unshare` probe (`AGY_NAMESPACES`) only shows that the namespaces agy needs
+can start, not what agy mounts in them. opencode's `external_directory`
+binds only its file tools.
+
+**Rejected alternatives:**
+- A read and write deny of the other agy leaves (their names are in the
+  runner's records) in agy's settings: it would read as a boundary that is
+  not shown to hold for commands, and leaves made later would be missing
+  from it, as with Claude Code's list.
+- Moving agy's scratch back beside the clone, where Claude Code and Codex
+  are kept out of it: agy's sandbox cannot write there (the agy scratch
+  entry of this file).
+
 ## `runner check` starts a nested user namespace inside bubblewrap, and a refusal is an error
 
 **Id:** 0f216e9d-1661-4887-a035-094efa301dfa
@@ -5190,3 +5388,68 @@ spellings accept argparse's refusal, but only for words with a `--` before
   the word. A raw check that avoids that would have to re-implement
   argparse's reading of global options, abbreviations and `--`, which is
   more fragile than taking argparse's own result.
+
+## A quiet placement is diagnosed by the runner, on facts the hub supplies, and the runner reacts by cause
+
+**Id:** e6a12eff-5d04-476e-8239-22970a139c7b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-twmms66p1ww4, 2026-11-20: the owner's direction (chat seq 179583, "look at the cause first"), the plan the lead approved with its rulings of the same day, the owner's decision on foreign agents (req-1kk6pwdxdmg6) and on the runner's log lines (note on the card, 20:42Z); contract in docs/api.md §15.7, §15.8, §15.14 ("The runner's watch"); not built yet
+**Revisit when:** the hub builds §15.14's `health` (the grace becomes `hang_after_minutes`) or flapping; the hub gains an actor with a restart right that could resume a session; a recurring `unknown` cause asks for a class of its own
+
+The hub tells the runner, on each placement it reads, what it knows of the
+agent behind it: `session` with `started_at`, `not_listening_since`,
+`paused` and `dormant`. The runner decides. Past its grace for not
+listening, or without a join after a start, it gathers what it sees (the
+process, the exit code, what runs below the harness, fixed pane
+signatures, the login probe, a refused pickup's code), names one cause,
+reports it as `finding` with its own recent log lines (read only by the
+runner's owner, the agent's owner and the project's members with trust
+`owner` or `admin`, the arbiter's answer to req-jcq33fsvc72a), and reacts by that
+cause: one restart that resumes the session, a nudge, a wait for the
+limit's reset, or `failed` at once for a login or a refused pickup. A
+second failure within its window, counted only for the causes it restarts
+for, holds the placement as `failed`/`hung`, which opens the owner's
+outage request, so it never loops. Paused and dormant agents are left
+alone. For a foreign placement (`session: null`) the runner acts only on
+what it sees itself.
+
+Round 2 of the review (PR #2059) added four rules:
+- a session with a client attached (tmux's `session_attached`, unknown
+  counted as attached) is never ended by the watch; the finding is
+  reported instead;
+- a pane match alone decides neither `login_invalid` (it needs the login
+  probe, and a harness without one never gets it) nor `usage_limit` (it
+  needs the harness's limit exit);
+- `finding.log` holds only text the runner wrote, with values from the
+  agents' side as placeholders, and only lines that start with the
+  placement's id;
+- an own-check end after a watch nudge counts toward `crash_cap`, not
+  `auto_restarts`, so one end is counted once, under the rule that made it.
+
+The reason for the pane rule: text in a pane is the session's to write,
+so it may say anything. The causes that stop an agent for a person
+(`auth`) or pause it (`rate_limited`) therefore rest on a signal from
+outside the pane.
+
+**Reason:** only the runner sees the process, its exit code and the pane,
+and it already owns restart, backoff and the caps; its own restarts keep
+the generation and resume the session, and need no right. The hub alone
+knows the §5.3 episode and whether a session started, which the runner
+cannot see: a deaf `maity wait` looks like waiting from the process tree.
+So the facts go to where the decision is, on the read the runner already
+makes, with no new event and no new right.
+
+**Rejected alternatives:**
+- The hub restarts the placement itself by raising `generation`: a new
+  generation starts a fresh session, the hub would need an actor with a
+  restart right, and it would restart blindly, without the cause, which the
+  owner ruled out (a restart does nothing for a failed login).
+- Send `member_not_listening` to the runner as an event: the runner
+  re-reads its placements on every wake and on its own interval anyway, so
+  a field on that read carries the same fact and survives a lost event.
+- Keep the finding in `reported.detail` alone: one closed code, no signals
+  to learn from. A health view of its own: not built.
+- Restart for not listening on a fresh session: the agent's context is the
+  work; a fresh start stays a person's reset.

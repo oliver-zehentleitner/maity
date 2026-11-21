@@ -15,7 +15,7 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy import Connection
 
-from maity_hub import forge, idempotency, images
+from maity_hub import access, forge, idempotency, images
 from maity_hub.access import membership
 from maity_hub.deps import AnyCaller, HumanCaller, engine_of, reader_of
 from maity_hub.errors import ApiError, invalid, not_found
@@ -47,14 +47,18 @@ def _state_loader(kind: str) -> idempotency.Loader:
 
 
 def _get(kind: str) -> Callable[..., Response]:
+    @access.outside_read  # the project's own image, on its public page too (§2.3, §16.9)
     def get_image(slug: str, request: Request, caller: AnyCaller) -> Response:
         engine = engine_of(request)
         with engine.begin() as conn:
-            mine = membership(conn, caller, slug)
+            mine = access.reader(conn, caller, slug)
             mine.require("project:read")
             project = mine.project
             image = images.current(conn, project.id, kind)
-            checked = images.forge_row(conn, project.id, kind) is not None
+            # An outsider's read leaves no trace (§2.3): never the read-through, whose answer
+            # may announce a `project_updated`; it gets what is stored.
+            outside = isinstance(mine, access.OutsideReader)
+            checked = outside or images.forge_row(conn, project.id, kind) is not None
         if image is None and not checked and forge.kind_of(project.repository_url) == "github":
             # Nothing stored yet: the one read-through; later refreshes are the worker's.
             answered = images.read_through(engine, reader_of(request), project.id, kind)

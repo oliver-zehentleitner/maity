@@ -250,7 +250,8 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert states(reports) == [("starting", None, None), ("running", None, None)]
     first, second = (b for _, b in reports.sent)
     assert (first["seq"], second["seq"]) == (1, 2)
-    assert second["session_hint"] == "tmux -S /run/maity/tmux.sock attach -t maity_maity_agent-3"
+    hint = "tmux -S /run/maity/tmux.sock attach -t '=maity_maity_agent-3'"
+    assert second["session_hint"] == hint
     assert second["target"] == "local" and second["observed_generation"] == 1
 
 
@@ -514,6 +515,268 @@ def test_a_sandboxed_start_is_refused_while_settings_switch_hooks_off(
     managed.write_text('{"allowManagedHooksOnly": true}')
     assert sup._refusal(placement(harness="claude-code"), target) == ("harness_refused", None)
     assert any("sets allowManagedHooksOnly" in line for line in logged)
+
+
+SOCKET_FILES = [
+    ('{"sandbox": {"network": {"allowAllUnixSockets": false}}}',
+     "sets sandbox.network.allowAllUnixSockets"),
+    ('{"sandbox": {"network": {"allowUnixSockets": ["/x"]}}}',
+     "sets sandbox.network.allowUnixSockets"),
+    ('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig"),
+    ('{"permissions": {}}', None),
+    ("{not json", "cannot be read as JSON"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("text", "why"), SOCKET_FILES)
+def test_a_sandboxed_start_is_refused_while_the_users_settings_carry_a_socket_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, why: str | None
+) -> None:
+    """The placement pins its Unix socket settings and refuses user settings that would change
+    them, read at every start; an unreadable file refuses too. Other harnesses are not
+    asked."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    user = Path.home() / ".claude" / "settings.json"
+    user.parent.mkdir()
+    user.write_text(text)
+    found = sup._refusal(placement(harness="claude-code"), target)
+    if why is None:
+        assert found is None and logged == []
+    else:
+        assert found == ("harness_refused", None)
+        assert len(logged) == 1 and why in logged[0] and str(user) in logged[0]
+    assert sup._refusal(placement(harness="codex"), target) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "why", "line"),
+    [('{"sandbox": {"network": {"allowAllUnixSockets": true}}}',
+      "sets sandbox.network.allowAllUnixSockets", "pins its Unix socket settings"),
+     ('{"sandbox": {"seccompConfig": {}}}', "sets sandbox.seccompConfig",
+      "pins its Unix socket settings"),
+     # An unreadable managed file is already refused by the hook check, read first.
+     ("{not json", "cannot be read as JSON", "the runner's hook would not run")],
+)  # fmt: skip
+def test_a_sandboxed_start_is_refused_while_the_managed_settings_carry_a_socket_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str, why: str, line: str
+) -> None:
+    """The managed settings win over the placement's file: a socket key there refuses the
+    start like one in the user's settings, and an unreadable file refuses it too."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(
+        capabilities, "claude_seccomp", lambda as_user: capabilities.ClaudeSeccomp("ok", "x64")
+    )
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    managed = capabilities.CLAUDE_MANAGED["linux"]
+    managed.parent.mkdir(parents=True)
+    managed.write_text(text)
+    assert sup._refusal(placement(harness="claude-code"), target) == ("harness_refused", None)
+    assert len(logged) == 1 and why in logged[0] and str(managed) in logged[0]
+    assert line in logged[0]
+
+
+@pytest.mark.parametrize(
+    ("record", "installed", "warned"),
+    [(None, "2.1.325", "has not passed on this target, installed 2.1.325"),
+     ({"local": "2.1.324"}, "2.1.325", "last passed with 2.1.324, installed 2.1.325"),
+     ({"local": "2.1.325"}, "2.1.325", None),
+     ({"other": "2.1.325"}, "2.1.325", "has not passed on this target")],
+)  # fmt: skip
+def test_a_start_after_a_version_change_warns_to_run_check_and_still_starts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    record: dict[str, str] | None,
+    installed: str,
+    warned: str | None,
+) -> None:
+    """The version whose `check` probe passed is read from the state directory: a different
+    one, or none, is logged at the start and refuses nothing."""
+    import sys
+
+    from maity import state
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, installed, "", True)
+    sup.log = logged.append
+    if record is not None:
+        state.save_state(sup.cfg.state_dir, record, name=capabilities.PROBE_FILE)
+    target = sup.targets["local"]
+    view = supervisor.GateView.of(target, "claude-code")
+    sup._probe_warning(target, view, "s")
+    if warned is None:
+        assert logged == []
+    else:
+        assert len(logged) == 1 and warned in logged[0], logged
+        assert logged[0].endswith("run `maity runner check`")
+    logged.clear()
+    sup._probe_warning(target, supervisor.GateView(view.found, False, False), "s")
+    monkeypatch.setattr(sys, "platform", "darwin")
+    sup._probe_warning(target, view, "s")
+    assert logged == []  # unsandboxed, or Seatbelt: no probe to have passed
+
+
+def test_the_version_warning_is_logged_once_per_target_and_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two launches with the same installed version warn once; a new version warns again,
+    and so does the first version on another target."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    view = supervisor.GateView.of(target, "claude-code")
+    sup._probe_warning(target, view, "a")
+    sup._probe_warning(target, view, "b")
+    assert len(logged) == 1 and "installed 2.1.325" in logged[0]
+    newer = supervisor.GateView(capabilities.Probe("/usr/bin/claude", "2.1.330", None), True,
+                                False)  # fmt: skip
+    sup._probe_warning(target, newer, "c")
+    sup._probe_warning(target, newer, "d")
+    assert len(logged) == 2 and "installed 2.1.330" in logged[1]
+    other = replace(target, name="build-9", probe_warned=set())
+    sup._probe_warning(other, view, "e")
+    assert len(logged) == 3 and "build-9" in logged[2]
+
+
+SECCOMP_ANSWERS = {
+    "ok": capabilities.ClaudeSeccomp("ok", "x64"),
+    "unsupported_arch": capabilities.ClaudeSeccomp(
+        "unsupported_arch", "riscv64", "machine riscv64"
+    ),
+    "no_seccomp": capabilities.ClaudeSeccomp("no_seccomp", "x64", "no Seccomp line"),
+    "inconclusive": capabilities.ClaudeSeccomp("inconclusive", detail="could not be read"),
+}
+
+
+@pytest.mark.parametrize("outcome", sorted(SECCOMP_ANSWERS))
+def test_a_sandboxed_claude_code_start_needs_the_seccomp_preflight_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: str
+) -> None:
+    """On Linux only `ok` starts a sandboxed Claude Code placement; an unsupported machine, a
+    kernel without seccomp filtering and an answer that could not be read refuse it with the
+    reason in the log. Other harnesses are not asked."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    asked: list[object] = []
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        asked.append(as_user)
+        return SECCOMP_ANSWERS[outcome]
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+
+    def probe(*args: object) -> object:
+        raise AssertionError("the headless probe runs in `check` only, never at a start")
+
+    monkeypatch.setattr(capabilities, "claude_socket_probe", probe)
+    logged: list[str] = []
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = logged.append
+    target = sup.targets["local"]
+    found = sup._refusal(placement(harness="claude-code"), target)
+    if outcome == "ok":
+        assert found is None and logged == []
+    else:
+        assert found == ("harness_refused", None)
+        assert logged == [capabilities.claude_seccomp_line(SECCOMP_ANSWERS[outcome])]
+        assert logged[0].endswith("its placements are not started")
+    assert len(asked) == 1
+    for other in ("stub", "codex"):
+        assert sup._refusal(placement(harness=other), target) is None
+    assert len(asked) == 1  # only claude-code asks
+
+
+def test_an_ok_preflight_is_kept_and_any_other_answer_is_read_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    monkeypatch.setattr(sys, "platform", "linux")
+    answers = [SECCOMP_ANSWERS["inconclusive"], SECCOMP_ANSWERS["ok"]]
+    asked: list[str] = []
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        asked.append("asked")
+        return answers.pop(0)
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    target = sup.targets["local"]
+    p = placement(harness="claude-code")
+    assert sup._refusal(p, target) == ("harness_refused", None)
+    assert sup._refusal(p, target) is None  # read again, now ok
+    assert sup._refusal(p, target) is None  # kept: not read a third time
+    assert asked == ["asked", "asked"]
+
+
+def test_an_ssh_target_reads_its_preflight_again_after_it_was_unreachable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The host behind an ssh target's name may be another machine or a new kernel when it
+    comes back: its kept `ok` is forgotten while it is unreachable. A local target keeps it."""
+    from maity.runner.asuser import Ssh
+
+    answers = [SECCOMP_ANSWERS["ok"], SECCOMP_ANSWERS["no_seccomp"]]
+    asked: list[object] = []
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        asked.append(as_user)
+        return answers.pop(0)
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", True)
+    sup.log = lambda line: None
+    local = sup.targets["local"]
+    local.seccomp = SECCOMP_ANSWERS["ok"]
+    sup._reachable(local, False, 1.0, "gone")
+    assert local.seccomp == SECCOMP_ANSWERS["ok"]  # the local machine does not change
+    host = replace(local, name="build-9", as_user=Ssh(name="build-9"), seccomp=None,
+                   reachable=True, unreachable_since=None)  # fmt: skip
+    assert sup._seccomp(host).outcome == "ok"
+    assert sup._seccomp(host).outcome == "ok"  # kept while it stays reachable
+    assert len(asked) == 1
+    sup._reachable(host, False, 2.0, "connection refused")
+    assert host.seccomp is None
+    sup._reachable(host, True, 3.0)
+    found = sup._seccomp(host)
+    assert found.outcome == "no_seccomp" and len(asked) == 2  # read again: now refused
+    assert host.seccomp is None  # and not kept
+
+
+@pytest.mark.parametrize(("platform", "tools"), [("darwin", True), ("linux", False)])
+def test_no_preflight_under_seatbelt_or_without_claude_codes_sandbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform: str, tools: bool
+) -> None:
+    """Seatbelt has no seccomp step; an unsandboxed Claude Code is reported as such already."""
+    import sys
+
+    monkeypatch.setattr(sys, "platform", platform)
+
+    def preflight(as_user: object) -> capabilities.ClaudeSeccomp:
+        raise AssertionError("not asked")
+
+    monkeypatch.setattr(capabilities, "claude_seccomp", preflight)
+    sup = _claude_world(tmp_path, monkeypatch, "2.1.325", "", tools)
+    assert sup._refusal(placement(harness="claude-code"), sup.targets["local"]) is None
 
 
 def test_a_missing_harness_binary(world: Any) -> None:
@@ -1739,7 +2002,8 @@ def test_tmux_starts_the_server_under_a_clean_environment(
     log = tmp_path / "logs" / "plc-0003.log"
     assert oct(log.stat().st_mode & 0o777) == "0o600"
     pipe = calls[3]  # the pane's output goes through logcap, held to limits.log_keep_bytes
-    assert pipe[3:7] == ["pipe-pane", "-o", "-t", "maity_maity_agent-3"]
+    assert pipe[3:7] == ["pipe-pane", "-o", "-t", "=maity_maity_agent-3:"]
+    assert calls[1][3:5] == ["set-option", "-t"] and calls[1][5] == "=maity_maity_agent-3:"
     assert pipe[-1].endswith(f"-m maity.runner.logcap {log} {10 * 1024 * 1024}")
 
 
@@ -2124,7 +2388,66 @@ def test_a_session_that_cannot_be_labelled_is_killed(tmp_path: Path) -> None:
     backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path / "logs", run=run)
     with pytest.raises(tmux.TmuxError):
         backend.start("maity_p_c", tmp_path, ["x"], {}, "plc-0003", 1)
-    assert calls[-1][-3:] == ["kill-session", "-t", "maity_p_c"]
+    assert calls[-1][-3:] == ["kill-session", "-t", "=maity_p_c"]
+
+
+def test_every_tmux_target_names_its_session_exactly(tmp_path: Path) -> None:
+    """tmux takes a bare `-t maity_p_c` as the start of `maity_p_c-2` when no session is
+    named `maity_p_c` exactly, so each target carries `=`: the session by its exact name,
+    and with a `:` where tmux reads the target as a pane."""
+    from maity.runner.asuser import AsUser as Direct
+
+    calls: list[list[str]] = []
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(list(argv), 0, "0\n", "")
+
+    backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path / "logs", run=run)
+    for name in ("maity_p_c", "maity_p_c-2"):
+        calls.clear()
+        backend.start(name, tmp_path, ["x"], {}, "plc-0003", 1)
+        backend.attached(name)
+        backend.pane_digest(name)
+        backend.pane_has(name, ("x",))
+        backend.type_line(name, "x")
+        backend.environment_of(name)
+        backend.kill(name)
+        targets = [(argv[3], argv[argv.index("-t") + 1]) for argv in calls if "-t" in argv]
+        pane, session = f"={name}:", f"={name}"
+        assert targets == [
+            ("set-option", pane),
+            ("set-option", pane),
+            ("pipe-pane", pane),
+            ("display-message", pane),
+            ("capture-pane", pane),
+            ("capture-pane", pane),
+            ("send-keys", pane),
+            ("send-keys", pane),
+            ("show-environment", session),
+            ("kill-session", session),
+        ]
+        attach = tmux.attach_words(tmp_path / "s", name, Direct())
+        assert attach[-2:] == ["-t", session]
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
+def test_real_tmux_does_not_reach_a_session_whose_name_only_starts_with_the_target(
+    tmp_path: Path,
+) -> None:
+    socket = tmp_path / "t.sock"
+    backend = tmux.Tmux(socket, tmp_path / "tmux.conf", str(tmp_path), "/usr/bin:/bin",
+                        tmp_path / "logs")  # fmt: skip
+    try:
+        backend.start("maity_p_c-2", tmp_path, ["sh"], {}, "plc-0004", 1)
+        assert backend.attached("maity_p_c") is None  # no session of that exact name
+        assert backend.pane_digest("maity_p_c") is None
+        with pytest.raises(tmux.TmuxError):
+            backend.submit("maity_p_c")
+        backend.kill("maity_p_c")
+        assert "maity_p_c-2" in backend.sessions()
+    finally:
+        subprocess.run(["tmux", "-S", str(socket), "kill-server"], check=False)
 
 
 def test_a_tmux_failure_at_start_backs_off_instead_of_failing_for_good(
@@ -3031,12 +3354,12 @@ def test_the_idle_reads_are_tmux_and_ps_calls(tmp_path: Path) -> None:
     assert backend.attached(SESSION) is True
     assert backend.pane_digest(SESSION) == hashlib.sha256(b"> hello\n").hexdigest()
     assert backend.pane_has(SESSION, ("hello", "Open restricted")) == frozenset({"hello"})
-    assert calls[-1][-4:] == ["capture-pane", "-p", "-t", SESSION]
+    assert calls[-1][-4:] == ["capture-pane", "-p", "-t", f"={SESSION}:"]
     assert backend.activity(session) == tmux.WAITING
     assert backend.activity(replace(session, pid=None)) is None
     backend.type_line(SESSION, "a line; with -t words")
-    assert calls[-2][-4:] == ["-t", SESSION, "-l", "a line; with -t words"]
-    assert calls[-1][-3:] == ["-t", SESSION, "Enter"]
+    assert calls[-2][-4:] == ["-t", f"={SESSION}:", "-l", "a line; with -t words"]
+    assert calls[-1][-3:] == ["-t", f"={SESSION}:", "Enter"]
 
 
 def settle_on(read: Any, want: str) -> Any:

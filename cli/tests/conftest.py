@@ -12,8 +12,10 @@ import fakehub
 import pytest
 
 from maity import winacl
+from maity.runner import capabilities as _capabilities
 
 GIT = shutil.which("git")
+REAL_SOCKET_PROBE = _capabilities.claude_socket_probe
 GITHUB_URL = "https://github.com/acme/widget"
 
 # The runner does not run on Windows (context/credentials.md).
@@ -78,13 +80,16 @@ def fake_maity(bin_dir: Path) -> None:
 
 @pytest.fixture(autouse=True)
 def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """No test sees the developer's git config or a MAITY_STATE_DIR from the shell, and none
-    writes into the developer's home: an interactive Claude Code launch records the clone's
-    folder trust in ~/.claude.json (runner/trust.py)."""
+    """No test sees the developer's git config, a MAITY_STATE_DIR or a placement from the
+    shell, and none writes into the developer's home: an interactive Claude Code launch
+    records the clone's folder trust in ~/.claude.json (runner/trust.py)."""
     home = tmp_path / "isolated-home"  # not `home`: tests make their own
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.delenv("MAITY_STATE_DIR", raising=False)
+    # Nor a placement of the shell's: a test that wants one sets it (`placed`).
+    monkeypatch.delenv("MAITY_PLACEMENT", raising=False)
+    monkeypatch.delenv("MAITY_GIT_PRIVATE", raising=False)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     # Nor the host's managed Claude Code settings (runner/capabilities.claude_hooks_off).
@@ -92,6 +97,11 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     managed = tmp_path / "managed-claude" / "managed-settings.json"
     monkeypatch.setattr(capabilities, "CLAUDE_MANAGED", {"linux": managed, "darwin": managed})
+    # Nor a real headless Claude Code run from `check` (a prompt on a login); its own tests
+    # take the function from `REAL_SOCKET_PROBE`.
+    monkeypatch.setattr(
+        capabilities, "claude_socket_probe", lambda *args: capabilities.SocketProbe("ok")
+    )
 
 
 @pytest.fixture
@@ -165,6 +175,24 @@ def joined(clone: Path, fake: fakehub.FakeHub) -> Path:
         },
     )
     return directory
+
+
+@pytest.fixture
+def placed(
+    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """The joined clone (the working directory) under a placement, with the variables the
+    runner sets for a session. A test file with a `placed` of its own uses that one."""
+    from maity import clonecheck
+
+    clone = Path.cwd()
+    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
+    monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
+    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
+    private = tmp_path / "agent" / "git"
+    private.mkdir(parents=True)
+    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
+    return clone
 
 
 @pytest.fixture(autouse=True)

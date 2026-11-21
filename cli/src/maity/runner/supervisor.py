@@ -45,6 +45,7 @@ from . import (
     workspace,
 )
 from .asuser import RUNNER, AsUser, Unreachable
+from .capabilities import ClaudeSeccomp
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
 
@@ -706,6 +707,10 @@ class Supervisor:
             return
         target.reachable = up
         target.unreachable_since = None if up else (target.unreachable_since or now)
+        if not up and target.remote:
+            # The host that answers under this name when it comes back may be another machine
+            # or a new kernel: its seccomp preflight is read again (_seccomp).
+            target.seccomp = None
         if up:
             self.log(f"target {target.name}: reachable")
         else:
@@ -1127,7 +1132,51 @@ class Supervisor:
             if why is not None:
                 self.log(capabilities.claude_hooks_line(why))
                 return ("harness_refused", None)
+            # The placement pins its Unix socket settings; the agents' user's settings are
+            # merged in, so a start waits until they carry none (capabilities.SOCKET_SETTINGS).
+            why = capabilities.claude_socket_settings(target.as_user)
+            if why is not None:
+                self.log(capabilities.claude_socket_settings_line(why))
+                return ("harness_refused", None)
+            # Every placement runs as the same OS user: the seccomp step is what keeps a
+            # sandboxed command away from the other placements' sockets, and Claude Code says
+            # nothing when it cannot run (capabilities.claude_seccomp).
+            seccomp = self._seccomp(target)
+            if seccomp.outcome != "ok":
+                self.log(capabilities.claude_seccomp_line(seccomp))
+                return ("harness_refused", None)
         return None
+
+    def _probe_warning(self, target: Target, view: GateView, name: str) -> None:
+        """A sandboxed Claude Code start on Linux whose installed version is not the one
+        whose `check` probe last passed on `target` is logged, never refused: the runner
+        installs Claude Code itself, and refusing every start after a version pin until
+        `check` runs would be an outage (cli/context/runner.md). Logged once per target and
+        installed version for the service's run."""
+        if not view.sandbox or not capabilities.claude_seccomp_applies(target.as_user):
+            return
+        installed = view.found.version if view.found is not None else None
+        if installed in target.probe_warned:
+            return
+        passed = capabilities.probe_passed(self.cfg.state_dir, target.name)
+        stale = capabilities.probe_stale_line(passed, installed)
+        if stale is not None:
+            target.probe_warned.add(installed)
+            self.log(f"{name}: {target.name}: {stale}")
+
+    def _seccomp(self, target: Target) -> ClaudeSeccomp:  # the field `capabilities` hides it
+        """The seccomp preflight for `target` (Linux only, `ok` elsewhere): an `ok` is kept for
+        the service's lifetime, on an ssh host until it turns unreachable (_reachable); any
+        other answer is read again at the next start, so a host that could not be read starts
+        once it can."""
+        if not capabilities.claude_seccomp_applies(target.as_user):
+            return ClaudeSeccomp("ok")
+        if target.seccomp is not None:
+            return target.seccomp
+        found = capabilities.claude_seccomp(target.as_user)
+        if found.outcome == "ok":
+            target.seccomp = found
+        return found
 
     def _wait(self, rec: Record, why: str, name: str) -> int:
         if rec.waiting != why:
@@ -1145,6 +1194,8 @@ class Supervisor:
         harness = self.cfg.harnesses[p["harness"]]
         if harness.id not in adapters.READY:
             return self._wait(rec, f"no adapter for {harness.id} in this version", name)
+        if harness.id == "claude-code":
+            self._probe_warning(target, view, name)
         if harness.id == "codex":  # starts without what it cannot enforce, said at each start
             repository = config.normalise_repository(p["workspace"].get("repository") or "")
             grant = self.cfg.repositories.get(repository, config.RepositoryGrant())

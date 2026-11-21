@@ -15,7 +15,7 @@ whole instance and read no member views (a suspended account's credentials are r
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -94,9 +94,12 @@ def branch(rows: Sequence[Any], top: int) -> list[Any]:
     return found
 
 
-def for_member(conn: Connection, row: Any) -> dict[str, dict[str, int]]:
+def for_member(
+    conn: Connection, row: Any, among: Collection[int] | None = None
+) -> dict[str, dict[str, int]]:
     """`manages` of one member: reads the project's active memberships, and the member views
-    of its branch only (for their instances)."""
+    of its branch only (for their instances). With `among`, only those memberships count, as
+    the member list of an outsider counts them (§2.3)."""
     from maity_hub.views import member_views  # views imports this module's callers
 
     rows = conn.execute(
@@ -104,6 +107,8 @@ def for_member(conn: Connection, row: Any) -> dict[str, dict[str, int]]:
             t.membership.c.project_id == row.project_id, t.membership.c.active.is_(True)
         )
     ).all()
+    if among is not None:
+        rows = [r for r in rows if r.id in among]
     below = branch(rows, row.id)
     views = {r.id: v for r, v in zip(below, member_views(conn, below), strict=True)}
     return manages(below, views, [row.id])[row.id]

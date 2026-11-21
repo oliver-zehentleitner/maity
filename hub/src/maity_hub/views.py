@@ -1093,7 +1093,8 @@ def _release(
 
 
 def task_view(conn: Connection, row: Any, fg: forge.Forge, viewer: Any = None) -> dict[str, Any]:
-    """The card as §6.4 shows it (the tasks slice adds its endpoints)."""
+    """The card as §6.4 shows it (the tasks slice adds its endpoints). Not for an outsider,
+    whose view may drop (`task_views`)."""
     return task_views(conn, [row], fg, viewer)[0]
 
 
@@ -1102,13 +1103,22 @@ def task_views(
 ) -> list[dict[str, Any]]:
     """`task_view` for several cards: one query for the edges, one for the members. With
     `viewer` (the reader's membership) each card carries `watching`, the reader's own
-    watch or the one a dependency brings (§6.4), never anyone else's."""
+    watch or the one a dependency brings (§6.4), never anyone else's. A public project's
+    outsider (`access.OutsideReader`) reads no trace of a card it does not read (§2.3,
+    `public_cards.outside_views`)."""
     if not rows:
         return []
     views = _task_views(conn, rows, fg)
+    from maity_hub import access, public_cards  # they read views; imported here, not at the top
+
+    outside = isinstance(viewer, access.OutsideReader)
+    if outside:
+        # Decided on the rows its last statement returns: a view may drop (READ COMMITTED).
+        views = public_cards.outside_views(conn, views)
     from maity_hub import moderation  # moderation reads views; imported here, not at the top
 
-    held = moderation.holds_of(conn, "card", [r.id for r in rows])
+    # An outsider reads no held card, so no hold: none read after `outside_views` decided.
+    held = {} if outside else moderation.holds_of(conn, "card", [r.id for r in rows])
     for view in views:
         if view["id"] in held:  # only while a hold stands (§16.8)
             view["moderation"] = held[view["id"]]
