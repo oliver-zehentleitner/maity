@@ -5446,7 +5446,7 @@ A Claude Code placement gets the same leaf, but only as its
 `CLAUDE_CODE_TMPDIR` (tsk-k7svzz2p4v7y). It gets no TMPDIR, and its settings
 open nothing for the leaf. Claude Code writes the leaf itself, from outside
 its sandbox: its own temporary files (`<leaf>/tmp/claude-<uid>/`: the project
-directory, task outputs, edit diffs, plugin staging) and its sandbox socket
+directory, edit diffs, plugin staging) and its sandbox socket
 (`<leaf>/tmp/cc-socks/<pid>.sock`). They no longer sit in the
 `/tmp/claude-<uid>` directory every Claude Code session of the user shares,
 and they go with the placement.
@@ -5500,8 +5500,10 @@ reuses the make, record and removal code agy's scratch already has.
   scratch is writable from the session's own sandbox, so its sandboxed
   commands could change Claude Code's own temporary files and its socket
   directory. Its `cc-socks` socket also fits there only for a short enough
-  home. The hidden leaf keeps both out of the sandbox's reach and always
-  fits.
+  home. The leaf always fits, and the sandbox cannot write it: it sees
+  Claude Code's own `claude-<uid>/` there read-only and does not see
+  `cc-socks/`. So the leaf keeps both out of the sandbox's write reach (review
+  A1856).
 - TMPDIR set to the long scratch `tmp`, now that `CLAUDE_CODE_TMPDIR` takes
   the `cc-socks` socket: Claude Code's HTTP and mux bridge sockets still go
   under TMPDIR, about 33 bytes past a path of about 83, over the 107 a
