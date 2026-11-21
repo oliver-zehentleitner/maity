@@ -22,7 +22,9 @@
   `409 conflict` (`client_too_old`, `min_cli: null`) and a message that says resume is not
   available yet for it, until the resume packet per project is built.
 - hub: a runner's stop and a replayed credential revocation speak in each attached
-  project, never in the oldest attachment alone (§6.17, §15.3).
+  project, never in the oldest attachment alone (§6.17, §15.3): the owner's stop tells
+  `credential_revoked` in every project the instance is attached to, beside those of the
+  placements it closes.
 
 ### Security
 

@@ -789,6 +789,26 @@ def test_a_runner_revocation_due_is_told_in_every_attached_project(world: World)
         assert list(told) == sorted([w.alpha, w.beta])
 
 
+@pytest.mark.parametrize("placed", [["alpha"], ["alpha", "beta"]])
+def test_a_runner_stop_over_one_placement_is_told_in_every_attached_project(
+    world: World, placed: list[str]
+) -> None:
+    """The owner's stop names the projects of the placements it closes (`apply`,
+    `_on_the_machine`, `_due_now`); the instance is attached to A and B, so the revocation is
+    told in both, whichever the placements were in (§6.17, §15.3)."""
+    from maity_hub import events, runner_revoke
+
+    w = world
+    ids = {"alpha": w.alpha, "beta": w.beta}
+    with events.transaction(w.engine) as conn:
+        runner_revoke.revoke_agent(conn, w.agent.credential_id, None, [ids[p] for p in placed])
+    with w.engine.connect() as conn:
+        told = conn.execute(
+            select(t.event.c.project_id).where(t.event.c.kind == "credential_revoked")
+        ).scalars()
+        assert sorted(told) == sorted([w.alpha, w.beta])
+
+
 def test_a_replayed_credential_revocation_reads_the_attachment_it_named(world: World) -> None:
     """The stored key names the membership; a key without one, from before, is read only
     while the credential has a single live attachment."""

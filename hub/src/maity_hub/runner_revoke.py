@@ -52,31 +52,27 @@ def revoke_agent(
 ) -> None:
     """Revoke an agent credential a runner's stop names, and say so to the agent and the
     owners (`credential_revoked`, §15.10), once: only the revocation that wins says it. The
-    event is written in each of `project_ids`, the projects of the placements the revocation
-    is about, which the caller holds the locks of; without them (a grace that fell due, read
-    at authentication), in each project the instance is attached to (§6.17), in the order of
-    their ids. Never one project chosen for the others. Those and every project the
-    revocation writes in are locked first, in the order of their ids, before any write."""
+    event is written in each project the instance is attached to (§6.17), and in each of
+    `project_ids`, the projects of the placements the revocation is about (a closed
+    placement's project the instance may have left), in the order of their ids. Never one
+    project chosen for the others. Those and every project the revocation writes in are
+    locked first, in the order of their ids, before any write."""
     from maity_hub.auth.revocation import projects_of, revoke
 
-    if project_ids is None:
-        a = t.instance_attachment
-        project_ids = (
-            conn.execute(
-                select(t.membership.c.project_id)
-                .join(a, a.c.membership_id == t.membership.c.id)
-                .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
-            )
-            .scalars()
-            .all()
-        )
-    events.lock_projects(conn, {*project_ids, *projects_of(conn, [credential_id])})
+    a = t.instance_attachment
+    attached = conn.execute(
+        select(t.membership.c.project_id)
+        .join(a, a.c.membership_id == t.membership.c.id)
+        .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
+    ).scalars()
+    told = {*attached, *(project_ids or ())}
+    events.lock_projects(conn, {*told, *projects_of(conn, [credential_id])})
     if not revoke(conn, credential_id, REASON, by):
         return
     agent_id = conn.execute(
         select(t.credential.c.agent_id).where(t.credential.c.id == credential_id)
     ).scalar_one()
-    for project_id in sorted(set(project_ids)):
+    for project_id in sorted(told):
         events.emit(
             conn,
             project_id,
