@@ -19956,15 +19956,17 @@ skill.
   them the hub adds `log`
   to the finding wherever they read it: in `reported` on the placement
   (§15.5) and in the history (`GET
-  /projects/{owner}/{slug}/placements/{id}/reports`, §15.6). Those two
+  /projects/{owner}/{slug}/placements/{id}/reports`, §15.6; in the
+  history not built yet, tsk-n50ez67he2pz). Those two
   reach wider (every human with `project:read`, an agent for its own
   placement, every agent with `agents:propose`), so for every other
   caller the finding comes without the `log` key. A proxy holds trust
   `admin` (§2.3) and reads the lines as any admin does. A bridge's call
   for an agent (`Maity-For`, §2.3, "The bridge") gets the finding
   without `log`, whoever it serves: the lines are read by their readers
-  themselves, not through a connection. The hub keeps the
-  lines with the `placement_reported` event's row, outside its payload,
+  themselves, not through a connection. The hub is to keep the
+  lines with the `placement_reported` event's row, outside its payload
+  (not built yet, tsk-n50ez67he2pz: today it keeps none in the history),
   so the event as such never carries `log`: in the event stream (`GET
   /events`, §8.3) every reader sees the finding without it, its
   audience (§8.2) and those who read every event alike, a reader above
@@ -19972,7 +19974,8 @@ skill.
   gets them back in the answer to its own report.
 - **How long.** The lines are kept with their finding: in `reported`
   until the next report replaces it, and with that `placement_reported`
-  event as long as the event is kept, and they go with it.
+  event as long as the event is kept, and they go with it (with the
+  event not built yet, tsk-n50ez67he2pz).
 - **Not in this contract.** The tail of the session's own terminal log,
   sent on request, is a later card of its own.
 

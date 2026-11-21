@@ -141,6 +141,8 @@ LOG_LINES_MAX = 200
 LOG_LINE_BYTES = 1024
 LOG_TOTAL_BYTES = 24 * 1024
 TIMESTAMP: TypeAdapter[datetime] = TypeAdapter(AwareDatetime)
+# The form §1.1 gives every timestamp, `2026-10-21T13:41:10Z`; ASCII digits only, `fullmatch`.
+WIRE_TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
 RUNNING_STATES = ("starting", "running", "stopping")
 # Closing at once tells a running agent, except where it never ran or cannot listen:
 # a refused or withdrawn proposal, and a removed membership (§15.10).
@@ -488,6 +490,15 @@ def runner_sessions(conn: Connection, placements: list[Any]) -> dict[str, dict[s
             )
         )
     }
+    # §5.3 asks whether *an* active placement names the credential, not the row shown: a
+    # closed placement's credential carried over to an active one (`carried_credential`).
+    named_active = set(
+        conn.execute(
+            select(t.placement.c.credential_id).where(
+                t.placement.c.credential_id.in_(credential_ids), t.placement.c.active.is_(True)
+            )
+        ).scalars()
+    )
     found: dict[str, dict[str, Any] | None] = {}
     for p in placements:
         member = members.get(p.membership_id)
@@ -505,7 +516,11 @@ def runner_sessions(conn: Connection, placements: list[Any]) -> dict[str, dict[s
         if (
             paused
             or (member is not None and (member.availability_state or "available") != "available")
-            or (session is not None and session.supervisor is not None and p.active is True)
+            or (
+                session is not None
+                and session.supervisor is not None
+                and p.credential_id in named_active
+            )
         ):
             since = None
         found[p.id] = {
@@ -1357,7 +1372,9 @@ def runner_quota(runner_id: str, quota: dict[str, Any]) -> dict[str, Any]:
 
 
 def _timestamp(value: Any) -> bool:
-    if not isinstance(value, str):
+    """A timestamp in the wire form of §1.1: RFC 3339 in UTC, `Z`, second precision. The form
+    is checked before the parse, which alone also takes an epoch, an offset or no zone."""
+    if not isinstance(value, str) or not WIRE_TIMESTAMP.fullmatch(value):
         return False
     try:
         TIMESTAMP.validate_python(value)

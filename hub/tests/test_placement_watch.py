@@ -25,6 +25,7 @@ from maity_hub.routes.runner import Status, _check_codes
 from tests import factory, flow
 from tests.conftest import ClientFactory
 from tests.statements import count_statements
+from tests.test_auth_agent import signed
 from tests.test_placements import REPOSITORY, allow_instances
 from tests.test_runner_stream import attach, hello, member, send
 from tests.test_runners import Runner, call, error, paired
@@ -152,7 +153,7 @@ def credential(w: Watch, instance: str) -> str:
     return credential_id
 
 
-def name_credential(w: Watch, placement_id: str, credential_id: str) -> None:
+def name_credential(w: Watch, placement_id: str, credential_id: str | None) -> None:
     """As the pickup's exchange sets it (§15.9)."""
     with w.engine.begin() as conn:
         conn.execute(
@@ -169,6 +170,7 @@ def open_session(
     *,
     ended: bool = False,
     not_listening_since: datetime | None = None,
+    supervisor: str | None = None,
 ) -> str:
     member_id = membership_id(w)
     session_id = new_id("session")
@@ -186,6 +188,7 @@ def open_session(
                 live=None if ended else True,
                 ended_at=started_at if ended else None,
                 not_listening_since=not_listening_since,
+                supervisor=supervisor,
             )
         )
     return session_id
@@ -286,6 +289,41 @@ def test_a_dormant_instance_reads_dormant(watch: Watch) -> None:
     assert session_of(watch, body["id"])["dormant"] is True
     set_row(watch, t.credential, credential_id, dormant_since=None)
     assert session_of(watch, body["id"])["dormant"] is False
+
+
+def closed_session_of(w: Watch, placement_id: str) -> Any:
+    """`session` of a closed placement, as `closed=true` lists it (§15.8)."""
+    path = "/api/v1/runner/placements"
+    headers = signed(w.runner, "GET", path, "closed=true")
+    response = w.client.get(f"{path}?closed=true", headers=headers)
+    assert response.status_code == 200, response.text
+    [item] = [p for p in response.json()["items"] if p["id"] == placement_id]
+    return item["session"]
+
+
+def test_a_supervised_session_is_left_out_while_any_active_placement_names_it(
+    watch: Watch,
+) -> None:
+    """§5.3: a session opened with `supervisor` whose credential *an* active placement names is
+    never not listening; the closed placement the credential came from reads it the same way.
+    Once no active placement names it, it is checked like any other, also on the closed one."""
+    closed = placed(watch)
+    credential_id = credential(watch, "tst1")
+    name_credential(watch, closed["id"], credential_id)
+    deleted = watch.owner.delete(f"{PROJECT}/placements/{closed['id']}")
+    assert deleted.json()["active"] is False, deleted.text  # the runner never acted: at once
+    allow_instances(watch.engine, watch.agent.id, 5)
+    active = placed(watch)
+    name_credential(watch, active["id"], credential_id)  # carried over (`carried_credential`)
+    available(watch)
+    open_session(
+        watch, credential_id, STARTED, not_listening_since=DEAF, supervisor="maity-runner/0.9.0"
+    )
+    assert closed_session_of(watch, closed["id"])["not_listening_since"] is None
+    assert session_of(watch, active["id"])["not_listening_since"] is None
+    name_credential(watch, active["id"], None)  # no active placement names it any more
+    assert closed_session_of(watch, closed["id"])["not_listening_since"] == "2026-11-20T20:09:00Z"
+    assert session_of(watch, active["id"]) == NO_SESSION
 
 
 def test_the_session_costs_the_same_statements_for_3_and_30_placements(watch: Watch) -> None:
@@ -453,6 +491,34 @@ def test_a_finding_outside_its_lists_and_bounds_is_invalid(
     with pytest.raises(ApiError) as refused:
         _check_codes(_status(finding=sent))
     assert (refused.value.code, refused.value.details) == ("invalid", {"fields": fields})
+
+
+@pytest.mark.parametrize(
+    "moment",
+    [
+        "1763712000",  # an epoch as a string, which the parse alone takes
+        1763712000,
+        "2026-11-20T20:26:00",  # no zone
+        "2026-11-20T21:26:00+01:00",  # an offset
+        "2026-11-20T20:26:00+00:00",
+        "2026-11-20T20:26:00.5Z",  # finer than a second
+        "2026-11-20 20:26:00Z",
+        "2026-11-20t20:26:00z",
+        "2026-13-40T20:26:00Z",  # the form, but no date
+    ],
+)
+@pytest.mark.parametrize("where", ["finding.seen_at", "finding.log.0.at"])
+def test_a_finding_time_outside_the_wire_form_is_invalid(moment: Any, where: str) -> None:
+    """§1.1: RFC 3339 in UTC with `Z` and second precision, for `seen_at` and each `at`."""
+    sent = (
+        finding(seen_at=moment)
+        if where == "finding.seen_at"
+        else finding(log=[{"at": moment, "line": "plc-0003: started"}])
+    )
+    with pytest.raises(ApiError) as refused:
+        _check_codes(_status(finding=sent))
+    assert refused.value.details == {"fields": {where: "invalid"}}
+    _check_codes(_status(finding=finding(log=[{"at": AT, "line": "plc-0003: started"}])))
 
 
 @pytest.mark.parametrize(

@@ -5191,9 +5191,15 @@ pydantic model. The contract names the answers (`unknown`, `required`,
 `duplicate`, `too_many`, `format`, `empty`, `too_long`, `too_large`), and
 pydantic's own types (`literal_error`, `missing`, `too_long` for a list) would
 answer otherwise. An unknown key keeps pydantic's `extra_forbidden`, as for
-any body. `session` is built for the whole page from five reads with `IN`
-(`placements.runner_sessions`): a row read per placement would make the
-runner's read grow with its placements on every wake.
+any body. A finding's times must have the wire form of §1.1 (`Z`, whole
+seconds) before they are parsed, because the parse alone also takes an epoch or
+an offset (review A1836 of #2079). `session` is built for the whole page from
+six reads with `IN` (`placements.runner_sessions`): a row read per placement
+would make the runner's read grow with its placements on every wake. The
+supervised exclusion is decided per credential, as §5.3 does: a supervised
+session is left out while any active placement names its credential, so a
+closed placement whose credential was carried over reads it as the active one
+does.
 
 **Reason:** only the runner sees the process, its exit code and the pane,
 and it already owns restart, backoff and the caps; its own restarts keep
