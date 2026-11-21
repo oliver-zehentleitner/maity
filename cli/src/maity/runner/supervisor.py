@@ -1598,8 +1598,9 @@ class Supervisor:
         a placement that is given that parent and whose sandbox lets it write the re-opened
         `tmp` (workspace.OWN_TMPDIR_HARNESSES: Codex and Claude Code, on this machine). None
         where the scratch's own `tmp` fits, where a leaf would not fit either (a long uid on
-        macOS), or where it cannot be made: the session then starts with no TMPDIR, as before
-        (tsk-0zb9mgzmbwn4, tsk-k7svzz2p4v7y)."""
+        macOS), or where it cannot be made: a Codex session then starts with no TMPDIR, as
+        before, and a sandboxed Claude Code one is refused in `_start`
+        (adapters.private_tmpdir_refusal; tsk-0zb9mgzmbwn4, tsk-k7svzz2p4v7y)."""
         if scratch is not None and adapters.scratch_tmpdir(scratch) is not None:
             return None
         try:
