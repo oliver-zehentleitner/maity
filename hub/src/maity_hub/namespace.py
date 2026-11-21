@@ -42,7 +42,9 @@ class ProjectRoute(APIRoute):
     answered `not_found` there, before FastAPI reads the body or the query (§2.3), an owner of
     an agent or a runner in it too unless the route is one of `access.OWNER_CALLS` (§1.3). One
     of `access.PUBLIC_REPOSITORY_READS` passes the gate too, which opens it to an outsider only
-    while the project's stored `repository_public` is true."""
+    while the project's stored `repository_public` is true, the instance's token serves the
+    project's namespace (the operator's own, §11.4), and the forge's answer on the repository,
+    asked live when the kept one is too old, says it is public, all before the query is read."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         inner = super().get_route_handler()

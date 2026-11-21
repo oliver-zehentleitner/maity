@@ -721,7 +721,23 @@ for the outsider by closing every list instead of filtering it (tsk-kqn8zhptf06k
     the other's; a cold first read (no entry of its own) and an ordinary refresh (an entry older than its
     `max_age`) are always made, and an overlapping request waits and serves what was just read (the lead's
     ruling, seq 186740; earlier seq 185669). So the owner's "the same one forge read per 30 seconds per project
-    as for a member" holds for the forced reads it governs. Apart from it, the live visibility
+    as for a member" holds for the forced reads it governs. The shared window holds back only a forced read on
+    an own entry still younger than `DEFAULT_MAX_AGE`, which then gets that entry as it is; a read whose own entry
+    is older than the `max_age` asked for (default `DEFAULT_MAX_AGE`) always refreshes, and so does a forced read
+    on an entry past `DEFAULT_MAX_AGE`, whatever the other cache did, so neither cache starves the other (the
+    lead's ruling, seq 187034, on zxjn A1830; `wakeups` forgets both caches on a repository change). A caller
+    with its own entry does not wait while another request holds the project's lock for its read: it gets its
+    own entry at once (`fresh: false`); only a cold caller waits, at most `LOCK_WAIT`, and then serves what was
+    read. File fetches are content fetches too: the export and bodies fetch a published file themselves on a miss
+    or an expired file while the family is still kept, and for an outsider that fetch follows the same answer
+    in the same request (`ktw_reads.outside_before_fetch`), on the repository the file belongs to: the
+    project's own, or the named repository of a `?canonical=` read; a named repository's family read
+    (`ForeignCache._read`) asks about that repository live before its walk, and that answer is this request's
+    (`_record`), so each repository is asked at most once per request (the lead, seq 187245, on zxjn A1830). A
+    file served from the store needs none. A project's lock is reclaimed when its last request leaves and the
+    cache holds no entry for it. The gate
+    reads `max_age` with the routes' own pydantic type (`ktw.max_age_of`), so `00` or `0.0` give it the same
+    window as the route (the lead, seq 187206, on ukxh A1875). Apart from it, the live visibility
     check of an outsider's own repository (at most once per `FORCE_INTERVAL` with `max_age=0`) is one small forge
     request (`/repos/{owner}/{repo}`), not a family read. The published files (`ktw.RAW`, read over plain HTTPS
     without any token) and the named repositories' families (`ktw_reads.FOREIGN`, read without a grant after a

@@ -165,6 +165,10 @@ class WhyForge(why_tests.Fake):
         self.asked = 0
         self.bound: list[str] = []
         self.events: list[str] = []  # "repos" for a visibility question, "file" for a file read
+        # A named repository's files (`acme/other`, which the family names as a URL child), and
+        # whether the forge reports it private.
+        self.foreign: dict[str, Any] = {}
+        self.named_private = False
         fake = self
 
         def file(reader: forge.Forge, repository: str, path: str, cap: int) -> bytes | None:
@@ -172,6 +176,8 @@ class WhyForge(why_tests.Fake):
             fake.file_reads.append(path)
             fake.grants.append(reader.granted)
             fake.tokens.append(reader.token)
+            if repository.lower() != "acme/widget":
+                return None if fake.named_private else fake.foreign.get(path)
             if fake.private and reader.granted is None:
                 return None  # a private repository answers 404 without a grant
             found = fake.files.get(path)
@@ -188,6 +194,9 @@ class WhyForge(why_tests.Fake):
                 fake.events.append("repos")
                 fake.asked += 1
                 return {"private": fake.private}
+            if path == "/repos/acme/other":
+                fake.events.append("repos")
+                return {"private": fake.named_private}
             return None
 
         def require_public(reader: forge.Forge, repository: str) -> None:
@@ -1510,6 +1519,141 @@ def test_overlapping_cold_requests_make_one_read() -> None:
     second.join(5)
     assert reads == [True]
     assert sorted(answers) == [False, True]
+
+
+def test_a_warm_caller_gets_its_own_entry_at_once_while_a_read_is_under_way(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A caller with its own entry for the repository does not wait for the lock another
+    request holds for its read: it gets that entry at once, `fresh: false` (`ktw.Cache.get`,
+    the lead, seq 187206)."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    reads: list[bool] = []
+    cache = _CountingCache(reads)
+    reader, project = forge.Forge(None), "prj-warm"
+    kept = cache.get(reader, project, why_tests.REPO, 0)[0]  # its own entry, at 1000
+    go = threading.Event()
+    cache.go = go
+    now[0] += ktw.FORCE_INTERVAL + 1
+    holder = threading.Thread(target=lambda: cache.get(reader, project, why_tests.REPO, 0))
+    holder.start()
+    for _ in range(500):
+        if len(reads) == 2:
+            break
+        time.sleep(0.01)
+    assert len(reads) == 2  # the holder's read is under way, holding the lock
+    began = time.monotonic()
+    entry, fresh = cache.get(reader, project, why_tests.REPO, 0)
+    waited = time.monotonic() - began
+    go.set()
+    holder.join(5)
+    assert (entry, fresh) == (kept, False)
+    assert waited < ktw.LOCK_WAIT
+    assert len(reads) == 2
+
+
+def test_an_outsiders_file_fetch_asks_the_forge_first(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The export and bodies fetch a published file themselves when the store misses, while the
+    family is still kept: for an outsider that fetch, too, follows the forge's answer in the
+    same request (the lead, seq 187206, ukxh A1875). The repository turns private with the kept
+    public answer still within its window: no file is fetched and the answer is `not_found`."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    for path in WHY_READS:
+        assert world.outsider.get(path).status_code == 200, path  # the family kept, at 1000
+    ktw.RAW.clear()  # the files dropped from the store; the family stays in OUTSIDE_CACHE
+    why.private = True
+    # Past the files' 30 s hold, inside the kept answer's and the family's 600 s: the gate and
+    # the endpoint use the kept answer, and only the file fetch would reach the forge.
+    now[0] += ktw.FORCE_INTERVAL + 1
+    states = len(why.state_reads)
+    for path in WHY_READS[1:]:
+        refused = world.outsider.get(path)
+        assert (refused.status_code, refused.json()) == (404, NOT_FOUND), (path, refused.text)
+    assert len(why.state_reads) == states, "a published file fetched for an outsider"
+    assert why.asked >= 1
+
+
+def test_an_outsiders_fetch_of_a_named_repositorys_file_asks_about_that_repository(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A named repository (`?canonical=`): its family kept in `ktw_reads.FOREIGN` and its state
+    file in the store, its bodies file never fetched. The named repository turns private: the
+    outsider's bodies read asks the forge about that repository, not the project's own, in the
+    same request, fetches nothing and answers `not_found` (the lead, seq 187245, zxjn A1830)."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    other, other_base = "https://github.com/acme/other", "https://other.example/ktw"
+    why.foreign[".keep-the-why"] = why_tests.kfile(f"{other_base}/state.json", "acme---other")
+    lean(why, f"{other_base}/state.json", why_tests.entry(10))
+    assert world.outsider.get(WHY).status_code == 200  # the project's family kept
+    named = world.outsider.get(f"{WHY}/export", params={"canonical": other})
+    assert named.status_code == 200, named.text  # the named family kept, its state file stored
+    why.named_private = True
+    now[0] += 5  # inside every window: the kept answers and entries all stand
+    reads = (len(why.file_reads), len(why.state_reads))
+    why.forget()
+    refused = world.outsider.get(f"{WHY}/bodies", params={"canonical": other})
+    assert (refused.status_code, refused.json()) == (404, NOT_FOUND), refused.text
+    assert (len(why.file_reads), len(why.state_reads)) == reads, "a file fetched for an outsider"
+    assert "repos" in why.events  # the named repository was asked about
+
+
+@pytest.mark.parametrize(
+    "raw", ["0", "00", "000", "0.0", "+0", " 0", "5", "600", "86400", "86401", "-1", "0.5", "x"]
+)
+def test_the_gate_parses_max_age_as_the_route_does(world: World, why: WhyForge, raw: str) -> None:
+    """One parser (`ktw.max_age_of`, the route's own pydantic type): a spelling the route
+    accepts is a value in the gate too, one it refuses is `None` (the default window)."""
+    answer = world.owner.get(WHY, params={"max_age": raw})
+    accepted = answer.status_code != 400
+    assert (ktw.max_age_of(raw) is not None) == accepted, (raw, answer.status_code)
+
+
+def test_a_zero_padded_max_age_takes_the_forced_window_in_the_gate(
+    world: World, why: WhyForge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`max_age=00` is 0 to the gate as to the route (ukxh, A1875): past the 30 s window the
+    gate asks the forge live, finds the repository private and answers `not_found` before a
+    bad `canonical` is read; with the default window it would have let the `400` through."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    assert world.outsider.get(f"{WHY}/export").status_code == 200  # the kept answer: public
+    why.private = True
+    now[0] += ktw.FORCE_INTERVAL + 1
+    query = {"max_age": "00", "canonical": "x" * 2049}
+    refused = world.outsider.get(f"{WHY}/export", params=query)
+    assert (refused.status_code, refused.json()) == (404, NOT_FOUND), refused.text
+
+
+@pytest.mark.parametrize("starving", ["members", "outsiders"])
+@pytest.mark.parametrize("asked", [0, ktw.DEFAULT_MAX_AGE], ids=["forced", "normal"])
+def test_a_cache_is_not_starved_by_its_linked_peer(
+    monkeypatch: pytest.MonkeyPatch, starving: str, asked: int
+) -> None:
+    """The lead's ruling, seq 187034 (zxjn, A1830): the peer forces a read every 30.1 s; the
+    other cache's forced read on its own entry younger than DEFAULT_MAX_AGE still gets that
+    entry as it is, but once the entry is past DEFAULT_MAX_AGE the next read refreshes it,
+    a normal one (`max_age` the default) and a forced one (`max_age=0`) alike, either way round."""
+    now = [1000.0]
+    monkeypatch.setattr(ktw, "now", lambda: now[0])
+    reads: list[bool] = []
+    members, outsiders = _CountingCache(reads), _CountingCache(reads, bind=False)
+    members.link(outsiders)
+    starver, victim = (members, outsiders) if starving == "members" else (outsiders, members)
+    reader, project, url = forge.Forge(None), "prj-starve", why_tests.REPO
+    assert victim.get(reader, project, url, 0)[1] is True  # its own entry, at 1000
+    start = now[0]
+    while True:
+        now[0] += 30.1
+        assert starver.get(reader, project, url, 0)[1] is True  # the peer's forced read
+        if now[0] - start >= ktw.DEFAULT_MAX_AGE:
+            break
+        assert victim.get(reader, project, url, asked)[1] is False, now[0] - start
+    assert victim.get(reader, project, url, asked)[1] is True  # past DEFAULT_MAX_AGE: refreshed
 
 
 def test_one_forced_read_per_project_across_linked_caches(

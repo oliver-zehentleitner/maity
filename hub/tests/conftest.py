@@ -464,6 +464,7 @@ def _fresh_process_state() -> Iterator[None]:
     ktw_reads.FOREIGN.clear()
     ktw_reads.OUTSIDE_CACHE.clear()  # the peer link to `ktw.CACHE` stays
     ktw_reads._outside_seen.clear()
+    ktw_reads._asked_now.set(frozenset())  # no answer of an earlier test counts as this one's
     ktw_reads._slots.clear()
     ktw_reads._flights.clear()
     ktw_reads._failed.clear()

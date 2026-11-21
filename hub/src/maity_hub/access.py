@@ -417,15 +417,12 @@ def open_why_project(
 
 def _lenient_max_age(request: Any) -> int:
     """The query's `max_age` before FastAPI reads it, for the visibility answer's window alone:
-    an integer 0..86400 as written, else the default (the route refuses it later)."""
+    parsed exactly as the route parses it (`ktw.max_age_of`, the same pydantic type), else the
+    default (absent, or refused by the route later)."""
     from maity_hub import ktw
 
-    raw = request.query_params.get("max_age")
-    if raw is not None and raw.isascii() and raw.isdigit() and len(raw) <= 5:
-        value = int(raw)
-        if value <= 86400:
-            return value
-    return ktw.DEFAULT_MAX_AGE
+    found = ktw.max_age_of(request.query_params.get("max_age"))
+    return ktw.DEFAULT_MAX_AGE if found is None else found
 
 
 async def _why_visible_now(request: Any, project: Any, token: str) -> None:

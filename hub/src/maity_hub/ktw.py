@@ -28,7 +28,9 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field, TypeAdapter, ValidationError
 
 from maity_hub import bounded, clock, forge, outbound
 
@@ -47,6 +49,23 @@ FORCE_INTERVAL = 30.0
 STATUSES = ("active", "open", "needs-review", "pending-confirmation", "superseded")
 ATTENTION_ORDER = ("needs-review", "pending-confirmation", "open")
 STATE_JSON_MAJOR = 2
+MAX_AGE_MAX = 86400  # the routes' `max_age` bound (§11.3, §11.5)
+# The routes' `max_age: int = Query(ge=0, le=MAX_AGE_MAX)` as FastAPI validates a query value:
+# pydantic in lax mode, from the string the query carries.
+_MAX_AGE = TypeAdapter(Annotated[int, Field(ge=0, le=MAX_AGE_MAX)])
+
+
+def max_age_of(raw: str | None) -> int | None:
+    """A query's `max_age` exactly as the routes read it (`_MAX_AGE`, the same pydantic type),
+    None when absent or refused: one parser for `access.gate`, which reads the query before
+    FastAPI does, and the routes (the lead, seq 187206)."""
+    if raw is None:
+        return None
+    try:
+        return _MAX_AGE.validate_python(raw)
+    except ValidationError:
+        return None
+
 
 _OPEN = {name: re.compile(rf"<!--\s*keep-the-why:{name}\s*-->") for name in ("config", "children")}
 _CLOSE = {
@@ -886,12 +905,20 @@ class Cache:
         return self._lock(project_id)
 
     def _leave(self, project_id: str) -> None:
+        """The request is done with the project. The last one out takes the project's lock
+        along while this cache holds no entry for it (a read that raised on a cold cache), as
+        `_drop` does for a dropped entry: no lock outlives every use of a project (zxjn,
+        A1830)."""
+        with self.guard:
+            kept = project_id in self.entries
         with self.refresh.guard:
             left = self.refresh.users.get(project_id, 1) - 1
             if left > 0:
                 self.refresh.users[project_id] = left
             else:
                 self.refresh.users.pop(project_id, None)
+                if not kept:
+                    self.refresh.locks.pop(project_id, None)
 
     def get(
         self,
@@ -905,9 +932,12 @@ class Cache:
         Always read: a cold cache (no entry of its own for this repository: another cache's
         answer is never served here) and an ordinary refresh (`max_age` at least
         FORCE_INTERVAL, the entry older than it). A forced read (`max_age` below
-        FORCE_INTERVAL, i.e. `0`) is made only when no cache sharing `refresh` read the
-        project's repository in the last FORCE_INTERVAL; otherwise this cache's own entry is
-        served (the lead's ruling, seq 186740: one forced forge read per project per 30 s).
+        FORCE_INTERVAL, i.e. `0`) on an own entry younger than DEFAULT_MAX_AGE is made only
+        when no cache sharing `refresh` read the project's repository in the last
+        FORCE_INTERVAL; otherwise this cache's own entry is served as it is (the lead's
+        rulings, seq 186740: one forced forge read per project per 30 s; seq 187034: on an
+        entry past DEFAULT_MAX_AGE a forced read refreshes whatever the other cache did, so
+        neither cache starves the other).
 
         While another request reads the family, the cached answer is served at once, and a
         request with nothing cached waits at most LOCK_WAIT before `Busy`, then serves what
@@ -929,7 +959,11 @@ class Cache:
                     if age < max(max_age, FORCE_INTERVAL):
                         return entry, False
                     forced = max_age < FORCE_INTERVAL
-                    if forced and self._read_lately(project_id, repository_url):
+                    if (
+                        forced
+                        and age < DEFAULT_MAX_AGE
+                        and self._read_lately(project_id, repository_url)
+                    ):
                         return entry, False
                 entry = self._read(reader, project_id, repository_url, entry)
                 with self.guard:

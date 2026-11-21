@@ -17,7 +17,7 @@ import re
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -163,6 +163,10 @@ class ForeignCache:
                 found = self._read(reader, repository)  # a spent budget raises, unmarked
         except ktw.MemberError:
             raise ktw.Busy from None
+        # `_read` asked the forge live whether the repository is public, before its walk: this
+        # request's answer on it, so a file of it fetched next asks no second time (seq 187245).
+        moved_or_private = found.error in ("not_public", "repository_moved")
+        _record(project_id, repository, found.error if moved_or_private else None)
         _mark_read("family", held)
         with self.guard:
             bounded.put(self.entries, key, found, FOREIGN_KEPT, lambda k: False)
@@ -305,8 +309,13 @@ def _before_outside_read(reader: forge.Forge, project_id: str, repository: str) 
     is dropped so the reads that follow ask again too. Not public, or no answer:
     `forge.NotCoveredError`, nothing read and nothing stored; a spent budget raises
     `forge.ForgeUnavailableError` with `retry_at`."""
-    key = (project_id, repository.lower())
     reader._forget(repository)
+    _require_live(reader, (project_id, repository.lower()))
+
+
+def _require_live(reader: forge.Forge, key: tuple[str, str]) -> None:
+    """The forge's answer on the repository in this request: the one already asked, else a
+    live ask. `forge.NotCoveredError` unless it is public."""
     if key in _asked_now.get():
         with _outside_guard:
             seen = _outside_seen.get(key)
@@ -316,6 +325,37 @@ def _before_outside_read(reader: forge.Forge, project_id: str, repository: str) 
         _asked_now.set(_asked_now.get() | {key})
     if verdict is not None:
         raise forge.NotCoveredError(verdict)
+
+
+def outside_before_fetch(reader: forge.Forge, project_id: str) -> Callable[[str], None]:
+    """For an outsider's export and bodies (`export`, `bodies`): before each published file
+    they fetch themselves (a miss or an expired file while the family is still kept), the
+    forge's answer in this request on the repository the file belongs to (`owner/repo`: the
+    project's own or a named one), as before a family read (`_require_live`; the lead, seq
+    187206 and seq 187245); a file served from the store needs none. Not public:
+    `forge.NotCoveredError`, nothing fetched or stored."""
+
+    def check(repository: str) -> None:
+        _require_live(reader, (project_id, repository.lower()))
+
+    return check
+
+
+def _record(project_id: str, repository: str, verdict: str | None) -> None:
+    """A live answer on `repository` made elsewhere (a named repository's family read,
+    `ForeignCache._read`): kept, and this request's answer, so no second ask follows."""
+    key = (project_id, repository.lower())
+    with _outside_guard:
+        bounded.put(_outside_seen, key, (ktw.now(), verdict), FOREIGN_KEPT)
+    _asked_now.set(_asked_now.get() | {key})
+
+
+def _checked(check: Callable[[str], None] | None, canonical_url: str) -> Callable[[], None] | None:
+    """`check` bound to the repository `canonical_url` names, for `_file`."""
+    if check is None:
+        return None
+    repository = canonical_url.removeprefix("https://github.com/")
+    return lambda: check(repository)
 
 
 # §11.3's answers for a public project's outsiders, apart from the members' `ktw.CACHE`, which a
@@ -532,13 +572,21 @@ def _read(kind: str, url: str, cap: int) -> ktw.Raw:
 
 
 def _file(
-    project_id: str, kind: str, url: str, cap: int, max_age: int, start: float
+    project_id: str,
+    kind: str,
+    url: str,
+    cap: int,
+    max_age: int,
+    start: float,
+    before_fetch: Callable[[], None] | None = None,
 ) -> tuple[ktw.Raw, bool]:
     """(file, fresh): `fresh` when it was read since `start`, the request's beginning, by
     this call, by a call it waited for, or by §11.3's read of the family that the same call
     made. The call waits at most ktw.LOCK_WAIT in all, for a read of the same file under way
     and for the permits; past that it answers the file it holds (`fresh: false`), else
-    `ktw.MemberError("timeout")`."""
+    `ktw.MemberError("timeout")`. `before_fetch` runs before the file is fetched, never for an
+    answer from the store: an outsider's (`outside_before_fetch`) raises when the repository is
+    not public, and then nothing is fetched or marked."""
     until = time.monotonic() + ktw.LOCK_WAIT
     with _one_read((kind, url), until) as mine:  # after a read under way, which may answer
         if not mine:
@@ -546,6 +594,8 @@ def _file(
         answered = _answered(kind, url, max_age, start)
         if answered is not None:
             return answered
+        if before_fetch is not None:
+            before_fetch()
         try:
             with _permits(project_id, until):
                 _mark_read(kind, url)
@@ -596,7 +646,10 @@ def export(
     root: str,
     max_age: int,
     cache: ktw.Cache | None = None,
+    before_fetch: Callable[[str], None] | None = None,
 ) -> Served:
+    """`before_fetch`: for an outsider, the check before a published file is fetched, given
+    the repository the file belongs to (`outside_before_fetch`); members pass none."""
     start = ktw.now()
     canonical_url, member = _member(
         reader,
@@ -616,7 +669,15 @@ def export(
         last = Served(canonical_url, root, kept, False) if kept is not None else None
         raise _unavailable(error["reason"], last, **extra)
     try:
-        raw, fresh = _file(project_id, "state", member.state_url, ktw.STATE_CAP, max_age, start)
+        raw, fresh = _file(
+            project_id,
+            "state",
+            member.state_url,
+            ktw.STATE_CAP,
+            max_age,
+            start,
+            _checked(before_fetch, canonical_url),
+        )
     except ktw.MemberError as failed:
         kept = ktw.RAW.get("state", member.state_url)
         last = Served(canonical_url, root, kept, False) if kept is not None else None
@@ -640,16 +701,27 @@ def bodies(
     root: str,
     max_age: int,
     cache: ktw.Cache | None = None,
+    before_fetch: Callable[[str], None] | None = None,
 ) -> Served:
     start = ktw.now()
-    state = export(reader, others, project_id, repository_url, canonical, root, max_age, cache)
+    state = export(
+        reader, others, project_id, repository_url, canonical, root, max_age, cache, before_fetch
+    )
     if state.raw.bodies is None:
         raise _not_found("this export carries its bodies inline", "no_bodies_file")
     url = bodies_url(state.raw.url, state.raw.bodies)
     if url is None:
         raise _unavailable("bodies_url_invalid")
     try:
-        raw, fresh = _file(project_id, "bodies", url, BODIES_CAP, max_age, start)
+        raw, fresh = _file(
+            project_id,
+            "bodies",
+            url,
+            BODIES_CAP,
+            max_age,
+            start,
+            _checked(before_fetch, state.canonical),
+        )
     except ktw.MemberError as failed:
         raise _unavailable(failed.reason, **failed.details) from None
     return Served(state.canonical, root, raw, fresh)

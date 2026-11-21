@@ -87,7 +87,7 @@ def read_keep_the_why(
     slug: str,
     request: Request,
     caller: AnyCaller,
-    max_age: int = Query(default=ktw.DEFAULT_MAX_AGE, ge=0, le=86400),
+    max_age: int = Query(default=ktw.DEFAULT_MAX_AGE, ge=0, le=ktw.MAX_AGE_MAX),
     member: str | None = Query(default=None, max_length=2048),
 ) -> JSONResponse:
     with engine_of(request).begin() as conn:
@@ -173,6 +173,7 @@ def _views_read(
                 root or "",
                 max_age,
                 ktw_reads.OUTSIDE_CACHE,
+                ktw_reads.outside_before_fetch(reader, project.id),
             )
         except forge.NotCoveredError:
             raise not_found() from None  # refused to the reader without a grant: not public
@@ -230,7 +231,7 @@ def read_keep_the_why_export(
     caller: AnyCaller,
     canonical: str | None = Query(default=None, max_length=2048),
     root: str | None = Query(default=None, max_length=2048),
-    max_age: int = Query(default=ktw.DEFAULT_MAX_AGE, ge=0, le=86400),
+    max_age: int = Query(default=ktw.DEFAULT_MAX_AGE, ge=0, le=ktw.MAX_AGE_MAX),
 ) -> Response:
     with engine_of(request).begin() as conn:
         mine = access.reader(conn, caller, slug)
@@ -245,7 +246,7 @@ def read_keep_the_why_bodies(
     caller: AnyCaller,
     canonical: str | None = Query(default=None, max_length=2048),
     root: str | None = Query(default=None, max_length=2048),
-    max_age: int = Query(default=ktw.DEFAULT_MAX_AGE, ge=0, le=86400),
+    max_age: int = Query(default=ktw.DEFAULT_MAX_AGE, ge=0, le=ktw.MAX_AGE_MAX),
 ) -> Response:
     with engine_of(request).begin() as conn:
         mine = access.reader(conn, caller, slug)
