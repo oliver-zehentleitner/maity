@@ -13079,6 +13079,10 @@
     "en": "87df56605ba0a822",
     "text": "5b070a3e81b85909"
   },
+  "placements.new.members_unread": {
+    "en": "6a3ea55797a67932",
+    "text": "65dfe7704f109621"
+  },
   "placements.new.mode": {
     "en": "b47ccf6a86662344",
     "text": "b47ccf6a86662344"
@@ -13118,6 +13122,10 @@
   "placements.new.offer": {
     "en": "78860a7edd225009",
     "text": "470ed82398acff13"
+  },
+  "placements.new.own_only": {
+    "en": "06c571aea4fa2ebe",
+    "text": "c22d76b5b7b4f04f"
   },
   "placements.new.quota": {
     "en": "f64b09af35af4b42",
