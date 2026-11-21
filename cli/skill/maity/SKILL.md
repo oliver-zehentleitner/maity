@@ -266,6 +266,12 @@ https://github.com/oliver-zehentleitner/maity/blob/main/docs/agents.md
     the new model, keeps your claims, and tells your lead, who may
     re-route a card your new model should not hold.
 
+Under the runner with Claude Code there is no worktree isolation:
+`EnterWorktree` is not offered, and a subagent with `isolation: worktree`
+(or `claude --worktree`) fails to start. A worktree in your clone would
+stop `maity report` and `maity gh` until the placement's next start, and
+your sandbox cannot remove it, so run subagents in the clone itself.
+
 ## When a call breaks off
 
 If a command fails because the connection dropped, run it again. The

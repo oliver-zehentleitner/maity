@@ -101,6 +101,19 @@ PULL_REQUEST_PROMPT = (
 # harness itself, never through an agent's command tool (runner_own_file is the boundary).
 MAITY_RUNNER_DENIED = ("maity runner", "maity runner *")
 
+# A placed Claude Code session makes no git worktree in its clone: while one exists maity runs
+# no git there (clonecheck, "Worktrees are"), so `maity report` and `maity gh` fail, and the
+# session cannot remove it from its sandbox; only the next start clears it (worktree.py). The
+# bare name takes EnterWorktree out of the model's context, as for AskUserQuestion; the
+# WorktreeCreate hook replaces Claude Code's own worktree creation (subagents with
+# `isolation: worktree` included) and fails it (cli/context/runner.md).
+CLAUDE_WORKTREE_DENIED = ("EnterWorktree",)
+# Shell form, like the plain-call hook; no runner module, so it cannot fail to start in a way
+# that would let a worktree through. It prints no path, and exits 2 on any version.
+CLAUDE_WORKTREE_HOOK = (
+    "echo 'git worktrees are off in a placement clone; work in the clone itself' >&2; exit 2"
+)
+
 
 # What in a clone's .git redirects git's configuration, hooks or object sources: never
 # written by the agent. Not everything that can make git run something: a rebase state
@@ -490,6 +503,7 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
             for name in GIT_PROTECTED]  # fmt: skip
     deny += [f"Edit(/{git}/maity/**)", f"Read(/{git}/maity/**)"]
     deny += [f"Bash({rule})" for rule in (*GIT_DENIED, *GH_DENIED, *MAITY_RUNNER_DENIED)]
+    deny += list(CLAUDE_WORKTREE_DENIED)  # every placement, with or without the sandbox
     if headless(ctx):
         # Nobody answers a headless run. `dontAsk` already denies the question tool, but it
         # stays in the model's context; the bare name takes it out of the model's context
@@ -501,6 +515,13 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # strings, not `false`: a binary older than 2.1.281 rejects `false` and drops this
         # whole file, grant included (cli/context/runner.md).
         "attribution": {"commit": "", "pr": "", "sessionUrl": False},
+        # No git worktree in the clone, sandbox or not (CLAUDE_WORKTREE_HOOK): a hook that
+        # fails or gives no path fails the worktree's creation.
+        "hooks": {
+            "WorktreeCreate": [{"hooks": [{"type": "command", "command": CLAUDE_WORKTREE_HOOK}]}],
+        },
+        # Over a `true` in the agents' user settings, which would leave the hooks unrun.
+        "disableAllHooks": False,
     }
     if ctx.sandbox:
         settings["sandbox"] = {
@@ -539,13 +560,10 @@ def claude_settings(ctx: Context) -> dict[str, Any]:
         # when the hook cannot start or fails.
         module = " ".join(shlex.quote(word) for word in ctx.as_user.runner_module("plaincall"))
         hook = f"{module} || exit 2"
-        settings["hooks"] = {
-            "PreToolUse": [
-                {"hooks": [{"type": "command", "command": hook, "timeout": 30,
-                            "onFailure": "block"}]},
-            ],
-        }  # fmt: skip
-        settings["disableAllHooks"] = False  # over a `true` in the agents' user settings
+        settings["hooks"]["PreToolUse"] = [
+            {"hooks": [{"type": "command", "command": hook, "timeout": 30,
+                        "onFailure": "block"}]},
+        ]  # fmt: skip
     return settings
 
 

@@ -692,6 +692,7 @@ def _check_claude_code(
         if tools == ("bwrap", "socat"):  # bubblewrap's nesting; Seatbelt has none
             _check_claude_nesting(report, agent_path, as_user)
         _check_claude_hooks(report, as_user, "")
+    report.ok(WORKTREES_OFF)
     _check_claude_settings(report, as_user, "")
 
 
@@ -719,6 +720,55 @@ def _check_claude_nesting(report: Report, agent_path: str, as_user: AsUser) -> N
             "harness claude-code: could not tell whether a user namespace starts inside "
             f"bubblewrap ({found.detail})"
         )
+
+
+WORKTREES_OFF = (
+    "harness claude-code: git worktrees are off for placements (the runner's settings deny "
+    "EnterWorktree and refuse worktree creation with a hook)"
+)
+# The places in a clone where a git worktree shows: Claude Code's working trees, and git's own
+# registration of any worktree. While either holds an entry maity runs no git in the clone.
+WORKTREE_PLACES = (Path(".claude", "worktrees"), Path(".git", "worktrees"))
+
+
+def _check_leftover_worktrees(
+    report: Report, cfg: config.Config, as_user: AsUser, host: str = "", where: str = ""
+) -> None:
+    """A warning per clone the runner recorded on this target (`workspaces.json`; the clones
+    it made, kept or not) whose clone holds a worktree entry. Read-only: the runner clears a
+    `.claude/worktrees/` leftover only at the placement's next start (worktree.py)."""
+    for key, entry in sorted(workspace.records(cfg.state_dir).items()):
+        # `host:/path` for an ssh target, the bare path for the local one (Place.key); a
+        # Windows drive letter is no host, as the remote path is always absolute POSIX.
+        on_host, _, path = key.partition(":")
+        if not path.startswith("/") or key.startswith("/"):
+            on_host, path = "", key
+        if on_host != host:
+            continue
+        repo = Path(path) / workspace.REPO if workspace.recorded_layout(entry) else Path(path)
+        found = [str(place) for place in WORKTREE_PLACES if _holds_entries(as_user, repo / place)]
+        if found:
+            report.warn(
+                f"{where}clone {repo} holds a git worktree ({', '.join(found)}), so maity runs "
+                "no git there; the runner clears one under .claude/worktrees/ at the "
+                "placement's next start, uncommitted work in it included"
+            )
+
+
+def _holds_entries(as_user: AsUser, path: Path) -> bool:
+    """Whether the directory `path` has any entry, as the agents' user sees it; a missing or
+    unreadable one counts as none (check warns, it does not refuse). No link is followed."""
+    try:
+        if not as_user.exists(path, "-d") or as_user.exists(path, "-L"):
+            return False
+        if as_user.direct:
+            with os.scandir(path) as listed:
+                return any(True for _ in listed)
+        done = as_user.run(["find", str(path), "-mindepth", "1", "-maxdepth", "1", "-print",
+                            "-quit"])  # fmt: skip
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return done.returncode == 0 and bool(done.stdout.strip())
 
 
 def _check_claude_hooks(report: Report, as_user: AsUser, where: str) -> None:
@@ -829,6 +879,8 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
                 (report.error if refused else report.warn)(line)
             elif harness.id == "claude-code":
                 _check_claude_hooks(report, as_user, f"{name}: ")
+            if harness.id == "claude-code":
+                report.ok(f"{name}: {WORKTREES_OFF}")
             if harness.id == "antigravity":
                 _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
             if harness.id == "opencode":
@@ -841,6 +893,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
         report.ok(f"{name}: workspaces {root}")
     if "claude-code" in cfg.harnesses:
         _check_claude_settings(report, as_user, f"{name}: ")
+        _check_leftover_worktrees(report, cfg, as_user, target.host, f"{name}: ")
     if "antigravity" in cfg.harnesses:
         _check_agy_workspaces(report, root, as_user, f"{name}: ")
     if as_user.run(["sudo", "-n", "true"]).returncode == 0:
@@ -911,6 +964,8 @@ def cmd_check(args: argparse.Namespace) -> int:
             _check_agy_workspaces(report, cfg.local.workspaces, supervisor.agents_user(cfg))
         if "codex" in cfg.harnesses:
             _check_codex_home(report, cfg, supervisor.agents_user(cfg))
+        if "claude-code" in cfg.harnesses:
+            _check_leftover_worktrees(report, cfg, supervisor.agents_user(cfg))
     if not args.offline:
         _check_hub(report, cfg)
     report.print()

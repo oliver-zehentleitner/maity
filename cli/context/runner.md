@@ -5111,3 +5111,57 @@ spellings accept argparse's refusal, but only for words with a `--` before
   the word. A raw check that avoids that would have to re-implement
   argparse's reading of global options, abbreviations and `--`, which is
   more fragile than taking argparse's own result.
+
+## A placed Claude Code session makes no git worktree in its clone
+
+**Id:** 6e3b9c41-27d8-4f5a-b0c3-9a1d47e82f65
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-d5e4d9s95ytj, 2026-11-21: two incidents on 2026-11-20, in which a Claude Code subagent in a placed session made an isolated git worktree under the clone's `.claude/worktrees/`, after which maity refused git in the clone ("Worktrees are not supported…"), `maity report` and `maity gh pr create` failed, and the session's sandbox refused to remove the worktree; Claude Code's documentation (permissions: a bare tool name in a deny rule removes the tool from the model's context; hooks, `WorktreeCreate`: the hook replaces Claude Code's own git worktree creation for `--worktree`, `EnterWorktree`, subagents with `isolation: "worktree"`, workflow agents and background sessions, and "if the hook fails or produces no path, worktree creation fails with an error"); `cli/src/maity/runner/adapters.py` (`claude_settings`). The plan is the lead's; the settings were not yet run on the hosted Claude Code version
+**See:** runner.md — a01035af-a4c1-4ab7-83a7-91670439fa50 — as of 2026-11-21
+**Revisit when:** the `Agent(isolation:worktree)` parameter deny rule is verified on the hosted Claude Code version (it would take the worktree option from subagents before they try); Claude Code renames `EnterWorktree` or the `WorktreeCreate` hook, or changes what a failing hook does; the clone check starts tolerating a worktree
+
+The settings file the runner writes for every Claude Code placement,
+sandboxed or not, headless or interactive, keeps the session from making a
+git worktree in its clone:
+
+- `EnterWorktree` as a bare name in `permissions.deny`, so the model is
+  not offered the tool.
+- A `WorktreeCreate` hook, a plain shell line that prints a short reason
+  to stderr, no path to stdout, and exits 2. Claude Code then fails every
+  worktree it would make, a subagent's `isolation: worktree` included.
+- `disableAllHooks: false`, now whenever the file is written, not only
+  under the sandbox, so a `true` in the agents' user settings does not
+  switch the hook off.
+
+`maity runner check` says so for each Claude Code target and warns about a
+clone the runner recorded there that already holds a worktree; it removes
+nothing. The clone check's refusal names stopping and starting the
+placement as the way out, which runs the existing prune.
+
+**Reason:** while a worktree is in the clone maity runs no git there, so a
+running session cannot report or open its pull request, and it cannot
+remove the worktree itself. The existing prune clears it only at the next
+start. Not making the worktree at all keeps the session working. The bare
+deny means the model never tries; the hook is the backstop for every other
+way Claude Code makes one, and its failure is documented to fail the
+creation.
+
+**Deferred:** an `Agent(isolation:worktree)` deny rule, which would take
+the worktree option from subagents and leave subagents themselves
+available. Nobody could check the parameter rule on the hosted Claude Code
+version, and a binary that cannot read a rule may drop the whole settings
+file, the grant included (as with `attribution` before 2.1.281). The
+failing hook already makes such a subagent's worktree fail, so the rule is
+left out until it is verified.
+
+**Rejected alternatives:**
+- A prune at session close. A placed session does not close by itself:
+  it waits for events, so the session stays blocked until then, and the
+  prune would have to judge a dirty worktree from a clean one.
+- The hook alone. The documentation does not say that the hook's message
+  reaches the model; without the bare deny the model would keep trying
+  `EnterWorktree`, while with it the tool is not offered at all.
+- The existing start prune alone. It helps only after a restart; the
+  session that made the worktree stays blocked until someone restarts it.

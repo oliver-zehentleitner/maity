@@ -416,6 +416,40 @@ def test_check_warns_opencode_is_unsandboxed_on_an_ssh_host(tmp_path: Path, fake
     assert "docs/runners.md#opencode-grok" in warning[0] and "tsk-nynpvag9zvhh" in warning[0]
 
 
+def test_check_says_worktrees_are_off_on_an_ssh_host_and_warns_about_its_leftover(
+    tmp_path: Path, fake_ssh: Path
+) -> None:
+    """Per host: the line that worktrees are off for Claude Code placements, and a warning for
+    a clone the runner recorded on that host which holds a worktree; another host's clone and
+    an empty `.git/worktrees` (the sandbox's placeholder) are not named. Nothing is removed."""
+    path = tmp_path / "runner.toml"
+    path.write_text(CONFIG.format(root=tmp_path) + "\n[harness.claude-code]\n")
+    (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
+    (tmp_path / "remote" / "ws").mkdir(parents=True)
+    claude = tmp_path / "remote" / "bin" / "claude"
+    claude.write_text("#!/bin/sh\necho '2.1.325 (Claude Code)'\n")
+    claude.chmod(0o755)
+    ws = tmp_path / "remote" / "ws" / "prj-1"
+    clones = {name: ws / name for name in ("left", "clean", "elsewhere")}
+    (clones["left"] / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    (clones["clean"] / ".git" / "worktrees").mkdir(parents=True)
+    (clones["elsewhere"] / ".git" / "worktrees" / "agent-y").mkdir(parents=True)
+    for name, host in (("left", "build-2"), ("clean", "build-2"), ("elsewhere", "build-1")):
+        place = workspace.Workspace(clones[name], "prj-1", name, host)
+        workspace.record(tmp_path / "st", place, "agt", f"plc-{name}")
+    cfg = config.load(path)
+    target = targets.ssh_hosts(cfg)[1]
+    report = commands.Report()
+    commands._check_host(report, cfg, target)
+    assert ("ok", f"build-2: {commands.WORKTREES_OFF}") in report.lines, report.lines
+    found = [(lvl, t) for lvl, t in report.lines if "holds a git worktree" in t]
+    assert len(found) == 1, report.lines
+    level, text = found[0]
+    assert level == "warn" and text.startswith(f"build-2: clone {clones['left']} ")
+    assert ".claude/worktrees" in text and "placement's next start" in text
+    assert (clones["left"] / ".claude" / "worktrees" / "agent-x").is_dir()  # read-only
+
+
 @pytest.mark.parametrize(
     ("extra", "level"),
     [("", "warn"), ("\nrequire_sandbox = true", "error")],

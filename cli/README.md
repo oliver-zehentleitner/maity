@@ -1250,7 +1250,10 @@ project's own harness configuration is never loaded:
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
   configuration. A `supervised` placement also gets `AskUserQuestion` as a
   bare deny rule: nobody answers a headless run, so the tool is not
-  offered. Before an `interactive` start the runner marks the
+  offered. Every placement gets `EnterWorktree` as a bare deny rule and a
+  `WorktreeCreate` hook that fails (with `disableAllHooks` set to
+  `false`), so the session makes no git worktree in its clone, where one
+  would stop maity's git until the next start. Before an `interactive` start the runner marks the
   clone as trusted in the agents' Claude Code configuration
   (`hasTrustDialogAccepted` for the clone's path, under the lock Claude
   Code's own saves take; see `cli/context/runner.md` for the one case in

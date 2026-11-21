@@ -630,6 +630,45 @@ def test_check_warns_about_inherited_claude_settings(
     assert len(warnings) == 2, warnings
 
 
+@pytest.mark.parametrize(
+    ("leftover", "warned"),
+    [(None, False), (".claude/worktrees/agent-x", True), (".git/worktrees/agent-x", True),
+     (".git/worktrees", False)],  # the sandbox leaves an empty `.git/worktrees`: nothing there
+)  # fmt: skip
+def test_check_says_worktrees_are_off_and_warns_about_a_leftover(
+    paired: Path, bin_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    leftover: str | None, warned: bool,
+) -> None:  # fmt: skip
+    """A placed Claude Code session makes no worktree (adapters.CLAUDE_WORKTREE_HOOK); a clone
+    that already holds one is named, with the start that clears it, and left as it is."""
+    from maity.runner import workspace
+
+    fake_tool(bin_dir, "tmux")
+    fake_tool(bin_dir, "maity")
+    fake_tool(bin_dir, "claude", "2.1.325 (Claude Code)")
+    for tool in ("bwrap", "socat", "unshare", "true"):
+        fake_tool(bin_dir, tool)
+    paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
+    clone = tmp_path / "ws" / "prj-1" / "agent-3"
+    (clone / ".git").mkdir(parents=True)
+    workspace.record(tmp_path / "st", workspace.Workspace(clone, "prj-1", "agent-3"), "a", "p")
+    # A clone on an ssh host is that host's check, not this one.
+    workspace.record(tmp_path / "st", workspace.Workspace(clone, "prj-1", "agent-4", "b"), "a", "q")
+    if leftover is not None:
+        (clone / leftover).mkdir(parents=True)
+    capsys.readouterr()
+    assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0  # no block
+    out = lines(capsys)
+    assert f"ok     {commands.WORKTREES_OFF}" in out, out
+    found = [line for line in out if "holds a git worktree" in line]
+    assert len(found) == int(warned), out
+    if leftover is not None:
+        assert (clone / leftover).is_dir()  # check removes nothing
+    if warned:
+        assert found[0].startswith("warn") and f"clone {clone} " in found[0]
+        assert "placement's next start" in found[0]
+
+
 @pytest.mark.parametrize(("version", "warned"), [("2.1.325", False), ("2.1.330", True)])
 def test_check_warns_when_claude_code_is_not_the_checked_version(
     paired: Path, bin_dir: Path, capsys: pytest.CaptureFixture[str], version: str, warned: bool

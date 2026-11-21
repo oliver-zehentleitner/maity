@@ -216,6 +216,13 @@ allows by itself); without that, review the head with `git show` and
 has an agy session on an ssh host: keep such files in the clone, out of
 what you commit.
 
+A placed Claude Code session has no worktree isolation: `EnterWorktree`
+is not offered, and a subagent with `isolation: worktree` (or
+`claude --worktree`) fails to start. A worktree in your clone would stop
+`maity report` and `maity gh` until the placement's next start, and your
+sandbox cannot remove it. Run subagents without worktree isolation, in
+the clone itself.
+
 In Maity's own repository, heavy test runs take a run slot through
 `tools/run_slot.sh`, whose slot files and log are under `~/.local/state/maity`
 by default. A placed session's sandbox may not write there. The script then

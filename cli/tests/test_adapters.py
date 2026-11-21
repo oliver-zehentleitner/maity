@@ -196,7 +196,14 @@ def test_claude_code_grant(tmp_path: Path) -> None:
     assert not any(rule.startswith("Write(") for rule in deny)  # Claude Code ignores those
     assert not any(rule.startswith("WebFetch") for rule in allow)
     assert settings["permissions"]["defaultMode"] == "dontAsk"
-    assert "sandbox" not in settings and "hooks" not in settings  # no exclusion, no hook
+    assert "sandbox" not in settings  # no exclusion
+    # Without the sandbox, the worktree hook alone: no plain-call hook.
+    assert settings["hooks"] == {
+        "WorktreeCreate": [
+            {"hooks": [{"type": "command", "command": adapters.CLAUDE_WORKTREE_HOOK}]},
+        ],
+    }  # fmt: skip
+    assert settings["disableAllHooks"] is False
     strict = adapters.claude_settings(
         context(tmp_path / "s", sandbox=True, hosts=("maity.team", "github.com"))
     )["sandbox"]
@@ -227,6 +234,7 @@ def test_claude_code_grant(tmp_path: Path) -> None:
 def test_under_the_sandbox_every_tool_call_passes_the_plain_call_hook(tmp_path: Path) -> None:
     settings = adapters.claude_settings(context(tmp_path, sandbox=True))
     assert settings["disableAllHooks"] is False
+    assert set(settings["hooks"]) == {"WorktreeCreate", "PreToolUse"}
     (entry,) = settings["hooks"]["PreToolUse"]
     assert "matcher" not in entry  # every tool, not only Bash
     (hook,) = entry["hooks"]
@@ -263,6 +271,44 @@ def test_claude_codes_sandbox_needs_the_hook_failure_policy(
     from maity.runner import capabilities
 
     assert capabilities.sandbox_version_ok(harness_id, version) is ok
+
+
+@pytest.mark.parametrize("mode", ["interactive", "supervised"])
+@pytest.mark.parametrize("sandbox", [False, True])
+def test_a_placed_claude_code_session_makes_no_git_worktree(
+    tmp_path: Path, mode: str, sandbox: bool
+) -> None:
+    """While a worktree is in the clone maity runs no git there, and the session cannot remove
+    it (tsk-d5e4d9s95ytj). Every placement: EnterWorktree denied by its bare name, and a
+    WorktreeCreate hook that fails, which fails a subagent's `isolation: worktree` too. No
+    `Agent(isolation:…)` parameter rule: not verified on the hosted Claude Code yet, and a rule
+    a binary cannot read could cost the whole file (cli/context/runner.md)."""
+    ctx = context(tmp_path, placement={**PLACEMENT, "mode": mode}, sandbox=sandbox)
+    adapters.launch(ctx)
+    written = json.loads((ctx.agent_dir / "claude-settings.json").read_text())
+    assert written == adapters.claude_settings(ctx)
+    deny = written["permissions"]["deny"]
+    assert "EnterWorktree" in deny
+    assert not any(rule.startswith("Agent(") for rule in deny)
+    assert written["disableAllHooks"] is False  # the agents' user settings cannot turn it off
+    (entry,) = written["hooks"]["WorktreeCreate"]
+    assert "matcher" not in entry
+    (hook,) = entry["hooks"]
+    assert hook == {"type": "command", "command": adapters.CLAUDE_WORKTREE_HOOK}
+    # Claude Code takes the hook's stdout as the worktree's path: it must fail and print none.
+    payload = json.dumps({"hook_event_name": "WorktreeCreate", "name": "agent-x"})
+    done = subprocess.run(["sh", "-c", hook["command"]], input=payload, capture_output=True,
+                          text=True, check=False, timeout=60)  # fmt: skip
+    assert done.returncode != 0 and done.stdout == ""
+    assert "worktree" in done.stderr
+
+
+def test_no_other_harness_gets_the_worktree_rules(tmp_path: Path) -> None:
+    """Only Claude Code's settings change; codex and opencode name neither rule nor hook."""
+    codex = adapters.codex_config(context(tmp_path / "x", harness_id="codex"))
+    opencode = json.dumps(adapters.opencode_config(context(tmp_path / "o", harness_id="opencode")))
+    for text in (codex, opencode):
+        assert "EnterWorktree" not in text and "WorktreeCreate" not in text
 
 
 def test_the_hook_refuses_when_it_cannot_start(tmp_path: Path) -> None:
