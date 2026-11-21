@@ -28,6 +28,7 @@ from sqlalchemy import Engine, func, select, update
 
 from maity_hub import clock, instances, read_limits
 from maity_hub import tables as t
+from maity_hub.ids import new_id
 from tests import factory
 from tests.conftest import ClientFactory
 from tests.test_auth_agent import bearer, signed
@@ -62,15 +63,19 @@ class World:
         sign: bool = True,
         body: Any = None,
         key: str | None = None,
+        extra: dict[str, str] | None = None,
     ) -> Any:
         """The agent's call to `path` below /api/v1, signed or as Bearer; a write under `key`,
-        else a fresh Idempotency-Key."""
+        else a fresh Idempotency-Key; `extra` headers beside them (Bearer only: a signature
+        does not cover them here)."""
         full = f"{API}{path}"
         raw = json.dumps(body).encode() if body is not None else b""
         route, _, query = full.partition("?")
         headers = (
-            signed(self.agent, method, route, query, raw) if sign else bearer(self.agent)
-        ) | {"Content-Type": "application/json"}
+            (signed(self.agent, method, route, query, raw) if sign else bearer(self.agent))
+            | {"Content-Type": "application/json"}
+            | (extra or {})
+        )
         if method != "GET":
             headers["Idempotency-Key"] = key or f"key-{secrets.token_hex(12)}"
         return self.client.request(method, full, headers=headers, content=raw or None)
@@ -580,12 +585,15 @@ def test_no_route_outside_a_project_answers_500_for_an_instance_in_two(world: Wo
     """Every route converted in hub PR B step 3, once, for an instance attached to A and B:
     an answer or a clean refusal, never a server error."""
     w = world
+    other = factory.agent(w.engine, w.beta, w.agent.owner_id, instance="oth1")
     calls = [
         ("GET", "/me", None),
         ("GET", "/projects", None),
         ("GET", "/bootstrap", None),
         ("GET", "/bootstrap?project=maintainer/beta", None),
-        ("GET", f"/avatars/{w.agent.agent_id}", None),
+        # Another member's picture, so `avatars.may_read` reads the attachments (its own
+        # would be answered before them).
+        ("GET", f"/avatars/{other.agent_id}", None),
         ("PATCH", "/me", {"paused": None}),
         ("PATCH", "/me", {"dormant": False}),
         ("PATCH", "/me", {"avatar_motif": None}),
@@ -593,12 +601,24 @@ def test_no_route_outside_a_project_answers_500_for_an_instance_in_two(world: Wo
         ("POST", "/me/keep-the-why/ack", None),
         ("POST", "/me/resume", {"client": "test"}),
         ("POST", "/me/soul/proposals", {"markdown": "me", "reason": "why"}),
-        ("POST", "/reports", {"target": {"type": "project", "id": "maintainer/beta"}}),
+        # With its `reason`, so the call gets past validation to the reader of the target.
+        (
+            "POST",
+            "/reports",
+            {"target": {"type": "project", "id": "maintainer/beta"}, "reason": "spam"},
+        ),
+        (
+            "POST",
+            "/reports",
+            {"target": {"type": "profile", "id": other.agent_id}, "reason": "spam"},
+        ),
         ("GET", "/me/cross-chats", None),
     ]
     for method, path, body in calls:
-        answered = w.call(method, path, body=body)
+        answered = w.call(method, path, body=body, sign=method != "GET" or "?" not in path)
         assert answered.status_code < 500, (method, path, answered.text)
+    for path in (f"/avatars/{other.agent_id}", "/bootstrap?project=maintainer/beta"):
+        assert w.call("GET", path, sign="?" not in path).status_code == 200, path
     _invalid(
         w.call("POST", "/me/soul/proposals", body={"markdown": "me", "reason": "why"}),
         "project",
@@ -935,3 +955,232 @@ def test_a_write_in_every_attachment_locks_its_projects_in_order_first(
     assert done.status_code == 200, done.text
     assert len(done.json()["projects"]) == 2
     assert taken[:2] == [(ordered[0], False), (ordered[1], False)]
+
+
+# --- the rest of the boundary, per route (review of #2105) ----------------------------------
+
+
+def _other_in(w: World, project_id: str) -> factory.Agent:
+    """Another agent of the same owner, a member of `project_id` alone."""
+    return factory.agent(w.engine, project_id, w.agent.owner_id, instance="oth1")
+
+
+def test_a_bridge_in_b_carries_through_its_attachment_in_b_alone(world: World) -> None:
+    """The instance is a bridge in B (its membership there, §2.3): a call with `Maity-For` on
+    B's routes acts as the served agent through B's row; on A's routes, where it bridges
+    nothing, the same header is refused, A's row never standing in for B's."""
+    w = world
+    served = _other_in(w, w.beta)
+    with w.engine.begin() as conn:
+        conn.execute(
+            t.bridge.insert().values(
+                id=new_id("bridge"),
+                project_id=w.beta,
+                served=served.membership_id,
+                bridge=w.in_b,
+                purpose="git for the designer",
+                cross_owner=False,
+                created_by=w.agent.owner_id,
+                created_at=clock.now(),
+            )
+        )
+    carried = {"Maity-For": served.agent_id}
+    said = w.call("POST", f"{B}/events", sign=False, body=NOTICE, extra=carried)
+    assert said.status_code == 201, said.text
+    actor = said.json()["actor"]
+    assert actor["member_id"] == served.agent_id, said.text
+    assert w.agent.agent_id in json.dumps(actor["via"]), said.text
+    before = w.event_count(w.alpha)
+    refused = w.call("POST", f"{A}/events", sign=False, body=NOTICE, extra=carried)
+    assert refused.status_code in (403, 404), refused.text
+    assert w.event_count(w.alpha) == before
+
+
+def test_patch_me_without_project_changes_nothing_when_one_project_refuses(
+    world: World,
+) -> None:
+    """All or nothing (§5.3, "Per project"): A's own pause would be lifted, but in B a human
+    paused the instance, which the agent may not lift; the call is refused with B named in
+    `details.project`, and A's pause stays."""
+    w = world
+    own = w.call("PATCH", "/me", body={"paused": {"reason": "mine"}, "project": "maintainer/alpha"})
+    assert own.status_code == 200, own.text
+    with w.engine.begin() as conn:
+        conn.execute(
+            update(t.instance_attachment)
+            .where(instances.attachment_of(w.agent.credential_id, w.in_b))
+            .values(paused_since=clock.now(), paused_by=w.agent.owner_id, paused_reason="stop")
+        )
+    lifted = w.call("PATCH", "/me", body={"paused": None})
+    _refused(lifted, "forbidden")
+    details = lifted.json()["error"]["details"]
+    assert details["reason"] == "paused_by_human"
+    assert details["project"] == "maintainer/beta"
+    assert _attachment(w, w.in_a).paused_since is not None  # A's change rolled back
+    assert _attachment(w, w.in_b).paused_by == w.agent.owner_id
+
+
+def test_post_me_limit_without_project_changes_nothing_when_one_project_refuses(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All or nothing for `POST /me/limit` too: the write in B is refused after A's, and
+    neither stays; `details.project` names B."""
+    from maity_hub import availability
+    from maity_hub.errors import ApiError
+
+    w = world
+    real = availability.set_agent_limit
+
+    def refusing(conn: Any, row: Any, *args: Any, **kwargs: Any) -> None:
+        if row.id == w.in_b:
+            raise ApiError(409, "conflict", "not here", {"reason": "test"})
+        real(conn, row, *args, **kwargs)
+
+    monkeypatch.setattr(availability, "set_agent_limit", refusing)
+    until = clock.rfc3339(clock.now() + timedelta(hours=1))
+    refused = w.call("POST", "/me/limit", body={"until": until})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["details"]["project"] == "maintainer/beta"
+    assert _limit(w, w.in_a) is None and _limit(w, w.in_b) is None
+
+
+def test_dormant_applies_per_project(world: World) -> None:
+    """`dormant` with `project` in that attachment alone, without it in every one that is
+    not isolated; `GET /me` shows it per project."""
+    w = world
+    one = w.call("PATCH", "/me", body={"dormant": True, "project": "maintainer/beta"})
+    assert one.status_code == 200, one.text
+    assert _attachment(w, w.in_b).dormant_since is not None
+    assert _attachment(w, w.in_a).dormant_since is None
+    shown = {p["id"]: p["dormant"] for p in w.call("GET", "/me").json()["projects"]}
+    assert shown[w.alpha] is None and shown[w.beta] is not None
+    w.isolate(w.in_b)
+    woke = w.call("PATCH", "/me", body={"dormant": False})
+    assert woke.status_code == 200, woke.text
+    assert _attachment(w, w.in_b).dormant_since is not None  # B is isolated, skipped
+    both = w.call("PATCH", "/me", body={"dormant": True})
+    assert both.status_code == 200, both.text
+    assert _attachment(w, w.in_a).dormant_since is not None
+
+
+def test_a_soul_proposal_is_filed_in_the_project_it_names(world: World) -> None:
+    """`POST /me/soul/proposals` files its consent request in the project named (202); an
+    isolated one there is `isolated`, and nothing is filed."""
+    w = world
+
+    def requests_in(project_id: str) -> int:
+        with w.engine.connect() as conn:
+            return int(
+                conn.execute(
+                    select(func.count())
+                    .select_from(t.request)
+                    .where(t.request.c.project_id == project_id)
+                ).scalar_one()
+            )
+
+    proposal = {"markdown": "me", "reason": "why", "project": "maintainer/beta"}
+    filed = w.call("POST", "/me/soul/proposals", body=proposal)
+    assert filed.status_code == 202, filed.text
+    assert (requests_in(w.alpha), requests_in(w.beta)) == (0, 1)
+    w.isolate(w.in_b)
+    refused = w.call("POST", "/me/soul/proposals", body=proposal)
+    _refused(refused, "forbidden")
+    assert refused.json()["error"]["details"]["reason"] == "isolated"
+    assert (requests_in(w.alpha), requests_in(w.beta)) == (0, 1)
+
+
+def test_a_cross_chat_post_from_an_isolated_project_is_refused(chat: Any) -> None:
+    """The author is isolated in B: a mention posted from B is `isolated` and charges
+    nothing; from A it goes on (§9.5, §6.2)."""
+    author = chat["author"]
+    with chat["engine"].begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == chat["in_b"])
+            .values(isolated_since=clock.now(), isolated_reason="a rewrite", isolated_by="hub")
+        )
+    refused = author.post(chat["path"], {"body": chat["mention"], "project": "maintainer/beta"})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "isolated"
+    assert chat["charged"] == []
+    posted = author.post(chat["path"], {"body": chat["mention"], "project": "maintainer/alpha"})
+    assert posted.status_code == 201, posted.text
+
+
+def test_a_cross_chat_author_acts_through_its_own_live_attachment_only(world: World) -> None:
+    """`_author_actor`: in a project the instance is attached to and not isolated in, the
+    member actor of that attachment; isolated there, detached from it, or in a project where
+    only its profile is a member, an agent that is no member there (§9.5, Q4)."""
+    from maity_hub import cross_chats
+    from maity_hub.auth.caller import Caller
+
+    w = world
+    gamma = factory.project(w.engine, "gamma")
+    factory.membership(w.engine, gamma, agent_id=w.agent.agent_id)  # the profile, not attached
+    caller = Caller(
+        kind="agent",
+        via="signed",
+        agent_id=w.agent.agent_id,
+        owner_id=w.agent.owner_id,
+        credential_id=w.agent.credential_id,
+        instance=w.agent.instance,
+    )
+
+    def acting(project_id: str) -> int | None:
+        with w.engine.connect() as conn:
+            found: int | None = cross_chats._author_actor(conn, caller, project_id).membership_id
+        return found
+
+    assert (acting(w.alpha), acting(w.beta), acting(gamma)) == (w.in_a, w.in_b, None)
+    w.isolate(w.in_a)
+    w.detach(w.in_b)
+    assert (acting(w.alpha), acting(w.beta)) == (None, None)
+
+
+def test_a_member_in_b_alone_is_read_through_bs_attachment_only(world: World) -> None:
+    """Another agent is a member of B alone: the instance reads its picture and may report it
+    while attached to B and not isolated there; isolated in B, or detached from it, neither,
+    though A stays (§6.10, §16.8, §6.17)."""
+    w = world
+    other = _other_in(w, w.beta)
+    avatar = f"/avatars/{other.agent_id}"
+
+    def report() -> Any:
+        return w.call(
+            "POST",
+            "/reports",
+            body={"target": {"type": "profile", "id": other.agent_id}, "reason": "spam"},
+        )
+
+    assert w.call("GET", avatar).status_code == 200
+    filed = report()
+    assert filed.status_code in (200, 201, 202), filed.text
+    w.isolate(w.in_b)
+    assert w.call("GET", avatar).status_code == 404
+    assert report().status_code == 404
+    with w.engine.begin() as conn:
+        conn.execute(
+            update(t.membership).where(t.membership.c.id == w.in_b).values(isolated_since=None)
+        )
+    w.detach(w.in_b)
+    assert w.call("GET", avatar).status_code == 404
+    assert report().status_code == 404
+
+
+def test_bootstrap_with_project_reads_through_that_attachment(world: World) -> None:
+    """`GET /bootstrap?project=` answers the project's parts as its single routes would: in
+    B while attached and free there; `isolated` once isolated, `not_found` once detached, `me`
+    answering either way (§5.4, §6.2)."""
+    w = world
+
+    def parts() -> tuple[int, int, int]:
+        found = w.call("GET", "/bootstrap?project=maintainer/beta", sign=False)
+        assert found.status_code == 200, found.text
+        body = found.json()
+        return body["me"]["status"], body["head"]["status"], body["project"]["status"]
+
+    assert parts() == (200, 200, 200)
+    w.isolate(w.in_b)
+    assert parts() == (200, 403, 403)
+    w.detach(w.in_b)
+    assert parts() == (200, 404, 404)
