@@ -1598,6 +1598,38 @@ def test_managed_settings_that_switch_hooks_off_are_named(text: str, off: str | 
     assert (why is None) if off is None else (why is not None and off in why)
 
 
+# No `os.geteuid` on Windows, and test_trust imports this module there (tsk-0tje3vzzedtx).
+@pytest.mark.skipif(getattr(os, "geteuid", lambda: -1)() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("quiet", [False, True])
+def test_managed_settings_that_cannot_be_looked_at_are_named_not_taken_for_absent(
+    monkeypatch: pytest.MonkeyPatch, quiet: bool
+) -> None:
+    """A managed settings file below a directory the runner cannot search could switch the
+    hook off: the check names it, never takes it for absent. Also where pathlib's predicates
+    answer False instead of raising, as from Python 3.14 (tsk-0tje3vzzedtx, A1943)."""
+    from maity.runner import capabilities
+
+    if quiet:
+        for name in ("is_dir", "is_file", "exists", "is_symlink"):
+            original = getattr(Path, name)
+
+            def answer(self: Path, *args: Any, _original: Any = original, **kw: Any) -> bool:
+                try:
+                    return bool(_original(self, *args, **kw))
+                except PermissionError:
+                    return False
+
+            monkeypatch.setattr(Path, name, answer)
+    managed = _managed(capabilities)
+    managed.write_text('{"disableAllHooks": true}')
+    managed.parent.chmod(0)
+    try:
+        why = capabilities.claude_hooks_off(AsUser(), "linux")
+    finally:
+        managed.parent.chmod(0o700)
+    assert why is not None and "cannot be checked" in why
+
+
 def test_no_managed_settings_switch_no_hook_off() -> None:
     from maity.runner import capabilities
 

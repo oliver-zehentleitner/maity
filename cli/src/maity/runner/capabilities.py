@@ -139,7 +139,9 @@ _DROP_INS = 'for f in "$1"/*.json; do if [ -f "$f" ]; then printf "%s\\n" "$f"; 
 
 
 def _present(as_user: AsUser, path: Path, kind: str = "-e") -> bool:
-    """`test` on the agents' side; anything but a clear yes or no is an OSError."""
+    """`test` on the agents' side; anything but a clear yes or no is an OSError. On the
+    runner's own side `AsUser.exists` already raises for a path it cannot look at (stat, not
+    pathlib's predicates, which stop raising from Python 3.14; tsk-0tje3vzzedtx)."""
     if as_user.direct:
         return as_user.exists(path, kind)
     done = as_user.run(["test", kind, str(path)])

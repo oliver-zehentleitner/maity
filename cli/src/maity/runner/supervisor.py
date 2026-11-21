@@ -45,7 +45,7 @@ from . import (
     targets,
     workspace,
 )
-from .asuser import RUNNER, AsUser, Unreachable
+from .asuser import RUNNER, AsUser, Unreachable, present
 from .capabilities import ClaudeSeccomp
 from .targets import Target
 from .tmux import IDLE, WAITING, WORKING, Session, Tmux, TmuxError, session_name
@@ -2196,6 +2196,16 @@ def private_paths(
     return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
 
 
+# The fail-closed listings below decide with stat, never with pathlib's predicates, which stop
+# raising from Python 3.14 (asuser.present, tsk-0tje3vzzedtx).
+def _is_dir(path: Path) -> bool:
+    return present(path, "-d")
+
+
+def _is_link(path: Path) -> bool:
+    return present(path, "-L")
+
+
 def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Path]:
     """The credential directories of the other clones under `workspaces` as they stand now,
     a workspace folder's clone `repo` included
@@ -2211,11 +2221,11 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     if as_user.direct:
         found: list[Path] = []
         try:
-            for project in root.iterdir() if root.is_dir() else ():
-                if project.is_dir() and not project.is_symlink():
+            for project in root.iterdir() if _is_dir(root) else ():
+                if _is_dir(project) and not _is_link(project):
                     found += [c / ".git" / "maity" for d in project.iterdir()
                               for c in (d, d / workspace.REPO)
-                              if (c / ".git" / "maity").is_dir()]  # fmt: skip
+                              if _is_dir(c / ".git" / "maity")]  # fmt: skip
         except OSError as exc:
             raise refused from exc
         real_root, real_clone = root, clone.resolve()
@@ -2245,9 +2255,9 @@ def other_scratches(
     found: list[Path] = []
     if as_user.direct:
         try:
-            for project in root.iterdir() if root.is_dir() else ():
+            for project in root.iterdir() if _is_dir(root) else ():
                 holder = project / workspace.SCRATCH
-                if project.is_symlink() or holder.is_symlink() or not holder.is_dir():
+                if _is_link(project) or _is_link(holder) or not _is_dir(holder):
                     continue
                 found += [root / project.name / workspace.SCRATCH / e.name
                           for e in holder.iterdir()]  # fmt: skip
