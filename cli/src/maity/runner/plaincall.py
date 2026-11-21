@@ -29,7 +29,9 @@ heredoc or more than one line (`read_whole`), and any line is refused when its q
 close, when it holds `$'...'` text with a backslash or an unquoted `$"`, or when its quoted
 text is nested too deep: the hook does not read such lines to the end. Nor does it read a
 line that holds a construct it does not model exactly (`_unmodelled`): such a line is
-refused as well. A command the shell
+refused as well, and so is a line that names `maity` and holds a control character other
+than a tab or a newline, or a space other than the ASCII one (`odd_spacing`), at which the
+shell does not split words while another reader of the line may. A command the shell
 builds from values the hook cannot know, such as globs against files and expansions of
 variables or of input, is not read. What the hook holds is that a line Claude Code may take
 out of the sandbox, `maity` after only the allowed assignments, runs only as one plain
@@ -47,6 +49,7 @@ import itertools
 import json
 import re
 import sys
+import unicodedata
 from collections.abc import Sequence
 from typing import TypeAlias
 
@@ -112,6 +115,13 @@ PREFIX_REFUSED = (
     "`maity` by its name, not by a path. Run "
     "`maity …` at the start of the line; text that mentions `maity` goes in a file in this "
     "clone, passed with `--body-file`."
+)
+SPACING_REFUSED = (
+    "A line that names `maity` holds no control character and no space other than an ASCII "
+    "space and a tab: no carriage return, vertical tab, form feed, no-break or other Unicode "
+    "space, and no zero-width space or other invisible format character. "
+    "Run `maity …` with plain spaces; text that holds such "
+    "characters goes in a file in this clone, passed with `--body-file`."
 )
 # The reason for a refused line with a word before `maity` that reads as an assignment to
 # MAITY_WAIT_TIMEOUT (`_assigns_wait_timeout`): the same rule, led by the way to set a wait's
@@ -998,6 +1008,32 @@ def _split(line: str) -> list[tuple[str, bool, int, str]]:
     return words
 
 
+def _odd(c: str) -> bool:
+    """Whether a character is one a line that names `maity` may not hold (`odd_spacing`): a
+    control character (C0, DEL or C1) other than a tab and a newline, any other character
+    Python counts as a space (no-break, em, ideographic and the other Unicode spaces, the
+    line and paragraph separators, U+0085), or a format character (Unicode category Cf).
+    Format characters are invisible: the zero-width space U+200B, U+180E (a space before
+    Unicode 6.3) and U+FEFF (a space to JavaScript's regular expressions) are among them,
+    and so are the zero-width joiner and non-joiner, the word joiner, the soft hyphen and
+    the bidi controls, which can hide or reorder what a reader sees of the line."""
+    if c in " \t\n":
+        return False
+    return ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F or c.isspace() or unicodedata.category(c) == "Cf"
+
+
+def odd_spacing(command: str) -> bool:
+    """Whether the line names `maity` (`names_maity`), also once the characters `_odd` finds
+    are taken out, and holds one of them. The shell splits words only at a space, a tab and
+    a newline, so `maity` followed by a carriage return, a form feed or a no-break space is
+    part of a longer word to it, and the rules above do not hold the line; a harness that
+    takes such a character as a space would read `maity` as the line's command. The hook
+    does not rely on how the harness splits: it refuses such a line (cli/context/runner.md).
+    A line that does not name `maity` is left as before."""
+    kept = "".join(c for c in command if not _odd(c))
+    return kept != command and names_maity(kept)
+
+
 def names_maity(command: str) -> bool:
     """Whether `maity` appears anywhere in the line, in any case, also with quotes or
     backslashes between its letters."""
@@ -1302,7 +1338,10 @@ def _in_substitution(command: str) -> str | None:
 
 
 def refusal(payload: object) -> str | None:
-    """The reason to refuse the tool call in Claude Code's PreToolUse input, or None."""
+    """The reason to refuse the tool call in Claude Code's PreToolUse input, or None. A line
+    that names `maity` and holds a control character or a space the shell does not split at
+    (`odd_spacing`) is refused when nothing else refuses it, so a line refused before keeps
+    its reason."""
     if not isinstance(payload, dict):
         return "the hook's input is not a JSON object"
     tool_input = payload.get("tool_input")
@@ -1310,7 +1349,11 @@ def refusal(payload: object) -> str | None:
     if not isinstance(command, str):
         return None
     reason = _decide(command)
-    return reason if reason is not None else _in_substitution(command)
+    if reason is None:
+        reason = _in_substitution(command)
+    if reason is None and odd_spacing(command):
+        reason = SPACING_REFUSED
+    return reason
 
 
 def _decide(command: str) -> str | None:

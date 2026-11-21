@@ -249,7 +249,8 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert states(reports) == [("starting", None, None), ("running", None, None)]
     first, second = (b for _, b in reports.sent)
     assert (first["seq"], second["seq"]) == (1, 2)
-    assert second["session_hint"] == "tmux -S /run/maity/tmux.sock attach -t maity_maity_agent-3"
+    hint = "tmux -S /run/maity/tmux.sock attach -t '=maity_maity_agent-3'"
+    assert second["session_hint"] == hint
     assert second["target"] == "local" and second["observed_generation"] == 1
 
 
@@ -690,12 +691,94 @@ def test_serve_logs_each_new_state_of_a_placement_once(
     sup.update([placement(agent=NEW)])
     settle(sup)
     settle(sup)
-    lines = [line for line in logs if line.startswith("plc-0003: ")]
-    assert lines == [
-        "plc-0003: starting (generation 1)",
-        "plc-0003: failed join_failed instance_quota (generation 1)",
-    ]
+    # The refusal's warning comes from the start thread, so its place against `starting` is
+    # not fixed; it always comes before `failed`, which is logged once the thread entered it.
+    warning = "plc-0003: warning: join pickup refused: instance_quota (reason -, why -)"
+    failed = "plc-0003: failed join_failed instance_quota (generation 1)"
+    assert logs.count(warning) == 1
+    assert logs.index(warning) < logs.index(failed)
+    lines = [line for line in logs if line.startswith("plc-0003: ") and line != warning]
+    assert lines == ["plc-0003: starting (generation 1)", failed]
     assert not any("AAAA-BBBB-CCCC" in line or "/j/tok" in line for line in logs)
+
+
+def _not_allowed(why: str) -> hub.HubError:
+    err = hub.HubError("join: pickup_not_allowed: no", code="pickup_not_allowed", status=409)
+    err.details = {"why": why}
+    return err
+
+
+@pytest.mark.parametrize(
+    "why",
+    ["not_running", "stale_generation", "credential_issued", "project_not_allowed",
+     "handle_taken", "creator_lacks_authority"],
+)  # fmt: skip
+def test_a_refused_pickup_logs_one_warning_with_its_code_and_why(
+    world: Any, monkeypatch: pytest.MonkeyPatch, why: str
+) -> None:
+    """tsk-fveaj86ec6e2: each `pickup_not_allowed` cause of §15.9 is named in one warning
+    line, while the reported detail keeps the code alone."""
+    sup, _, _, _, logs = world
+    sup.client = pickups = Pickups(_not_allowed(why))
+    joining(monkeypatch)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    warnings = [line for line in logs if "warning:" in line]
+    assert warnings == [
+        f"plc-0003: warning: join pickup refused: pickup_not_allowed (reason -, why {why})"
+    ]
+    rec = sup.records["plc-0003"]  # the report keeps the code alone
+    assert (rec.state, rec.reason, rec.detail) == ("failed", "join_failed", "pickup_not_allowed")
+    # and that is what reached the hub: the Pickups client holds the reports on the wire
+    assert states(pickups)[-1] == ("failed", "join_failed", "pickup_not_allowed")
+
+
+@pytest.mark.parametrize(
+    ("pickup", "line"),
+    [
+        (_forbidden("member_agents_max"),
+         "join pickup refused: forbidden (reason member_agents_max, why -)"),
+        (hub.HubError("404 Not Found", code="not_found", status=404),
+         "join pickup refused: not_found (reason -, why -)"),
+        (_not_allowed("Some Text mty1.crd-x.y"),
+         "join pickup refused: pickup_not_allowed (reason -, why -)"),
+        (hub.HubError("odd", code="Some Text", status=409),
+         "join pickup refused: - (reason -, why -)"),
+    ],
+)  # fmt: skip
+def test_a_pickup_refusal_logs_only_values_in_code_form(
+    world: Any, monkeypatch: pytest.MonkeyPatch, pickup: hub.HubError, line: str
+) -> None:
+    sup, _, _, _, logs = world
+    sup.client = Pickups(pickup)
+    joining(monkeypatch)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert [x for x in logs if "warning:" in x] == [f"plc-0003: warning: {line}"]
+    assert not any("mty1." in x or "Some Text" in x for x in logs)
+
+
+@pytest.mark.parametrize(
+    ("joined", "line"),
+    [
+        ((False, "not_found"), "join exchange refused: not_found (reason -, why -)"),
+        ((False, "code_invalid"), "join exchange refused: code_invalid (reason -, why -)"),
+        ((False, None), "join exchange refused: - (reason -, why -)"),
+    ],
+)
+def test_a_refused_exchange_logs_one_warning_with_its_code(
+    world: Any, monkeypatch: pytest.MonkeyPatch, joined: tuple[bool, str | None], line: str
+) -> None:
+    sup, _, _, _, logs = world
+    sup.client = Pickups(PICKUP)
+    joining(monkeypatch, joined)
+    new_clone(sup.cfg)
+    sup.update([placement(agent=NEW)])
+    settle(sup)
+    assert [x for x in logs if "warning:" in x] == [f"plc-0003: warning: {line}"]
+    assert not any("AAAA-BBBB-CCCC" in x or "/j/tok" in x for x in logs)
 
 
 def test_a_failed_clone_logs_why_and_reports_only_the_code(
@@ -1656,7 +1739,8 @@ def test_tmux_starts_the_server_under_a_clean_environment(
     log = tmp_path / "logs" / "plc-0003.log"
     assert oct(log.stat().st_mode & 0o777) == "0o600"
     pipe = calls[3]  # the pane's output goes through logcap, held to limits.log_keep_bytes
-    assert pipe[3:7] == ["pipe-pane", "-o", "-t", "maity_maity_agent-3"]
+    assert pipe[3:7] == ["pipe-pane", "-o", "-t", "=maity_maity_agent-3:"]
+    assert calls[1][3:5] == ["set-option", "-t"] and calls[1][5] == "=maity_maity_agent-3:"
     assert pipe[-1].endswith(f"-m maity.runner.logcap {log} {10 * 1024 * 1024}")
 
 
@@ -2041,7 +2125,66 @@ def test_a_session_that_cannot_be_labelled_is_killed(tmp_path: Path) -> None:
     backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path / "logs", run=run)
     with pytest.raises(tmux.TmuxError):
         backend.start("maity_p_c", tmp_path, ["x"], {}, "plc-0003", 1)
-    assert calls[-1][-3:] == ["kill-session", "-t", "maity_p_c"]
+    assert calls[-1][-3:] == ["kill-session", "-t", "=maity_p_c"]
+
+
+def test_every_tmux_target_names_its_session_exactly(tmp_path: Path) -> None:
+    """tmux takes a bare `-t maity_p_c` as the start of `maity_p_c-2` when no session is
+    named `maity_p_c` exactly, so each target carries `=`: the session by its exact name,
+    and with a `:` where tmux reads the target as a pane."""
+    from maity.runner.asuser import AsUser as Direct
+
+    calls: list[list[str]] = []
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(list(argv), 0, "0\n", "")
+
+    backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path / "logs", run=run)
+    for name in ("maity_p_c", "maity_p_c-2"):
+        calls.clear()
+        backend.start(name, tmp_path, ["x"], {}, "plc-0003", 1)
+        backend.attached(name)
+        backend.pane_digest(name)
+        backend.pane_has(name, ("x",))
+        backend.type_line(name, "x")
+        backend.environment_of(name)
+        backend.kill(name)
+        targets = [(argv[3], argv[argv.index("-t") + 1]) for argv in calls if "-t" in argv]
+        pane, session = f"={name}:", f"={name}"
+        assert targets == [
+            ("set-option", pane),
+            ("set-option", pane),
+            ("pipe-pane", pane),
+            ("display-message", pane),
+            ("capture-pane", pane),
+            ("capture-pane", pane),
+            ("send-keys", pane),
+            ("send-keys", pane),
+            ("show-environment", session),
+            ("kill-session", session),
+        ]
+        attach = tmux.attach_words(tmp_path / "s", name, Direct())
+        assert attach[-2:] == ["-t", session]
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
+def test_real_tmux_does_not_reach_a_session_whose_name_only_starts_with_the_target(
+    tmp_path: Path,
+) -> None:
+    socket = tmp_path / "t.sock"
+    backend = tmux.Tmux(socket, tmp_path / "tmux.conf", str(tmp_path), "/usr/bin:/bin",
+                        tmp_path / "logs")  # fmt: skip
+    try:
+        backend.start("maity_p_c-2", tmp_path, ["sh"], {}, "plc-0004", 1)
+        assert backend.attached("maity_p_c") is None  # no session of that exact name
+        assert backend.pane_digest("maity_p_c") is None
+        with pytest.raises(tmux.TmuxError):
+            backend.submit("maity_p_c")
+        backend.kill("maity_p_c")
+        assert "maity_p_c-2" in backend.sessions()
+    finally:
+        subprocess.run(["tmux", "-S", str(socket), "kill-server"], check=False)
 
 
 def test_a_tmux_failure_at_start_backs_off_instead_of_failing_for_good(
@@ -2948,12 +3091,12 @@ def test_the_idle_reads_are_tmux_and_ps_calls(tmp_path: Path) -> None:
     assert backend.attached(SESSION) is True
     assert backend.pane_digest(SESSION) == hashlib.sha256(b"> hello\n").hexdigest()
     assert backend.pane_has(SESSION, ("hello", "Open restricted")) == frozenset({"hello"})
-    assert calls[-1][-4:] == ["capture-pane", "-p", "-t", SESSION]
+    assert calls[-1][-4:] == ["capture-pane", "-p", "-t", f"={SESSION}:"]
     assert backend.activity(session) == tmux.WAITING
     assert backend.activity(replace(session, pid=None)) is None
     backend.type_line(SESSION, "a line; with -t words")
-    assert calls[-2][-4:] == ["-t", SESSION, "-l", "a line; with -t words"]
-    assert calls[-1][-3:] == ["-t", SESSION, "Enter"]
+    assert calls[-2][-4:] == ["-t", f"={SESSION}:", "-l", "a line; with -t words"]
+    assert calls[-1][-3:] == ["-t", f"={SESSION}:", "Enter"]
 
 
 def settle_on(read: Any, want: str) -> Any:
