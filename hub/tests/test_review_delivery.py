@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from sqlalchemy import Engine, select, update
 
-from maity_hub import chat_gate, clock, events, review_delivery
+from maity_hub import chat_gate, clock, events, instances, review_delivery
 from maity_hub import tables as t
 from tests import factory, flow
 from tests.conftest import ClientFactory
@@ -907,8 +907,8 @@ def test_a_dormant_orderer_is_woken_by_its_own_token(
     asked = order(lead, reviewer.id)
     with migrated.begin() as conn:
         conn.execute(
-            update(t.credential)
-            .where(t.credential.c.id == lead.credential_id)
+            update(t.instance_attachment)
+            .where(instances.attachment_of(lead.credential_id))
             .values(dormant_since=clock.now())
         )
     answer = post(reviewer, "#99", to=lead.id, in_reply_to=asked)
