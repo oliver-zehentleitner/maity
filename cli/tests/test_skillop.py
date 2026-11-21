@@ -249,6 +249,35 @@ def test_deliver_hands_out_nothing_the_runner_did_not_record(
         skills.deliver(*args)
 
 
+@pytest.mark.parametrize(
+    "where, error",
+    [
+        ("skill_check", UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")),
+        ("skill_check", scratchop.Unsupported("host maity has no skill ops")),
+        ("skill_check", skillop.OnTheWay(".local below /home/agents is a link")),
+        ("payload", skillop.Mismatch("SKILL.md in the skill's copy cannot be read")),
+    ],
+)  # fmt: skip
+def test_every_delivery_error_is_unavailable_so_a_start_goes_on_without_the_skill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, where: str, error: Exception
+) -> None:
+    # The review of #2089 (A1893): a decoding error on the ssh answer, or a cached file that
+    # turned unreadable between the check and the packaging, must not escape as a failed start.
+    runner_copy(tmp_path / "runner", tmp_path / "state")
+    home = tmp_path / "agents"
+    home.mkdir()
+
+    def fail(*_: object, **__: object) -> Any:
+        raise error
+
+    if where == "payload":
+        monkeypatch.setattr(skillop, "payload", fail)
+    else:
+        monkeypatch.setattr(AsUser, where, fail)
+    with pytest.raises(skills.Unavailable, match="could not be put below"):
+        skills.deliver(AsUser(), home, tmp_path / "runner", tmp_path / "state", SOURCE, COMMIT)
+
+
 def test_an_old_host_maity_without_the_ops_is_unsupported() -> None:
     import subprocess
 

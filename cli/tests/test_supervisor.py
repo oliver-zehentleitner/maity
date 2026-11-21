@@ -4308,6 +4308,34 @@ def test_a_host_maity_without_the_skill_ops_starts_without_the_skill(
     assert any("no Keep the Why skill: host maity has no skill ops" in line for line in logs)
 
 
+@pytest.mark.parametrize(
+    "error",
+    [UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"), ValueError("no answer")],
+)
+def test_a_skill_error_of_any_kind_starts_without_it_and_counts_no_crash(
+    world: Any, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    """The review of #2089 (A1893): an error that is not an OSError (a decoding error on an ssh
+    answer) is caught too, so the session starts, no crash is counted, and the report says
+    keep_the_why_unavailable."""
+    sup, backend, reports, clock, logs = world
+    recorded(sup.cfg)
+
+    def ensure(*_: Any) -> Path:
+        raise error
+
+    monkeypatch.setattr(skills, "ensure", ensure)
+    sup.update([placement(keep_the_why=KTW)])
+    settle(sup)
+    assert len(backend.started) == 1
+    rec = sup.records["plc-0003"]
+    assert rec.crashes == [] and rec.skill_missing is True
+    assert any("no Keep the Why skill:" in line for line in logs)
+    clock.now += supervisor.RUNNING_AFTER + 1
+    sup.tick()
+    assert states(reports)[-1] == ("running", None, "keep_the_why_unavailable")
+
+
 def test_a_skill_that_cannot_be_had_starts_the_session_without_it_and_says_so(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

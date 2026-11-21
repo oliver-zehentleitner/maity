@@ -1626,7 +1626,9 @@ class Supervisor:
                 return skills.ensure(self.cfg.skills_dir, self.cfg.state_dir, *wanted)
             return skills.deliver(target.as_user, self._agents_home(target),
                                   self.cfg.skills_dir, self.cfg.state_dir, *wanted)  # fmt: skip
-        except (skills.Unavailable, OSError, subprocess.SubprocessError) as exc:
+        except (skills.Unavailable, OSError, ValueError, subprocess.SubprocessError) as exc:
+            # ValueError too (a decoding error, the review of #2089): the skill is never what
+            # fails a start, so it is never counted as a crash.
             self.log(f"{p['id']}: no Keep the Why skill: {onboarding.inline(str(exc))[:200]}")
             return None
 

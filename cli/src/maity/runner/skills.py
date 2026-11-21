@@ -5,7 +5,9 @@ resume packet names, and the git commit of it. The runner fetches exactly that c
 own git, outside any sandbox, and keeps the skill's files in `skills_dir/keep-the-why/<key>/`
 (`key`: the commit and a hash of the source), laid out as a Claude Code plugin
 (`plugin/.claude-plugin/plugin.json`, `plugin/skills/keep-the-why/`), so a session loads it
-with `--plugin-dir` and nothing goes into the agents' home. Git checks every object against
+with `--plugin-dir` and nothing goes into the harness's own settings or skills (where the
+agents cannot read this directory, deliver puts the same files below their home, which no
+harness loads on its own, tsk-7casfxb7cn49). Git checks every object against
 the commit id, so a moved tag changes nothing here. Only regular files are taken, bounded in
 number and size, written 0644 in 0755 directories, and a `manifest.json` with each file's
 SHA-256 written last marks a copy as complete. A copy is checked against its manifest every
@@ -197,14 +199,26 @@ def deliver(
     agent_user layout and an ssh host (tsk-7casfxb7cn49). The runner fetches and checks its own
     copy first (`ensure`); the agents' copy is handed out only when its manifest's SHA-256 is
     the one the runner recorded for it. A missing or different one is put again from the
-    runner's copy, once. Unavailable when it cannot be had; scratchop.Unsupported when an ssh
-    host's `maity` has no skill ops (older than this one); skillop.OnTheWay when a directory
-    below the agents' home is a link. All but Unavailable are OSErrors."""
+    runner's copy, once. Unavailable for anything that keeps it from being had, so a start
+    goes on without the skill and is never counted as a crash (the review of #2089): a failed
+    op (OSError, scratchop.Unsupported for an ssh host's `maity` without the skill ops,
+    skillop.OnTheWay for a link below the agents' home, a timeout), an answer that cannot be
+    decoded (ValueError), and a cached file that turned unreadable since the check
+    (skillop.Mismatch while packaging)."""
     root = ensure(skills_dir, state_dir, source, commit)
     name = key(source, commit)
     recorded = _anchors(state_dir).get(name)
     if recorded is None:  # ensure records every copy it hands out
         raise Unavailable(f"the runner holds no record of the skill's copy {name}")
+    try:
+        return _deliver(as_user, home, root, name, source, commit, recorded)
+    except (OSError, ValueError, subprocess.SubprocessError, skillop.Mismatch) as exc:
+        raise Unavailable(f"the skill's copy could not be put below {home}: {exc}") from None
+
+
+def _deliver(
+    as_user: AsUser, home: Path, root: Path, name: str, source: str, commit: str, recorded: str
+) -> Path:
     copy = skillop.agent_copy(home, name)
     found = as_user.skill_check(home, name, source, commit)
     if found.get("result") == "ok" and found.get("digest") == recorded:

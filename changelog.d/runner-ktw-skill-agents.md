@@ -4,9 +4,11 @@
   hosts too. The runner fetches and checks its own copy as before, then puts the same files below
   the agents' user's home (`~/.local/share/maity-runner/skills/`) through `skillop put` (on an
   ssh host the host's own `maity runner skillop`), and checks that copy against the hash it
-  recorded at every start (`skillop check`). The session's rules point at it unchanged:
-  readable, never writable from the session. A copy that cannot be put or checked starts the
-  session without the skill, reported as `keep_the_why_unavailable` (tsk-7casfxb7cn49).
+  recorded at every start (`skillop check`). The session's rules point at it unchanged: `Read`
+  on it, and the `Edit` deny, the sandbox's `denyWrite` and agy's `write_file` deny against
+  writes. A process of the agents' user outside any sandbox could still change it; the next
+  start notices and puts it back (docs/runners.md). A copy that cannot be put or checked starts
+  the session without the skill, reported as `keep_the_why_unavailable` (tsk-7casfxb7cn49).
 
 ### Changed
 

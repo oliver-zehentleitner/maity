@@ -5467,7 +5467,10 @@ runner fetches it and hands it to the session read-only:
 verifies every object against it, the rule the runner already follows for
 tools (take only an exact release it can check). The hub stays the one
 source of the version, as it is for the resume packet's install text, and
-a per-session plugin path writes nothing into the agents' home. Starting
+a per-session plugin path writes nothing into the harness's settings or
+skills in the agents' home (in the `single` layout nothing at all; in the
+agent_user layout and on ssh hosts only the copy below, which no harness
+loads on its own). Starting
 without the skill keeps an agent online through a forge outage, and the
 report tells the owner.
 
