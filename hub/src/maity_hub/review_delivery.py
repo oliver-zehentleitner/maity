@@ -11,10 +11,11 @@ audience already reaches (the author's instance only that same instance; `all` n
 
 With `in_reply_to` the answered message's author, the orderer, is added too (§8.4, "A review
 result reaches the instance whose message it answers"): the instance that wrote it, its
-successor when it was replaced, else its member. It is treated as the author is, and left out
-when it has left the project, is isolated, is the sender, or is not in the project's
-restricted-access set (§6.1) while the result's card has a restricted text (§6.4); that also
-leaves out a guest.
+successor when it was replaced, else its member. It is treated as the author is, except that
+it passes the §9.6 gate only when the answered message was addressed to the sender itself
+(`Recipient.ungated`). It is left out when it has left the project, is isolated, is the
+sender, or is not in the project's restricted-access set (§6.1) while the result's card has a
+restricted text (§6.4); that also leaves out a guest.
 """
 
 from __future__ import annotations
@@ -37,6 +38,9 @@ PULL_REQUEST = re.compile(r"#([1-9][0-9]*)")
 class Recipient:
     member_id: str
     token: str
+    # Part of the card's own flow, which the §9.6 gate leaves open; an orderer only when the
+    # answered message was addressed to the sender itself (§8.4).
+    ungated: bool = True
 
 
 def _principal(row: Any) -> str:
@@ -191,7 +195,32 @@ def _orderer(
         and not restricted.in_set(conn, project, current.id)
     ):
         return None  # outside the restricted set on a restricted card (§8.4); nothing is said
-    return Recipient(member_id, token)
+    return Recipient(member_id, token, _addressed_to(conn, answered, sender, sender_instance))
+
+
+def _addressed_to(
+    conn: Connection, answered: Any, sender: Any, sender_instance: str | None
+) -> bool:
+    """Whether the answered message was addressed to the sender itself (§8.4): its `to` names
+    the sender's member or instance, or it mentions them. An instance named comes down to its
+    successor, as an address does. Reached only through `all`, a role or a trust token, it was
+    not: the orderer then passes the §9.6 gate only where the gate lets the sender reach it."""
+    me = _principal(sender)
+    payload = answered.payload or {}
+    named = [
+        (str(m.get("member_id")), m.get("instance"))
+        for m in payload.get("mentions") or []
+        if isinstance(m, dict)
+    ]
+    to = payload.get("to")
+    if isinstance(to, str):
+        named.append(instances.split_address(to))
+    mine = instances.token(me, sender_instance)
+    return any(
+        member == me
+        and (instance is None or _instance_token(conn, sender.id, me, instance) == mine)
+        for member, instance in named
+    )
 
 
 def recipients(

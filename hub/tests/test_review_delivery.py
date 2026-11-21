@@ -884,3 +884,103 @@ def test_a_replaced_orderer_resolves_to_its_successor(
     new = flow.agent(make_client, owner, agent={"id": old.id}, replaces=old.instance)
     got = sent(migrated, post(reviewer, "#99", in_reply_to=asked))
     assert got == [f"member:{reviewer.id}", f"instance:{old.id}#{new.instance}"]
+
+
+def test_in_reply_to_reads_as_the_single_event_route_does(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """A group chat message the sender sees only in the chat's history, added after it was
+    written, is not served by `GET …/events/{seq}` (§8.9): it answers as an unknown event, not
+    as a message of the wrong kind (review A1858, point 3)."""
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    other = flow.agent(make_client, owner)
+    third = flow.agent(make_client, owner)
+    chats = "/projects/maintainer/maity/conversations"
+    group = owner.post(chats, {"title": "room", "participants": [other.id, third.id]})
+    assert group.status_code == 201, group.text
+    chat = group.json()["id"]
+    said = owner.post(f"{chats}/{chat}/messages", {"body": "in the room"})
+    assert said.status_code == 201, said.text
+    in_room = int(said.json()["seq"])
+    added = owner.post(f"{chats}/{chat}/participants", {"member_id": reviewer.id})
+    assert added.status_code == 200, added.text
+    history = reviewer.get(f"{chats}/{chat}/messages?before={in_room + 1}")
+    assert in_room in [m["seq"] for m in history.json()["items"]]
+    assert reviewer.get(f"/projects/maintainer/maity/events/{in_room}").status_code == 404
+    assert refused(post(reviewer, "#99", to=owner.id, in_reply_to=in_room)) == "unknown_event"
+
+
+def test_an_explicit_null_in_reply_to_is_refused_and_omission_is_not(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """Presence, not value (§8.4; review A1858, point 4): supplied, it is a positive integer on
+    a review result and refused on any other type, null included; omitted, it is fine."""
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    assert refused(post(reviewer, "#99", to=owner.id, in_reply_to=None)) == "format"
+    notice = reviewer.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "x", "in_reply_to": None},
+    )
+    assert refused(notice) == "not_allowed"
+    omitted = post(reviewer, "#99", to=owner.id)
+    assert omitted.status_code == 201, omitted.text
+    assert omitted.json()["payload"]["in_reply_to"] is None
+
+
+def test_the_orderer_is_judged_on_the_project_row_read_under_the_lock(
+    owner: flow.Human,
+    make_client: ClientFactory,
+    migrated: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A restricted-access change that commits after the sender's membership was looked up
+    but before the event takes the project's lock decides the audience (review A1858, point 2).
+    Simulated in the request's own transaction: the orderer is in the set when the membership
+    is read and out of it right after; the result must not reach it."""
+    from maity_hub.routes import events as event_routes
+
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    orderer = flow.agent(make_client, owner, role="manager")
+    orderer.resume()
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    listed = [owner.id, author.id, reviewer.id]
+    writer = membership_id(migrated, owner.id)
+
+    def restrict(conn: Any, members: list[str]) -> None:
+        project = conn.execute(select(t.project)).one()
+        settings = {
+            **(project.settings or {}),
+            "restricted_access": {"mode": "nobody_except", "members": members},
+        }
+        conn.execute(
+            update(t.project).where(t.project.c.id == project.id).values(settings=settings)
+        )
+
+    with migrated.begin() as conn:
+        restrict(conn, [*listed, orderer.id])
+        project_id = conn.execute(select(t.project.c.id)).scalar_one()
+        conn.execute(
+            t.task_restricted.insert().values(
+                task_id=card["id"],
+                project_id=project_id,
+                text="secret",
+                version=1,
+                updated_by=writer,
+                updated_at=clock.now(),
+            )
+        )
+    asked = order(orderer, reviewer.id)
+    looked_up = getattr(event_routes, "membership")  # noqa: B009 - imported, not exported
+
+    def then_changed(conn: Any, caller: Any, slug: str, *args: Any, **kwargs: Any) -> Any:
+        mine = looked_up(conn, caller, slug, *args, **kwargs)
+        restrict(conn, listed)  # the orderer leaves the set after the lookup
+        return mine
+
+    monkeypatch.setattr(event_routes, "membership", then_changed)
+    got = sent(migrated, post(reviewer, task_id=card["id"], in_reply_to=asked))
+    assert all(orderer.id not in token for token in got)
+    assert f"instance:{author.id}#{author.instance}" in got

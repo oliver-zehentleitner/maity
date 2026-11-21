@@ -618,7 +618,7 @@ default.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); the arbiter's confirmation of the restricted-set reading, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
+**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); the arbiter's confirmation of the restricted-set reading and rulings on reviews A1858 and A1859, 2026-11-21; contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
 **Revisit when:** another message type adopts `in_reply_to`, the restricted text (§6.4) comes to hide a card's messages under §8.9, or review orders move to a resource of their own
 **See:** messages.md#the-hub-delivers-a-review-result-to-the-author-and-both-leads — 2c02c8c4-6918-495c-ae29-84ec7f3e51f4 — as of 2026-11-21
 **See:** instances.md#an-answer-goes-to-the-instance-that-asked-and-an-instance-address-in-a-request-wakes-only-that-instance — 407a0aba-c1dd-4073-a5cc-bb4e13452efa — as of 2026-11-21
@@ -628,7 +628,8 @@ answers. The hub adds that message's author, the orderer: the instance
 that wrote it (its successor when it was replaced), else its member. The
 orderer is treated as the author is (2c02c8c4): an instance orderer
 replaces its member's `member:` token from `to`, a mention or a lead, is
-added once, and passes the §9.6 gate as part of the card's own flow. It is
+added once, and passes the §9.6 gate as part of the card's own flow when
+the answered message was addressed to the sender. It is
 left out when it has left the project, is isolated, is the sender, or
 is not in the project's restricted-access set while the result's card has
 a restricted text; the result still reaches everyone else
@@ -655,9 +656,26 @@ itself look at its card; the arbiter confirmed it and reworded §8.4 to
 say it directly (confirmed): the orderer is left out when the result's
 card (the one `task_id` names, or the exact-PR subject resolves) has a
 restricted text (§6.4) and the orderer is not in the project's
-restricted-access set (§6.1), which also excludes a guest. The jour fixe's `in_reply_to`, a list of response ids
-on a jour fixe reply, is another field on another resource; §8.4 says so
-in one line.
+restricted-access set (§6.1), which also excludes a guest. The arbiter
+also confirmed, on 2026-11-21, two consequences of that wording: the rule
+governs only the orderer the hub adds (`to`, mentions and leads keep their
+own rules, so a recipient on one of those paths still receives the
+result), and an empty restricted-access set on a card with a restricted
+text leaves every orderer out, by design, since nobody may read that
+text. The arbiter also ruled, on 2026-11-21, that the orderer's
+exemption from the §9.6 gate needs the answered message to have been
+addressed to the sender itself (its `to` names the sender's member or
+instance, or it mentions them); after an order that reached the sender
+only through `all`, a role or a trust token, the orderer is added only
+where the gate lets the sender reach it. Whether the orderer is added depends on state another writer
+changes under the project's lock (the restricted-access setting, a card's
+restriction, a member's state), so the hub takes that lock before it
+validates `in_reply_to` and resolves the orderer, and reads the project
+and the sender's row again under it, as `tasks._locked` does; decided on
+the rows read at the membership lookup, a change that commits before the
+event write would leave an audience based on the earlier state. The jour
+fixe's `in_reply_to`, a list of response ids on a jour fixe reply, is
+another field on another resource; §8.4 says so in one line.
 
 **Rejected alternatives:**
 - Matching `review.head` against earlier messages to find the order: a

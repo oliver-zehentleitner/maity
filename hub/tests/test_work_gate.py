@@ -435,6 +435,60 @@ def test_a_review_results_orderer_passes_the_gate(
     assert answered.json()["seq"] in seqs(theirs)
 
 
+def answer_order(who: Any, asked: int, task_id: str, to: str) -> dict[str, Any]:
+    answered = who.post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": to,
+            "task_id": task_id,
+            "body": "reviewed",
+            "review": REVIEW,
+            "in_reply_to": asked,
+        },
+    )
+    assert answered.status_code == 201, answered.text
+    found: dict[str, Any] = answered.json()
+    return found
+
+
+def audience_of(engine: Engine, seq: int) -> list[str]:
+    with engine.connect() as conn:
+        found: list[str] = conn.execute(
+            select(t.event.c.audience).where(t.event.c.seq == seq)
+        ).scalar_one()
+    return found
+
+
+def test_an_orderer_passes_the_gate_only_for_an_order_addressed_to_the_sender(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """The arbiter's ruling on review A1859: the orderer's §9.6 exemption needs the answered
+    message's `to` to name the sender, or a mention of it. An order that reached the sender
+    only through `all` gives none: the orderer is then added only where the gate lets the
+    sender reach it, and is neither added nor held here (§8.4)."""
+    theirs, writer = sides["theirs"], sides["writer"]
+    theirs.resume()
+    task_id = card(owner)
+    broadcast = send(theirs, "all", body="please review #7")["seq"]
+    result = answer_order(writer, broadcast, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    assert all(theirs.id not in token for token in audience_of(migrated, result["seq"]))
+    assert result["seq"] not in seqs(theirs)
+    # The same agent's order to the sender directly: the orderer is added and passes.
+    direct = send(theirs, writer.id, body="please review #7")["seq"]
+    result = answer_order(writer, direct, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    assert f"instance:{theirs.id}#{theirs.instance}" in audience_of(migrated, result["seq"])
+    assert result["seq"] in seqs(theirs)
+    # A mention of the sender in an order to `all` counts as addressing it.
+    mentioned = send(theirs, "all", body=f"@{writer.handle} please review #7")["seq"]
+    result = answer_order(writer, mentioned, task_id, owner.id)
+    assert result["payload"]["held"] == []
+    assert result["seq"] in seqs(theirs)
+
+
 def test_a_review_results_lead_of_another_owner_is_reached_only_through_the_gate(
     owner: flow.Human, make_client: ClientFactory, sides: dict[str, Any], migrated: Engine
 ) -> None:

@@ -15205,10 +15205,16 @@ and so is an orderer who is the sender. An orderer who is not in the
 project restricted-access set (§6.1) is left out when the review result
 card (its task_id, or the card its exact-PR subject resolves to) has a
 restricted text. The result is still delivered to everyone else, and the
-hub says nothing about the omission. The orderer is part of the card's own flow, so the
-§9.6 gate leaves it open, as for the author and the leads: the orderer
-wrote to the reviewer first. Without `in_reply_to`
-nothing changes. The hub never searches a body or a subject for the
+hub says nothing about the omission. The rule governs only the orderer
+the hub adds; a `to`, a mention and the leads follow their own rules.
+The orderer is part of the card's own flow, so the §9.6 gate leaves it
+open, as for the author and the leads: the orderer wrote to the reviewer
+first. The orderer passes the §9.6 gate only when the answered message
+was addressed to the sender itself: its `to` names the sender's member
+or instance, or it mentions them. An order that reached the sender only
+through `all`, a role or a trust token gives the orderer no exemption; it
+is then added only where the gate would let the sender reach it anyway.
+Without `in_reply_to` nothing changes. The hub never searches a body or a subject for the
 message being answered.
 
 The author's instance and the orderer's instance are each added unless the
