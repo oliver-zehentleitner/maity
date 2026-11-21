@@ -386,7 +386,10 @@ def printable(text: str) -> str:
 # starts at a word boundary of its own (`tsk-…` is no `sk-` key); a match becomes `<secret>`
 # and the line is kept (the lead's ruling).
 _LEFT = r"(?<![A-Za-z0-9_-])"
-_TAIL = r"[A-Za-z0-9_.-]+"
+# The scrub reads the raw line, before anything is written as ASCII (Gemini A1958), so a
+# token's tail runs on through a non-ASCII character in it: a token split by one is replaced
+# whole, not up to that character.
+_TAIL = r"[A-Za-z0-9_.\-\u0080-\U0010ffff]+"
 _SECRET = re.compile(
     _LEFT
     + r"(?:"
@@ -415,7 +418,7 @@ _AUTHORIZATION = re.compile(
     r"(?i)(?<![A-Za-z0-9_-])(authorization[\"']?\s*[:=]\s*[\"']?)"
     r"(?:[a-z][a-z0-9-]*\s+)?[^\s,;\"'<>]+"
 )
-_BEARER = re.compile(r"(?i)(?<![A-Za-z0-9_-])(bearer\s+)[A-Za-z0-9._~+/=-]+")
+_BEARER = re.compile(r"(?i)(?<![A-Za-z0-9_-])(bearer\s+)[A-Za-z0-9._~+/=\-\u0080-\U0010ffff]+")
 # A path that holds a user's name: under /home/<user>, /Users/<user>, C:\Users\<user> or
 # C:/Users/<user>, or /root. The whole path becomes `<path>`, the only form a path may take in
 # a log line (§15.7); the path is the run of characters between these stops.
@@ -443,10 +446,11 @@ def log_entries(
 ) -> list[dict[str, str]]:
     """`finding.log` (§15.7) from the runner's notes, oldest first: only lines that start with
     this placement's id; a line in the hub's credential format dropped (`sign.
-    contains_credential`, the check the hub client runs on every body); the rest written as
-    printable ASCII, scrubbed, cut at 1021 bytes plus `...`; then the oldest left out until at
-    most 200 lines of at most 24 KiB remain. `at` is the line's time plus `offset`, in the
-    wire form."""
+    contains_credential`, the check the hub client runs on every body); the rest scrubbed as
+    written, then written as printable ASCII (scrub first, so a tab or a line break does not
+    hide `Authorization:<tab>Bearer …` from it; Gemini A1958), cut at 1021 bytes plus `...`;
+    then the oldest left out until at most 200 lines of at most 24 KiB remain. `at` is the
+    line's time plus `offset`, in the wire form."""
     prefix = f"{placement}: "
     kept: list[dict[str, str]] = []
     for at, line in entries:
@@ -454,7 +458,7 @@ def log_entries(
             continue
         if sign.contains_credential(line):
             continue
-        text = scrub(printable(line[:SCRUB_INPUT_MAX]))
+        text = printable(scrub(line[:SCRUB_INPUT_MAX]))
         if sign.contains_credential(text):
             continue
         if len(text) > LOG_LINE_BYTES:

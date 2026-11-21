@@ -6010,7 +6010,7 @@ makes, with no new event and no new right.
 **Evidence:** inferred
 **Source:** card tsk-bzmd0avm4yhb, 2026-11-21: the contract in docs/api.md §15.7, §15.8 and §15.14 as merged in #2059; the lead's go on the plan with its rulings (seq 188562); security review A1838 (note nte-46y7xkgz9njk) for the scrub; `cli/src/maity/runner/watch.py`, `supervisor.py` (`_watch`, `_react`, `_pickup_finding`), `keeper.py` (`login_state`). Tested with fakes for tmux, the clock and the hub, not yet on a live runner
 **See:** runner.md — e6a12eff-5d04-476e-8239-22970a139c7b — as of 2026-11-21
-**Revisit when:** the hub carries `health.settings` (the grace becomes `hang_after_minutes`); a pane signature is verified on a real run; an interactive harness's limit exit is recognised; the runner restarts often enough that losing its notes hides a cause; a secret kind the scrub does not know shows up in a log line
+**Revisit when:** the hub carries `health.settings` (the grace becomes `hang_after_minutes`); a pane signature is verified on a real run; an interactive harness's limit exit is recognised; ops has seen Claude Code's and Codex's live logged-out answers (Claude Code then gets a `needed` entry); the runner restarts often enough that losing its notes hides a cause; a secret kind the scrub does not know shows up in a log line
 
 The runner builds the watch exactly as the contract says (entry e6a12eff).
 Where the contract left the choice open, it decided as follows.
@@ -6054,11 +6054,17 @@ Where the contract left the choice open, it decided as follows.
   working run look two hours quiet at its first look. A session that
   vanished while the watch was ending it enters that end (auth, held or a
   restart) instead of a fresh start.
-- **Terminal exits stay with the exit handling; the watch takes only a
-  plain exit** (A1940). A revoked credential, the loop's hot loop, a folder
-  refusal or a provider limit is decided as without the watch
-  (`agent_credential_revoked`, `crash_loop`/`hot_loop`, `workspace_in_use`,
-  `rate_limited`), with the finding on that report. Only an exit the restart
+- **Final exits stay with the exit handling; the watch takes only a
+  plain exit** (A1940; narrowed in Gemini review A1958). A supervised loop's
+  revoked credential, hot loop or folder refusal is decided as without the
+  watch (`agent_credential_revoked`, `crash_loop`/`hot_loop`,
+  `workspace_in_use`), with the finding on that report. The loop's limit
+  exits (22, 23) are not among them: they go through the cause order, so a
+  limit exit while the login is gone is `failed`/`auth`, not a retry at every
+  reset, and otherwise `usage_limit` gives exactly the exit handling's
+  `rate_limited` report through the same helper (`_limit_exit`, 23 starting
+  the row of limits over). An interactive harness's exit code is no loop
+  sentinel. Only an exit the restart
   policy would restart becomes a watch restart. For such a dead harness the
   crash cap is checked before the watch's cap and wins (the lead's ruling).
 - **A join is compared at whole seconds and, once seen, stays seen** (A1940).
@@ -6069,19 +6075,45 @@ Where the contract left the choice open, it decided as follows.
   that replaces an unsent one, after a failed write, carries the finding on;
   a newer finding replaces it. Rejected: clearing it when the body is
   built, which lost it whenever the state changed before the retry.
-- **Only the probe's documented "not logged in" is `needed`** (security
-  review A1942, the lead, seq 189308): `claude auth status` exiting 1, and
-  `codex login status` exiting 1 with the line `Not logged in` (it also
-  exits 1 on an error). Any other exit, a timeout or an error is `unknown`,
-  since `needed` ends the placement as `failed`/`auth` with no restart.
-  Evidence: the two answers come from the tools' documentation and are not
-  yet observed in a live session (neither probe may run in the placement
-  that wrote this; security delta A1959). A wrong answer for Codex only
-  turns a real logout into `unknown`. If Claude Code's exit 1 also covers an
-  error, a placement can end as `failed`/`auth` with no restart (availability
-  only). Revisit when ops has seen the live not-logged-in answers: give
-  Claude Code a text check like Codex's. Re-check this first if placements
-  start ending as `auth` unexpectedly.
+- **Only a confirmed "not logged in" is `needed`** (security review A1942,
+  the lead, seq 189308 and 189704): `codex login status` exiting 1 with the
+  line `Not logged in` (it also exits 1 on an error, with another line).
+  Claude Code has no `needed` answer until ops confirms its marker: every
+  non-zero exit of `claude auth status` is `unknown`, also exit 1, which its
+  documentation names for "not logged in" but which may cover an error too.
+  Any other exit, a timeout or an error is `unknown`, since `needed` ends
+  the placement as `failed`/`auth` with no restart. A real Claude Code
+  logout meanwhile shows as a restart and then `failed`/`hung` at the cap,
+  which costs availability only. Evidence: the answers come from the tools'
+  documentation and are not yet observed in a live session (neither probe
+  may run in the placement that wrote this; security delta A1959). A wrong
+  answer for Codex only turns a real logout into `unknown`. Revisit when ops
+  has seen the live not-logged-in answers: then Claude Code gets an entry
+  like Codex's, its exit code and its line.
+- **A pending end is called off before the kill when its facts changed**
+  (Codex delta review A1957). Before the kill that follows a TERM the
+  harness survived, the runner reads the facts again. A pause or dormancy
+  calls off any end, since a paused or dormant agent is never acted on. A
+  trigger that no longer holds calls off a restart end only. An end for a
+  login that needs a person or at the cap is decided and goes on. Called
+  off, the session stays and the finding is reported once. If the TERM
+  itself ends the session after a pause or dormancy, a restart end is not
+  carried out either: no watch restart is counted and the watch relaunches
+  nothing; the finding is reported once, and the gone session is handled as
+  any other exit (the restart policy), its next start resuming the session.
+  An auth or held end is a stop already and stays as it is.
+- **A watch restart counts only once the session is gone** (A1957): when
+  the relaunch is decided, not when the TERM is sent, so an end that is
+  called off (someone attached, a pause, a trigger that cleared) spends
+  nothing of `auto_restarts`.
+- **A report carrying a finding goes again with its own `seq` until it is
+  settled** (A1957). The hub knows a report by its `seq` alone; a lost reply
+  followed by a copy in a new `seq` would give the finding twice. So that
+  body is sent again as it is until the hub takes it or answers definitively;
+  the next state is reported right after it, delayed, never lost. Only a
+  definitive refusal (a 4xx other than 408 or 429) carries the finding on to
+  the next state's report, and a second refusal drops it, since the finding
+  may be what the hub refuses and must not hold every later report back.
 - **The scrub also takes a URL's userinfo and underscore key prefixes**
   (A1942): `scheme://user:pass@host` and `scheme://token@host` keep the
   scheme and the host and lose the userinfo; Stripe `sk_live_`, `sk_test_`,
@@ -6121,8 +6153,11 @@ Where the contract left the choice open, it decided as follows.
   `pickup_code: null` would contradict the cause. The login is probed for
   it too, in the start thread.
 - **The scrub (A1838).** The hub's guard knows only the hub's credential
-  format, so before a finding leaves, each log line is written as printable
-  ASCII, then scrubbed, then cut and bounded. The scrub replaces forge
+  format, so before a finding leaves, each log line is scrubbed as written,
+  then written as printable ASCII, then cut and bounded (scrub first since
+  Gemini review A1958: written as ASCII first, a tab became `?` and hid
+  `Authorization:<tab>Bearer …` from the scrub; a token's tail also runs on
+  through a non-ASCII character, so one does not split it). The scrub replaces forge
   tokens (GitHub `ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`, `github_pat_`,
   GitLab `glpat-`), provider keys (`sk-` with `sk-ant-` and `sk-proj-`,
   `xai-`, Google `AIza` and `ya29.`, AWS `AKIA`/`ASIA` with 16 more

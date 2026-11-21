@@ -379,6 +379,7 @@ class Record:
     finding: dict[str, Any] | None = None
     finding_n: int = 0
     reports_finding: bool = False
+    finding_refused: int = 0  # the finding_n the hub refused once: a second refusal drops it
 
     def calm(self) -> None:
         """Forget the idle check: a new start, or an agent that is listening again."""
@@ -418,11 +419,11 @@ def _state_text(rec: Record) -> str:
     return f"{' '.join(words)} (generation {rec.generation}{restarts})"
 
 
-def _terminal_exit(code: int | None) -> bool:
-    """An exit code `Supervisor._exited` decides apart from the restart policy: a revoked
-    credential, the loop's hot loop or folder refusal (final), or a provider limit."""
-    final = (loop.EXIT_REVOKED, loop.EXIT_HOT_LOOP, *loop.EXIT_FOLDER.values())
-    return code in (*final, loop.EXIT_RATE_LIMITED, loop.EXIT_RATE_LIMITED_AFTER_CLEAN)
+def _final_exit(code: int | None) -> bool:
+    """A supervised loop's final exit, which `Supervisor._exited` decides apart from the
+    restart policy: a revoked credential, the hot loop, a folder refusal. The limit exits
+    are not here: the watch decides them as `usage_limit`, after `login_invalid`."""
+    return code in (loop.EXIT_REVOKED, loop.EXIT_HOT_LOOP, *loop.EXIT_FOLDER.values())
 
 
 def _minutes(value: Any, default: int) -> float:
@@ -521,6 +522,45 @@ class Supervisor:
         facts = watch.session_facts(p)
         return facts is not None and facts.resting
 
+    def _trigger_now(
+        self, p: dict[str, Any], rec: Record, now: float
+    ) -> tuple[str | None, watch.SessionFacts | None, Any]:
+        """The trigger that holds now, the facts it was read from, and its episode (the
+        quiet spell's start for `not_listening`, the run's start for `never_joined`)."""
+        facts = watch.session_facts(p)
+        settings = self.cfg.limits.watch
+        run = None if rec.started_at is None else rec.started_at + self.hub_offset
+        if (
+            run is not None and facts is not None and facts.started_at is not None
+            and facts.started_at >= math.floor(run)
+        ):  # fmt: skip
+            # A session of this run was seen once: never_joined stays off for the rest of the
+            # run, whatever a later read says at the edge of a second (Codex A1940).
+            rec.watch_joined = True
+        trigger_ = watch.trigger(
+            facts,
+            interactive=p.get("mode") == "interactive",
+            run_started=None if rec.watch_joined else run,
+            watched_since=None if rec.watch_since is None else rec.watch_since + self.hub_offset,
+            hub_now=now + self.hub_offset,
+            grace=settings.not_listening_grace_minutes * 60.0,
+            join_within=settings.join_within_minutes * 60.0,
+        )
+        episode = None
+        if facts is not None:
+            episode = (
+                facts.not_listening_since if trigger_ == watch.NOT_LISTENING else rec.started_at
+            )
+        return trigger_, facts, episode
+
+    def _abort_end(self, pid: str, rec: Record, verdict: dict[str, Any], why: str) -> bool:
+        """An end the watch began is not carried to the kill: the session stays, and the
+        finding is reported once on a `running` report. Its restart was never counted
+        (`_watch_ended` counts one only once the session is gone)."""
+        rec.watch_end = None
+        line = f"{self._watch_words(verdict)}: the end is called off, {why}"
+        return self._file(pid, rec, verdict, line)
+
     def _watch(
         self, p: dict[str, Any], rec: Record, session: Session, target: Target, now: float
     ) -> bool:
@@ -538,14 +578,25 @@ class Supervisor:
         interactive = p.get("mode") == "interactive"
         if rec.watch_end is not None:
             end = rec.watch_end
-            if not session.dead and now - end["at"] >= KILL_AFTER:
-                # Nobody attached, freshly, right before the kill too (Codex A1940): someone
-                # who attached meanwhile keeps the session; the finding is reported instead.
-                there = self._attached(backend, session, interactive)
-                if there and end.get("verdict") is not None:
+            ended = end.get("verdict")
+            if not session.dead and now - end["at"] >= KILL_AFTER and ended is not None:
+                # Before the kill, the facts are read again (Codex A1940, A1957). Someone who
+                # attached meanwhile keeps the session; the finding is reported instead. A
+                # paused or dormant agent is never acted on, so a pause aborts any end; a
+                # trigger that cleared aborts a restart only, while an end for a login that
+                # needs a person or at the cap is decided and goes on.
+                if self._attached(backend, session, interactive):
                     rec.watch_end = None
-                    self._someone_there(pid, rec, end["verdict"], "while it was being ended")
+                    self._someone_there(pid, rec, ended, "while it was being ended")
                     return True
+                trigger_, _, episode = self._trigger_now(p, rec, now)
+                if self._resting(p):
+                    return self._abort_end(pid, rec, ended, "it was paused or made dormant")
+                if end["then"] == "restart" and (trigger_, episode) != (
+                    ended["trigger"], ended["episode"]
+                ):  # fmt: skip
+                    return self._abort_end(pid, rec, ended, "its trigger no longer holds")
+            if not session.dead and now - end["at"] >= KILL_AFTER:
                 backend.kill(session.name)  # TERM was not enough
                 self._watch_ended(rec, now, None)
             return True
@@ -555,31 +606,8 @@ class Supervisor:
                 return True
             del self.watching[pid]
         verdict, rec.watch_verdict = rec.watch_verdict, None
-        facts = watch.session_facts(p)
-        settings = self.cfg.limits.watch
         hub_now = now + self.hub_offset
-        run = None if rec.started_at is None else rec.started_at + self.hub_offset
-        if (
-            run is not None and facts is not None and facts.started_at is not None
-            and facts.started_at >= math.floor(run)
-        ):  # fmt: skip
-            # A session of this run was seen once: never_joined stays off for the rest of the
-            # run, whatever a later read says at the edge of a second (Codex A1940).
-            rec.watch_joined = True
-        trigger_ = watch.trigger(
-            facts,
-            interactive=interactive,
-            run_started=None if rec.watch_joined else run,
-            watched_since=None if rec.watch_since is None else rec.watch_since + self.hub_offset,
-            hub_now=hub_now,
-            grace=settings.not_listening_grace_minutes * 60.0,
-            join_within=settings.join_within_minutes * 60.0,
-        )
-        episode = None
-        if facts is not None:
-            episode = (
-                facts.not_listening_since if trigger_ == watch.NOT_LISTENING else rec.started_at
-            )
+        trigger_, facts, episode = self._trigger_now(p, rec, now)
         if verdict is not None and verdict["generation"] == rec.generation:
             # The verdict is acted on only while its facts still hold at acting time (Codex
             # A1940): not paused or dormant (no trigger then), the same trigger and quiet spell,
@@ -635,8 +663,9 @@ class Supervisor:
         # as the trigger's grace does (Gemini A1941): a stale spell from before a restart must
         # not make this run's work look older than it is.
         quiet_from = facts.not_listening_since
-        if quiet_from is not None and rec.watch_since is not None:
-            quiet_from = max(quiet_from, rec.watch_since + self.hub_offset)
+        since = rec.watch_since if rec.watch_since is not None else rec.started_at
+        if quiet_from is not None and since is not None:
+            quiet_from = max(quiet_from, since + self.hub_offset)
         quiet = None if quiet_from is None else hub_now - quiet_from
         worker = threading.Thread(
             target=self._diagnose,
@@ -772,13 +801,29 @@ class Supervisor:
         line = f"{self._watch_words(verdict)}: {said}, nothing ended"
         return self._file(pid, rec, verdict, line)
 
-    def _watch_ended(self, rec: Record, now: float, code: int | None) -> None:
+    def _watch_ended(
+        self, rec: Record, now: float, code: int | None, resting: bool = False
+    ) -> bool:
         """The session the watch ended is gone: `failed`/`auth`, `failed`/`hung` at the cap,
         or `exited`/`hung` and a restart after the first backoff step, resuming the session,
-        as after the own check's end (§15.14). The trigger is the `hung` detail."""
+        as after the own check's end (§15.14). The trigger is the `hung` detail.
+
+        A restart end whose agent was paused or made dormant meanwhile (`resting`, read by
+        the caller as the kill branch reads it) is no watch restart: nothing is counted and
+        the watch relaunches nothing; the finding is reported once and False returned, so the
+        caller handles the gone session as it does any other (Codex A1957). Its next start
+        still resumes the session the runner ended. An auth or held end is a stop already."""
         end, rec.watch_end = rec.watch_end, None
         if end is None:
-            return
+            return True
+        if end["then"] == "restart" and resting:
+            pid, verdict = self._pid_of(rec), end.get("verdict")
+            rec.resume = True
+            if pid is not None and verdict is not None:
+                self._abort_end(pid, rec, verdict, "it was paused or made dormant")
+            else:
+                self._found(rec, end["finding"])
+            return False
         if end["then"] == "auth":
             rec.enter(now, "failed", "auth", exit_code=code, retry_at=None)
         elif end["then"] == "held":
@@ -786,9 +831,12 @@ class Supervisor:
         else:
             rec.calm()
             rec.resume = True
+            rec.limits_unknown = 0  # a completed restart ends a row of limits, as an exit does
+            rec.watch_restarts = [*rec.watch_restarts, now]  # the restart counts now
             again = now + restart.delay(self.cfg.limits.restart, 0, self.rand)
             rec.enter(now, "exited", "hung", detail=end["trigger"], exit_code=code, retry_at=again)
         self._found(rec, end["finding"])
+        return True
 
     def _react(
         self, p: dict[str, Any], rec: Record, session: Session, target: Target, now: float,
@@ -824,24 +872,23 @@ class Supervisor:
             return self._file(pid, rec, verdict, f"{what}: {said}")
         if alive and verdict["attached"]:  # wait_deaf, never_joined, unknown, login_invalid
             return self._someone_there(pid, rec, verdict)
-        if not alive and _terminal_exit(session.exit_status):
-            # An exit the exit handling treats as final or as a limit (a revoked credential,
-            # the loop's hot loop, a workspace refusal, a provider limit) is decided there, as
-            # without the watch; the finding goes on that report (Codex A1940). usage_limit is
-            # the loop's limit exit, so it is decided there too: `rate_limited` at the reset.
+        if not alive and not verdict.get("interactive") and _final_exit(session.exit_status):
+            # The supervised loop's final exits (a revoked credential, the hot loop, a folder
+            # refusal) are decided by the exit handling, as without the watch; the finding goes
+            # on that report (Codex A1940, Gemini A1958). An interactive harness's code is no
+            # loop sentinel.
             self._exited(rec, session, now, backend, target)
-            said = "started again at the reset" if cause == "usage_limit" else "the exit decides"
-            return self._file(pid, rec, verdict, f"{what}: {said} ({_state_text(rec)})")
-        if cause == "login_invalid":
+            return self._file(pid, rec, verdict, f"{what}: the exit decides ({_state_text(rec)})")
+        if cause == "login_invalid":  # before usage_limit, as the cause order says
             said = f"{what}: the login needs a person; failed (auth)"
             if alive:
                 return self._end(pid, rec, session, backend, now, verdict, "auth", said)
             backend.kill(session.name)
             rec.enter(now, "failed", "auth", exit_code=session.exit_status, retry_at=None)
             return self._file(pid, rec, verdict, said)
-        if cause == "usage_limit":  # the harness has exited: its limit, its reset
+        if cause == "usage_limit":  # the loop's limit exit: what `_exited` does for it
             backend.kill(session.name)
-            self._rate_limited(rec, now, target)
+            self._limit_exit(rec, session.exit_status, now, target)
             return self._file(pid, rec, verdict, f"{what}: started again at the reset")
         # harness_exited, wait_deaf, never_joined, unknown: a restart, under the cap.
         settings = self.cfg.limits.watch
@@ -854,7 +901,8 @@ class Supervisor:
         if alive:
             if not allowed:
                 return self._end(pid, rec, session, backend, now, verdict, "held", held)
-            rec.watch_restarts = [*recent, now]
+            # Counted once the session is gone and the relaunch decided (`_watch_ended`): an
+            # end that is called off spends nothing (Codex A1957).
             return self._end(pid, rec, session, backend, now, verdict, "restart",
                              f"{what}: restart, resuming")  # fmt: skip
         # Gone already: an exit under the restart policy's crash count too (§15.14). Its cap
@@ -1198,6 +1246,7 @@ class Supervisor:
             if record.generation != p["generation"]:
                 record.generation, record.restarts, record.crashes = p["generation"], 0, []
                 record.sessions = 0  # the failure report is the new generation's (§15.7)
+                record.finding = None  # a finding belongs to its generation
             record.reports_sessions = "fresh_session" in p
             record.enter(now, "failed", "harness_refused", detail="target_unknown")
             return
@@ -1339,12 +1388,12 @@ class Supervisor:
                 and self._watch(p, rec, mine, target, now)
             ):  # fmt: skip
                 return 0  # the watch takes the exit: a trigger held when it came
-            self._exited(rec, mine, now, backend, target)
+            self._exited(rec, mine, now, backend, target, resting=self._resting(p))
             return 0
-        if rec.watch_end is not None:
+        if rec.watch_end is not None and self._watch_ended(rec, now, None, self._resting(p)):
             # The session the watch was ending is gone without an exit to read: its end is
             # entered now (auth, held or a restart), never a start in its place (Gemini A1941).
-            self._watch_ended(rec, now, None)
+            # A restart end of an agent paused meanwhile goes on below, as any gone session.
             return 0
         if rec.state == "failed" or (rec.retry_at is not None and now < rec.retry_at):
             return 0
@@ -1373,8 +1422,10 @@ class Supervisor:
 
     def _exited(
         self, rec: Record, session: Session, now: float, backend: Tmux,
-        target: Target | None = None,
+        target: Target | None = None, resting: bool = False,
     ) -> None:  # fmt: skip
+        """The session is gone with an exit code. `resting`: the agent is paused or dormant
+        now, which keeps a watch restart end from relaunching it (`_watch_ended`)."""
         backend.kill(session.name)
         code = session.exit_status
         pid = self._pid_of(rec)
@@ -1390,8 +1441,9 @@ class Supervisor:
             self._hung_exit(rec, now, code)
             return
         if rec.watch_end is not None:  # the watch ended it (§15.14)
-            self._watch_ended(rec, now, code)
-            return
+            if self._watch_ended(rec, now, code, resting):
+                return
+            # A restart end whose agent is resting now: handled as any other exit below.
         # An adopted session's start is unknown: its exit is not counted as a quick one.
         started = (
             rec.started_at
@@ -1411,9 +1463,7 @@ class Supervisor:
                       retry_at=None)  # fmt: skip
             return
         if code in (loop.EXIT_RATE_LIMITED, loop.EXIT_RATE_LIMITED_AFTER_CLEAN):
-            if code == loop.EXIT_RATE_LIMITED_AFTER_CLEAN:
-                rec.limits_unknown = 0  # a clean run since the last limit: a new row
-            self._rate_limited(rec, now, target or self.targets[self._default_target()])
+            self._limit_exit(rec, code, now, target)
             return
         rec.limits_unknown = 0
         decision = restart.on_exit(self.cfg.limits.restart, rec.crashes, started, now, self.rand)
@@ -1616,6 +1666,14 @@ class Supervisor:
         else:
             rec.enter(now, "exited", "hung", detail="idle", exit_code=code,
                       retry_at=now + restart.delay(policy, 0, self.rand))  # fmt: skip
+
+    def _limit_exit(self, rec: Record, code: int | None, now: float, target: Target | None) -> None:
+        """The loop's exit for its provider's limit (22, or 23 after a clean run, which starts
+        the row of limits over): `rate_limited` at the backoff. One path for the exit handling
+        and the watch's `usage_limit`, so both report the same."""
+        if code == loop.EXIT_RATE_LIMITED_AFTER_CLEAN:
+            rec.limits_unknown = 0  # a clean run since the last limit: a new row
+        self._rate_limited(rec, now, target or self.targets[self._default_target()])
 
     def _rate_limited(self, rec: Record, now: float, target: Target) -> None:
         """The harness stopped for its provider's limit (§15.7): not a crash. `retry_at` is
@@ -2641,7 +2699,15 @@ class Supervisor:
                 if rec is None or rec.state is None:
                     continue
                 key = rec.key()
-                if key != rec.acked and (rec.pending is None or rec.pending["key"] != key):
+                # A report carrying a finding goes again as it is, with its `seq`, until it is
+                # settled: its reply may only be lost, and the hub knows a report by its `seq`
+                # alone, so a copy in a new one would give the finding twice (Codex A1957).
+                # The new state is reported right after it.
+                held = rec.pending is not None and "finding_n" in rec.pending
+                if (
+                    not held and key != rec.acked
+                    and (rec.pending is None or rec.pending["key"] != key)
+                ):  # fmt: skip
                     rec.seq = max(rec.seq, p.get("seq") or 0) + 1  # validated in update()
                     body = self._body(rec)
                     rec.pending = {"key": key, "body": body}
@@ -2664,6 +2730,15 @@ class Supervisor:
                         rec.acked, rec.pending = pending["key"], None
                         self._delivered(rec, pending)
                     continue
+                if "finding_n" in pending and _refused(exc):
+                    # The hub answered and did not take it: the next state's report is built
+                    # and carries the finding on, once (Codex A1957).
+                    with self.lock:
+                        if rec.pending is pending:
+                            rec.pending = None
+                        self._finding_refused(rec, pending)
+                    self.log(f"report for {pid} refused ({exc}); the next one carries its finding")
+                    continue
                 self.log(f"report for {pid} not taken ({exc}); sent again on the next tick")
                 continue
             with self.lock:
@@ -2677,6 +2752,26 @@ class Supervisor:
         newer one took its place meanwhile."""
         if pending.get("finding_n") is not None and pending["finding_n"] == rec.finding_n:
             rec.finding = None
+
+    @staticmethod
+    def _finding_refused(rec: Record, pending: dict[str, Any]) -> None:
+        """The hub refused a report carrying the finding: the next report carries it on, but
+        a finding refused twice is dropped, since it may be what the hub refuses, and it must
+        not hold every later report back."""
+        n = pending.get("finding_n")
+        if n is None or n != rec.finding_n:
+            return
+        if rec.finding_refused == n:
+            rec.finding = None
+        else:
+            rec.finding_refused = n
+
+
+def _refused(exc: hub.HubError) -> bool:
+    """A definitive answer: the hub was reached and refused the body (a 4xx other than a
+    timeout or a rate limit). No answer, a 5xx, 408 or 429 may have been taken, or will be,
+    so the same body with the same `seq` goes again (Codex A1957)."""
+    return exc.status is not None and 400 <= exc.status < 500 and exc.status not in (408, 429)
 
 
 # In the agents' home: logins and keys a sandboxed command never needs. A list, so not every

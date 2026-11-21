@@ -621,7 +621,9 @@ def test_a_terminal_exit_stays_with_the_exit_handling(
     assert len(backend.started) == 1  # no watch restart
 
 
-def test_a_finding_whose_report_failed_arrives_with_the_next_state(world: Any) -> None:
+def test_a_finding_whose_report_got_no_answer_goes_again_before_the_next_state(
+    world: Any,
+) -> None:
     sup, backend, reports, clock, _ = world
     running(sup, clock, joined_then_quiet())
     backend.below = tmux.WAITING
@@ -629,16 +631,34 @@ def test_a_finding_whose_report_failed_arrives_with_the_next_state(world: Any) -
     drain(sup)
     backend.exit(NAME, 143)
     reports.fail.append(hub.HubError("no answer"))
-    sup.tick()  # exited/hung with the finding: its write fails
+    sup.tick()  # exited/hung with the finding: no answer
     assert with_findings(reports) == []
     clock.now += 11
-    settle(sup)  # the restart's `starting` replaces the report that was not taken
+    settle(sup)  # the same report goes again first; `starting` follows it
     carried = with_findings(reports)
     assert len(carried) == 1
-    assert (carried[0]["state"], carried[0]["finding"]["cause"]) == ("starting", "wait_deaf")
+    assert (carried[0]["state"], carried[0]["finding"]["cause"]) == ("exited", "wait_deaf")
+    assert states(reports)[-1] == ("starting", None, None)
     clock.now += supervisor.RUNNING_AFTER
     sup.tick()
     assert len(with_findings(reports)) == 1  # and once only
+
+
+def test_a_finding_the_hub_refused_is_carried_on_once(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    backend.exit(NAME, 143)
+    reports.fail.append(hub.HubError("refused", code="invalid", status=400))
+    sup.tick()  # the hub answered and did not take it
+    assert with_findings(reports) == []
+    clock.now += 11
+    settle(sup)  # the restart's `starting` carries the finding on
+    carried = with_findings(reports)
+    assert len(carried) == 1
+    assert (carried[0]["state"], carried[0]["finding"]["cause"]) == ("starting", "wait_deaf")
 
 
 # --- Gemini review A1941 ---------------------------------------------------------------------
@@ -713,3 +733,171 @@ def test_the_quiet_span_counts_from_the_adoption_too(world: Any) -> None:
     backend.exit(NAME, 143)
     sup.tick()
     assert last(reports)["finding"]["cause"] == "unknown"
+
+
+# --- Codex delta review A1957 ----------------------------------------------------------------
+
+
+def ended_by_term(sup: supervisor.Supervisor, backend: FakeTmux, clock: Clock) -> None:
+    """A deaf `maity wait`, ended with TERM, which the harness survives."""
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    assert backend.terminated == [NAME] and sup.records[PID].watch_end is not None
+
+
+@pytest.mark.parametrize("change", ["paused", "dormant", "cleared"])
+def test_the_kill_is_called_off_when_the_facts_changed(world: Any, change: str) -> None:
+    sup, backend, reports, clock, _ = world
+    ended_by_term(sup, backend, clock)
+    if change == "cleared":  # it listens again
+        sup.update([watched(started_at=watch.stamp(T0 + 60))])
+    else:
+        sup.update([joined_then_quiet(**{change: True})])
+    clock.now += supervisor.KILL_AFTER
+    sup.tick()
+    assert NAME not in backend.killed
+    rec = sup.records[PID]
+    assert rec.watch_end is None and rec.watch_restarts == []
+    body = last(reports)
+    assert (body["state"], body["finding"]["cause"]) == ("running", "wait_deaf")
+
+
+@pytest.mark.parametrize("rest", ["paused", "dormant"])
+def test_a_session_the_term_ends_after_a_pause_is_no_watch_restart(world: Any, rest: str) -> None:
+    sup, backend, reports, clock, _ = world
+    ended_by_term(sup, backend, clock)
+    sup.update([joined_then_quiet(**{rest: True})])
+    backend.exit(NAME, 143)  # the TERM ended it after all
+    sup.tick()
+    rec = sup.records[PID]
+    assert rec.watch_end is None and rec.watch_restarts == []  # nothing counted
+    body = last(reports)
+    # Not the watch's `exited`/`hung` relaunch: the exit is handled as any other exit.
+    assert (body["state"], body["reason"]) == ("exited", None)
+    assert body["finding"]["cause"] == "wait_deaf"  # reported once
+    assert rec.resume  # whatever starts it next resumes the session the runner ended
+
+
+def test_a_decided_end_goes_on_when_the_trigger_cleared(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    sup.login = lambda harness, binary, as_user, agent_path: "needed"
+    ended_by_term(sup, backend, clock)
+    assert sup.records[PID].watch_end["then"] == "auth"
+    sup.update([watched(started_at=watch.stamp(T0 + 60))])  # listening again
+    clock.now += supervisor.KILL_AFTER
+    sup.tick()
+    assert backend.killed[-1] == NAME
+    assert states(reports)[-1] == ("failed", "auth", None)
+
+
+def test_a_restart_counts_only_once_the_session_is_gone(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    ended_by_term(sup, backend, clock)
+    assert sup.records[PID].watch_restarts == []  # TERM sent: not counted yet
+    backend.attach = True  # someone attaches before the kill: the end is called off
+    clock.now += supervisor.KILL_AFTER
+    sup.tick()
+    assert NAME not in backend.killed
+    assert sup.records[PID].watch_restarts == []  # the one allowed restart is still there
+    backend.attach = False  # they leave; the quiet spell goes on
+    clock.now += supervisor.IDLE_EVERY
+    drain(sup)
+    assert backend.terminated == [NAME, NAME]  # a restart again, not the cap's hold
+    backend.exit(NAME, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "not_listening")
+    assert sup.records[PID].watch_restarts == [clock.now]
+
+
+# --- Gemini delta review A1958 ---------------------------------------------------------------
+
+
+def test_a_limit_exit_while_logged_out_is_a_needed_login(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    sup.login = lambda harness, binary, as_user, agent_path: "needed"
+    running(sup, clock, watched(mode="supervised"))
+    clock.now = T0 + JOIN
+    backend.exit(NAME, loop.EXIT_RATE_LIMITED)
+    drain(sup)
+    assert states(reports)[-1] == ("failed", "auth", None)  # not a retry at every reset
+    assert last(reports)["finding"]["cause"] == "login_invalid"
+
+
+@pytest.mark.parametrize(
+    ("code", "before", "after"),
+    [(loop.EXIT_RATE_LIMITED, 2, 3), (loop.EXIT_RATE_LIMITED_AFTER_CLEAN, 2, 1)],
+)
+def test_a_limit_exit_is_reported_as_without_the_watch(
+    world: Any, code: int, before: int, after: int
+) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, watched(mode="supervised"))
+    sup.records[PID].limits_unknown = before
+    clock.now = T0 + JOIN
+    backend.exit(NAME, code)
+    drain(sup)
+    body = last(reports)
+    assert (body["state"], body["reason"], body["detail"]) == ("rate_limited", "quota",
+                                                               "reset_unknown")  # fmt: skip
+    assert sup.records[PID].limits_unknown == after  # 23 starts the row over first
+    backoff = min(supervisor.LIMIT_BACKOFF * 2 ** (after - 1), supervisor.LIMIT_BACKOFF_MAX)
+    assert body["retry_at"] == supervisor.stamp(clock.now + backoff)
+    assert body["finding"]["cause"] == "usage_limit"
+
+
+def test_an_interactive_exit_22_is_a_plain_exit(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    clock.now = QUIET_PAST_GRACE
+    backend.exit(NAME, loop.EXIT_RATE_LIMITED)  # no loop runs here: just an exit code
+    drain(sup)
+    assert states(reports)[-1] == ("exited", "hung", "not_listening")
+    assert last(reports)["finding"]["cause"] == "harness_exited"
+
+
+def test_a_completed_watch_restart_ends_a_row_of_limits(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    ended_by_term(sup, backend, clock)
+    sup.records[PID].limits_unknown = 3
+    backend.exit(NAME, 143)
+    sup.tick()
+    assert states(reports)[-1] == ("exited", "hung", "not_listening")
+    assert sup.records[PID].limits_unknown == 0
+
+
+class LostReplies(Reports):
+    """The hub takes a status report, but its reply is lost `lose` times."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lose = 0
+
+    def call(self, method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
+        if self.lose and path.endswith("/status"):
+            self.lose -= 1
+            self.sent.append((path.split("/")[3], body))  # the hub stored it
+            raise hub.HubError("no answer")
+        return super().call(method, path, body, **kwargs)
+
+
+def test_a_finding_whose_reply_was_lost_stays_in_one_seq(world: Any) -> None:
+    sup, backend, _, clock, _ = world
+    hub_ = LostReplies()
+    sup.client = hub_
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    backend.exit(NAME, 143)
+    hub_.lose = 1
+    sup.tick()  # exited/hung with the finding: stored, the reply lost
+    clock.now += 11
+    settle(sup)  # the restart: the same report first, then `starting`
+    carried = with_findings(hub_)
+    assert len(carried) == 2  # sent twice ...
+    assert len({body["seq"] for body in carried}) == 1  # ... with one seq: one report
+    after = hub_.sent[-1][1]
+    assert after["state"] == "starting" and "finding" not in after
+    assert after["seq"] == carried[0]["seq"] + 1

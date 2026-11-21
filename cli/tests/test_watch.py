@@ -298,7 +298,8 @@ def login(harness: str, probe: Probe, binary: str | None = "/bin/tool") -> str:
     ("harness", "probe", "answer"),
     [
         ("claude-code", Probe(0), "ok"),
-        ("claude-code", Probe(1), "needed"),  # its documented "not logged in"
+        ("claude-code", Probe(1), "unknown"),  # no confirmed marker yet (the lead, 189704)
+        ("claude-code", Probe(1, out="Not logged in\n"), "unknown"),
         ("claude-code", Probe(2), "unknown"),
         ("claude-code", Probe(127), "unknown"),
         ("claude-code", Probe(126), "unknown"),
@@ -325,7 +326,7 @@ def test_only_the_documented_answer_is_a_needed_login(
 
 
 def test_no_binary_is_an_unknown_login() -> None:
-    assert login("claude-code", Probe(1), binary=None) == "unknown"
+    assert login("codex", Probe(1, err="Not logged in\n"), binary=None) == "unknown"
 
 
 def test_the_probe_runs_with_the_agents_path_through_sudo_or_ssh() -> None:
@@ -691,6 +692,22 @@ def test_log_times_are_hub_time_in_the_wire_form() -> None:
 def test_log_drops_a_line_in_the_hubs_credential_format() -> None:
     got = watch.log_entries("plc-1", entries("plc-1: mty1.cred0123.secretPART_x-y", "plc-1: kept"))
     assert [e["line"] for e in got] == ["plc-1: kept"]
+
+
+def test_log_scrubs_before_it_writes_ascii() -> None:
+    # A tab is still a space to the scrub, and a non-ASCII character does not split a token.
+    got = watch.log_entries(
+        "plc-1",
+        entries("plc-1: Authorization:\tBearer abc123", "plc-1: token ghp_abcédef123 seen",
+                "plc-1: sent Bearer abcédef\tdone"),
+    )  # fmt: skip
+    lines = [entry["line"] for entry in got]
+    assert lines == [
+        "plc-1: Authorization:?<secret>",
+        "plc-1: token <secret> seen",
+        "plc-1: sent Bearer <secret>?done",
+    ]
+    assert not any("abc" in line or "def" in line for line in lines)
 
 
 def test_log_scrubs_each_line() -> None:
