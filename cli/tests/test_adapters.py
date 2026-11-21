@@ -710,6 +710,72 @@ def test_the_agy_shared_tmp_parent_is_hidden_from_a_non_agy_sandbox(tmp_path: Pa
     assert str(parent) in claude["denyRead"] and str(parent) in claude["denyWrite"]
 
 
+def test_a_placements_own_tmpdir_leaf_is_opened_again_and_its_siblings_stay_hidden(
+    tmp_path: Path,
+) -> None:
+    """tsk-0zb9mgzmbwn4: a Codex placement's own TMPDIR leaf under the hidden per-user `/tmp`
+    parent is opened again for it alone (`write` within `none`), and a sibling leaf stays
+    hidden. Claude Code's sandbox never opens such a leaf: live, it mounted one re-opened under
+    a denied parent read-only (Claude Code 2.1.329), so the supervisor gives it none. Paths
+    only, nothing is made: short, as the runner's, so the leaf is the session's TMPDIR."""
+    parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
+    own, sibling = parent / ("a" * 32), parent / ("b" * 32)
+
+    def codex_fs(base: Path, **extra: Any) -> dict[str, str]:  # a directory of its own per call
+        ctx = context(
+            base, harness_id="codex", binary="/usr/bin/codex",
+            clone=base / "ws" / "proj" / "agent-3", workspaces=base / "ws",
+            private=(base / "st",), tmp_scratch_parent=parent, tmpdir=own / "tmp",
+            placement={**PLACEMENT, "mode": "supervised"}, **extra,
+        )  # fmt: skip
+        fs: dict[str, str] = tomllib.loads(adapters.codex_config(ctx))["permissions"]["maity"][
+            "filesystem"
+        ]
+        return fs
+
+    filesystem = codex_fs(tmp_path / "x")
+    assert filesystem[str(parent)] == "none" and filesystem[str(own)] == "write"
+    assert _effective_rule(filesystem, own / "tmp" / "pytest-1") == "write"
+    assert _effective_rule(filesystem, sibling / "tmp") == "none"
+    # Where the scratch's own `tmp` fits, that is the TMPDIR, and the leaf is not opened.
+    room = Path("/srv/ws/proj/.scratch/plc-0003")
+    assert adapters.scratch_tmpdir(room) is not None
+    assert str(own) not in codex_fs(tmp_path / "y", scratch=room)
+    # Claude Code: the parent stays denied, and no leaf is opened, even if one were given.
+    claude = adapters.claude_settings(
+        context(tmp_path / "c", sandbox=True, tmp_scratch_parent=parent, tmpdir=own / "tmp")
+    )["sandbox"]["filesystem"]
+    assert str(parent) in claude["denyRead"] and str(parent) in claude["denyWrite"]
+    assert "allowRead" not in claude and str(own) not in claude.get("allowWrite", [])
+
+
+def test_a_scratch_without_room_for_a_socket_gets_the_short_tmpdir_the_runner_made(
+    tmp_path: Path,
+) -> None:
+    """tsk-0zb9mgzmbwn4: where the scratch's own `tmp` leaves no room for a socket, TMPDIR is
+    the placement's own short one; where the scratch's `tmp` fits, that one is kept."""
+    deep = Path("/") / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    own = Path("/tmp/maity-scratch-1002") / ("a" * 32) / "tmp"  # noqa: S108 - a path only
+    launched = adapters.launch(context(tmp_path / "d", "stub", scratch=deep, tmpdir=own))
+    assert launched.env["TMPDIR"] == str(own) and launched.env["MAITY_SCRATCH"] == str(deep)
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    launched = adapters.launch(context(tmp_path / "r", "stub", scratch=room, tmpdir=own))
+    assert launched.env["TMPDIR"] == str(room / "tmp")
+
+
+def test_the_short_tmpdir_fits_a_socket_at_its_longest() -> None:
+    """The leaf the runner draws is 32 hex digits (`secrets.token_hex(16)`); with the largest
+    uid the path still leaves room for Claude Code's socket on Linux. On macOS, under the
+    resolved `/private/tmp`, a uid of up to four digits fits (macOS gives users 501 and up);
+    a longer one does not, and the runner then starts the session without one (`_tmpdir`)."""
+    linux = Path("/tmp") / f"maity-scratch-{2**32 - 1}" / ("f" * 32) / "tmp"  # noqa: S108
+    assert adapters.fits_socket(linux, adapters.socket_path_max("linux"))
+    mac = Path("/private/tmp") / "maity-scratch-9999" / ("f" * 32) / "tmp"
+    assert adapters.fits_socket(mac, adapters.socket_path_max("darwin"))
+    longer = Path("/private/tmp") / "maity-scratch-99999" / ("f" * 32) / "tmp"
+    assert not adapters.fits_socket(longer, adapters.socket_path_max("darwin"))
+
+
 def test_without_a_scratch_codex_home_stays_in_the_runner_directory(tmp_path: Path) -> None:
     """No workspaces root to carve (so no scratch): CODEX_HOME keeps today's location in the
     runner's directory rather than crashing. `maity runner check` reports that case."""
