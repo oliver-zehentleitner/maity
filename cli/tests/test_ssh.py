@@ -416,38 +416,64 @@ def test_check_warns_opencode_is_unsandboxed_on_an_ssh_host(tmp_path: Path, fake
     assert "docs/runners.md#opencode-grok" in warning[0] and "tsk-nynpvag9zvhh" in warning[0]
 
 
-def test_check_says_worktrees_are_off_on_an_ssh_host_and_warns_about_its_leftover(
-    tmp_path: Path, fake_ssh: Path
+@pytest.mark.parametrize(
+    ("hooks_off", "version"), [(False, "2.1.325"), (True, "2.1.325"), (False, "2.1.40")]
+)
+def test_check_says_the_worktree_guard_on_an_ssh_host_and_names_its_leftovers(
+    tmp_path: Path, fake_ssh: Path, hooks_off: bool, version: str
 ) -> None:
-    """Per host: the line that worktrees are off for Claude Code placements, and a warning for
-    a clone the runner recorded on that host which holds a worktree; another host's clone and
-    an empty `.git/worktrees` (the sandbox's placeholder) are not named. Nothing is removed."""
+    """Per host: the guard as configured, or a warning where the host's settings switch hooks
+    off; and per clone the runner recorded on that host, a registered worktree (which stops
+    maity's git) told from a bare directory under `.claude/worktrees/` (which does not).
+    Another host's clone, an empty `.git/worktrees` (the sandbox's placeholder) and a `.claude`
+    that is a link are not named. Nothing is removed."""
     path = tmp_path / "runner.toml"
     path.write_text(CONFIG.format(root=tmp_path) + "\n[harness.claude-code]\n")
     (tmp_path / "st").mkdir(mode=0o700, exist_ok=True)
     (tmp_path / "remote" / "ws").mkdir(parents=True)
     claude = tmp_path / "remote" / "bin" / "claude"
-    claude.write_text("#!/bin/sh\necho '2.1.325 (Claude Code)'\n")
+    claude.write_text(f"#!/bin/sh\necho '{version} (Claude Code)'\n")
     claude.chmod(0o755)
+    if hooks_off:
+        (tmp_path / "remote" / "home" / ".claude").mkdir()
+        settings = tmp_path / "remote" / "home" / ".claude" / "settings.json"
+        settings.write_text('{"allowManagedHooksOnly": true}')
     ws = tmp_path / "remote" / "ws" / "prj-1"
-    clones = {name: ws / name for name in ("left", "clean", "elsewhere")}
-    (clones["left"] / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    names = ("bare", "registered", "linked", "clean", "elsewhere")
+    clones = {name: ws / name for name in names}
+    (clones["bare"] / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    (clones["registered"] / ".git" / "worktrees" / "agent-z").mkdir(parents=True)
+    (ws / "target" / "worktrees" / "agent-w").mkdir(parents=True)
+    clones["linked"].mkdir()
+    (clones["linked"] / ".claude").symlink_to(ws / "target", target_is_directory=True)
     (clones["clean"] / ".git" / "worktrees").mkdir(parents=True)
     (clones["elsewhere"] / ".git" / "worktrees" / "agent-y").mkdir(parents=True)
-    for name, host in (("left", "build-2"), ("clean", "build-2"), ("elsewhere", "build-1")):
+    for name in names:
+        host = "build-1" if name == "elsewhere" else "build-2"
         place = workspace.Workspace(clones[name], "prj-1", name, host)
         workspace.record(tmp_path / "st", place, "agt", f"plc-{name}")
     cfg = config.load(path)
     target = targets.ssh_hosts(cfg)[1]
     report = commands.Report()
     commands._check_host(report, cfg, target)
-    assert ("ok", f"build-2: {commands.WORKTREES_OFF}") in report.lines, report.lines
-    found = [(lvl, t) for lvl, t in report.lines if "holds a git worktree" in t]
-    assert len(found) == 1, report.lines
-    level, text = found[0]
-    assert level == "warn" and text.startswith(f"build-2: clone {clones['left']} ")
-    assert ".claude/worktrees" in text and "placement's next start" in text
-    assert (clones["left"] / ".claude" / "worktrees" / "agent-x").is_dir()  # read-only
+    guard = [(lvl, t) for lvl, t in report.lines if "WorktreeCreate" in t]
+    if hooks_off or version != "2.1.325":
+        ((level, text),) = guard
+        assert level == "warn" and text.startswith("build-2: harness claude-code: ")
+        why = "sets allowManagedHooksOnly" if hooks_off else "version 2.1.40 is older than 2.1.50"
+        assert why in text and "denies remain" in text
+    else:
+        assert guard == [("ok", f"build-2: {commands.WORKTREES_OFF}")], report.lines
+    found = {t.split()[2]: (lvl, t) for lvl, t in report.lines if t.startswith("build-2: clone ")}
+    assert set(found) == {str(clones["bare"]), str(clones["registered"])}, report.lines
+    level, text = found[str(clones["bare"])]
+    assert level == "warn" and "leftover directory under .claude/worktrees/" in text
+    assert "does not stop maity's git" in text and "placement's next start" in text
+    level, text = found[str(clones["registered"])]
+    assert level == "warn" and "git worktree registration (.git/worktrees)" in text
+    assert "maity runs no git there" in text and "leaves any other for a person" in text
+    assert (clones["bare"] / ".claude" / "worktrees" / "agent-x").is_dir()  # read-only
+    assert (clones["registered"] / ".git" / "worktrees" / "agent-z").is_dir()
 
 
 @pytest.mark.parametrize(

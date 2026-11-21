@@ -64,13 +64,31 @@ def sandbox_version_ok(harness_id: str, version: str | None) -> bool:
     Other harnesses: always."""
     if harness_id != "claude-code":
         return True
+    return claude_at_least(version, CLAUDE_SANDBOX_MIN)
+
+
+# The oldest Claude Code with the `WorktreeCreate` hook event, which the runner's worktree hook
+# needs (adapters.claude_settings). Claude Code's documentation names no version; this one is
+# from review A1808's probe (2.1.40 has no such event, 2.1.50 has it), not from the docs.
+CLAUDE_WORKTREE_HOOK_MIN = (2, 1, 50)
+
+
+def worktree_hook_version_ok(version: str | None) -> bool:
+    """Whether a Claude Code of this version has the WorktreeCreate event: CLAUDE_WORKTREE_HOOK_MIN
+    or later, read as the sandbox gate reads it; an unknown or unreadable version is not."""
+    return claude_at_least(version, CLAUDE_WORKTREE_HOOK_MIN)
+
+
+def claude_at_least(version: str | None, minimum: tuple[int, int, int]) -> bool:
+    """Whether a probed Claude Code version is `minimum` or later. Only a SemVer version counts;
+    a prerelease sorts before its release (SemVer §11); build metadata does not count."""
     match = _RELEASE.fullmatch(version or "")
     if match is None:
         return False
     release = tuple(int(part) for part in match.groups()[:3])
     if match.group(4) is not None:  # a prerelease of `release`
-        return release > CLAUDE_SANDBOX_MIN
-    return release >= CLAUDE_SANDBOX_MIN
+        return release > minimum
+    return release >= minimum
 
 
 def sandbox_version_line(version: str | None) -> str:

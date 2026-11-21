@@ -5118,9 +5118,9 @@ spellings accept argparse's refusal, but only for words with a `--` before
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-d5e4d9s95ytj, 2026-11-21: two incidents on 2026-11-20, in which a Claude Code subagent in a placed session made an isolated git worktree under the clone's `.claude/worktrees/`, after which maity refused git in the clone ("Worktrees are not supported…"), `maity report` and `maity gh pr create` failed, and the session's sandbox refused to remove the worktree; Claude Code's documentation (permissions: a bare tool name in a deny rule removes the tool from the model's context; hooks, `WorktreeCreate`: the hook replaces Claude Code's own git worktree creation for `--worktree`, `EnterWorktree`, subagents with `isolation: "worktree"`, workflow agents and background sessions, and "if the hook fails or produces no path, worktree creation fails with an error"); `cli/src/maity/runner/adapters.py` (`claude_settings`). The plan is the lead's; the settings were not yet run on the hosted Claude Code version
+**Source:** card tsk-d5e4d9s95ytj, 2026-11-21: two incidents on 2026-11-20, in which a Claude Code subagent in a placed session made an isolated git worktree under the clone's `.claude/worktrees/`, after which maity refused git in the clone ("Worktrees are not supported…"), `maity report` and `maity gh pr create` failed, and the session's sandbox refused to remove the worktree; Claude Code's documentation (permissions: a bare tool name in a deny rule removes the tool from the model's context; hooks, `WorktreeCreate`: the hook replaces Claude Code's own git worktree creation for `--worktree`, `EnterWorktree`, subagents with `isolation: "worktree"`, workflow agents and background sessions, and "if the hook fails or produces no path, worktree creation fails with an error"); `cli/src/maity/runner/adapters.py` (`claude_settings`). The plan is the lead's; the settings were not yet run on the hosted Claude Code version; review A1808 (round 2 of #2075): the `WorktreeCreate` event probed absent on 2.1.40, present on 2.1.50
 **See:** runner.md — a01035af-a4c1-4ab7-83a7-91670439fa50 — as of 2026-11-21
-**Revisit when:** the `Agent(isolation:worktree)` parameter deny rule is verified on the hosted Claude Code version (it would take the worktree option from subagents before they try); Claude Code renames `EnterWorktree` or the `WorktreeCreate` hook, or changes what a failing hook does; the clone check starts tolerating a worktree
+**Revisit when:** the `Agent(isolation:worktree)` parameter deny rule is verified on the hosted Claude Code version (it would take the worktree option from subagents before they try); the hook is seen working on the hosted version, or Claude Code documents from which version it has the `WorktreeCreate` event; Claude Code renames `EnterWorktree` or the `WorktreeCreate` hook, or changes what a failing hook does; the clone check starts tolerating a worktree
 
 The settings file the runner writes for every Claude Code placement,
 sandboxed or not, headless or interactive, keeps the session from making a
@@ -5128,17 +5128,37 @@ git worktree in its clone:
 
 - `EnterWorktree` as a bare name in `permissions.deny`, so the model is
   not offered the tool.
+- `git worktree` and `git worktree *` denied for the shell (for opencode
+  too), over a repository grant that allows them: a registration outside
+  `.claude/worktrees/` is one the start's prune does not clear.
 - A `WorktreeCreate` hook, a plain shell line that prints a short reason
   to stderr, no path to stdout, and exits 2. Claude Code then fails every
   worktree it would make, a subagent's `isolation: worktree` included.
-- `disableAllHooks: false`, now whenever the file is written, not only
+  Written only when the start's probed version is 2.1.50 or later.
+- `disableAllHooks: false` whenever the file carries a hook, not only
   under the sandbox, so a `true` in the agents' user settings does not
-  switch the hook off.
+  switch the hook off. In an unsandboxed placement it also turns that
+  user's own hooks on.
 
-`maity runner check` says so for each Claude Code target and warns about a
-clone the runner recorded there that already holds a worktree; it removes
-nothing. The clone check's refusal names stopping and starting the
-placement as the way out, which runs the existing prune.
+`maity runner check` reports this configuration for each Claude Code
+target, not a live test. It warns about a clone the runner recorded there
+that already holds a worktree, and tells a registration the start clears
+from one a person must remove, and both from a bare directory, which does
+not stop maity's git; it removes nothing. The clone check's refusal names
+stopping and starting the placement as the way out, which runs the
+existing prune.
+
+**Version floor (round 2 of the review):** Claude Code's documentation
+names no version for the `WorktreeCreate` event. The floor 2.1.50 comes
+from review A1808's probe: 2.1.40 has no such event. For an older or
+unknown version the runner writes no hook (lotse's ruling, no fallback),
+and `check` warns that only the denies apply. The denies go in every file:
+a deny of a name the binary does not know is taken as harmless. The hook's
+effect rests on the documentation and was not confirmed on the hosted
+version. Settings that switch hooks off (a managed `disableAllHooks: true`
+or `allowManagedHooksOnly`, or the agents' user's `allowManagedHooksOnly`)
+leave only the denies, sandboxed or not; `check` warns there too. These
+are guards against an agent's mistakes, not a boundary.
 
 **Reason:** while a worktree is in the clone maity runs no git there, so a
 running session cannot report or open its pull request, and it cannot

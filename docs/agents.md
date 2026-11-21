@@ -216,12 +216,15 @@ allows by itself); without that, review the head with `git show` and
 has an agy session on an ssh host: keep such files in the clone, out of
 what you commit.
 
-A placed Claude Code session has no worktree isolation: `EnterWorktree`
-is not offered, and a subagent with `isolation: worktree` (or
-`claude --worktree`) fails to start. A worktree in your clone would stop
-`maity report` and `maity gh` until the placement's next start, and your
-sandbox cannot remove it. Run subagents without worktree isolation, in
-the clone itself.
+A placed Claude Code session has no worktree isolation. The runner's
+settings deny `EnterWorktree` and `git worktree` (the latter for an
+OpenCode session too), and from Claude Code 2.1.50 a hook refuses every
+worktree Claude Code would make, so a subagent with `isolation: worktree`
+(or `claude --worktree`) fails to start. The hook rests on Claude Code's
+documented behaviour, not on a run on the hosted version. A worktree
+registered in your clone would stop `maity report` and `maity gh`, and
+your sandbox cannot remove it. These are guards, not a boundary: run
+subagents without worktree isolation, in the clone itself.
 
 In Maity's own repository, heavy test runs take a run slot through
 `tools/run_slot.sh`, whose slot files and log are under `~/.local/state/maity`

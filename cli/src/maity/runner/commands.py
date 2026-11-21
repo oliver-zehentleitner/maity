@@ -692,7 +692,7 @@ def _check_claude_code(
         if tools == ("bwrap", "socat"):  # bubblewrap's nesting; Seatbelt has none
             _check_claude_nesting(report, agent_path, as_user)
         _check_claude_hooks(report, as_user, "")
-    report.ok(WORKTREES_OFF)
+    _check_worktree_guard(report, as_user, "", version)
     _check_claude_settings(report, as_user, "")
 
 
@@ -722,21 +722,49 @@ def _check_claude_nesting(report: Report, agent_path: str, as_user: AsUser) -> N
         )
 
 
+# Configured, not seen working: the hook rests on Claude Code's documented behaviour, which no
+# check here runs (cli/context/runner.md).
 WORKTREES_OFF = (
-    "harness claude-code: git worktrees are off for placements (the runner's settings deny "
-    "EnterWorktree and refuse worktree creation with a hook)"
+    "harness claude-code: placements are set up without git worktrees (EnterWorktree and git "
+    "worktree denied; a WorktreeCreate hook refuses worktree creation; not confirmed on this "
+    "Claude Code version)"
 )
-# The places in a clone where a git worktree shows: Claude Code's working trees, and git's own
-# registration of any worktree. While either holds an entry maity runs no git in the clone.
-WORKTREE_PLACES = (Path(".claude", "worktrees"), Path(".git", "worktrees"))
+# Claude Code's working trees: a leftover directory there alone does not stop maity's git.
+CLAUDE_WORKTREES = Path(".claude", "worktrees")
+# git's registration of a worktree: while it holds an entry maity runs no git in the clone.
+GIT_WORKTREES = Path(".git", "worktrees")
+
+
+def _check_worktree_guard(report: Report, as_user: AsUser, where: str, version: str | None) -> None:
+    """The worktree guard as the runner's settings configure it, or a warning, sandbox or not,
+    where the hook is not written (a version older than CLAUDE_WORKTREE_HOOK_MIN, or unknown)
+    or would not run (capabilities.claude_hooks_off): then only the deny rules hold. It reports
+    the configuration, it runs nothing. Under the sandbox `_check_claude_hooks` already reports
+    the refused starts as an error; this line stays a warning, never an ok after it."""
+    why: str | None
+    if not capabilities.worktree_hook_version_ok(version):
+        oldest = ".".join(str(part) for part in capabilities.CLAUDE_WORKTREE_HOOK_MIN)
+        why = f"version {version or 'unknown'} is older than {oldest} or unknown"
+        written = "the runner writes no WorktreeCreate hook"
+    else:
+        why = capabilities.claude_hooks_off(as_user)
+        written = "the runner's WorktreeCreate hook does not run"
+    if why is None:
+        report.ok(f"{where}{WORKTREES_OFF}")
+        return
+    report.warn(
+        f"{where}harness claude-code: {why}, so {written} and a subagent's worktree isolation "
+        "is not refused; the EnterWorktree and git worktree denies remain"
+    )
 
 
 def _check_leftover_worktrees(
     report: Report, cfg: config.Config, as_user: AsUser, host: str = "", where: str = ""
 ) -> None:
     """A warning per clone the runner recorded on this target (`workspaces.json`; the clones
-    it made, kept or not) whose clone holds a worktree entry. Read-only: the runner clears a
-    `.claude/worktrees/` leftover only at the placement's next start (worktree.py)."""
+    it made, kept or not) that holds a registered worktree or a leftover directory under
+    `.claude/worktrees/`. Read-only: the runner clears a `.claude/worktrees/` leftover only at
+    the placement's next start (worktree.py)."""
     for key, entry in sorted(workspace.records(cfg.state_dir).items()):
         # `host:/path` for an ssh target, the bare path for the local one (Place.key); a
         # Windows drive letter is no host, as the remote path is always absolute POSIX.
@@ -746,20 +774,53 @@ def _check_leftover_worktrees(
         if on_host != host:
             continue
         repo = Path(path) / workspace.REPO if workspace.recorded_layout(entry) else Path(path)
-        found = [str(place) for place in WORKTREE_PLACES if _holds_entries(as_user, repo / place)]
-        if found:
+        if _holds_entries(as_user, repo / GIT_WORKTREES):
+            report.warn(f"{where}clone {repo} {_registered(repo, as_user)}")
+        elif _holds_entries(as_user, repo / CLAUDE_WORKTREES):
             report.warn(
-                f"{where}clone {repo} holds a git worktree ({', '.join(found)}), so maity runs "
-                "no git there; the runner clears one under .claude/worktrees/ at the "
-                "placement's next start, uncommitted work in it included"
+                f"{where}clone {repo} holds a leftover directory under .claude/worktrees/ with "
+                "no registration; it does not stop maity's git, and the runner clears it at the "
+                "placement's next start"
             )
+
+
+BLOCKS_GIT = "so maity runs no git there and `maity report` and `maity gh` fail"
+
+
+def _registered(repo: Path, as_user: AsUser) -> str:
+    """What a clone's worktree registration means, by the start prune's own rule
+    (worktree.registrations): cleared at the next start, or left for a person. Read here as
+    the runner's own user only; through sudo or ssh the kind is not told apart."""
+    counts = worktree.registrations(str(repo)) if as_user.direct else None
+    if counts is None or sum(counts) == 0:
+        return (
+            f"holds a git worktree registration (.git/worktrees), {BLOCKS_GIT}; the runner "
+            "clears one whose working tree is under .claude/worktrees/ at the placement's next "
+            "start, uncommitted work in it included, and leaves any other for a person"
+        )
+    if counts[1]:
+        return (
+            f"holds a git worktree registration (.git/worktrees) the runner's start does not "
+            f"clear (its working tree is not under .claude/worktrees/), {BLOCKS_GIT}; a person "
+            "removes it outside the session (`git worktree remove` or `git worktree prune`)"
+        )
+    return (
+        f"holds a git worktree registration (.git/worktrees) of a working tree under "
+        f".claude/worktrees/, {BLOCKS_GIT}; the runner clears it at the placement's next start, "
+        "uncommitted work in it included"
+    )
 
 
 def _holds_entries(as_user: AsUser, path: Path) -> bool:
     """Whether the directory `path` has any entry, as the agents' user sees it; a missing or
-    unreadable one counts as none (check warns, it does not refuse). No link is followed."""
+    unreadable one counts as none (check warns, it does not refuse). The directory and its
+    parent (`.claude`, `.git`) are tested with `test -L`, and a link as either counts as none;
+    the clone's path above them is the runner's own record and is not tested. Only a boolean
+    reaches the operator."""
     try:
-        if not as_user.exists(path, "-d") or as_user.exists(path, "-L"):
+        if not as_user.exists(path, "-d") or any(
+            as_user.exists(part, "-L") for part in (path.parent, path)
+        ):
             return False
         if as_user.direct:
             with os.scandir(path) as listed:
@@ -880,7 +941,7 @@ def _check_host(report: Report, cfg: config.Config, target: targets.Target) -> N
             elif harness.id == "claude-code":
                 _check_claude_hooks(report, as_user, f"{name}: ")
             if harness.id == "claude-code":
-                report.ok(f"{name}: {WORKTREES_OFF}")
+                _check_worktree_guard(report, as_user, f"{name}: ", probe.version)
             if harness.id == "antigravity":
                 _check_antigravity(report, harness, as_user, target.agent_path, f"{name}: ")
             if harness.id == "opencode":

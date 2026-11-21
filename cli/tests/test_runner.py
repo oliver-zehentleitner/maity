@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import stat
@@ -13,6 +14,7 @@ import pytest
 
 from maity import cli, state
 from maity.runner import adapters, commands, config
+from maity.runner.asuser import RUNNER
 
 MINIMAL = """\
 [hub]
@@ -630,17 +632,11 @@ def test_check_warns_about_inherited_claude_settings(
     assert len(warnings) == 2, warnings
 
 
-@pytest.mark.parametrize(
-    ("leftover", "warned"),
-    [(None, False), (".claude/worktrees/agent-x", True), (".git/worktrees/agent-x", True),
-     (".git/worktrees", False)],  # the sandbox leaves an empty `.git/worktrees`: nothing there
-)  # fmt: skip
-def test_check_says_worktrees_are_off_and_warns_about_a_leftover(
-    paired: Path, bin_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str],
-    leftover: str | None, warned: bool,
-) -> None:  # fmt: skip
-    """A placed Claude Code session makes no worktree (adapters.CLAUDE_WORKTREE_HOOK); a clone
-    that already holds one is named, with the start that clears it, and left as it is."""
+def test_check_says_the_worktree_guard_is_configured_and_names_a_leftover(
+    paired: Path, bin_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`check` says what the runner's settings configure, not that it was seen working, and
+    names a recorded clone that holds a worktree; it removes nothing."""
     from maity.runner import workspace
 
     fake_tool(bin_dir, "tmux")
@@ -650,23 +646,119 @@ def test_check_says_worktrees_are_off_and_warns_about_a_leftover(
         fake_tool(bin_dir, tool)
     paired.write_text(paired.read_text() + "\n[harness.claude-code]\n")
     clone = tmp_path / "ws" / "prj-1" / "agent-3"
-    (clone / ".git").mkdir(parents=True)
+    (clone / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
     workspace.record(tmp_path / "st", workspace.Workspace(clone, "prj-1", "agent-3"), "a", "p")
-    # A clone on an ssh host is that host's check, not this one.
-    workspace.record(tmp_path / "st", workspace.Workspace(clone, "prj-1", "agent-4", "b"), "a", "q")
-    if leftover is not None:
-        (clone / leftover).mkdir(parents=True)
     capsys.readouterr()
     assert cli.main(["runner", "check", "--config", str(paired), "--offline"]) == 0  # no block
     out = lines(capsys)
     assert f"ok     {commands.WORKTREES_OFF}" in out, out
-    found = [line for line in out if "holds a git worktree" in line]
-    assert len(found) == int(warned), out
-    if leftover is not None:
-        assert (clone / leftover).is_dir()  # check removes nothing
-    if warned:
-        assert found[0].startswith("warn") and f"clone {clone} " in found[0]
-        assert "placement's next start" in found[0]
+    assert "not confirmed on this Claude Code version" in commands.WORKTREES_OFF
+    found = [line for line in out if f"clone {clone} " in line]
+    assert len(found) == 1 and found[0].startswith("warn"), out
+    assert (clone / ".claude" / "worktrees" / "agent-x").is_dir()
+
+
+@pytest.mark.parametrize("sandboxed", [False, True])
+def test_check_warns_that_the_worktree_hook_does_not_run_when_hooks_are_off(
+    home: Path, sandboxed: bool
+) -> None:
+    """Settings that switch hooks off (capabilities.claude_hooks_off) leave only the denies:
+    the worktree line is a warning, sandbox or not. Under the sandbox the hooks error that
+    refuses the starts is `_check_claude_hooks`' own, not repeated here."""
+    (home / ".claude").mkdir()
+    (home / ".claude" / "settings.json").write_text('{"allowManagedHooksOnly": true}')
+    report = commands.Report()
+    if sandboxed:
+        commands._check_claude_hooks(report, RUNNER, "")
+    commands._check_worktree_guard(report, RUNNER, "", "2.1.325")
+    assert ("ok", commands.WORKTREES_OFF) not in report.lines
+    (warning,) = [t for level, t in report.lines if level == "warn"]
+    assert warning.startswith("harness claude-code: ") and "sets allowManagedHooksOnly" in warning
+    assert "WorktreeCreate hook does not run" in warning
+    assert "EnterWorktree and git worktree denies remain" in warning
+    errors = [t for level, t in report.lines if level == "error"]
+    assert len(errors) == int(sandboxed)  # the existing refusal only, not a second one
+
+
+@pytest.mark.parametrize(
+    ("version", "ok"),
+    [("2.1.325", True), ("2.1.50", True), ("2.1.49", False), ("2.1.50-rc.1", False),
+     (None, False), ("dev build", False)],
+)  # fmt: skip
+def test_check_warns_when_claude_code_has_no_worktree_event(
+    home: Path, version: str | None, ok: bool
+) -> None:
+    """Below 2.1.50 (review A1808's probe), or unknown, the runner writes no worktree hook
+    (adapters.claude_settings): the line says the denies alone remain."""
+    report = commands.Report()
+    commands._check_worktree_guard(report, RUNNER, "", version)
+    if ok:
+        assert report.lines == [("ok", commands.WORKTREES_OFF)]
+    else:
+        ((level, text),) = report.lines
+        assert level == "warn" and "older than 2.1.50 or unknown" in text
+        assert f"version {version or 'unknown'} " in text
+        assert "writes no WorktreeCreate hook" in text and "denies remain" in text
+
+
+def _leftover(clone: Path, kind: str) -> None:
+    """A clone's worktree state as `check` may find it."""
+    (clone / ".git").mkdir(parents=True)
+    if kind == "bare directory":
+        (clone / ".claude" / "worktrees" / "agent-x").mkdir(parents=True)
+    elif kind in ("registered, cleared", "registered, kept"):
+        tree = (clone / ".claude" / "worktrees" if kind == "registered, cleared"
+                else clone.parent / "elsewhere") / "agent-x"  # fmt: skip
+        tree.mkdir(parents=True)
+        admin = clone / ".git" / "worktrees" / "agent-x"
+        admin.mkdir(parents=True)
+        (admin / "gitdir").write_text(f"{tree / '.git'}\n")
+    elif kind == "empty registration directory":  # the sandbox's placeholder
+        (clone / ".git" / "worktrees").mkdir()
+    elif kind == "linked .claude":
+        target = clone.parent / "target"
+        (target / "worktrees" / "agent-x").mkdir(parents=True)
+        (clone / ".claude").symlink_to(target, target_is_directory=True)
+
+
+@pytest.mark.parametrize(
+    ("kind", "said"),
+    [("none", None), ("empty registration directory", None), ("linked .claude", None),
+     ("bare directory", "leftover directory under .claude/worktrees/ with no registration; it "
+                        "does not stop maity's git"),
+     ("registered, cleared", "of a working tree under .claude/worktrees/, so maity runs no git"),
+     ("registered, kept", "the runner's start does not clear"),
+     ],
+)  # fmt: skip
+def test_check_tells_a_registered_worktree_from_a_leftover_directory(
+    tmp_path: Path, kind: str, said: str | None
+) -> None:
+    """A registration stops maity's git; the start clears it only when its working tree is
+    under `.claude/worktrees/` (worktree.registrations), else a person removes it. A bare
+    directory there does not stop git. A link as `.claude` counts as none. Read-only."""
+    from maity.runner import workspace
+
+    cfg = dataclasses.replace(parse(minimal()), state_dir=tmp_path / "st")
+    clone = tmp_path / "ws" / "prj-1" / "agent-3"
+    clone.mkdir(parents=True)
+    _leftover(clone, kind)
+    workspace.record(cfg.state_dir, workspace.Workspace(clone, "prj-1", "agent-3"), "a", "p")
+    # A clone on an ssh host is that host's check, not this one.
+    workspace.record(cfg.state_dir, workspace.Workspace(clone, "prj-1", "agent-4", "b"), "a", "q")
+    before = sorted(str(p) for p in tmp_path.rglob("*"))
+    report = commands.Report()
+    commands._check_leftover_worktrees(report, cfg, RUNNER)
+    found = [(level, t) for level, t in report.lines if f"clone {clone} " in t]
+    if said is None:
+        assert found == [], report.lines
+    else:
+        ((level, text),) = found
+        assert level == "warn" and said in text, text
+        if kind == "registered, kept":
+            assert "a person removes it" in text and "maity runs no git" in text
+        else:
+            assert "placement's next start" in text
+    assert sorted(str(p) for p in tmp_path.rglob("*")) == before  # nothing removed
 
 
 @pytest.mark.parametrize(("version", "warned"), [("2.1.325", False), ("2.1.330", True)])
