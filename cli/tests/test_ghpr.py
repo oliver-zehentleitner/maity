@@ -1147,6 +1147,9 @@ def test_edit_says_which_pull_request_changed_in_one_cleaned_line(
     [
         json.dumps({"title": "secret title", "body": "the body\nsecond"}),  # no number
         json.dumps({"number": "2045", "body": "the body"}),  # a number of another type
+        json.dumps({"number": 2046, "body": "the body"}),  # another pull request (A1851)
+        json.dumps({"number": 0, "body": "the body"}),
+        json.dumps({"number": -2045, "body": "the body"}),
         "not json, the body",
         "",  # gh printed nothing
     ],

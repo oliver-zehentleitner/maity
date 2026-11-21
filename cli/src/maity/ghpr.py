@@ -438,7 +438,9 @@ def _edited(answer: bytes, number: str) -> str:
         pr = json.loads(answer)
     except ValueError:
         pr = None
-    if not isinstance(pr, dict) or type(pr.get("number")) is not int:
+    # Success only for the pull request the PATCH named (review A1851 of #2081): an answer
+    # naming another number, zero or a negative one gets the fixed line for the requested one.
+    if not isinstance(pr, dict) or type(pr.get("number")) is not int or str(pr["number"]) != number:
         return (
             f"sent the edit of pull request #{number}; gh's answer was not the pull request, "
             "so it may have taken effect: read it with maity gh pr view\n"
