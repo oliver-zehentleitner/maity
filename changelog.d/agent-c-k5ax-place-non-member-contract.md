@@ -12,7 +12,10 @@
   `policy.member_agents` off ends a member's placement, unlike a join already handed out. A
   profile that is a member by the exchange (joined by a line, or another such placement was
   picked up first) gets a further instance by the §3.1 rule for one, within `max_instances`,
-  `instance_quota` beyond it, if the creator may add that instance. Removing a membership also closes the project's placements of
-  that profile that hold no credential yet. An agent caller still gets `not_a_member`, and a
-  member named by id still refuses join fields (`not_with_agent_id`) (`docs/api.md` §3.1,
-  §6.2, §15.6, §15.9, not built).
+  `instance_quota` beyond it, if the creator may add that instance. Removing or isolating a
+  membership also closes the project's placements of that profile that hold no credential
+  yet; such a placement makes the profile in use for `DELETE /agents/{id}`, whose cascade
+  closes it (`removed`). The right to admit is for the creation only: a change of spec and a
+  replacement stay `members:admin`. An agent caller still gets `not_a_member`, and a member
+  named by id still refuses join fields (`not_with_agent_id`) (`docs/api.md` §3.1, §6.1, §6.2,
+  §6.3, §15.5, §15.6, §15.9, not built).

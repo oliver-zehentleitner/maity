@@ -3467,7 +3467,7 @@ do, and hid that the cause was the shape of its own command.
 **Type:** decision
 **Status:** needs-review
 **Evidence:** inferred
-**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13; card tsk-54492gk4xp69 part 1 (the lead's order to refuse `maity runner` from a placed session's tool call), 2026-11-17; the fifth review round of #1942 (the order to refuse a line that names `maity` and holds a comment, a heredoc or more than one line, and to count quoted words in line order), 2026-11-18; the `excludedCommands` matcher of Claude Code 2.1.327 (native binary, sha256 `343c744baa14bfd38286a7cb90871051f04379956da6c5b803a9e66019a76ac9`), read statically only in the sixth review round of #1942, 2026-11-18: the readings differ, and nothing was checked live; the sixth review round of #1942 (the order to hold a `maity` line after variable assignments or a wrapper command to the same rules, whichever way the exclusion matches), 2026-11-18; the seventh review round of #1942 (the decision to replace the wrapper list by one rule: only variable assignments may stand before `maity`, anything else is refused outright), 2026-11-18; a review leg of the seventh round (the confirmation that a word whose path ends in `/maity` counts as `maity` in every position, and the order to name that rule and test it), 2026-11-18; the eighth review round of #1942 (review A1269 and its order: a word counts as `maity` or `runner` also with the backslashes and quotes left in it taken off, the line starts with `maity` only when its first word is `maity` alone, and the sentence that assignments cannot run another program goes; review A1271 on the same start of the line), 2026-11-18; review A1270 of the seventh round, relayed in message 162483 (a quoted or escaped first word skipped before `maity`, `$"…"` locale quoting, quoted text read again one level less than `calls_runner` reads it, mutants that survived), 2026-11-18; the decision of the eighth round (message 162185) to allow only assignments to a list of names before `maity`, and every `+=` refused, 2026-11-18; review A1269 and the decision of the eighth round that amends 162185 (message 162361, relayed in 162371 and 162378): no `MAITY_*` wildcard, only `MAITY_` names documented for agents, every runner-trusted name refused and a guard test for the list, 2026-11-18; the inventory of the `MAITY_` names in `cli/src/maity` at d6474bb5 for that decision, 2026-11-18; the ninth review round of #1942 (review A1309 and the order in message 163399: a word that holds literal brace alternatives counts by each alternative; lowercase and bare `LC_` names before `maity` stay refused), 2026-11-18; the tenth review round of #1942 (review A1337, and the lead's order in message 164326 after the decision in message 164294 to do it in one round: a word's brace expansion, joined with the text around it, counts by each word it makes, capped at 256 words, a word over the cap refuses the line, and the reason the ninth round gave for leaving such names unread was wrong), 2026-11-18; the eleventh review round of #1942 (review A1371, and the lead's decision in message 165140: a letter range's step may carry a sign, and a word that holds an unquoted `{` and also a quoted or escaped `{`, `}` or `,` is not read and refuses the line, fail-closed, quote-aware expansion left for a later card), 2026-11-18; Bash 5.2.21 on the author's machine, 2026-11-18: `{a..e..+2}` and `{a..e..-2}` make `a c e`, `{e..a..+2}` makes `e c a`, `{a..e..0}` and `{a..e..+0}` make `a b c d e`, `{a..e..++2}` stays as it is; review A1372 of the tenth round, relayed in the twelfth review round of #1942 (Bash's rule for when a `}` closes a brace group, and the quote removal after a range of mixed letters), 2026-11-18; Bash 5.2.21 on the author's machine, 2026-11-18: the closing rule, ranges of mixed letters, number ranges and their zero padding, compared word by word with the hook's expansion; review notes of the eleventh round's head, relayed in the twelfth review round of #1942 (message 165755: other fail-open forms of the mixed-word refusal, a crash on a long step, false refusals of quoted programs), and the decision of the twelfth round (message 165756, relayed in 165786): quote-aware brace expansion replaces the mixed-word refusal, a fuzz test against Bash in CI, the step bounded as Bash bounds it, a failing hook refuses, 2026-11-18; the CI run of #1942 at b6d523e6 on Ubuntu 26.04 (job 135108287127), whose Bash expanded a word otherwise than the hook's 5.2 rules, and Bash 5.3's `braces.c` (Ubuntu's 5.3 source), read 2026-11-18; reviews A1406 and A1407 of the twelfth round's head, relayed in the thirteenth review round of #1942 (messages 166319 and 166393), and lotse's ruling for that round (message 166401, relayed in 166408): a line with a construct the hook does not model exactly is refused, 2026-11-18; the S200 re-check on Claude Code 2.1.329 with the runner's hook, 2026-11-20 (996b6f48: `MAITY_WAIT_TIMEOUT=5 maity wait` passed the hook and its `maity` found no credential; lines with only the other allowed names before `maity` got it), and card tsk-f5fy2zq26xcy from the review of #2019 (the order to take `MAITY_WAIT_TIMEOUT` off the list, with `maity wait --timeout N` as the way out), 2026-11-20, and the lead's ruling on it (the hint in its own reason, only for a prefix that assigns `MAITY_WAIT_TIMEOUT`), 2026-11-20; the review of #2024 and card tsk-12zb1s0zgdjw, 2026-11-20: a correction to how the hook reads backticks, with a Bash differential test, and the lead's ruling to keep the timeout hint for any unquoted word before `maity` that reads as an assignment to `MAITY_WAIT_TIMEOUT`, after `env` included, and to correct only its wording; the first and second review rounds of #2026 (both review legs, and the lead's and security's reset of the scope), 2026-11-20: substitutions and expansions that hide the name, read as a correction with a Bash differential test, and the boundary of what the hook guarantees. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
+**Source:** card tsk-bg81webs911m (the lead's order for a PreToolUse hook on a `maity` line, before the other reads of the card), 2026-11-13; Claude Code's hooks documentation (code.claude.com/docs/en/hooks), read 2026-11-13: command hooks run unsandboxed, exit 2 refuses a PreToolUse call, `onFailure: "block"` (2.1.295 and later) refuses it when the hook fails or times out; Claude Code 2.1.325 on the agents' machine, 2026-11-13 (`claude -p` with `--setting-sources user`, the hook in a `--settings` file, `dontAsk`, no sandbox, no hub): the hook refused `maity --version > out1.txt` before it ran and passed `maity --version`, and a hook at a missing path refused `echo`; the first review round of #1752 (the version the failure policy needs), 2026-11-13; card tsk-54492gk4xp69 part 1 (the lead's order to refuse `maity runner` from a placed session's tool call), 2026-11-17; the fifth review round of #1942 (the order to refuse a line that names `maity` and holds a comment, a heredoc or more than one line, and to count quoted words in line order), 2026-11-18; the `excludedCommands` matcher of Claude Code 2.1.327 (native binary, sha256 `343c744baa14bfd38286a7cb90871051f04379956da6c5b803a9e66019a76ac9`), read statically only in the sixth review round of #1942, 2026-11-18: the readings differ, and nothing was checked live; the sixth review round of #1942 (the order to hold a `maity` line after variable assignments or a wrapper command to the same rules, whichever way the exclusion matches), 2026-11-18; the seventh review round of #1942 (the decision to replace the wrapper list by one rule: only variable assignments may stand before `maity`, anything else is refused outright), 2026-11-18; a review leg of the seventh round (the confirmation that a word whose path ends in `/maity` counts as `maity` in every position, and the order to name that rule and test it), 2026-11-18; the eighth review round of #1942 (review A1269 and its order: a word counts as `maity` or `runner` also with the backslashes and quotes left in it taken off, the line starts with `maity` only when its first word is `maity` alone, and the sentence that assignments cannot run another program goes; review A1271 on the same start of the line), 2026-11-18; review A1270 of the seventh round, relayed in message 162483 (a quoted or escaped first word skipped before `maity`, `$"…"` locale quoting, quoted text read again one level less than `calls_runner` reads it, mutants that survived), 2026-11-18; the decision of the eighth round (message 162185) to allow only assignments to a list of names before `maity`, and every `+=` refused, 2026-11-18; review A1269 and the decision of the eighth round that amends 162185 (message 162361, relayed in 162371 and 162378): no `MAITY_*` wildcard, only `MAITY_` names documented for agents, every runner-trusted name refused and a guard test for the list, 2026-11-18; the inventory of the `MAITY_` names in `cli/src/maity` at d6474bb5 for that decision, 2026-11-18; the ninth review round of #1942 (review A1309 and the order in message 163399: a word that holds literal brace alternatives counts by each alternative; lowercase and bare `LC_` names before `maity` stay refused), 2026-11-18; the tenth review round of #1942 (review A1337, and the lead's order in message 164326 after the decision in message 164294 to do it in one round: a word's brace expansion, joined with the text around it, counts by each word it makes, capped at 256 words, a word over the cap refuses the line, and the reason the ninth round gave for leaving such names unread was wrong), 2026-11-18; the eleventh review round of #1942 (review A1371, and the lead's decision in message 165140: a letter range's step may carry a sign, and a word that holds an unquoted `{` and also a quoted or escaped `{`, `}` or `,` is not read and refuses the line, fail-closed, quote-aware expansion left for a later card), 2026-11-18; Bash 5.2.21 on the author's machine, 2026-11-18: `{a..e..+2}` and `{a..e..-2}` make `a c e`, `{e..a..+2}` makes `e c a`, `{a..e..0}` and `{a..e..+0}` make `a b c d e`, `{a..e..++2}` stays as it is; review A1372 of the tenth round, relayed in the twelfth review round of #1942 (Bash's rule for when a `}` closes a brace group, and the quote removal after a range of mixed letters), 2026-11-18; Bash 5.2.21 on the author's machine, 2026-11-18: the closing rule, ranges of mixed letters, number ranges and their zero padding, compared word by word with the hook's expansion; review notes of the eleventh round's head, relayed in the twelfth review round of #1942 (message 165755: other fail-open forms of the mixed-word refusal, a crash on a long step, false refusals of quoted programs), and the decision of the twelfth round (message 165756, relayed in 165786): quote-aware brace expansion replaces the mixed-word refusal, a fuzz test against Bash in CI, the step bounded as Bash bounds it, a failing hook refuses, 2026-11-18; the CI run of #1942 at b6d523e6 on Ubuntu 26.04 (job 135108287127), whose Bash expanded a word otherwise than the hook's 5.2 rules, and Bash 5.3's `braces.c` (Ubuntu's 5.3 source), read 2026-11-18; reviews A1406 and A1407 of the twelfth round's head, relayed in the thirteenth review round of #1942 (messages 166319 and 166393), and lotse's ruling for that round (message 166401, relayed in 166408): a line with a construct the hook does not model exactly is refused, 2026-11-18; the S200 re-check on Claude Code 2.1.329 with the runner's hook, 2026-11-20 (996b6f48: `MAITY_WAIT_TIMEOUT=5 maity wait` passed the hook and its `maity` found no credential; lines with only the other allowed names before `maity` got it), and card tsk-f5fy2zq26xcy from the review of #2019 (the order to take `MAITY_WAIT_TIMEOUT` off the list, with `maity wait --timeout N` as the way out), 2026-11-20, and the lead's ruling on it (the hint in its own reason, only for a prefix that assigns `MAITY_WAIT_TIMEOUT`), 2026-11-20; the review of #2024 and card tsk-12zb1s0zgdjw, 2026-11-20: a correction to how the hook reads backticks, with a Bash differential test, and the lead's ruling to keep the timeout hint for any unquoted word before `maity` that reads as an assignment to `MAITY_WAIT_TIMEOUT`, after `env` included, and to correct only its wording; the first and second review rounds of #2026 (both review legs, and the lead's and security's reset of the scope), 2026-11-20: substitutions and expansions that hide the name, read as a correction with a Bash differential test, and the boundary of what the hook guarantees; card tsk-wc9ayykt4hdg (the order that the hook hold on its own where `maity` meets a control character or a Unicode space, by either of two options), 2026-11-20. The grammar, the version gate and the rejected alternatives below are the author's, not yet fully reviewed
 **See:** runner.md#a-placed-claude-code-agent-runs-maity-alone — 996b6f48-a8d7-4b81-b977-33cef46bc4cc — as of 2026-11-13
 **See:** runner.md#claude-codes-sandbox-runs-strict-or-not-at-all — 3c074f5a-6245-4fd9-82a2-09b543738394 — as of 2026-11-13
 **Verification:** uncorroborated — what this entry says of Claude Code's sandbox exclusion rests on static readings of its 2.1.327 binary that differ from each other; none was checked live, and the hook relies on none of them
@@ -3812,6 +3812,28 @@ no line pass that names `maity`: the whole line then starts with a `#`
 or holds a newline, and `read_whole` refuses it (a test runs every
 listed line under comment lines). The live re-check of S200 is in
 996b6f48.
+
+Since card tsk-wc9ayykt4hdg (2026-11-20), a line that names `maity`,
+also once such characters are taken out, and holds a control character
+other than a tab or a newline (C0, DEL, C1) or a space other than the
+ASCII one (each character Python counts as a space, U+0085 and the
+Unicode spaces among them) or a format character (Unicode category Cf:
+U+180E, U+200B, U+FEFF, the zero-width joiners, the word joiner, the
+soft hyphen and the bidi controls, all invisible, counted since the
+review of #2070) is refused (`odd_spacing`). The check runs after the other rules, so a line they
+refuse keeps its reason. The shell splits words only at a space, a tab
+and a newline: `maity` followed by a carriage return, a vertical tab, a
+form feed or a no-break space was part of a longer word to it, and no
+rule above held such a line, while a harness that splits at that
+character would read `maity` as the command. Rejected: the card's other
+option, holding a line in which `maity` is followed by any character
+outside the word set to one plain call. It covers only the character
+right after `maity`, not one between an allowed assignment and `maity`
+(`LANG=C`, a no-break space, `maity`) or between its letters, so the
+hook would still depend on how the harness splits. The cost: text that
+names `maity` and holds such a character (a no-break space in quoted
+text) is refused as well, with `--body-file` as the way out; a line
+that does not name `maity` is left as before.
 
 **Reason:** only `maity` itself needs to run outside the sandbox. A line
 that holds more than maity's call is held to the rules every other
@@ -5111,3 +5133,68 @@ spellings accept argparse's refusal, but only for words with a `--` before
   the word. A raw check that avoids that would have to re-implement
   argparse's reading of global options, abbreviations and `--`, which is
   more fragile than taking argparse's own result.
+
+## A quiet placement is diagnosed by the runner, on facts the hub supplies, and the runner reacts by cause
+
+**Id:** e6a12eff-5d04-476e-8239-22970a139c7b
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-twmms66p1ww4, 2026-11-20: the owner's direction (chat seq 179583, "look at the cause first"), the plan the lead approved with its rulings of the same day, the owner's decision on foreign agents (req-1kk6pwdxdmg6) and on the runner's log lines (note on the card, 20:42Z); contract in docs/api.md §15.7, §15.8, §15.14 ("The runner's watch"); not built yet
+**Revisit when:** the hub builds §15.14's `health` (the grace becomes `hang_after_minutes`) or flapping; the hub gains an actor with a restart right that could resume a session; a recurring `unknown` cause asks for a class of its own
+
+The hub tells the runner, on each placement it reads, what it knows of the
+agent behind it: `session` with `started_at`, `not_listening_since`,
+`paused` and `dormant`. The runner decides. Past its grace for not
+listening, or without a join after a start, it gathers what it sees (the
+process, the exit code, what runs below the harness, fixed pane
+signatures, the login probe, a refused pickup's code), names one cause,
+reports it as `finding` with its own recent log lines (read only by the
+runner's owner, the agent's owner and the project's members with trust
+`owner` or `admin`, the arbiter's answer to req-jcq33fsvc72a), and reacts by that
+cause: one restart that resumes the session, a nudge, a wait for the
+limit's reset, or `failed` at once for a login or a refused pickup. A
+second failure within its window, counted only for the causes it restarts
+for, holds the placement as `failed`/`hung`, which opens the owner's
+outage request, so it never loops. Paused and dormant agents are left
+alone. For a foreign placement (`session: null`) the runner acts only on
+what it sees itself.
+
+Round 2 of the review (PR #2059) added four rules:
+- a session with a client attached (tmux's `session_attached`, unknown
+  counted as attached) is never ended by the watch; the finding is
+  reported instead;
+- a pane match alone decides neither `login_invalid` (it needs the login
+  probe, and a harness without one never gets it) nor `usage_limit` (it
+  needs the harness's limit exit);
+- `finding.log` holds only text the runner wrote, with values from the
+  agents' side as placeholders, and only lines that start with the
+  placement's id;
+- an own-check end after a watch nudge counts toward `crash_cap`, not
+  `auto_restarts`, so one end is counted once, under the rule that made it.
+
+The reason for the pane rule: text in a pane is the session's to write,
+so it may say anything. The causes that stop an agent for a person
+(`auth`) or pause it (`rate_limited`) therefore rest on a signal from
+outside the pane.
+
+**Reason:** only the runner sees the process, its exit code and the pane,
+and it already owns restart, backoff and the caps; its own restarts keep
+the generation and resume the session, and need no right. The hub alone
+knows the §5.3 episode and whether a session started, which the runner
+cannot see: a deaf `maity wait` looks like waiting from the process tree.
+So the facts go to where the decision is, on the read the runner already
+makes, with no new event and no new right.
+
+**Rejected alternatives:**
+- The hub restarts the placement itself by raising `generation`: a new
+  generation starts a fresh session, the hub would need an actor with a
+  restart right, and it would restart blindly, without the cause, which the
+  owner ruled out (a restart does nothing for a failed login).
+- Send `member_not_listening` to the runner as an event: the runner
+  re-reads its placements on every wake and on its own interval anyway, so
+  a field on that read carries the same fact and survives a lost event.
+- Keep the finding in `reported.detail` alone: one closed code, no signals
+  to learn from. A health view of its own: not built.
+- Restart for not listening on a fresh session: the agent's context is the
+  work; a fresh start stays a person's reset.

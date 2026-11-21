@@ -120,9 +120,42 @@ window.Maity = window.Maity || {};
     return /^https:\/\/[^/?#]*@/i.test(url) ? null : url;
   }
 
+  // Every child gone in one change where the browser has replaceChildren (tsk-3b2t7hwc352s: the
+  // board's columns emptied one removeChild at a time), one by one where it has not.
   function clear(el) {
+    if (typeof el.replaceChildren === "function") { el.replaceChildren(); return el; }
     while (el.firstChild) el.removeChild(el.firstChild);
     return el;
+  }
+
+  // Whether two trees draw the same: the same elements with the same attributes and the same text,
+  // in the same order. Listeners and properties (a value typed, a box ticked) are not compared, so
+  // only the caller knows whether the older tree's listeners still act on the right data. loose(name,
+  // a, b), where given, says that two different values of an attribute count as the same (an id
+  // made up anew for every draw). A view keeps the older tree where it would draw the same, and the
+  // browser has nothing to lay out or style again (tsk-3b2t7hwc352s). A missing tree (null or
+  // undefined) is never the same as any, another missing one included: there is nothing to keep.
+  // Nodes of different kinds (an element, text, a comment) are never the same, whatever their text.
+  function sameTree(a, b, loose) {
+    if (a == null || b == null) return false;
+    if (a.nodeType !== b.nodeType) return false;
+    const element = typeof a.getAttribute === "function";
+    if (element !== (typeof b.getAttribute === "function")) return false;
+    if (!element) return a.textContent === b.textContent;
+    if (a.tagName !== b.tagName) return false;
+    const an = typeof a.getAttributeNames === "function" ? a.getAttributeNames() : [];
+    const bn = typeof b.getAttributeNames === "function" ? b.getAttributeNames() : [];
+    if (an.length !== bn.length) return false;
+    for (let i = 0; i < an.length; i++) {
+      const av = a.getAttribute(an[i]);
+      const bv = b.getAttribute(an[i]);
+      if (av !== bv && !(loose && bv != null && loose(an[i], av, bv))) return false;
+    }
+    const ac = a.childNodes;
+    const bc = b.childNodes;
+    if (ac.length !== bc.length) return false;
+    for (let i = 0; i < ac.length; i++) if (!sameTree(ac[i], bc[i], loose)) return false;
+    return true;
   }
 
   // Every <img> under root, the root itself included, in document order.
@@ -484,5 +517,5 @@ window.Maity = window.Maity || {};
     return [M.t("manages.members", { count: c.members }), c.instances ? M.t("manages.instances", { count: c.instances }) + " (" + live + ")" : null].filter(Boolean).join(" · ");
   };
 
-  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, keepImages, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
+  M.dom = { word, isOwnImage, handleOf, handleIn, ambiguousMention, isSilentAgent, silentSince, dormantOf, dormantNote, managesText, memberRef, instanceHref, memberChip, h, append, clear, sameTree, keepImages, safeUrl, formatTime, formatAgo, NAME_RULES, mentionSpans, sniffImage, IMAGE_MAX, get SEND_KEYS() { return sendKeys(); }, sendKeysFor, showSendKeys, sendOnCtrlEnter };
 })(window.Maity);
