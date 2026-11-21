@@ -5,7 +5,8 @@ compares them with the sessions tmux has and acts: start, restart after a backof
 grace, adopt a session it finds after its own restart, end a session no placement wants any
 more. It reports what is actually there, one record per placement and only on a change of
 (state, reason, detail, generation, restarts), each with the next `seq`, saved before it is
-sent. A report the hub did not take is sent again on the next tick.
+sent. A report the hub did not take is sent again on the next tick; one it refused as
+`invalid` is not (`Supervisor._send`).
 
 Long actions (clone, start) run as one task per placement, so a slow clone never holds up a
 stop elsewhere. Everything else runs in the supervisor's own thread. `actual.json` keeps the
@@ -1346,21 +1347,18 @@ class Supervisor:
             # An ssh host whose `maity` predates the codex launch-write op cannot anchor the
             # home. The no-scratch fall-back would put CODEX_HOME back under the hidden state
             # directory (the original incident: no command runs), so refuse the placement with
-            # a clear reason the operator can act on, rather than crash-looping it.
-            #
-            # The reason goes to the runner's log only. `harness_refused`'s detail is a closed
-            # contract list (docs/api.md §15.7) with no code for this; an unknown detail makes
-            # the hub answer `invalid`, so the runner would re-send the rejected report every
-            # tick and the refusal would never be recorded. The report therefore carries no
-            # detail (a contract detail-code is deferred to a follow-up card). `retry_at` stays
-            # None, so the start still does not crash-loop and only a new generation retries.
+            # a clear reason the operator can act on, rather than crash-looping it: detail
+            # `codex_host_too_old` (docs/api.md §15.7). A hub older than that code refuses the
+            # detail; the report then goes once more without it (`_send`). `retry_at` stays
+            # None, so the start does not crash-loop and only a new generation retries.
             # `old` carries the host's own message, the host version among it when it names one.
             self.log(
                 f"{p['id']}: codex placement refused: the host's maity is too old for the "
                 f"codex launch-write op: {old}"
             )
             with self.lock:
-                rec.enter(self.now(), "failed", "harness_refused", retry_at=None)
+                rec.enter(self.now(), "failed", "harness_refused", detail="codex_host_too_old",
+                          retry_at=None)  # fmt: skip
             return
         except Exception as exc:  # noqa: BLE001 - a start task never dies leaving `starting`
             # Counted like a quick exit: a passing tmux hiccup is retried after the backoff,
@@ -1906,18 +1904,53 @@ class Supervisor:
             return
         self.save()  # the seq is on disk before it is sent
         for pid, rec, pending in outgoing:
-            try:
-                self.client.call("POST", f"/runner/placements/{pid}/status", body=pending["body"])
-            except hub.HubError as exc:
-                if exc.code in ("stale_generation", "not_found"):
-                    with self.lock:  # the hub moved on: settled, until the state changes
-                        rec.acked, rec.pending = pending["key"], None
-                    continue
-                self.log(f"report for {pid} not taken ({exc}); sent again on the next tick")
-                continue
-            with self.lock:
-                if rec.pending is pending:
+            again: dict[str, Any] | None = pending
+            while again is not None:
+                again = self._send(pid, rec, again)
+
+    def _send(self, pid: str, rec: Record, pending: dict[str, Any]) -> dict[str, Any] | None:
+        """POST one report (§15.8). Returns the report to send at once in its place -- the same
+        report with `detail: null` and the same `seq`, when the hub refused it as `invalid` for
+        its detail alone -- else None. A report refused as `invalid` is never sent again as it
+        was: the same body meets the same refusal every tick and the hub never records the
+        state. Any other `invalid` is dropped (the next change reports afresh); a failure that
+        is no refusal of the body (no answer, `429`, `5xx`, maintenance) is sent again on the
+        next tick."""
+        assert self.client is not None  # noqa: S101 - _report checks it
+        try:
+            self.client.call("POST", f"/runner/placements/{pid}/status", body=pending["body"])
+        except hub.HubError as exc:
+            if exc.code in ("stale_generation", "not_found"):
+                with self.lock:  # the hub moved on: settled, until the state changes
                     rec.acked, rec.pending = pending["key"], None
+                return None
+            if exc.status == 400 and exc.code == "invalid":
+                fields = exc.details.get("fields")
+                detail = pending["body"].get("detail")
+                if isinstance(fields, dict) and set(fields) == {"detail"} and detail is not None:
+                    # A hub older than the detail code (or one that pairs it otherwise): the
+                    # state, reason and seq still stand, and a refused report stored nothing,
+                    # so the seq is still free.
+                    self.log(f"report for {pid} refused for its detail {detail!r} ({exc}); "
+                             "sent again without the detail")  # fmt: skip
+                    stripped = {"key": pending["key"], "body": {**pending["body"], "detail": None}}
+                    with self.lock:
+                        if rec.pending is not pending:
+                            return None
+                        rec.pending = stripped
+                    return stripped
+                self.log(f"report for {pid} refused as invalid ({exc}); dropped, "
+                         "the next change reports afresh")  # fmt: skip
+                with self.lock:
+                    if rec.pending is pending:
+                        rec.acked, rec.pending = pending["key"], None
+                return None
+            self.log(f"report for {pid} not taken ({exc}); sent again on the next tick")
+            return None
+        with self.lock:
+            if rec.pending is pending:
+                rec.acked, rec.pending = pending["key"], None
+        return None
 
 
 # In the agents' home: logins and keys a sandboxed command never needs. A list, so not every

@@ -20591,7 +20591,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `hot_loop` | `crash_loop` in `supervised` mode |
 | `idle`, `tool` | `hung`: ended after a nudge found it silent, or a tool call stayed open past `tool_call_max_minutes` |
 | `reset_unknown` | `rate_limited`: the harness named no reset time; `retry_at` is the runner's own backoff |
-| `mode_unsupported`, `model_unsupported`, `target_unknown` | `harness_refused`; `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made) |
+| `mode_unsupported`, `model_unsupported`, `target_unknown`, `codex_host_too_old` | `harness_refused`; `target_unknown`: the placement names a target the runner no longer has (the operator removed it from the configuration after the placement was made); `codex_host_too_old`: a Codex placement on an ssh target whose `maity` is too old for the Codex launch-write op, so the runner cannot anchor `CODEX_HOME` in the placement's scratch (§15.5); it starts nothing and does not retry until a new generation; upgrade `maity` on that host |
 
 Two more details of `hung` come with the runner's watch (§15.14), not
 built yet (tsk-twmms66p1ww4): `not_listening`, the placement's session
@@ -21061,7 +21061,11 @@ A placement as the runner reads it:
   it is `stale_generation`. A terminal report (`stopped`, `failed`, or
   `exited` with `retry_at: null`) of the current generation on a
   placement that is closing closes it (§15.5). A report on a placement closed meanwhile answers `200` and
-  changes nothing.
+  changes nothing. A report answered `400 invalid` is not sent again as it was: when
+  `details.fields` names only `detail`, the runner sends it once more with `detail: null`
+  and the same `seq` (a refused report stores nothing, so the `seq` is still free); any other
+  `invalid` it logs once and drops, and the next change reports afresh; every other failure
+  (no answer, `429`, `5xx`, a maintenance window) it sends again as before.
 - `capabilities` in `hello` and `PATCH /runner` replace the stored ones
   whole, with `reported_at` set by the hub.
 

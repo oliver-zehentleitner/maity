@@ -110,6 +110,7 @@ DETAILS: dict[str, tuple[str, str]] = {
     "mode_unsupported": ("reason", "harness_refused"),
     "model_unsupported": ("reason", "harness_refused"),
     "target_unknown": ("reason", "harness_refused"),
+    "codex_host_too_old": ("reason", "harness_refused"),
     "reset_unknown": ("state", "rate_limited"),
 }
 RUNNING_STATES = ("starting", "running", "stopping")
