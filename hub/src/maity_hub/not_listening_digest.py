@@ -142,7 +142,8 @@ def _holders(conn: Connection, owner_id: str | None, now: datetime) -> list[Any]
         return []
     from maity_hub.instances import credential_rows  # instances imports this module's callers
 
-    # Each instance as it is in the holder's project: its pause there, on the attachment.
+    # Each instance as it is in the holder's project: its pause there, on the attachment. A
+    # revoked or detached one on purpose: the digest reports the claims it still holds there.
     credentials = {
         (r.membership_id, r.instance): r
         for r in conn.execute(

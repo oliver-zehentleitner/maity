@@ -606,7 +606,12 @@ profile in `agent_id`; its `membership_id` is gone. The keys are (membership_id,
 across one profile's memberships. A session's event position and its not-listening episode are rows of
 `agent_session_project`, one per (session, membership). The migration makes every credential one
 attachment, attached at its `created_at` through its join, and every session one position row; the
-downgrade refuses while a credential is attached to more than one project. A revoked credential is not
+downgrade refuses before its first DDL (MariaDB commits each step) while a credential has more or fewer
+than one attachment row or a session more or fewer than one position row, a detached row included, and
+names only a database restore, since detaching keeps the row. Every reader that speaks for the instance
+in a project reads live attachments only (`attached_now()` or `detached_at IS NULL`), as the lead ruled
+on review (seq 187927), though nothing writes `detached_at` before hub PR D; a reader that means a
+detached row on purpose (the 30-day credentials list, an id ever used) says why. A revoked credential is not
 marked detached by the migration, and `detached_project` exists now but is written only in hub PR D, both
 as the lead ruled. "Ever used" in the instance-id rule (§3.1) is per membership row, as the key is.
 

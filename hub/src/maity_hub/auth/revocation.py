@@ -51,13 +51,18 @@ def revoke(
         .values(live=None, ended_at=now)
     ).rowcount
     if ended:
+        # Every project the instance is attached to now, as `holder_stalled.revoked` reads
+        # them; not `attached_now()`, as the credential is revoked by now (§6.17).
         for member in conn.execute(
             select(t.membership.c.id, t.membership.c.project_id)
             .join(
                 t.instance_attachment,
                 t.instance_attachment.c.membership_id == t.membership.c.id,
             )
-            .where(t.instance_attachment.c.credential_id == credential_id)
+            .where(
+                t.instance_attachment.c.credential_id == credential_id,
+                t.instance_attachment.c.detached_at.is_(None),
+            )
             .order_by(t.instance_attachment.c.id)
         ).all():
             environment.refresh(conn, member.project_id, member.id)
@@ -81,8 +86,9 @@ def revoke(
 
 def _lead_revoked(conn: Connection, credential_id: str, *, announce: bool) -> None:
     """A revoked lead stops being lead: `lead_instance: null`, `member_updated` (§6.17), in
-    every membership the instance leads. Not announced when the whole member is being
-    removed: `member_removed` says it."""
+    every membership the instance leads and is attached to now (a detach clears its lead
+    there, §6.17). Not announced when the whole member is being removed: `member_removed`
+    says it."""
     from maity_hub.views import member_view  # views reads the auth modules
 
     attachment = t.instance_attachment
@@ -91,6 +97,7 @@ def _lead_revoked(conn: Connection, credential_id: str, *, announce: bool) -> No
         .join(attachment, attachment.c.membership_id == t.membership.c.id)
         .where(
             attachment.c.credential_id == credential_id,
+            attachment.c.detached_at.is_(None),
             t.membership.c.lead_instance == attachment.c.instance,
         )
         .order_by(t.membership.c.id)

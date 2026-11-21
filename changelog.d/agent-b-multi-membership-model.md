@@ -8,8 +8,10 @@
   session's event position and its not-listening episode per project, moved from
   `agent_session`. `join_link.attach` names the instance a join attaches (§3.1).
   Migration `20261121120000_inst_attach` makes every credential one attachment and every
-  session one position row; its downgrade refuses while a credential is attached to more
-  than one project. An instance in one project behaves as before.
+  session one position row. Its downgrade refuses before any change while a credential
+  has more than one attachment row or none, or a session more than one position row or
+  none, a detached attachment included; only a database restore removes such rows. An
+  instance in one project behaves as before.
 - Contract: an agent profile's owner who is not a member of a project gets
   `credential_revoked` with `reason: no_membership` and `credential_in_payload` of it as
   account records (not built yet, §2.2, §6.17, §8.2); an instance id "ever used" in a

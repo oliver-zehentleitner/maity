@@ -1715,13 +1715,20 @@ def list_credentials(
         target = member_row_or_removed(conn, mine.project.id, member_id)
         _may_manage_credentials(conn, mine, target)
         since = clock.now() - REVOKED_LISTED
+        a = t.instance_attachment
         rows = conn.execute(
             instances.credential_rows().where(
-                t.instance_attachment.c.membership_id == target.id,
+                a.c.membership_id == target.id,
                 t.credential.c.revoked_at.is_(None) | (t.credential.c.revoked_at > since),
+                # A detached attachment on purpose, for 30 days like a revoked credential:
+                # §10 lists a credential detached from this project for that long (§6.17).
+                a.c.detached_at.is_(None) | (a.c.detached_at > since),
             )
         ).all()
-        rows = sorted(rows, key=lambda r: (r.revoked_at is not None, r.created_at), reverse=False)
+        rows = sorted(
+            rows,
+            key=lambda r: (r.revoked_at is not None or r.detached_at is not None, r.created_at),
+        )
         return JSONResponse(
             {"items": [credential_view(conn, r) for r in rows], "next_cursor": None}
         )
@@ -1740,6 +1747,8 @@ def revoke_credential(
             .where(
                 t.credential.c.id == credential_id,
                 t.membership.c.project_id == mine.project.id,
+                # A project the instance was detached from revokes nothing (§6.17).
+                t.instance_attachment.c.detached_at.is_(None),
             )
         ).first()
         if row is None or row.project_id != mine.project.id:

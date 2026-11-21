@@ -17,7 +17,10 @@ becomes one position row in its membership. The backfill is two INSERT … SELEC
 whatever the number of rows; the drops come last, since MariaDB commits each step.
 
 A downgrade puts the columns back from the one row of each credential and session, and
-therefore refuses while a credential is attached to more than one project.
+therefore refuses, before its first change, while a credential has more than one attachment
+row or none, or a session more than one position row or none: the older schema holds one
+project per credential and per session, a detached attachment keeps its row, and only a
+database restore removes such rows.
 
 Revision ID: 20261121120000_inst_attach
 Revises: 20261120205253_plc_agent_id
@@ -260,7 +263,58 @@ def _drop_moved() -> None:
         batch_op.add_column(sa.Column("attach", sa.String(length=40), nullable=True))
 
 
+def _refuse_what_does_not_fit() -> None:
+    """Refuse before the first DDL, since MariaDB commits each DDL step and a later failure
+    would leave the schema half downgraded: the older schema holds one project per credential
+    and per session, so a credential needs exactly one attachment row and a session exactly
+    one position row. A detached attachment keeps its row, so detaching never helps. Four
+    reads, whatever the number of rows."""
+    attachment = sa.table("instance_attachment", sa.column("credential_id"))
+    position = sa.table("agent_session_project", sa.column("session_id"))
+    credential = sa.table("credential", sa.column("id"))
+    session = sa.table("agent_session", sa.column("id"))
+    checks = (
+        (
+            "a credential has more than one instance_attachment row",
+            sa.select(attachment.c.credential_id)
+            .group_by(attachment.c.credential_id)
+            .having(sa.func.count() > 1),
+        ),
+        (
+            "a session has more than one agent_session_project row",
+            sa.select(position.c.session_id)
+            .group_by(position.c.session_id)
+            .having(sa.func.count() > 1),
+        ),
+        (
+            "a credential has no instance_attachment row",
+            sa.select(credential.c.id).where(
+                ~sa.select(attachment.c.credential_id)
+                .where(attachment.c.credential_id == credential.c.id)
+                .exists()
+            ),
+        ),
+        (
+            "a session has no agent_session_project row",
+            sa.select(session.c.id).where(
+                ~sa.select(position.c.session_id)
+                .where(position.c.session_id == session.c.id)
+                .exists()
+            ),
+        ),
+    )
+    conn = op.get_bind()
+    for what, query in checks:
+        if conn.execute(query.limit(1)).first() is not None:
+            raise RuntimeError(
+                f"{what}; the schema before this revision holds one project per credential "
+                "and per session, so these rows do not fit it, and only a database restore "
+                "removes them (docs/api.md §6.17)"
+            )
+
+
 def downgrade() -> None:
+    _refuse_what_does_not_fit()
     attachment = sa.table(
         "instance_attachment",
         sa.column("id"),
@@ -268,20 +322,6 @@ def downgrade() -> None:
         sa.column("membership_id"),
         *(sa.column(name) for name in CREDENTIAL_MOVED),
     )
-    doubled = (
-        op.get_bind()
-        .execute(
-            sa.select(attachment.c.credential_id)
-            .group_by(attachment.c.credential_id)
-            .having(sa.func.count() > 1)
-        )
-        .first()
-    )
-    if doubled is not None:
-        raise RuntimeError(
-            "an agent instance has more than one attachment; detach all but one before this "
-            "downgrade (docs/api.md §6.17)"
-        )
 
     with op.batch_alter_table("credential", schema=None) as batch_op:
         batch_op.add_column(sa.Column("membership_id", sa.Integer(), nullable=True))

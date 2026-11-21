@@ -2200,13 +2200,8 @@ def test_inst_attach_moves_each_instance_s_project_state_onto_its_one_attachment
     # Attached to a second project, the instance cannot go back to one membership.
     migrate(engine, revision)
     second = factory.attach(engine, active, factory.project(engine, "gamma"))
-    with pytest.raises(RuntimeError, match="more than one attachment"):
-        downgrade(engine, before)
-    # PostgreSQL and SQLite roll the whole run back; MariaDB cannot roll DDL back, so it stays
-    # at the refusing revision. The refusal comes before the first change, so every engine
-    # names the revision this test holds the database at.
-    assert current_revision(engine) == revision
-    with engine.begin() as conn:  # detached for good: the row goes, and its position
+    _refused_before_any_change(engine, "a credential has more than one instance_attachment row")
+    with engine.begin() as conn:  # the rows go, as only a restore would remove them
         conn.execute(
             delete(t.agent_session_project).where(t.agent_session_project.c.membership_id == second)
         )
@@ -2216,3 +2211,119 @@ def test_inst_attach_moves_each_instance_s_project_state_onto_its_one_attachment
     downgrade(engine, before)
     assert current_revision(engine) == before
     assert old_rows() == (credentials, sessions)
+
+
+def _refused_before_any_change(engine: Engine, condition: str) -> None:
+    """The downgrade of 20261121120000_inst_attach refuses, naming `condition`, before its
+    first DDL: PostgreSQL and SQLite would roll a later failure back, MariaDB would not, so
+    every engine stays at the revision with the schema untouched. The message advises no
+    detach, which keeps the row, but a restore."""
+    from sqlalchemy import inspect
+
+    revision = "20261121120000_inst_attach"
+    with pytest.raises(RuntimeError, match=condition) as refused:
+        downgrade(engine, _before(engine, revision))
+    assert "database restore" in str(refused.value)
+    assert "detach" not in str(refused.value)
+    assert current_revision(engine) == revision
+    shape = inspect(engine)
+    credential = {c["name"] for c in shape.get_columns("credential")}
+    assert "agent_id" in credential and "membership_id" not in credential
+    session = {c["name"] for c in shape.get_columns("agent_session")}
+    assert "membership_id" not in session and "acknowledged_seq" not in session
+    assert "attach" in {c["name"] for c in shape.get_columns("join_link")}
+    assert {"instance_attachment", "agent_session_project"} <= set(shape.get_table_names())
+
+
+def _at_inst_attach(engine: Engine) -> tuple[str, str, Any]:
+    """The database at 20261121120000_inst_attach with an owner, projects alpha and beta,
+    and one agent in alpha whose credential and live session fit the older schema."""
+    from tests import factory
+
+    migrate(engine, "20261121120000_inst_attach")
+    owner = factory.human(engine, "owner")
+    alpha = factory.project(engine, "alpha")
+    beta = factory.project(engine, "beta")
+    factory.membership(engine, alpha, "owner", human_id=owner)
+    return alpha, beta, factory.agent(engine, alpha, owner, "coder")
+
+
+def test_inst_attach_downgrade_refuses_a_credential_with_two_attachments(
+    engine: Engine,
+) -> None:
+    """A credential attached to two projects, the second one detached: the row stays, so
+    the downgrade still refuses."""
+    from sqlalchemy import update
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+    from tests import factory
+
+    _, beta, agent = _at_inst_attach(engine)
+    with engine.begin() as conn:  # no live session: only the attachment is doubled
+        conn.execute(
+            update(t.agent_session)
+            .where(t.agent_session.c.id == agent.session_id)
+            .values(live=None, ended_at=clock.now())
+        )
+    second = factory.attach(engine, agent, beta)
+    with engine.begin() as conn:
+        conn.execute(
+            update(t.instance_attachment)
+            .where(t.instance_attachment.c.membership_id == second)
+            .values(detached_at=clock.now(), detached_reason="detached")
+        )
+    _refused_before_any_change(engine, "a credential has more than one instance_attachment row")
+
+
+def test_inst_attach_downgrade_refuses_a_session_with_two_positions(engine: Engine) -> None:
+    from sqlalchemy import insert
+
+    from maity_hub import tables as t
+    from tests import factory
+
+    _, beta, agent = _at_inst_attach(engine)
+    in_beta = factory.membership(engine, beta, "coder", agent_id=agent.agent_id)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.agent_session_project).values(
+                session_id=agent.session_id, membership_id=in_beta, acknowledged_seq=0
+            )
+        )
+    _refused_before_any_change(engine, "a session has more than one agent_session_project row")
+
+
+def test_inst_attach_downgrade_refuses_a_session_without_a_position(engine: Engine) -> None:
+    from sqlalchemy import insert
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    _, _, agent = _at_inst_attach(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.agent_session).values(
+                id="ses-nowhere", credential_id=agent.credential_id, started_at=clock.now(),
+                last_seen_at=clock.now(), ended_at=clock.now(),
+            )
+        )  # fmt: skip
+    _refused_before_any_change(engine, "a session has no agent_session_project row")
+
+
+def test_inst_attach_downgrade_refuses_a_credential_without_an_attachment(
+    engine: Engine,
+) -> None:
+    from sqlalchemy import insert
+
+    from maity_hub import clock
+    from maity_hub import tables as t
+
+    _, _, agent = _at_inst_attach(engine)
+    with engine.begin() as conn:
+        conn.execute(
+            insert(t.credential).values(
+                id="crd-nowhere", agent_id=agent.agent_id, instance="zzzz", verifier="0" * 64,
+                created_at=clock.now(),
+            )
+        )  # fmt: skip
+    _refused_before_any_change(engine, "a credential has no instance_attachment row")

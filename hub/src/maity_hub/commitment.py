@@ -129,9 +129,10 @@ def confirmed(conn: Connection, credential: Any) -> None:
 
 
 def _outstanding(conn: Connection, project_id: str, credential_id: str | None) -> list[Any]:
-    """The project's active instances that have not confirmed and have a deadline,
-    with what the hub needs to know about their member; one instance when named. One row
-    per instance in this project: the commitment is per attachment (§6.17)."""
+    """The project's instances that have not confirmed and have a deadline, with what the
+    hub needs to know about their member; one instance when named. One row per instance in
+    this project: the commitment is per attachment (§6.17). A revoked or detached one is
+    read on purpose: `reconcile` ends what it owes."""
     a = t.instance_attachment
     query = (
         instances.credential_rows()
@@ -182,14 +183,15 @@ def reconcile(
         ended = (
             not on
             or row.revoked_at is not None
+            or row.detached_at is not None  # the instance left this project (§6.17)
             or not row.membership_active
             or row.profile_deleted is not None
         )
         if ended:
             # Nothing is owed any more: withdraw an open request, and let a later
             # `required` start the clock afresh.
-            # A revoked instance is reset too: it owes nothing, and leaving its deadline
-            # would keep its project in every sweep for good.
+            # A revoked or detached instance is reset too: it owes nothing, and leaving its
+            # deadline would keep its project in every sweep for good.
             withdraw_hub_notice(conn, row.ktw_request_id, "the commitment no longer applies")
             conn.execute(
                 update(t.instance_attachment)
@@ -251,7 +253,7 @@ def reconcile(
 
 def sweep(engine: Engine) -> None:
     """One pass over the projects that check the commitment, or that still hold an
-    outstanding one."""
+    outstanding one; a detached attachment's included on purpose, so `reconcile` ends it."""
     with engine.connect() as conn:
         ids = list(
             conn.execute(

@@ -972,7 +972,9 @@ def _author_actor(conn: Any, caller: Caller, project_id: str) -> Actor:
 
 
 def _mention_home(conn: Any, agent_id: str) -> Any:
-    """The one non-isolated membership that resumed most recently, or None."""
+    """The one non-isolated membership that resumed most recently, or None. An instance
+    detached from a membership's project resumes nothing for it (§6.17)."""
+    a = t.instance_attachment
     rows = conn.execute(
         select(
             t.membership.c.id,
@@ -981,8 +983,8 @@ def _mention_home(conn: Any, agent_id: str) -> Any:
         )
         .select_from(
             t.membership.outerjoin(
-                t.instance_attachment, t.instance_attachment.c.membership_id == t.membership.c.id
-            ).outerjoin(t.credential, t.credential.c.id == t.instance_attachment.c.credential_id)
+                a, and_(a.c.membership_id == t.membership.c.id, a.c.detached_at.is_(None))
+            ).outerjoin(t.credential, t.credential.c.id == a.c.credential_id)
         )
         .where(
             t.membership.c.agent_id == agent_id,
@@ -1002,11 +1004,17 @@ def _mention_home(conn: Any, agent_id: str) -> Any:
 
 
 def _instance_home(conn: Any, agent_id: str, instance: str) -> Any:
-    """The active membership whose instance id is the one the mention wrote."""
+    """The active membership whose instance id is the one the mention wrote: where the
+    instance is attached now, else, for a revoked or detached one, where it was."""
     from maity_hub import instances  # instances imports what this module's imports import
 
     rows = conn.execute(
-        select(t.membership.c.id, t.membership.c.project_id, t.credential.c.revoked_at)
+        select(
+            t.membership.c.id,
+            t.membership.c.project_id,
+            t.credential.c.revoked_at,
+            t.instance_attachment.c.detached_at,
+        )
         .select_from(instances.credential_join())
         .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
         .where(
@@ -1018,7 +1026,8 @@ def _instance_home(conn: Any, agent_id: str, instance: str) -> Any:
     ).all()
     if not rows:
         return None
-    live = [r for r in rows if r.revoked_at is None]
+    live = [r for r in rows if r.revoked_at is None and r.detached_at is None]
+    # Without a live one a detached row is meant on purpose: the id was the instance's there.
     return (live or rows)[0]
 
 

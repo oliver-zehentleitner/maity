@@ -15,7 +15,16 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, select, update
 
-from maity_hub import clock, commitment, instances, landing_stats, not_listening
+from maity_hub import (
+    clock,
+    commitment,
+    cross_chats,
+    events,
+    instances,
+    landing_stats,
+    moderation,
+    not_listening,
+)
 from maity_hub import tables as t
 from maity_hub.app import create_app
 from maity_hub.config import Settings
@@ -85,6 +94,27 @@ class World:
         response = self.owner.patch(f"{project}/members/{self.agent.id}", body)
         assert response.status_code == 200, response.text
         return response
+
+    def detach(self, membership_id: int, at: datetime | None = None) -> None:
+        """End the attachment to `membership_id` by hand: nothing writes `detached_at` yet
+        (hub PR D)."""
+        with self.engine.begin() as conn:
+            conn.execute(
+                update(t.instance_attachment)
+                .where(instances.attachment_of(self.agent.credential_id, membership_id))
+                .values(detached_at=at or clock.now(), detached_reason="detached")
+            )
+
+    def events(self, kind: str) -> list[str]:
+        """The projects of every event of `kind`, oldest first."""
+        with self.engine.connect() as conn:
+            return list(
+                conn.execute(
+                    select(t.event.c.project_id)
+                    .where(t.event.c.kind == kind)
+                    .order_by(t.event.c.seq)
+                ).scalars()
+            )
 
     def say(self, project: str, body: str) -> int:
         said = self.owner.post(
@@ -240,6 +270,144 @@ def test_an_instance_in_two_projects_counts_once_in_each(world: World) -> None:
     for project in (A, B):
         shown = w.owner.get(f"{project}/members/{w.agent.id}").json()
         assert [i["id"] for i in shown["instances"]] == [w.agent.instance]
+
+
+# A detached attachment (§6.17, "Detaching") keeps its row: every reader that speaks for the
+# instance in a project reads only the live ones. Nothing writes `detached_at` yet (hub PR D),
+# so these tests set it by hand.
+
+
+def test_a_leak_is_told_only_where_the_instance_is_attached_now(world: World) -> None:
+    """A leaked credential is revoked, and `credential_revoked` and `credential_in_payload`
+    are written in A; B, which the instance left, hears nothing."""
+    w = world
+    w.detach(w.in_b)
+    leaked = w.owner.post(
+        f"{A}/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": f"oops {w.agent.credential}"},
+    )
+    assert leaked.status_code == 400, leaked.text
+    with w.engine.connect() as conn:
+        reason = conn.execute(
+            select(t.credential.c.revoked_reason).where(t.credential.c.id == w.agent.credential_id)
+        ).scalar_one()
+    assert reason == "leaked_in_payload"
+    assert w.events("credential_revoked") == [w.alpha]
+    assert w.events("credential_in_payload") == [w.alpha]
+
+
+def test_a_suspension_neither_locks_nor_tells_a_project_the_instance_left(world: World) -> None:
+    """The owner's suspension locks A only and writes `credential_revoked` in A only."""
+    w = world
+    w.detach(w.in_b)
+    m = t.membership.c
+    agents = select(t.agent_profile.c.id).where(t.agent_profile.c.owner_id == w.owner.id)
+    own = (m.human_id == w.owner.id) | m.agent_id.in_(agents)
+    with events.transaction(w.engine) as conn:
+        assert moderation._projects_to_lock(conn, [], own) == [w.alpha]
+        moderation.suspend(conn, w.owner.id, "rpt-000000000000")
+    assert w.events("credential_revoked") == [w.alpha]
+
+
+def test_the_commitment_of_a_detached_attachment_ends(world: World) -> None:
+    """An overdue deadline on B's attachment, once detached, reminds nobody: the sweep ends
+    it as it ends a revoked instance's."""
+    w = world
+    acked = w.agent.post("/me/keep-the-why/ack")  # A owes nothing
+    assert acked.status_code == 200, acked.text
+    session = w.position(w.in_b).session_id
+    with w.engine.begin() as conn:
+        conn.execute(
+            update(t.instance_attachment)
+            .where(instances.attachment_of(w.agent.credential_id, w.in_b))
+            .values(ktw_acknowledge_by=clock.now() - timedelta(minutes=1), ktw_session_id=session)
+        )
+    w.detach(w.in_b)
+    commitment.sweep(w.engine)
+    assert w.events("keep_the_why_reminder") == []
+    ended = w.attachment(w.in_b)
+    assert (ended.ktw_acknowledge_by, ended.ktw_reminded_at) == (None, None)
+
+
+def test_a_detached_attachment_starts_no_episode(world: World) -> None:
+    """A message waiting in B for ten minutes starts no not-listening episode once the
+    instance left B."""
+    w = world
+    w.detach(w.in_b)
+    start = clock.now()
+    clock.set_source(lambda: start)
+    said = w.owner.post(f"{B}/conversations/{w.agent.id}/messages", {"body": "are you there?"})
+    assert said.status_code == 201, said.text
+    clock.set_source(lambda: start + timedelta(minutes=11))
+    not_listening.sweep(w.engine)
+    assert w.position(w.in_b).not_listening_since is None
+    assert w.events("member_not_listening") == []
+
+
+def test_the_credentials_list_shows_a_detached_instance_for_30_days(world: World) -> None:
+    """§10: B lists the credential detached from it for 30 days, after the live ones, as
+    it lists a revoked one; then no more. A lists it as active throughout."""
+    w = world
+
+    def listed(project: str) -> list[str]:
+        found = w.owner.get(f"{project}/members/{w.agent.id}/credentials")
+        assert found.status_code == 200, found.text
+        return [c["id"] for c in found.json()["items"]]
+
+    w.detach(w.in_b)
+    assert listed(B) == [w.agent.credential_id]
+    w.detach(w.in_b, clock.now() - timedelta(days=31))
+    assert listed(B) == []
+    assert listed(A) == [w.agent.credential_id]
+
+
+def test_a_project_the_instance_left_cannot_revoke_it(world: World) -> None:
+    """B's admin revokes nothing of an instance detached from B: `not_found`, and the
+    credential stays live in A."""
+    w = world
+    w.detach(w.in_b)
+    refused = w.owner.post(f"{B}/credentials/{w.agent.credential_id}/revoke", {})
+    assert refused.status_code == 404, refused.text
+    with w.engine.connect() as conn:
+        revoked = conn.execute(
+            select(t.credential.c.revoked_at).where(t.credential.c.id == w.agent.credential_id)
+        ).scalar_one()
+    assert revoked is None
+    assert w.events("credential_revoked") == []
+
+
+def test_a_revocation_clears_the_lead_only_where_the_instance_is_attached(world: World) -> None:
+    """The instance leads in A and, left over, in B it was detached from: its revocation
+    clears A's lead and tells A; B's row and B's events are untouched."""
+    w = world
+    m = t.membership
+    with w.engine.begin() as conn:
+        conn.execute(
+            update(m).where(m.c.id.in_([w.in_a, w.in_b])).values(lead_instance=w.agent.instance)
+        )
+    w.detach(w.in_b)
+    told = len(w.events("member_updated"))
+    revoked = w.owner.post(f"{A}/credentials/{w.agent.credential_id}/revoke", {})
+    assert revoked.status_code == 200, revoked.text
+    with w.engine.connect() as conn:
+        leads = dict(
+            conn.execute(
+                select(m.c.id, m.c.lead_instance).where(m.c.id.in_([w.in_a, w.in_b]))
+            ).all()
+        )
+    assert leads == {w.in_a: None, w.in_b: w.agent.instance}
+    assert w.events("member_updated")[told:] == [w.alpha]
+
+
+def test_a_mention_finds_the_instance_where_it_is_attached_now(world: World) -> None:
+    """A cross-chat mention's home: the membership the instance is attached to now. Here A
+    is the detached one, as A's membership is the older, whose lower id would win the tie
+    of `_mention_home` and come first in `_instance_home`; B is picked."""
+    w = world
+    w.detach(w.in_a)
+    with w.engine.connect() as conn:
+        assert cross_chats._mention_home(conn, w.agent.id).id == w.in_b
+        assert cross_chats._instance_home(conn, w.agent.id, w.agent.instance).id == w.in_b
 
 
 def test_auth_resolves_the_oldest_attachment_that_is_not_detached(

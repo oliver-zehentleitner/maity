@@ -31,9 +31,11 @@ INSTANCE_PATTERN = re.compile(r"[2-9a-hjkmnp-z]{4,5}")
 BOUND = 1000  # the hub's bound of `max_instances`; its ceiling is in ceilings.py (§6.31)
 
 # What an instance has per project, on its `instance_attachment` row (§6.17): the
-# membership, its dormancy, the handover numbers, its Keep the Why commitment and its pause.
+# membership, its dormancy, the handover numbers, its Keep the Why commitment and its pause;
+# and `detached_at`, so a reader of a row can tell an attachment that ended.
 ATTACHMENT_COLUMNS = (
     "membership_id",
+    "detached_at",
     "dormant_since",
     "dormant_by",
     "exchange_seq",

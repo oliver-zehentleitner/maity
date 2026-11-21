@@ -136,6 +136,8 @@ def _excluded(conn: Connection, session: Any, member: Any, credential: Any) -> s
     # as in the views.
     if credential.revoked_at is not None or runner_revoke.due(credential):
         return "the credential was revoked"
+    if credential.detached_at is not None:  # its attachment to this project ended (§6.17)
+        return "the instance left the project"
     if credential.paused_since is not None or member.paused_since is not None:
         return "the agent is paused"
     if member.active is None or member.removed_at is not None:

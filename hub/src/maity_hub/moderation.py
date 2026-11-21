@@ -179,15 +179,16 @@ def _projects_to_lock(conn: Connection, runner_ids: list[str], own: Any) -> list
     """The projects a suspension locks, sorted: those of the account's live credentials,
     which their revocation locks, and for each of its runners what the owner's stop locks
     (`runner_revoke.projects_to_lock`, the rule `apply` itself follows below)."""
-    from maity_hub.instances import credential_join  # imported here, not at the top
+    from maity_hub.instances import attached_now, credential_join  # not at the top
 
-    # Every project a live credential is attached to: its revocation locks each (§6.17).
+    # Every project a live credential is attached to now: its revocation locks each, and
+    # none it was detached from (§6.17).
     found = set(
         conn.execute(
             select(t.membership.c.project_id)
             .select_from(credential_join())
             .join(t.membership, t.membership.c.id == t.instance_attachment.c.membership_id)
-            .where(t.credential.c.revoked_at.is_(None), own)
+            .where(attached_now(), own)
         ).scalars()
     )
     for runner_id in runner_ids:
@@ -221,9 +222,10 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
     for project_id in _projects_to_lock(conn, runner_ids, own):
         lock_project(conn, project_id)
     a = t.instance_attachment.c
-    # One row per project a live credential is attached to (§6.17), its oldest first.
+    # One row per project a live credential was ever attached to (§6.17), its oldest first:
+    # each is revoked whatever its attachments, and told only where it is attached now.
     credentials = conn.execute(
-        select(c.id, m.project_id, m.agent_id)
+        select(c.id, m.project_id, m.agent_id, a.detached_at)
         .select_from(credential_join())
         .join(t.membership, m.id == a.membership_id)
         .where(c.revoked_at.is_(None), own)
@@ -235,7 +237,7 @@ def suspend(conn: Connection, human_id: str, report_id: str) -> None:
         # instances stopped; only the revocation that wins says it, in each project.
         if credential.id not in won:
             won[credential.id] = revocation.revoke(conn, credential.id, REVOKED_REASON, None)
-        if won[credential.id] and credential.agent_id:
+        if won[credential.id] and credential.agent_id and credential.detached_at is None:
             events.emit(
                 conn,
                 credential.project_id,
