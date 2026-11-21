@@ -4445,7 +4445,7 @@ The refusal's report would carry the generation before's count.
 **Type:** decision
 **Status:** active
 **Evidence:** confirmed
-**Source:** card tsk-m1mkmx0ncckr (a refused placement report resent every tick); request req-gb2rgpe7k94g (the §15.7 code `codex_host_too_old` and the §15.8 rule, approved as written); docs/api.md §15.7, §15.8
+**Source:** card tsk-m1mkmx0ncckr (a refused placement report resent every tick); request req-gb2rgpe7k94g (the §15.7 code `codex_host_too_old` and the §15.8 rule, approved as written); docs/api.md §15.7, §15.8; the review of PR #2080 (the resend and the drop saved at once, across a restart)
 **See:** runner.md#codexs-codex_home-lives-inside-the-placement-scratch-not-the-runners-state-directory — 9084b0ed-985d-41ea-906d-cd9cc6e18879 — as of 2026-11-21
 **Revisit when:** the hub's `invalid` answer stops naming the failing fields in `details.fields`, or a report field other than `detail` gains a value a newer runner may send to an older hub
 
@@ -4453,7 +4453,9 @@ A placement report the hub answers `400 invalid` is never sent again as it
 was (`Supervisor._send`). When `details.fields` names exactly `detail`, the
 runner sends the same report once more with `detail: null` and the same
 `seq`; any other `invalid` it logs once and drops, so the record counts as
-settled until its state changes and the next change reports afresh. A
+settled until its state changes and the next change reports afresh. Like
+the first send, the stripped report and the drop are saved at once, before
+anything else is sent, so a restart never sends the refused body again. A
 failure that refuses no body — no answer, `429`, a `5xx`, a maintenance
 window — is sent again on the next tick as before.
 

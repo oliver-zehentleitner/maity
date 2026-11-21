@@ -1915,7 +1915,8 @@ class Supervisor:
         was: the same body meets the same refusal every tick and the hub never records the
         state. Any other `invalid` is dropped (the next change reports afresh); a failure that
         is no refusal of the body (no answer, `429`, `5xx`, maintenance) is sent again on the
-        next tick."""
+        next tick. The stripped report and the drop are saved at once, so a restart before the
+        end of the tick never sends the refused body again."""
         assert self.client is not None  # noqa: S101 - _report checks it
         try:
             self.client.call("POST", f"/runner/placements/{pid}/status", body=pending["body"])
@@ -1938,12 +1939,17 @@ class Supervisor:
                         if rec.pending is not pending:
                             return None
                         rec.pending = stripped
+                    # On disk before it is sent, like the first: a restart then sends the
+                    # stripped report, never the refused one again.
+                    self.save()
                     return stripped
                 self.log(f"report for {pid} refused as invalid ({exc}); dropped, "
                          "the next change reports afresh")  # fmt: skip
                 with self.lock:
-                    if rec.pending is pending:
-                        rec.acked, rec.pending = pending["key"], None
+                    if rec.pending is not pending:
+                        return None
+                    rec.acked, rec.pending = pending["key"], None
+                self.save()  # the drop is on disk: a restart does not send it again
                 return None
             self.log(f"report for {pid} not taken ({exc}); sent again on the next tick")
             return None

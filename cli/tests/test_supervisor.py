@@ -1594,6 +1594,129 @@ def test_a_failure_that_refuses_no_body_is_still_sent_again(
     assert [b["seq"] for _, b in reports.sent] == [1]  # the same report, sent again
 
 
+class Crash(BaseException):
+    """The service exits here: nothing after it in the tick runs, the end-of-tick save
+    included."""
+
+
+def _restarted(sup: Any, backend: Any, client: Any) -> Any:
+    """A new supervisor over the old one's state directory, the way the service comes back."""
+    again = supervisor.Supervisor(
+        sup.cfg, backend, client, sup.log, sup.probes, now=sup.now, rand=lambda: 0.5
+    )
+    again.load()
+    again.targets["local"].sandbox["codex"] = sup.targets["local"].sandbox.get("codex", False)
+    return again
+
+
+def _crash_after_the_report(sup: Any, monkeypatch: pytest.MonkeyPatch, when: Any) -> None:
+    """Exit right after the tick's reports went out, before its end-of-tick save."""
+    real = sup._advertise
+
+    def advertise(*a: Any, **k: Any) -> None:
+        if when():
+            raise Crash
+        real(*a, **k)
+
+    monkeypatch.setattr(sup, "_advertise", advertise)
+
+
+def _codex_too_old(sup: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    recorded(sup.cfg)
+    sup.targets["local"].sandbox["codex"] = True
+
+    def too_old(*a: Any, **k: Any) -> None:
+        raise scratchop.Unsupported("host maity too old for codex placements: invalid choice")
+
+    monkeypatch.setattr(scratch, "write_codex_home", too_old)
+
+
+def test_a_restart_between_a_detail_refusal_and_its_resend_never_resends_the_detail(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The report without the detail is on disk before it is sent: a service that exits after
+    the refusal, before the stripped report went out, sends the stripped one after its
+    restart, with the same seq, never the refused body again (§15.8)."""
+    sup, backend, _, _, _ = world
+    hub_ = Refusing()
+    real = hub_.call
+
+    def call(method: str, path: str, body: Any = None, **kwargs: Any) -> Any:
+        if body is not None and body.get("state") == "failed" and body.get("detail") is None:
+            raise Crash  # the refusal came back; the service exits before the resend lands
+        return real(method, path, body, **kwargs)
+
+    hub_.call = call  # type: ignore[method-assign]
+    sup.client = hub_
+    _codex_too_old(sup, monkeypatch)
+    sup.update([placement(harness="codex")])
+    with pytest.raises(Crash):
+        settle(sup)
+    (refused,) = [b for b in hub_.refused if b["state"] == "failed"]
+    assert refused["detail"] == "codex_host_too_old"
+
+    after = Refusing()
+    again = _restarted(sup, backend, after)
+    again.update([placement(harness="codex")])
+    for _ in range(3):
+        again.tick()
+    assert [b for b in after.refused if b["state"] == "failed"] == []  # never the detail again
+    assert [b for _, b in after.sent if b["state"] == "failed"] == [{**refused, "detail": None}]
+
+
+def test_a_restart_after_the_stripped_report_was_taken_never_resends_the_detail(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The hub took the report without its detail, and the service exits before the
+    end-of-tick save: after its restart it never sends the refused body with the detail."""
+    sup, backend, _, _, _ = world
+    hub_ = Refusing()
+    sup.client = hub_
+    _codex_too_old(sup, monkeypatch)
+    _crash_after_the_report(
+        sup, monkeypatch, lambda: any(b["state"] == "failed" for _, b in hub_.sent)
+    )
+    sup.update([placement(harness="codex")])
+    with pytest.raises(Crash):
+        settle(sup)
+    (refused,) = [b for b in hub_.refused if b["state"] == "failed"]
+    assert [b for _, b in hub_.sent if b["state"] == "failed"] == [{**refused, "detail": None}]
+
+    after = Refusing()
+    again = _restarted(sup, backend, after)
+    again.update([placement(harness="codex")])
+    for _ in range(3):
+        again.tick()
+    assert [b for b in after.refused if b["state"] == "failed"] == []  # never the detail again
+    # At most the taken report once more, the same seq: what any report taken before an
+    # unsaved exit gets.
+    assert all(b == {**refused, "detail": None} for _, b in after.sent if b["state"] == "failed")
+
+
+def test_a_restart_after_an_invalid_report_was_dropped_does_not_send_it_again(
+    world: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The drop is on disk at once: a service that exits after it, before the end-of-tick
+    save, does not send the dropped report again after its restart."""
+    sup, backend, reports, _, logs = world
+    reports.fail = [_invalid({"reason": "unknown"})]
+    _crash_after_the_report(sup, monkeypatch, lambda: not reports.fail)
+    sup.update([placement(desired="stopped")])
+    with pytest.raises(Crash):
+        sup.tick()
+    assert sum("refused as invalid" in line for line in logs) == 1
+
+    after = Reports()
+    again = _restarted(sup, backend, after)
+    again.update([placement(desired="stopped")])
+    for _ in range(3):
+        again.tick()
+    assert after.sent == []  # dropped stays dropped
+    again.update([placement(desired="stopped", generation=2)])
+    again.tick()
+    assert [b["seq"] for _, b in after.sent] == [2]  # the next change, afresh
+
+
 def test_records_survive_a_restart(world: Any) -> None:
     sup, backend, _, _, _ = world
     recorded(sup.cfg)
