@@ -642,3 +642,34 @@ Rejected alternatives:
 - Refusing a credential with two attachments: it would break every instance as soon as hub PR D attaches
   one to a second project.
 - Any attachment, unordered: the choice would depend on the order the database returns rows in.
+
+## Signing: `required` in any attached project refuses Bearer everywhere for that credential
+
+**Id:** 3d06ced3-d69e-4649-9c3a-a2ce6e71d4dc
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** the lead's ruling on card tsk-w8wnar6nqqsp (hub PR B, Q7: "attached is attached"); docs/api.md §2.2 "Signing required" and "Deliberate: signing across projects", §1 (`signature_required`); `auth/caller.py` `_credential`, `_agent`
+**See:** instances.md#an-instances-projects-are-rows-of-instance_attachment-pause-dormancy-the-commitment-and-the-handover-numbers-live-on-the-row — 8d07cc82-f612-4e24-aebe-72683131671b — as of 2026-11-21
+**Revisit when:** hub PR D builds the detach, since a detach releases the requirement
+
+One credential has one secret. If any live attachment of the credential (a detached row does
+not count) is in a project whose policy has `signing: required`, a Bearer call of it is
+refused with `403 signature_required` on every route: those of that project, those of every
+other project it is attached to, and the project-less ones (`/me`, `/me/resume`,
+`/me/events`). The credential's lookup computes this in the same statement
+(`_credential`, an `EXISTS` over the live attachments), and `_agent` refuses after the proof of
+possession and before any side effect. An attachment whose membership is isolated still binds
+the credential.
+
+**Reason:** the bearer secret is the same in every project, so a Bearer call anywhere puts the
+key to the project that requires signing on the wire; the strictest project decides. The
+isolated attachment counts by the lead's ruling Q7, "attached is attached", the stricter of the
+two readings.
+
+**Rejected alternatives:**
+- Per-route signing, required only on the routes of the project that asks for it: with one
+  bearer secret for all projects, that project's requirement would be bypassed through another
+  project's routes or a project-less call.
+- An isolated attachment stops counting: an isolation is reversible, and the requirement would
+  flicker with it.
