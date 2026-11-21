@@ -124,6 +124,24 @@ def test_supervised_with_a_model(tmp_path: Path) -> None:
         assert argv[argv.index("--model") + 1] == "m-1"
 
 
+def test_an_effort_reaches_the_first_and_every_continued_command(tmp_path: Path) -> None:
+    """§15.5 (tsk-0fr0xzy2ce95): agy's `--effort`, so a continued run keeps the level."""
+    effort = {"id": "plc-0003", "mode": "supervised", "effort": "medium"}
+    launch = adapters.launch(context(tmp_path, placement=effort))
+    spec = json.loads(Path(launch.argv[-1]).read_text())
+    for argv in (spec["first"], spec["again"]):
+        assert argv[argv.index("--effort") + 1] == "medium"
+    shown = {**effort, "mode": "interactive"}
+    interactive = adapters.launch(context(tmp_path / "i", placement=shown))
+    assert interactive.argv[interactive.argv.index("--effort") + 1] == "medium"
+    resumed = adapters.launch(context(tmp_path / "r", placement=shown, resume=True))
+    assert resumed.argv[resumed.argv.index("--effort") + 1] == "medium"
+
+
+def test_no_effort_passes_no_flag(tmp_path: Path) -> None:
+    assert "--effort" not in adapters.launch(context(tmp_path)).argv
+
+
 def test_the_pull_request_line_reaches_the_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

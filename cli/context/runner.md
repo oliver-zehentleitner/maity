@@ -1455,6 +1455,47 @@ log). Rejected because the harm — repository content reaching opencode's
 servers — happens on the start itself, not later, so only refusing the start
 prevents it.
 
+## A placement's effort goes into Codex's own config.toml, and an effort no longer offered refuses the start
+
+**Id:** 16f71263-bf51-4fed-9472-e5a5dd40efb7
+**Type:** decision
+**Status:** active
+**Evidence:** confirmed
+**Source:** contract request req-bq4vg5f0jcvd (adopted 2026-11-21) and its accepted correction of the same day, card tsk-0fr0xzy2ce95
+**See:** runner.md#the-opencode-adapter-fails-closed-on-the-model — 7c23704d-d02f-4cbf-80ca-494119f8fa5c — as of 2026-11-21
+**Revisit when:** Codex or agy change how they take a reasoning effort, or Claude Code or opencode get one the runner maps
+
+A placement names its reasoning effort (`effort`, docs/api.md §15.5) from the
+`efforts` the operator configures per harness. Codex gets it as
+`model_reasoning_effort` in the placement's own `config.toml` under
+CODEX_HOME; agy gets `--effort` in the base of every command. A start whose
+effort the harness no longer offers fails with `harness_refused`,
+`effort_unsupported`. `efforts` is advertised only when configured, and the
+configuration check refuses it on a harness whose launch passes none.
+
+**Reason:** the owner asked for a specific level for the reviewers; running
+another one without a word is the wrong failure, as with the opencode model
+above. Codex's resume (`exec … resume --last`) reads the same home as the
+first start, so a key in that file holds both alike, where a flag would have
+to be repeated on every command line. The hub's hello is strict about harness
+entries, so a key sent by a runner with nothing configured would make every
+older hub refuse the runner; leaving it out keeps such a runner working
+against any hub, as `tools` does. The adopted contract first said an older
+hub ignores the key; reading the hub showed `HarnessOffer` is strict, and the
+correction (only when configured, optional with default `[]` on the hub, the
+hub upgraded first) was accepted. A test pins the hello of a runner without
+efforts to exactly the old keys.
+
+**Rejected alternatives:**
+- `-c model_reasoning_effort=…` on the Codex command line: works, but first
+  start and resume could drift apart.
+- Starting on the harness's default when the effort is gone, with a warning:
+  the placement would silently run a level nobody asked for.
+- A hub-side list of allowed values: the values differ per harness and
+  version (Codex has `ultra`, agy does not), so they come from the runner.
+- Mapping Claude Code and opencode now: not verified when the change was
+  made; adding them later is a runner-only change.
+
 ## A fail-closed listing decides with stat, not pathlib's predicates; Python stays uncapped
 
 **Id:** 52b35dea-cf66-4fc9-9574-417dca42ef5e

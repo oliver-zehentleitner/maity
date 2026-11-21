@@ -261,6 +261,19 @@ def test_harness_modes_and_models() -> None:
     )
 
 
+def test_harness_efforts() -> None:
+    """tsk-0fr0xzy2ce95: `efforts` only where the launch passes one, in the hub's shape."""
+    with_codex = minimal() + '\n[harness.codex]\nefforts = ["low", "medium"]\n'
+    assert parse(with_codex).harnesses["codex"].efforts == ("low", "medium")
+    assert "harness.stub.efforts: the runner passes no effort to this harness" in problems(
+        minimal().replace("[harness.stub]\n", '[harness.stub]\nefforts = ["low"]\n')
+    )
+    bad = problems(minimal() + '\n[harness.codex]\nefforts = ["High"]\n')
+    assert any(p.startswith("harness.codex.efforts: not an effort") for p in bad), bad
+    twice = problems(minimal() + '\n[harness.codex]\nefforts = ["low", "low"]\n')
+    assert "harness.codex.efforts: an effort is named twice" in twice
+
+
 def test_every_bad_repository_is_named() -> None:
     bad = ", ".join(f'"x/{n}"' for n in range(5))
     found = problems(minimal().replace('"github.com/oliver-zehentleitner/maity"', bad))
