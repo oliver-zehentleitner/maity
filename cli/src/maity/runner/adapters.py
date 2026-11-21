@@ -15,6 +15,7 @@ could widen the grant, bring hooks or plugins, and change with a `git checkout`.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
@@ -994,15 +995,26 @@ def codex_skill(ctx: Context, home: Path) -> bool:
     home is read-only to the session (codex_config), so the skill is too; Codex's own `.system/`
     beside it is left alone. Only with a scratch: without one the home lies in the runner's own
     directory, which the sandbox hides. Whether it was written: a failure leaves the session
-    with `MAITY_KTW_SKILL_DIR` alone, which is how Codex had the skill before."""
-    if ctx.skill_source is None or ctx.scratch is None:
+    with `MAITY_KTW_SKILL_DIR` alone, which is how Codex had the skill before.
+
+    A launch that writes no skill (none named, or one that could not be written) removes a copy
+    an earlier launch left in a reused home, so Codex never loads a skill this launch did not
+    hand it (the review of #2093). That removal is best effort: if it fails too, the earlier
+    copy stays, one the runner wrote from a checked copy."""
+    if ctx.scratch is None:
         return False
-    try:
-        payload = skillop.payload(ctx.skill_source, ctx.skill_source.name)
-        ctx.as_user.skill_codex(ctx.scratch.parents[2], home, payload)
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError, skillop.Mismatch):
-        return False
-    return True
+    under = ctx.scratch.parents[2]
+    errors = (OSError, ValueError, KeyError, subprocess.SubprocessError, skillop.Mismatch)
+    if ctx.skill_source is not None:
+        try:
+            payload = skillop.payload(ctx.skill_source, ctx.skill_source.name)
+            ctx.as_user.skill_codex(under, home, payload)
+            return True
+        except errors:
+            pass
+    with contextlib.suppress(*errors):
+        ctx.as_user.skill_codex_clear(under, home)
+    return False
 
 
 def _codex(ctx: Context, env: dict[str, str]) -> Launch:

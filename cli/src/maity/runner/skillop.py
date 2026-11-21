@@ -460,6 +460,16 @@ def remove(home: str, keep: Sequence[str]) -> dict[str, object]:
 # --- Codex's own skills directory ---------------------------------------------------------------
 
 CODEX_SKILLS = "skills"  # in CODEX_HOME; Codex keeps its own `.system/` beside the skill
+CODEX_HOME = "codex-home"  # a placement's CODEX_HOME in its scratch (adapters.codex_home)
+
+
+def _codex_scratch(under: str, home: str) -> list[str]:
+    """The names from the workspaces root `under` to the scratch holding the Codex `home`,
+    which must be `<scratch>/codex-home` and nothing else: a `..` or another leaf would
+    step out of, or elsewhere in, the scratch (the review of #2093)."""
+    if PurePosixPath(home).name != CODEX_HOME:
+        raise OSError(f"{home} is not a placement's {CODEX_HOME}")
+    return scratchop._below(str(PurePosixPath(home).parent), under)
 
 
 def codex_put(under: str, home: str, document: Mapping[str, Any]) -> dict[str, object]:
@@ -482,9 +492,9 @@ def codex_put(under: str, home: str, document: Mapping[str, Any]) -> dict[str, o
     }
     if ("SKILL.md",) not in wanted:
         raise OSError("the skill's document holds no SKILL.md")
-    names = scratchop._below(str(PurePosixPath(home).parent), under)
+    names = _codex_scratch(under, home)
     with scratchop._opened(under, names, make=False) as scratch_fd:
-        home_fd = scratchop._step(scratch_fd, PurePosixPath(home).name, 0o700)
+        home_fd = scratchop._step(scratch_fd, CODEX_HOME, 0o700)
         try:
             skills_fd = scratchop._step(home_fd, CODEX_SKILLS, 0o755)
             try:
@@ -496,11 +506,31 @@ def codex_put(under: str, home: str, document: Mapping[str, Any]) -> dict[str, o
     return {"result": "put", "files": len(wanted)}
 
 
+def codex_clear(under: str, home: str) -> dict[str, object]:
+    """`<home>/skills/keep-the-why/` of a Codex placement's CODEX_HOME removed, so a launch
+    that writes no skill (none named, or none that could be written) leaves Codex no earlier
+    copy to load (the review of #2093). Reached as `codex_put` reaches it, nothing made on the
+    way; `removed`, or `missing` when there was none."""
+    names = _codex_scratch(under, home)
+    try:
+        with scratchop._opened(under, [*names, CODEX_HOME, CODEX_SKILLS],
+                               make=False) as skills_fd:  # fmt: skip
+            try:
+                os.lstat(NAME, dir_fd=skills_fd)
+            except FileNotFoundError:
+                return {"result": "missing"}
+            _remove_tree(skills_fd, NAME)
+    except FileNotFoundError:  # no codex-home or no skills directory yet
+        return {"result": "missing"}
+    return {"result": "removed"}
+
+
 def _stage_and_replace(parent: int, name: str, wanted: Mapping[tuple[str, ...], bytes]) -> None:
     """`wanted` (each file's path parts and bytes) written into a fresh staging directory in
     the open `parent`, 0644 files in 0755 directories, then renamed to `name`, a directory
-    already there renamed aside and removed (`_replace`). The staging directory goes on any
-    failure."""
+    already there renamed aside and removed (`_replace`). The staged tree is checked to hold
+    exactly `wanted`, byte for byte, before it is renamed into place, as `put` verifies its
+    copy (the review of #2093). The staging directory goes on any failure."""
     staging = f"{STAGING}{secrets.token_hex(8)}"
     os.mkdir(staging, 0o700, dir_fd=parent)
     try:
@@ -509,6 +539,7 @@ def _stage_and_replace(parent: int, name: str, wanted: Mapping[tuple[str, ...], 
             for parts, data in wanted.items():
                 _write_into(staged, parts, data)
             _open_up(staged)
+            _verify_staged(staged, wanted)
         finally:
             os.close(staged)
         _replace(parent, staging, name)
@@ -518,14 +549,44 @@ def _stage_and_replace(parent: int, name: str, wanted: Mapping[tuple[str, ...], 
         raise
 
 
+def _unreadable(exc: OSError) -> None:
+    """An fwalk `onerror`: a directory that cannot be opened is a failure, never skipped."""
+    raise OSError(f"a directory of the staged skill cannot be read: {exc}") from None
+
+
 def _open_up(fd: int) -> None:
     """Every directory below the open `fd`, and `fd` itself, 0755: read by the session,
     written by nobody but the runner's op."""
     # Through each directory's own descriptor: chmod by name would need follow_symlinks=False,
     # which chmod does not support on Linux (the review of #2089).
-    for _top, _dirs, _names, top_fd in os.fwalk(".", dir_fd=fd, follow_symlinks=False):
+    for _top, _dirs, _names, top_fd in os.fwalk(
+        ".", dir_fd=fd, follow_symlinks=False, onerror=_unreadable
+    ):
         os.fchmod(top_fd, 0o755)  # noqa: S103
     os.fchmod(fd, 0o755)  # noqa: S103
+
+
+def _verify_staged(fd: int, wanted: Mapping[tuple[str, ...], bytes]) -> None:
+    """The open staged tree holds exactly the files of `wanted` with their bytes, only the
+    directories they lie in, and nothing that is a link or not a plain file; OSError otherwise."""
+    expected = {parts: hashlib.sha256(data).hexdigest() for parts, data in wanted.items()}
+    needed = {p for parts in wanted for p in PurePosixPath(*parts).parents} - {PurePosixPath(".")}
+    found: dict[tuple[str, ...], str] = {}
+    try:
+        walk = os.fwalk(".", dir_fd=fd, follow_symlinks=False, onerror=_unreadable)
+        for top, dirs, names, top_fd in walk:
+            where = PurePosixPath(top)
+            for name in dirs:
+                _kind_at(top_fd, name, stat.S_ISDIR, "directory", Path(where / name))
+                if where / name not in needed:
+                    raise Mismatch(f"{where / name} is not a directory of the skill")
+            for name in names:
+                data = _read_at(top_fd, name, MAX_BYTES, Path(where / name), MAX_BYTES)
+                found[(where / name).parts] = hashlib.sha256(data).hexdigest()
+    except Mismatch as exc:
+        raise OSError(f"the staged skill does not hold: {exc}") from None
+    if found != expected:
+        raise OSError("the staged skill does not hold exactly the files it was given")
 
 
 # --- the entry point on the agents' side ----------------------------------------------------------
@@ -535,7 +596,8 @@ LINK = 4  # the exit code for a link below the agents' home, as scratchop.LINK: 
 # manifest, and room for the JSON around them.
 DOCUMENT_MAX = 8 * 1024 * 1024
 USAGE = ("usage: skillop check --home HOME KEY SOURCE COMMIT | put --home HOME | "
-         "codex --under DIR CODEX_HOME | remove --home HOME [KEEP...] "
+         "codex --under DIR CODEX_HOME | codexclear --under DIR CODEX_HOME | "
+         "remove --home HOME [KEEP...] "
          "(the document on stdin for put and codex)")  # fmt: skip
 
 
@@ -563,6 +625,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         call = functools.partial(check, args[2], args[3], args[4], args[5])
     elif len(args) >= 3 and args[0] == "remove" and args[1] == "--home":
         call = functools.partial(remove, args[2], args[3:])
+    elif len(args) == 4 and args[0] == "codexclear" and args[1] == "--under":
+        call = functools.partial(codex_clear, args[2], args[3])
     elif (len(args) == 3 and args[0] == "put" and args[1] == "--home") or (
         len(args) == 4 and args[0] == "codex" and args[1] == "--under"
     ):

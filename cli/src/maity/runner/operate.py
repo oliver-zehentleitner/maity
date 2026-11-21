@@ -304,10 +304,11 @@ def _active_with_skills(
         if keys is not None:
             try:
                 wanted = skills.named(p)
-            except skills.Unavailable:
-                wanted = None
-            if wanted is not None:
-                keys.add(skills.key(*wanted))
+            except skills.Unavailable:  # a pin that cannot be read keeps everything (#2093)
+                keys = None
+            else:
+                if wanted is not None:
+                    keys.add(skills.key(*wanted))
         pairs.add((p["project_id"], p["workspace"]["clone"]))
         agent = p.get("agent") or {}
         agents.update(v for v in (agent.get("id"), agent.get("handle")) if isinstance(v, str))
@@ -333,7 +334,13 @@ def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
             "without --yes to list them"
         ) from None
     try:
-        pairs, agents, ids, keys = _active_with_skills(cfg)
+        # The skills' keys are read only for --skills; everything else goes through `_active`,
+        # as before this change (the review of #2093).
+        keys: set[str] | None = None
+        if with_skills:
+            pairs, agents, ids, keys = _active_with_skills(cfg)
+        else:
+            pairs, agents, ids = _active(cfg)
         if args.revoked:
             found = workspace.records(cfg.state_dir)
             gone: list[str] = []
@@ -360,17 +367,19 @@ def cmd_gc(cfg: config.Config, args: argparse.Namespace) -> int:
     return 0
 
 
-def _running(cfg: config.Config) -> set[str] | None:
+def _running(cfg: config.Config, what: str = "scratch") -> set[str] | None:
     """The placements with a session on the local target (§15.5), dead panes included: a
-    session gc cannot see ended keeps its scratch. None when the sessions cannot be read."""
+    session gc cannot see ended keeps its scratch. None when the sessions cannot be read, said
+    for `what` gc is collecting (`scratch`, or `skills` for the copies)."""
     try:
         target = _targets(cfg)[0]
         target.connect({})
         assert target.backend is not None  # noqa: S101 - set by connect
         sessions = target.backend.sessions()
     except (OSError, TmuxError) as exc:
-        print(f"scratch  none listed: the agents' sessions could not be read "
-              f"({onboarding.inline(str(exc))[:200]}), so every scratch is kept")  # fmt: skip
+        kept = "every scratch is kept" if what == "scratch" else "every copy is kept"
+        print(f"{what:<8} none listed: the agents' sessions could not be read "
+              f"({onboarding.inline(str(exc))[:200]}), so {kept}")  # fmt: skip
         return None
     return {s.placement for s in sessions.values() if s.placement}
 
@@ -378,15 +387,26 @@ def _running(cfg: config.Config) -> set[str] | None:
 def _skills_running(cfg: config.Config) -> set[str] | None:
     """The Keep the Why copies (skills.key) running sessions started with, from the
     supervisor's records (`skill_key`) of the placements with a session on the local target:
-    kept even when the hub names another commit by now. None when the sessions cannot be read."""
-    running = _running(cfg)
+    kept even when the hub names another commit by now. None when the sessions cannot be read,
+    or when a running session's copy is not known: no record of it, or a record without the
+    field, as one from before this version or one not saved yet after its start (the review of
+    #2093). A record holds the field always, null for a session started without the skill."""
+    running = _running(cfg, "skills")
     if running is None:
         return None
     records = state.load_state(cfg.state_dir, name=supervisor.ACTUAL_FILE)
-    return {
-        r["skill_key"] for pid, r in records.items()
-        if pid in running and isinstance(r, dict) and isinstance(r.get("skill_key"), str)
-    }  # fmt: skip
+    keys: set[str] = set()
+    for pid in sorted(running):
+        record = records.get(pid)
+        key = record.get("skill_key", 0) if isinstance(record, dict) else 0
+        if key is None:
+            continue
+        if not isinstance(key, str):
+            print(f"skills   none listed: the copy {pid}'s running session started with is not "
+                  "known, so every copy is kept")  # fmt: skip
+            return None
+        keys.add(key)
+    return keys
 
 
 def _collect_skills(cfg: config.Config, named: set[str] | None, remove: bool) -> None:
@@ -401,27 +421,38 @@ def _collect_skills(cfg: config.Config, named: set[str] | None, remove: bool) ->
               "read, so every copy is kept")  # fmt: skip
         return
     running = _skills_running(cfg)
-    if running is None:
+    if running is None:  # _skills_running said why
         return
     keep = named | running
     found = [name for name, *_rest in skills.copies(cfg.skills_dir, cfg.state_dir)]
     unused = [name for name in found if name not in keep]
+    as_user = _as_user(cfg)
     if not remove:
         for name in unused:
             print(f"skills   {cfg.skills_dir / skills.NAME / name}: removable (no active "
                   "placement names it and no session runs with it)")  # fmt: skip
+        if not as_user.direct:  # the agents' side is read only by the op that removes there
+            print("skills   the agents' copies of the same commits, and staging left there, "
+                  "are removed with --yes too")  # fmt: skip
         return
-    removed = skills.remove_unused(cfg.skills_dir, keep)
-    skills.forget(cfg.state_dir, set(removed))
+    failed: list[str] = []
+    removed: list[str] = []
+    try:
+        removed = skills.remove_unused(cfg.skills_dir, keep, failed)
+    except OSError as exc:  # a link, or no directory, where the copies are kept
+        failed.append(f"{cfg.skills_dir / skills.NAME} ({exc})")
+    finally:
+        skills.forget(cfg.state_dir, set(removed))  # exactly the ones that went
     for name in removed:
         if skills.KEY.fullmatch(name):
             print(f"skills   {cfg.skills_dir / skills.NAME / name}: removed")
-    as_user = _as_user(cfg)
+    for what in failed:
+        print(f"skills   not removed: {onboarding.inline(what)[:200]}")
     if as_user.direct:
         return  # the single layout: the agents' copy is the runner's own
     try:
         gone = as_user.skill_remove(as_user.home(), keep)
-    except (OSError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError) as exc:
         print(f"skills   the agents' copies: not removed ({onboarding.inline(str(exc))[:200]})")
         return
     for name in gone:

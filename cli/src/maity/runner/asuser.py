@@ -415,6 +415,15 @@ class AsUser:
         argv = [*self.runner_module("skillop"), "codex", "--under", str(under), str(home)]
         return self._skill_answer(self.run(argv, env=self.module_env(), input=payload), "codex", "")
 
+    def skill_codex_clear(self, under: Path, home: Path) -> dict[str, Any]:
+        """`<home>/skills/keep-the-why/` of a Codex placement's CODEX_HOME removed
+        (skillop.codex_clear), for a launch that writes no skill there. Errors as for
+        `skill_codex`."""
+        if self.direct:
+            return dict(skillop.codex_clear(str(under), str(home)))
+        argv = [*self.runner_module("skillop"), "codexclear", "--under", str(under), str(home)]
+        return self._skill_answer(self.run(argv, env=self.module_env()), "codexclear", "")
+
     def skill_remove(self, home: Path, keep: set[str]) -> list[str]:
         """The delivered copies below the agents' `home` that are not in `keep` removed
         (skillop.remove, `gc --skills`); their names. Errors as for `skill_check`."""

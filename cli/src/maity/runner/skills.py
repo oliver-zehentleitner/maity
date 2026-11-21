@@ -23,7 +23,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import stat
 import subprocess
 import tempfile
@@ -418,16 +417,29 @@ def forget(state_dir: Path, names: set[str]) -> None:
             state.save_state(state_dir, kept, name=ANCHORS)
 
 
-def remove_unused(skills_dir: Path, keep: set[str]) -> list[str]:
-    """The cached copies (`key`) no placement names any more, removed; returns them. For `gc`."""
+def remove_unused(skills_dir: Path, keep: set[str], failed: list[str] | None = None) -> list[str]:
+    """The cached copies (`key`) and `.fetch-` leftovers not in `keep`, removed; returns them.
+    For `gc`. The directory holding them is opened without following a link (OSError for a
+    link there), and each entry is removed as skillop removes the agents' copies: a link or
+    file unlinked, never entered, a directory with the owner's access restored on every level
+    (the review of #2093). An entry that cannot be removed goes into `failed`, and the others
+    are still removed, so the caller can forget exactly the ones that went."""
     removed: list[str] = []
-    parent = skills_dir / NAME
-    if not parent.is_dir():
+    try:
+        parent = os.open(skills_dir / NAME, skillop._FOLDER | skillop._NOFOLLOW)
+    except FileNotFoundError:
         return removed
-    for entry in parent.iterdir():
-        if entry.name in keep or entry.is_symlink() or not entry.is_dir():
-            continue
-        if KEY.fullmatch(entry.name) or entry.name.startswith(".fetch-"):
-            shutil.rmtree(entry)
-            removed.append(entry.name)
+    try:
+        for name in sorted(os.listdir(parent)):
+            if name in keep or not (KEY.fullmatch(name) or name.startswith(".fetch-")):
+                continue
+            try:
+                skillop._remove_tree(parent, name)
+            except OSError as exc:
+                if failed is not None:
+                    failed.append(f"{name} ({exc})")
+                continue
+            removed.append(name)
+    finally:
+        os.close(parent)
     return removed

@@ -5583,8 +5583,19 @@ nte-nqs227hnpqzz). The home is read-only in the session's profile already,
 so no rule changes. Only `skills/keep-the-why/` is the runner's: Codex
 writes its own `.system/` skills beside it. The bytes come from the
 runner's own copy, not the agents', because on an ssh host the runner
-cannot read the agents' side. A copy that cannot be written leaves the
-session with `MAITY_KTW_SKILL_DIR` alone, as before.
+cannot read the agents' side. The op takes the home only as
+`<scratch>/codex-home`: a `..` or another last name would pass the check
+on its parent and land outside, or elsewhere in, the scratch (the review
+of #2093). The staged tree is checked to hold exactly
+the document's files before it is renamed into place, as `put` checks
+its copy. A copy that cannot be written leaves the session with
+`MAITY_KTW_SKILL_DIR` alone, as before, and so does a placement that no
+longer names a skill. Either way the copy an earlier launch left in a
+reused home is removed (`skillop codexclear`), because Codex would
+otherwise still load a skill this launch did not hand it (the review of
+#2093). That removal is best effort: if it fails, the earlier copy stays,
+one the runner wrote from a checked copy, and it is not worth refusing the
+start for.
 
 **`maity runner check`** lists the runner's own copies with their state
 (whole and recorded, unrecorded, or changed), as a warning at worst: a
@@ -5596,8 +5607,20 @@ records at every start.
 running session started with (the supervisor keeps the started copy's key
 in its record), with their records in `skills.json`, and in the
 agent_user layout the same copies below the agents' home (`skillop
-remove`). A copy removed too early is only fetched again. Copies on ssh
-hosts are not collected: `gc` is for the local backend.
+remove`). It fails closed: every copy is kept when the keep set cannot be
+known, which means a partial hub list, an active placement whose pin
+cannot be read, or a running session whose record has no `skill_key`.
+Such a session started before this version, or the service stopped
+between its start and the next save of the records. A record always
+holds the field, null for a session started without the skill (the
+review of #2093). The runner's own copies are removed the way the
+agents' are. The directory holding them is opened without following a
+link, a link or file there is unlinked, never entered, and every level of
+a copy has its owner's access restored first. A copy that cannot be
+removed is named and the rest still go, and only the ones that went are
+dropped from `skills.json`. A copy removed too early is only fetched
+again. Copies on ssh hosts are not collected: `gc` is for the local
+backend.
 
 **Not built yet:** hiding a hand-installed `~/.claude/skills/keep-the-why`
 from placed sessions; `maity runner check` only warns about one, and ops

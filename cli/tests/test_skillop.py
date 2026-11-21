@@ -336,6 +336,97 @@ def test_a_codex_skill_that_cannot_be_written_leaves_the_launch_as_it_was(tmp_pa
     assert adapters.codex_skill(ctx, tmp_path / "home") is False
 
 
+def test_a_reused_codex_home_loses_the_earlier_skill_when_a_launch_hands_out_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The review of #2093 (ukxh): the same scratch launched again without a skill, and then
+    # with one that cannot be written, leaves Codex no copy from the launch before.
+    from test_adapters import _codex_scratch_context
+
+    from maity.runner import adapters, scratch
+
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    monkeypatch.delenv("CODEX_HOME", raising=False)
+    plain = _codex_scratch_context(tmp_path)
+    (tmp_path / "ws").mkdir()
+    assert plain.scratch is not None
+    scratch.make(plain.scratch)
+    skill = plain.scratch / "codex-home" / "skills" / "keep-the-why"
+    with_skill = dataclasses.replace(plain, skill=root, skill_source=root.parent)
+    adapters.launch(with_skill)
+    assert (skill / "SKILL.md").is_file()
+    adapters.launch(plain)  # no skill named this time
+    assert not skill.exists()
+    assert (plain.scratch / "codex-home" / "skills").is_dir()  # only the runner's directory
+    adapters.launch(with_skill)
+    assert (skill / "SKILL.md").is_file()
+    missing = tmp_path / "runner" / "keep-the-why" / ("e" * 40 + "-" + "1" * 16)
+    broken = dataclasses.replace(plain, skill=missing / "plugin", skill_source=missing)
+    adapters.launch(broken)  # named, but no copy to write it from
+    assert not skill.exists()
+
+
+@pytest.mark.parametrize("leaf", ["..", "other", "."])
+def test_codexs_skill_goes_only_into_the_scratchs_codex_home(tmp_path: Path, leaf: str) -> None:
+    # The review of #2093 (kduz): `<scratch>/..` passed the scratch check on its parent and
+    # stepped out of it; only `<scratch>/codex-home` is accepted, by both Codex ops.
+    root = runner_copy(tmp_path / "runner", tmp_path / "state")
+    under, home = _codex_home(tmp_path)
+    bad = str(home.parent) + "/" + leaf
+    with pytest.raises(OSError, match="codex-home"):
+        skillop.codex_put(str(under), bad, json.loads(skillop.payload(root.parent, KEY)))
+    with pytest.raises(OSError, match="codex-home"):
+        skillop.codex_clear(str(under), bad)
+    assert not list(under.rglob("skills"))  # nothing written anywhere below the root
+
+
+def test_clearing_codexs_skill_follows_no_link_and_answers_for_a_missing_one(
+    tmp_path: Path,
+) -> None:
+    under, home = _codex_home(tmp_path)
+    assert skillop.codex_clear(str(under), str(home)) == {"result": "missing"}
+    home.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "keep-the-why").mkdir(parents=True)
+    (home / "skills").symlink_to(elsewhere)
+    with pytest.raises(scratchop.OnTheWay):
+        skillop.codex_clear(str(under), str(home))
+    assert (elsewhere / "keep-the-why").is_dir()
+    (home / "skills").unlink()
+    (home / "skills").mkdir()
+    (home / "skills" / "keep-the-why").symlink_to(elsewhere / "keep-the-why")
+    assert skillop.codex_clear(str(under), str(home)) == {"result": "removed"}
+    assert (elsewhere / "keep-the-why").is_dir()  # the link went, never what it named
+
+
+@pytest.mark.parametrize("change", ["extra", "changed", "missing", "link"])
+def test_a_staged_skill_that_does_not_hold_exactly_its_files_is_never_published(
+    tmp_path: Path, change: str
+) -> None:
+    # The review of #2093: the staging is verified before the rename, as `put` verifies.
+    wanted = {("SKILL.md",): b"skill\n", ("references", "help.md"): b"# help\n"}
+    staged = tmp_path / "staged"
+    (staged / "references").mkdir(parents=True)
+    (staged / "SKILL.md").write_bytes(b"skill\n")
+    (staged / "references" / "help.md").write_bytes(b"# help\n")
+    fd = os.open(staged, os.O_RDONLY)
+    try:
+        skillop._verify_staged(fd, wanted)  # exactly its files: holds
+        if change == "extra":
+            (staged / "references" / "planted.md").write_text("planted\n")
+        elif change == "changed":
+            (staged / "SKILL.md").write_bytes(b"other\n")
+        elif change == "missing":
+            (staged / "references" / "help.md").unlink()
+        else:
+            (staged / "SKILL.md").unlink()
+            (staged / "SKILL.md").symlink_to(tmp_path / "elsewhere.md")
+        with pytest.raises(OSError, match="staged skill"):
+            skillop._verify_staged(fd, wanted)
+    finally:
+        os.close(fd)
+
+
 @pytest.mark.parametrize(
     "where, error",
     [
@@ -421,6 +512,58 @@ def test_gc_skills_lists_then_removes_only_what_nothing_names_or_runs_with(
     left = sorted(p.name for p in (tmp_path / "runner" / "keep-the-why").iterdir())
     assert left == sorted([KEY, other])
     assert set(skills._anchors(tmp_path / "state")) == {KEY, other}  # its record went with it
+
+
+@pytest.mark.parametrize(
+    "records, expected",
+    [
+        ({"plc-1": {"skill_key": KEY}, "plc-2": {"skill_key": None}}, {KEY}),
+        ({"plc-1": {"skill_key": KEY}}, None),  # plc-2 runs with no record: not saved yet
+        ({"plc-1": {"skill_key": KEY}, "plc-2": {"id": "plc-2"}}, None),  # an older record
+        ({"plc-1": {"skill_key": KEY}, "plc-2": {"skill_key": 7}}, None),
+    ],
+)
+def test_gc_keeps_everything_while_a_running_sessions_copy_is_not_known(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    records: dict[str, Any],
+    expected: set[str] | None,
+) -> None:
+    # The review of #2093 (ukxh): a session from before `skill_key`, or one whose record the
+    # service had not saved yet, may run with any copy; none of them goes by that.
+    from maity import state
+    from maity.runner import operate, supervisor
+
+    monkeypatch.setattr(operate, "_running", lambda cfg, what="scratch": {"plc-1", "plc-2"})
+    state.save_state(tmp_path / "state", records, name=supervisor.ACTUAL_FILE)
+    assert operate._skills_running(_cfg(tmp_path)) == expected
+
+
+def test_gc_keeps_everything_when_an_active_placements_pin_cannot_be_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from maity import state
+    from maity.runner import operate, serve, supervisor
+
+    placements: list[dict[str, Any]] = [
+        {"id": f"plc-{n}", "project_id": "prj-1", "workspace": {"clone": "c"}, "agent": {}}
+        for n in (1, 2)
+    ]
+    service = type("S", (), {"client": type("C", (), {"call": staticmethod(
+        lambda method, path: {"items": placements})})()})()  # fmt: skip
+    monkeypatch.setattr(serve, "open_service", lambda cfg, st: service)
+    monkeypatch.setattr(state, "load_state", lambda d, name: {})
+    monkeypatch.setattr(supervisor, "valid", lambda p: True)
+
+    def named(p: dict[str, Any]) -> tuple[str, str] | None:
+        if p["id"] == "plc-2":
+            raise skills.Unavailable("a pin that is not a commit")
+        return (SOURCE, COMMIT)
+
+    monkeypatch.setattr(skills, "named", named)
+    monkeypatch.setattr(skills, "key", lambda source, commit: KEY)
+    _pairs, _agents, _ids, keys = operate._active_with_skills(_cfg(Path("unused")))
+    assert keys is None
 
 
 def test_gc_skills_keeps_everything_when_the_hubs_list_is_partial(
