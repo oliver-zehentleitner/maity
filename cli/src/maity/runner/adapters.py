@@ -28,7 +28,7 @@ from typing import Any
 from .. import __version__, clonecheck, ghpr, proc
 from . import config, scratch, stub, trust
 from .asuser import AsUser
-from .workspace import TMP_SCRATCH_HARNESSES
+from .workspace import OWN_TMPDIR_HARNESSES, TMP_SCRATCH_HARNESSES
 
 START_PROMPT = (
     "This clone is a Maity project. Run `maity resume` now and follow it: your briefing "
@@ -229,9 +229,11 @@ class Context:
     # owns that parent, for one that hides nothing, and where there is no local `/tmp` scratch (an
     # ssh host, no uid).
     tmp_scratch_parent: Path | None = None
-    # The placement's own short TMPDIR (`tmp` in a fresh leaf under that per-user `/tmp` parent),
-    # made by the supervisor only where the scratch's own `tmp` leaves no room for a Unix socket
-    # (scratch_tmpdir), and re-opened for this placement alone in its sandbox (tsk-0zb9mgzmbwn4).
+    # The placement's own short temp directory (`tmp` in a fresh leaf under that per-user `/tmp`
+    # parent), made by the supervisor only where the scratch's own `tmp` leaves no room for a Unix
+    # socket (scratch_tmpdir): Codex's TMPDIR, re-opened for it alone in its sandbox
+    # (tsk-0zb9mgzmbwn4), or Claude Code's CLAUDE_CODE_TMPDIR, kept from its sandbox
+    # (tsk-k7svzz2p4v7y; workspace.OWN_TMPDIR_HARNESSES).
     tmpdir: Path | None = None
     # The placement's test cluster password file in the holder every sandbox is denied
     # (scratchop.PG_HOLDER), when the runner vouched for it; without one the session gets no
@@ -292,11 +294,31 @@ def fits_socket(tmp: Path, limit: int | None = None) -> bool:
 
 def session_tmpdir(ctx: Context) -> Path | None:
     """The session's TMPDIR: `tmp` in its scratch where a socket fits under it, else the short
-    one of its own the supervisor made under the per-user `/tmp` parent (Context.tmpdir), else
-    none, and tools fall back to the system's (tsk-0zb9mgzmbwn4)."""
+    one of its own the supervisor made under the per-user `/tmp` parent (Context.tmpdir), unless
+    the harness takes that one in another variable (Claude Code, own_tmp_env), else none, and
+    tools fall back to the system's (tsk-0zb9mgzmbwn4)."""
     own = scratch_tmpdir(ctx.scratch)
     if own is not None:
         return own
+    takes = OWN_TMPDIR_HARNESSES.get(ctx.harness.id, "TMPDIR") == "TMPDIR"
+    return _own_tmpdir(ctx) if takes else None
+
+
+def own_tmp_env(ctx: Context) -> dict[str, str]:
+    """The placement's own short temp directory for a harness that takes it in a variable other
+    than TMPDIR (workspace.OWN_TMPDIR_HARNESSES): Claude Code's CLAUDE_CODE_TMPDIR, for its own
+    temp files and its sandbox socket, which Claude Code writes outside its sandbox. Empty where
+    the scratch's `tmp` fits (it is the TMPDIR, and Claude Code's own files follow it) or where
+    there is no leaf (tsk-k7svzz2p4v7y)."""
+    name = OWN_TMPDIR_HARNESSES.get(ctx.harness.id)
+    leaf = _own_tmpdir(ctx)
+    if name is None or name == "TMPDIR" or leaf is None or scratch_tmpdir(ctx.scratch) is not None:
+        return {}
+    return {name: str(leaf)}
+
+
+def _own_tmpdir(ctx: Context) -> Path | None:
+    """Context.tmpdir where a socket fits under it, else None."""
     return ctx.tmpdir if ctx.tmpdir is not None and fits_socket(ctx.tmpdir) else None
 
 
@@ -392,6 +414,8 @@ def launch(ctx: Context) -> Launch:
         # when the placement ends instead of piling up in the agents' home (§15.5).
         **({"MAITY_SCRATCH": str(ctx.scratch)} if ctx.scratch is not None else {}),
         **({"TMPDIR": str(tmp)} if (tmp := session_tmpdir(ctx)) is not None else {}),
+        # Claude Code's own temp files and sandbox socket in that leaf (own_tmp_env).
+        **own_tmp_env(ctx),
         # The test slots and test cluster in the scratch, and who takes them (tools/run_slot.sh).
         **run_env(ctx.scratch if beside else None),
         **({"MAITY_RUN_NAME": name} if (name := run_name(ctx.placement)) is not None else {}),
@@ -487,8 +511,9 @@ def own_tmp_leaf(ctx: Context) -> Path | None:
     """The leaf of the placement's own TMPDIR under the per-user `/tmp` parent, to open again
     in its sandbox: only when that TMPDIR is the one the session gets (session_tmpdir), so the
     sandbox never opens a leaf the session does not use. Only Codex's profile opens it: Claude
-    Code's sandbox mounts a leaf re-opened under a denied parent read-only, so the supervisor
-    gives a Claude Code placement none (workspace.OWN_TMPDIR_HARNESSES)."""
+    Code's sandbox mounts a leaf re-opened under a denied parent read-only, so a Claude Code
+    placement's leaf is its CLAUDE_CODE_TMPDIR alone, which Claude Code writes outside its
+    sandbox, and its sandbox opens nothing (own_tmp_env, tsk-k7svzz2p4v7y)."""
     if ctx.tmpdir is None or session_tmpdir(ctx) != ctx.tmpdir:
         return None
     return ctx.tmpdir.parent

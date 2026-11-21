@@ -716,8 +716,8 @@ def test_a_placements_own_tmpdir_leaf_is_opened_again_and_its_siblings_stay_hidd
     """tsk-0zb9mgzmbwn4: a Codex placement's own TMPDIR leaf under the hidden per-user `/tmp`
     parent is opened again for it alone (`write` within `none`), and a sibling leaf stays
     hidden. Claude Code's sandbox never opens such a leaf: live, it mounted one re-opened under
-    a denied parent read-only (Claude Code 2.1.329), so the supervisor gives it none. Paths
-    only, nothing is made: short, as the runner's, so the leaf is the session's TMPDIR."""
+    a denied parent read-only (Claude Code 2.1.329), so its leaf is only its CLAUDE_CODE_TMPDIR
+    (tsk-k7svzz2p4v7y). Paths only, nothing is made: short, as the runner's."""
     parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
     own, sibling = parent / ("a" * 32), parent / ("b" * 32)
 
@@ -763,6 +763,37 @@ def test_a_scratch_without_room_for_a_socket_gets_the_short_tmpdir_the_runner_ma
     assert launched.env["TMPDIR"] == str(room / "tmp")
 
 
+def test_claude_codes_leaf_is_its_claude_code_tmpdir_never_its_tmpdir(tmp_path: Path) -> None:
+    """tsk-k7svzz2p4v7y, the live probes of 2026-11-21 (Claude Code 2.1.329): Claude Code's own
+    temp files and its sandbox socket follow CLAUDE_CODE_TMPDIR, which Claude Code writes outside
+    its sandbox, while its sandbox mounts a leaf re-opened under the denied parent read-only. So
+    with no room under the scratch, a Claude Code placement's leaf is its CLAUDE_CODE_TMPDIR, it
+    gets no TMPDIR, and its settings open nothing; Codex keeps the leaf as its TMPDIR."""
+    deep = Path("/") / ("w" * 60) / "maity" / ".scratch" / "plc-0000000000000003"
+    parent = Path("/tmp/maity-scratch-1002")  # noqa: S108 - a path only
+    own = parent / ("a" * 32) / "tmp"
+    ctx = context(tmp_path / "d", sandbox=True, scratch=deep, tmpdir=own, tmp_scratch_parent=parent)
+    env = adapters.launch(ctx).env
+    assert env["CLAUDE_CODE_TMPDIR"] == str(own) and "TMPDIR" not in env
+    filesystem = adapters.claude_settings(ctx)["sandbox"]["filesystem"]
+    assert str(parent) in filesystem["denyRead"] and str(parent) in filesystem["denyWrite"]
+    assert "allowRead" not in filesystem
+    assert not any(str(own.parent) in path for path in filesystem.get("allowWrite", []))
+    # Where the scratch's own `tmp` fits, it is the TMPDIR, and Claude Code's files follow it.
+    room = Path("/srv/ws/maity/.scratch/plc-0003")
+    env = adapters.launch(context(tmp_path / "r", scratch=room, tmpdir=own)).env
+    assert env["TMPDIR"] == str(room / "tmp") and "CLAUDE_CODE_TMPDIR" not in env
+    # Without a leaf (an ssh host, or none could be made): neither.
+    env = adapters.launch(context(tmp_path / "n", scratch=deep)).env
+    assert "TMPDIR" not in env and "CLAUDE_CODE_TMPDIR" not in env
+    # Codex: the leaf is its TMPDIR, and it gets no CLAUDE_CODE_TMPDIR.
+    codex = context(
+        tmp_path / "c", harness_id="codex", binary="/usr/bin/codex", scratch=deep, tmpdir=own
+    )
+    env = adapters.launch(codex).env
+    assert env["TMPDIR"] == str(own) and "CLAUDE_CODE_TMPDIR" not in env
+
+
 def test_the_short_tmpdir_fits_a_socket_at_its_longest() -> None:
     """The leaf the runner draws is 32 hex digits (`secrets.token_hex(16)`); with the largest
     uid the path still leaves room for Claude Code's socket on Linux. On macOS, under the
@@ -774,6 +805,9 @@ def test_the_short_tmpdir_fits_a_socket_at_its_longest() -> None:
     assert adapters.fits_socket(mac, adapters.socket_path_max("darwin"))
     longer = Path("/private/tmp") / "maity-scratch-99999" / ("f" * 32) / "tmp"
     assert not adapters.fits_socket(longer, adapters.socket_path_max("darwin"))
+    # Claude Code's sandbox socket under its CLAUDE_CODE_TMPDIR, `cc-socks/<pid>.sock` (live
+    # 2026-11-21), with the largest Linux pid, takes no more room than the name checked above.
+    assert len("cc-socks/4194304.sock") <= adapters.SOCKET_NAME_ROOM
 
 
 def test_without_a_scratch_codex_home_stays_in_the_runner_directory(tmp_path: Path) -> None:
