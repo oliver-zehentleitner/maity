@@ -438,10 +438,10 @@ def test_the_meat_proxy_and_the_presence_choice_go_with_the_account(
     ).where(t.human.c.id == pat.id)
     with migrated.connect() as conn:
         assert tuple(conn.execute(query).one()) == (False, False, True)
-    choices = {"meat_proxy_lead": True, "meat_proxy_hands": True, "public_presence": False}
+    choices = {"meat_proxy_lead": True, "meat_proxy_hands": True, "public_presence": True}
     assert pat.patch("/me", choices).status_code == 200
     with migrated.connect() as conn:
-        assert tuple(conn.execute(query).one()) == (True, True, False)
+        assert tuple(conn.execute(query).one()) == (True, True, True)
     assert ask_deletion(pat).status_code == 202
     assert press(pat, token_of(migrated)).status_code == 200
     with migrated.connect() as conn:
