@@ -656,8 +656,8 @@ Rejected alternatives:
 One credential has one secret. If any live attachment of the credential (a detached row does
 not count) is in a project whose policy has `signing: required`, a Bearer call of it is
 refused with `403 signature_required` on every route: those of that project, those of every
-other project it is attached to, and the project-less ones (`/me`, `/me/resume`,
-`/me/events`). The credential's lookup computes this in the same statement
+other project it is attached to, and the project-less ones (`/me`, `/me/resume`, and
+`/me/events` once hub PR C builds it). The credential's lookup computes this in the same statement
 (`_credential`, an `EXISTS` over the live attachments), and `_agent` refuses after the proof of
 possession and before any side effect. An attachment whose membership is isolated still binds
 the credential.
