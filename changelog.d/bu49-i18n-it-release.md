@@ -8,3 +8,9 @@
   answered requests' other texts (tsk-0fng8rnbs0et).
 - hub: the mails and notices of a changed password and of second-factor codes refused for the day,
   with the page that lets one try again, read in Italian too (tsk-0fng8rnbs0et).
+
+### Fixed
+
+- web: three Italian texts that put a link starting with its own article after a preposition
+  (`forge.unlink.hint`, `mail.address.forbidden.not_in_good_standing`,
+  `restricted.box.not_in_good_standing`) read correctly around the link (tsk-0fng8rnbs0et).

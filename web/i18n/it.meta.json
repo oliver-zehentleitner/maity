@@ -3489,7 +3489,7 @@
   },
   "chat_access.hint": {
     "en": "05b397a6c4f338d6",
-    "text": "82556f13eff80643"
+    "text": "6013e69604178a93"
   },
   "chat_access.history.allow.changed": {
     "en": "fbeadefaa8af01d0",
@@ -5177,7 +5177,7 @@
   },
   "forge.unlink.hint": {
     "en": "79b1849ead91e2e6",
-    "text": "46f60d8fe7f94f02"
+    "text": "b7c99f352cbf1ed7"
   },
   "forge.unread": {
     "en": "8f8742a167aaec52",
@@ -5501,7 +5501,7 @@
   },
   "group.people.your_waiting": {
     "en": "6ff7e8ae9a0b7f9d",
-    "text": "db426c19936290fb"
+    "text": "586041fb73fdf265"
   },
   "group.people.your_waiting_inbox": {
     "en": "3bf608033d0fd639",
@@ -9533,7 +9533,7 @@
   },
   "mail.address.forbidden.not_in_good_standing": {
     "en": "37058fb06cf84d22",
-    "text": "c60a6b6b548258d6"
+    "text": "ce8a60a5cefed0b2"
   },
   "mail.address.held": {
     "en": "54608ec68257813d",
@@ -16321,7 +16321,7 @@
   },
   "restricted.box.not_in_good_standing": {
     "en": "0ee74976329c8ce6",
-    "text": "81e70cdd0e209679"
+    "text": "19c3cc27cae8f575"
   },
   "restricted.box.not_read": {
     "en": "5787c42d385dcb0a",
