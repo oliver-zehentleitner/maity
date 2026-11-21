@@ -378,6 +378,12 @@ def _check_repositories(report: Report, cfg: config.Config) -> None:
             # Codex starts without what it cannot enforce, said here and at each start.
             for part in adapters.codex_left_out(grant):
                 report.warn(f"repositories.{name}: {part}")
+        if grant.lead and not grant.pull_requests:
+            # Whether the placed member is a manager is the hub's to say at each call; the
+            # check reads no member, so it does not warn about that.
+            report.warn(
+                f"repositories.{name}: lead = true gives nothing without pull_requests = true"
+            )
         if grant.pull_requests and "api.github.com" in grant.network:
             report.warn(
                 f"repositories.{name}: network api.github.com is not needed for pull requests "
