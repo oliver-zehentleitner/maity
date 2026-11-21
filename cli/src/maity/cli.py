@@ -3909,6 +3909,9 @@ def cmd_placement_list(args: argparse.Namespace) -> int:
 
 
 def cmd_placement_start(args: argparse.Namespace) -> int:
+    # Before the session and the member lookup, so a usage error sends nothing (A1994, A1996).
+    if args.effort is not None and not args.effort:  # empty is not "the default"
+        raise UsageError("--effort: name one of the runner's efforts, or leave it out")
     session = Session()
     body: dict[str, Any] = {
         "agent": {"id": _member_id(session, args.agent)},
@@ -3921,8 +3924,6 @@ def cmd_placement_start(args: argparse.Namespace) -> int:
     if args.model:
         body["model"] = args.model
     if args.effort is not None:
-        if not args.effort:  # empty is not "the default": leave the flag out for that (A1994)
-            raise UsageError("--effort: name one of the runner's efforts, or leave it out")
         body["effort"] = args.effort
     if args.target:
         body["target"] = args.target

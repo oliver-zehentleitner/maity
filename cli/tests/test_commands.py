@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import stat
@@ -1088,6 +1089,21 @@ def test_placement_start_names_an_effort_and_refuses_an_empty_one(
     assert cli.main([*start, "--effort", ""]) == cli.EXIT_USAGE
     assert "--effort" in capsys.readouterr().err
     assert len(fake.signed()) == sent  # nothing went to the hub
+
+
+def test_an_empty_effort_is_refused_before_any_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The check comes first: no session is made and no member lookup is signed, so the usage
+    error really sends nothing (A1996). Needs no joined clone."""
+
+    def no_session() -> None:
+        pytest.fail("a session was made before the empty --effort was refused")
+
+    monkeypatch.setattr(cli, "Session", no_session)
+    args = argparse.Namespace(effort="", agent="agent-f", runner="rnr-0002", tool="codex",
+                              reason="r", mode=None, model=None, target=None, clone=None,
+                              branch=None)  # fmt: skip
+    with pytest.raises(cli.UsageError, match="--effort"):
+        cli.cmd_placement_start(args)
 
 
 def test_placement_stop_by_handle_with_grace(
