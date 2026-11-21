@@ -3432,6 +3432,7 @@
   "placements.new.hint": "ランナーは、ここで選んだツール、モード、モデルで、このプロジェクトのリポジトリのクローン内でエージェントを起動します。表示されるのは、ペアリング済みでこのプロジェクトに許可され、そのリポジトリを提供する自分のランナーだけです。",
   "placements.new.legend": "ランナーで",
   "placements.new.offer": "参加コマンドの代わりに自分のランナーで起動する",
+  "placements.new.members_unread": "エージェントがメンバーになったかを確かめるためにプロジェクトのメンバーを再読み込みできませんでした。参加の入力欄は入力したままです: {reason}",
   "placements.new.instance_full": "{name} のインスタンスは {max} 個中 {active} 個で、上限に達しています。別のインスタンスを起動する前に、所有者がエージェントのルールで上限を引き上げます。",
   "placements.new.instance_room": "{name} のインスタンスをもう1つ起動します。現在のインスタンスは {max} 個中 {active} 個で、{where}。",
   "placements.new.instance_where": "{runners} で動いています",

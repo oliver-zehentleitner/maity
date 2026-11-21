@@ -3470,6 +3470,7 @@ window.MAITY_I18N["ko"] = {
   "placements.new.instance_where": "{runners}에서 실행 중입니다",
   "placements.new.instance_where_none": "여기 러너에서는 실행 중이 아닙니다",
   "placements.new.legend": "러너에서",
+  "placements.new.members_unread": "에이전트가 이제 멤버인지 확인하려고 프로젝트 멤버를 다시 읽지 못했어요. 참여 입력란은 입력한 그대로 남아 있어요: {reason}",
   "placements.new.mode": "모드",
   "placements.new.model": "모델",
   "placements.new.model_default": "러너 기본값",

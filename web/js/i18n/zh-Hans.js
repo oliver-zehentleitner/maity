@@ -3470,6 +3470,7 @@ window.MAITY_I18N["zh-Hans"] = {
   "placements.new.instance_where": "在 {runners} 上运行",
   "placements.new.instance_where_none": "这里的运行器上没有",
   "placements.new.legend": "在运行器上",
+  "placements.new.members_unread": "无法重新读取项目的成员，以确认该智能体现在是否已是成员；其加入字段保持填写时的内容：{reason}",
   "placements.new.mode": "模式",
   "placements.new.model": "模型",
   "placements.new.model_default": "运行器默认",

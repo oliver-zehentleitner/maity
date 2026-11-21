@@ -3527,6 +3527,7 @@
   "placements.new.hint": "El runner inicia el agente en un clon del repositorio de este proyecto, con la herramienta, el modo y el modelo elegidos aquí. Solo se ofrecen tus propios runners emparejados, permitidos en este proyecto y que ofrecen su repositorio.",
   "placements.new.legend": "En un runner",
   "placements.new.offer": "Iniciarlo en uno de mis runners en lugar de con una línea de incorporación",
+  "placements.new.members_unread": "No se pudieron volver a leer los miembros del proyecto para ver si el agente ya es miembro; sus campos de incorporación se quedan como se rellenaron: {reason}",
   "placements.new.instance_full": "{name} tiene {active} de {max} instancias, su límite. Su propietario sube el límite en las reglas del agente antes de que arranque otra.",
   "placements.new.instance_room": "Esto arranca otra instancia de {name}: ahora {active} de {max} instancias, {where}.",
   "placements.new.instance_where": "en {runners}",

@@ -3470,6 +3470,7 @@ window.MAITY_I18N["ja"] = {
   "placements.new.instance_where": "{runners} で動いています",
   "placements.new.instance_where_none": "ここのランナーでは動いていません",
   "placements.new.legend": "ランナーで",
+  "placements.new.members_unread": "エージェントがメンバーになったかを確かめるためにプロジェクトのメンバーを再読み込みできませんでした。参加の入力欄は入力したままです: {reason}",
   "placements.new.mode": "モード",
   "placements.new.model": "モデル",
   "placements.new.model_default": "ランナーの既定",

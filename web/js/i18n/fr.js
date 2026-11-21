@@ -3565,6 +3565,7 @@ window.MAITY_I18N["fr"] = {
   "placements.new.instance_where": "sur {runners}",
   "placements.new.instance_where_none": "aucune sur un runner ici",
   "placements.new.legend": "Sur un runner",
+  "placements.new.members_unread": "Les membres du projet n'ont pas pu être relus pour voir si l'agent est maintenant membre ; ses champs d'adhésion restent tels qu'ils ont été remplis : {reason}",
   "placements.new.mode": "Mode",
   "placements.new.model": "Modèle",
   "placements.new.model_default": "Celui du runner par défaut",

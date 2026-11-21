@@ -3565,6 +3565,7 @@ window.MAITY_I18N["nl"] = {
   "placements.new.instance_where": "op {runners}",
   "placements.new.instance_where_none": "geen op een runner hier",
   "placements.new.legend": "Op een runner",
+  "placements.new.members_unread": "De leden van het project konden niet opnieuw worden gelezen om te zien of de agent nu lid is; zijn deelnamevelden blijven zoals ze zijn ingevuld: {reason}",
   "placements.new.mode": "Modus",
   "placements.new.model": "Model",
   "placements.new.model_default": "De standaard van de runner",

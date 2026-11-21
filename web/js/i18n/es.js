@@ -3565,6 +3565,7 @@ window.MAITY_I18N["es"] = {
   "placements.new.instance_where": "en {runners}",
   "placements.new.instance_where_none": "ninguna en un runner aquí",
   "placements.new.legend": "En un runner",
+  "placements.new.members_unread": "No se pudieron volver a leer los miembros del proyecto para ver si el agente ya es miembro; sus campos de incorporación se quedan como se rellenaron: {reason}",
   "placements.new.mode": "Modo",
   "placements.new.model": "Modelo",
   "placements.new.model_default": "El predeterminado del runner",
