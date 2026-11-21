@@ -2003,6 +2003,67 @@ def origin_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return repo
 
 
+def _pathlib_as_on_314(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pathlib's predicates as Python 3.14+ answer them: False below a directory that cannot
+    be searched, where 3.13 raised PermissionError (tsk-0tje3vzzedtx)."""
+    for name in ("is_dir", "is_file", "exists", "is_symlink"):
+        original = getattr(Path, name)
+
+        def quiet(self: Path, *args: Any, _original: Any = original, **kwargs: Any) -> bool:
+            try:
+                return bool(_original(self, *args, **kwargs))
+            except PermissionError:
+                return False
+
+        monkeypatch.setattr(Path, name, quiet)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+@pytest.mark.parametrize("kind", ["-e", "-f", "-d", "-L"])
+def test_the_runners_own_exists_raises_where_it_cannot_look(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """`AsUser.exists` on the runner's own side: absent is False, a path below a directory it
+    cannot search raises, as pathlib did up to 3.13, also where pathlib now keeps quiet. The
+    gate in front of `workspace.owned` and `prepare`'s existing-clone branch read it
+    (tsk-0tje3vzzedtx, A1945)."""
+    _pathlib_as_on_314(monkeypatch)
+    assert AsUser().exists(tmp_path / "none", kind) is False
+    locked = tmp_path / "locked"
+    (locked / "agent-3").mkdir(parents=True)
+    locked.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            AsUser().exists(locked / "agent-3", kind)
+    finally:
+        locked.chmod(0o700)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+def test_prepare_does_not_take_a_clone_it_cannot_look_at_for_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A clone below a project directory the runner cannot search is not missing: `prepare`
+    stops there instead of cloning into it (which would fail only by accident), also where
+    pathlib keeps quiet (tsk-0tje3vzzedtx, A1945)."""
+    _pathlib_as_on_314(monkeypatch)
+    cfg = load(tmp_path)
+    assert cfg.local is not None
+    place = workspace.locate(cfg.local.workspaces, "maity", "agent-3")
+    (place.path / ".git").mkdir(parents=True)
+
+    def no_clone(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("prepare took the clone for missing and went on to make one")
+
+    monkeypatch.setattr(AsUser, "mkdir", no_clone)  # the first step of a new clone
+    place.path.parent.chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            workspace.prepare(cfg, place, "https://github.com/x/y", "agt-3", "plc-0003")
+    finally:
+        place.path.parent.chmod(0o700)
+
+
 def test_prepare_clones_and_records(tmp_path: Path, origin_repo: Path) -> None:
     cfg = load(tmp_path)
     assert cfg.local is not None
