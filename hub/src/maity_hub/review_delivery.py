@@ -1,10 +1,11 @@
 """Who a `review_result` reaches without the reviewer naming them (docs/api.md §8.4, "A review
-result reaches the author and both leads").
+result reaches the author and both leads, except a boss of another owner").
 
 The author of the reviewed work, the member the reviewer reports to and the member the author
-reports to. The card is the one the message's `task_id` names, or without it the card whose
-latest report names the pull request `#<n>` when `review.subject` is exactly that; its author
-is the holding instance, or on a card nobody holds the instance that sent its latest report.
+reports to, each boss only when it is not of another owner than its subordinate. The card is
+the one the message's `task_id` names, or without it the card whose latest report names the
+pull request `#<n>` when `review.subject` is exactly that; its author is the holding instance,
+or on a card nobody holds the instance that sent its latest report.
 A part that resolves to nobody is left out; `routes/events._deliver_review` drops whoever the
 audience already reaches (the author's instance only that same instance; `all` never).
 """
@@ -18,7 +19,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
 
-from maity_hub import instances
+from maity_hub import cross_owner, instances
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 
@@ -52,7 +53,10 @@ def _active(conn: Connection, project_id: str, member_id: str) -> Any:
 
 def _lead(conn: Connection, membership: Any) -> Recipient | None:
     """The member `membership` reports to, while that member is still in the project; an
-    isolated one is routed past as `views.routing_boss` does (§6.2)."""
+    isolated one is routed past as `views.routing_boss` does (§6.2). A boss of another owner
+    (a cross-owner edge, `cross_owner.owners`) is left out: it is never added, so it is no part
+    of the card's own flow the gate leaves open, and a `to` or a mention naming it passes the
+    gate like anyone else's (§8.4, §9.6)."""
     if membership is None or membership.reports_to is None:
         return None
     lead = conn.execute(
@@ -65,6 +69,8 @@ def _lead(conn: Connection, membership: Any) -> Recipient | None:
     ).first()
     if lead is None:
         return None
+    if cross_owner.owners(conn, membership, lead) is not None:
+        return None  # a boss of another owner is left out, not gated (§8.4, §6.2)
     member_id = _principal(lead)
     return Recipient(member_id, instances.token(member_id, None))
 

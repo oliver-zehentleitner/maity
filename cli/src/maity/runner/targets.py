@@ -13,12 +13,11 @@ from __future__ import annotations
 
 import os
 import re
-import shlex
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from . import capabilities, config
-from .asuser import SSH_UNREACHABLE, AsUser, Ssh, Unreachable
+from .asuser import SSH_UNREACHABLE, AsUser, Ssh, Unreachable, shell_join
 from .tmux import Tmux, attach_words
 
 LOGS = "logs"
@@ -63,9 +62,12 @@ class Target:
         assert self.backend is not None  # noqa: S101 - set once connected
         attach = attach_words(self.backend.socket, session, self.as_user)
         if isinstance(self.as_user, Ssh):
+            # ssh hands the host's login shell its words joined by spaces, so the remote line
+            # is quoted for that shell (the `=` target too, for zsh) and passed as one word.
             ssh = self.as_user
-            attach = ["ssh", "-t", "-p", str(ssh.port), f"{ssh.login}@{ssh.address}", *attach]
-        return shlex.join(attach)  # every word quoted: a remote value cannot become a command
+            destination = f"{ssh.login}@{ssh.address}"
+            attach = ["ssh", "-t", "-p", str(ssh.port), destination, shell_join(attach)]
+        return shell_join(attach)  # every word quoted: a remote value cannot become a command
 
     def connect(self, harnesses: dict[str, config.Harness]) -> None:
         """For an ssh target: its home, tmux server and harnesses, on the first connection.
