@@ -12443,8 +12443,11 @@ machine has installed and wherever its session was started:
   by default the skill's release tree that this repository's
   `.keep-the-why` names as its `context-schema` (`tree/v0.20.3`), and
   the skills installer at a fixed version (`skills@1.7.6`); an operator who
-  mirrors the skill points it elsewhere. They are instructions to the
-  agent, rendered as text, never run by the hub or the CLI.
+  mirrors the skill points it elsewhere, and names its commit in
+  `MAITY_KTW_SKILL_COMMIT` with it (a source without it stops the hub):
+  that commit is what a runner delivers to its placements (§15.5). They
+  are instructions to the agent, rendered as text, never run by the hub
+  or the CLI.
   `guide` is the skill's installation guide for every harness, by
   default `https://keepthewhy.com/installation/`, from the instance
   setting `MAITY_KTW_SKILL_GUIDE`: the place to look when `install` or
@@ -20034,6 +20037,7 @@ serves several (§6.2, "Isolation").
 | `generation` | starts at 1; incremented on every change of the spec and every restart (a restart with `rejoin: true` included); a `rejoin` set by a `removed` workspace report does not increment it, as the next start makes a new clone anyway (§15.5); the runner reports which generation it acted on |
 | `rejoin` | set by a restart with `rejoin: true` after the clone's credential was revoked, or by a `removed` workspace report on an active placement and on every active placement naming the credential it revoked (§15.5): the runner removes the old credential file and picks up a new join |
 | `fresh_session` | `true` while the current `generation` is the one a reset made (a restart with `fresh_session: true`, §15.6): the runner starts the harness on a fresh session instead of resuming the last one (§15.14). Any later new generation, a plain restart or a change of spec, reads `false` again; a stop and a start keep the generation and with it the value |
+| `keep_the_why` | runner's read only (§15.8): `null` when the project does not use Keep the Why (§6.23), else `{source, commit}`. `source` is the skill's release tree, the resume packet's `keep_the_why.skill.source` (the hub's `MAITY_KTW_SKILL_SOURCE`); `commit` is 40 lowercase hex digits, the git commit of that tree (`MAITY_KTW_SKILL_COMMIT`). The runner fetches exactly that commit, never the tag, into a directory it owns and gives the session the skill read-only at its start (Claude Code: as a plugin for that session, docs/runners.md); it takes nothing else from the hub for it. Not part of the spec: a change of either value or of the project's memory makes no new `generation` and reaches a placement at its next start. A runner that cannot fetch or check the commit starts the session without it and reports `keep_the_why_unavailable` (§15.7) (req-b3q6ttwgrp1v) |
 | `approval` | `status`: `approved`, `pending`, `refused`; `request_id`: the consent request while one exists; `pending_change`: an agent's proposed change of a running placement's spec waiting for consent, else `null` (§15.6). A runner never sees a placement that is not `approved` |
 | `stop_grace_seconds` | 0–900, default 120: how long the agent gets to park its work after a stop before the process is ended |
 | `workspace_retention` | `immediate`, `3h`, `24h` (default) or `7d`: how long the runner keeps the clone after the session ended under a stop or a close, before it removes it (§15.5). The hub stores it and the runner reads it; the runner's clock and its removal are not built yet, tsk-34gb7frfbsk7 |
@@ -20594,6 +20598,7 @@ placement as `reported`; the history is the `placement_reported` events.
 | `workspace_not_bare` | `workspace_in_use`: an `antigravity` workspace folder holds an entry besides the clone `repo` (§15.5), such as agy configuration a run left there; the runner starts nothing and deletes nothing, and its log names the entries, without their contents |
 | `stale_index_lock` | `starting`: a stale `.git/index.lock` in the clone |
 | `sandbox_unavailable` | `running`: the harness's own OS sandbox could not be enabled and the runner's configuration allows running without it |
+| `keep_the_why_unavailable` | `running`: the placement names a Keep the Why skill (`keep_the_why`, §15.5) and the runner could not fetch or check that commit, or cannot deliver it where this session runs yet (docs/runners.md), so the session started without the delivered skill; the resume packet's install text (§6.23) is its only way to it. The runner's log says why; the next report after a start with the skill clears it. Never for a placement whose `keep_the_why` is `null`, and `sandbox_unavailable` goes first when both hold. A runner sends it only to a hub whose placements carry `keep_the_why` (req-b3q6ttwgrp1v) |
 | `hot_loop` | `crash_loop` in `supervised` mode |
 | `idle`, `tool` | `hung`: ended after a nudge found it silent, or a tool call stayed open past `tool_call_max_minutes` |
 | `reset_unknown` | `rate_limited`: the harness named no reset time; `retry_at` is the runner's own backoff |
@@ -20975,6 +20980,8 @@ A placement as the runner reads it:
   "workspace": { "clone": "agent-b", "branch": null,
                  "repository": "https://github.com/oliver-zehentleitner/maity" },
   "rejoin": false, "fresh_session": false,
+  "keep_the_why": { "source": "https://github.com/oliver-zehentleitner/keep-the-why/tree/v0.20.3/skills/keep-the-why",
+                    "commit": "<40 hex digits>" },
   "stop_grace_seconds": 120, "workspace_retention": "24h", "workspace_epoch": 1,
   "health": { "flapping": false,
               "settings": { "hang_after_minutes": 30, "reply_within_minutes": 10, "tool_call_max_minutes": 120 } },
@@ -21031,7 +21038,9 @@ A placement as the runner reads it:
   `detail: credential_missing`, never a silent second join. `seq` is
   the highest report counter the hub has stored. `open_run` is as in
   §15.5: the id the runner names in a run's usage record (§15.15), here
-  and in the answer to every status report. Never in this shape:
+  and in the answer to every status report. `keep_the_why` is as in
+  §15.5: the skill the runner delivers at the next start, `null` for a
+  project without Keep the Why. Never in this shape:
   `briefing`, the join URL or code, `approval`, `created_by`.
 - **What a runner reads.** Its projects are those it is attached to plus
   those where it still has an active placement (a detached runner's
@@ -23035,7 +23044,7 @@ does to its agents in projects whose policy says `inherit` (§15.3,
 `MAITY_ATTACHMENT_DIR` / `MAITY_ATTACHMENT_S3_*` settings — where the
 attachment bytes live (§8.7). The others are named where they act (`MAITY_PUBLIC_URL`,
 `MAITY_JOIN_URL` §1.1, `MAITY_TRUSTED_PROXIES`, `MAITY_ALLOW_PLAIN_HTTP`
-§2.5, `MAITY_CLI_INSTALL` §3.2, `MAITY_KTW_SKILL_SOURCE` and `MAITY_KTW_SKILL_GUIDE` §6.23, `MAITY_SMTP_*`,
+§2.5, `MAITY_CLI_INSTALL` §3.2, `MAITY_KTW_SKILL_SOURCE` and `MAITY_KTW_SKILL_GUIDE` §6.23, `MAITY_KTW_SKILL_COMMIT` §15.5, `MAITY_SMTP_*`,
 `MAITY_MAIL_SIGNING_KEY` and `MAITY_SECRET_KEY` §16.2).
 All of them, with the value in effect and where it came from, secrets
 only as set or not set, are listed read-only in `GET /admin/instance`
