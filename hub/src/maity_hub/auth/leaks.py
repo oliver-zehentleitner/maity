@@ -13,12 +13,12 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
+from maity_hub import placements
 from maity_hub import tables as t
 from maity_hub.auth import credentials, verifiers
 from maity_hub.auth.caller import is_runner_credential
 from maity_hub.auth.revocation import projects_of, revoke, revoke_runner_credential
 from maity_hub.events import emit, lock_projects
-from maity_hub.runners import attached_project_ids
 
 REASON = "leaked_in_payload"
 
@@ -61,10 +61,13 @@ def revoke_leaked(conn: Connection, found: list[credentials.Presented]) -> list[
         if row.revoked_at is None and _verifies("credential", row, secrets_by_id[row.id])
     }
     # Every project any of these revocations writes in, locked in the order of their ids
-    # before the first write, so two leaks over overlapping projects cannot deadlock.
+    # before the first write, so two leaks over overlapping projects cannot deadlock. A
+    # runner's are those it is attached to and those of its active placements: one still
+    # closing after the runner's detach closes now, in its own project
+    # (`placements.runner_credential_gone`).
     affected = projects_of(conn, verified)
     for runner in runners:
-        affected.update(attached_project_ids(conn, runner.runner_id))
+        affected.update(placements.reading_projects(conn, runner.runner_id))
     lock_projects(conn, affected)
     revoked: list[str] = []
     for runner in runners:

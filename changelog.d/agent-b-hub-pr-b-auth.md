@@ -35,4 +35,7 @@
 - hub: every agent credential revocation (a leak, a project's revoke, a runner's stop, a
   suspension) locks each project it writes in, in the order of their ids, before its first
   write, so two revocations over overlapping projects cannot deadlock on PostgreSQL or
-  MariaDB.
+  MariaDB. A leaked runner credential's revocation also locks the project of each active
+  placement of the runner, among them one still closing after the runner was detached from
+  that project, which the revocation closes there; it was locked late before
+  (tsk-k6fsdcn03pyd).

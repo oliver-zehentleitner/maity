@@ -883,6 +883,44 @@ def test_a_leaked_runner_credential_closes_what_is_closing(setup: Setup) -> None
     assert get(setup, body["id"])["closed_reason"] == "removed"
 
 
+def test_a_leaked_detached_runner_locks_its_closing_placements_project_first(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runner detached from the project while its placement there is still closing: the
+    leak's revocation closes that placement, in that project, so the project is locked in the
+    sorted set before the runner's credential is revoked, never late (persistence.md)."""
+    from maity_hub.auth import credentials, leaks
+
+    body = placed(setup)
+    report(setup, body, 1)
+    setup.owner.delete(f"/projects/maintainer/maity/runners/{setup.runner.id}")
+    closing = get(setup, body["id"])
+    assert (closing["active"], closing["desired"]) == (True, "stopped")
+    with setup.engine.connect() as conn:
+        project_id = conn.execute(
+            select(t.placement.c.project_id).where(t.placement.c.id == body["id"])
+        ).scalar_one()
+    real = events.lock_project
+    taken: list[tuple[str, bool]] = []
+
+    def recording(conn: Any, locked: str) -> Any:
+        revoked = conn.execute(
+            select(t.runner_credential.c.revoked_at).where(
+                t.runner_credential.c.id == setup.runner.credential_id
+            )
+        ).scalar_one()
+        taken.append((locked, revoked is not None))
+        return real(conn, locked)
+
+    monkeypatch.setattr(events, "lock_project", recording)
+    presented = credentials.parse(setup.runner.value)
+    assert presented is not None
+    with events.transaction(setup.engine) as conn:
+        assert leaks.revoke_leaked(conn, [presented]) == [setup.runner.credential_id]
+    assert taken[0] == (project_id, False)
+    assert get(setup, body["id"])["closed_reason"] == "detached"
+
+
 def test_a_suspended_owners_runner_closes_what_is_closing(setup: Setup) -> None:
     """The suspension stops the runner (§15.3): what was closing closes at once too."""
     body = placed(setup)
