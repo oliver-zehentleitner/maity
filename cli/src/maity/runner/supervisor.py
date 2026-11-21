@@ -1633,12 +1633,12 @@ class Supervisor:
         Unix socket (adapters.scratch_tmpdir), as under the default `~/maity-workspaces`:
         `tmp` in a fresh leaf under the per-user `/tmp` parent this placement's sandbox hides
         (workspace.tmp_scratch_of, made as agy's scratch is, `_tmp_scratch`), opened again for
-        this placement alone (adapters) and removed with it (`_clear_scratch`). Called only for
-        a placement that is given that parent and whose sandbox lets it write the re-opened
-        leaf (workspace.OWN_TMPDIR_HARNESSES: Codex, on this machine; Claude Code mounts it
-        read-only). None where the scratch's own `tmp` fits, where a leaf would not fit
-        either (a long uid on macOS), or where it cannot be made: the session then starts with
-        no TMPDIR, as before (tsk-0zb9mgzmbwn4)."""
+        this placement alone or not opened in its settings (adapters) and removed with it
+        (`_clear_scratch`). Called only for a placement that is given that parent and whose
+        harness takes such a leaf (workspace.OWN_TMPDIR_HARNESSES, on this machine: Codex as its
+        TMPDIR, Claude Code as its CLAUDE_CODE_TMPDIR). None where the scratch's own `tmp` fits,
+        where a leaf would not fit either (a long uid on macOS), or where it cannot be made: the
+        session then starts without one, as before (tsk-0zb9mgzmbwn4, tsk-k7svzz2p4v7y)."""
         if scratch is not None and adapters.scratch_tmpdir(scratch) is not None:
             return None
         try:
@@ -1648,7 +1648,7 @@ class Supervisor:
             return None
         if not adapters.fits_socket(longest):
             return None
-        leaf = self._tmp_scratch(p, target, "TMPDIR")
+        leaf = self._tmp_scratch(p, target, "temp directory")
         return None if leaf is None else leaf / "tmp"
 
     def _make_tmp_parent(self, parent: Path, target: Target) -> None:
