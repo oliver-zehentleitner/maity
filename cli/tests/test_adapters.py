@@ -290,7 +290,9 @@ def test_a_placed_claude_code_session_makes_no_git_worktree(
     assert written == adapters.claude_settings(ctx)
     deny = written["permissions"]["deny"]
     assert "EnterWorktree" in deny
-    assert {"Bash(git worktree)", "Bash(git worktree *)"} <= set(deny)  # from the shell too
+    assert {"Bash(git worktree)", "Bash(git worktree *)", "Bash(git * worktree *)"} <= set(
+        deny
+    )  # from the shell too, also after a global option
     assert not any(rule.startswith("Agent(") for rule in deny)
     assert written["disableAllHooks"] is False  # the agents' user settings cannot turn it off
     (entry,) = written["hooks"]["WorktreeCreate"]
@@ -312,7 +314,8 @@ def test_a_placed_claude_code_session_makes_no_git_worktree(
 def test_claude_code_without_the_worktree_event_gets_the_denies_alone(
     tmp_path: Path, version: str | None, sandbox: bool
 ) -> None:
-    """The WorktreeCreate event is there from 2.1.50 (review A1808's probe): an older or
+    """The WorktreeCreate event is there from 2.1.50 (its release notes, as cited in review
+    A1808; not verified against a live binary): an older or
     unknown version gets no hook, only the two denies, which a binary that does not know the
     name takes as harmless. Without the sandbox no hook is left, so `disableAllHooks` is not
     written either, and the agents' user's own switch stands as before."""
@@ -333,7 +336,9 @@ def test_no_other_harness_gets_the_worktree_rules(tmp_path: Path) -> None:
     harnesses with a command allowlist, Claude Code and opencode, also over a grant that allows
     it; codex and agy have none to add it to."""
     codex = adapters.codex_config(context(tmp_path / "x", harness_id="codex"))
-    worktree_grant = config.RepositoryGrant(allow=("git worktree",))
+    # A second allow after it: without moving the denies to the end, `make check`'s allows would
+    # come after the `git worktree` deny in opencode's map.
+    worktree_grant = config.RepositoryGrant(allow=("git worktree", "make check"))
     o_ctx = context(tmp_path / "o", harness_id="opencode", grant=worktree_grant)
     bash = adapters.opencode_config(o_ctx)["permission"]["bash"]
     a_ctx = context(tmp_path / "a", "antigravity", folder=tmp_path / "a" / "ws" / "folder")
@@ -345,6 +350,20 @@ def test_no_other_harness_gets_the_worktree_rules(tmp_path: Path) -> None:
     for rule in adapters.GIT_WORKTREE_DENIED:  # denied, after every allow: the last match wins
         assert bash[rule] == "deny"
         assert all(bash[key] == "deny" for key in order[order.index(rule) :])
+    assert bash["git * worktree *"] == "deny"
+
+    def resolve(command: str) -> str:  # opencode: the last matching pattern wins
+        verdict = "deny"
+        for pattern, value in bash.items():
+            if fnmatch.fnmatchcase(command, pattern):
+                verdict = value
+        return verdict
+
+    # fnmatch semantics, as the UUID test above: `*` matches any characters, spaces included.
+    assert fnmatch.fnmatchcase("git -C . worktree add x", "git * worktree *")
+    for command in ("git worktree add x", "git -C . worktree add x", "git worktree"):
+        assert resolve(command) == "deny", command
+    assert resolve("make check") == "allow" and resolve("git status") == "allow"
     claude = adapters.claude_settings(context(tmp_path / "c", grant=worktree_grant))
     assert "Bash(git worktree)" in claude["permissions"]["allow"]  # the grant, as written
     assert "Bash(git worktree)" in claude["permissions"]["deny"]  # and the deny, which wins

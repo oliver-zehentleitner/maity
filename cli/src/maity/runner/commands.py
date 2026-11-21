@@ -776,7 +776,9 @@ def _check_leftover_worktrees(
         repo = Path(path) / workspace.REPO if workspace.recorded_layout(entry) else Path(path)
         if _holds_entries(as_user, repo / GIT_WORKTREES):
             report.warn(f"{where}clone {repo} {_registered(repo, as_user)}")
-        elif _holds_entries(as_user, repo / CLAUDE_WORKTREES):
+        # Only a real directory there is what the start's prune removes (worktree._is_real_dir);
+        # a file or a link there neither stops maity's git nor is removed, so it is not named.
+        elif _holds_entries(as_user, repo / CLAUDE_WORKTREES, directories=True):
             report.warn(
                 f"{where}clone {repo} holds a leftover directory under .claude/worktrees/ with "
                 "no registration; it does not stop maity's git, and the runner clears it at the "
@@ -811,12 +813,13 @@ def _registered(repo: Path, as_user: AsUser) -> str:
     )
 
 
-def _holds_entries(as_user: AsUser, path: Path) -> bool:
-    """Whether the directory `path` has any entry, as the agents' user sees it; a missing or
-    unreadable one counts as none (check warns, it does not refuse). The directory and its
-    parent (`.claude`, `.git`) are tested with `test -L`, and a link as either counts as none;
-    the clone's path above them is the runner's own record and is not tested. Only a boolean
-    reaches the operator."""
+def _holds_entries(as_user: AsUser, path: Path, directories: bool = False) -> bool:
+    """Whether the directory `path` has any entry (with `directories`, any real directory, a
+    link to one not counted), as the agents' user sees it; a missing or unreadable one counts
+    as none (check warns, it does not refuse). The directory and its parent (`.claude`,
+    `.git`) are tested with `test -L`, and a link as either counts as none; the clone's path
+    above them is the runner's own record and is not tested. Only a boolean reaches the
+    operator."""
     try:
         if not as_user.exists(path, "-d") or any(
             as_user.exists(part, "-L") for part in (path.parent, path)
@@ -824,9 +827,10 @@ def _holds_entries(as_user: AsUser, path: Path) -> bool:
             return False
         if as_user.direct:
             with os.scandir(path) as listed:
-                return any(True for _ in listed)
-        done = as_user.run(["find", str(path), "-mindepth", "1", "-maxdepth", "1", "-print",
-                            "-quit"])  # fmt: skip
+                return any(not directories or e.is_dir(follow_symlinks=False) for e in listed)
+        kind = ["-type", "d"] if directories else []  # find follows no link without -L
+        done = as_user.run(["find", str(path), "-mindepth", "1", "-maxdepth", "1", *kind,
+                            "-print", "-quit"])  # fmt: skip
     except (OSError, subprocess.TimeoutExpired):
         return False
     return done.returncode == 0 and bool(done.stdout.strip())

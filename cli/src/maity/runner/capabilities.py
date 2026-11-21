@@ -68,8 +68,9 @@ def sandbox_version_ok(harness_id: str, version: str | None) -> bool:
 
 
 # The oldest Claude Code with the `WorktreeCreate` hook event, which the runner's worktree hook
-# needs (adapters.claude_settings). Claude Code's documentation names no version; this one is
-# from review A1808's probe (2.1.40 has no such event, 2.1.50 has it), not from the docs.
+# needs (adapters.claude_settings). Claude Code's hooks documentation names no version; this
+# one rests on Claude Code's v2.1.50 release notes, as cited in review A1808; not verified
+# against a live binary.
 CLAUDE_WORKTREE_HOOK_MIN = (2, 1, 50)
 
 

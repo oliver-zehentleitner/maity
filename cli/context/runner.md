@@ -5118,8 +5118,9 @@ spellings accept argparse's refusal, but only for words with a `--` before
 **Type:** decision
 **Status:** active
 **Evidence:** inferred
-**Source:** card tsk-d5e4d9s95ytj, 2026-11-21: two incidents on 2026-11-20, in which a Claude Code subagent in a placed session made an isolated git worktree under the clone's `.claude/worktrees/`, after which maity refused git in the clone ("Worktrees are not supported…"), `maity report` and `maity gh pr create` failed, and the session's sandbox refused to remove the worktree; Claude Code's documentation (permissions: a bare tool name in a deny rule removes the tool from the model's context; hooks, `WorktreeCreate`: the hook replaces Claude Code's own git worktree creation for `--worktree`, `EnterWorktree`, subagents with `isolation: "worktree"`, workflow agents and background sessions, and "if the hook fails or produces no path, worktree creation fails with an error"); `cli/src/maity/runner/adapters.py` (`claude_settings`). The plan is the lead's; the settings were not yet run on the hosted Claude Code version; review A1808 (round 2 of #2075): the `WorktreeCreate` event probed absent on 2.1.40, present on 2.1.50
+**Source:** card tsk-d5e4d9s95ytj, 2026-11-21: two incidents on 2026-11-20, in which a Claude Code subagent in a placed session made an isolated git worktree under the clone's `.claude/worktrees/`, after which maity refused git in the clone ("Worktrees are not supported…"), `maity report` and `maity gh pr create` failed, and the session's sandbox refused to remove the worktree; Claude Code's documentation (permissions: a bare tool name in a deny rule removes the tool from the model's context; hooks, `WorktreeCreate`: the hook replaces Claude Code's own git worktree creation for `--worktree`, `EnterWorktree`, subagents with `isolation: "worktree"`, workflow agents and background sessions, and "if the hook fails or produces no path, worktree creation fails with an error"); `cli/src/maity/runner/adapters.py` (`claude_settings`). The plan is the lead's; the settings were not yet run on the hosted Claude Code version; the 2.1.50 floor for the `WorktreeCreate` event: Claude Code's v2.1.50 release notes, as cited in review A1808 (round 2 of #2075), not verified against a live binary
 **See:** runner.md — a01035af-a4c1-4ab7-83a7-91670439fa50 — as of 2026-11-21
+**Verification:** uncorroborated
 **Revisit when:** the `Agent(isolation:worktree)` parameter deny rule is verified on the hosted Claude Code version (it would take the worktree option from subagents before they try); the hook is seen working on the hosted version, or Claude Code documents from which version it has the `WorktreeCreate` event; Claude Code renames `EnterWorktree` or the `WorktreeCreate` hook, or changes what a failing hook does; the clone check starts tolerating a worktree
 
 The settings file the runner writes for every Claude Code placement,
@@ -5149,8 +5150,9 @@ stopping and starting the placement as the way out, which runs the
 existing prune.
 
 **Version floor (round 2 of the review):** Claude Code's documentation
-names no version for the `WorktreeCreate` event. The floor 2.1.50 comes
-from review A1808's probe: 2.1.40 has no such event. For an older or
+names no version for the `WorktreeCreate` event. The floor 2.1.50 rests
+on Claude Code's v2.1.50 release notes, as cited in review A1808; it was
+not verified against a live binary. For an older or
 unknown version the runner writes no hook (lotse's ruling, no fallback),
 and `check` warns that only the denies apply. The denies go in every file:
 a deny of a name the binary does not know is taken as harmless. The hook's

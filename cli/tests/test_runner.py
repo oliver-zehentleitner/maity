@@ -688,7 +688,8 @@ def test_check_warns_that_the_worktree_hook_does_not_run_when_hooks_are_off(
 def test_check_warns_when_claude_code_has_no_worktree_event(
     home: Path, version: str | None, ok: bool
 ) -> None:
-    """Below 2.1.50 (review A1808's probe), or unknown, the runner writes no worktree hook
+    """Below 2.1.50 (its release notes, as cited in review A1808), or unknown, the runner writes
+    no worktree hook
     (adapters.claude_settings): the line says the denies alone remain."""
     report = commands.Report()
     commands._check_worktree_guard(report, RUNNER, "", version)
@@ -713,6 +714,14 @@ def _leftover(clone: Path, kind: str) -> None:
         admin = clone / ".git" / "worktrees" / "agent-x"
         admin.mkdir(parents=True)
         (admin / "gitdir").write_text(f"{tree / '.git'}\n")
+    elif kind in ("plain file", "link to a directory"):  # what the prune never removes
+        scope = clone / ".claude" / "worktrees"
+        scope.mkdir(parents=True)
+        if kind == "plain file":
+            (scope / "agent-x").write_text("x\n")
+        else:
+            (clone.parent / "victim").mkdir()
+            (scope / "agent-x").symlink_to(clone.parent / "victim", target_is_directory=True)
     elif kind == "empty registration directory":  # the sandbox's placeholder
         (clone / ".git" / "worktrees").mkdir()
     elif kind == "linked .claude":
@@ -724,6 +733,8 @@ def _leftover(clone: Path, kind: str) -> None:
 @pytest.mark.parametrize(
     ("kind", "said"),
     [("none", None), ("empty registration directory", None), ("linked .claude", None),
+     # Not a directory the start's prune removes, and nothing that stops maity's git: not named.
+     ("plain file", None), ("link to a directory", None),
      ("bare directory", "leftover directory under .claude/worktrees/ with no registration; it "
                         "does not stop maity's git"),
      ("registered, cleared", "of a working tree under .claude/worktrees/, so maity runs no git"),
