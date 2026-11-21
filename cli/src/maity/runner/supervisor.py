@@ -2768,10 +2768,11 @@ class Supervisor:
 
 
 def _refused(exc: hub.HubError) -> bool:
-    """A definitive answer: the hub was reached and refused the body (a 4xx other than a
-    timeout or a rate limit). No answer, a 5xx, 408 or 429 may have been taken, or will be,
-    so the same body with the same `seq` goes again (Codex A1957)."""
-    return exc.status is not None and 400 <= exc.status < 500 and exc.status not in (408, 429)
+    """A definitive answer about the body: the hub validated it and refused it (400
+    `invalid`). Anything else proves nothing about the body or about whether an earlier try
+    was taken: no answer, a 5xx, 408, 429, or an authentication refusal such as
+    `timestamp_skew`. So the same body with the same `seq` goes again (Codex A1957, A1965)."""
+    return exc.status == 400 and exc.code == "invalid"
 
 
 # In the agents' home: logins and keys a sandboxed command never needs. A list, so not every

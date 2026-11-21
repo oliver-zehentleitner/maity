@@ -661,6 +661,27 @@ def test_a_finding_the_hub_refused_is_carried_on_once(world: Any) -> None:
     assert (carried[0]["state"], carried[0]["finding"]["cause"]) == ("starting", "wait_deaf")
 
 
+def test_an_authentication_refusal_keeps_the_findings_own_seq(world: Any) -> None:
+    """Only a validated `invalid` says the body was refused; a refusal such as a clock skew
+    says nothing about it, so the same body goes again with its seq (Codex A1965)."""
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    backend.exit(NAME, 143)
+    for _ in range(2):
+        reports.fail.append(hub.HubError("skew", code="timestamp_skew", status=401))
+    sup.tick()
+    clock.now += 11
+    sup.tick()  # refused twice: neither drops the finding nor moves it to a new seq
+    clock.now += 11
+    settle(sup)
+    carried = with_findings(reports)
+    assert len(carried) == 1
+    assert (carried[0]["state"], carried[0]["finding"]["cause"]) == ("exited", "wait_deaf")
+
+
 # --- Gemini review A1941 ---------------------------------------------------------------------
 
 

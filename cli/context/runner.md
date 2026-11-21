@@ -6111,9 +6111,13 @@ Where the contract left the choice open, it decided as follows.
   followed by a copy in a new `seq` would give the finding twice. So that
   body is sent again as it is until the hub takes it or answers definitively;
   the next state is reported right after it, delayed, never lost. Only a
-  definitive refusal (a 4xx other than 408 or 429) carries the finding on to
-  the next state's report, and a second refusal drops it, since the finding
-  may be what the hub refuses and must not hold every later report back.
+  definitive refusal of the body (400 `invalid`, the hub's validation)
+  carries the finding on to the next state's report, and a second refusal
+  drops it, since the finding may be what the hub refuses and must not hold
+  every later report back. Any other answer, an authentication refusal such
+  as `timestamp_skew` included, says nothing about the body or about an
+  earlier try, so the same `seq` goes again (A1965). Rejected: any 4xx as
+  definitive, which dropped a valid finding after two clock-skew refusals.
 - **The scrub also takes a URL's userinfo and underscore key prefixes**
   (A1942): `scheme://user:pass@host` and `scheme://token@host` keep the
   scheme and the host and lose the userinfo; Stripe `sk_live_`, `sk_test_`,
