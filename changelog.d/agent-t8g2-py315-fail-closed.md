@@ -7,9 +7,12 @@
   side the listing skipped what it could not see. The sandbox then started without the deny
   for it. The listings now decide with `os.stat`/`os.lstat`, so every error other than
   "nothing there" refuses the start, on every Python.
-- cli: the same for the check of Claude Code's managed and user settings (the hook and socket
-  checks). On Python 3.14+ a settings file below a directory the runner cannot search passed
-  for absent; it is now named as one that cannot be checked.
+- cli: the same for every check of the runner's own side that asks whether a path exists
+  (`AsUser.exists`): the Claude Code settings files behind the hook and socket checks, the
+  existing-clone checks before the ownership check, and the rest. On Python 3.14+ a path
+  below a directory the runner cannot search passed for absent there; it raises again, as
+  on 3.13, so a settings file is named as one that cannot be checked and a clone is not
+  taken for missing.
 
 ### Changed
 

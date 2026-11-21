@@ -295,11 +295,11 @@ class AsUser:
 
     def exists(self, path: Path, kind: str = "-e") -> bool:
         """`test -e` (or `-f`, `-d`, `-L`) on the agents' side, which may be closed to the
-        runner."""
+        runner. On the runner's own side with stat (`present`): absent is False, and a path it
+        cannot look at raises, as pathlib's predicates did up to Python 3.13, so no caller
+        takes what it cannot see for absent (tsk-0tje3vzzedtx)."""
         if self.direct:
-            checks = {"-e": path.exists, "-f": path.is_file, "-d": path.is_dir,
-                      "-L": path.is_symlink}  # fmt: skip
-            return checks[kind]()
+            return present(path, kind)
         return self.run(["test", kind, str(path)]).returncode == 0
 
     def link(self, target: Path, link: Path) -> None:

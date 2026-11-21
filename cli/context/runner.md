@@ -1412,12 +1412,24 @@ prevents it.
 
 `supervisor.other_credentials` and `other_scratches` decide on their
 direct side with `asuser.present` (`os.stat`/`os.lstat`), and so does
-`capabilities._present`, which finds the Claude Code settings files the
-hook and socket checks read. Only ENOENT, ENOTDIR and ELOOP count as
-nothing there; every other error refuses the start or names the file as
-one that cannot be checked. They no longer use `is_dir()`/`is_symlink()`
-or `AsUser.exists`, whose answer stays a quiet yes or no for the callers
-that want one. CI runs the CLI on 3.11,
+`AsUser.exists` on the runner's own side. Only ENOENT, ENOTDIR and
+ELOOP count as nothing there; every other error raises, which refuses
+the start or names a file as one that cannot be checked. That is what
+pathlib's predicates did for every caller up to 3.13.
+
+Audit of the runner's direct-side checks (main 1ab5dfa7; the
+pull request's body predates the last two rows):
+- guarding a deny or a refusal, now by stat: the two listings above;
+  `capabilities._present`, the Claude Code settings files behind the
+  hook and socket checks; supervisor's existing-directory gate in front
+  of `workspace.owned`; `workspace.prepare`'s existing-clone branch;
+- every other `AsUser.exists` caller (adapters, commands, operate,
+  supervisor's start checks, tmux, workspace) gets the 3.13 meaning
+  back through the same method;
+- left on pathlib, since a quiet False only does less: `operate.py`'s
+  gc walk of `.scratch`, `skills.py` over the runner's own cache,
+  `asuser.link`, the runner's own state_dir checks, and the
+  `/proc/self/fd` feature probe in `scratchop.py`. CI runs the CLI on 3.11,
 3.13, 3.14 and 3.15 on Linux; Windows stays on 3.11 and 3.13, since
 what changed is POSIX search permission and each Windows leg costs every
 CLI pull request about 15 minutes. `requires-python` stays `>=3.11`.

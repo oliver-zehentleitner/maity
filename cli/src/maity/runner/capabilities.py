@@ -22,7 +22,7 @@ from typing import Any
 
 from .. import proc, state
 from . import config, tools
-from .asuser import RUNNER, AsUser, present
+from .asuser import RUNNER, AsUser
 
 VERSION_TIMEOUT = 10.0
 # A version as a harness prints it, whole: its prerelease and build metadata may hold `-`
@@ -140,11 +140,10 @@ _DROP_INS = 'for f in "$1"/*.json; do if [ -f "$f" ]; then printf "%s\\n" "$f"; 
 
 def _present(as_user: AsUser, path: Path, kind: str = "-e") -> bool:
     """`test` on the agents' side; anything but a clear yes or no is an OSError. On the
-    runner's own side with stat, not `AsUser.exists`: its pathlib predicates answer False for
-    a path below a directory that cannot be searched from Python 3.14, and an unreadable
-    settings file would pass for an absent one (tsk-0tje3vzzedtx, A1943)."""
+    runner's own side `AsUser.exists` already raises for a path it cannot look at (stat, not
+    pathlib's predicates, which stop raising from Python 3.14; tsk-0tje3vzzedtx)."""
     if as_user.direct:
-        return present(path, kind)
+        return as_user.exists(path, kind)
     done = as_user.run(["test", kind, str(path)])
     if done.returncode not in (0, 1):
         raise OSError(f"{path} cannot be checked (exit {done.returncode})")
