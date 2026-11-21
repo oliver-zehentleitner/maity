@@ -68,13 +68,10 @@ class Unreachable(OSError):
     """An ssh target's host did not answer (ssh's exit 255)."""
 
 
-# What a stat may answer for a path that is simply not there (none, a file on the way, a bad
-# descriptor, a loop of links; on Windows a drive not ready, an invalid name, a name it cannot
-# resolve), exactly as pathlib's predicates read it up to Python 3.13. Any other error, a
-# directory that cannot be searched above all, is not "not there" (tsk-0tje3vzzedtx).
-ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP)
-# ERROR_NOT_READY, ERROR_INVALID_NAME, ERROR_CANT_RESOLVE_FILENAME
-ABSENT_WINERRORS = (21, 123, 1921)
+# What a stat may answer for a path that is simply not there (none, a file on the way, a loop
+# of links), as pathlib's predicates read it up to Python 3.13. Any other error, a directory
+# that cannot be searched above all, is not "not there" (tsk-0tje3vzzedtx).
+ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
 
 
 def stat_mode(path: Path, *, follow: bool = True) -> int | None:
@@ -86,11 +83,9 @@ def stat_mode(path: Path, *, follow: bool = True) -> int | None:
     try:
         return (os.stat if follow else os.lstat)(path).st_mode
     except OSError as exc:
-        if exc.errno in ABSENT or getattr(exc, "winerror", None) in ABSENT_WINERRORS:
+        if exc.errno in ABSENT:
             return None
         raise
-    except ValueError:  # a name the OS cannot hold (an embedded NUL), as pathlib read it
-        return None
 
 
 def present(path: Path, kind: str = "-e") -> bool:

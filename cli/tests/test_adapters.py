@@ -1557,7 +1557,8 @@ def test_managed_settings_that_switch_hooks_off_are_named(text: str, off: str | 
     assert (why is None) if off is None else (why is not None and off in why)
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root searches any directory")
+# No `os.geteuid` on Windows, and test_trust imports this module there (tsk-0tje3vzzedtx).
+@pytest.mark.skipif(getattr(os, "geteuid", lambda: -1)() == 0, reason="root searches any directory")
 @pytest.mark.parametrize("quiet", [False, True])
 def test_managed_settings_that_cannot_be_looked_at_are_named_not_taken_for_absent(
     monkeypatch: pytest.MonkeyPatch, quiet: bool
