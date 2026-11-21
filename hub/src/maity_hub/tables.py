@@ -1448,6 +1448,8 @@ placement = Table(
     Column("harness", String(32), nullable=False),
     Column("mode", String(16), nullable=False),
     Column("model", String(TITLE)),
+    # The reasoning effort, one the runner advertises for the harness; null: its default.
+    Column("effort", String(16)),
     Column("clone", String(HANDLE), nullable=False),
     Column("branch", String(255)),
     Column("desired", String(16), nullable=False),

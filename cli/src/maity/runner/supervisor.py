@@ -1173,6 +1173,11 @@ class Supervisor:
         model = p.get("model")
         if model is not None and model not in harness.models:
             return ("harness_refused", "model_unsupported")
+        effort = p.get("effort")
+        if effort is not None and effort not in harness.efforts:
+            # Never started on the harness's default instead: the placement asked for a level
+            # the operator no longer offers (tsk-0fr0xzy2ce95).
+            return ("harness_refused", "effort_unsupported")
         view = view or GateView.of(target, harness.id)
         found = view.found
         if found is not None and not found.available:

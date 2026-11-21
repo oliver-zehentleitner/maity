@@ -3916,6 +3916,8 @@ def cmd_placement_start(args: argparse.Namespace) -> int:
         body["mode"] = args.mode
     if args.model:
         body["model"] = args.model
+    if args.effort:
+        body["effort"] = args.effort
     if args.target:
         body["target"] = args.target
     if args.clone or args.branch:
@@ -6138,6 +6140,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--tool", required=True, help="the harness, e.g. claude-code or codex")
     r.add_argument("--mode", choices=("interactive", "supervised"), help="default: the tool's")
     r.add_argument("--model", help="one of the runner's models for the tool")
+    r.add_argument(
+        "--effort",
+        help="one of the runner's efforts for the tool (default: the tool's own; Codex and "
+        "agy only, docs/api.md §15.5)",
+    )
     r.add_argument("--target", help="a target the runner advertises")
     r.add_argument(
         "--clone",

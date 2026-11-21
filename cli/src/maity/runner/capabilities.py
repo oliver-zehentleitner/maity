@@ -711,7 +711,7 @@ def harness_entry(
             harness.id, found.version
         )
     on = sandbox
-    return {
+    entry: dict[str, Any] = {
         "id": harness.id,
         "version": found.version,
         "available": found.available,
@@ -724,6 +724,11 @@ def harness_entry(
         "confinement": {"stub": "none", "codex": "sandbox"}.get(harness.id, "allowlist"),
         "sandbox": "n/a" if harness.id == "stub" else "on" if on else "off",
     }
+    if harness.efforts:
+        # Only when configured: a hub from before `efforts` refuses the key in a strict
+        # hello, so a runner without efforts sends exactly what that hub takes (§15.3).
+        entry["efforts"] = list(harness.efforts)
+    return entry
 
 
 def build(
