@@ -167,6 +167,18 @@ def test_the_connection_trusts_only_the_runners_known_hosts(tmp_path: Path) -> N
     assert shlex.split(argv[-1]) == ["env", "PATH=/usr/bin", "test", "-d", "/srv/a b"]
 
 
+def test_the_remote_command_quotes_an_exact_tmux_target_for_zsh(tmp_path: Path) -> None:
+    # A host whose login shell is zsh would expand a bare `=maity_p_c:` (to the path of a
+    # command `maity_p_c:`), which `shlex.quote` leaves bare.
+    host = Ssh(name="build-1", address="b1.lan", login="maity", port=2222,
+               known_hosts=tmp_path / "known_hosts", identity="agent",
+               control_dir=tmp_path / "ssh")  # fmt: skip
+    words = ["tmux", "-S", "/srv/tmux.sock", "kill-session", "-t", "=maity_p_c:"]
+    command = host.argv(words)[-1]
+    assert command.endswith(" -t '=maity_p_c:'")
+    assert shlex.split(command) == words
+
+
 def test_an_agent_identity_uses_no_key_file(tmp_path: Path) -> None:
     host = Ssh(name="b", address="b.lan", login="m", known_hosts=tmp_path / "k")
     assert "-i" not in host.ssh() and "IdentitiesOnly=yes" not in host.ssh()
@@ -268,7 +280,7 @@ def test_a_placement_on_a_host_runs_there(tmp_path: Path, fake_ssh: Path) -> Non
     body = reports.sent[-1][1]
     assert body["target"] == "build-2" and body["state"] == "starting"
     hint = sup.targets["build-2"].attach_hint("maity_maity_agent-3")
-    assert hint.startswith("ssh -t -p 2222 maity@b2.lan tmux -S ")
+    assert hint.startswith("ssh -t -p 2222 maity@b2.lan 'tmux -S ")
     assert sup.records["plc-0003"].session_hint == (hint if len(hint) <= 200 else None)
     assert sup.actual()[0]["target"] == "build-2"
 
@@ -672,8 +684,12 @@ def test_a_home_that_is_not_a_plain_path_refuses_the_host(
 def test_the_attach_hint_quotes_every_word(tmp_path: Path, fake_ssh: Path) -> None:
     sup, _, _, _, _ = remote_world(tmp_path, fake_ssh)
     hint = sup.targets["build-2"].attach_hint("maity_maity_agent-3")
-    assert shlex.split(hint)[:5] == ["ssh", "-t", "-p", "2222", "maity@b2.lan"]
-    assert shlex.split(hint)[-2:] == ["-t", "maity_maity_agent-3"]
+    words = shlex.split(hint)
+    assert words[:5] == ["ssh", "-t", "-p", "2222", "maity@b2.lan"]
+    # ssh joins its command words for the host's login shell: the remote line is one word,
+    # quoted again for that shell, the `=` target too (zsh expands a bare `=name`).
+    assert len(words) == 6 and words[5].endswith(" -t '=maity_maity_agent-3'")
+    assert shlex.split(words[5])[-2:] == ["-t", "=maity_maity_agent-3"]
 
 
 def test_the_operators_ssh_configuration_cannot_forward_or_run_local_commands(

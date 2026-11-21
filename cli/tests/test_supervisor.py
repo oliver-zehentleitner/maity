@@ -249,7 +249,8 @@ def test_a_stub_placement_starts_and_runs(world: Any) -> None:
     assert states(reports) == [("starting", None, None), ("running", None, None)]
     first, second = (b for _, b in reports.sent)
     assert (first["seq"], second["seq"]) == (1, 2)
-    assert second["session_hint"] == "tmux -S /run/maity/tmux.sock attach -t maity_maity_agent-3"
+    hint = "tmux -S /run/maity/tmux.sock attach -t '=maity_maity_agent-3'"
+    assert second["session_hint"] == hint
     assert second["target"] == "local" and second["observed_generation"] == 1
 
 
@@ -2000,7 +2001,8 @@ def test_tmux_starts_the_server_under_a_clean_environment(
     log = tmp_path / "logs" / "plc-0003.log"
     assert oct(log.stat().st_mode & 0o777) == "0o600"
     pipe = calls[3]  # the pane's output goes through logcap, held to limits.log_keep_bytes
-    assert pipe[3:7] == ["pipe-pane", "-o", "-t", "maity_maity_agent-3"]
+    assert pipe[3:7] == ["pipe-pane", "-o", "-t", "=maity_maity_agent-3:"]
+    assert calls[1][3:5] == ["set-option", "-t"] and calls[1][5] == "=maity_maity_agent-3:"
     assert pipe[-1].endswith(f"-m maity.runner.logcap {log} {10 * 1024 * 1024}")
 
 
@@ -2385,7 +2387,66 @@ def test_a_session_that_cannot_be_labelled_is_killed(tmp_path: Path) -> None:
     backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path / "logs", run=run)
     with pytest.raises(tmux.TmuxError):
         backend.start("maity_p_c", tmp_path, ["x"], {}, "plc-0003", 1)
-    assert calls[-1][-3:] == ["kill-session", "-t", "maity_p_c"]
+    assert calls[-1][-3:] == ["kill-session", "-t", "=maity_p_c"]
+
+
+def test_every_tmux_target_names_its_session_exactly(tmp_path: Path) -> None:
+    """tmux takes a bare `-t maity_p_c` as the start of `maity_p_c-2` when no session is
+    named `maity_p_c` exactly, so each target carries `=`: the session by its exact name,
+    and with a `:` where tmux reads the target as a pane."""
+    from maity.runner.asuser import AsUser as Direct
+
+    calls: list[list[str]] = []
+
+    def run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(list(argv))
+        return subprocess.CompletedProcess(list(argv), 0, "0\n", "")
+
+    backend = tmux.Tmux(tmp_path / "s", tmp_path / "c", "/h", "/bin", tmp_path / "logs", run=run)
+    for name in ("maity_p_c", "maity_p_c-2"):
+        calls.clear()
+        backend.start(name, tmp_path, ["x"], {}, "plc-0003", 1)
+        backend.attached(name)
+        backend.pane_digest(name)
+        backend.pane_has(name, ("x",))
+        backend.type_line(name, "x")
+        backend.environment_of(name)
+        backend.kill(name)
+        targets = [(argv[3], argv[argv.index("-t") + 1]) for argv in calls if "-t" in argv]
+        pane, session = f"={name}:", f"={name}"
+        assert targets == [
+            ("set-option", pane),
+            ("set-option", pane),
+            ("pipe-pane", pane),
+            ("display-message", pane),
+            ("capture-pane", pane),
+            ("capture-pane", pane),
+            ("send-keys", pane),
+            ("send-keys", pane),
+            ("show-environment", session),
+            ("kill-session", session),
+        ]
+        attach = tmux.attach_words(tmp_path / "s", name, Direct())
+        assert attach[-2:] == ["-t", session]
+
+
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="needs tmux")
+def test_real_tmux_does_not_reach_a_session_whose_name_only_starts_with_the_target(
+    tmp_path: Path,
+) -> None:
+    socket = tmp_path / "t.sock"
+    backend = tmux.Tmux(socket, tmp_path / "tmux.conf", str(tmp_path), "/usr/bin:/bin",
+                        tmp_path / "logs")  # fmt: skip
+    try:
+        backend.start("maity_p_c-2", tmp_path, ["sh"], {}, "plc-0004", 1)
+        assert backend.attached("maity_p_c") is None  # no session of that exact name
+        assert backend.pane_digest("maity_p_c") is None
+        with pytest.raises(tmux.TmuxError):
+            backend.submit("maity_p_c")
+        backend.kill("maity_p_c")
+        assert "maity_p_c-2" in backend.sessions()
+    finally:
+        subprocess.run(["tmux", "-S", str(socket), "kill-server"], check=False)
 
 
 def test_a_tmux_failure_at_start_backs_off_instead_of_failing_for_good(
@@ -3292,12 +3353,12 @@ def test_the_idle_reads_are_tmux_and_ps_calls(tmp_path: Path) -> None:
     assert backend.attached(SESSION) is True
     assert backend.pane_digest(SESSION) == hashlib.sha256(b"> hello\n").hexdigest()
     assert backend.pane_has(SESSION, ("hello", "Open restricted")) == frozenset({"hello"})
-    assert calls[-1][-4:] == ["capture-pane", "-p", "-t", SESSION]
+    assert calls[-1][-4:] == ["capture-pane", "-p", "-t", f"={SESSION}:"]
     assert backend.activity(session) == tmux.WAITING
     assert backend.activity(replace(session, pid=None)) is None
     backend.type_line(SESSION, "a line; with -t words")
-    assert calls[-2][-4:] == ["-t", SESSION, "-l", "a line; with -t words"]
-    assert calls[-1][-3:] == ["-t", SESSION, "Enter"]
+    assert calls[-2][-4:] == ["-t", f"={SESSION}:", "-l", "a line; with -t words"]
+    assert calls[-1][-3:] == ["-t", f"={SESSION}:", "Enter"]
 
 
 def settle_on(read: Any, want: str) -> Any:

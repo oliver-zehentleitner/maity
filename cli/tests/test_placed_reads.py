@@ -54,22 +54,6 @@ COMMANDS: dict[str, Callable[[str], list[str]]] = {
 walks = pytest.mark.skipif(not inclone.WALKS, reason="no dir_fd or O_NOFOLLOW: refused here")
 
 
-@pytest.fixture
-def placed(
-    joined: Path, fake: fakehub.FakeHub, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Path:
-    """The joined clone (the working directory) under a placement, with the variables the
-    runner sets for a session."""
-    clone = Path.cwd()
-    monkeypatch.setenv(clonecheck.PLACEMENT_ENV, "plc-0003")
-    monkeypatch.setenv("GIT_COMMON_DIR", str(clone / ".git"))
-    monkeypatch.setenv(clonecheck.GIT_INODE_ENV, str(os.lstat(clone / ".git").st_ino))
-    private = tmp_path / "agent" / "git"
-    private.mkdir(parents=True)
-    monkeypatch.setenv(clonecheck.GIT_PRIVATE_ENV, str(private))
-    return clone
-
-
 def secret(tmp_path: Path, name: str = "secret.txt") -> Path:
     """A file outside the clone, with the marker."""
     outside = tmp_path / "outside"
