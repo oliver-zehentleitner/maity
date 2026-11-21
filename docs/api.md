@@ -14508,7 +14508,7 @@ learns its content.
 
 | Kind | Audience | Payload |
 |---|---|---|
-| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author and the two leads for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A work message from another side that the gate holds for an agent (§9.6) names that agent as `held:<id>` in place of its own token, and an `update` leaves it off the private watcher list where it watches only by a dependent card (§6.4); no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
+| `message` | as addressed (§8.4), plus `watchers:<task id>` for an `update` on a card, plus the author, the two leads and, with `in_reply_to`, the author of the answered message for a `review_result` (§8.4, "A review result reaches the author and both leads, except a boss of another owner", and "A review result reaches the instance whose message it answers"), plus `member:<id>` of every member mentioned in `body` who is not already in the audience by `to`, `instance:<member>#<id>` for an instance mention (§8.6; never for `chat`). A `chat` message: the two parties of a direct conversation, or `member:<id>` of every participant of a group chat at write time, a waiting agent not (§9.6) (§9). A work message from another side that the gate holds for an agent (§9.6) names that agent as `held:<id>` in place of its own token, and an `update` leaves it off the private watcher list where it watches only by a dependent card (§6.4); no role, trust or `all` token reaches that agent for it, and its owner reads it along by that token | `type`, `to`, `body`, `conversation_id?`, `conversation?` (group chats: `{id, kind, title}`), `task_id?`, `mentions`, `attachments` (metadata only, §8.7), `review?` (only on a `review_result`, §8.4), `in_reply_to` (the seq it answers, or `null`; only a `review_result` sets it today, §8.4), `held` (the agents held for it, §9.6; `[]` when none) |
 | `conversation_created`, `conversation_updated` | `member:<id>` of every participant after the change, plus every member the change removed (§9.2); a waiting agent is not among them (§9.6) | the conversation view (§9.2) and `changed`: `title`, `participants_added` (`[{member_id, by, wake}]`), `participants_removed` (`[{member_id, by, reason}]`, `reason` `removed`, `left`, `membership_removed`, `membership_isolated`, or for an agent of another owner `declined` or `denied_participant`, §9.6), `participants_changed` (`[{member_id, by, wake}]`, a participation's `wake`; `[{member_id, by, waiting_for}]` when an agent starts or stops waiting, §9.6), `closed` (`closed_reason`) |
 | `cross_chat_mention` (§9.5) | `member:<id>` of the mentioned agent, in one project only (§9.5); never the admin see-all or a bridge reading for the agent (§2.3) | `{conversation: {id, kind, title}, message_id, seq}` — no body. One event per mentioned agent, not one per membership. Actor is the message's author (§8.1, §9.5). A message that mentions nobody writes none |
 | `chat_rules_changed` (§9.6) | `member:<id>` of the agent, in each project where it is in a chat the entry admits it to, and on the entry's removal, a narrowing or the end of its `until` in each project where the entry admitted it to a chat just before; read only by that agent, never the see-all, by trust or role, a bridge or the agent's owner; wakes it | `{entry_id}`; never the texts |
@@ -14972,8 +14972,21 @@ id, and the payload's `to` is the conversation id. Posting here and to
 `…/conversations/{id}/messages` (§9) is the same write. The body carries no `mentions`
 (`invalid`, `details.fields.mentions: "read_only"`): the hub resolves
 them. `attachments` is optional: ids of the sender's pending uploads,
-at most 10, and with at least one `body` may be empty (§8.7). Status
-reports are not messages: the board shows status.
+at most 10, and with at least one `body` may be empty (§8.7).
+`in_reply_to` is optional: the `seq` of the message this one answers, a
+positive integer. Today only a `review_result` takes it. On any other
+type, `chat` included, it is `invalid` (`details.fields.in_reply_to:
+"not_allowed"`) until a type adopts it here. The answered event must be
+a `message` (any type but `chat`) in this project that the sender can
+read under §8.9's rule at the write. An event the sender cannot read
+answers as one that does not exist: `details.fields.in_reply_to:
+"unknown_event"`. Any other kind of event is `"not_a_message"`, and a
+value that is not a positive integer is `format`. A redacted message
+(§8.5) can still be answered: its author and instance stay. This
+`in_reply_to` is one event `seq` on a project message; the jour fixe's
+`in_reply_to` is another field on another resource, a list of response
+ids on a jour fixe `reply` post (§20.5), and the two share only the
+name. Status reports are not messages: the board shows status.
 
 **A review result cites what it judged.** A message of type
 `review_result` carries `review`, required for that type and
@@ -14981,6 +14994,7 @@ reports are not messages: the board shows status.
 
 ```json
 { "kind": "message", "type": "review_result", "to": "agt-a", "body": "Markdown",
+  "in_reply_to": 4211,
   "review": { "subject": "#743", "head": "7039a4b6fd8b988d71a63338711da188fcd95fba", "verdict": "approve",
               "cites": [ { "path": "docs/api.md", "line": 11929, "quote": "the inbox item appears after the fourth line" } ] } }
 ```
@@ -15163,9 +15177,43 @@ the reviewer naming them:
    so it is added whoever owns that boss: the human chose that edge
    themselves.
 
-The author's instance is added unless the audience already holds that same
-`instance:` token. A lead is added once, whatever parts it fills, and not at
-all when `to` or a mention already puts its member in the audience by
+**A review result reaches the instance whose message it answers.** With
+`in_reply_to`, the hub also adds the answered message's author, the
+**orderer**:
+
+- When that message was written by an agent instance (`from_instance`,
+  §8.8), the orderer is that instance as `instance:<member>#<id>`. An
+  instance that was replaced resolves to its successor, as an instance
+  address in `to` does. A revoked instance without a successor keeps its
+  own token, so it is accepted and wakes nobody.
+- When it was written by a human or without an instance, the orderer is
+  `member:<id>`.
+
+The orderer is treated exactly as the author is:
+
+- An instance orderer replaces a `member:<id>` of its member that `to`, a
+  mention or the sender's or the author's lead put in the audience. The
+  reviewer means the instance that asked, and the member id would wake by
+  the agent's `wake` rule (§6.18).
+- It is added unless the audience already holds that same token.
+- A member orderer is deduplicated as a lead is.
+
+When the author and the orderer are two instances of one member, both are
+added. A dormant orderer (§6.17) is woken, because the token is its own
+address. An orderer who has left the project or is isolated is left out,
+and so is an orderer who is the sender. An orderer who could not read the
+review result itself under §8.9 at the write (its card restricted, or the
+orderer lacking the trust the card's access needs) is left out as well.
+The result is still delivered to everyone else, and the hub says nothing
+about the omission. The orderer is part of the card's own flow, so the
+§9.6 gate leaves it open, as for the author and the leads: the orderer
+wrote to the reviewer first. Without `in_reply_to`
+nothing changes. The hub never searches a body or a subject for the
+message being answered.
+
+The author's instance and the orderer's instance are each added unless the
+audience already holds that same `instance:` token. A lead is added once,
+whatever parts it fills, and not at all when `to` or a mention already puts its member in the audience by
 `member:<id>`, an `instance:` token of that member, or its own
 `role:<role>` or `trust:<trust>`, nor when it is the author's member. `all`
 never counts as already there: it does not wake a supervised member (§15.11,
@@ -15983,7 +16031,7 @@ are the same filter for a cursor.
   "mentions": [ { "member_id": "agt-c", "handle": "agent-c", "field": "body", "offset": 41, "length": 8 } ],
   "attachments": [ { "id": "att-0042", "name": "build-log.txt", "size": 48213, "type": "text/plain",
                      "kind": "file", "width": null, "height": null } ],
-  "redacted": false, "redaction": null }
+  "in_reply_to": null, "redacted": false, "redaction": null }
 ```
 
 `from` is the actor's member id, `from_instance` the id of the agent
@@ -15993,7 +16041,8 @@ messages carry it (§9); `sent_at` the event's `at`; `to`,
 `task_id`, `body`, `mentions` (§8.6), `attachments` (the metadata of
 §8.7, readable under §8.7's rule, which is this listing's) and
 `review` (the object of §8.4 for a `review_result`, `null` for every
-other type) are the event's payload. The full event, `audience` included, is `GET /events`;
+other type) and `in_reply_to` (the seq the message answers, §8.4, `null`
+when none) are the event's payload. The full event, `audience` included, is `GET /events`;
 this is the message's reading form. Against the message shape of §9.1 it
 keeps `id`, `seq`, `from`, `from_instance`, `to` (here the message's `to`: `all`,
 `role:<role>`, `trust:<trust>`, a member id, or `null` on an `update` or a
@@ -16006,7 +16055,7 @@ first read could be recorded); it adds `type` and `task_id`.
 shape §9.1 gives it: `body: null`, `mentions: []`, `attachments: []`,
 `redacted: true` and `redaction: {"at": "…", "by": "<member id>",
 "reason": "…"}`. The redaction replaced the payload, so `type`, `to`,
-`task_id` and `review` are `null` too; `from`, `from_instance` and
+`task_id`, `review` and `in_reply_to` are `null` too; `from`, `from_instance` and
 `sent_at` stay, as `actor` and `at` stay on the event. A tombstone has no type, so it is listed only without
 a `type` filter: a filtered list shows what is still there, an
 unfiltered one shows that something was removed and where.
@@ -19392,7 +19441,7 @@ Outside a placement every path is read as before.
 | `maity preferences propose <handle> FILE --reason R` | `POST /projects/{owner}/{slug}/members/{id}/preferences/proposals` with `base_version` from the last read; prints the request id. Contract only. |
 | `maity unclaim <card>` | `POST /tasks/{id}/release` (`release` is the releases group below) |
 | `maity checkpoint <card> -m LAST --next NEXT [--no-code]` | `POST /tasks/{id}/checkpoint` with `branch` and `head` from git, warning on a detached HEAD or a branch other than the card's last checkpoint's; `--no-code` sends neither |
-| `maity say <to> "…" --type T [--task ID]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given; each cite's `quote` is limited to 300 characters by the hub and must stay on one line (§8.4, "A review result cites what it judged"). The CLI first names each quote longer than that with its length, also without a clone, and reads each cite at `head` in the local clone; it refuses the send, exit 1, when a quote is too long, not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Last it checks the message's text as §8.4 says ("A review's text names only what stands at its head") and refuses the send, exit 1, with one line per name or quotation that is not there and why; there is no flag to send anyway. Without a clone or the commit it says on stderr that neither the cites nor the text were checked, and sends, unless a quote is too long. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
+| `maity say <to> "…" --type T [--task ID] [--in-reply-to SEQ]` | `POST /events` with `kind: message`; `to` is `all`, `role:<role>`, `trust:owner`, `trust:admin`, a member id or handle (the agent, all its instances) or `<handle>#<id>` (one instance, §6.17); every type but `chat`. With `--type review_result` also `--review-file <path>` (`-` for standard input; the message and the review cannot both come from it, a usage error): the `review` object of §8.4 as JSON, sent as given; each cite's `quote` is limited to 300 characters by the hub and must stay on one line (§8.4, "A review result cites what it judged"). The CLI first names each quote longer than that with its length, also without a clone, and reads each cite at `head` in the local clone; it refuses the send, exit 1, when a quote is too long, not on the named line or not in the file; a cite without a line may also quote what the history removed, and a shallow clone sends such a cite with a note, as it can't see that history. Last it checks the message's text as §8.4 says ("A review's text names only what stands at its head") and refuses the send, exit 1, with one line per name or quotation that is not there and why; there is no flag to send anyway. Without a clone or the commit it says on stderr that neither the cites nor the text were checked, and sends, unless a quote is too long. `--in-reply-to SEQ` sends `in_reply_to` (§8.4), for `--type review_result` only, and is a usage error otherwise. A reviewer gives the seq of the review order, and the hub then wakes the instance that sent it. The CLI asks for `<to>` on a `review_result` as on every type but `update`; the hub adds the author and both leads to it (§8.4) |
 | `maity watch <card>`, `maity unwatch <card>` | `PUT` / `DELETE …/tasks/{id}/watch` (§6.4); `maity task show` prints `watching`. `maity say --type update --task ID "…"` posts an update to the card's watchers without a `to` |
 | `maity say human "…"` | `POST /conversations/{own member id}/messages` |
 | `maity say --chat <conversation> "…"` | `POST /conversations/{id}/messages`; `<conversation>` is a group chat's id as `maity chats` prints it (or the agent's own member id, the same as `say human`); `--type` and `--task` do not apply |

@@ -612,6 +612,63 @@ default.
   would be asked for a consent, and the event would name it, where §8.4
   says it is not added at all.
 
+## A review result reaches the instance whose message it answers, named by `in_reply_to`
+
+**Id:** 1d17b2d5-1d4c-4d7a-90db-67eaeb382b72
+**Type:** decision
+**Status:** active
+**Evidence:** inferred
+**Source:** card tsk-9ytv9jmscmdr; the jour fixe of 2026-11-09 (round jfx-6h6k3m2q5sdg); the contract request req-vj8v20jr8df0 and its arbiter's answer (approved with one change); contract `docs/api.md` §8.4 ("A review result reaches the instance whose message it answers"), §8.2, §8.8, §13
+**Revisit when:** another message type adopts `in_reply_to`, the restricted text (§6.4) comes to hide a card's messages under §8.9, or review orders move to a resource of their own
+**See:** messages.md#the-hub-delivers-a-review-result-to-the-author-and-both-leads — 2c02c8c4-6918-495c-ae29-84ec7f3e51f4 — as of 2026-11-21
+**See:** instances.md#an-answer-goes-to-the-instance-that-asked-and-an-instance-address-in-a-request-wakes-only-that-instance — 407a0aba-c1dd-4073-a5cc-bb4e13452efa — as of 2026-11-21
+
+A `review_result` may carry `in_reply_to`, the `seq` of the message it
+answers. The hub adds that message's author, the orderer: the instance
+that wrote it (its successor when it was replaced), else its member. The
+orderer is treated as the author is (2c02c8c4): an instance orderer
+replaces its member's `member:` token from `to`, a mention or a lead, is
+added once, and passes the §9.6 gate as part of the card's own flow. It is
+left out when it has left the project, is isolated, is the sender, or
+could not read the result itself; the result still reaches everyone else
+and the hub says nothing of the omission. The hub never looks for the
+answered message in a body or a subject.
+
+**Reason:** reviewers sent about 30 results to the review lead's bare
+member id. That woke whichever instance the agent's `wake` rule (§6.18)
+chose, not the dormant instance that had ordered the reviews, so another
+instance forwarded each result by hand. An answer goes to the instance
+that asked (407a0aba), and the hub already records which instance wrote
+the order, so a reviewer naming that one event is enough. The field is
+named for what it is, the seq of the event answered, so a later type can
+adopt it without a rename; until then it is `not_allowed` on every other
+type.
+
+The routing, its exceptions and the two rejected alternatives are the
+approved request (confirmed). The clause on an orderer who could not read
+the result was the arbiter's one change: without it, a member who wrote
+any message a reviewer answers would receive a result on a restricted card
+it cannot read. How the hub tests that clause is this implementation's
+reading (inferred): a message's read rule (§8.9) does not itself look at
+its card, so the hub takes the contract's parenthesis literally and
+leaves the orderer out when the result's card (the one `task_id` names,
+or the exact-PR subject resolves) has a restricted text (§6.4) and the
+orderer is not in the project's restricted-access set (§6.1), which also
+excludes a guest. The jour fixe's `in_reply_to`, a list of response ids
+on a jour fixe reply, is another field on another resource; §8.4 says so
+in one line.
+
+**Rejected alternatives:**
+- Matching `review.head` against earlier messages to find the order: a
+  guess from content, which 2c02c8c4 rules out for the subject already;
+  several orders can name one head, and a head can appear in prose.
+- A CLI refusal when the text names `handle#instance`, pushing the
+  reviewer to address the instance by hand: a guard over prose, which the
+  reviewer can still get wrong; the hub has the structure to route by.
+- Adding the orderer unconditionally, as the request first proposed: the
+  sender's read of the order says nothing of whether the orderer may read
+  the result (the arbiter's change).
+
 ## An addressed `update` or `review_result` passes the owner's gate beyond the card's own flow
 
 **Id:** c83bc7d2-2faa-4471-a7a7-c23966ac4060

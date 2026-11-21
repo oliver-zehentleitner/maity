@@ -8,6 +8,13 @@ pull request `#<n>` when `review.subject` is exactly that; its author is the hol
 or on a card nobody holds the instance that sent its latest report.
 A part that resolves to nobody is left out; `routes/events._deliver_review` drops whoever the
 audience already reaches (the author's instance only that same instance; `all` never).
+
+With `in_reply_to` the answered message's author, the orderer, is added too (§8.4, "A review
+result reaches the instance whose message it answers"): the instance that wrote it, its
+successor when it was replaced, else its member. It is treated as the author is, and left out
+when it has left the project, is isolated, is the sender, or could not read the result itself
+under §8.9 at the write: the result's card has a restricted text (§6.4) and the orderer is not
+in the project's restricted-access set (§6.1), which also leaves out a guest.
 """
 
 from __future__ import annotations
@@ -19,7 +26,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
 
-from maity_hub import cross_owner, instances
+from maity_hub import cross_owner, instances, restricted
 from maity_hub import tables as t
 from maity_hub.errors import ApiError
 
@@ -139,29 +146,90 @@ def _author(conn: Connection, project_id: str, card: Any) -> tuple[Recipient, An
     return Recipient(member_id, token), membership
 
 
+def _orderer(
+    conn: Connection,
+    project: Any,
+    sender: Any,
+    sender_instance: str | None,
+    answered: Any,
+    card: Any,
+) -> Recipient | None:
+    """The author of the answered message (`answered`, an event row), or None where §8.4 leaves
+    it out. Its instance is the message's `from_instance` (§8.8): the credential's, none for a
+    bridge's call or a human; an instance that was replaced comes down to its successor, a
+    revoked one without a successor keeps its own token."""
+    if answered.actor_membership is None:
+        return None
+    row = conn.execute(
+        select(t.membership).where(t.membership.c.id == answered.actor_membership)
+    ).first()
+    if row is None:
+        return None
+    member_id = _principal(row)
+    current = _active(conn, project.id, member_id)
+    if current is None:
+        return None  # left the project, or isolated (§6.2)
+    instance = None
+    if answered.actor_bridge is None and answered.actor_credential_id is not None:
+        instance = instances.instances_of(conn, [answered.actor_credential_id]).get(
+            answered.actor_credential_id
+        )
+    token = (
+        _instance_token(conn, row.id, member_id, instance)
+        if instance
+        else instances.token(member_id, None)
+    )
+    me = _principal(sender)
+    if member_id == me and token in (
+        instances.token(me, None),
+        instances.token(me, sender_instance),
+    ):
+        return None  # the sender itself
+    if (
+        card is not None
+        and restricted.card_has_text(conn, card.id)
+        and not restricted.in_set(conn, project, current.id)
+    ):
+        return None  # could not read the result itself (§8.4, §8.9); nothing is said of it
+    return Recipient(member_id, token)
+
+
 def recipients(
     conn: Connection,
-    project_id: str,
+    project: Any,
     sender: Any,
     task_id: str | None,
     review: dict[str, Any],
+    answered: Any = None,
+    sender_instance: str | None = None,
 ) -> list[Recipient]:
-    """Author, the sender's lead, the author's lead: in that order, each member once, without
-    the sender. `sender` is the sender's membership row."""
+    """Author, the orderer (with `answered`, the event row `in_reply_to` names), the sender's
+    lead, the author's lead: in that order, without the sender. An instance is kept once per
+    token, so the author and the orderer may be two instances of one member; a member token is
+    kept only for a member no earlier recipient names, so a lead whose member is the author's or
+    the orderer's is replaced by that one. `sender` is the sender's membership row."""
     found: list[Recipient] = []
-    card = _card(conn, project_id, task_id, review)
-    author = _author(conn, project_id, card) if card is not None else None
-    if author is not None:
-        found.append(author[0])
-    for lead in (_lead(conn, sender), _lead(conn, author[1] if author else None)):
-        if lead is not None:
-            found.append(lead)
+    card = _card(conn, project.id, task_id, review)
+    author = _author(conn, project.id, card) if card is not None else None
     me = _principal(sender)
-    seen: set[str] = set()
+    if author is not None and author[0].member_id != me:
+        found.append(author[0])
+    if answered is not None:
+        orderer = _orderer(conn, project, sender, sender_instance, answered, card)
+        if orderer is not None:
+            found.append(orderer)
+    for lead in (_lead(conn, sender), _lead(conn, author[1] if author else None)):
+        if lead is not None and lead.member_id != me:
+            found.append(lead)
+    seen_members: set[str] = set()
+    seen_tokens: set[str] = set()
     unique = []
     for r in found:
-        if r.member_id == me or r.member_id in seen:
+        if r.token in seen_tokens:
             continue
-        seen.add(r.member_id)
+        if not r.token.startswith("instance:") and r.member_id in seen_members:
+            continue
+        seen_members.add(r.member_id)
+        seen_tokens.add(r.token)
         unique.append(r)
     return unique

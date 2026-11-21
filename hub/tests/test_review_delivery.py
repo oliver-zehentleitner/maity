@@ -579,3 +579,308 @@ def test_a_human_senders_human_lead_is_still_added(
         f"instance:{author.id}#{author.instance}",
         f"member:{other.id}",
     ]
+
+
+# A review result reaches the instance whose message it answers (§8.4, `in_reply_to`,
+# tsk-9ytv9jmscmdr): the answered message's author, the orderer, is added as the author is.
+
+
+def woken_as(engine: Engine, agent: flow.Agent) -> list[int]:
+    """What wakes this one instance, as its own credential reads (a dormant one included)."""
+    with engine.connect() as conn:
+        row = conn.execute(select(t.membership).where(t.membership.c.agent_id == agent.id)).one()
+        rows, _ = events.read_waking(
+            conn,
+            row.project_id,
+            row,
+            agent.id,
+            0,
+            200,
+            instance=agent.instance,
+            credential_id=agent.credential_id,
+        )
+    return [r.seq for r in rows]
+
+
+def order(who: Any, to: str, body: str = "Please review #7.") -> int:
+    """A review order: a plain message, whose author instance the hub records."""
+    answer = who.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": to, "body": body},
+    )
+    assert answer.status_code == 201, answer.text
+    return int(answer.json()["seq"])
+
+
+def test_the_instance_that_ordered_the_review_is_added_and_woken(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    lead = flow.agent(make_client, owner, role="manager")
+    lead.resume()
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    asked = order(lead, reviewer.id)
+    answer = post(reviewer, task_id=card["id"], in_reply_to=asked)
+    assert sent(migrated, answer) == [
+        f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+        f"instance:{lead.id}#{lead.instance}",
+    ]
+    assert answer.json()["payload"]["in_reply_to"] == asked
+    assert int(answer.json()["seq"]) in woken_as(migrated, lead)
+    # The project's messages carry it (§8.8); without `in_reply_to` it is null there.
+    listed = reviewer.get("/projects/maintainer/maity/messages?type=review_result")
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["items"][0]["in_reply_to"] == asked
+    assert post(reviewer, task_id=card["id"]).json()["payload"]["in_reply_to"] is None
+
+
+def test_the_orderers_instance_replaces_its_member_id_and_its_lead_token(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The bug of the jour fixe: results to the review lead's member id woke whatever instance
+    its `wake` rule chose. The ordering instance takes the place of that `member:` token, from
+    `to` and from the reviewer's `reports_to` alike."""
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    lead = flow.agent(make_client, owner, role="manager")
+    lead.resume()
+    reports_to(migrated, reviewer, lead)
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    asked = order(lead, reviewer.id)
+    answer = post(reviewer, task_id=card["id"], to=lead.id, in_reply_to=asked)
+    got = sent(migrated, answer)
+    assert f"member:{lead.id}" not in got
+    assert got == [
+        f"instance:{lead.id}#{lead.instance}",
+        f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+    ]
+    assert answer.json()["payload"]["to"] == lead.id
+    # Without `to` the lead is not added as its member either: the instance stands for it.
+    got = sent(migrated, post(reviewer, task_id=card["id"], in_reply_to=asked))
+    assert got == [
+        f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+        f"instance:{lead.id}#{lead.instance}",
+    ]
+
+
+def test_a_human_orderer_is_its_member_and_added_once(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    reports_to(migrated, reviewer, owner)
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    asked = order(owner, reviewer.id)
+    got = sent(migrated, post(reviewer, task_id=card["id"], in_reply_to=asked))
+    assert got == [
+        f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+        f"member:{owner.id}",
+    ]
+
+
+def test_the_orderer_is_found_without_a_card(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    lead = flow.agent(make_client, owner, role="manager")
+    lead.resume()
+    asked = order(lead, reviewer.id)
+    # No card resolves from the subject, so the orderer alone is added and the result is valid.
+    got = sent(migrated, post(reviewer, "#99", in_reply_to=asked))
+    assert got == [f"member:{reviewer.id}", f"instance:{lead.id}#{lead.instance}"]
+
+
+def test_an_orderer_who_left_is_isolated_or_is_the_sender_is_left_out(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    reviewer.resume()
+    lead = flow.agent(make_client, owner, role="manager")
+    lead.resume()
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    own = order(reviewer, lead.id)
+    got = sent(migrated, post(reviewer, task_id=card["id"], in_reply_to=own))
+    assert got == [f"member:{reviewer.id}", f"instance:{author.id}#{author.instance}"]
+    asked = order(lead, reviewer.id)
+    isolate(migrated, lead)
+    got = sent(migrated, post(reviewer, task_id=card["id"], in_reply_to=asked))
+    assert all(lead.id not in token for token in got)
+    row = membership_id(migrated, lead.id)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.membership)
+            .where(t.membership.c.id == row)
+            .values(isolated_since=None, removed_at=clock.now())
+        )
+    got = sent(migrated, post(reviewer, task_id=card["id"], in_reply_to=asked))
+    assert all(lead.id not in token for token in got)
+
+
+def test_a_redacted_order_can_still_be_answered(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    lead = flow.agent(make_client, owner, role="manager")
+    lead.resume()
+    asked = order(lead, reviewer.id)
+    redacted = owner.post(f"/projects/maintainer/maity/events/{asked}/redact", {"reason": "x"})
+    assert redacted.status_code == 200, redacted.text
+    got = sent(migrated, post(reviewer, "#99", in_reply_to=asked))
+    assert f"instance:{lead.id}#{lead.instance}" in got
+
+
+def test_an_orderer_who_cannot_read_the_restricted_card_is_left_out(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    """The lead's change to the request: on a card with a restricted text (§6.4), an orderer
+    outside the restricted-access set (§6.1) gets no event; the author and the leads still do,
+    and the hub says nothing of the omission."""
+    author = flow.agent(make_client, owner)
+    author.resume()
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    reviewer_lead = flow.agent(make_client, owner, role="manager")
+    author_lead = flow.agent(make_client, owner, role="manager")
+    reports_to(migrated, reviewer, reviewer_lead)
+    reports_to(migrated, author, author_lead)
+    orderer = flow.agent(make_client, owner, role="manager")
+    orderer.resume()
+    card = task(owner)
+    held(migrated, card, author, author.instance)
+    listed = [owner.id, author.id, reviewer.id, reviewer_lead.id, author_lead.id]
+    writer = membership_id(migrated, owner.id)
+    with migrated.begin() as conn:
+        project = conn.execute(select(t.project)).one()
+        settings = {
+            **(project.settings or {}),
+            "restricted_access": {"mode": "nobody_except", "members": listed},
+        }
+        conn.execute(
+            update(t.project).where(t.project.c.id == project.id).values(settings=settings)
+        )
+        conn.execute(
+            t.task_restricted.insert().values(
+                task_id=card["id"],
+                project_id=project.id,
+                text="secret",
+                version=1,
+                updated_by=writer,
+                updated_at=clock.now(),
+            )
+        )
+    asked = order(orderer, reviewer.id)
+    answer = post(reviewer, task_id=card["id"], in_reply_to=asked)
+    assert answer.status_code == 201, answer.text
+    seq = int(answer.json()["seq"])
+    assert sent(migrated, answer) == [
+        f"member:{reviewer.id}",
+        f"instance:{author.id}#{author.instance}",
+        f"member:{reviewer_lead.id}",
+        f"member:{author_lead.id}",
+    ]
+    assert answer.json()["payload"]["held"] == []
+    assert seq not in seqs(orderer)
+    assert seq not in woken_as(migrated, orderer)
+    for reached in (reviewer_lead, author_lead):
+        assert seq in seqs(reached)
+    assert seq in woken_as(migrated, author)
+    # In the set, the same orderer is added.
+    with migrated.begin() as conn:
+        project = conn.execute(select(t.project)).one()
+        settings = {
+            **project.settings,
+            "restricted_access": {"mode": "nobody_except", "members": [*listed, orderer.id]},
+        }
+        conn.execute(
+            update(t.project).where(t.project.c.id == project.id).values(settings=settings)
+        )
+    got = sent(migrated, post(reviewer, task_id=card["id"], in_reply_to=asked))
+    assert f"instance:{orderer.id}#{orderer.instance}" in got
+
+
+def refused(answer: Any) -> Any:
+    assert answer.status_code == 400, answer.text
+    return answer.json()["error"]["details"]["fields"]["in_reply_to"]
+
+
+def test_in_reply_to_is_checked(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    lead = flow.agent(make_client, owner, role="manager")
+    lead.resume()
+    asked = order(lead, reviewer.id)
+    # Only a review result takes it today.
+    notice = reviewer.post(
+        "/projects/maintainer/maity/events",
+        {"kind": "message", "type": "notice", "to": "all", "body": "x", "in_reply_to": asked},
+    )
+    assert refused(notice) == "not_allowed"
+    for value in (0, -3, "7", True, 1.5):
+        assert refused(post(reviewer, "#99", to=owner.id, in_reply_to=value)) == "format"
+    assert refused(post(reviewer, "#99", to=owner.id, in_reply_to=10**6)) == "unknown_event"
+    assert refused(post(reviewer, "#99", to=owner.id, in_reply_to=2**70)) == "unknown_event"
+    # A message the sender cannot read answers as one that does not exist.
+    private = order(lead, owner.id, "Not for the reviewer.")
+    assert refused(post(reviewer, "#99", to=owner.id, in_reply_to=private)) == "unknown_event"
+    # An event the sender reads that is no project message, and a chat message.
+    task(owner)
+    other = [
+        e["seq"]
+        for e in reviewer.get("/projects/maintainer/maity/events?after=0&limit=200").json()["items"]
+        if e["kind"] != "message"
+    ]
+    assert other
+    assert refused(post(reviewer, "#99", to=owner.id, in_reply_to=other[-1])) == "not_a_message"
+    chat = owner.post(
+        f"/projects/maintainer/maity/conversations/{reviewer.id}/messages", {"body": "Hello."}
+    )
+    assert chat.status_code == 201, chat.text
+    said = int(chat.json()["seq"])
+    assert refused(post(reviewer, "#99", to=owner.id, in_reply_to=said)) == "not_a_message"
+
+
+def test_a_dormant_orderer_is_woken_by_its_own_token(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    lead = flow.agent(make_client, owner, role="manager")
+    lead.resume()
+    asked = order(lead, reviewer.id)
+    with migrated.begin() as conn:
+        conn.execute(
+            update(t.credential)
+            .where(t.credential.c.id == lead.credential_id)
+            .values(dormant_since=clock.now())
+        )
+    answer = post(reviewer, "#99", to=lead.id, in_reply_to=asked)
+    assert sent(migrated, answer) == [
+        f"instance:{lead.id}#{lead.instance}",
+        f"member:{reviewer.id}",
+    ]
+    assert int(answer.json()["seq"]) in woken_as(migrated, lead)
+
+
+def test_a_replaced_orderer_resolves_to_its_successor(
+    owner: flow.Human, make_client: ClientFactory, migrated: Engine
+) -> None:
+    reviewer = flow.agent(make_client, owner, role="reviewer")
+    old = flow.agent(make_client, owner, role="manager")
+    old.resume()
+    asked = order(old, reviewer.id)
+    new = flow.agent(make_client, owner, agent={"id": old.id}, replaces=old.instance)
+    got = sent(migrated, post(reviewer, "#99", in_reply_to=asked))
+    assert got == [f"member:{reviewer.id}", f"instance:{old.id}#{new.instance}"]

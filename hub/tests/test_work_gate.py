@@ -408,6 +408,33 @@ def test_a_review_result_reaches_the_author_and_the_leads_ungated(
     assert loose["payload"]["held"] == [theirs.id]
 
 
+def test_a_review_results_orderer_passes_the_gate(
+    owner: flow.Human, sides: dict[str, Any], migrated: Engine
+) -> None:
+    """The orderer, the author of the message `in_reply_to` names (§8.4), is part of the card's
+    own flow: it wrote to the reviewer first, so the gate leaves it open (tsk-9ytv9jmscmdr)."""
+    theirs, writer = sides["theirs"], sides["writer"]
+    theirs.resume()
+    task_id = card(owner)
+    asked = send(theirs, writer.id, body="please review #7")["seq"]
+    # Without `in_reply_to` the same result to that agent is held (as above).
+    assert held_for(writer, "review_result", theirs.id, task_id)["payload"]["held"] == [theirs.id]
+    answered = writer.post(
+        f"{PROJECT}/events",
+        {
+            "kind": "message",
+            "type": "review_result",
+            "to": theirs.id,
+            "body": "please look",
+            "review": REVIEW,
+            "in_reply_to": asked,
+        },
+    )
+    assert answered.status_code == 201, answered.text
+    assert answered.json()["payload"]["held"] == []
+    assert answered.json()["seq"] in seqs(theirs)
+
+
 def test_a_review_results_lead_of_another_owner_is_reached_only_through_the_gate(
     owner: flow.Human, make_client: ClientFactory, sides: dict[str, Any], migrated: Engine
 ) -> None:

@@ -72,6 +72,7 @@ class MessageIn(Written):
     conversation_id: str | None = None
     to_instance: str | None = None  # a direct chat message to one instance of the agent (§9.1)
     review: Any = None  # a `review_result`'s object (§8.4), checked in `post_message`
+    in_reply_to: Any = None  # the seq a `review_result` answers (§8.4), checked by hand
 
     @field_validator("body")
     @classmethod
@@ -606,6 +607,7 @@ def post_message(
             raise invalid(problems)
     elif body.review is not None:
         raise invalid({"review": "not_allowed"})
+    answered = _answered(conn, mine, body) if body.in_reply_to is not None else None
     if body.to_instance is not None and (
         body.type != "chat"
         or (body.conversation_id is not None and group_chats.is_group(body.conversation_id))
@@ -759,7 +761,7 @@ def post_message(
     # side, so they reach it through the gate, and leave the list where it holds them.
     derived: dict[str, int] = {}
     if review is not None:
-        audience, passes = _deliver_review(conn, mine, body.task_id, review, audience)
+        audience, passes = _deliver_review(conn, mine, body.task_id, review, audience, answered)
     elif body.type == "update" and body.task_id is not None:
         watching = card_watches.at_write(conn, body.task_id)
         agents = _watching_agents(conn, watching)
@@ -790,8 +792,9 @@ def post_message(
         payload["conversation"] = {"id": group.id, "kind": "group", "title": group.title}
     if body.type == "chat":  # the instance a direct chat message names, as written (§9.1)
         payload["to_instance"] = body.to_instance
-    if review is not None:  # what a review result judged and read (§8.4)
+    if review is not None:  # what a review result judged and read, and what it answers (§8.4)
         payload["review"] = review
+        payload["in_reply_to"] = answered.seq if answered is not None else None
     seq = events.emit(
         conn,
         mine.project.id,
@@ -825,30 +828,61 @@ def _watching_agents(conn: Connection, watching: list[int]) -> dict[str, int]:
     }
 
 
+def _answered(conn: Connection, mine: Membership, body: MessageIn) -> Any:
+    """The event row a message's `in_reply_to` names (§8.4): only a `review_result` takes it;
+    a positive integer; a message of this project that is no conversation's (a redacted one
+    included: the event keeps its conversation and its actor) and that the sender reads under
+    §8.9's rule now. One it cannot read answers as one that does not exist."""
+    if body.type != "review_result":
+        raise invalid({"in_reply_to": "not_allowed"})
+    value = body.in_reply_to
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise invalid({"in_reply_to": "format"})
+    row = (
+        conn.execute(
+            select(t.event).where(t.event.c.seq == value, t.event.c.project_id == mine.project.id)
+        ).first()
+        if value <= SEQ_MAX
+        else None
+    )
+    if row is None or not _reads_event(conn, mine, str(value)):
+        raise invalid({"in_reply_to": "unknown_event"})
+    if row.kind != "message" or row.conversation_id is not None:
+        raise invalid({"in_reply_to": "not_a_message"})
+    return row
+
+
 def _deliver_review(
     conn: Connection,
     mine: Membership,
     task_id: str | None,
     review: dict[str, Any],
     audience: list[str],
+    answered: Any = None,
 ) -> tuple[list[str], list[str]]:
-    """A review result's author and both leads (§8.4), and those members: the card's own flow,
-    which the §9.6 gate leaves open; without a resolved card (neither `task_id` nor the
-    exact-PR subject names one, §8.4) only the leads. The author's instance takes
-    the place of the author's `member:` token that `to` or a mention put in the audience, and is
-    added unless the audience holds that same instance token. A member token (a lead, or an
+    """A review result's author, the orderer (the author of the message `in_reply_to` names,
+    `answered`) and both leads (§8.4), and those members: the card's own flow, which the §9.6
+    gate leaves open; without a resolved card (neither `task_id` nor the exact-PR subject names
+    one, §8.4) only the orderer and the leads. The author's and the orderer's instances take
+    the place of their member's `member:` token that `to` or a mention put in the audience, and
+    each is added unless the audience holds that same instance token. A member token (a lead, or an
     author whose card was claimed for the team) is added unless `to` or a mention reaches the
     member already: one of its role or trust tokens, or a token of its own. `all` counts for
     neither: it does not wake a supervised member, and beside it an added token wakes only such
     a one. One that then reaches nobody but its sender is `invalid`."""
     sender = conn.execute(select(t.membership).where(t.membership.c.id == mine.id)).one()
-    found = review_delivery.recipients(conn, mine.project.id, sender, task_id, review)
+    found = review_delivery.recipients(
+        conn, mine.project, sender, task_id, review, answered, mine.instance
+    )
+    # The reviewer means the author and the orderer: the member id would wake other instances
+    # by the agent's `wake` rule (§6.18). The payload's `to` stays as written.
+    meant: dict[str, list[str]] = {}
     for r in found:
         if r.token.startswith("instance:"):
-            # The reviewer means the author: the member id would wake other instances by the
-            # agent's `wake` rule (§6.18). The payload's `to` stays as written.
-            member = f"member:{r.member_id}"
-            audience = [r.token if token == member else token for token in audience]
+            meant.setdefault(f"member:{r.member_id}", []).append(r.token)
+    audience = list(
+        dict.fromkeys(replaced for token in audience for replaced in meant.get(token, [token]))
+    )
     roles = _roles(conn, mine.project.id, [r.member_id for r in found])
     reached_members = {
         token.split(":", 1)[1].split("#", 1)[0]

@@ -2676,6 +2676,8 @@ def cmd_say(args: argparse.Namespace) -> int:
         raise UsageError(
             "--type review_result needs --review-file: the review object as JSON (§8.4)"
         )
+    if args.in_reply_to is not None and args.type != "review_result":
+        raise UsageError("--in-reply-to goes with --type review_result only")
     if args.chat is not None:
         if args.body is not None:
             raise UsageError("with --chat give only the message: the chat is the recipient")
@@ -2768,6 +2770,8 @@ def cmd_say(args: argparse.Namespace) -> int:
         body["task_id"] = args.task
     if review is not None:
         body["review"] = review  # as given: the hub checks it and names each bad path
+    if args.in_reply_to is not None:
+        body["in_reply_to"] = args.in_reply_to  # the hub checks it (§8.4)
     return _say_event(args, session, body, attach, f"sent {args.type} to {to}")
 
 
@@ -5392,6 +5396,14 @@ def build_parser() -> argparse.ArgumentParser:
         "in this clone and every file:line, name in backticks and hash in the message is there "
         "(commands and their output go under a heading `## Ran`, which is not checked); each "
         "cite quote stays on one line, at most 300 characters (the hub's limit)",
+    )
+    p.add_argument(
+        "--in-reply-to",
+        dest="in_reply_to",
+        type=_seq_arg,
+        metavar="SEQ",
+        help="with --type review_result: the seq of the review order this result answers; the "
+        "hub then wakes the instance that sent it",
     )
     _json_flag(p)
     p.set_defaults(handler=cmd_say)
