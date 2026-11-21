@@ -641,3 +641,39 @@ def test_a_cross_chat_author_not_attached_to_the_project_is_refused(chat: Any) -
     refused = lone.post(chat["path"], {"body": chat["mention"], "project": "maintainer/beta"})
     _invalid(refused, "project", "not_a_member")
     assert chat["charged"] == []
+
+
+# --- a revocation speaks for each attachment, never the oldest (§6.17, §15.3) --------------
+
+
+def test_a_runner_revocation_due_is_told_in_every_attached_project(world: World) -> None:
+    from maity_hub import events, runner_revoke
+
+    w = world
+    with events.transaction(w.engine) as conn:
+        runner_revoke.revoke_agent(conn, w.agent.credential_id, None)
+    with w.engine.connect() as conn:
+        told = conn.execute(
+            select(t.event.c.project_id)
+            .where(t.event.c.kind == "credential_revoked")
+            .order_by(t.event.c.project_id)
+        ).scalars()
+        assert list(told) == sorted([w.alpha, w.beta])
+
+
+def test_a_replayed_credential_revocation_reads_the_attachment_it_named(world: World) -> None:
+    """The stored key names the membership; a key without one, from before, is read only
+    while the credential has a single live attachment."""
+    from maity_hub.errors import ApiError
+    from maity_hub.routes.members import credential_key, load_credential
+
+    w = world
+    with w.engine.connect() as conn:
+        shown = load_credential(conn, credential_key(w.agent.credential_id, w.in_b))
+        assert shown["id"] == w.agent.credential_id
+        with pytest.raises(ApiError) as refused:
+            load_credential(conn, w.agent.credential_id)
+        assert refused.value.code == "not_found"
+    w.detach(w.in_b)
+    with w.engine.connect() as conn:
+        assert load_credential(conn, w.agent.credential_id)["id"] == w.agent.credential_id

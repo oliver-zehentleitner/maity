@@ -257,43 +257,54 @@ idempotency.register("member_read", load_member_as_read, _IN_MEMBERS_PROJECT)
 idempotency.register("member_team", load_member_as_read, _IN_MEMBERS_PROJECT)
 
 
-def load_credential(conn: Connection, credential_id: str) -> dict[str, Any]:
-    # TODO(hub PR B): the attachment of the route's project; the oldest not detached until
-    # then.
+def credential_key(credential_id: str, membership_id: int) -> str:
+    """A revocation's stored resource (§1.5): the credential in the membership of the route's
+    project, `<credential id>@<membership id>`, so that its replay reads that attachment."""
+    return f"{credential_id}@{membership_id}"
+
+
+def _attachment_named(conn: Connection, key: str) -> Any | None:
+    """The membership a stored revocation names, with the credential's id. A key from before
+    an instance could sit in several projects names the credential alone: its one attachment
+    that is not detached then, and none when it has several now, never one chosen."""
+    credential_id, _, membership_id = key.partition("@")
+    a = t.instance_attachment
+    query = (
+        select(t.membership, a.c.credential_id)
+        .join(a, a.c.membership_id == t.membership.c.id)
+        .where(a.c.credential_id == credential_id)
+    )
+    if membership_id:
+        if not membership_id.isdigit():
+            return None
+        return conn.execute(query.where(a.c.membership_id == int(membership_id))).first()
+    rows = conn.execute(query.where(a.c.detached_at.is_(None))).all()
+    return rows[0] if len(rows) == 1 else None
+
+
+def load_credential(conn: Connection, key: str) -> dict[str, Any]:
+    """A credential's view in the membership `key` names (`credential_key`)."""
+    target = _attachment_named(conn, key)
+    if target is None:
+        raise not_found()
     row = conn.execute(
-        instances.credential_rows()
-        .where(t.credential.c.id == credential_id, t.instance_attachment.c.detached_at.is_(None))
-        .order_by(t.instance_attachment.c.attached_at, t.instance_attachment.c.id)
-        .limit(1)
+        instances.credential_rows().where(
+            t.credential.c.id == target.credential_id,
+            t.instance_attachment.c.membership_id == target.id,
+        )
     ).one()
     return credential_view(conn, row)
 
 
-def _oldest_attachment(credential_id: str) -> Any:
-    """The membership of a credential's oldest attachment that is not detached, by
-    attached_at and then id. TODO(hub PR B): the attachment of the route's project."""
-    a = t.instance_attachment
-    return (
-        select(t.membership)
-        .select_from(t.membership)
-        .join(a, a.c.membership_id == t.membership.c.id)
-        .where(a.c.credential_id == credential_id, a.c.detached_at.is_(None))
-        .order_by(a.c.attached_at, a.c.id)
-        .limit(1)
-    )
+def _credential_project(conn: Connection, key: str) -> str | None:
+    target = _attachment_named(conn, key)
+    return None if target is None else str(target.project_id)
 
 
-def _credential_project(conn: Connection, credential_id: str) -> str | None:
-    found: str | None = conn.execute(
-        _oldest_attachment(credential_id).with_only_columns(t.membership.c.project_id)
-    ).scalar()
-    return found
-
-
-def _sees_credential(conn: Connection, mine: Membership, credential_id: str) -> bool:
+def _sees_credential(conn: Connection, mine: Membership, key: str) -> bool:
     """The read of the credentials list (§10), for a replayed revocation."""
-    target = conn.execute(_oldest_attachment(credential_id)).one()
-    return _manages_credentials(conn, mine, target)
+    target = _attachment_named(conn, key)
+    return target is not None and _manages_credentials(conn, mine, target)
 
 
 def _sees_member(conn: Connection, membership_id: str, caller: Caller) -> bool:
@@ -1826,8 +1837,7 @@ def revoke_credential(
                 actor=caller.actor(mine.id),
                 subject=("credential", credential_id),
             )
-        return idempotency.Outcome(
-            200, "credential", credential_id, load_credential(conn, credential_id)
-        )
+        key = credential_key(credential_id, row.membership_id)
+        return idempotency.Outcome(200, "credential", key, load_credential(conn, key))
 
     return idempotency.run(engine_of(request), request, caller, action)
