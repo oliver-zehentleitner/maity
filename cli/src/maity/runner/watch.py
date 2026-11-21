@@ -410,15 +410,18 @@ _SECRET = re.compile(
 # `<secret>`, the scheme and the host stay (security review A1942).
 _USERINFO = re.compile(r"(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*://)[^\s/@<>\"'?#]+@")
 # `Authorization: <scheme> <value>` or `authorization=<value>`: the value, with its scheme.
+# Quoted too: `authorization='…'`, `"Authorization": "Bearer …"` (Gemini review A1941).
 _AUTHORIZATION = re.compile(
-    r"(?i)(?<![A-Za-z0-9_-])(authorization\s*[:=]\s*)(?:[a-z][a-z0-9-]*\s+)?[^\s,;\"'<>]+"
+    r"(?i)(?<![A-Za-z0-9_-])(authorization[\"']?\s*[:=]\s*[\"']?)"
+    r"(?:[a-z][a-z0-9-]*\s+)?[^\s,;\"'<>]+"
 )
 _BEARER = re.compile(r"(?i)(?<![A-Za-z0-9_-])(bearer\s+)[A-Za-z0-9._~+/=-]+")
 # A path that holds a user's name: under /home/<user>, /Users/<user>, C:\Users\<user> or
 # C:/Users/<user>, or /root. The whole path becomes `<path>`, the only form a path may take in
 # a log line (§15.7); the path is the run of characters between these stops.
 _PATH_TOKEN = re.compile(r"[^\s\"'`<>|=,;()\[\]{}]+")
-_USER_DIR = re.compile(r"[\\/](?:home|[Uu]sers)[\\/][^\\/]|[\\/]root(?![A-Za-z0-9_-])")
+# `Users` in any case (`C:\USERS\…`, `c:/users/…`: Windows and macOS ignore it; A1941).
+_USER_DIR = re.compile(r"[\\/](?:home|(?i:users))[\\/][^\\/]|[\\/]root(?![A-Za-z0-9_-])")
 
 
 def _path(found: re.Match[str]) -> str:

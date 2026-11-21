@@ -34,7 +34,7 @@ def make(tmp_path: Path, extra: str = "") -> Any:
     sup = supervisor.Supervisor(
         cfg, backend, reports, logs.append, probes, now=clock, rand=lambda: 0.5  # type: ignore[arg-type]
     )
-    sup.login = lambda harness, binary, as_user: "ok"
+    sup.login = lambda harness, binary, as_user, agent_path: "ok"
     return sup, backend, reports, clock, logs
 
 
@@ -201,7 +201,7 @@ def test_usage_limit_waits_for_the_reset(world: Any) -> None:
 
 def test_login_invalid_ends_the_session_and_never_restarts(world: Any) -> None:
     sup, backend, reports, clock, _ = world
-    sup.login = lambda harness, binary, as_user: "needed"
+    sup.login = lambda harness, binary, as_user, agent_path: "needed"
     running(sup, clock, joined_then_quiet())
     backend.below = tmux.WAITING
     clock.now = QUIET_PAST_GRACE
@@ -220,7 +220,7 @@ def test_login_invalid_ends_the_session_and_never_restarts(world: Any) -> None:
 
 def test_no_login_probe_is_never_a_gone_login(world: Any) -> None:
     sup, backend, reports, clock, _ = world
-    sup.login = lambda harness, binary, as_user: "unknown"
+    sup.login = lambda harness, binary, as_user, agent_path: "unknown"
     running(sup, clock, joined_then_quiet())
     backend.below = tmux.WAITING
     clock.now = QUIET_PAST_GRACE
@@ -639,3 +639,77 @@ def test_a_finding_whose_report_failed_arrives_with_the_next_state(world: Any) -
     clock.now += supervisor.RUNNING_AFTER
     sup.tick()
     assert len(with_findings(reports)) == 1  # and once only
+
+
+# --- Gemini review A1941 ---------------------------------------------------------------------
+
+
+def test_a_pane_that_died_before_the_nudge_goes_to_the_exit(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())  # nothing below: not_waiting
+    clock.now = QUIET_PAST_GRACE
+    sup.tick()  # the diagnosis starts while the harness is alive
+    for worker in list(sup.watching.values()):
+        worker.join(5)
+    backend.exit(NAME, 1)  # and dies before the verdict is acted on
+    sup.tick()
+    assert backend.typed == []  # no line into a dead pane
+    for worker in list(sup.watching.values()):
+        worker.join(5)
+    sup.tick()
+    body = last(reports)
+    assert (body["state"], body["reason"], body["detail"]) == ("exited", "hung", "not_listening")
+    assert body["finding"]["cause"] == "harness_exited"
+
+
+def test_an_exit_soon_after_a_look_is_still_the_watchs(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WORKING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)  # work below: looked at, nothing done
+    assert backend.terminated == [] and with_findings(reports) == []
+    clock.now += 10  # well within a minute of that look
+    backend.exit(NAME, 1)
+    drain(sup)
+    body = last(reports)
+    assert (body["state"], body["reason"], body["detail"]) == ("exited", "hung", "not_listening")
+    assert body["finding"]["cause"] == "harness_exited"
+    rec = sup.records[PID]
+    assert rec.resume and rec.watch_restarts == [clock.now]
+
+
+def test_a_session_gone_during_the_end_enters_the_end_and_starts_nothing(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    sup.login = lambda harness, binary, as_user, agent_path: "needed"
+    running(sup, clock, joined_then_quiet())
+    backend.below = tmux.WAITING
+    clock.now = QUIET_PAST_GRACE
+    drain(sup)
+    assert backend.terminated == [NAME]
+    backend.live.pop(NAME)  # gone, without a dead pane to read
+    sup.tick()
+    body = last(reports)
+    assert (body["state"], body["reason"]) == ("failed", "auth")
+    assert body["finding"]["cause"] == "login_invalid"
+    clock.now += 3600
+    sup.tick()
+    assert len(backend.started) == 1
+
+
+def test_the_quiet_span_counts_from_the_adoption_too(world: Any) -> None:
+    sup, backend, reports, clock, _ = world
+    backend.below = tmux.WORKING  # a long build
+    # Quiet for three hours by the hub's count, from before the runner's restart.
+    adopt(sup, backend, watched(
+        started_at=watch.stamp(T0 - 4 * 3600), not_listening_since=watch.stamp(T0 - 3 * 3600)
+    ))  # fmt: skip
+    clock.now = T0 + GRACE
+    drain(sup)
+    assert backend.terminated == []  # 15 min of quiet in this watch, not 3 h 15
+    clock.now = T0 + supervisor.TOOL_CALL_MAX_MINUTES * 60
+    drain(sup)
+    assert backend.terminated == [NAME]
+    backend.exit(NAME, 143)
+    sup.tick()
+    assert last(reports)["finding"]["cause"] == "unknown"

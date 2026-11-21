@@ -479,7 +479,7 @@ class Supervisor:
     # `server_time` (§15.8); the login probe (keeper.login_state; replaced in tests).
     watching: dict[str, threading.Thread] = field(default_factory=dict)
     hub_offset: float = 0.0
-    login: Callable[[str, str | None, AsUser], str] = keeper.login_state
+    login: Callable[[str, str | None, AsUser, str | None], str] = keeper.login_state
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
@@ -583,18 +583,25 @@ class Supervisor:
         if verdict is not None and verdict["generation"] == rec.generation:
             # The verdict is acted on only while its facts still hold at acting time (Codex
             # A1940): not paused or dormant (no trigger then), the same trigger and quiet spell,
-            # and the same answer on attachment, read afresh. Otherwise it is dropped, and a
-            # new diagnosis follows if a trigger holds again.
+            # and the same answer on attachment, read afresh; and the process as it was, so a
+            # session that died since goes to the exit, never to a nudge (Gemini A1941).
+            # Otherwise it is dropped, and a new diagnosis follows if a trigger holds again.
             now_attached = trigger_ is not None and self._attached(backend, session, interactive)
-            if (trigger_, episode, now_attached) == (
-                verdict["trigger"], verdict["episode"], verdict["attached"]
+            if (trigger_, episode, now_attached, session.dead) == (
+                verdict["trigger"], verdict["episode"], verdict["attached"],
+                verdict.get("dead", session.dead),
             ):  # fmt: skip
                 return self._react(p, rec, session, target, now, verdict)
             self.note(pid, "the facts changed before the watch acted: its diagnosis dropped")
         if trigger_ is None or facts is None:
             rec.watch_seen = None
             return False
-        if rec.watch_looked_at is not None and now - rec.watch_looked_at < IDLE_EVERY:
+        # At most one look a minute, but never for a session that just exited: it would be
+        # reaped as a plain exit, losing the finding and the watch's own count (Gemini A1941).
+        if (
+            not session.dead and rec.watch_looked_at is not None
+            and now - rec.watch_looked_at < IDLE_EVERY
+        ):  # fmt: skip
             return False
         rec.watch_looked_at = now
         alive = not session.dead
@@ -624,19 +631,25 @@ class Supervisor:
             "below": below if below in watch.BELOW else "unknown",
             "pane_match": watch.pane_match(harness, version, shown),
         }
-        quiet = None if facts.not_listening_since is None else hub_now - facts.not_listening_since
+        # The quiet span counts from the later of the quiet spell's start and `watch_since`,
+        # as the trigger's grace does (Gemini A1941): a stale spell from before a restart must
+        # not make this run's work look older than it is.
+        quiet_from = facts.not_listening_since
+        if quiet_from is not None and rec.watch_since is not None:
+            quiet_from = max(quiet_from, rec.watch_since + self.hub_offset)
+        quiet = None if quiet_from is None else hub_now - quiet_from
         worker = threading.Thread(
             target=self._diagnose,
             args=(rec, {
                 "generation": rec.generation, "trigger": trigger_, "episode": episode,
-                "interactive": interactive,
+                "interactive": interactive, "dead": not alive,
                 "seen_at": hub_now, "attached": attached, "limit_exit": limit_exit,
                 "quiet_for": quiet,
                 "tool_call_max": _minutes(
                     settings_.get("tool_call_max_minutes"), TOOL_CALL_MAX_MINUTES
                 ),
             }, gathered, harness, rec.binary or (probe.path if probe else None),
-                target.as_user),
+                target.as_user, target.agent_path),
             daemon=True,
             name=f"maity-watch-{pid}",
         )  # fmt: skip
@@ -652,11 +665,12 @@ class Supervisor:
         harness: str,
         binary: str | None,
         as_user: AsUser,
+        agent_path: str | None = None,
     ) -> None:
-        """The worker's part: the login probe, then the first cause that fits (watch.diagnose),
-        left on the record for the tick to act on."""
+        """The worker's part: the login probe (with the agents' PATH), then the first cause
+        that fits (watch.diagnose), left on the record for the tick to act on."""
         try:
-            login = self.login(harness, binary, as_user)
+            login = self.login(harness, binary, as_user, agent_path)
         except Exception:  # noqa: BLE001 - a probe that fails says nothing about the login
             login = "unknown"
         if login not in watch.LOGIN:
@@ -709,7 +723,8 @@ class Supervisor:
             return None
         found = (view or GateView.of(target, harness.id)).found
         try:
-            login = self.login(harness.id, found.path if found else None, target.as_user)
+            binary = found.path if found else None
+            login = self.login(harness.id, binary, target.as_user, target.agent_path)
         except Exception:  # noqa: BLE001 - a probe that fails says nothing about the login
             login = "unknown"
         signals = watch.signals(
@@ -846,6 +861,7 @@ class Supervisor:
         # is checked first and wins over the watch's (the lead's ruling, Codex A1940):
         # `failed`/`crash_loop`, with the finding.
         backend.kill(session.name)
+        rec.limits_unknown = 0  # a plain exit ends a row of limits, as in `_exited`
         policy, code = self.cfg.limits.restart, session.exit_status
         started = rec.started_at if rec.started_at is not None else now - policy.quick_exit
         decision = restart.on_exit(policy, rec.crashes, started, now, self.rand)
@@ -1009,7 +1025,8 @@ class Supervisor:
                 for pid in [pid for pid in self.records if pid not in wanted]:
                     if pid not in self.tasks:
                         del self.records[pid]  # closed or gone: nothing left to report
-                        self.notes.forget(pid)
+                        self.notes.forget(pid)  # and nothing of the watch's kept for it
+                        self.watching.pop(pid, None)
                 self.first_tick = False
             running = {
                 name: sum(1 for s in found.values() if not s.dead and s.placement in labelled)
@@ -1268,7 +1285,7 @@ class Supervisor:
             rec.watch_seen, rec.finding = None, None
 
         if p.get("desired") == "stopped":
-            rec.watch_verdict = None  # a stop wins over a reaction still to come
+            rec.watch_verdict = rec.watch_end = None  # a stop wins over a reaction to come
             if mine is not None and not mine.dead:
                 self._stop(rec, mine, p, now, backend)
             else:
@@ -1323,6 +1340,11 @@ class Supervisor:
             ):  # fmt: skip
                 return 0  # the watch takes the exit: a trigger held when it came
             self._exited(rec, mine, now, backend, target)
+            return 0
+        if rec.watch_end is not None:
+            # The session the watch was ending is gone without an exit to read: its end is
+            # entered now (auth, held or a restart), never a start in its place (Gemini A1941).
+            self._watch_ended(rec, now, None)
             return 0
         if rec.state == "failed" or (rec.retry_at is not None and now < rec.retry_at):
             return 0
@@ -1801,6 +1823,7 @@ class Supervisor:
         rec.calm()
         rec.folder_prompt = None
         rec.watch_looked_at, rec.watch_verdict, rec.watch_seen = None, None, None  # a new run
+        rec.watch_end = None
         rec.enter(now, "starting", retry_at=None, started_at=now, watch_since=now,
                   watch_joined=False)  # fmt: skip
         rec.sandbox = view.sandbox

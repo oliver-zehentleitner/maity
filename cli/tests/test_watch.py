@@ -272,11 +272,19 @@ def test_a_session_started_in_the_runs_second_counts_as_joined() -> None:
 class Probe:
     """A stand-in for AsUser.run: the probe's answer, or the exception it raises."""
 
-    def __init__(self, code: int = 0, out: str = "", err: str = "", raises: Any = None) -> None:
+    def __init__(
+        self, code: int = 0, out: str = "", err: str = "", raises: Any = None,
+        direct: bool = True,
+    ) -> None:  # fmt: skip
         self.done = subprocess.CompletedProcess(["probe"], code, out, err)
         self.raises = raises
+        self.direct = direct  # AsUser.direct: the runner's own user here
+        self.env: Any = "not run"
 
-    def run(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    def run(
+        self, argv: list[str], env: Any = None, **kwargs: Any
+    ) -> subprocess.CompletedProcess[str]:
+        self.env = env
         if self.raises is not None:
             raise self.raises
         return self.done
@@ -293,6 +301,11 @@ def login(harness: str, probe: Probe, binary: str | None = "/bin/tool") -> str:
         ("claude-code", Probe(1), "needed"),  # its documented "not logged in"
         ("claude-code", Probe(2), "unknown"),
         ("claude-code", Probe(127), "unknown"),
+        ("claude-code", Probe(126), "unknown"),
+        ("claude-code", Probe(255), "unknown"),  # ssh could not reach the host
+        ("claude-code", Probe(-9), "unknown"),  # killed by a signal
+        ("codex", Probe(255, err="Not logged in\n"), "unknown"),
+        ("codex", Probe(-9), "unknown"),
         ("claude-code", Probe(raises=subprocess.TimeoutExpired("claude", 30)), "unknown"),
         ("claude-code", Probe(raises=OSError("no such binary")), "unknown"),
         ("codex", Probe(0, out="Logged in using ChatGPT\n"), "ok"),
@@ -313,6 +326,16 @@ def test_only_the_documented_answer_is_a_needed_login(
 
 def test_no_binary_is_an_unknown_login() -> None:
     assert login("claude-code", Probe(1), binary=None) == "unknown"
+
+
+def test_the_probe_runs_with_the_agents_path_through_sudo_or_ssh() -> None:
+    path = "/usr/local/bin:/usr/bin:/bin"
+    remote = Probe(0, direct=False)
+    found = keeper.login_state("claude-code", "/bin/c", remote, path)  # type: ignore[arg-type]
+    assert found == "ok" and remote.env == {"PATH": path}
+    here = Probe(0)
+    found = keeper.login_state("claude-code", "/bin/c", here, path)  # type: ignore[arg-type]
+    assert found == "ok" and here.env is None  # the runner's own environment, as before
 
 
 # --- signals and the diagnosis ---------------------------------------------------------------
@@ -583,6 +606,20 @@ def test_scrub_replaces_an_authorization_value() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("line", "scrubbed"),
+    [
+        ("plc-0003: authorization='abc123'", "plc-0003: authorization='<secret>'"),
+        ('plc-0003: {"Authorization": "Bearer abc.DEF"}',
+         'plc-0003: {"Authorization": "<secret>"}'),
+        ("plc-0003: headers {'authorization': 'token abc'}",
+         "plc-0003: headers {'authorization': '<secret>'}"),
+    ],
+)  # fmt: skip
+def test_scrub_replaces_a_quoted_authorization_value(line: str, scrubbed: str) -> None:
+    assert watch.scrub(line) == scrubbed
+
+
 def test_scrub_replaces_a_bearer_token_anywhere() -> None:
     assert watch.scrub("plc-0003: sent Bearer abc.DEF/123+= then") == (
         "plc-0003: sent Bearer <secret> then"
@@ -598,6 +635,9 @@ def test_scrub_replaces_a_bearer_token_anywhere() -> None:
         ("plc-0003: cwd C:\\Users\\carol\\repo done", "plc-0003: cwd <path> done"),
         ("plc-0003: cwd C:/Users/dave/repo done", "plc-0003: cwd <path> done"),
         ("plc-0003: cwd c:\\users\\erin done", "plc-0003: cwd <path> done"),
+        ("plc-0003: cwd C:\\USERS\\frank\\repo done", "plc-0003: cwd <path> done"),
+        ("plc-0003: cwd c:/users/gina done", "plc-0003: cwd <path> done"),
+        ("plc-0003: cwd /USERS/hal/repo done", "plc-0003: cwd <path> done"),
         ("plc-0003: cwd /root/.config done", "plc-0003: cwd <path> done"),
         ("plc-0003: cwd /root done", "plc-0003: cwd <path> done"),
         ("plc-0003: HOME=/home/alice", "plc-0003: HOME=<path>"),

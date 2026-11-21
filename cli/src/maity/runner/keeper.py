@@ -69,18 +69,23 @@ LOGIN_NEEDED: dict[str, tuple[int, str | None]] = {
 }
 
 
-def login_state(harness_id: str, binary: str | None, as_user: AsUser) -> str:
+def login_state(
+    harness_id: str, binary: str | None, as_user: AsUser, agent_path: str | None = None
+) -> str:
     """The tool's own login answer as the watch's `login` signal (§15.7): `ok` on exit 0,
     `needed` only on the probe's documented "not logged in" answer (LOGIN_NEEDED), and
     `unknown` for anything else: another exit, a timeout, an error, a harness without a
     probe (agy, opencode, …) or no binary. `needed` ends a placement as `failed`/`auth`
     with no restart, so a flaky probe must never give it (security review A1942). Unlike
-    `logged_in`, neither a missing probe nor a failed one counts as an answer."""
+    `logged_in`, neither a missing probe nor a failed one counts as an answer. Through sudo
+    or on an ssh host the probe runs with the agents' PATH (`agent_path`), as the harness
+    probe does: a tool there finds its own helpers on it (Gemini review A1941)."""
     args = LOGIN_STATUS.get(harness_id)
     if args is None or not binary:
         return "unknown"
+    env = {"PATH": agent_path} if not as_user.direct and agent_path else None
     try:
-        done = as_user.run([binary, *args], timeout=LOGIN_TIMEOUT)
+        done = as_user.run([binary, *args], env=env, timeout=LOGIN_TIMEOUT)
     except Exception:  # noqa: BLE001 - a probe that cannot run says nothing about the login
         return "unknown"
     if done.returncode == 0:

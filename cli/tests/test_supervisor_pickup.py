@@ -44,7 +44,7 @@ def start(
 ) -> tuple[supervisor.Supervisor, Hub]:  # fmt: skip
     sup, _, _, _, _ = make(tmp_path)
     sup.client = client
-    sup.login = lambda harness, binary, as_user: "needed"
+    sup.login = lambda harness, binary, as_user, agent_path: "needed"
     recorded(sup.cfg, credential=False)
     data = placement(agent=agent or NEW_MEMBER, **extra)
     if session is not ...:

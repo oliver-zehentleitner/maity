@@ -6042,6 +6042,18 @@ Where the contract left the choice open, it decided as follows.
   attached meanwhile keeps it, and the finding is reported once instead.
   Rejected: acting on the worker's snapshot, which can be seconds old and
   could end a session a person has just attached to.
+- **A session that just exited is never throttled, and the quiet span is
+  clamped** (Gemini review A1941). The watch looks at most once a minute,
+  but not for a dead session: one that exits within a minute of an earlier
+  look would otherwise be reaped as a plain exit, losing its finding, the
+  watch's count and the resume. The verdict's re-check includes whether the
+  process still runs, so a pane that died is taken to the exit, never
+  nudged. The quiet span that `tool_call_max_minutes` is measured against
+  counts from the later of the quiet spell's start and `watch_since`, as the
+  grace does: a stale spell from before a restart would otherwise make a
+  working run look two hours quiet at its first look. A session that
+  vanished while the watch was ending it enters that end (auth, held or a
+  restart) instead of a fresh start.
 - **Terminal exits stay with the exit handling; the watch takes only a
   plain exit** (A1940). A revoked credential, the loop's hot loop, a folder
   refusal or a provider limit is decided as without the watch
