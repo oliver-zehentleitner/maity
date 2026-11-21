@@ -5,7 +5,9 @@ resume packet names, and the git commit of it. The runner fetches exactly that c
 own git, outside any sandbox, and keeps the skill's files in `skills_dir/keep-the-why/<key>/`
 (`key`: the commit and a hash of the source), laid out as a Claude Code plugin
 (`plugin/.claude-plugin/plugin.json`, `plugin/skills/keep-the-why/`), so a session loads it
-with `--plugin-dir` and nothing goes into the agents' home. Git checks every object against
+with `--plugin-dir` and nothing goes into the harness's own settings or skills (where the
+agents cannot read this directory, deliver puts the same files below their home, which no
+harness loads on its own, tsk-7casfxb7cn49). Git checks every object against
 the commit id, so a moved tag changes nothing here. Only regular files are taken, bounded in
 number and size, written 0644 in 0755 directories, and a `manifest.json` with each file's
 SHA-256 written last marks a copy as complete. A copy is checked against its manifest every
@@ -32,6 +34,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .. import proc, state
+from . import skillop
+from .asuser import AsUser
 
 NAME = "keep-the-why"
 COMMIT = re.compile(r"[0-9a-f]{40}")
@@ -122,8 +126,7 @@ def ensure(skills_dir: Path, state_dir: Path, source: str, commit: str) -> Path:
     final = skills_dir / NAME / name
     recorded = _anchors(state_dir).get(name)
     if os.path.lexists(final / MANIFEST):
-        verify(final, source, commit)
-        digest = _sha256(final / MANIFEST)
+        digest = verify(final, source, commit)  # the manifest's SHA-256, as it read it
         if digest == recorded:
             return final / PLUGIN
         if recorded is not None:
@@ -143,8 +146,7 @@ def ensure(skills_dir: Path, state_dir: Path, source: str, commit: str) -> Path:
         except OSError:
             if not os.path.lexists(final / MANIFEST):  # not another start's finished copy
                 raise Unavailable(f"cannot put the skill at {final}") from None
-    verify(final, source, commit)
-    if _sha256(final / MANIFEST) != fresh:  # a copy that was there before: the same, or not ours
+    if verify(final, source, commit) != fresh:  # a copy that was there before: ours, or not
         raise Unavailable(f"the skill's copy at {final} is not what commit {commit} holds")
     _record(state_dir, name, fresh)
     return final / PLUGIN
@@ -173,48 +175,60 @@ def _record(state_dir: Path, name: str, digest: str) -> None:
 MANIFEST_MAX = 64 * 1024
 
 
-def verify(copy: Path, source: str, commit: str) -> None:
+def verify(copy: Path, source: str, commit: str) -> str:
     """The copy of `source` at `commit`, as its manifest says, and every file the manifest
     names, with its hash, and nothing else: the copy, its plugin
     root and every directory below are real directories, the manifest and every file regular
     files, none a link, within the same bounds as at the fetch (the review of #2056). A file is
     opened without following a link and without waiting on a FIFO, and its type is checked on
-    the open descriptor before anything is read."""
-    for directory in (copy, copy / PLUGIN):
-        _kind(directory, stat.S_ISDIR, "directory")
+    the open descriptor before anything is read. One check for the runner's copy and the one on
+    the agents' side (skillop.verify); the manifest's SHA-256."""
     try:
-        manifest = json.loads(_read(copy / MANIFEST, MANIFEST_MAX).decode("utf-8"))
-        files = manifest["files"]
-        if not isinstance(files, dict):
-            raise TypeError
-    except (ValueError, KeyError, TypeError):
-        raise Unavailable(f"{copy / MANIFEST} is not a manifest the runner wrote") from None
-    if manifest.get("source") != source or manifest.get("commit") != commit:
-        raise Unavailable(f"the skill's copy at {copy} is not of {source} at {commit}")
-    found: dict[str, str] = {}
-    total = 0
-    for dirpath, dirnames, filenames in os.walk(copy / PLUGIN, followlinks=False):
-        for name in dirnames:
-            _kind(Path(dirpath) / name, stat.S_ISDIR, "directory")
-        for name in filenames:
-            full = Path(dirpath) / name
-            if len(found) >= MAX_FILES + 1:  # the skill's files and plugin.json
-                raise Unavailable(f"the skill's copy at {copy} has too many files")
-            data = _read(full, MAX_BYTES + MANIFEST_MAX - total)  # the plugin.json on top
-            total += len(data)
-            found[full.relative_to(copy).as_posix()] = hashlib.sha256(data).hexdigest()
-    if found != files:
-        raise Unavailable(f"the skill's copy at {copy} does not match its manifest")
+        return skillop.verify_path(copy, source, commit, MAX_FILES, MAX_BYTES, MANIFEST_MAX)
+    except skillop.Mismatch as exc:
+        raise Unavailable(str(exc)) from None
 
 
-def _kind(path: Path, test: Any, what: str) -> None:
-    """`path` itself (never a link's target) is a `what`."""
+def deliver(
+    as_user: AsUser, home: Path, skills_dir: Path, state_dir: Path, source: str, commit: str
+) -> Path:
+    """The plugin root of `source` at `commit` on the agents' side, below their `home`
+    (skillop.AGENT_SKILLS), for a target whose agents cannot read the runner's own copy: the
+    agent_user layout and an ssh host (tsk-7casfxb7cn49). The runner fetches and checks its own
+    copy first (`ensure`); the agents' copy is handed out only when its manifest's SHA-256 is
+    the one the runner recorded for it. A missing or different one is put again from the
+    runner's copy, once. Unavailable for anything that keeps it from being had, so a start
+    goes on without the skill and is never counted as a crash (the review of #2089): a failed
+    op (OSError, scratchop.Unsupported for an ssh host's `maity` without the skill ops,
+    skillop.OnTheWay for a link below the agents' home, a timeout), an answer that cannot be
+    decoded (ValueError), and a cached file that turned unreadable since the check
+    (skillop.Mismatch while packaging)."""
+    root = ensure(skills_dir, state_dir, source, commit)
+    name = key(source, commit)
+    recorded = _anchors(state_dir).get(name)
+    if recorded is None:  # ensure records every copy it hands out
+        raise Unavailable(f"the runner holds no record of the skill's copy {name}")
     try:
-        mode = os.lstat(path).st_mode
-    except OSError:
-        raise Unavailable(f"{path} is missing from the skill's copy") from None
-    if stat.S_ISLNK(mode) or not test(mode):
-        raise Unavailable(f"{path} in the skill's copy is not a plain {what}")
+        return _deliver(as_user, home, root, name, source, commit, recorded)
+    except (OSError, ValueError, subprocess.SubprocessError, skillop.Mismatch) as exc:
+        raise Unavailable(f"the skill's copy could not be put below {home}: {exc}") from None
+
+
+def _deliver(
+    as_user: AsUser, home: Path, root: Path, name: str, source: str, commit: str, recorded: str
+) -> Path:
+    copy = skillop.agent_copy(home, name)
+    found = as_user.skill_check(home, name, source, commit)
+    if found.get("result") == "ok" and found.get("digest") == recorded:
+        return copy / PLUGIN
+    put = as_user.skill_put(home, skillop.payload(root.parent, name))
+    if put.get("digest") != recorded:
+        raise Unavailable(f"the skill's copy put at {copy} is not the one the runner fetched")
+    again = as_user.skill_check(home, name, source, commit)
+    if again.get("result") != "ok" or again.get("digest") != recorded:
+        why = again.get("why") or again.get("result")
+        raise Unavailable(f"the skill's copy at {copy} does not hold after it was put: {why}")
+    return copy / PLUGIN
 
 
 def _read(path: Path, limit: int) -> bytes:

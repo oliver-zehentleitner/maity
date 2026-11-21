@@ -19902,19 +19902,26 @@ nor shows it, and a runner view carries none (below).
     OS user. The runner starts it only as far as its configuration allows
     a harness to run without its sandbox (`require_sandbox`,
     docs/runners.md), and gives it no scratch (§15.5).
-  - **Modes.** Both. `supervised` runs `opencode run` and continues with
-    `--continue`; `interactive` runs `opencode --prompt` with the start
-    prompt in the pane.
+  - **Modes.** Both. `supervised` runs `opencode run` in the clone as its
+    working directory (`run` has no `--dir`) and continues with
+    `--continue`; `interactive` runs `opencode --standalone <clone>
+    --prompt` with the start prompt in the pane. `--standalone` keeps the
+    TUI off the user's shared opencode background service, which would
+    read neither the placement's `opencode.json` nor the switch that turns
+    the repository's own opencode configuration off.
   - **Models.** Names in opencode's own form, `<provider>/<model>`,
-    passed as `opencode --model`. opencode needs a named model: without
-    `--model` it runs its own default, a model opencode hosts, and the
-    clone's conversation would go to opencode's servers instead of the
-    provider the runner names. So the runner fails closed on the model:
-    a placement without one (`model: null`) starts on the runner's
-    `default_model`, and a start whose model is none of the runner's
-    `models` (an opencode harness configured with none included) is
-    refused, `failed` with `harness_refused` and `model_unsupported`
-    (§15.7), never started without `--model`. The dashboard names a
+    given as the top-level `model` of the `opencode.json` the runner
+    writes for the placement, in both modes, and to `opencode run` also
+    as `--model` (opencode's TUI has no `--model` since 2.3). opencode
+    needs a named model: without one it runs its own default, a model
+    opencode hosts, and the clone's conversation would go to opencode's
+    servers instead of the provider the runner names. So the runner fails
+    closed on the model: a placement without one (`model: null`) starts
+    on the runner's `default_model`, and a start whose model is none of
+    the runner's `models` (an opencode harness configured with none
+    included) is refused, `failed` with `harness_refused` and
+    `model_unsupported` (§15.7), never started without a model. The
+    dashboard names a
     model for every opencode placement it makes and does not offer
     opencode where the runner advertises no `models`.
   - **Login.** The runner has no installer for opencode: `install` and
