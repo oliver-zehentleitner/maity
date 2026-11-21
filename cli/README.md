@@ -1179,7 +1179,15 @@ built on manager, then also runs:
   left out, and maity says how many. Text inside a line is never changed.
 - `maity gh pr edit [<number> | <branch>] [--title <text>] --body-file
   <file>` (or `--body <text>`): the title and the body, nothing else. The
-  body loses the same footer lines.
+  body loses the same footer lines. maity sets them with one REST call
+  through gh (`gh api --method=PATCH repos/<owner>/<repo>/pulls/<number>`
+  on the clone's own repository, the title and body as JSON on standard
+  input), not with `gh pr edit`, which in older gh versions asks the forge
+  for a field it no longer serves and fails; so any gh with `api` works. A
+  branch is first turned into its pull request's number (`gh pr view
+  --json number`). maity prints which pull request changed, as one line;
+  when gh's answer is not the pull request, a fixed line says the edit was
+  sent and may have taken effect, and never repeats gh's answer.
 - `maity gh pr ready [<number> | <branch>]`: marks a draft ready for review.
 - `maity gh run list --commit <sha>`: the runs of a commit as gh's JSON
   (id, workflow, name, event, status, conclusion, head, time).
@@ -1326,7 +1334,12 @@ project's own harness configuration is never loaded:
   `.git/maity`), `--permission-mode dontAsk`, and an empty MCP
   configuration. A `supervised` placement also gets `AskUserQuestion` as a
   bare deny rule: nobody answers a headless run, so the tool is not
-  offered. Before an `interactive` start the runner marks the
+  offered. Every placement gets `EnterWorktree` as a bare deny rule and
+  `git worktree` denied, and from Claude Code 2.1.50 a `WorktreeCreate`
+  hook that fails (with `disableAllHooks` set to `false`), so the session
+  makes no git worktree in its clone, where one would stop maity's git.
+  The hook rests on Claude Code's documented behaviour and was not
+  confirmed on the hosted version. Before an `interactive` start the runner marks the
   clone as trusted in the agents' Claude Code configuration
   (`hasTrustDialogAccepted` for the clone's path, under the lock Claude
   Code's own saves take; see `cli/context/runner.md` for the one case in
