@@ -4206,12 +4206,13 @@ def test_a_claude_code_placement_gets_no_password_file(
     assert ctx.pg_pass.is_file()
 
 
-def test_only_a_codex_placement_gets_a_tmpdir_leaf_of_its_own(
+def test_a_codex_and_a_claude_code_placement_get_a_temp_leaf_of_their_own(
     world: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """tsk-0zb9mgzmbwn4, the live check of 2026-11-20: Codex 0.171.0 writes a leaf re-opened
-    under the hidden parent, Claude Code 2.1.329 mounts it read-only. So with no room under
-    the scratch, a Codex placement gets its own TMPDIR leaf and a Claude Code one none."""
+    """With no room under the scratch, a Codex placement gets its own leaf as its TMPDIR
+    (tsk-0zb9mgzmbwn4) and a Claude Code one as its CLAUDE_CODE_TMPDIR (tsk-k7svzz2p4v7y;
+    which variable is the adapter's, adapters.own_tmp_env). A harness that hides nothing (stub)
+    is given no parent, so no leaf."""
     sup, *_ = world
     recorded(sup.cfg)
     target = sup.targets["local"]
@@ -4221,9 +4222,13 @@ def test_only_a_codex_placement_gets_a_tmpdir_leaf_of_its_own(
     monkeypatch.setattr(adapters, "SOCKET_PATH_MAX", 400)  # room under the test's root
     claude = config.Harness("claude-code", ("supervised",), "supervised")
     codex = config.Harness("codex", ("supervised",), "supervised")
-    assert sup._context(placement(), claude, place, target, scratch=deep).tmpdir is None
+    stub = config.Harness("stub", ("supervised",), "supervised")
+    ctx = sup._context(placement(), claude, place, target, scratch=deep)
+    assert ctx.tmpdir is not None and ctx.tmpdir.is_dir()
+    assert _stat_mode(ctx.tmpdir.parent) == 0o700
     ctx = sup._context(placement(n=4), codex, place, target, scratch=deep)
     assert ctx.tmpdir is not None and ctx.tmpdir.is_dir()
+    assert sup._context(placement(n=5), stub, place, target, scratch=deep).tmpdir is None
 
 
 def _stat_mode(path: Path) -> int:
