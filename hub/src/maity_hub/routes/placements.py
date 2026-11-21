@@ -140,7 +140,26 @@ def _briefing(mine: Membership, placement: Any) -> bool:
 
 def _view(conn: Connection, mine: Membership, placement: Any) -> dict[str, Any]:
     return pl.view(
-        conn, placement, viewer_id=mine.principal_id, briefing=_briefing(mine, placement)
+        conn,
+        placement,
+        viewer_id=mine.principal_id,
+        briefing=_briefing(mine, placement),
+        logs=_logs(conn, mine, placement),
+    )
+
+
+def _logs(conn: Connection, mine: Membership, placement: Any) -> bool:
+    """Whether the caller reads the runner's log lines of the stored finding (§15.7); asked
+    only when there are lines, so a placement without them costs no read."""
+    finding = (placement.reported or {}).get("finding")
+    if not finding or "log" not in finding:
+        return False
+    return pl.reads_logs(
+        conn,
+        placement,
+        principal_id=mine.principal_id,
+        trust=mine.trust,
+        bridged=mine.bridged,
     )
 
 
