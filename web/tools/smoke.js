@@ -2179,9 +2179,53 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   byId("join-agent").value = "agt-a"; byId("join-agent").dispatch("change");
   const srPlacedWhy = text(srPanel().querySelector(".join-runner-why"));
   await srSubmit();
-  expect(srMade.length === 1 && srPlacedWhy === "This agent already runs on a runner here: one placement per agent. Its row is under Managed agents."
-    && srSaid() === "Not placed on the runner: " + srPlacedWhy,
-    "placements: an agent placed now is said so and not sent " + srPlacedWhy);
+  // §15.5: one placement per instance, within max_instances (1 when the view names none, §6.18):
+  // Agent A's placement made above holds no instance yet and counts, so it is at its limit.
+  expect(srMade.length === 1 && srPlacedWhy === "Agent A has 1 of 1 instances, its limit. Its owner raises the limit in the agent's rulebook before another one starts."
+    && srSaid() === "Not placed on the runner: " + srPlacedWhy && srPanel().querySelector(".join-runner-another").hidden,
+    "placements: an agent at its instance limit is said so and not sent " + srPlacedWhy);
+  // An agent that runs already with room under its limit starts another instance: the count and
+  // where the others run are said, and the clone it gets is the next free <handle>-N there.
+  byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+  const srAnother = text(srPanel().querySelector(".join-runner-another"));
+  expect(srPanel().querySelector(".join-runner-why").hidden
+    && srAnother === "This starts another instance of Agent C: 1 of 3 instances now, on home-laptop."
+    && byId("placement-new-clone").getAttribute("placeholder") === "agent-c-2",
+    "placements: an agent with room starts another instance, with the count, its runners and the next clone "
+    + JSON.stringify([srAnother, byId("placement-new-clone").getAttribute("placeholder")]));
+  // Review A1746 of #2058: the form counts and picks clones as the hub does. Two active placements
+  // of Agent C whose credentials made instances that are no longer live (revoked, waiting to
+  // rejoin) each hold one of its 3 (instances_held), and a closed placement of another member
+  // whose clone the runner kept still holds that clone (the hub's clone default), while one
+  // reported removed does not.
+  srCancel().click(); await tick();
+  const iiAll = win.Maity.api.getAll;
+  const iiPlacement = (id, agent, clone, extra) => Object.assign({ id, agent: { id: agent, handle: agent, display_name: agent },
+    runner: { id: "rnr-0002", name: "home-laptop" }, workspace: { clone }, active: true, credential_id: null, instance: null }, extra);
+  const iiExtra = [
+    iiPlacement("plc-ii1", "agt-c", "agent-c-5", { credential_id: "crd-c-old1", instance: "gone1" }),
+    iiPlacement("plc-ii2", "agt-c", "agent-c-6", { credential_id: "crd-c-old2", instance: "gone2" }),
+  ];
+  win.Maity.api.getAll = (p, ...rest) => (p === "/projects/maintainer/maity/placements?closed=true"
+    ? iiAll(p, ...rest).then((a) => Object.assign({}, a, { items: [...a.items, ...iiExtra] }))
+    : iiAll(p, ...rest));
+  await srOpen();
+  byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+  const iiFull = text(srPanel().querySelector(".join-runner-why"));
+  expect(iiFull === "Agent C has 3 of 3 instances, its limit. Its owner raises the limit in the agent's rulebook before another one starts.",
+    "placements: an active placement whose instance is no longer live counts toward the limit, as the hub counts it " + iiFull);
+  srCancel().click(); await tick();
+  iiExtra.length = 0;
+  iiExtra.push(iiPlacement("plc-ii3", "agt-b", "agent-c-2", { active: false, workspace_outcome: { state: "kept" } }),
+    iiPlacement("plc-ii4", "agt-b", "agent-c-3", { active: false, workspace_outcome: { state: "removed" } }));
+  await srOpen();
+  byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+  const iiClone = byId("placement-new-clone").getAttribute("placeholder");
+  expect(iiClone === "agent-c-3",
+    "placements: a closed placement of another member that still holds its clone takes that clone, a removed one does not " + iiClone);
+  win.Maity.api.getAll = iiAll;
+  srCancel().click(); await tick();
+  await srOpen();
   // §15.6: by id only an active member of the project; a profile of one's own not in it yet joins by a line first.
   byId("join-agent").value = "agt-s1"; byId("join-agent").dispatch("change");
   const srOutsideWhy = text(srPanel().querySelector(".join-runner-why"));
@@ -2423,6 +2467,131 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
   srCancel().click(); await tick();
   await win.Maity.api.patch("/projects/maintainer/maity", { policy: { max_placements: 8 }, reason: "back for the tests" });
   srMade.pop();
+  // The hub's instance_quota for an agent the form saw room for (a start that raced another,
+  // §15.5): the refusal names the agent's limit and who raises it.
+  await srOpen();
+  byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+  const iqPost = win.Maity.api.post;
+  win.Maity.api.post = (p, b) => (p === "/projects/maintainer/maity/placements"
+    ? Promise.reject(new win.Maity.api.ApiError("the team has as many instances as its rulebook allows", 409, p, "instance_quota", { max: 3 }))
+    : iqPost(p, b));
+  await srSubmit();
+  const iqSaid = srForm() && srForm().querySelector(".send-status");
+  expect(iqSaid && text(iqSaid) === "Not placed on the runner: the agent has as many instances as its limit of 3 allows; its owner raises the limit in the agent's rulebook before another one starts.",
+    "placements: instance_quota from the hub names the agent's limit and who raises it " + (iqSaid && text(iqSaid)));
+  win.Maity.api.post = iqPost;
+  srCancel().click(); await tick();
+  // Review A1745 of #2058, its two cases: a placement whose credential is not a live instance's
+  // holds one of the agent's instances. By instance id where the view names no credentials
+  // (max 1, one such placement: blocked), and by credential where a members:admin view names
+  // them (max 2, one live instance and one revoked credential: at the limit).
+  const rcAll = win.Maity.api.getAll;
+  let rcMember = null, rcPlacements = [];
+  win.Maity.api.getAll = (p, ...rest) => {
+    if (p === "/projects/maintainer/maity/members") {
+      return rcAll(p, ...rest).then((a) => Object.assign({}, a, { items: a.items.map((x) => (x.id === "agt-c" && rcMember ? Object.assign({}, x, rcMember) : x)) }));
+    }
+    if (p === "/projects/maintainer/maity/placements?closed=true") {
+      return rcAll(p, ...rest).then((a) => Object.assign({}, a, { items: [...a.items, ...rcPlacements] }));
+    }
+    return rcAll(p, ...rest);
+  };
+  const rcWhy = async () => {
+    await srOpen();
+    byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+    const why = text(srPanel().querySelector(".join-runner-why"));
+    srCancel().click(); await tick();
+    return why;
+  };
+  rcMember = { team: { max_instances: 1, lead_instance: null, distribution: "free", wake: "all", review_within_team: false }, instances: [] };
+  rcPlacements = [iiPlacement("plc-rc1", "agt-c", "agent-c-7", { credential_id: "crd-c-gone", instance: "gone" })];
+  const rcByInstance = await rcWhy();
+  rcMember = { team: { max_instances: 2, lead_instance: null, distribution: "free", wake: "all", review_within_team: false },
+    instances: [{ id: "k3pa", credential_id: "crd-c-0002", revoked_at: null, presence: "online", claims: 0 }] };
+  rcPlacements = [iiPlacement("plc-rc2", "agt-c", "agent-c-8", { credential_id: "crd-c-revoked", instance: "old1" })];
+  const rcByCredential = await rcWhy();
+  win.Maity.api.getAll = rcAll;
+  // With no live instance at all, plc-0002 holds none either (review A1815 of #2058): 2 of 1.
+  expect(rcByInstance === "Agent C has 2 of 1 instances, its limit. Its owner raises the limit in the agent's rulebook before another one starts."
+    && rcByCredential === "Agent C has 2 of 2 instances, its limit. Its owner raises the limit in the agent's rulebook before another one starts.",
+    "placements: a placement whose credential is not a live instance's counts, by instance id and by credential "
+    + JSON.stringify([rcByInstance, rcByCredential]));
+  // Review A1815 of #2058: a start that takes up a credential adds no instance (the hub's
+  // carried_credential). Agent C at 2 of 2: its live instances run plc-0002 (crd-c-0002) and
+  // crd-c-carry, which the latest closed placement in agent-c-9 on home-laptop left (an older one
+  // there left a dead credential). The clone the form would give (agent-c-2) starts a new instance
+  // and is blocked; agent-c-9 takes the credential up and passes, with nothing more to say; another
+  // clone is blocked. By instance id where the view names no credentials, the same.
+  const ccAll = win.Maity.api.getAll;
+  let ccMember = null, ccPlacements = [];
+  win.Maity.api.getAll = (p, ...rest) => {
+    if (p === "/projects/maintainer/maity/members") {
+      return ccAll(p, ...rest).then((a) => Object.assign({}, a, { items: a.items.map((x) => (x.id === "agt-c" && ccMember ? Object.assign({}, x, ccMember) : x)) }));
+    }
+    if (p === "/projects/maintainer/maity/placements?closed=true") {
+      return ccAll(p, ...rest).then((a) => Object.assign({}, a, { items: [...a.items, ...ccPlacements] }));
+    }
+    return ccAll(p, ...rest);
+  };
+  const ccShown = (sel) => { const n = srPanel().querySelector(sel); return n && !n.hidden ? text(n) : ""; };
+  const ccLines = async () => {
+    await srOpen();
+    byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+    const seen = [ccShown(".join-runner-why")];
+    for (const clone of ["agent-c-9", "agent-c-8"]) {
+      byId("placement-new-clone").value = clone; byId("placement-new-clone").dispatch("input");
+      seen.push(ccShown(".join-runner-why"), ccShown(".join-runner-another"));
+    }
+    srCancel().click(); await tick();
+    return seen;
+  };
+  const ccTeam = { max_instances: 2, lead_instance: null, distribution: "free", wake: "all", review_within_team: false };
+  const ccClosed = (id, credential, instance, at) => iiPlacement(id, "agt-c", "agent-c-9", { active: false, credential_id: credential, instance, closed_at: at });
+  ccPlacements = [ccClosed("plc-cc0", "crd-c-gone", "gone", "2026-11-19T10:00:00Z"), ccClosed("plc-cc1", "crd-c-carry", "c9ar", "2026-11-20T10:00:00Z")];
+  ccMember = { team: ccTeam, instances: [{ id: "k3pa", credential_id: "crd-c-0002", revoked_at: null, presence: "online", claims: 0 },
+    { id: "c9ar", credential_id: "crd-c-carry", revoked_at: null, presence: "offline", claims: 0 }] };
+  const ccByCredential = await ccLines();
+  // Review A1816 of #2058: the list gives closed_at to the second, and two closes within one
+  // second cannot be ordered as the hub orders them; any of them that carries lets the start
+  // through, and the hub's answer decides. The live one listed first, then last.
+  const ccTied = "2026-11-20T10:00:00Z";
+  ccPlacements = [ccClosed("plc-cc1", "crd-c-carry", "c9ar", ccTied), ccClosed("plc-cc2", "crd-c-gone", "gone", ccTied)];
+  const ccTiedFirst = await ccLines();
+  ccPlacements = [ccClosed("plc-cc2", "crd-c-gone", "gone", ccTied), ccClosed("plc-cc1", "crd-c-carry", "c9ar", ccTied)];
+  const ccTiedLast = await ccLines();
+  ccPlacements = [ccClosed("plc-cc0", "crd-c-gone", "gone", "2026-11-19T10:00:00Z"), ccClosed("plc-cc1", "crd-c-carry", "c9ar", "2026-11-20T10:00:00Z")];
+  ccMember = { team: ccTeam, instances: [{ id: "k3pa", revoked_at: null, presence: "online", claims: 0 }, { id: "c9ar", revoked_at: null, presence: "offline", claims: 0 }] };
+  const ccByInstance = await ccLines();
+  win.Maity.api.getAll = ccAll;
+  const ccFull = "Agent C has 2 of 2 instances, its limit. Its owner raises the limit in the agent's rulebook before another one starts.";
+  const ccWant = JSON.stringify([ccFull, "", "", ccFull, ""]);
+  expect(JSON.stringify(ccByCredential) === ccWant && JSON.stringify(ccByInstance) === ccWant,
+    "placements: a start in the clone whose closed placement left a live credential passes at the limit and says nothing more; another clone is blocked "
+    + JSON.stringify([ccByCredential, ccByInstance]));
+  expect(JSON.stringify(ccTiedFirst) === ccWant && JSON.stringify(ccTiedLast) === ccWant,
+    "placements: closes within one second, one with a live credential, let the start through whichever is listed first "
+    + JSON.stringify([ccTiedFirst, ccTiedLast]));
+  // Review A1815 of #2058, its P3: an active placement holds no live instance when the member has
+  // none at all. Agent D has no instances and plc-0003 runs with a credential: 1 of 1, blocked.
+  await srOpen();
+  byId("join-agent").value = "agt-d"; byId("join-agent").dispatch("change");
+  const ndWhy = ccShown(".join-runner-why");
+  srCancel().click(); await tick();
+  expect(ndWhy === "Agent D has 1 of 1 instances, its limit. Its owner raises the limit in the agent's rulebook before another one starts.",
+    "placements: an active placement of an agent with no live instance counts as one waiting " + JSON.stringify(ndWhy));
+  // An agent that runs already, with room, is placed again: the hub (the fixture as it) takes a
+  // second placement of one agent and gives it the next free clone on that runner.
+  await srOpen();
+  byId("join-agent").value = "agt-c"; byId("join-agent").dispatch("change");
+  await srSubmit();
+  const scMade = srMade[srMade.length - 1];
+  const scPlaced = (await win.Maity.api.getAll("/projects/maintainer/maity/placements")).items
+    .filter((p) => p.agent.id === "agt-c" && p.workspace.clone === "agent-c-2");
+  expect(scMade && scMade.agent && scMade.agent.id === "agt-c" && !(scMade.workspace && scMade.workspace.clone) && scPlaced.length === 1,
+    "placements: a second instance of an agent that runs is sent and placed in the next free clone " + JSON.stringify([scMade, scPlaced.length]));
+  if (scPlaced.length) await win.Maity.api.del("/projects/maintainer/maity/placements/" + scPlaced[0].id);
+  srMade.pop();
+  if (srForm()) { srCancel().click(); await tick(); }
   // A project's own roles follow the built-in ones in a new profile's role, on any base, as the hub's
   // validate_assignment takes them (tsk-0e7mrvccjttn); since tsk-hdczmsq2r431 that is the join form's
   // role, the one a new profile started on a runner is sent with. The fixture refuses a role the project
@@ -13662,6 +13831,21 @@ ctx.navigator = { clipboard: { writeText: async (t) => { ctx.copied = t; } } };
     "event: a removed direct chat message still opens in its chat (conversation_id survives), its tombstone marked there " + win.location.hash + " " + evMarked());
   win.MAITY_FIXTURES = evFx;
   await go("#/maintainer/maity/inbox");
+  // Review A1815 of #2058, as the hub (the fixture as it), on a mock loaded afresh (home-laptop is
+  // removed further up; the next case loads it afresh again): removing a placement leaves its
+  // credential live, so placing the agent there again (same runner, same clone) takes it up and
+  // adds no instance: Agent B, max 1, passes; another clone stays refused.
+  {
+    vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
+    await win.Maity.api.del("/projects/maintainer/maity/placements/plc-0001");
+    const rpBody = (clone) => ({ runner: "rnr-0002", harness: "claude-code", agent: { id: "agt-b" }, workspace: { clone } });
+    const rpMade = await win.Maity.api.post("/projects/maintainer/maity/placements", rpBody("agent-b")).catch((e) => e);
+    const rpOther = await win.Maity.api.post("/projects/maintainer/maity/placements", rpBody("agent-b-9")).catch((e) => e);
+    expect(rpMade && rpMade.credential_id === "crd-b-0003" && rpMade.instance === "wle2" && rpMade.workspace && rpMade.workspace.continues_existing === true
+      && rpOther && rpOther.code === "instance_quota",
+      "placements: an agent placed again where its removed placement ran takes up the credential at its limit; another clone is refused "
+      + JSON.stringify([rpMade && (rpMade.code || rpMade.credential_id), rpOther && (rpOther.code || rpOther.id)]));
+  }
   // The mock as the hub answers an admin agent (?as=agt-a, docs/api.md §2.3 ᵃ).
   win.location.search = "?as=agt-a";
   vm.runInContext(fs.readFileSync(path.join(WEB, "js/api.js"), "utf8"), ctx);
