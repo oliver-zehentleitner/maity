@@ -15,11 +15,13 @@ records across runner restarts; the sessions themselves are found again through 
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import random
 import re
 import secrets
+import stat
 import subprocess
 import threading
 import time
@@ -2152,6 +2154,36 @@ def private_paths(
     return tuple(dict.fromkeys(p for p in found if p != clone and p not in clone.parents))
 
 
+# What a stat may answer for a path that is simply not there (none, a file on the way, a loop
+# of links), as pathlib's predicates read it up to Python 3.13. Any other error, a directory
+# that cannot be searched above all, is not "not there" (tsk-0tje3vzzedtx).
+_ABSENT = (errno.ENOENT, errno.ENOTDIR, errno.ELOOP)
+
+
+def _kind(path: Path, *, follow: bool = True) -> int | None:
+    """`st_mode` of `path` (through links with `follow`), None when nothing is there; every
+    other OSError raises. A fail-closed listing decides with this, never with
+    `is_dir()`/`is_symlink()`: from Python 3.14 those answer False for a path below a
+    directory that cannot be searched instead of raising, and the listing would skip what it
+    cannot see (tsk-0tje3vzzedtx)."""
+    try:
+        return (os.stat if follow else os.lstat)(path).st_mode
+    except OSError as exc:
+        if exc.errno in _ABSENT:
+            return None
+        raise
+
+
+def _is_dir(path: Path) -> bool:
+    mode = _kind(path)
+    return mode is not None and stat.S_ISDIR(mode)
+
+
+def _is_link(path: Path) -> bool:
+    mode = _kind(path, follow=False)
+    return mode is not None and stat.S_ISLNK(mode)
+
+
 def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Path]:
     """The credential directories of the other clones under `workspaces` as they stand now,
     a workspace folder's clone `repo` included
@@ -2167,11 +2199,11 @@ def other_credentials(workspaces: Path, clone: Path, as_user: AsUser) -> list[Pa
     if as_user.direct:
         found: list[Path] = []
         try:
-            for project in root.iterdir() if root.is_dir() else ():
-                if project.is_dir() and not project.is_symlink():
+            for project in root.iterdir() if _is_dir(root) else ():
+                if _is_dir(project) and not _is_link(project):
                     found += [c / ".git" / "maity" for d in project.iterdir()
                               for c in (d, d / workspace.REPO)
-                              if (c / ".git" / "maity").is_dir()]  # fmt: skip
+                              if _is_dir(c / ".git" / "maity")]  # fmt: skip
         except OSError as exc:
             raise refused from exc
         real_root, real_clone = root, clone.resolve()
@@ -2201,9 +2233,9 @@ def other_scratches(
     found: list[Path] = []
     if as_user.direct:
         try:
-            for project in root.iterdir() if root.is_dir() else ():
+            for project in root.iterdir() if _is_dir(root) else ():
                 holder = project / workspace.SCRATCH
-                if project.is_symlink() or holder.is_symlink() or not holder.is_dir():
+                if _is_link(project) or _is_link(holder) or not _is_dir(holder):
                     continue
                 found += [root / project.name / workspace.SCRATCH / e.name
                           for e in holder.iterdir()]  # fmt: skip
