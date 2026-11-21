@@ -463,7 +463,7 @@ the hub records it on the session.
 | Registration mails | `registration_max_per_hour`, default 30 (§16.2) |
 | Terms | `url` 2048 characters, `version` 1–64 (§16.4) |
 | A rejection `reason` | 1024 characters (§16.4) |
-| Accounts waiting for approval | deleted after 30 days undecided; a rejected or expired address blocked 30 days (§2.7.5) |
+| Accounts waiting for approval | deleted after 30 days undecided; a rejected or expired address blocked 30 days, the block with its address deleted by the hourly pass after that (§2.7.5) |
 
 Larger bodies are `payload_too_large`. The caps keep the resume packet
 and the inbox bounded; what does not fit goes into the repository.
@@ -3055,8 +3055,11 @@ the account is deleted with its sessions, the person gets a mail with
 the reason (security budget), and the address is blocked from
 registering for 30 days (§16.4). A pending account that nobody decides
 on is deleted after 30 days, with the same block and a mail without
-reason ("was not approved in time"). With `approval: automatic` the
-account is `active` at once.
+reason ("was not approved in time"). A block holds the address only
+while it runs: once its 30 days are over, the registration's hourly
+pass (the one that deletes undecided accounts) deletes it, address
+included; an instance admin who lifts it early deletes it at once
+(§16.4). With `approval: automatic` the account is `active` at once.
 
 #### 2.7.6 Privacy
 
@@ -3709,7 +3712,13 @@ What deletion does:
   as theirs and as others' (§6.29).
 - **Removes the person**: the addresses, display name, avatar,
   languages, preferences, notification settings, public profile and its
-  static pages (§16.9) are deleted. The account row stays with its id
+  static pages (§16.9) are deleted, and with the profile the person's
+  links: `website` and `social` become `null`, `links_visible` its
+  default `private` (§16.9). Every public switch of the account ends
+  off, whatever its default on a new account: `meat_proxy_lead` and
+  `meat_proxy_hands` become `false` (§5.2, "Meat proxy"), and so does
+  `public_presence` (§16.9), although a new account starts with it
+  `true`. The account row stays with its id
   and `deleted_at`, so that every stored id keeps resolving. Its handle
   and aliases stay reserved for good (§6.24): an old mention, an old
   link and an old project name (§6.25) never come to mean someone else.
@@ -22572,7 +22581,7 @@ value it sets is `invalid` with `details.fields.<field>:
 |---|---|
 | `GET /admin/registrations` | the pending accounts, oldest first, paged (§1.4): `{id, handle, display_name, address, created_at, expires_at, source_ip, terms}` |
 | `POST /admin/registrations/{id}/approve` | `pending` → `active`; 200 with the item and `account_status: "active"` |
-| `POST /admin/registrations/{id}/reject` `{reason}` | deletes the pending account and its sessions; `reason` 1–1024 characters, required, mailed to the person; the address is blocked for 30 days; 200 `{id, status: "rejected"}` |
+| `POST /admin/registrations/{id}/reject` `{reason}` | deletes the pending account and its sessions; `reason` 1–1024 characters, required, mailed to the person; the address is blocked for 30 days, then the block and its address are deleted (§2.7.5); 200 `{id, status: "rejected"}` |
 | `DELETE /admin/registrations/blocks/{address}` | lifts a block early; idempotent |
 
 Scope `instance:admin`, human only, for all four. An `id` that is not a
