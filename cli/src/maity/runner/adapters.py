@@ -432,6 +432,8 @@ def launch(ctx: Context) -> Launch:
     # What `maity gh` may do here: the repository it pins and the gh it starts, or nothing
     # (an empty record also clears one a former grant left).
     ctx.as_user.write(records / ghpr.PULL_REQUESTS, pull_requests_record(ctx))
+    # Whether `maity gh`'s lead commands are granted here; the role is checked per call.
+    ctx.as_user.write(records / ghpr.LEAD, lead_record(ctx))
     # Where maity also reads a file the agent names (inclone): its scratch, or nowhere.
     scratch_record = f"{ctx.scratch}\n" if ctx.scratch is not None else ""
     ctx.as_user.write(records / clonecheck.SCRATCH_RECORD, scratch_record)
@@ -631,6 +633,8 @@ def codex_left_out(grant: config.RepositoryGrant) -> list[str]:
             "pull_requests is not given to codex: its `maity` runs inside its sandbox, and "
             "the runner sets up `maity gh` only for a `maity` outside it"
         )
+    if grant.lead:
+        left.append("lead is not given to codex, for the same reason as pull_requests")
     return left
 
 
@@ -646,6 +650,14 @@ def pull_requests_record(ctx: Context) -> str:
     if gh is None or not repository:
         return ""
     return f"{repository}\n{gh}\n"
+
+
+def lead_record(ctx: Context) -> str:
+    """The content of the runner's record `ghpr.LEAD`: `lead` when the grant has `lead` and
+    the pull-request record is written (`pull_requests_record`: never for Codex), else empty,
+    which also clears one a former grant left. The member's role is the hub's, read by
+    `maity gh` at each call, not decided here."""
+    return "lead\n" if ctx.grant.lead and pull_requests_record(ctx) else ""
 
 
 def _sandbox_prompt(ctx: Context) -> str:

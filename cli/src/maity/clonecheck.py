@@ -858,7 +858,9 @@ def runner_record(root: Path, top: int | None, name: str, limit: int) -> bytes:
             raise OSError(f"{name}: not a plain file")
         return path.read_bytes()
     try:
-        fd = os.open(name, os.O_RDONLY | NOFOLLOW, dir_fd=folder)
+        # Without blocking (security A1806 of #2054): a FIFO planted as a record would hold
+        # the open before the S_ISREG check below could refuse it.
+        fd = os.open(name, os.O_RDONLY | NOFOLLOW | getattr(os, "O_NONBLOCK", 0), dir_fd=folder)
     finally:
         os.close(folder)
     try:
