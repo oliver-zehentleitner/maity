@@ -1185,7 +1185,9 @@ built on manager, then also runs:
   input), not with `gh pr edit`, which in older gh versions asks the forge
   for a field it no longer serves and fails; so any gh with `api` works. A
   branch is first turned into its pull request's number (`gh pr view
-  --json number`). maity prints which pull request changed, as one line.
+  --json number`). maity prints which pull request changed, as one line;
+  when gh's answer is not the pull request, a fixed line says the edit was
+  sent and may have taken effect, and never repeats gh's answer.
 - `maity gh pr ready [<number> | <branch>]`: marks a draft ready for review.
 - `maity gh run list --commit <sha>`: the runs of a commit as gh's JSON
   (id, workflow, name, event, status, conclusion, head, time).

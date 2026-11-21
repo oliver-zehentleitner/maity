@@ -1100,6 +1100,7 @@ def test_edit_naming_another_repository_is_refused_before_gh_runs(
     [
         {"number": "77"},
         {"number": 0},
+        {"number": -5},
         {"number": True},
         {"number": 1.5},
         {},
@@ -1138,6 +1139,42 @@ def test_edit_says_which_pull_request_changed_in_one_cleaned_line(
     assert "long" not in seen.out and seen.out.count("\n") == 1
     call = ran(lead)
     assert call is not None and json.loads(call["stdin"]) == {"body": "Text.\n"}
+
+
+@runs_gh
+@pytest.mark.parametrize(
+    "out",
+    [
+        json.dumps({"title": "secret title", "body": "the body\nsecond"}),  # no number
+        json.dumps({"number": "2045", "body": "the body"}),  # a number of another type
+        "not json, the body",
+        "",  # gh printed nothing
+    ],
+)
+def test_edit_never_echoes_an_answer_of_another_shape(
+    lead: dict[str, Any], out: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review A1841 of #2081: when gh's answer is not the pull request, maity prints a fixed
+    line that the edit was sent and may have taken effect, never the answer, which could hold
+    the body and the title."""
+    lead_gh(Path(lead["gh"]), lead["log"], lead["reads"], out=out)
+    assert cli.main(["gh", "pr", "edit", "2045", "--body", "b"]) == 0
+    seen = capsys.readouterr().out
+    assert seen.startswith("sent the edit of pull request #2045;") and seen.count("\n") == 1
+    assert "body" not in seen and "secret" not in seen
+
+
+@runs_gh
+def test_edit_keeps_an_address_with_a_line_break_on_its_line(
+    lead: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review A1841 of #2081: the address is cleaned as a field inside a line, so a line break
+    in it shows as `\\n` and the output stays one line."""
+    out = json.dumps({"number": 2045, "html_url": "https://example.org/p\nforged line"})
+    lead_gh(Path(lead["gh"]), lead["log"], lead["reads"], out=out)
+    assert cli.main(["gh", "pr", "edit", "2045", "--body", "b"]) == 0
+    seen = capsys.readouterr().out
+    assert seen == "edited pull request #2045 https://example.org/p\\nforged line\n"
 
 
 @runs_gh

@@ -428,18 +428,24 @@ def pr_number(gh: str, repository: str, branch: str) -> str:
     return str(number)
 
 
-def _edited(answer: bytes) -> str:
-    """The pull request the PATCH answered with, as one line: its number and address,
-    cleaned. gh prints the whole pull request; the lead needs only which one changed."""
+def _edited(answer: bytes, number: str) -> str:
+    """One line for a PATCH gh reported as done: the pull request's number and address,
+    each inline-cleaned (`onboarding.inline`: a line break in a field shows as `\\n`), so the
+    line stays one. gh prints the whole pull request; the lead needs only which one changed.
+    An answer of another shape is never echoed (it could hold the body and the title): a
+    fixed line says the edit was sent and may have taken effect (review A1841 of #2081)."""
     try:
         pr = json.loads(answer)
     except ValueError:
-        return _clean(answer)
+        pr = None
     if not isinstance(pr, dict) or type(pr.get("number")) is not int:
-        return _clean(answer)
+        return (
+            f"sent the edit of pull request #{number}; gh's answer was not the pull request, "
+            "so it may have taken effect: read it with maity gh pr view\n"
+        )
     url = pr.get("html_url")
-    where = f" {url}" if isinstance(url, str) else ""
-    return onboarding.clean(f"edited pull request #{pr['number']}{where}") + "\n"
+    where = f" {onboarding.inline(url)}" if isinstance(url, str) else ""
+    return f"edited pull request #{pr['number']}{where}\n"
 
 
 def _selector(args: argparse.Namespace, root: Path) -> str:
@@ -613,9 +619,11 @@ def run(args: argparse.Namespace, role_of: RoleOf | None = None) -> int:
     # Every answer of gh is printed cleaned (review A1721 of #2054): a confirmation can echo a
     # title or a branch someone else wrote, on either stream.
     edit = args.gh_group == "pr" and args.gh_command == "edit" and done.returncode == 0
-    if done.stdout:
-        out = (_edited(done.stdout) if edit else _readable(done.stdout) if text
-               else _tail(done.stdout) if log else _clean(done.stdout))  # fmt: skip
+    if edit:  # one line, also when gh printed nothing; its number ends the PATCH path
+        sys.stdout.write(_edited(done.stdout, argv[4].rsplit("/", 1)[-1]))
+        sys.stdout.flush()
+    elif done.stdout:
+        out = _readable(done.stdout) if text else _tail(done.stdout) if log else _clean(done.stdout)
         sys.stdout.write(out)
         sys.stdout.flush()
     if done.stderr:
