@@ -42,6 +42,7 @@ from . import (
     scratchop,
     skills,
     targets,
+    watch,
     workspace,
 )
 from .asuser import RUNNER, AsUser, Unreachable
@@ -363,9 +364,13 @@ Log = Callable[[str], None]
 def changed(pid: str, rec: Record) -> str:
     """The log line for a placement's new reported state: codes and numbers only, so no
     URL, join code or credential can reach it."""
+    return f"{pid}: {_state_text(rec)}"
+
+
+def _state_text(rec: Record) -> str:
     words = [w for w in (rec.state, rec.reason, rec.detail) if w]
     restarts = f", restart {rec.restarts}" if rec.restarts else ""
-    return f"{pid}: {' '.join(words)} (generation {rec.generation}{restarts})"
+    return f"{' '.join(words)} (generation {rec.generation}{restarts})"
 
 
 def _minutes(value: Any, default: int) -> float:
@@ -414,10 +419,32 @@ class Supervisor:
     # Serialises the TMP_NAMES_FILE write: `_save_scratch_names` holds it across snapshot + write,
     # so two start threads (or a start and a tick) never race a stale snapshot over a fresh one.
     scratch_names_lock: threading.Lock = field(default_factory=threading.Lock)
+    # The runner's own lines about each placement, for a finding's `log` (§15.7, "The runner's
+    # log lines"): in memory only, dropped when the placement is closed.
+    notes: watch.Notes = field(default_factory=watch.Notes)
 
     def __post_init__(self) -> None:
         if not self.targets and self.cfg.local is not None and self.backend is not None:
             self.targets = {"local": targets.local(self.cfg, self.probes, self.backend)}
+
+    # --- the runner's own lines about a placement (§15.7) -----------------------------------
+
+    def note(self, pid: str, text: str, log: bool = True) -> None:
+        """Keep `<pid>: <text>` among the placement's notes, the only lines a finding's `log`
+        takes, and write it to the service log unless `log` is false (where the log already
+        has its own line for the event). `text` is the runner's own: fixed wording, codes,
+        numbers, timestamps and the names it gave (harness, mode, target). A value from the
+        agents' side (a path, a branch, an exception's text) goes in only as a placeholder
+        (`<path>`, `<branch>`, `<error>`), never as itself."""
+        line = self.notes.add(pid, self.now(), text)
+        if log:
+            self.log(line)
+
+    def _pid_of(self, rec: Record) -> str | None:
+        """The placement a record belongs to; never from a session's tmux label, which the
+        agents' side can set."""
+        with self.lock:
+            return next((pid for pid, r in self.records.items() if r is rec), None)
 
     # --- what serve calls ------------------------------------------------------------------
 
@@ -562,6 +589,7 @@ class Supervisor:
                 for pid in [pid for pid in self.records if pid not in wanted]:
                     if pid not in self.tasks:
                         del self.records[pid]  # closed or gone: nothing left to report
+                        self.notes.forget(pid)
                 self.first_tick = False
             running = {
                 name: sum(1 for s in found.values() if not s.dead and s.placement in labelled)
@@ -888,6 +916,10 @@ class Supervisor:
     ) -> None:  # fmt: skip
         backend.kill(session.name)
         code = session.exit_status
+        pid = self._pid_of(rec)
+        if pid is not None:
+            said = f"with code {code}" if code is not None else "without a code the runner read"
+            self.note(pid, f"the harness exited {said}", log=False)
         if rec.state == "stopping":
             rec.hung_at = None
             rec.enter(now, "stopped", "stopped_by_hub", exit_code=code, deadline_at=None,
@@ -925,6 +957,8 @@ class Supervisor:
             rec.enter(now, "failed", "crash_loop", exit_code=code, crashes=decision.crashes,
                       retry_at=None)  # fmt: skip
             self.log(f"{session.name}: crash loop after {len(decision.crashes)} quick exits")
+            if pid is not None:
+                self.note(pid, f"crash loop after {len(decision.crashes)} quick exits", log=False)
         else:
             rec.enter(now, "exited", exit_code=code, crashes=decision.crashes,
                       retry_at=decision.retry_at)  # fmt: skip
@@ -1021,6 +1055,8 @@ class Supervisor:
                 if now - rec.nudged_at >= reply:
                     self.log(f"{session.name}: the nudge's line did not show in "
                              f"{reply / 60:.0f} min; ending it to resume its session")  # fmt: skip
+                    self.note(p["id"], f"the nudge's line did not show in {reply / 60:.0f} min; "
+                              "ending the session to resume it", log=False)  # fmt: skip
                     backend.terminate(session)
                     rec.hung_at = now
                 return
@@ -1045,6 +1081,8 @@ class Supervisor:
             if rec.nudges >= NUDGE_CAP:
                 self.log(f"{session.name}: answered {rec.nudges} nudges without going back to "
                          "its wait; ending it to resume its session")  # fmt: skip
+                self.note(p["id"], f"answered {rec.nudges} nudges without going back to its "
+                          "wait; ending the session to resume it", log=False)  # fmt: skip
                 backend.terminate(session)
                 rec.hung_at = now
                 return
@@ -1063,11 +1101,15 @@ class Supervisor:
             rec.pane, rec.unsent = (digest, True) if shown is None else (shown, False)
             self.log(f"{session.name}: not listening for {(now - rec.quiet_since) / 60:.0f} min; "
                      "nudged in its pane")  # fmt: skip
+            self.note(p["id"], f"not listening for {(now - rec.quiet_since) / 60:.0f} min, "
+                      "nothing runs below the harness: nudged in its pane", log=False)  # fmt: skip
             return
         if now - rec.nudged_at < reply:
             return
         self.log(f"{session.name}: still not listening {reply / 60:.0f} min after the nudge; "
                  "ending it to resume its session")  # fmt: skip
+        self.note(p["id"], f"still not listening {reply / 60:.0f} min after the nudge; "
+                  "ending the session to resume it", log=False)  # fmt: skip
         backend.terminate(session)
         rec.hung_at = now
 
@@ -1116,7 +1158,11 @@ class Supervisor:
         retry_at = now + backoff
         rec.enter(now, "rate_limited", "quota", detail="reset_unknown", retry_at=retry_at,
                   exit_code=code)  # fmt: skip
-        self.log(f"{pid}: the harness stopped for its provider's limit; again at {stamp(retry_at)}")
+        said = f"the harness stopped for its provider's limit; again at {stamp(retry_at)}"
+        if pid:
+            self.note(pid, said)
+        else:
+            self.log(f": {said}")  # as before, for a record no placement holds
 
     def _limit_file(self, pid: str, target: Target) -> Path:
         assert target.agent_files is not None  # noqa: S101 - connected before a launch
@@ -1360,10 +1406,13 @@ class Supervisor:
                     pruned = as_user.worktree_prune(place.repo)
                 except (OSError, subprocess.TimeoutExpired) as exc:
                     self.log(f"{p['id']}: worktree prune skipped: {exc}")
+                    self.note(p["id"], "worktree prune skipped: <error>", log=False)
                 else:
                     if pruned.get("removed"):
                         where = ", ".join(str(w) for w in pruned["removed"])
                         self.log(f"{p['id']}: cleared leftover worktree(s): {where}")
+                        self.note(p["id"], f"cleared {len(pruned['removed'])} leftover "
+                                  "worktree(s): <path>", log=False)  # fmt: skip
             workspace.prepare(
                 self.cfg, place, p["workspace"].get("repository") or "", owner, p["id"],
                 p["workspace"].get("branch"), as_user,
@@ -1416,6 +1465,7 @@ class Supervisor:
         except workspace.Refused as refused:
             if refused.why:  # the runner's log only; the report keeps the codes
                 self.log(f"{p['id']}: {refused.reason}: {refused.why}")
+                self.note(p["id"], f"{_code_or_dash(refused.reason)}: <error>", log=False)
             with self.lock:
                 rec.enter(self.now(), "failed", refused.reason, detail=refused.detail,
                           exit_code=refused.exit_code)  # fmt: skip
@@ -1430,6 +1480,8 @@ class Supervisor:
             return
         except Retry as again:
             self.log(f"{name}: {again}; trying again in {PICKUP_RETRY:.0f} s")
+            self.note(p["id"], f"the pickup got no answer; trying again in {PICKUP_RETRY:.0f} s",
+                      log=False)  # fmt: skip
             with self.lock:
                 rec.retry_at = self.now() + PICKUP_RETRY
             return
@@ -1450,6 +1502,8 @@ class Supervisor:
                 f"{p['id']}: codex placement refused: the host's maity is too old for the "
                 f"codex launch-write op: {old}"
             )
+            self.note(p["id"], "codex placement refused: the host's maity is too old for the "
+                      "codex launch-write op", log=False)  # fmt: skip
             with self.lock:
                 rec.enter(self.now(), "failed", "harness_refused", retry_at=None)
             return
@@ -1457,6 +1511,7 @@ class Supervisor:
             # Counted like a quick exit: a passing tmux hiccup is retried after the backoff,
             # a lasting one ends in crash_loop instead of a permanent wrong reason.
             self.log(f"{name}: start failed: {type(exc).__name__}: {exc}")
+            self.note(p["id"], "start failed: <error>", log=False)
             now = self.now()
             with self.lock:
                 decision = restart.on_exit(
@@ -1475,8 +1530,13 @@ class Supervisor:
             if not launch.resumed:
                 rec.sessions += 1
         self.log(f"{name}: started generation {p['generation']}")
+        how = "resuming its session" if launch.resumed else "a fresh session"
+        self.note(p["id"], f"started {harness.id} ({_code_or_dash(p.get('mode'))}) on "
+                  f"{target.name}, generation {p['generation']}, {how}",
+                  log=False)  # fmt: skip
         if reset and not launch.resumed:
             self.log(f"{name}: reset: a fresh session, the last one not resumed")
+            self.note(p["id"], "reset: a fresh session, the last one not resumed", log=False)
         if harness.id == "opencode":  # name the model in effect: the placement's, or the default
             self.log(f"{name}: opencode model {p.get('model') or harness.default_model}")
         found = (view or GateView.of(target, harness.id)).found  # the version that started
@@ -1517,7 +1577,7 @@ class Supervisor:
             # A 404 (the placement gone, or no such route) is not the join token's `not_found`.
             gone = exc.status == 404
             reason, why = exc.details.get("reason"), exc.details.get("why")
-            self.log(f"{p['id']}: {refusal_line('pickup', exc.code, reason, why)}")
+            self.note(p["id"], refusal_line("pickup", exc.code, reason, why))
             detail = None if gone else join_detail(exc.code, reason)
             raise workspace.Refused("join_failed", detail) from None
         url, code = pickup.get("join_url"), pickup.get("code")
@@ -1527,7 +1587,7 @@ class Supervisor:
         if not joined:
             # The child's machine line carries the code only (for `forbidden`, the reason in
             # its place), and the exchange answers `not_found` without a why (§15.9).
-            self.log(f"{p['id']}: {refusal_line('exchange', why)}")
+            self.note(p["id"], refusal_line("exchange", why))
             raise workspace.Refused("join_failed", why)
         try:
             if not as_user.direct:
@@ -2088,7 +2148,7 @@ class Supervisor:
                 if key != rec.acked and (rec.pending is None or rec.pending["key"] != key):
                     rec.seq = max(rec.seq, p.get("seq") or 0) + 1  # validated in update()
                     rec.pending = {"key": key, "body": self._body(rec)}
-                    self.log(changed(p["id"], rec))
+                    self.note(p["id"], _state_text(rec))  # the line `changed` writes
                 if rec.pending is not None:
                     outgoing.append((p["id"], rec, rec.pending))
         if not outgoing or self.client is None:
